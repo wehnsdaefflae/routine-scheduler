@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "rsched",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "rsched", "daemon"],
+      "port": 8321
+    }
+  ]
+}
