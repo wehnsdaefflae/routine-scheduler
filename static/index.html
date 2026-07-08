@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>routine-scheduler</title>
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128260;</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="#/">&#128260; routines</a>
+  <nav>
+    <a href="#/" data-nav="dashboard">Dashboard</a>
+    <a href="#/questions" data-nav="questions">Questions <span id="q-badge" class="badge" hidden></span></a>
+    <a href="#/library" data-nav="library">Library</a>
+    <a href="#/settings" data-nav="settings">Settings</a>
+  </nav>
+  <div class="topbar-right">
+    <a class="btn primary" href="#/wizard">+ New routine</a>
+    <span id="daemon-dot" class="dot" title="daemon"></span>
+  </div>
+</header>
+<main id="view"></main>
+<div id="toast" hidden></div>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

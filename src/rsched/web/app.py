@@ -1,0 +1,87 @@
+"""FastAPI app factory: bearer-token auth, API routers, SSE, static frontend, and the
+scheduler running as a startup task — one process serves everything."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import os
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from ..config import ServerConfig, load_server_config
+from ..daemon.events import EventBus
+from ..daemon.runner import Runner
+from ..daemon.scheduler import Scheduler
+
+log = logging.getLogger("rsched.web")
+
+STATIC_DIR = Path(__file__).resolve().parents[3] / "static"
+
+
+def require_auth(request: Request) -> None:
+    token = request.app.state.server.token
+    if not token:
+        return  # auth disabled (empty token in config)
+    header = request.headers.get("authorization", "")
+    if header == f"Bearer {token}" or request.query_params.get("token") == token:
+        return
+    raise HTTPException(status_code=401, detail="missing or invalid token")
+
+
+def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = True) -> FastAPI:
+    if server is None:
+        server, problems = load_server_config()
+        for pr in problems:
+            log.warning("config: %s", pr)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: FastAPI):
+        task = None
+        if with_scheduler and not os.environ.get("RSCHED_NO_SCHEDULER"):
+            task = asyncio.create_task(app.state.scheduler.run_forever())
+        yield
+        if task:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    app = FastAPI(title="routine-scheduler", lifespan=lifespan)
+    bus = EventBus()
+    runner = Runner(server, bus)
+    scheduler = Scheduler(server, runner, bus)
+    app.state.server = server
+    app.state.bus = bus
+    app.state.runner = runner
+    app.state.scheduler = scheduler
+
+    from . import api_questions, api_routines, api_runs, api_settings
+
+    deps = [Depends(require_auth)]
+    app.include_router(api_routines.router, prefix="/api", dependencies=deps)
+    app.include_router(api_runs.router, prefix="/api", dependencies=deps)
+    app.include_router(api_questions.router, prefix="/api", dependencies=deps)
+    app.include_router(api_settings.router, prefix="/api", dependencies=deps)
+
+    @app.get("/api/status", dependencies=deps)
+    def status() -> dict:
+        from .. import __version__
+
+        return {"version": __version__, **scheduler.snapshot()}
+
+    @app.get("/api/events", dependencies=deps)
+    async def global_events():
+        from .sse import bus_stream, sse_response
+
+        return sse_response(bus_stream(bus))
+
+    @app.get("/", include_in_schema=False)
+    def index():
+        return FileResponse(STATIC_DIR / "index.html")
+
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    return app

@@ -78,13 +78,16 @@ def read_events(path: Path, offset: int = 0) -> tuple[list[dict], int]:
     with fh:
         if is_gz:
             data = fh.read()
+            total = len(data.encode("utf-8"))
+            if offset >= total:
+                return [], offset  # a gz transcript is immutable — nothing new, ever
             for line in data.splitlines():
                 if line.strip():
                     try:
                         events.append(json.loads(line))
                     except json.JSONDecodeError:
                         pass
-            return events, len(data.encode("utf-8"))
+            return events, total
         fh.seek(offset)
         pos = offset
         for line in fh:

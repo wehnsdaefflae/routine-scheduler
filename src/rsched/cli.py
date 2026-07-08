@@ -137,34 +137,19 @@ def cmd_validate(args) -> int:
 
 
 def cmd_daemon(_args) -> int:
-    import asyncio
     import logging
 
-    from .daemon.events import EventBus
-    from .daemon.runner import Runner
-    from .daemon.scheduler import Scheduler
+    import uvicorn
+
+    from .web.app import create_app
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     server, problems = load_server_config()
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
-
-    async def main() -> None:
-        bus = EventBus()
-        runner = Runner(server, bus)
-        scheduler = Scheduler(server, runner, bus)
-        stop = asyncio.Event()
-        loop = asyncio.get_running_loop()
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, stop.set)
-        task = asyncio.create_task(scheduler.run_forever())
-        await stop.wait()
-        logging.getLogger("rsched").info("shutting down (%d active runs keep running "
-                                         "and will be recovered at next boot)", len(runner.active))
-        task.cancel()
-
-    asyncio.run(main())
+    app = create_app(server)
+    uvicorn.run(app, host=server.bind, port=server.port, log_level="warning")
     return 0
 
 

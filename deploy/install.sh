@@ -27,7 +27,8 @@ else
 fi
 
 # Workflow library: seed once, git-init with best-effort auto-push hook.
-if [ -d "${REPO}/library-seed" ] && [ ! -d "${LIBRARY}" ]; then
+if [ -d "${REPO}/library-seed" ] && [ -n "$(find "${REPO}/library-seed" -type f -print -quit)" ] \
+    && [ ! -d "${LIBRARY}" ]; then
   mkdir -p "${LIBRARY}"
   cp -r "${REPO}/library-seed/." "${LIBRARY}/"
   git -C "${LIBRARY}" init -q -b main
