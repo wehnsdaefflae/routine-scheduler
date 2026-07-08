@@ -1,0 +1,33 @@
+[project]
+name = "rsched"
+version = "0.1.0"
+description = "LLM agent routine scheduler: provider-agnostic workflow-as-harness engine, cron daemon, web UI"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "httpx>=0.27",
+    "croniter>=3.0",
+    "pyyaml>=6.0",
+    "jsonschema>=4.23",
+]
+
+[project.scripts]
+rsched = "rsched.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rsched"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
