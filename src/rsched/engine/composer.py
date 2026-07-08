@@ -60,6 +60,11 @@ def harness_contract(ctx: RunContext) -> str:
 EXACTLY one JSON object matching the action schema below — no prose outside the JSON. Narrate what \
 you observed and decided in the "say" field.
 
+The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \
+conversation, one per turn, each answered by an observation before your next reply. Never state or \
+summarize results that no observation here has shown; finishing with claims of unperformed work is \
+the single worst failure this system knows. The engine rejects a finish(ok) before any action ran.
+
 Working directory: {r.dir}. All relative paths resolve there.{extra}
 Shell commands run there; every command segment must match the allowlist: {r.shell_allowlist}. \
 Global utils are your primary tools: `gu <name> ... --json` (run `gu list` for the catalog).
@@ -137,8 +142,9 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
 
 
 def kickoff_message(ctx: RunContext) -> str:
-    return (f"Begin run {ctx.run_id}. Follow the workflow from the top; reply with your first "
-            "action as one JSON object.")
+    return (f"Begin run {ctx.run_id}. Nothing has been executed yet — the workflow starts now, "
+            "at step 1. Reply with ONE JSON action object: your first actual step (not a plan, "
+            "not a summary, not a finish).")
 
 
 def format_observation(obs: dict) -> str:

@@ -58,6 +58,7 @@ def test_shell_and_guard_rejection(make_routine, scripted):
 def test_invalid_json_retry_then_ok(make_routine, scripted):
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
         "utter prose, no JSON at all",
+        shell("git status"),
         finish(),
     ])
     assert status == "ok"
@@ -96,6 +97,24 @@ def test_repeated_action_warn_then_fail(make_routine, scripted):
     assert warned, "warning observation was injected before the hard stop"
     # 5 actions authored, but only 4 executed (5th hit the fail gate)
     assert len([e for e in events if e["type"] == "observation"]) == 4
+
+
+def test_fabricated_finish_rejected(make_routine, scripted):
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        finish(summary="All done! Committed everything."),   # turn 1: pure fabrication
+        shell("git status"),
+        finish(summary="Now actually done."),
+    ], slug="fabber")
+    assert status == "ok"
+    rejected = [e for e in events if e["type"] == "observation"
+                and e["payload"].get("kind") == "finish" and e["payload"].get("rejected")]
+    assert len(rejected) == 1
+    assert "not executed a single action" in ep.calls[1]["messages"][-1]["content"]
+    # a failed-finish without work IS allowed (e.g. broken preconditions)
+    d2, ep2, status2, run_dir2, events2 = _run(make_routine, scripted, [
+        finish(status="failed", summary="Cannot start: credentials missing."),
+    ], slug="failer")
+    assert status2 == "failed" and events2[-1]["payload"]["authored"] is True
 
 
 def test_ask_user_deferred(make_routine, scripted):
@@ -148,7 +167,7 @@ def test_deferred_answer_reaches_next_run_digest(make_routine, scripted):
     ], slug="qcarry")
     qid = read_json(next((d / "questions" / "pending").glob("*.json")))["qid"]
     atomic_write_json(d / "inbox" / f"answer-{qid}.json", {"qid": qid, "text": "teal"})
-    ep2 = scripted([finish(summary="noted teal")])
+    ep2 = scripted([shell("git status"), finish(summary="noted teal")])
     status2, run_dir2 = run_routine(d, ServerConfig(), run_ts="20260709-070000")
     assert status2 == "ok"
     system = ep2.calls[0]["messages"][0]["content"]
@@ -233,7 +252,7 @@ def test_injection_mid_run(make_routine, scripted):
 def test_boot_inbox_message_lands_in_system_prompt(make_routine, scripted):
     d = make_routine(slug="bootmsg")
     atomic_write_json(d / "inbox" / "msg-0.json", {"text": "priority: check the deploy"})
-    ep = scripted([finish()])
+    ep = scripted([shell("git status"), finish()])
     status, _ = run_routine(d, ServerConfig(), run_ts=TS)
     assert status == "ok"
     assert "priority: check the deploy" in ep.calls[0]["messages"][0]["content"]
@@ -262,7 +281,7 @@ def test_endpoint_error_fails_run(make_routine, scripted):
     assert status == "failed"
     err = next(e for e in events if e["type"] == "error")
     assert err["payload"]["where"] == "endpoint"
-    assert "gu claude-login" in events[-1]["payload"]["summary"]
+    assert "~/.credentials/" in events[-1]["payload"]["summary"]
 
 
 def test_pause_gate(make_routine, scripted):

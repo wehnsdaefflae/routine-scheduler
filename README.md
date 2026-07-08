@@ -11,9 +11,10 @@ markdown files, with self-audit / self-improvement / self-healing standards on b
 Runs execute on a **provider-agnostic engine**: the workflow document is the harness. The
 orchestrator LLM follows it and acts only by returning one JSON action per turn — run a global
 util (`gu …`), read/write a file, make a scoped LLM subcall, spawn a sub-instruction, ask the
-user, or finish. Any chat-completion endpoint works: local Ollama, OpenAI-compatible servers,
-the Anthropic API, or the Claude Code CLI used purely as a subscription-billed completion
-endpoint (never as an agentic harness).
+user, or finish. Any DIRECT chat-completion endpoint works: OpenRouter, local Ollama, other
+OpenAI-compatible servers, or the Anthropic Messages API. Wrapped agent runtimes (headless
+Claude Code and the like) are deliberately excluded — this scheduler is the harness, and a
+second harness in the path fights it.
 
 A **meta routine** periodically ingests the top-level transcripts of all routines' runs,
 identifies flaws and optimization potential, and revises or creates workflows in the library.

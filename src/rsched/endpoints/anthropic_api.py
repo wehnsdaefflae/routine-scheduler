@@ -10,9 +10,8 @@ from __future__ import annotations
 import httpx
 
 from ..config import EndpointConfig
-from ..paths import expand
 from .base import (DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT, Completion, EndpointError,
-                   Message, split_system, with_retries)
+                   Message, key_from_env_file, split_system, with_retries)
 
 API_VERSION = "2023-06-01"
 
@@ -29,19 +28,6 @@ def merge_consecutive(messages: list[Message]) -> list[Message]:
     return merged
 
 
-def _key_from_env_file(path: str, var: str) -> str | None:
-    p = expand(path)
-    if not p.exists():
-        return None
-    for line in p.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            if k.strip() == var:
-                return v.strip().strip('"').strip("'")
-    return None
-
-
 class AnthropicEndpoint:
     def __init__(self, cfg: EndpointConfig):
         self.name = cfg.name
@@ -52,7 +38,7 @@ class AnthropicEndpoint:
         self.supports_schema = True
 
     def _api_key(self) -> str:
-        key = _key_from_env_file(self.key_env_file, self.key_var) if self.key_env_file else None
+        key = key_from_env_file(self.key_env_file, self.key_var) if self.key_env_file else None
         if not key:
             raise EndpointError(
                 f"{self.name}: no API key ({self.key_var} not found in {self.key_env_file})", auth=True

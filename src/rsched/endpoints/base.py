@@ -48,6 +48,22 @@ class ChatEndpoint(Protocol):
     ) -> Completion: ...
 
 
+def key_from_env_file(path: str, var: str) -> str | None:
+    """Read VAR=value from a ~/.credentials/*.env style file (comments/quotes tolerated)."""
+    from ..paths import expand
+
+    p = expand(path)
+    if not p.exists():
+        return None
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            if k.strip() == var:
+                return v.strip().strip('"').strip("'")
+    return None
+
+
 def split_system(messages: list[Message]) -> tuple[str, list[Message]]:
     """Pull leading system message(s) out; most APIs want them separated."""
     system_parts, rest = [], []

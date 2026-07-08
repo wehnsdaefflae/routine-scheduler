@@ -26,7 +26,9 @@ DEFAULT_BUDGETS = {
 DEFAULT_SELF = {"audit": True, "improve": True, "ledger": True, "fresh_eyes": True, "hygiene": True}
 DEFAULT_ALLOWLIST = ["gu *", "git *", "uv run --script *"]
 ROLES = ("orchestrator", "subcall", "cheap")
-ENDPOINT_KINDS = ("openai", "anthropic", "claude-cli")
+# Direct model access only: raw chat-completion APIs. Never a wrapped agent runtime
+# (headless Claude Code etc.) — the scheduler's engine is the one and only harness.
+ENDPOINT_KINDS = ("openai", "anthropic")
 SCHEMA_MODES = ("json_schema", "json_object", "none")
 
 
@@ -38,7 +40,6 @@ class EndpointConfig:
     api_key: str = ""
     key_env_file: str = ""
     key_var: str = "ANTHROPIC_API_KEY"
-    credentials_env: str = "~/.credentials/claude-code-oauth.env"
     schema_mode: str = "json_schema"  # openai kind only
     context_chars: int = 100_000
     temperature: float | None = None
@@ -105,7 +106,7 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
             problems.append(f"endpoints.{name}: kind must be one of {ENDPOINT_KINDS}, got {kind!r}")
             continue
         ep = EndpointConfig(name=name, kind=kind)
-        for key in ("base_url", "api_key", "key_env_file", "key_var", "credentials_env", "schema_mode"):
+        for key in ("base_url", "api_key", "key_env_file", "key_var", "schema_mode"):
             if key in spec:
                 setattr(ep, key, str(spec[key]))
         if ep.schema_mode not in SCHEMA_MODES:

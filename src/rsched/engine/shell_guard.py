@@ -16,7 +16,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..endpoints.claude_cli import STRIP_VARS
+# LLM auth vars stripped from child-shell environments: a child tool inheriting a key
+# could silently switch to metered billing or the wrong account. Tools that need LLM
+# access (e.g. `gu claude`) resolve their own credentials from ~/.credentials files.
+STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
+              "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS",
+              "OPENROUTER_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY")
 
 DEFAULT_TIMEOUT_S = 120
 SEPARATORS = {";", "&&", "||", "|", "&", "\n"}

@@ -53,6 +53,7 @@ class EngineLoop:
         self.repeat_hashes: deque[str] = deque(maxlen=REPEAT_FAIL)
         self.consumed_dir = ctx.root_run_dir / "consumed"
         self.final_summary = ""
+        self.executed_actions = 0  # actions that produced an observation this run
 
     # --- lifecycle ---------------------------------------------------------------
 
@@ -83,6 +84,19 @@ class EngineLoop:
                                                       f"{repeat_streak} times in a row. Aborting the run.")
 
                 if action["kind"] == "finish":
+                    if action["status"] == "ok" and self.executed_actions == 0 and ctx.depth == 0:
+                        # Fabrication guard: a top-level ok-finish as the very first action
+                        # is a hallucinated completion (the classic no-tools failure mode) —
+                        # no observation exists that could ground any of its claims.
+                        obs = {"kind": "finish", "rejected": True}
+                        ctx.transcript.event("observation", obs, turn=ctx.turn)
+                        self.messages.append({"role": "user", "content":
+                            "OBSERVATION (finish REJECTED): you have not executed a single "
+                            "action this run, so the workflow cannot be complete and none of "
+                            "your claims have observations behind them. Start at workflow "
+                            "step 1 and do the actual work, one action per turn."})
+                        ctx.write_status()
+                        continue
                     self.final_summary = action["summary"]
                     return self._finish_run(action["status"], action["summary"], authored=True)
                 if action["kind"] == "ask_user":
@@ -92,6 +106,7 @@ class EngineLoop:
                 else:
                     obs = executor.dispatch(action, ctx)
                 ctx.transcript.event("observation", obs, turn=ctx.turn)
+                self.executed_actions += 1
                 text = format_observation(obs)
                 if REPEAT_WARN <= repeat_streak < REPEAT_FAIL:
                     text += (f"\n[ENGINE WARNING: this exact action has now run {repeat_streak} times "
@@ -102,7 +117,8 @@ class EngineLoop:
             return self._finish_run("aborted", "Run aborted by the user/daemon.")
         except EndpointError as exc:
             self.ctx.transcript.event("error", {"where": "endpoint", "message": str(exc)})
-            hint = " Run `gu claude-login` to refresh the subscription token." if exc.auth else ""
+            hint = (" Check the endpoint's key file under ~/.credentials/ (see config.yaml)."
+                    if exc.auth else "")
             return self._finish_run("failed", f"Endpoint failure: {exc}.{hint}")
         finally:
             if self.ctx.depth == 0:
@@ -161,9 +177,9 @@ class EngineLoop:
                     return completion.parsed, usage_sum
                 return parse_reply(completion.text, ACTION_SCHEMA, validate_action), usage_sum
             except SchemaViolation as exc:
-                ctx.transcript.event("error", {"where": "schema", "attempt": attempt,
-                                               "message": str(exc)[:500]})
                 raw = completion.text or json.dumps(completion.parsed or {})
+                ctx.transcript.event("error", {"where": "schema", "attempt": attempt,
+                                               "message": str(exc)[:500], "raw": raw[:1500]})
                 self.messages.append({"role": "assistant", "content": raw[:4000]})
                 self.messages.append({"role": "user", "content": retry_message(exc.problems)})
         return None, usage_sum
