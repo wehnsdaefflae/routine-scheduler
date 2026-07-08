@@ -9,7 +9,7 @@ const routes = [
   [/^#\/run\/([a-z0-9-]+:[0-9-]+)$/, () => import("/static/views/run.js")],
   [/^#\/questions$/, () => import("/static/views/questions.js")],
   [/^#\/library(?:\/(.*))?$/, () => import("/static/views/library.js")],
-  [/^#\/wizard$/, () => import("/static/views/wizard.js")],
+  [/^#\/wizard(?:\/(.+))?$/, () => import("/static/views/wizard.js")],
   [/^#\/settings$/, () => import("/static/views/settings.js")],
 ];
 

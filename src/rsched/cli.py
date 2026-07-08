@@ -182,12 +182,63 @@ def cmd_abort(args) -> int:
     return 0 if ok else 1
 
 
-def _not_yet(milestone: str):
-    def cmd(_args) -> int:
-        print(f"not implemented yet (arrives with {milestone})", file=sys.stderr)
-        return 2
+def cmd_lint(args) -> int:
+    from .workflows.lint import lint_all, lint_materialized_text
 
-    return cmd
+    server, _ = load_server_config()
+    results = lint_all(server.library_home)
+    bad = 0
+    for name, problems in sorted(results.items()):
+        if args.target and args.target not in name:
+            continue
+        print(f"{name}: {'ok' if not problems else 'PROBLEMS'}")
+        for p in problems:
+            print(f"  - {p}")
+            bad += 1
+    if not args.target and server.routines_home.is_dir():
+        for d in sorted(server.routines_home.iterdir()):
+            wf = d / "workflow.md"
+            if d.name.startswith(".") or not wf.exists():
+                continue
+            problems = lint_materialized_text(wf.read_text(encoding="utf-8"),
+                                              filename=f"{d.name}/workflow.md")
+            print(f"routines/{d.name}: {'ok' if not problems else 'PROBLEMS'}")
+            for p in problems:
+                print(f"  - {p}")
+                bad += 1
+    return 1 if bad else 0
+
+
+def cmd_suggest(args) -> int:
+    from .workflows.suggest import suggest
+
+    server, _ = load_server_config()
+    result = suggest(server, args.instruction)
+    for s in result["suggestions"]:
+        print(f"{s['confidence']:.2f}  {s['slug']}  — {s['reason']}")
+    if result.get("none_fit"):
+        print(f"none fit — hint: {result.get('new_workflow_hint', '')}", file=sys.stderr)
+    return 0
+
+
+def cmd_scaffold(args) -> int:
+    from .workflows.scaffold import scaffold
+
+    server, _ = load_server_config()
+    try:
+        path = scaffold(
+            server, slug=args.slug, name=args.name or args.slug,
+            instruction=Path(args.instruction_file).read_text(encoding="utf-8")
+            if args.instruction_file else f"# Instruction\n\n(fill in) — scaffolded for {args.slug}",
+            workflow_slug=args.workflow, cron=args.cron or "", tz=args.tz,
+            shell_allowlist=args.allow or None,
+            fs_read_roots=args.read_root or None, fs_write_roots=args.write_root or None,
+        )
+    except (ValueError, KeyError, FileNotFoundError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"scaffolded: {path}", file=sys.stderr)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -217,10 +268,25 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("run_id")
     a.set_defaults(fn=cmd_abort)
 
-    for name, milestone in (("lint", "M4"), ("suggest", "M4"), ("scaffold", "M4")):
-        s = sub.add_parser(name)
-        s.add_argument("args", nargs="*")
-        s.set_defaults(fn=_not_yet(milestone))
+    li = sub.add_parser("lint", help="lint the workflow library + materialized workflows")
+    li.add_argument("target", nargs="?", help="limit to entries containing this string")
+    li.set_defaults(fn=cmd_lint)
+
+    su = sub.add_parser("suggest", help="rank library workflows for an instruction")
+    su.add_argument("--instruction", required=True)
+    su.set_defaults(fn=cmd_suggest)
+
+    sc = sub.add_parser("scaffold", help="create a routine dir from a library workflow")
+    sc.add_argument("slug")
+    sc.add_argument("--workflow", required=True, help="library workflow slug")
+    sc.add_argument("--cron", default="")
+    sc.add_argument("--tz", default="Europe/Berlin")
+    sc.add_argument("--name", default="")
+    sc.add_argument("--instruction-file", help="file whose content becomes instruction.md")
+    sc.add_argument("--allow", action="append", help="shell allowlist entry (repeatable)")
+    sc.add_argument("--read-root", action="append", help="extra fs read root (repeatable)")
+    sc.add_argument("--write-root", action="append", help="extra fs write root (repeatable)")
+    sc.set_defaults(fn=cmd_scaffold)
 
     args = p.parse_args(argv)
     return args.fn(args)

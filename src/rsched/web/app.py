@@ -59,13 +59,16 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.state.runner = runner
     app.state.scheduler = scheduler
 
-    from . import api_questions, api_routines, api_runs, api_settings
+    from . import (api_questions, api_routines, api_runs, api_settings, api_wizard,
+                   api_workflows)
 
     deps = [Depends(require_auth)]
     app.include_router(api_routines.router, prefix="/api", dependencies=deps)
     app.include_router(api_runs.router, prefix="/api", dependencies=deps)
     app.include_router(api_questions.router, prefix="/api", dependencies=deps)
     app.include_router(api_settings.router, prefix="/api", dependencies=deps)
+    app.include_router(api_workflows.router, prefix="/api", dependencies=deps)
+    app.include_router(api_wizard.router, prefix="/api", dependencies=deps)
 
     @app.get("/api/status", dependencies=deps)
     def status() -> dict:

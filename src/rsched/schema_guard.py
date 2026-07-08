@@ -24,13 +24,19 @@ class SchemaViolation(Exception):
         self.problems = problems
 
 
+def loads_tolerant(text: str):
+    """json.loads for LLM-authored JSON: strict=False accepts raw control characters
+    (unescaped newlines/tabs) inside strings — a common weak-model slip."""
+    return json.loads(text, strict=False)
+
+
 def extract_json(text: str) -> dict:
     """Pull one JSON object out of a model reply, tolerating code fences and
     surrounding prose. Raises SchemaViolation if nothing parses."""
     text = text.strip()
     candidates: list[str] = []
     try:
-        json.loads(text)
+        loads_tolerant(text)
         candidates.append(text)
     except json.JSONDecodeError:
         candidates.extend(m.group(1).strip() for m in _FENCE_RE.finditer(text))
@@ -43,7 +49,7 @@ def extract_json(text: str) -> dict:
                 end = text.rfind("}", start, end)
     for cand in candidates:
         try:
-            obj = json.loads(cand)
+            obj = loads_tolerant(cand)
         except json.JSONDecodeError:
             continue
         if isinstance(obj, dict):
