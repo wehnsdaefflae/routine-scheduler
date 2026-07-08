@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# rsched auto-backup — push every commit to origin (best-effort, never blocks the commit).
+branch="$(git symbolic-ref --short HEAD 2>/dev/null)" || exit 0
+git remote get-url origin >/dev/null 2>&1 || exit 0
+out="$(timeout 20 git push --quiet origin "$branch" 2>&1)"; rc=$?
+if [ "$rc" -ne 0 ]; then
+  printf '[rsched backup] push to origin failed (exit %d)…\n%s\n' "$rc" "$out" >&2
+fi
+exit 0

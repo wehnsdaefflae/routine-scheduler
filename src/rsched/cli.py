@@ -136,6 +136,67 @@ def cmd_validate(args) -> int:
     return 1 if total else 0
 
 
+def cmd_daemon(_args) -> int:
+    import asyncio
+    import logging
+
+    from .daemon.events import EventBus
+    from .daemon.runner import Runner
+    from .daemon.scheduler import Scheduler
+
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    server, problems = load_server_config()
+    for pr in problems:
+        logging.getLogger("rsched").warning("config: %s", pr)
+
+    async def main() -> None:
+        bus = EventBus()
+        runner = Runner(server, bus)
+        scheduler = Scheduler(server, runner, bus)
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, stop.set)
+        task = asyncio.create_task(scheduler.run_forever())
+        await stop.wait()
+        logging.getLogger("rsched").info("shutting down (%d active runs keep running "
+                                         "and will be recovered at next boot)", len(runner.active))
+        task.cancel()
+
+    asyncio.run(main())
+    return 0
+
+
+def cmd_abort(args) -> int:
+    import asyncio
+
+    from .daemon import registry
+    from .daemon.runner import abort_process
+    from .ids import parse_run_id
+    from .paths import read_json
+
+    server, _ = load_server_config()
+    target = args.run_id
+    if ":" in target:
+        slug, ts = parse_run_id(target)
+    else:
+        slug = target
+        runs = registry.run_index(_routine_dir(server, slug), slug)
+        alive = [r for r in runs if r.state in ("running", "waiting_user", "paused", "starting")]
+        if not alive:
+            print(f"no active run for {slug}", file=sys.stderr)
+            return 1
+        ts = alive[0].ts
+    run_dir = _routine_dir(server, slug) / "runs" / ts
+    st = read_json(run_dir / "status.json")
+    pid = st.get("pid") if isinstance(st, dict) else None
+    ok = asyncio.run(abort_process(pid, run_dir, f"{slug}:{ts}"))
+    print(f"abort {'sent' if ok else 'failed — process not found'} for {slug}:{ts}",
+          file=sys.stderr)
+    return 0 if ok else 1
+
+
 def _not_yet(milestone: str):
     def cmd(_args) -> int:
         print(f"not implemented yet (arrives with {milestone})", file=sys.stderr)
@@ -164,8 +225,14 @@ def main(argv: list[str] | None = None) -> int:
     v.add_argument("routine", nargs="?", help="one routine (default: all)")
     v.set_defaults(fn=cmd_validate)
 
-    for name, milestone in (("daemon", "M2"), ("abort", "M2"), ("lint", "M4"),
-                            ("suggest", "M4"), ("scaffold", "M4")):
+    d = sub.add_parser("daemon", help="run the scheduler (systemd runs this)")
+    d.set_defaults(fn=cmd_daemon)
+
+    a = sub.add_parser("abort", help="abort a run: rsched abort <slug>[:<ts>]")
+    a.add_argument("run_id")
+    a.set_defaults(fn=cmd_abort)
+
+    for name, milestone in (("lint", "M4"), ("suggest", "M4"), ("scaffold", "M4")):
         s = sub.add_parser(name)
         s.add_argument("args", nargs="*")
         s.set_defaults(fn=_not_yet(milestone))

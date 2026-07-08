@@ -1,0 +1,14 @@
+[Unit]
+Description=LLM agent routine scheduler (rsched daemon + web UI)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/git-repos/routine-scheduler
+ExecStart=%h/.local/bin/uv run --project %h/git-repos/routine-scheduler rsched daemon
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
