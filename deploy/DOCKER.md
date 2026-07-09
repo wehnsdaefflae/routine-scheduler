@@ -75,10 +75,13 @@ systemctl --user disable --now routine-scheduler.service
 
 ## Caveats
 
-- **Claude token refresh is manual.** `gu claude-login` opens a browser and cannot run headless.
-  When `~/.credentials/claude-code-oauth.env` expires, refresh it on a machine with a browser and
-  copy the new `CLAUDE_CODE_OAUTH_TOKEN=` line into the server's file (the mount picks it up; no
-  rebuild). Only `self-audit` (orchestrator) and `meta-workflows` (subcall) use `claude-cli`.
+- **Credentials are set in the UI**, not on the host — see [SETUP.md](SETUP.md). All keys, tokens,
+  and util secrets go in **Settings → Secrets** (one store, injected at run time). The Claude
+  subscription token is minted once elsewhere with `claude setup-token` and pasted in as
+  `CLAUDE_CODE_OAUTH_TOKEN`; the container's `claude` CLI uses it via the environment and never logs
+  in. It's long-lived — when it expires, re-run `claude setup-token` and update the Secrets value
+  (no restart). Only `self-audit` (orchestrator) and `meta-workflows` (subcall) use `claude-cli` by
+  default; most setups can use API keys instead.
 - **No browser in the image.** None of the routines drive one. The personal CDP utils
   (freelance/gulp/xing/…) won't work until you add a Chromium/Playwright layer to the `Dockerfile`
   and provide a logged-in profile — out of scope here.

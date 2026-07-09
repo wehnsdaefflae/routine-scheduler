@@ -86,7 +86,8 @@ PEP 723 script: `# /// script` deps block, a module docstring whose first line i
 built-in checks, data on stdout / diagnostics on stderr / exit 0 on success). The engine runs
 `--selftest` and only commits if it passes; a util may call sibling utils via `gu <name>`. If it \
 needs a secret (token, password, API key), read it env-first — `os.environ["NAME"]` — never hardcode \
-or prompt for it; the user sets NAME once in the Secrets store and the engine injects it.{util_confirm}
+or prompt for it, AND declare the names in a header `secrets: NAME1, NAME2` line so the UI tells the \
+user what to set (they set it once in the Secrets store; the engine injects it).{util_confirm}
 - read_file / write_file: read or write a file (within the working dir or an allowed root).
 - llm: one scoped, stateless LLM subcall (role "subcall" or "cheap"). It sees ONLY your prompt/\
 system — include everything it needs; set response_schema for structured replies.

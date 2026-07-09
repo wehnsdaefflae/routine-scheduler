@@ -82,6 +82,20 @@ def test_tags_on_library_elements():
     assert utils["websearch"]["tags"] == ["web", "research", "search"]
 
 
+def test_util_declares_secrets(tmp_path):
+    """A util's `secrets:` header line is parsed → the UI can tell users which vars to set."""
+    from rsched import utils_lib
+    d = tmp_path / "utils" / "foo"
+    d.mkdir(parents=True)
+    (d / "main.py").write_text(
+        '"""foo — does foo.\n\nusage: gu foo\nsecrets: FOO_TOKEN, FOO_USER\ntags: a, b, c\n"""\n')
+    u = utils_lib.list_utils(tmp_path)[0]
+    assert u["secrets"] == ["FOO_TOKEN", "FOO_USER"] and u["tags"] == ["a", "b", "c"]
+    # a util with no secrets (or "(none)") declares none
+    (d / "main.py").write_text('"""foo — x.\n\nusage: gu foo\nsecrets: (none)\n"""\n')
+    assert utils_lib.list_utils(tmp_path)[0]["secrets"] == []
+
+
 def test_lint_requires_three_tags():
     from rsched.workflows.lint import lint_fragment_text, lint_workflow_text
     two_tag_wf = ("---\nname: X\nslug: x\ndescription: d\nwhen_to_use: w\nversion: 1\n"

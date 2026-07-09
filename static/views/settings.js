@@ -104,23 +104,45 @@ export async function render(view) {
     catch (err) { secBox.append(el("div", { class: "muted" }, err.message)); return; }
     secBox.append(el("div", { class: "muted", style: "font-size:12.5px;margin-bottom:6px" },
       "One store for every credential — injected into all utils, LLM endpoints, and the Claude ",
-      "subscription (as CLAUDE_CODE_OAUTH_TOKEN) at run time. Add whatever a util needs (a token, ",
-      "a username, an API key). Values are write-only — never shown back."));
-    if (s.keys.length) {
-      secBox.append(el("table", { class: "list" }, el("tbody", {}, s.keys.map((k) => {
-        const del = el("button", { class: "btn small danger" }, "delete");
-        del.onclick = async () => {
-          if (!confirm(`Delete secret ${k}?`)) return;
-          try { await api(`/api/settings/secrets/${encodeURIComponent(k)}`, { method: "DELETE" }); renderSecrets(); }
-          catch (err) { toast(err.message); }
-        };
-        return el("tr", {}, el("td", { class: "mono" }, k), el("td", { class: "muted" }, "••••••••"), el("td", {}, del));
-      }))));
-    } else {
-      secBox.append(el("div", { class: "muted", style: "font-size:12px" }, "no secrets set yet"));
-    }
+      "subscription (as CLAUDE_CODE_OAUTH_TOKEN) at run time. Values are write-only — never shown back."));
+
     const keyIn = el("input", { type: "text", placeholder: "KEY (e.g. CLAUDE_CODE_OAUTH_TOKEN)", style: "flex:1" });
     const valIn = el("input", { type: "password", placeholder: "value", style: "flex:1" });
+    const delBtn = (k) => {
+      const b = el("button", { class: "btn small danger" }, "delete");
+      b.onclick = async () => {
+        if (!confirm(`Delete secret ${k}?`)) return;
+        try { await api(`/api/settings/secrets/${encodeURIComponent(k)}`, { method: "DELETE" }); renderSecrets(); }
+        catch (err) { toast(err.message); }
+      };
+      return b;
+    };
+
+    // What the installed utils DECLARE they need — so you know exactly what to add (unset flagged).
+    if (s.needed?.length) {
+      secBox.append(el("div", { class: "mt", style: "font-size:12.5px;font-weight:600" }, "Needed by installed utils"));
+      secBox.append(el("table", { class: "list" }, el("tbody", {}, s.needed.map((n) => {
+        const setBtn = el("button", { class: "btn small" }, n.set ? "replace" : "set");
+        setBtn.onclick = () => { keyIn.value = n.key; valIn.value = ""; valIn.focus(); };
+        return el("tr", {},
+          el("td", { class: "mono" }, n.key),
+          el("td", { style: `font-size:12px;color:${n.set ? "var(--ok)" : "var(--warn)"}` }, n.set ? "✓ set" : "unset"),
+          el("td", { class: "muted", style: "font-size:11.5px" }, n.utils.join(", ")),
+          el("td", {}, n.set ? delBtn(n.key) : setBtn));
+      }))));
+    }
+
+    // Anything you've set that no util declares (e.g. an endpoint's key_var, or a manual add).
+    const declared = new Set((s.needed || []).map((n) => n.key));
+    const extra = s.keys.filter((k) => !declared.has(k));
+    if (extra.length) {
+      secBox.append(el("div", { class: "mt", style: "font-size:12.5px;font-weight:600" }, "Other secrets set"));
+      secBox.append(el("table", { class: "list" }, el("tbody", {}, extra.map((k) =>
+        el("tr", {}, el("td", { class: "mono" }, k), el("td", { class: "muted" }, "••••••••"), el("td", {}, delBtn(k)))))));
+    }
+    if (!s.needed?.length && !extra.length)
+      secBox.append(el("div", { class: "muted mt", style: "font-size:12px" }, "no secrets set yet"));
+
     const save = el("button", { class: "btn small primary" }, "set");
     save.onclick = async () => {
       const key = keyIn.value.trim();

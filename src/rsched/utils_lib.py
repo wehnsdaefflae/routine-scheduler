@@ -169,7 +169,10 @@ def _parse_header(src: str) -> dict:
     usage = next((ln for ln in lines if ln.lower().startswith("usage:")), "")
     tags_line = next((ln for ln in lines if ln.lower().startswith("tags:")), "")
     tags = [t.strip() for t in tags_line[len("tags:"):].split(",") if t.strip()] if tags_line else []
-    return {"summary": summary, "usage": usage, "tags": tags}
+    sec_line = next((ln for ln in lines if ln.lower().startswith("secrets:")), "")
+    secrets = [s.strip() for s in sec_line[len("secrets:"):].split(",")
+               if s.strip() and s.strip().lower() != "(none)"] if sec_line else []
+    return {"summary": summary, "usage": usage, "tags": tags, "secrets": secrets}
 
 
 def catalog_text(home: Path) -> str:

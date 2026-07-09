@@ -285,8 +285,16 @@ def _gh_store_token(token: str) -> str:
 # write-only: the API returns key NAMES, never the values.
 
 @router.get("/settings/secrets")
-def list_secrets(_request: Request) -> dict:
-    return {"keys": secret_store.secret_keys(), "path": str(secret_store.secrets_path())}
+def list_secrets(request: Request) -> dict:
+    from .. import utils_lib
+    have = set(secret_store.secret_keys())
+    # which env vars do the installed utils declare they need, and are they set yet?
+    declared: dict[str, list[str]] = {}
+    for u in utils_lib.list_utils(_server(request).utils_home):
+        for var in u.get("secrets", []):
+            declared.setdefault(var, []).append(u["name"])
+    needed = [{"key": k, "utils": us, "set": k in have} for k, us in sorted(declared.items())]
+    return {"keys": sorted(have), "needed": needed, "path": str(secret_store.secrets_path())}
 
 
 class SecretBody(BaseModel):

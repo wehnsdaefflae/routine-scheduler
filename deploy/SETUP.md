@@ -1,67 +1,96 @@
 # First-run setup
 
-routine-scheduler ships **no secrets and no repo URLs** — you point it at your own model providers
-and your own git repos on first launch. This is the setup checklist after `docker compose up -d`
-(see [DOCKER.md](DOCKER.md) for the container/compose details).
+routine-scheduler ships **no secrets and no repo URLs** — you provision everything from the web UI
+on first launch. After `docker compose up -d` (see [DOCKER.md](DOCKER.md) for the container details),
+the app **redirects you to Settings** and shows a setup banner until you're done.
 
-The image already contains everything the setup needs: `git`, the **GitHub CLI (`gh`)**, Node + the
-`claude` CLI, and `uv`.
+The image already contains everything setup needs: `git`, the **GitHub CLI (`gh`)**, Node + the
+**`claude` CLI**, and `uv`. Nothing of the maintainer's is baked in.
 
 ---
 
 ## 1. Open the UI
 
 ```bash
-docker compose up -d
-# the access token is generated into config.yaml on first boot:
 docker exec rsched sh -c "grep '^token:' ~/.config/routine-scheduler/config.yaml"
 ```
-Browse to `http://<host>:8321` and paste the token when prompted.
+Browse to `http://<host>:8321` and paste the token.
 
-## 2. Add your model providers  — Settings → LLM endpoints
+## 2. Secrets — the one place for every credential  (Settings → Secrets)
 
-Endpoints are **model transports only**. The fresh config already lists `openrouter`, `anthropic`,
-and `claude-cli` — for each one you use, **paste the key straight into its "save key" box** (an
-OpenRouter/Anthropic API key, or a Claude OAuth token from `claude setup-token`). It's stored in the
-mounted `config.yaml` and never echoed back — no host files, no container terminal. (You can still
-put keys in `~/.credentials/*.env` instead if you prefer file-based secrets.) Then set the default
-roles (orchestrator / subcall / cheap).
+A single `KEY → VALUE` store, **injected into every util, LLM endpoint, and the Claude subscription
+at run time**. Values are **write-only** — the UI lists key names, never the values. Example rows:
 
-## 3. Connect GitHub  — Settings → GitHub
+| KEY | value |
+|---|---|
+| `OPENROUTER_KEY` | `sk-or-v1-…` |
+| `ANTHROPIC_KEY` | `sk-ant-…` |
+| `CLAUDE_CODE_OAUTH_TOKEN` | *(subscription — see §3)* |
+| `DISCORD_BOT_TOKEN` | *(for the `discord` util)* |
 
-Your workflow / fragment / util libraries and the source repo live in git. To clone/pull/push them
-(especially if they're **private**), click **Connect GitHub** and follow the on-screen device flow:
+**"Needed by installed utils"** — this section lists exactly which env vars your utils declare they
+need and flags the **unset** ones. So when a routine generates a new util, its required vars show up
+here automatically (unset) — click **set** and fill them in. You never have to read a util's source
+to discover what to add. (Under the hood each util declares a `secrets: NAME1, NAME2` header line;
+the engine surfaces it. This is also required of every `write_util`-generated util.)
+
+## 3. Model providers  (Settings → LLM endpoints)
+
+The fresh config lists `openrouter`, `anthropic`, and `claude-cli`. Each OpenAI/Anthropic endpoint
+reads its key from **Secrets** via its `key_var` (e.g. `openrouter` → `OPENROUTER_KEY`) — so just set
+that key in §2 and the endpoint works. (You can also paste a per-endpoint inline key if you prefer.)
+Then set the default roles (orchestrator / subcall / cheap).
+
+### Using your Claude subscription (`claude-cli`) — where the token comes from
+
+The `claude-cli` transport bills your **Claude subscription**, not an API key. It authenticates with
+a long-lived OAuth token (`CLAUDE_CODE_OAUTH_TOKEN`) — **not** by logging Claude Code into your
+account inside the container. You mint the token **once, elsewhere**:
+
+1. On any machine with a browser and Claude Code installed (e.g. your laptop):
+   ```bash
+   claude setup-token
+   ```
+   Log into your Anthropic account; it prints a long-lived token.
+2. Paste that token into **Secrets** as `CLAUDE_CODE_OAUTH_TOKEN`.
+
+Done. The container's `claude` CLI uses the token from the environment — it **never logs in**. (The
+CLI *is* installed in the image, but only to run `claude -p` with your token; minting the token is a
+one-time browser step on your own machine.) When it eventually expires, re-run `claude setup-token`
+and update the Secrets value — no restart.
+
+> Don't want the subscription path? Use an Anthropic **API key** instead: set `ANTHROPIC_KEY` in
+> Secrets and use the `anthropic` endpoint (metered billing). Simpler, no `claude setup-token`.
+
+## 4. Connect GitHub  (Settings → GitHub)
+
+To clone/pull/push your (private) library + source repos, click **Connect GitHub**:
 
 1. The UI shows a one-time code and a link to `github.com/login/device`.
 2. Open it in your browser, paste the code, authorize.
-3. The scheduler stores the token via `gh` (persisted in the mounted `~/.config/gh`) and wires `git`.
+3. The token is stored via `gh` (persisted in the mounted `~/.config/gh`) and wired into `git`.
 
-No container terminal needed. Skip this only if all your repos are public and you never push.
+No container terminal, no PAT to mint. Skip only if all your repos are public and you never push.
 
-> Advanced: to brand the authorize screen, register your own GitHub OAuth App (device flow enabled)
-> and set `github_client_id` in `config.yaml`. Otherwise it uses the GitHub CLI's public app.
+## 5. Point at your repos  (Settings → Library repositories + Source repository)
 
-## 4. Point at your repos  — Settings → Library repositories + Source repository
+Paste each git URL and click **Test** — it runs `git ls-remote` and reports:
 
-For each library (workflows / fragments / utils) and the source repo, paste your git URL and click
-**Test**. The button runs `git ls-remote` and tells you immediately:
+- **✓ reachable — N branch(es)** → good, *save*.
+- **✗ authentication required** → private repo, do §4 first (or the URL is wrong).
+- **✗ repository not found / timed out** → check the URL / network.
 
-- **✓ reachable — N branch(es)** → good, click *save*.
-- **✗ Authentication failed / repository not found** → the repo is private and step 3 isn't done (or
-  the URL is wrong). The exact git error is shown.
-- **✗ timed out** → the host is unreachable from the container.
+## 6. Finish
 
-Fix any ✗ before saving, so the daemon never silently fails to sync later.
+Click **finish setup** in the banner (stops the first-launch redirect).
 
 ---
 
 ## Notes
 
-- **LAN only.** The container binds `0.0.0.0`; the access token is the only auth. Keep it on a trusted
-  network (or front it with a reverse proxy + TLS).
-- **`claude-cli` token** (only if you use that transport) can't be refreshed headless — run
-  `gh`-style device auth on a machine with a browser and drop the token into
-  `~/.credentials/claude-code-oauth.env`; the mount picks it up.
-- **What's git-backed vs. local:** the three libraries + the source repo have remotes and are meant to
-  live on GitHub. Your **routines** (run history, ledgers, state) are **local-only** — back them up by
-  copying `~/routines`, not via a remote.
+- **LAN only.** The container binds `0.0.0.0`; the access token is the only auth. Keep it on a
+  trusted network (or front it with a reverse proxy + TLS).
+- **Secrets are plaintext on disk** (in the config dir, `0600`), like most self-hosted `.env` setups —
+  fine on a trusted host; use disk encryption if you need at-rest protection.
+- **What's git-backed vs. local:** the three libraries + the source repo have remotes (GitHub); your
+  **routines** (run history, ledgers) are local-only — back them up by copying `~/routines`.
