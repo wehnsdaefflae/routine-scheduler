@@ -32,7 +32,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
              params: dict | None = None, budgets: dict | None = None,
              self_flags: dict | None = None, shell_allowlist: list[str] | None = None,
              fs_read_roots: list[str] | None = None,
-             fs_write_roots: list[str] | None = None, enabled: bool = True) -> Path:
+             fs_write_roots: list[str] | None = None,
+             playbook: dict[str, str] | None = None, enabled: bool = True) -> Path:
     """Create ~/routines/<slug>. Raises ValueError on a bad/taken slug, KeyError on
     missing workflow params."""
     if not is_slug(slug):
@@ -47,6 +48,10 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
 
     for sub in ("state", "playbook", "inbox"):
         (routine_dir / sub).mkdir(parents=True)
+    # Purpose-specific step files (the routine's on-demand playbook), if the wizard split them out.
+    for fname, fcontent in (playbook or {}).items():
+        safe = fname if fname.endswith(".md") else f"{fname}.md"
+        (routine_dir / "playbook" / Path(safe).name).write_text(fcontent, encoding="utf-8")
     (routine_dir / "workflow.md").write_text(content, encoding="utf-8")
     (routine_dir / "instruction.md").write_text(instruction.rstrip() + "\n", encoding="utf-8")
     (routine_dir / "LEDGER.md").write_text(

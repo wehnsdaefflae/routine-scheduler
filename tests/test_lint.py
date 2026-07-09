@@ -95,3 +95,16 @@ def test_scaffold_creates_valid_routine(tmp_path):
     with pytest.raises(ValueError):
         scaffold(server, slug="Bad Slug", name="x", instruction="x",
                  workflow_slug="general-task")
+
+
+def test_scaffold_writes_playbook_step_files(tmp_path):
+    server = ServerConfig()
+    server.routines_home = tmp_path / "routines"
+    server.routines_home.mkdir()
+    server.library_home = SEED
+    d = scaffold(server, slug="split-routine", name="Split",
+                 instruction="# Entry\n\nSteps in playbook/.", workflow_slug="general-task",
+                 playbook={"discover": "# Discover step\n\nHow to discover.",
+                           "compose.md": "# Compose step\n\nHow to compose."})
+    assert (d / "playbook" / "discover.md").read_text().startswith("# Discover step")
+    assert (d / "playbook" / "compose.md").read_text().startswith("# Compose step")

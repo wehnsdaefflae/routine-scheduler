@@ -60,6 +60,10 @@ conversation, one per turn, each answered by an observation before your next rep
 summarize results that no observation here has shown; finishing with claims of unperformed work is \
 the single worst failure this system knows. The engine rejects a finish(ok) before any action ran.
 
+The workflow below is your single entry point. Detailed, step-specific instructions may live in \
+separate `playbook/<name>.md` files (the state digest lists them) — read the one for the step you \
+are on with read_file, ON DEMAND, instead of loading them all up front. Keep your context lean.
+
 Working directory: {r.dir}. All relative paths resolve there.{extra}
 
 You have NO shell. The ONLY way to run code is a global util (the `util` action). If no util
@@ -109,11 +113,16 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     phase = read_json(routine_dir / "state" / "phase.json")
     parts.append(f"Current phase: {json.dumps(phase, ensure_ascii=False)}" if phase
                  else "Current phase: (none recorded — likely the first run)")
-    for sub in ("state", "playbook"):
-        d = routine_dir / sub
-        if d.is_dir():
-            entries = [f"{p.name} ({p.stat().st_size}B)" for p in sorted(d.iterdir()) if p.is_file()]
-            parts.append(f"{sub}/: " + (", ".join(entries) if entries else "(empty)"))
+    state_dir = routine_dir / "state"
+    if state_dir.is_dir():
+        entries = [f"{p.name} ({p.stat().st_size}B)" for p in sorted(state_dir.iterdir()) if p.is_file()]
+        parts.append("state/: " + (", ".join(entries) if entries else "(empty)"))
+    pb = routine_dir / "playbook"
+    if pb.is_dir():
+        names = [p.name for p in sorted(pb.iterdir()) if p.is_file() and p.suffix == ".md"]
+        if names:
+            parts.append("playbook/ step modules (read the relevant one on demand with read_file): "
+                         + ", ".join(names))
     runs = sorted((routine_dir / "runs").glob("*/result.md")) if (routine_dir / "runs").is_dir() else []
     if runs:
         last = runs[-1]

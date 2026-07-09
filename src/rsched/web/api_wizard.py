@@ -156,10 +156,11 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
         raise HTTPException(409, "no refined instruction to finalize")
     try:
         cron = schedule.friendly_to_cron(body.friendly or {"frequency": "manual"})
+        playbook = result.get("playbook") if isinstance(result.get("playbook"), dict) else None
         routine_dir = scaffold(server, slug=body.slug, name=body.name,
                                instruction=result["refined_instruction"],
                                workflow_slug=body.workflow_slug, cron=cron,
-                               tz=schedule.server_tz(), params=body.params)
+                               tz=schedule.server_tz(), params=body.params, playbook=playbook)
     except (ValueError, KeyError, FileNotFoundError) as exc:
         raise HTTPException(422, str(exc)) from exc
     # keep the wizard conversation as provenance inside the new routine

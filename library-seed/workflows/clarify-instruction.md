@@ -6,7 +6,7 @@ when_to_use: >
   Internal: drives the new-routine wizard. Takes a raw draft instruction as its instruction,
   asks the user blocking questions to resolve ambiguities, contradictions and scope, then
   writes state/wizard_result.json. Not for scheduled use.
-version: 2
+version: 3
 status: stable
 params: []
 default_budgets: {max_turns: 25, max_wall_clock_min: 30}
@@ -36,10 +36,17 @@ includes: [ask-policy]
    the concrete deliverable and where it lives, constraints, what is autonomous vs gated
    (outward acts), and completion criteria — schedule-free and phrased per-run. Fold in the
    user's answers and your stated assumptions. It must make sense to a fresh agent with no
-   memory of this conversation.
+   memory of this conversation. Keep this ENTRY instruction concise: it is the single entry
+   point the routine always reads.
+   **Split by function when the task has several substantial, separable steps** (like the
+   grants/freelancing/birthday examples): keep the multi-sentence detail for each step in its
+   own `playbook/<step>.md` file, and in the entry instruction just name the step and say
+   "detailed instructions in playbook/<step>.md — read on demand". Don't split a simple task.
 5. **Write the result** — `write_file` to `state/wizard_result.json`:
-   `{"refined_instruction": "<the full markdown>", "suggested_slug": "<kebab-case>",
-     "suggested_name": "<short human name>", "notes": "<anything the creator should know>"}`
+   `{"refined_instruction": "<the full ENTRY markdown>", "suggested_slug": "<kebab-case>",
+     "suggested_name": "<short human name>",
+     "playbook": {"<step>.md": "<detailed step instructions>", ...},  // omit or {} if not split
+     "notes": "<anything the creator should know>"}`
 6. **Finish ok**, summarizing the refined instruction in 3-6 lines.
 
 ## Phases
