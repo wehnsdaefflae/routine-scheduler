@@ -165,6 +165,8 @@ def provision_library(request: Request, name: str, body: Provision) -> dict:
                            capture_output=True, text=True, timeout=120)
         if r.returncode != 0:
             raise HTTPException(502, f"clone failed (connect GitHub first?): {r.stderr.strip()[:300]}")
+        for k, v in (("user.name", "routine-scheduler"), ("user.email", "noreply@routine-scheduler.local")):
+            subprocess.run(["git", "-C", str(home), "config", k, v], capture_output=True)  # so later commits work
         bootstrap.install_push_hook(home)
     elif body.mode == "create":
         try:
