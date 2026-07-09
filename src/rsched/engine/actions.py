@@ -105,6 +105,18 @@ def normalize_action(obj: dict) -> dict:
     tend to emit OTHER kinds' fields as empty strings/false/null. Empty-valued fields that
     are not required for this kind carry no information — drop them so the semantic
     validator sees the model's intent, not the grammar's debris."""
+    # weak models sometimes wrap the action in a generic tool-call envelope — unwrap it
+    if "kind" not in obj:
+        if isinstance(obj.get("action"), dict):        # {"action": {...}}
+            obj = obj["action"]
+        inner = (obj.get("parameters") or obj.get("arguments")
+                 or obj.get("tool_input") or obj.get("input"))
+        tool = obj.get("tool_name") or obj.get("tool") or obj.get("name")
+        if isinstance(inner, dict):
+            obj = {**inner, **({"kind": tool} if tool and "kind" not in inner else {})}
+        elif tool in KINDS:
+            obj = {**{k: v for k, v in obj.items() if k not in ("tool_name", "tool", "name")},
+                   "kind": tool}
     kind = obj.get("kind")
     required = set(_KIND_FIELDS.get(kind, ((), ()))[0])
     out = {}

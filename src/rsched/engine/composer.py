@@ -152,8 +152,14 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
         harness_contract(ctx),
         "# ACTION SCHEMA (your every reply matches this)\n" + json.dumps(ACTION_SCHEMA, indent=1),
         "# EXAMPLE of a valid reply\n" + json.dumps(example_action(), indent=1),
-        "# GLOBAL UTILS (run with the util action; write_util to add one)\n"
-        + utils_lib.catalog_text(ctx.server.utils_home),
+    ]
+    # The util catalog loads only for routines that work with the toolbox (the global-utils
+    # fragment). Minimal routines get a lean prompt — and it keeps weak models from being
+    # primed toward tool-call formats by a long tool list.
+    if "global-utils" in (ctx.routine.fragments or []):
+        sections.append("# GLOBAL UTILS (run with the util action; write_util to add one)\n"
+                        + utils_lib.catalog_text(ctx.server.utils_home))
+    sections += [
         "# WORKFLOW (the control flow you follow)\n" + workflow_body.strip(),
         "# INSTRUCTION (what this routine is for)\n" + instruction.strip(),
     ]

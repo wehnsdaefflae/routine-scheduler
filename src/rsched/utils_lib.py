@@ -175,13 +175,14 @@ def catalog_text(home: Path) -> str:
     if not utils:
         return ("(no global utils yet — create one with the write_util action when you need "
                 "to run code; there is NO shell action)")
-    # summary is the util's first docstring line, already in '<name> — <summary>' form.
+    # Names + one-line summaries only (no usage lines): keeps the prompt lean and avoids
+    # priming weak models toward a tool-call format. Full usage is one `util name=list` away.
     lines = []
     for u in utils:
         head = u["summary"] or u["name"]
         if not head.startswith(u["name"]):
             head = f"{u['name']} — {head}"
-        lines.append(f"- {head}" + (f"\n    {u['usage']}" if u["usage"] else ""))
+        lines.append(f"- {head}")
     return "\n".join(lines)
 
 
