@@ -1,0 +1,4 @@
+# The image only needs pyproject.toml + uv.lock at build; everything else is bind-mounted at run.
+*
+!pyproject.toml
+!uv.lock

@@ -151,6 +151,7 @@ def cmd_validate(args) -> int:
 
 def cmd_daemon(_args) -> int:
     import logging
+    import os
 
     import uvicorn
 
@@ -162,11 +163,15 @@ def cmd_daemon(_args) -> int:
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)
+    # env overrides so a container can bind the LAN (RSCHED_BIND=0.0.0.0) and remap the port
+    # without editing the mounted config; unset → the config's bind/port as before.
+    host = os.environ.get("RSCHED_BIND") or server.bind
+    port = int(os.environ.get("RSCHED_PORT") or server.port)
     # Bound graceful shutdown: the web UI holds long-lived SSE streams that never close on
     # their own, so an unbounded graceful shutdown hangs (a manual `systemctl restart` waited
     # the full TimeoutStopSec; the self-update restart, which SIGTERMs itself, would hang with
     # no systemd timeout at all). 10s force-closes idle streams while letting real requests finish.
-    uvicorn.run(app, host=server.bind, port=server.port, log_level="warning",
+    uvicorn.run(app, host=host, port=port, log_level="warning",
                 timeout_graceful_shutdown=10)
     return 0
 

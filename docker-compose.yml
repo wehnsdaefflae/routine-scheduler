@@ -1,0 +1,36 @@
+# rsched — daemon + web UI in one container, everything mutable bind-mounted.
+#
+# The CONTAINER paths are always /home/mark/... (routines and config bake absolute paths, so they
+# must not change). The HOST paths are ${RSCHED_HOME}-relative (default /home/mark), so on the
+# server you can unpack the migration bundle anywhere and just set RSCHED_HOME to its base.
+#
+#   RSCHED_HOME=/home/mark          docker compose up -d      # bundle unpacked into /home/mark
+#   RSCHED_HOME=/srv/rsched-data    docker compose up -d      # …or anywhere else
+
+services:
+  rsched:
+    build:
+      context: .
+      args:
+        UID: "${RSCHED_UID:-1000}"
+        GID: "${RSCHED_GID:-1000}"
+    image: rsched:latest
+    container_name: rsched
+    restart: unless-stopped          # self-audit's drain-and-exit restart relaunches here, like Restart=always
+    stop_grace_period: 20s           # matches the old systemd TimeoutStopSec (uvicorn bounds its own to 10s)
+    ports:
+      - "${RSCHED_PORT:-8321}:8321"  # reachable at http://192.168.0.128:8321
+    environment:
+      HOME: /home/mark
+      RSCHED_BIND: "0.0.0.0"         # bind the LAN inside the container without editing the mounted config
+      # The claude-cli transport reads its token from the mounted ~/.credentials/claude-code-oauth.env.
+      # If you'd rather inject it (e.g. it lives elsewhere on the server), uncomment:
+      # CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN}"
+    volumes:
+      - ${RSCHED_HOME:-/home/mark}/git-repos/routine-scheduler:/home/mark/git-repos/routine-scheduler
+      - ${RSCHED_HOME:-/home/mark}/.config/routine-scheduler:/home/mark/.config/routine-scheduler
+      - ${RSCHED_HOME:-/home/mark}/.credentials:/home/mark/.credentials:ro
+      - ${RSCHED_HOME:-/home/mark}/routines:/home/mark/routines
+      - ${RSCHED_HOME:-/home/mark}/.local/share/workflow-library:/home/mark/.local/share/workflow-library
+      - ${RSCHED_HOME:-/home/mark}/.local/share/routine-fragments:/home/mark/.local/share/routine-fragments
+      - ${RSCHED_HOME:-/home/mark}/.local/share/global-utils:/home/mark/.local/share/global-utils
