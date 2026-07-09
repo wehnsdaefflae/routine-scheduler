@@ -86,15 +86,15 @@ export async function render(view, slug) {
       d.next_fire ? el("div", { class: "muted mt", style: "font-family:var(--mono);font-size:12px" },
         `next run · ${new Date(d.next_fire).toLocaleString()}`) : null));
 
-  // -- workflow (referenced, edited only in Library) ------------------------------
-  view.append(el("h2", {}, "Workflow"),
+  // -- workflow = the routine's OWN main.md (self-contained; generated from a recipe) ----------
+  view.append(el("h2", {}, "Workflow (main.md)"),
     el("div", { class: "panel row spread" },
       el("div", {},
         el("span", { class: "ref-tag" }, d.workflow_ref?.slug || "—"),
         el("span", { class: "muted", style: "margin-left:10px;font-size:12.5px" },
-          "the control-flow pattern this routine follows")),
-      el("a", { class: "btn small", href: `#/library/workflow/${d.workflow_ref?.slug || ""}` },
-        "view / edit in Library →")));
+          "the recipe this routine was born from — main.md is the routine's OWN now, editable below")),
+      el("button", { class: "btn small",
+        onclick: () => editFile("main.md", "main.md — the routine's workflow") }, "edit main.md")));
 
   // -- standards = fragments (toggle + edit) --------------------------------------
   const boxes = {};
@@ -131,13 +131,13 @@ export async function render(view, slug) {
     await api(`/api/routines/${slug}/instruction`, { method: "PUT", body: { content } });
   }));
 
-  const pbFiles = (d.files?.playbook) || [];
-  view.append(el("h2", {}, "Playbook step files"),
+  const stepFiles = (d.files?.steps) || [];
+  view.append(el("h2", {}, "Step modules"),
     el("div", { class: "panel" },
-      pbFiles.length
-        ? el("div", { class: "row" }, pbFiles.map((n) =>
-            el("button", { class: "btn small", onclick: () => editFile(`playbook/${n}`, n) }, n)))
-        : el("div", { class: "muted" }, "none — the workflow's steps are inline in the instruction")));
+      stepFiles.length
+        ? el("div", { class: "row" }, stepFiles.map((n) =>
+            el("button", { class: "btn small", onclick: () => editFile(`steps/${n}`, n) }, n)))
+        : el("div", { class: "muted" }, "none — this recipe keeps its whole flow in main.md")));
 
   const fileEditor = el("div", {});
   view.append(fileEditor);
