@@ -8,7 +8,7 @@ when_to_use: >
   fs_read/write_roots over the library (it commits via the git-sync util).
 version: 3
 status: stable
-tags: [meta, maintenance]
+tags: [meta, maintenance, workflows]
 params: []
 default_budgets: {max_turns: 80, max_wall_clock_min: 60}
 requires: {schema_output: false}

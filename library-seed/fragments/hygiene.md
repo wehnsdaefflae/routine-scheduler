@@ -1,5 +1,5 @@
 ---
-tags: [self-management]
+tags: [self-management, cleanup, quality]
 ---
 # fragment: hygiene — files stay small, present-tense, and consolidated
 

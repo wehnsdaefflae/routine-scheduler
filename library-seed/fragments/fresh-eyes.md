@@ -1,5 +1,5 @@
 ---
-tags: [self-management]
+tags: [self-management, review, quality]
 ---
 # fragment: fresh eyes — holistic artifact audit with health budgets
 

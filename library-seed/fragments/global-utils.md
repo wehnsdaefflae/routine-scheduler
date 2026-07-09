@@ -1,5 +1,5 @@
 ---
-tags: [tool-use]
+tags: [tool-use, utils, discovery]
 ---
 # fragment: global utils — your tools, and how to build more
 

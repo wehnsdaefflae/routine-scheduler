@@ -8,7 +8,7 @@ when_to_use: >
   instruction mostly says WHAT to deliver and the HOW is ordinary tool work, this is the one.
 version: 5
 status: stable
-tags: [general]
+tags: [general, research, tool-use]
 params: []
 default_budgets: {max_turns: 60, max_wall_clock_min: 45}
 requires: {schema_output: false}

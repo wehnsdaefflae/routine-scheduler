@@ -1,5 +1,5 @@
 ---
-tags: [self-management]
+tags: [self-management, feedback, quality]
 ---
 # fragment: improvement — act on the self-audit, same run
 

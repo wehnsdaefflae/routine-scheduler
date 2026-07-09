@@ -5,14 +5,13 @@
 
 usage: gu pytest-run REPO_PATH [--cmd "uv run pytest -q"] [--timeout SECS] [--json]
 calls: (none)
-tags: dev, testing
+tags: dev, testing, code
 
 Runs the test suite in REPO_PATH and returns a structured verdict: ok (exit 0), the pytest
 summary line, and the tail of output. Meant as the gate a self-modifying routine checks before
 committing an edit to a project's own tree — a red suite must never be promoted. Default command
 is `uv run --project REPO_PATH pytest -q`. --selftest exercises the output parser offline (it
-does not spawn pytest).
-"""
+does not spawn pytest)."""
 
 import argparse
 import json

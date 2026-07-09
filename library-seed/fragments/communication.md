@@ -1,5 +1,5 @@
 ---
-tags: [communication, policy, tool-use]
+tags: [communication, policy, notification]
 ---
 # fragment: communication — reach the user for a blocking decision, then escalate
 

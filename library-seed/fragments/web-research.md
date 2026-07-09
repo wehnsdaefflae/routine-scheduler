@@ -1,5 +1,5 @@
 ---
-tags: [tool-use, research]
+tags: [tool-use, research, web]
 ---
 # fragment: web-research — verify external facts by searching, don't guess from memory
 

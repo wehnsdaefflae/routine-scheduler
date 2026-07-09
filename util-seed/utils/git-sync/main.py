@@ -5,14 +5,13 @@
 
 usage: gu git-sync REPO_PATH [-m MESSAGE] [--no-push] [--no-pull] [--json]
 calls: (none)
-tags: git
+tags: git, dev, sync
 
 Commits any local changes in REPO_PATH under a neutral identity, pulls remote updates
 (--rebase, aborting cleanly on conflict), and pushes — keeping local and remote in sync in
 one call. Meant for routines maintaining a repo other than their own working dir (library
 sync, the meta routine committing the workflow library). --selftest runs against a
-throwaway repo, offline (no remote → no pull/push).
-"""
+throwaway repo, offline (no remote → no pull/push)."""
 
 import argparse
 import json

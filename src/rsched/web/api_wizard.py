@@ -18,7 +18,7 @@ from ..schema_guard import loads_tolerant
 from ..workflows.adapt import materialize
 from ..workflows.generate import generate
 from ..workflows.scaffold import GITIGNORE, scaffold
-from ..workflows.suggest import suggest
+from ..workflows.suggest import normalize_tags, suggest, suggest_tags
 from .sse import run_stream, sse_response
 
 router = APIRouter(tags=["wizard"])
@@ -114,8 +114,10 @@ def wizard_suggest(request: Request, wid: str) -> dict:
     result = _read_wizard_result(d)
     if not isinstance(result, dict) or not result.get("refined_instruction"):
         raise HTTPException(409, "the clarify run has not produced state/wizard_result.json yet")
-    ranking = suggest(request.app.state.server, result["refined_instruction"])
-    return {"wizard_result": result, **ranking}
+    server = request.app.state.server
+    ranking = suggest(server, result["refined_instruction"])
+    suggested_tags = suggest_tags(server, result["refined_instruction"])
+    return {"wizard_result": result, "suggested_tags": suggested_tags, **ranking}
 
 
 class GenerateBody(BaseModel):
@@ -141,6 +143,7 @@ class FinalizeBody(BaseModel):
     workflow_slug: str
     friendly: dict = {}          # friendly schedule spec → cron + server tz
     params: dict = {}
+    tags: list[str] = []         # >=3 tags, suggested (reuse-first) then user-editable
     run_now: bool = False
 
 
@@ -159,7 +162,8 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
         routine_dir = scaffold(server, slug=body.slug, name=body.name,
                                instruction=result["refined_instruction"],
                                workflow_slug=body.workflow_slug, cron=cron,
-                               tz=schedule.server_tz(), params=body.params, playbook=playbook)
+                               tz=schedule.server_tz(), params=body.params, playbook=playbook,
+                               tags=normalize_tags(body.tags) or None)
     except (ValueError, KeyError, FileNotFoundError) as exc:
         raise HTTPException(422, str(exc)) from exc
     # keep the wizard conversation as provenance inside the new routine

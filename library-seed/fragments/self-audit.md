@@ -1,5 +1,5 @@
 ---
-tags: [self-management]
+tags: [self-management, audit, quality]
 ---
 # fragment: self-audit — determine the routine's health
 

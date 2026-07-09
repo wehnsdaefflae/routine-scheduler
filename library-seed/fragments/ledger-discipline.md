@@ -1,5 +1,5 @@
 ---
-tags: [self-management]
+tags: [self-management, record-keeping, review]
 ---
 # fragment: LEDGER discipline — the routine's memory of its own changes
 

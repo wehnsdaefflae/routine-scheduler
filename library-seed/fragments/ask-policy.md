@@ -1,5 +1,5 @@
 ---
-tags: [policy]
+tags: [policy, communication, self-management]
 ---
 # fragment: ask policy — when and how to involve the user
 

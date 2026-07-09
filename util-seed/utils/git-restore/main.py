@@ -5,15 +5,14 @@
 
 usage: gu git-restore REPO_PATH [FILE ...] [--json]
 calls: (none)
-tags: git, dev
+tags: git, dev, code
 
 The revert a self-modifying routine runs when its edit fails the test gate: put the working tree
 back exactly as HEAD has it, so a bad edit is never left behind or committed. With FILEs, only
 those paths are touched — tracked ones are checked out from HEAD, and files the routine newly
 created (untracked) are deleted (guarded to stay inside the repo). With no FILEs, all modified
 TRACKED files are restored (untracked files are left alone, so runs/state are never nuked).
---selftest runs against a throwaway repo, offline.
-"""
+--selftest runs against a throwaway repo, offline."""
 
 import argparse
 import json

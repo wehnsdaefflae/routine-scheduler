@@ -62,18 +62,53 @@ def test_tags_on_library_elements():
 
     wfs = {w["slug"]: w for w in list_workflows(SEED)}
     assert "meta" in wfs["self-audit-code"]["tags"] and "meta" in wfs["meta-workflows"]["tags"]
-    assert wfs["general-task"]["tags"] == ["general"]      # not meta → stays user-facing
+    assert "meta" not in wfs["general-task"]["tags"]      # not meta → stays user-facing
+    # every library element carries at least three tags (the universal requirement)
+    for w in wfs.values():
+        assert len(w["tags"]) >= 3, (w["slug"], w["tags"])
 
     frags = {f["slug"]: f for f in fragments_lib.list_fragments(SEED / "fragments")}
-    assert frags["web-research"]["tags"] == ["tool-use", "research"]
-    assert frags["ask-policy"]["tags"] == ["policy"]
+    for f in frags.values():
+        assert len(f["tags"]) >= 3, (f["slug"], f["tags"])
+    assert set(frags["web-research"]["tags"]) >= {"web", "research"}
     # a fragment's frontmatter is stripped before its body is inlined into a prompt
     raw = (SEED / "fragments" / "web-research.md").read_text()
     assert raw.startswith("---") and fragments_lib.fragment_body(raw).lstrip().startswith("# fragment:")
 
     utils = {u["name"]: u for u in utils_lib.list_utils(SEED.parent / "util-seed")}
-    assert utils["pytest-run"]["tags"] == ["dev", "testing"]
-    assert utils["websearch"]["tags"] == ["web", "research"]
+    for u in utils.values():
+        assert len(u["tags"]) >= 3, (u["name"], u["tags"])
+    assert utils["pytest-run"]["tags"] == ["dev", "testing", "code"]
+    assert utils["websearch"]["tags"] == ["web", "research", "search"]
+
+
+def test_lint_requires_three_tags():
+    from rsched.workflows.lint import lint_fragment_text, lint_workflow_text
+    two_tag_wf = ("---\nname: X\nslug: x\ndescription: d\nwhen_to_use: w\nversion: 1\n"
+                  "status: draft\ntags: [a, b]\n---\n## Run flow\n## Phases\n## Completion criteria\n")
+    assert any("at least 3 tags" in p for p in lint_workflow_text(two_tag_wf, filename="x.md", fragment_slugs=[]))
+    three_tag_wf = two_tag_wf.replace("[a, b]", "[a, b, c]")
+    assert not any("tags" in p for p in lint_workflow_text(three_tag_wf, filename="x.md", fragment_slugs=[]))
+    two_tag_frag = "---\ntags: [a, b]\n---\n# fragment: x — y\n\nbody line one\nbody line two\n"
+    assert any("at least 3 tags" in p for p in lint_fragment_text(two_tag_frag, filename="x.md"))
+
+
+def test_tag_suggestion_helpers(tmp_path):
+    from rsched.config import ServerConfig
+    from rsched.workflows.suggest import existing_tags, normalize_tags
+
+    assert normalize_tags(["Web", "web", "Tool Use", "a", "b"]) == ["web", "tool-use", "a"]  # dedup, kebab, <=3
+    assert normalize_tags([]) == []
+
+    server = ServerConfig()
+    server.library_home = SEED
+    server.fragments_home = SEED / "fragments"
+    server.utils_home = SEED.parent / "util-seed"
+    server.routines_home = tmp_path                      # no routines → vocab from library only
+    vocab = existing_tags(server)
+    assert vocab == sorted(set(vocab))                   # deduped + sorted
+    for t in ("meta", "research", "web", "dev", "git"):  # spans workflows, fragments, utils
+        assert t in vocab, t
 
 
 def test_suggest_candidate_filter_uses_meta_tag():

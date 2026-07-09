@@ -121,6 +121,8 @@ export async function render(view, resumeWid) {
     const f = {
       slug: el("input", { type: "text", value: wr.suggested_slug || "" }),
       name: el("input", { type: "text", value: wr.suggested_name || "" }),
+      tags: el("input", { type: "text", value: (data.suggested_tags || []).join(", "),
+        placeholder: "three tags — reusing existing ones where they fit" }),
     };
     const status = await api("/api/status").catch(() => ({}));
     const sched = scheduleEditor({ frequency: "manual" }, status.server_tz);
@@ -133,6 +135,7 @@ export async function render(view, resumeWid) {
         const r = await api(`/api/wizard/${wid}/finalize`, { method: "POST", body: {
           slug: f.slug.value.trim(), name: f.name.value.trim() || f.slug.value.trim(),
           workflow_slug: picked.slug, friendly: sched.value(), run_now: runNow.checked,
+          tags: f.tags.value.split(",").map((t) => t.trim()).filter(Boolean),
         }});
         toast(`routine ${r.slug} created`);
         location.hash = r.run_id ? `#/run/${r.run_id}` : `#/routine/${r.slug}`;
@@ -144,6 +147,9 @@ export async function render(view, resumeWid) {
           el("label", { class: "field" }, el("span", {}, "slug"), f.slug),
           el("label", { class: "field" }, el("span", {}, "name"), f.name)),
         el("label", { class: "field" }, el("span", {}, "schedule"), sched.node),
+        el("label", { class: "field" }, el("span", {}, "tags"), f.tags),
+        el("div", { class: "muted", style: "font-size:11.5px;margin-top:-2px" },
+          "suggested from the existing vocabulary — reused where they fit, new ones only for a genuinely new facet"),
         wr.notes ? el("div", { class: "muted mt" }, `wizard notes: ${wr.notes}`) : null,
         el("div", { class: "row mt" },
           el("label", { class: "row", style: "gap:4px" }, runNow, "first run immediately"),
