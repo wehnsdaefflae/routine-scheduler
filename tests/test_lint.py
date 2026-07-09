@@ -61,7 +61,7 @@ def test_tags_on_library_elements():
     from rsched.workflows.library import list_workflows
 
     wfs = {w["slug"]: w for w in list_workflows(SEED)}
-    assert "meta" in wfs["self-audit-code"]["tags"] and "meta" in wfs["meta-workflows"]["tags"]
+    assert set(wfs) == {"general-task"}                   # only General Task ships by default
     assert "meta" not in wfs["general-task"]["tags"]      # not meta → stays user-facing
     # every library element carries at least three tags (the universal requirement)
     for w in wfs.values():
@@ -92,6 +92,20 @@ def test_bootstrap_generates_config_with_token(tmp_path, monkeypatch):
     token = yaml.safe_load(cfg.read_text())["token"]
     assert token and token not in ("", "change-me")
     assert ensure_config() is False                 # idempotent — no-op once present
+
+
+def test_bootstrap_seeds_meta_routines(tmp_path):
+    """Fresh install installs the bundled meta routines — disabled, generic (no hardcoded endpoints)."""
+    import yaml
+    from rsched.bootstrap import seed_routines
+    home = tmp_path / "routines"
+    assert seed_routines(home) >= 1
+    for slug in ("self-audit", "library-sync", "meta-workflows"):
+        p = home / slug
+        assert (p / "main.md").exists() and (p / ".git").is_dir()
+        cfg = yaml.safe_load((p / "routine.yaml").read_text())
+        assert cfg["enabled"] is False and "endpoints" not in cfg
+    assert seed_routines(home) == 0                  # idempotent — never clobbers an install
 
 
 def test_bootstrap_seeds_libraries(tmp_path):
@@ -145,7 +159,7 @@ def test_tag_suggestion_helpers(tmp_path):
     server.routines_home = tmp_path                      # no routines → vocab from library only
     vocab = existing_tags(server)
     assert vocab == sorted(set(vocab))                   # deduped + sorted
-    for t in ("meta", "research", "web", "dev", "git"):  # spans workflows, fragments, utils
+    for t in ("research", "web", "dev", "git"):          # spans workflows, fragments, utils
         assert t in vocab, t
 
 
@@ -155,8 +169,7 @@ def test_suggest_candidate_filter_uses_meta_tag():
 
     candidates = [w["slug"] for w in list_workflows(SEED)
                   if INTERNAL_TAG not in (w.get("tags") or []) and w["status"] == "stable"]
-    assert "general-task" in candidates
-    assert "meta-workflows" not in candidates and "self-audit-code" not in candidates
+    assert candidates == ["general-task"]                 # the only shipped workflow, user-facing
 
 
 def test_lint_rejects_non_list_tags():

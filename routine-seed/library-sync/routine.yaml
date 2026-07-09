@@ -1,0 +1,27 @@
+name: Library sync
+tags:
+- meta
+- maintenance
+- sync
+slug: library-sync
+enabled: false
+schedule:
+  cron: 0 */6 * * *
+  tz: Europe/Berlin
+  catchup: skip
+workflow:
+  library_slug: library-sync
+  library_commit: 2ef9bfb
+fragments:
+- global-utils
+- ledger-discipline
+budgets:
+  max_turns: 60
+  max_wall_clock_min: 45
+  max_total_tokens: 1500000
+  max_subruns: 8
+  max_subrun_depth: 2
+  ask_timeout_h: 8
+notifications: ui
+retention:
+  keep_runs: 30

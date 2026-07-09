@@ -159,9 +159,10 @@ def cmd_daemon(_args) -> int:
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    from .bootstrap import ensure_config
+    from .bootstrap import ensure_config, seed_routines
     ensure_config()                       # fresh deploy: generate config+token so the API isn't open
     server, problems = load_server_config()
+    seed_routines(server.routines_home)   # fresh deploy: install the (disabled) bundled meta routines
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

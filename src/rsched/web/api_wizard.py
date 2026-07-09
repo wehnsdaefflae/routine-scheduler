@@ -15,7 +15,6 @@ from ..config import DEFAULT_SELF
 from ..ids import now_iso, run_ts as make_run_ts
 from ..paths import atomic_write_json
 from ..schema_guard import loads_tolerant
-from ..workflows.adapt import materialize
 from ..workflows.generate import generate
 from ..workflows.scaffold import GITIGNORE, scaffold
 from ..workflows.suggest import normalize_tags, suggest, suggest_tags
@@ -64,7 +63,8 @@ async def start(request: Request, body: StartBody) -> dict:
     d = server.routines_home / wid
     (d / "state").mkdir(parents=True)
     (d / "inbox").mkdir()
-    main_content, _ = materialize(server.library_home, "clarify-instruction")
+    # Clarify is HARD-WIRED (not a library workflow) — internal machinery, tools disabled.
+    main_content = (Path(__file__).resolve().parents[1] / "clarify.md").read_text(encoding="utf-8")
     (d / "main.md").write_text(main_content, encoding="utf-8")
     (d / "instruction.md").write_text(body.draft.rstrip() + "\n", encoding="utf-8")
     (d / "LEDGER.md").write_text("# LEDGER — wizard session\n", encoding="utf-8")
@@ -144,6 +144,7 @@ class FinalizeBody(BaseModel):
     friendly: dict = {}          # friendly schedule spec → cron + server tz
     params: dict = {}
     tags: list[str] = []         # >=3 tags, suggested (reuse-first) then user-editable
+    fragments: list[str] | None = None   # standards picked on the draft page (None → workflow defaults)
     run_now: bool = False
 
 
@@ -163,7 +164,7 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
                                instruction=result["refined_instruction"],
                                workflow_slug=body.workflow_slug, cron=cron,
                                tz=schedule.server_tz(), params=body.params, playbook=playbook,
-                               tags=normalize_tags(body.tags) or None)
+                               tags=normalize_tags(body.tags) or None, fragments=body.fragments)
     except (ValueError, KeyError, FileNotFoundError) as exc:
         raise HTTPException(422, str(exc)) from exc
     # keep the wizard conversation as provenance inside the new routine

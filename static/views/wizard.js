@@ -19,36 +19,60 @@ export async function render(view, resumeWid) {
   view.append(stage);
   let source = null;
 
-  if (resumeWid) stageChat(resumeWid);  // resume an existing session (replays the chat,
-  else stageDraft();                    // jumps to suggest when the run is already done)
+  // Persist the in-progress session (id + chosen fragments) so switching tabs doesn't lose it.
+  const KEY = "rsched_wizard";
+  const saved = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; } };
+  const clearSaved = () => localStorage.removeItem(KEY);
+
+  const resume = resumeWid || saved()?.wid;
+  if (resume) stageChat(resume);        // resume an existing session (replays chat / jumps to suggest)
+  else stageDraft();
 
   function stageDraft() {
     stage.innerHTML = "";
     const ta = el("textarea", { class: "code", style: "min-height:160px",
-      placeholder: "Describe the TASK the routine should do, in your own words — not when it runs.\n\ne.g. Collect new AI-agent papers from arxiv and keep a reading list with one-line takes.\n\n(You'll set the schedule, workflow, and standards separately in the next steps.)" });
+      placeholder: "Describe the TASK the routine should do, in your own words — not when it runs.\n\ne.g. Collect new AI-agent papers from arxiv and keep a reading list with one-line takes." });
+    const fragBox = el("div", { class: "mt" }, el("div", { class: "muted", style: "font-size:12px" }, "Standards to apply: loading…"));
+    const chosen = () => Array.from(fragBox.querySelectorAll("input:checked")).map((c) => c.dataset.slug);
     const go = el("button", { class: "btn primary" }, "start clarification");
     go.onclick = async () => {
       if (!ta.value.trim()) return;
       go.disabled = true;
       try {
         const r = await api("/api/wizard/start", { method: "POST", body: { draft: ta.value } });
+        localStorage.setItem(KEY, JSON.stringify({ wid: r.wid, fragments: chosen() }));
         stageChat(r.wid);
       } catch (err) { toast(err.message); go.disabled = false; }
     };
     stage.append(el("div", { class: "panel" },
       el("div", { class: "muted", style: "margin-bottom:8px" },
-        "The wizard interrogates your draft (an actual engine run of the clarify-instruction ",
-        "workflow), then suggests a control-flow workflow and creates the routine."),
-      ta, el("div", { class: "row mt" }, go)));
+        "Describe the task; the wizard clarifies it, then creates the routine with the standards you pick here."),
+      ta, fragBox, el("div", { class: "row mt" }, go)));
+    // fill the fragment picker (default-check the common ones)
+    api("/api/library").then((lib) => {
+      fragBox.innerHTML = "";
+      fragBox.append(el("div", { class: "muted", style: "font-size:12px;margin-bottom:3px" }, "Standards to apply:"));
+      const DEFAULT = new Set(["global-utils", "web-research", "ledger-discipline", "ask-policy"]);
+      for (const f of (lib.fragments || [])) {
+        const cb = el("input", { type: "checkbox" });
+        cb.checked = DEFAULT.has(f.slug); cb.dataset.slug = f.slug;
+        fragBox.append(el("label", { class: "row", style: "gap:6px;font-size:12.5px;margin:2px 0" },
+          cb, el("strong", { style: "min-width:130px" }, f.slug), el("span", { class: "muted" }, f.summary || "")));
+      }
+    }).catch(() => { fragBox.innerHTML = ""; fragBox.append(el("div", { class: "muted" }, "(couldn't load fragments)")); });
   }
 
   function stageChat(wid) {
     stage.innerHTML = "";
-    stage.append(el("h2", {}, "Clarification — answer the questions"));
+    const discard = el("button", { class: "btn small danger",
+      onclick: () => { if (source) source.close(); clearSaved(); stageDraft(); } }, "discard");
+    stage.append(el("div", { class: "row spread" },
+      el("h2", {}, "Clarification — answer the questions"), discard));
     const chatBox = el("div", { class: "mt" });
     const qBox = el("div", {});
     stage.append(qBox, chatBox);
     const transcript = createTranscript(chatBox);
+    let gotAny = false;
 
     function showQuestion(q) {
       qBox.innerHTML = "";
@@ -74,10 +98,18 @@ export async function render(view, resumeWid) {
     }
 
     source = sse(`/api/wizard/${wid}/events`, {
-      transcript: (ev) => transcript.add(ev),
-      state: (st) => showQuestion(st.question),
+      transcript: (ev) => { gotAny = true; transcript.add(ev); },
+      state: (st) => { gotAny = true; showQuestion(st.question); },
       end: () => { source.close(); stageSuggest(wid); },
-      onerror: () => {},
+      onerror: () => {
+        if (gotAny) return;                    // transient mid-stream error — ignore
+        if (source) source.close();            // couldn't attach → the session is gone
+        qBox.innerHTML = "";
+        qBox.append(el("div", { class: "panel", style: "border-color:var(--warn)" },
+          "This wizard session is no longer available.",
+          el("div", { class: "row mt" },
+            el("button", { class: "btn small primary", onclick: () => { clearSaved(); stageDraft(); } }, "start over"))));
+      },
     });
   }
 
@@ -145,7 +177,9 @@ export async function render(view, resumeWid) {
           slug: f.slug.value.trim(), name: f.name.value.trim() || f.slug.value.trim(),
           workflow_slug: picked.slug, friendly: sched.value(), run_now: runNow.checked,
           tags: f.tags.value.split(",").map((t) => t.trim()).filter(Boolean),
+          fragments: saved()?.fragments || [],
         }});
+        clearSaved();
         toast(`routine ${r.slug} created`);
         location.hash = r.run_id ? `#/run/${r.run_id}` : `#/routine/${r.slug}`;
       } catch (err) { toast(err.message, 6000); create.disabled = false; }

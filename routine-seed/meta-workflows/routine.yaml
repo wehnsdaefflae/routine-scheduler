@@ -1,0 +1,40 @@
+name: 'Meta: workflow library'
+tags:
+- meta
+- maintenance
+- workflows
+slug: meta-workflows
+enabled: false
+schedule:
+  cron: 0 8 * * 1
+  tz: Europe/Berlin
+  catchup: skip
+workflow:
+  library_slug: meta-workflows
+  library_commit: eab87b5
+budgets:
+  max_turns: 60
+  max_wall_clock_min: 45
+  max_total_tokens: 1500000
+  max_subruns: 8
+  max_subrun_depth: 2
+  ask_timeout_h: 8
+self:
+  audit: true
+  improve: true
+  ledger: true
+  fresh_eyes: true
+  hygiene: true
+notifications: ui
+retention:
+  keep_runs: 30
+shell_allowlist:
+- gu *
+- git *
+- uv run *
+- ls *
+fs_read_roots:
+- ~/routines
+- ~/.local/share/workflow-library
+fs_write_roots:
+- ~/.local/share/workflow-library

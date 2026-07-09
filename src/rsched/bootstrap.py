@@ -53,6 +53,31 @@ def install_push_hook(home: Path) -> None:
         dst.chmod(0o755)
 
 
+def seed_routines(routines_home: Path) -> int:
+    """On a fresh install (no routines yet), install the bundled meta routines — disabled, so they
+    show up under the 'meta' tag for the user to enable, but don't run anything on their own."""
+    routines_home.mkdir(parents=True, exist_ok=True)
+    if any(d.is_dir() and not d.name.startswith(".") for d in routines_home.iterdir()):
+        return 0                                    # not a fresh install — never clobber
+    seed = repo_root() / "routine-seed"
+    if not seed.is_dir():
+        return 0
+    n = 0
+    for src in sorted(p for p in seed.iterdir() if p.is_dir()):
+        dst = routines_home / src.name
+        shutil.copytree(src, dst)
+        if not (dst / ".git").is_dir():
+            _git(dst, "init", "-q", "-b", "main")
+        _git(dst, "config", "user.name", "routine-scheduler")
+        _git(dst, "config", "user.email", "noreply@routine-scheduler.local")
+        _git(dst, "add", "-A")
+        _git(dst, "commit", "-qm", f"seed {src.name} routine")
+        n += 1
+    if n:
+        log.warning("first boot: installed %d bundled meta routines (disabled)", n)
+    return n
+
+
 def seed_library(name: str, home: Path) -> None:
     """Populate an empty library from the built-in seed + git-init it (matches deploy/install.sh)."""
     root = repo_root()

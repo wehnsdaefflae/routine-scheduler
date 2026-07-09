@@ -1,0 +1,37 @@
+name: Self audit
+tags:
+- meta
+- maintenance
+- code
+slug: self-audit
+enabled: false
+schedule:
+  cron: 0 6 * * 1
+  tz: Europe/Berlin
+  catchup: skip
+workflow:
+  library_slug: self-audit-code
+  library_commit: d18b822
+fragments:
+- ask-policy
+- communication
+- global-utils
+- ledger-discipline
+- web-research
+budgets:
+  max_turns: 60
+  max_wall_clock_min: 45
+  max_total_tokens: 1500000
+  max_subruns: 8
+  max_subrun_depth: 2
+  ask_timeout_h: 8
+notifications: ui
+confirm_util_changes: false
+retention:
+  keep_runs: 30
+fs_read_roots:
+- ~/git-repos/routine-scheduler
+- ~/routines
+fs_write_roots:
+- ~/git-repos/routine-scheduler
+- ~/routines/.control

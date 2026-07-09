@@ -11,7 +11,9 @@ from pathlib import Path
 
 from . import frontmatter
 
-FRAGMENT_RE = re.compile(r"^#\s*fragment:\s*(?P<slug>[a-z0-9-]+)\s*(?:—|-)\s*(?P<summary>.+)$", re.M)
+# Title before the em-dash may be a kebab slug OR a readable phrase ("ask policy"); the summary is
+# whatever follows the em-dash. (Splitting on a bare hyphen would swallow hyphens inside a slug.)
+FRAGMENT_RE = re.compile(r"^#\s*fragment:\s*(?P<slug>.+?)\s*—\s*(?P<summary>.+)$", re.M)
 
 
 def fragment_body(raw: str) -> str:
