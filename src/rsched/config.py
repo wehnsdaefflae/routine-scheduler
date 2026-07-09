@@ -294,9 +294,10 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
         except (TypeError, ValueError):
             problems.append("retention.keep_runs: expected an integer")
 
-    # workflow.md is NOT a routine file — the workflow lives in the library, referenced here.
-    if not cfg.workflow_slug and not (routine_dir / "workflow.md").exists():
-        problems.append("no workflow reference (workflow.library_slug) and no legacy workflow.md")
+    # A routine is self-contained: its recipe is materialized into main.md at generation, and the
+    # workflow.library_slug is kept only as "generated-from" provenance.
+    if not (routine_dir / "main.md").exists():
+        problems.append("no main.md — the routine's recipe was not materialized in")
     if not (routine_dir / "instruction.md").exists():
         problems.append("instruction.md missing")
     return cfg, problems

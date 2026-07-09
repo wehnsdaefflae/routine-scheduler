@@ -89,9 +89,9 @@ def routine_detail(request: Request, slug: str) -> dict:
     if ledger.exists():
         lines = ledger.read_text(encoding="utf-8").splitlines()
         ledger_tail = "\n".join(lines[-100:])
-    # editable routine files by directory (playbook step files + fragment copies)
+    # editable routine files by directory (step modules + fragment copies + state)
     files = {}
-    for sub in ("playbook", "fragments", "state"):
+    for sub in ("steps", "fragments", "state"):
         subdir = d / sub
         files[sub] = ([p.name for p in sorted(subdir.iterdir()) if p.is_file() and p.suffix == ".md"]
                       if subdir.is_dir() else [])
@@ -136,11 +136,10 @@ class RoutineFileBody(BaseModel):
 
 @router.put("/routines/{slug}/file")
 def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict:
-    """Edit any routine file EXCEPT the workflow (which lives only in the library)."""
+    """Edit any of the routine's own files — main.md, step modules, fragments, instruction, state.
+    A routine owns its recipe (materialized in), so main.md and steps/ ARE editable here."""
     info = _info(request, slug)
     _guard_not_active(request, info)
-    if Path(body.path).name == "workflow.md" or body.path.startswith("workflow"):
-        raise HTTPException(400, "the workflow is edited only in the Library tab, not per routine")
     try:
         p = resolve_rel(info.cfg.dir, body.path)
     except PermissionError as exc:

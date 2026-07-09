@@ -8,6 +8,7 @@ when_to_use: >
 version: 1
 status: stable
 tags: [meta, maintenance, sync]
+modules: []
 params: []
 default_budgets: {max_turns: 12, max_wall_clock_min: 15}
 requires: {schema_output: false}

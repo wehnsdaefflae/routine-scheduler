@@ -108,7 +108,7 @@ def make_routine(tmp_path):
             cfg["self"] = self_flags
         (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
         (d / "instruction.md").write_text(instruction, encoding="utf-8")
-        (d / "workflow.md").write_text(workflow_md, encoding="utf-8")
+        (d / "main.md").write_text(workflow_md, encoding="utf-8")   # the routine's materialized recipe
         (d / "LEDGER.md").write_text("# LEDGER\n\n### seed — routine created for tests\n",
                                      encoding="utf-8")
         return d

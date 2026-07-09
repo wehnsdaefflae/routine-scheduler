@@ -55,17 +55,26 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     active = [f for f in active if f in available]
     commit = library.head_commit(server.library_home)
 
-    for sub in ("state", "playbook", "inbox", "fragments"):
+    from .adapt import fill_params, materialize
+
+    for sub in ("state", "steps", "inbox", "fragments"):
         (routine_dir / sub).mkdir(parents=True)
+    # the recipe → the routine's OWN main.md (self-contained; the library is not read at run time)
+    main_content, _ = materialize(server.library_home, workflow_slug, params=params)
+    (routine_dir / "main.md").write_text(main_content, encoding="utf-8")
+    # the recipe's step modules (params filled) → steps/
+    for mod in library.list_modules(server.library_home, workflow_slug):
+        content = library.read_module(server.library_home, workflow_slug, mod) or ""
+        (routine_dir / "steps" / f"{mod}.md").write_text(fill_params(content, params), encoding="utf-8")
     # active fragments → editable routine copies
     for slug_f in active:
         content = fragments_lib.read_fragment(server.fragments_home, slug_f)
         if content:
             (routine_dir / "fragments" / f"{slug_f}.md").write_text(content, encoding="utf-8")
-    # purpose-specific step files (the routine's on-demand playbook), from the wizard
+    # extra purpose-specific step modules from the wizard also land in steps/
     for fname, fcontent in (playbook or {}).items():
         safe = fname if fname.endswith(".md") else f"{fname}.md"
-        (routine_dir / "playbook" / Path(safe).name).write_text(fcontent, encoding="utf-8")
+        (routine_dir / "steps" / Path(safe).name).write_text(fcontent, encoding="utf-8")
     (routine_dir / "instruction.md").write_text(instruction.rstrip() + "\n", encoding="utf-8")
     (routine_dir / "LEDGER.md").write_text(
         f"# LEDGER — {name}\n\n### seed — scaffolded from workflow '{workflow_slug}' @ {commit}\n",

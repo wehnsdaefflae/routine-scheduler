@@ -371,11 +371,11 @@ def test_spawn_caps(make_routine, scripted):
 
 def test_spawn_picks_library_workflow(make_routine, scripted, tmp_path):
     lib = tmp_path / "lib"
-    (lib / "workflows").mkdir(parents=True)
-    (lib / "workflows" / "echo-task.md").write_text(
+    (lib / "workflows" / "echo-task").mkdir(parents=True)
+    (lib / "workflows" / "echo-task" / "main.md").write_text(
         "---\nname: Echo\nslug: echo-task\ndescription: d\nwhen_to_use: w\n"
-        "version: 1\nstatus: stable\nparams: []\n---\n\n## Run flow\n"
-        "1. MARKER-ECHO-BODY: do the echo.\n## Phases\n- only\n## Completion criteria\n- done\n")
+        "version: 1\nstatus: stable\nparams: []\nmodules: []\n---\n\n## Run flow\n"
+        "1. MARKER-ECHO-BODY: do the echo.\n## Completion criteria\n- done\n")
     d = make_routine(slug="libpick")
     server = ServerConfig()
     server.library_home = lib

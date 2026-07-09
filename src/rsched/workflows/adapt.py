@@ -1,5 +1,7 @@
-"""Materialize a library workflow into a routine's workflow.md: fill params, inline the
-fragments the routine's self-flags keep, record provenance."""
+"""Materialize a recipe (workflows/<slug>/main.md + steps/) into a routine's own main.md:
+fill {{params}}, stamp provenance. Step modules and fragments stay as SEPARATE files (scaffold
+copies them into the routine); for an ephemeral sub-workflow — which has no persistent routine
+dir to hold module files — the modules can instead be inlined into the body."""
 
 from __future__ import annotations
 
@@ -7,52 +9,36 @@ from datetime import date
 from pathlib import Path
 
 from .. import frontmatter
-from .library import head_commit, read_fragment, read_workflow
+from .library import head_commit, list_modules, read_module, read_workflow
 
-# fragment slug → the routine.yaml self-flag that controls it (absent = always included)
-FRAGMENT_FLAGS = {
-    "self-audit": "audit",
-    "improvement": "improve",
-    "ledger-discipline": "ledger",
-    "fresh-eyes": "fresh_eyes",
-    "hygiene": "hygiene",
-}
+
+def fill_params(text: str, params: dict | None) -> str:
+    for key, val in (params or {}).items():
+        text = text.replace("{{" + key + "}}", str(val))
+    return text
 
 
 def materialize(home: Path, slug: str, *, params: dict | None = None,
-                self_flags: dict | None = None, today: str | None = None) -> tuple[str, dict]:
-    """Returns (workflow.md content, provenance dict). Raises KeyError for missing params."""
+                inline_modules: bool = False, today: str | None = None) -> tuple[str, dict]:
+    """Returns (main.md content, provenance dict). Raises KeyError for missing params.
+
+    inline_modules=True appends each step module into the body (a self-contained flow for a
+    sub-workflow that has nowhere to read separate module files from)."""
     params = params or {}
-    self_flags = self_flags or {}
-    meta, body, _ = read_workflow(home, slug)
+    meta, body, _ = read_workflow(home, slug)          # the recipe's main.md
     declared = meta.get("params") or []
     missing = [p for p in declared if p not in params]
     if missing:
-        raise KeyError(f"workflow {slug!r} requires params: {missing}")
-    for key, val in params.items():
-        body = body.replace("{{" + key + "}}", str(val))
-
+        raise KeyError(f"recipe {slug!r} requires params: {missing}")
+    body = fill_params(body, params)
     commit = head_commit(home)
-    included = []
-    for frag in meta.get("includes") or []:
-        flag = FRAGMENT_FLAGS.get(frag)
-        if flag is not None and self_flags.get(flag, True) is False:
-            continue
-        # strip the fragment's own frontmatter (tags, …) so only its body inlines
-        _, frag_body = frontmatter.parse(read_fragment(home, frag))
-        included.append((frag, frag_body.strip()))
-    if included:
-        parts = ["## Standard practices",
-                 "The following standing practices apply to every run (they are steps of the "
-                 "run flow wherever it references them):"]
-        for frag, text in included:
-            parts.append(f"### fragment: {frag} @ {commit}\n\n{text}")
-        body = body.rstrip() + "\n\n" + "\n\n".join(parts) + "\n"
-
+    if inline_modules:
+        for mod in list_modules(home, slug):
+            content = fill_params((read_module(home, slug, mod) or "").strip(), params)
+            body = body.rstrip() + f"\n\n---\n### module: {mod}\n\n{content}\n"
     provenance = {"slug": slug, "commit": commit, "version": meta.get("version", 0)}
-    out_meta = {
-        "materialized_from": provenance,
-        "adapted": today or date.today().isoformat(),
-        "params": params,
-    }
+    out_meta = dict(meta)                                # carry the recipe's frontmatter forward
+    out_meta.pop("params", None)                         # params are now filled in
+    out_meta["materialized_from"] = provenance
+    out_meta["adapted"] = today or date.today().isoformat()
     return frontmatter.dump(out_meta, body), provenance

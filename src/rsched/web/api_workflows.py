@@ -112,19 +112,29 @@ def put_util(request: Request, name: str, body: UtilBody) -> dict:
 
 
 @router.get("/workflows/{slug}")
-def workflow_detail(request: Request, slug: str, fragment: bool = False) -> dict:
+def workflow_detail(request: Request, slug: str, fragment: bool = False, module: str = "") -> dict:
+    """The recipe's main.md by default; a step module with ?module=<name>; a fragment with
+    ?fragment=true. A recipe is a directory workflows/<slug>/main.md (+ steps/)."""
     home = _home(request)
-    rel = f"fragments/{slug}.md" if fragment else f"workflows/{slug}.md"
+    if fragment:
+        rel = f"fragments/{slug}.md"
+    elif module:
+        rel = f"workflows/{slug}/steps/{module}.md"
+    else:
+        rel = f"workflows/{slug}/main.md"
     path = home / rel
     if not path.exists():
-        raise HTTPException(404, f"no {'fragment' if fragment else 'workflow'} {slug!r}")
+        raise HTTPException(404, f"no {'fragment' if fragment else 'recipe'} {slug!r}"
+                            + (f" module {module!r}" if module else ""))
     return {"slug": slug, "content": path.read_text(encoding="utf-8"),
+            "modules": [] if (fragment or module) else library.list_modules(home, slug),
             "log": library.git_log(home, rel)}
 
 
 class PutBody(BaseModel):
     content: str
     fragment: bool = False
+    module: str = ""            # edit steps/<module>.md instead of main.md
 
 
 @router.put("/workflows/{slug}")
@@ -133,12 +143,21 @@ def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
 
     home = _home(request)
     server = request.app.state.server
-    problems = lint_workflow_text(body.content, filename=f"{slug}.md",
-                                  fragment_slugs=fragments_lib.slugs(server.fragments_home))
+    if body.module:                                      # a step module — plain markdown, no frontmatter lint
+        path = library.recipe_dir(home, slug) / "steps" / f"{body.module}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body.content.rstrip() + "\n", encoding="utf-8")
+        library.git_commit(home, f"edit workflows/{slug}/steps/{body.module}.md via web")
+        return {"ok": True, "head": library.head_commit(home)}
+    problems = lint_workflow_text(body.content, filename=f"{slug}/main.md",
+                                  fragment_slugs=fragments_lib.slugs(server.fragments_home),
+                                  module_slugs=library.list_modules(home, slug))
     if problems:
         raise HTTPException(422, "; ".join(problems))
-    (home / f"workflows/{slug}.md").write_text(body.content.rstrip() + "\n", encoding="utf-8")
-    library.git_commit(home, f"edit workflows/{slug}.md via web")
+    main = library.main_path(home, slug)
+    main.parent.mkdir(parents=True, exist_ok=True)
+    main.write_text(body.content.rstrip() + "\n", encoding="utf-8")
+    library.git_commit(home, f"edit workflows/{slug}/main.md via web")
     return {"ok": True, "head": library.head_commit(home)}
 
 

@@ -30,29 +30,31 @@ when_to_use: w
 version: 1
 status: wild
 includes: [nope]
+modules: [ghost]
 params: []
 ---
 ## Run flow
 1. do {{undeclared}} things
 """
-    problems = lint_workflow_text(bad, filename="bad.md", fragment_slugs=frags)
+    problems = lint_workflow_text(bad, filename="wrongdir/main.md", fragment_slugs=frags, module_slugs=[])
     text = " | ".join(problems)
-    for needle in ("filename does not match", "status must be", "does not resolve",
-                   "## Phases", "## Completion criteria", "undeclared"):
+    for needle in ("does not match recipe dir", "status must be", "does not resolve",
+                   "module 'ghost'", "## Completion criteria", "undeclared"):
         assert needle in text, needle
-    assert lint_workflow_text("no frontmatter at all", filename="x.md", fragment_slugs=[])
+    assert lint_workflow_text("no frontmatter at all", filename="x/main.md", fragment_slugs=[])
 
 
-def test_materialize_inlines_fragments_and_provenance():
-    content, prov = materialize(SEED, "general-task", self_flags={"fresh_eyes": False})
-    assert prov["slug"] == "general-task" and prov["version"] == 5
-    assert "## Standard practices" in content
-    assert "### fragment: self-audit" in content
-    assert "### fragment: ask-policy" in content
-    assert "### fragment: web-research" in content         # always-on (no self-flag)
-    assert "fragment: fresh-eyes" not in content          # toggled off
-    assert "materialized_from" in content
-    assert "tags:" not in content                          # fragment frontmatter must not leak into the prompt
+def test_materialize_carries_recipe_and_provenance():
+    from rsched import frontmatter
+
+    content, prov = materialize(SEED, "general-task")
+    assert prov["slug"] == "general-task" and prov["version"] == 6
+    meta, body = frontmatter.parse(content)
+    assert meta["materialized_from"]["slug"] == "general-task"
+    assert meta["name"] == "General task" and meta["modules"] == ["bootstrap", "steady", "wrap-up"]
+    assert "## Run flow" in body and "## Completion criteria" in body
+    # fragments and step modules are NOT inlined — they stay as separate files copied by scaffold
+    assert "## Standard practices" not in content and "### fragment:" not in content
     assert lint_materialized_text(content) == []
 
 
@@ -109,22 +111,19 @@ def test_scaffold_writes_and_loads_tags(tmp_path):
     assert yaml.safe_load((d / "routine.yaml").read_text())["tags"] == ["meta", "custom"]
 
 
-def test_materialize_missing_param():
-    # inject a param requirement via a temp copy
+def test_materialize_missing_param(tmp_path):
     import shutil
-    import tempfile
 
-    with tempfile.TemporaryDirectory() as tmp:
-        home = Path(tmp)
-        shutil.copytree(SEED / "workflows", home / "workflows")
-        shutil.copytree(SEED / "fragments", home / "fragments")
-        wf = home / "workflows" / "general-task.md"
-        text = wf.read_text().replace("params: []", "params: [deliverable]")
-        wf.write_text(text.replace("## Run flow", "## Run flow\nDeliver {{deliverable}}."))
-        with pytest.raises(KeyError):
-            materialize(home, "general-task")
-        content, _ = materialize(home, "general-task", params={"deliverable": "a weekly report"})
-        assert "a weekly report" in content and "{{deliverable}}" not in content
+    home = tmp_path
+    shutil.copytree(SEED / "workflows", home / "workflows")
+    shutil.copytree(SEED / "fragments", home / "fragments")
+    main = home / "workflows" / "general-task" / "main.md"          # a recipe is a dir now
+    text = main.read_text().replace("params: []", "params: [deliverable]")
+    main.write_text(text.replace("## Run flow", "## Run flow\nDeliver {{deliverable}}."))
+    with pytest.raises(KeyError):
+        materialize(home, "general-task")
+    content, _ = materialize(home, "general-task", params={"deliverable": "a weekly report"})
+    assert "a weekly report" in content and "{{deliverable}}" not in content
 
 
 def test_scaffold_creates_valid_routine(tmp_path):
@@ -141,8 +140,8 @@ def test_scaffold_creates_valid_routine(tmp_path):
     assert cfg.cron == "0 8 * * 1" and cfg.workflow_slug == "general-task"
     assert (d / ".git").is_dir()
     assert (d / ".git" / "hooks" / "post-commit").stat().st_mode & 0o111
-    # the workflow is REFERENCED, not materialized into the routine
-    assert not (d / "workflow.md").exists()
+    # the recipe is MATERIALIZED into the routine (main.md + step modules) — self-contained
+    assert (d / "main.md").exists() and (d / "steps" / "steady.md").exists()
     raw = yaml.safe_load((d / "routine.yaml").read_text())
     assert raw["budgets"]["max_turns"] == 60 and "self" not in raw
     # active fragments = the workflow's includes, materialized as editable routine files
@@ -158,15 +157,17 @@ def test_scaffold_creates_valid_routine(tmp_path):
                  workflow_slug="general-task")
 
 
-def test_scaffold_writes_playbook_step_files(tmp_path):
+def test_scaffold_writes_step_modules(tmp_path):
     server = ServerConfig()
     server.routines_home = tmp_path / "routines"
     server.routines_home.mkdir()
     server.library_home = SEED
     server.fragments_home = SEED / "fragments"
     d = scaffold(server, slug="split-routine", name="Split",
-                 instruction="# Entry\n\nSteps in playbook/.", workflow_slug="general-task",
+                 instruction="# Entry\n\nSteps in steps/.", workflow_slug="general-task",
                  playbook={"discover": "# Discover step\n\nHow to discover.",
                            "compose.md": "# Compose step\n\nHow to compose."})
-    assert (d / "playbook" / "discover.md").read_text().startswith("# Discover step")
-    assert (d / "playbook" / "compose.md").read_text().startswith("# Compose step")
+    # the recipe's own modules + the wizard's extra step files all land in steps/
+    assert (d / "steps" / "steady.md").exists() and (d / "steps" / "bootstrap.md").exists()
+    assert (d / "steps" / "discover.md").read_text().startswith("# Discover step")
+    assert (d / "steps" / "compose.md").read_text().startswith("# Compose step")

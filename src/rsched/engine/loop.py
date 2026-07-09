@@ -389,30 +389,25 @@ class EngineLoop:
 
 
 def load_workflow(routine_dir, cfg, server) -> tuple[str, str, dict]:
-    """Load the workflow BODY from the library (referenced by routine.yaml), plus the routine's
-    active FRAGMENTS. Returns (workflow_body, fragments_text, provenance).
+    """Load the routine's OWN main.md body (the recipe was materialized into it at generation)
+    plus its active FRAGMENTS. Returns (main_body, fragments_text, provenance).
 
-    The workflow is edited only in the library (req 8). Fragments are the routine's editable
-    copies under fragments/; if that dir is empty we fall back to the library by cfg.fragments."""
+    A routine is self-contained: nothing is read from the workflow library at run time. Fragments
+    are the routine's editable copies under fragments/; if that dir is empty we fall back to the
+    library by cfg.fragments (transitional)."""
     from .. import fragments_lib
-    from ..workflows import library
 
-    body, prov = "", {"slug": cfg.workflow_slug, "commit": cfg.workflow_commit, "version": 0}
-    try:
-        meta, wbody, _ = library.read_workflow(server.library_home, cfg.workflow_slug)
-        body = wbody.strip()
-        prov = {"slug": cfg.workflow_slug, "commit": library.head_commit(server.library_home),
-                "version": meta.get("version", 0)}
-    except (FileNotFoundError, OSError):
-        # legacy fallback: a materialized workflow.md in the routine (pre-refactor routines)
-        legacy = routine_dir / "workflow.md"
-        if legacy.exists():
-            _, body = load_frontmatter(legacy)
-            body = body.strip()
-        else:
-            raise RuntimeError(
-                f"workflow {cfg.workflow_slug!r} not found in the library and no legacy "
-                f"workflow.md — cannot run") from None
+    # The recipe is materialized into the routine's OWN main.md at generation, so a routine is
+    # self-contained — the workflow library is NOT read at run time. The model reads the step
+    # modules under steps/ on demand via read_file (main.md routes to them).
+    main = routine_dir / "main.md"
+    if not main.exists():
+        raise RuntimeError(f"routine {cfg.slug!r} has no main.md — cannot run")
+    meta, mbody = load_frontmatter(main)
+    body = mbody.strip()
+    src = meta.get("materialized_from") if isinstance(meta.get("materialized_from"), dict) else {}
+    prov = {"slug": src.get("slug", cfg.workflow_slug),
+            "commit": src.get("commit", cfg.workflow_commit), "version": src.get("version", 0)}
 
     # active fragments: prefer the routine's editable copies, else the library
     parts: list[str] = []

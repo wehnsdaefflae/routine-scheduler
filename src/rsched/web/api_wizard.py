@@ -64,9 +64,14 @@ async def start(request: Request, body: StartBody) -> dict:
     d = server.routines_home / wid
     (d / "state").mkdir(parents=True)
     (d / "inbox").mkdir()
-    content, _ = materialize(server.library_home, "clarify-instruction",
-                             self_flags={k: False for k in DEFAULT_SELF})
-    (d / "workflow.md").write_text(content, encoding="utf-8")
+    from ..workflows import library
+
+    main_content, _ = materialize(server.library_home, "clarify-instruction")
+    (d / "main.md").write_text(main_content, encoding="utf-8")
+    for mod in library.list_modules(server.library_home, "clarify-instruction"):
+        (d / "steps").mkdir(exist_ok=True)
+        (d / "steps" / f"{mod}.md").write_text(
+            library.read_module(server.library_home, "clarify-instruction", mod) or "", encoding="utf-8")
     (d / "instruction.md").write_text(body.draft.rstrip() + "\n", encoding="utf-8")
     (d / "LEDGER.md").write_text("# LEDGER — wizard session\n", encoding="utf-8")
     (d / ".gitignore").write_text(GITIGNORE, encoding="utf-8")

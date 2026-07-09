@@ -12,6 +12,25 @@ def workflows_dir(home: Path) -> Path:
     return home / "workflows"
 
 
+def recipe_dir(home: Path, slug: str) -> Path:
+    """A recipe is a directory: <workflows>/<slug>/main.md (entry) + steps/<module>.md."""
+    return workflows_dir(home) / slug
+
+
+def main_path(home: Path, slug: str) -> Path:
+    return recipe_dir(home, slug) / "main.md"
+
+
+def list_modules(home: Path, slug: str) -> list[str]:
+    steps = recipe_dir(home, slug) / "steps"
+    return sorted(p.stem for p in steps.glob("*.md")) if steps.is_dir() else []
+
+
+def read_module(home: Path, slug: str, module: str) -> str | None:
+    p = recipe_dir(home, slug) / "steps" / f"{module}.md"
+    return p.read_text(encoding="utf-8") if p.is_file() else None
+
+
 def fragments_dir(home: Path) -> Path:
     return home / "fragments"
 
@@ -25,15 +44,19 @@ def list_workflows(home: Path) -> list[dict]:
     d = workflows_dir(home)
     if not d.is_dir():
         return out
-    for path in sorted(d.glob("*.md")):
-        meta, _ = frontmatter.load(path)
-        out.append({"slug": path.stem, "file": path.name,
-                    "name": meta.get("name", path.stem),
+    for sub in sorted(p for p in d.iterdir() if p.is_dir()):
+        main = sub / "main.md"
+        if not main.is_file():
+            continue
+        meta, _ = frontmatter.load(main)
+        out.append({"slug": sub.name, "file": f"{sub.name}/main.md",
+                    "name": meta.get("name", sub.name),
                     "description": meta.get("description", ""),
                     "when_to_use": str(meta.get("when_to_use", "")).strip(),
                     "version": meta.get("version", 0),
                     "status": meta.get("status", "draft"),
                     "includes": meta.get("includes") or [],
+                    "modules": list_modules(home, sub.name),
                     "tags": meta.get("tags") or []})
     return out
 
@@ -44,8 +67,8 @@ def list_fragments(home: Path) -> list[str]:
 
 
 def read_workflow(home: Path, slug: str) -> tuple[dict, str, str]:
-    """(meta, body, raw). Raises FileNotFoundError."""
-    path = workflows_dir(home) / f"{slug}.md"
+    """(meta, body, raw) of a recipe's main.md. Raises FileNotFoundError."""
+    path = main_path(home, slug)
     raw = path.read_text(encoding="utf-8")
     meta, body = frontmatter.parse(raw)
     return meta, body, raw
