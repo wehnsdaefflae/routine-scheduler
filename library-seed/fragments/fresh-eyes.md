@@ -8,8 +8,8 @@ user actually reads, published outputs).
 
 - **Every run, a cheap heuristic scan** against the health budgets below.
 - **Every ~5 runs, or whenever a budget trips or artifact structure changes: a deep
-  fresh-eyes review** — spawn a `subinstruction` whose prompt contains ONLY the rendered
-  artifact (paste the content; the sub-agent must NOT see this run's history) and asks:
+  fresh-eyes review** — `spawn` a sub-workflow whose prompt contains ONLY the rendered
+  artifact (paste the content; the sub-workflow must NOT see this run's history) and asks:
   "As a first-time reader: what is confusing, overwhelming, redundant, stale, or
   contradicted by reality here?" Fresh eyes see accretion that incremental eyes have
   learned to ignore.

@@ -22,14 +22,6 @@ KEEP_TAIL_MSGS = 24   # ~ last 12 turn pairs
 SELF_LABELS = {"audit": "self-audit", "improve": "self-improvement", "ledger": "LEDGER discipline",
                "fresh_eyes": "fresh-eyes artifact audit", "hygiene": "file hygiene"}
 
-SUBRUN_WORKFLOW = """## Run flow
-1. Read your instruction carefully; orient with the cheapest possible looks (ls, file reads).
-2. Do the work it describes, step by step. Prefer `gu` utils; verify what you produce.
-3. If something the instruction assumes is missing or broken, say so in your summary instead of guessing.
-## Completion criteria
-- Finish as soon as the instruction is fulfilled (status ok), or when you can state precisely
-  what is missing (status partial/failed). Your finish summary is the ONLY thing the caller
-  sees — pack the result, key facts, and file paths into it."""
 
 
 def truncate(text: str, cap: int = OBS_CAP_CHARS) -> tuple[str, bool]:
@@ -79,8 +71,14 @@ Action kinds:
 - read_file / write_file: read or write a file (within the working dir or an allowed root).
 - llm: one scoped, stateless LLM subcall (role "subcall" or "cheap"). It sees ONLY your prompt/\
 system — include everything it needs; set response_schema for structured replies.
-- subinstruction: spawn a fresh sub-agent with its own budget. It sees ONLY your "prompt" and \
-returns ONLY its finish summary. Use it to delegate separable chunks of work.
+- spawn: start a SUB-WORKFLOW that runs IN PARALLEL with you — pick its "workflow" from the \
+library (default general-task) and give it a fully self-contained "prompt" as its instruction; \
+it sees nothing else and returns only its finish summary. You keep working while it runs; you \
+are notified automatically when it exits. Give parallel children disjoint outputs (they share \
+your working directory); they must not write LEDGER.md or state/phase.json.
+- subruns: a status table of your sub-workflows (state, turns, elapsed).
+- kill: terminate sub-workflow "n". wait: block until sub-workflow "n" / "all": true / any next \
+one finishes (timeout_s, default 600). Children never outlive you — your finish kills them.
 - ask_user: mode "deferred" (default) files the question and CONTINUES — plan around the missing \
 answer. Mode "blocking" pauses the run until answered (after {b.ask_timeout_h}h it converts to \
 deferred). Ask sparingly; batch what can wait until run end.
@@ -173,9 +171,39 @@ def format_observation(obs: dict) -> str:
         if err := obs.get("error"):
             return f"OBSERVATION (llm subcall FAILED): {err}"
         return f"OBSERVATION (llm reply):\n{obs['reply']}"
-    if kind == "subinstruction":
-        return (f"OBSERVATION (subinstruction {obs.get('label') or '?'!r} finished: "
-                f"status {obs['status']}, {obs['turns']} turns):\n{obs['summary']}")
+    if kind == "spawn":
+        if obs.get("rejected"):
+            return f"OBSERVATION (spawn REJECTED): {obs['reason']}"
+        note = f" [{obs['note']}]" if obs.get("note") else ""
+        return (f"OBSERVATION (spawn): sub-workflow {obs['n']} {obs.get('label')!r} started "
+                f"(workflow {obs.get('workflow')}, now {obs.get('running')} running).{note} "
+                "It works in parallel — you will be notified when it finishes; keep going.")
+    if kind == "subruns":
+        if not obs.get("rows"):
+            return "OBSERVATION (subruns): no sub-workflows spawned this run."
+        lines = [f"- #{r['n']} {r['label']!r} [{r['workflow']}] {r['state']} · "
+                 f"{r['turns']} turns · {r['elapsed_s']}s"
+                 + (f" · {r['summary_head']}" if r["summary_head"] else "")
+                 for r in obs["rows"]]
+        return "OBSERVATION (subruns):\n" + "\n".join(lines)
+    if kind == "kill":
+        if obs.get("error"):
+            return f"OBSERVATION (kill FAILED): {obs['error']}"
+        if obs.get("already_finished"):
+            return f"OBSERVATION (kill): sub-workflow {obs['n']} had already finished ({obs['status']})."
+        return f"OBSERVATION (kill): sub-workflow {obs['n']} terminated ({obs.get('status')})."
+    if kind == "wait":
+        if obs.get("error"):
+            return f"OBSERVATION (wait FAILED): {obs['error']}"
+        parts = []
+        for f in obs.get("finished", []):
+            parts.append(f"SUB-WORKFLOW {f['n']} {f['label']!r} FINISHED "
+                         f"(status {f['status']}, {f['turns']} turns):\n{f['summary']}")
+        if obs.get("timed_out"):
+            parts.append(f"wait timed out; still running: {obs.get('still_running')}")
+        elif not parts:
+            parts.append("nothing new finished")
+        return "OBSERVATION (wait):\n" + "\n\n".join(parts)
     if kind == "ask_user":
         if obs.get("answered"):
             return f"OBSERVATION (ask_user): the user answered:\n{obs['answer']}"

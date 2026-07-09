@@ -11,12 +11,15 @@ default (each toggleable in `routine.yaml`).
 
 **The workflow is the harness.** Runs execute on a provider-agnostic engine: the
 orchestrator LLM follows the workflow document and acts only by returning one JSON action
-per turn — run a global util (`gu …`), read/write a file, make a scoped `llm` subcall, spawn
-a `subinstruction` sub-agent, ask the user (blocking or deferred), or finish. Any DIRECT
-chat-completion endpoint works: OpenRouter, local Ollama, other OpenAI-compatible servers,
-or the Anthropic Messages API. Wrapped agent runtimes (headless Claude Code and the like)
-are deliberately excluded — this scheduler is the harness, and a second harness in the path
-fights it (empirically: fabricated finishes).
+per turn — run a global util (`gu …`), read/write a file, make a scoped `llm` subcall,
+`spawn` parallel sub-workflows from the library (monitor with `subruns`, `kill` them, `wait`
+for them; their exits are announced automatically and they never outlive the parent), ask
+the user (blocking or deferred), or finish. Endpoints are
+model **transports** only: OpenRouter, local Ollama, other OpenAI-compatible servers, the
+Anthropic Messages API — or the Claude Code CLI in fully stripped print mode (`--tools ""`,
+no settings/MCP/session, our system prompt replacing its own) as a subscription-billed
+completion function. What is banned is a second *agent loop* in the path: this scheduler is
+the only harness.
 
 A **meta routine** (`~/routines/meta-workflows`) periodically ingests the top-level
 transcripts and LEDGERs of all routines, fixes workflow defects directly (lint-gated,

@@ -4,8 +4,8 @@
 import { el, fmtTokens } from "/static/util.js";
 
 const BRIEF_FIELD = { shell: "command", read_file: "path", write_file: "path",
-                      llm: "prompt", subinstruction: "label", ask_user: "question",
-                      finish: "status" };
+                      llm: "prompt", spawn: "label", kill: "n", wait: "n",
+                      ask_user: "question", finish: "status" };
 
 export function createTranscript(container) {
   const root = el("div", { class: "transcript" });
@@ -40,8 +40,19 @@ export function createTranscript(container) {
       text = o.error || o.reply || "";
     } else if (o.kind === "write_file") {
       text = o.error || `wrote ${o.bytes} bytes → ${o.path}`;
-    } else if (o.kind === "subinstruction") {
-      text = `${o.status} after ${o.turns} turns\n${o.summary || ""}`;
+    } else if (o.kind === "spawn") {
+      text = o.rejected ? `spawn REJECTED: ${o.reason}` :
+        `sub-workflow #${o.n} "${o.label}" started (${o.workflow}) — running in parallel`;
+    } else if (o.kind === "subruns") {
+      text = (o.rows || []).map((r) =>
+        `#${r.n} "${r.label}" [${r.workflow}] ${r.state} · ${r.turns} turns · ${r.elapsed_s}s`)
+        .join("\n") || "no sub-workflows";
+    } else if (o.kind === "kill") {
+      text = o.error || `sub-workflow #${o.n} ${o.already_finished ? "had already finished" : "terminated"}`;
+    } else if (o.kind === "wait") {
+      text = o.error || ((o.finished || []).map((f) =>
+        `#${f.n} "${f.label}" finished (${f.status}, ${f.turns} turns):\n${f.summary}`)
+        .join("\n\n") || (o.timed_out ? "wait timed out" : "nothing new finished"));
     } else if (o.kind === "ask_user") {
       text = o.answered ? `answered: ${o.answer}` : o.timed_out ? "timed out → deferred" : "filed as deferred";
     } else if (o.kind === "finish" && o.rejected) {

@@ -3,9 +3,11 @@
 LLM agent routine scheduler. A **routine** = instruction + workflow + schedule, living in its own
 git repo under `~/routines/<slug>`. Runs execute on a provider-agnostic engine where *the workflow
 is the harness* — the orchestrator LLM follows the workflow document and acts only through
-one JSON action per turn. Endpoints are DIRECT model APIs only (OpenAI-compatible, Anthropic
-Messages); wrapped agent runtimes such as headless Claude Code are banned from the execution
-path — a second harness both fights this one (fabricated finishes) and hides the conversation.
+one JSON action per turn. Endpoints are model TRANSPORTS only (OpenAI-compatible, Anthropic
+Messages, or claude-cli: `claude -p` fully stripped — tools off, our system prompt, no
+settings/MCP/session — subscription-billed). A second AGENT LOOP in the path is banned: it
+fights this harness and hides the conversation. The instruction contains only the task;
+schedule, self-* toggles, workdir, and model roles are routine config (routine.yaml / UI).
 
 ## Commands
 

@@ -1,30 +1,34 @@
 """The engine run loop — the workflow-as-harness core.
 
-Turn cycle: budget check → pause gate → inbox drain → compaction → one completion
-(schema-validated, ≤2 retries) → dispatch → observation. Control-flow kinds (ask_user,
-subinstruction, finish) are handled here; effect kinds go through executor.dispatch.
+Turn cycle: budget check → pause gate → inbox drain → sub-workflow exit notifications →
+compaction → one completion (schema-validated, ≤2 retries) → dispatch → observation.
+Control-flow kinds (spawn/subruns/kill/wait, ask_user, finish) are handled here; effect
+kinds go through executor.dispatch. Sub-workflows run in parallel threads (subruns.py)
+and never outlive the parent.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 from collections import deque
 from pathlib import Path
 
-from ..config import RoutineConfig, ServerConfig, load_routine
+from ..config import ServerConfig, load_routine
 from ..endpoints import EndpointRegistry
 from ..endpoints.base import EndpointError
 from ..frontmatter import load as load_frontmatter
 from ..ids import question_id, run_ts as make_run_ts
 from ..paths import read_json
-from ..schema_guard import SchemaViolation, parse_reply, retry_message, validate
+from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
 from . import executor, inbox
-from .actions import ACTION_SCHEMA, validate_action
-from .composer import (SUBRUN_WORKFLOW, build_system_prompt, format_observation,
-                       kickoff_message, maybe_compact, state_digest, truncate)
+from .actions import ACTION_SCHEMA, normalize_action, validate_action
+from .composer import (build_system_prompt, format_observation, kickoff_message,
+                       maybe_compact, state_digest, truncate)
 from .run_context import Budgets, RunContext
+from .subruns import SubrunManager
 from .transcript import Transcript
 
 POLL_S = 2.0
@@ -44,16 +48,22 @@ class RunAborted(Exception):
 
 
 class EngineLoop:
-    def __init__(self, ctx: RunContext, workflow_body: str, instruction: str):
+    def __init__(self, ctx: RunContext, workflow_body: str, instruction: str,
+                 abort_event: threading.Event | None = None):
         self.ctx = ctx
         self.workflow_body = workflow_body
         self.instruction = instruction
+        self.abort_event = abort_event or threading.Event()
+        self.subruns = SubrunManager(self)
         self.messages: list[dict] = []
         self.turn_records: list[dict] = []
         self.repeat_hashes: deque[str] = deque(maxlen=REPEAT_FAIL)
         self.consumed_dir = ctx.root_run_dir / "consumed"
         self.final_summary = ""
         self.executed_actions = 0  # actions that produced an observation this run
+
+    def _aborted(self) -> bool:
+        return _ABORT["flag"] or self.abort_event.is_set()
 
     # --- lifecycle ---------------------------------------------------------------
 
@@ -62,14 +72,17 @@ class EngineLoop:
         try:
             self._boot()
             while True:
-                if _ABORT["flag"]:
+                if self._aborted():
                     raise RunAborted()
                 if violation := ctx.budget_violation():
                     return self._finish_run("partial", f"Run stopped by the engine: {violation}. "
                                                        "Progress so far is in the transcript and LEDGER.")
                 self._pause_gate()
                 self._drain_injections()
+                self._announce_finished_subruns()
                 action, usage = self._next_action()
+                if self._aborted():
+                    raise RunAborted()  # a kill during the completion preempts the action
                 if action is None:
                     return self._finish_run("failed", "Orchestrator failed to produce a valid action "
                                                       f"after {MAX_SCHEMA_ATTEMPTS} attempts.")
@@ -101,8 +114,14 @@ class EngineLoop:
                     return self._finish_run(action["status"], action["summary"], authored=True)
                 if action["kind"] == "ask_user":
                     obs = self._handle_ask(action)
-                elif action["kind"] == "subinstruction":
-                    obs = self._handle_subrun(action)
+                elif action["kind"] == "spawn":
+                    obs = self.subruns.spawn(action)
+                elif action["kind"] == "subruns":
+                    obs = self.subruns.status_table()
+                elif action["kind"] == "kill":
+                    obs = self.subruns.kill(action["n"])
+                elif action["kind"] == "wait":
+                    obs = self.subruns.wait(action, poll_s=POLL_S, aborted=self._aborted)
                 else:
                     obs = executor.dispatch(action, ctx)
                 ctx.transcript.event("observation", obs, turn=ctx.turn)
@@ -143,8 +162,19 @@ class EngineLoop:
                          {"role": "user", "content": kickoff_message(ctx)}]
         ctx.write_status("running")
 
+    def _announce_finished_subruns(self) -> None:
+        """Turn-boundary notification: children that exited since the last boundary."""
+        for sub in self.subruns.take_finished_unannounced():
+            summary, _ = truncate(sub.summary, cap=4000)
+            self.messages.append({"role": "user", "content":
+                f"SUB-WORKFLOW FINISHED — #{sub.n} {sub.label!r} (workflow {sub.workflow}, "
+                f"status {sub.status}, {sub.ctx.turn} turns):\n{summary}"})
+
     def _finish_run(self, status: str, summary: str, *, authored: bool = False) -> str:
         ctx = self.ctx
+        killed = self.subruns.kill_all(reason=f"parent run finished ({status})")
+        if killed:
+            summary += f"\n[{killed} still-running sub-workflow(s) were terminated at run end.]"
         ctx.transcript.event("finish", {"status": status, "summary": summary, "authored": authored},
                              usage_total=dict(ctx.usage), turns=ctx.turn)
         self.final_summary = self.final_summary or summary
@@ -184,12 +214,13 @@ class EngineLoop:
                 time.sleep(1.5 * attempt)
                 continue
             try:
-                if completion.parsed is not None:
-                    problems = validate(completion.parsed, ACTION_SCHEMA) or validate_action(completion.parsed)
-                    if problems:
-                        raise SchemaViolation(problems)
-                    return completion.parsed, usage_sum
-                return parse_reply(completion.text, ACTION_SCHEMA, validate_action), usage_sum
+                candidate = (completion.parsed if completion.parsed is not None
+                             else extract_json(completion.text))
+                candidate = normalize_action(candidate)
+                problems = validate(candidate, ACTION_SCHEMA) or validate_action(candidate)
+                if problems:
+                    raise SchemaViolation(problems)
+                return candidate, usage_sum
             except SchemaViolation as exc:
                 raw = completion.text or json.dumps(completion.parsed or {})
                 ctx.transcript.event("error", {"where": "schema", "attempt": attempt,
@@ -200,8 +231,8 @@ class EngineLoop:
 
     def _record_turn(self, action: dict) -> None:
         brief_field = {"shell": "command", "read_file": "path", "write_file": "path",
-                       "llm": "prompt", "subinstruction": "prompt", "ask_user": "question",
-                       "finish": "status"}.get(action["kind"], "")
+                       "llm": "prompt", "spawn": "label", "kill": "n", "wait": "n",
+                       "ask_user": "question", "finish": "status"}.get(action["kind"], "")
         brief = str(action.get(brief_field, ""))[:80]
         self.turn_records.append({"turn": self.ctx.turn, "kind": action["kind"],
                                   "brief": json.dumps(brief, ensure_ascii=False),
@@ -227,7 +258,7 @@ class EngineLoop:
         ctx.write_status("paused")
         started = time.monotonic()
         while True:
-            if _ABORT["flag"]:
+            if self._aborted():
                 raise RunAborted()
             time.sleep(POLL_S)
             obj = read_json(control)
@@ -267,7 +298,7 @@ class EngineLoop:
         started = time.monotonic()
         answer = None
         while time.monotonic() < deadline:
-            if _ABORT["flag"]:
+            if self._aborted():
                 raise RunAborted()
             answer = inbox.take_answer(ctx.routine.dir, qid, self.consumed_dir)
             if answer:
@@ -283,62 +314,6 @@ class EngineLoop:
         inbox.file_deferred_question(ctx.routine.dir, qid, question, options, ctx.run_ts)
         return {"kind": "ask_user", "qid": qid, "mode": mode, "timed_out": True,
                 "timeout_h": ctx.budgets.ask_timeout_h}
-
-    def _handle_subrun(self, action: dict) -> dict:
-        ctx = self.ctx
-        label = action.get("label") or f"subrun-{ctx.sub_counter[0] + 1}"
-        if ctx.sub_counter[0] >= ctx.budgets.max_subruns:
-            return {"kind": "subinstruction", "label": label, "status": "failed", "turns": 0,
-                    "summary": f"REJECTED: subrun budget ({ctx.budgets.max_subruns}) exhausted."}
-        if ctx.depth + 1 > ctx.budgets.max_subrun_depth:
-            return {"kind": "subinstruction", "label": label, "status": "failed", "turns": 0,
-                    "summary": f"REJECTED: max subrun depth ({ctx.budgets.max_subrun_depth}) reached."}
-        ctx.sub_counter[0] += 1
-        n = ctx.sub_counter[0]
-        sub_dir = ctx.run_dir / "sub" / str(n)
-        rel = str(sub_dir.relative_to(ctx.root_run_dir) / "transcript.jsonl")
-        ctx.transcript.event("subrun_start", {"n": n, "label": label, "depth": ctx.depth + 1,
-                                              "transcript": rel})
-        sub_transcript = Transcript(sub_dir / "transcript.jsonl")
-        _, orch_ref = ctx.registry.for_role("subcall", ctx.routine.roles)
-        child = RunContext(
-            routine=ctx.routine, server=ctx.server, registry=ctx.registry,
-            run_ts=ctx.run_ts, run_dir=sub_dir, transcript=sub_transcript,
-            budgets=ctx.child_budgets(), depth=ctx.depth + 1,
-            parent_run_id=ctx.run_id, sub_counter=ctx.sub_counter,
-        )
-        # Subruns orchestrate on the (cheaper) subcall role.
-        child.routine = _with_subrun_roles(ctx.routine, orch_ref)
-        sub_transcript.header(run_id=f"{ctx.run_id}#sub{n}", routine=ctx.routine.slug,
-                              workflow={"slug": "(builtin-subrun)", "commit": "", "version": 0},
-                              orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model},
-                              depth=ctx.depth + 1, parent=ctx.run_id)
-        try:
-            child_loop = EngineLoop(child, SUBRUN_WORKFLOW, action["prompt"])
-            status = child_loop.run()
-            summary = child_loop.final_summary
-        finally:
-            sub_transcript.close()
-        ctx.add_usage(child.usage)
-        ctx.transcript.event("subrun_end", {"n": n, "label": label, "status": status,
-                                            "summary": summary, "turns": child.turn,
-                                            "usage": dict(child.usage)})
-        if _ABORT["flag"]:
-            raise RunAborted()
-        summary_text, _ = truncate(summary, cap=4000)
-        return {"kind": "subinstruction", "label": label, "status": status,
-                "turns": child.turn, "summary": summary_text}
-
-
-def _with_subrun_roles(routine: RoutineConfig, orch_ref) -> RoutineConfig:
-    """A shallow copy whose orchestrator role is the parent's subcall role."""
-    import copy
-
-    r = copy.copy(routine)
-    r.roles = dict(routine.roles)
-    r.roles["orchestrator"] = orch_ref
-    return r
-
 
 # --- top-level entry ------------------------------------------------------------------
 

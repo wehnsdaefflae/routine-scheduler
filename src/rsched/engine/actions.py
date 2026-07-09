@@ -11,7 +11,8 @@ prose-outside-JSON failures.
 
 from __future__ import annotations
 
-KINDS = ("shell", "read_file", "write_file", "llm", "subinstruction", "ask_user", "finish")
+KINDS = ("shell", "read_file", "write_file", "llm", "spawn", "subruns", "kill", "wait",
+         "ask_user", "finish")
 
 ACTION_SCHEMA: dict = {
     "type": "object",
@@ -30,7 +31,7 @@ ACTION_SCHEMA: dict = {
         },
         "timeout_s": {
             "type": "integer", "minimum": 1, "maximum": 600,
-            "description": "shell: seconds before kill (default 120)",
+            "description": "shell: seconds before kill (default 120) · wait: max seconds to block (default 600)",
         },
         # read_file / write_file
         "path": {
@@ -44,15 +45,21 @@ ACTION_SCHEMA: dict = {
         },
         "content": {"type": "string", "description": "write_file: full new content"},
         "append": {"type": "boolean", "description": "write_file: append instead of overwrite (default false)"},
-        # llm / subinstruction
-        "prompt": {"type": "string", "description": "llm/subinstruction: the prompt / the sub-instruction text"},
+        # llm / spawn
+        "prompt": {"type": "string",
+                   "description": "llm: the prompt · spawn: the sub-workflow's full self-contained instruction"},
         "system": {"type": "string", "description": "llm: optional system prompt"},
         "role": {
             "type": "string", "enum": ["subcall", "cheap"],
             "description": "llm: which configured model role (default subcall)",
         },
         "response_schema": {"type": "object", "description": "llm: optional JSON schema constraining the reply"},
-        "label": {"type": "string", "description": "subinstruction: short name shown in the run tree"},
+        "workflow": {"type": "string",
+                     "description": "spawn: library workflow slug for the child (default general-task)"},
+        "label": {"type": "string", "description": "spawn: short name shown in the run tree"},
+        # subruns / kill / wait
+        "n": {"type": "integer", "minimum": 1, "description": "kill/wait: the sub-workflow number"},
+        "all": {"type": "boolean", "description": "wait: wait for ALL running sub-workflows (default: any next)"},
         # ask_user
         "question": {"type": "string", "description": "ask_user: the question, self-contained"},
         "mode": {
@@ -78,10 +85,31 @@ _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "read_file": (("path",), ("start_line", "max_lines")),
     "write_file": (("path", "content"), ("append",)),
     "llm": (("prompt",), ("system", "role", "response_schema")),
-    "subinstruction": (("prompt",), ("label",)),
+    "spawn": (("prompt",), ("workflow", "label")),
+    "subruns": ((), ()),
+    "kill": (("n",), ()),
+    "wait": ((), ("n", "all", "timeout_s")),
     "ask_user": (("question",), ("mode", "options")),
     "finish": (("status", "summary"), ()),
 }
+
+
+def normalize_action(obj: dict) -> dict:
+    """Strip grammar-padding: constrained decoders (Ollama json_schema, OpenRouter strict)
+    tend to emit OTHER kinds' fields as empty strings/false/null. Empty-valued fields that
+    are not required for this kind carry no information — drop them so the semantic
+    validator sees the model's intent, not the grammar's debris."""
+    kind = obj.get("kind")
+    required = set(_KIND_FIELDS.get(kind, ((), ()))[0])
+    out = {}
+    for key, val in obj.items():
+        if key in ("say", "kind") or key in required:
+            out[key] = val
+        elif val in ("", None, [], {}) or val is False:
+            continue
+        else:
+            out[key] = val
+    return out
 
 
 def validate_action(obj: dict) -> list[str]:

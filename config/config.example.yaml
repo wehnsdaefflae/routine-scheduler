@@ -11,9 +11,11 @@ library_home: ~/.local/share/workflow-library
 max_concurrent_runs: 2
 registry_rescan_s: 30
 
-# Chat-completion endpoints — DIRECT model access only (raw APIs; never a wrapped agent
-# runtime like headless Claude Code: this scheduler's engine is the one and only harness).
-# kind: openai | anthropic
+# Chat-completion endpoints — model TRANSPORTS only; this scheduler's engine is the one
+# and only harness. kind: openai | anthropic | claude-cli
+#   claude-cli = Claude Code CLI in fully stripped print mode (tools off, no settings/MCP/
+#   session, OUR system prompt replaces its own) — a subscription-billed completion
+#   function, never an agent loop.
 #   context_chars — compaction threshold (chars; ~4 chars ≈ 1 token)
 #   schema_mode (openai kind) — json_schema | json_object | none
 # API keys live in ~/.credentials/*.env files (VAR=value lines), never in this file.
@@ -29,7 +31,7 @@ endpoints:
     kind: openai
     base_url: "http://127.0.0.1:11434/v1"
     api_key: "ollama"                             # Ollama ignores the key; no file needed
-    schema_mode: json_schema
+    schema_mode: json_object   # grammar mode pads other kinds' fields into actions (like openrouter)
     context_chars: 36000
     temperature: 0.2
   anthropic:
@@ -38,9 +40,14 @@ endpoints:
     key_env_file: ~/.credentials/anthropic.env    # line: ANTHROPIC_KEY=sk-ant-...
     key_var: ANTHROPIC_KEY
     context_chars: 400000
+  claude-cli:
+    kind: claude-cli                              # subscription-billed transport (see above)
+    credentials_env: ~/.credentials/claude-code-oauth.env   # minted by `gu claude-login`
+    context_chars: 400000                         # models: opus | sonnet | haiku | full names
 
 # Model roles routines refer to (each routine.yaml may override). Claude models are
-# reachable directly via `anthropic` (or as openrouter "anthropic/..." models).
+# reachable via `claude-cli` (subscription), `anthropic` (metered), or openrouter
+# "anthropic/..." models (metered).
 default_roles:
   orchestrator: {endpoint: openrouter, model: "z-ai/glm-5.2", effort: low}
   subcall:      {endpoint: openrouter, model: "z-ai/glm-5.2", effort: low}

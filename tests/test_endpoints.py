@@ -1,6 +1,7 @@
 """Adapter request construction, response parsing, error mapping — all mocked, no network."""
 
 import json
+import subprocess
 
 import pytest
 
@@ -10,6 +11,8 @@ from rsched.config import EndpointConfig
 from rsched.endpoints import EndpointRegistry, make_endpoint
 from rsched.endpoints.anthropic_api import AnthropicEndpoint, merge_consecutive
 from rsched.endpoints.base import EndpointError, split_system, with_retries
+from rsched.endpoints.claude_cli import (STRIP_VARS, TOKEN_VAR, ClaudeCliEndpoint, build_cmd,
+                                         parse_result, render_prompt, resolve_token, scrub_env)
 from rsched.endpoints.openai_compat import OpenAICompatEndpoint
 
 MESSAGES = [
@@ -186,6 +189,75 @@ def test_anthropic_missing_key(tmp_path):
     assert exc.value.auth
 
 
+# --- claude-cli ------------------------------------------------------------------
+
+def test_scrub_env_and_token(tmp_path, monkeypatch):
+    env = scrub_env({"ANTHROPIC_API_KEY": "x", "ANTHROPIC_BASE_URL": "y", "PATH": "/bin"},
+                    token="tok", max_tokens=99)
+    assert all(k not in env for k in STRIP_VARS)
+    assert env["PATH"] == "/bin" and env[TOKEN_VAR] == "tok"
+    assert env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == "99"
+    credfile = tmp_path / "cred.env"
+    credfile.write_text(f"# comment\n{TOKEN_VAR}='sk-file'\n")
+    monkeypatch.delenv(TOKEN_VAR, raising=False)
+    assert resolve_token(str(credfile)) == "sk-file"
+    monkeypatch.setenv(TOKEN_VAR, "sk-env")
+    assert resolve_token(str(credfile)) == "sk-env"
+
+
+def test_build_cmd_isolation_flags():
+    cmd = build_cmd("/bin/claude", "opus", system="sys", schema_str="{}", effort="low")
+    for flag in ("-p", "--tools", "--disable-slash-commands", "--no-session-persistence",
+                 "--strict-mcp-config", "--setting-sources", "--output-format",
+                 "--system-prompt", "--effort", "--json-schema"):
+        assert flag in cmd
+    assert cmd[cmd.index("--tools") + 1] == ""
+    assert cmd[cmd.index("--setting-sources") + 1] == ""
+
+
+def test_render_prompt():
+    single = render_prompt([{"role": "user", "content": "just this"}])
+    assert single == "just this"
+    multi = render_prompt([m for m in MESSAGES if m["role"] != "system"])
+    assert "<<USER>>" in multi and "<<ASSISTANT>>" in multi
+    assert multi.strip().endswith("no role tags.")
+
+
+def test_parse_result_envelopes():
+    text, parsed, usage = parse_result(json.dumps(
+        {"is_error": False, "result": "hi", "usage": {"input_tokens": 1, "output_tokens": 2}}), False)
+    assert text == "hi" and parsed is None and usage == {"in": 1, "out": 2}
+    _, parsed, _ = parse_result(json.dumps(
+        {"is_error": False, "result": "x", "structured_output": {"b": 2}}), True)
+    assert parsed == {"b": 2}
+    _, parsed, _ = parse_result(json.dumps({"is_error": False, "result": '{"a": 1}'}), True)
+    assert parsed == {"a": 1}
+    with pytest.raises(EndpointError) as exc:
+        parse_result(json.dumps({"is_error": True, "result": "401 unauthorized"}), False)
+    assert exc.value.auth
+
+
+def test_claude_cli_complete(monkeypatch, tmp_path):
+    credfile = tmp_path / "cred.env"
+    credfile.write_text(f"{TOKEN_VAR}=tok\n")
+    monkeypatch.delenv(TOKEN_VAR, raising=False)
+    ep = ClaudeCliEndpoint(EndpointConfig(
+        name="claude-cli", kind="claude-cli", credentials_env=str(credfile), context_chars=400000))
+    monkeypatch.setattr("rsched.endpoints.claude_cli.find_cli", lambda: "/bin/claude")
+    seen = {}
+
+    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None, env=None, cwd=None):
+        seen.update(cmd=cmd, input=input, env=env)
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(
+            {"is_error": False, "result": "ok", "usage": {"input_tokens": 3, "output_tokens": 4}}), stderr="")
+
+    monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
+    c = ep.complete(MESSAGES, model="opus", effort="medium")
+    assert c.text == "ok" and c.usage == {"in": 3, "out": 4}
+    assert seen["env"][TOKEN_VAR] == "tok" and "<<USER>>" in seen["input"]
+    assert "--system-prompt" in seen["cmd"]
+
+
 # --- registry ----------------------------------------------------------------------
 
 def test_merge_consecutive_same_role():
@@ -215,5 +287,5 @@ def test_make_endpoint_kinds():
     assert isinstance(make_endpoint(EndpointConfig(name="a", kind="openai", base_url="x")),
                       OpenAICompatEndpoint)
     assert isinstance(make_endpoint(EndpointConfig(name="b", kind="anthropic")), AnthropicEndpoint)
-    with pytest.raises(EndpointError):
-        make_endpoint(EndpointConfig(name="c", kind="claude-cli"))  # harness kinds are gone
+    assert isinstance(make_endpoint(EndpointConfig(name="c", kind="claude-cli")),
+                      ClaudeCliEndpoint)

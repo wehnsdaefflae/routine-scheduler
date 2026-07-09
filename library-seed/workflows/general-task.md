@@ -6,7 +6,7 @@ when_to_use: >
   Fits most recurring instructions that don't have a more specific pattern: collect/produce/
   maintain something on a schedule, tend a long-running goal, run a periodic check. If the
   instruction mostly says WHAT to deliver and the HOW is ordinary tool work, this is the one.
-version: 1
+version: 2
 status: stable
 params: []
 default_budgets: {max_turns: 60, max_wall_clock_min: 45}
@@ -24,8 +24,11 @@ includes: [ask-policy, ledger-discipline, self-audit, improvement, fresh-eyes, h
 3. **Execute in small verified steps.** Global utils (`gu <name> … --json`) are the primary
    tools; check `gu list` before hand-rolling anything. Verify what you produce (read the
    file back, check the exit code, count the results) — never claim unverified outcomes.
-   Delegate separable chunks (research, bulk processing) to `subinstruction` sub-agents with
-   self-contained prompts. Use `llm` subcalls for scoped one-shot judgments.
+   Delegate separable chunks (research, bulk processing) to parallel sub-workflows:
+   `spawn` them (pick a fitting library workflow; give each a fully self-contained
+   prompt and disjoint outputs), keep working, monitor with `subruns`, and collect
+   results via the automatic finish notifications or `wait`. Use `llm` subcalls for
+   scoped one-shot judgments.
 4. **Record.** Update `state/phase.json` and any state files; append the LEDGER entry
    (ledger-discipline). Keep artifacts the user reads coherent (fresh-eyes).
 5. **Self-audit** (self-audit fragment) — determine only.

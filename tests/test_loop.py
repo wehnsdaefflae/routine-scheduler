@@ -1,8 +1,9 @@
 """Scripted end-to-end engine runs: the loop's whole behavior surface, no network."""
 
 import json
+import time
 
-from conftest import finish, shell
+from conftest import finish, shell, spawn, wait_
 
 from rsched.config import ServerConfig
 from rsched.endpoints.base import EndpointError
@@ -13,10 +14,17 @@ from rsched.paths import atomic_write_json, read_json
 TS = "20260708-070000"
 
 
+def _server(routine_dir) -> ServerConfig:
+    s = ServerConfig()
+    # hermetic: no library on disk → sub-workflows use the builtin fallback body
+    s.library_home = routine_dir.parent.parent / "no-library"
+    return s
+
+
 def _run(make_routine, scripted, replies, *, slug="testr", ts=TS, **routine_kwargs):
     d = make_routine(slug=slug, **routine_kwargs)
     ep = scripted(replies)
-    status, run_dir = run_routine(d, ServerConfig(), run_ts=ts)
+    status, run_dir = run_routine(d, _server(d), run_ts=ts)
     events, _ = read_events(run_dir / "transcript.jsonl")
     return d, ep, status, run_dir, events
 
@@ -175,14 +183,15 @@ def test_deferred_answer_reaches_next_run_digest(make_routine, scripted):
     assert not list((d / "questions" / "pending").glob("*.json"))
 
 
-def test_subinstruction_nested_run(make_routine, scripted):
+PARENT = "Test instruction"  # marker present only in the parent's system prompt
+
+
+def test_spawn_and_wait_collects_child(make_routine, scripted):
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
-        {"say": "Delegate.", "kind": "subinstruction", "prompt": "Compute the answer to X.",
-         "label": "research"},
-        # ↓ consumed by the CHILD loop
-        finish(summary="X is 42, verified twice."),
-        # ↓ back in the parent
-        finish(summary="Done via subrun."),
+        (PARENT, spawn("CHILD-A: compute the answer to X.", label="research")),
+        ("CHILD-A", finish(summary="X is 42, verified twice.")),
+        (PARENT, wait_(all_=True)),
+        (PARENT, finish(summary="Done via sub-workflow.")),
     ])
     assert status == "ok"
     assert "subrun_start" in types(events) and "subrun_end" in types(events)
@@ -190,31 +199,122 @@ def test_subinstruction_nested_run(make_routine, scripted):
     assert sub_end["payload"]["status"] == "ok" and "42" in sub_end["payload"]["summary"]
     sub_events, _ = read_events(run_dir / "sub" / "1" / "transcript.jsonl")
     assert sub_events[0]["depth"] == 1 and sub_events[0]["parent"] == f"testr:{TS}"
-    child_system = ep.calls[1]["messages"][0]["content"]
-    assert "Compute the answer to X." in child_system and "subrun — no routine state digest" in child_system
-    assert "42" in ep.calls[2]["messages"][-1]["content"]  # parent observed the child summary
+    child_system = next(c for c in ep.calls if "CHILD-A" in c["messages"][0]["content"])
+    assert "no routine state digest" in child_system["messages"][0]["content"]
+    # the child summary reached the parent — via the wait observation or (if the child
+    # beat the wait to a turn boundary) via the FINISHED notification message
+    final_messages = json.dumps(ep.calls[-1]["messages"])
+    assert "42" in final_messages
+    # parent usage includes the child's tokens
+    fin = events[-1]
+    assert fin["usage_total"]["in"] >= 40  # 3 parent + 1 child completion × 10
 
 
-def test_subrun_depth_and_count_caps(make_routine, scripted):
-    sub = {"say": "d", "kind": "subinstruction", "prompt": "go deeper"}
+def test_parallel_children_notify_at_boundary(make_routine, scripted):
+    def slow_child(summary):
+        def reply():
+            time.sleep(0.05)
+            return finish(summary=summary)
+        return reply
+
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
-        sub,          # parent spawns child (depth 1)
-        sub,          # child tries to spawn grandchild → rejected (depth cap 1)
-        finish(summary="child done"),
-        sub,          # parent spawns second child (count 2 = cap)
-        finish(summary="child2 done"),
-        sub,          # parent tries a third → rejected (count cap)
-        finish(summary="parent done"),
-    ], slug="deep")
+        (PARENT, spawn("CHILD-A: research alpha.", label="a")),
+        (PARENT, spawn("CHILD-B: research beta.", label="b")),
+        ("CHILD-A: research alpha.", slow_child("alpha result ready")),
+        ("CHILD-B: research beta.", slow_child("beta result ready")),
+        (PARENT, shell("sleep 0.4")),   # parent works while both children finish
+        (PARENT, finish(summary="collected both")),
+    ], slug="par", allowlist=["sleep *", "git *", "gu *"])
     assert status == "ok"
-    rejects = [e for e in events
-               if e["type"] == "observation" and e["payload"]["kind"] == "subinstruction"
-               and "REJECTED" in e["payload"]["summary"]]
-    assert len(rejects) == 1  # the parent's third spawn; the child's own rejection is in the sub transcript
+    assert len([e for e in events if e["type"] == "subrun_end"]) == 2
+    # both finish notifications reached the parent before its last completion
+    final_call = ep.calls[-1]["messages"]
+    joined = json.dumps(final_call)
+    assert "SUB-WORKFLOW FINISHED" in joined
+    assert "alpha result ready" in joined and "beta result ready" in joined
+
+
+def test_kill_child(make_routine, scripted):
+    def sleepy():
+        time.sleep(0.5)
+        return finish(summary="should never land")
+
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        (PARENT, spawn("CHILD-S: sleep forever.", label="slow")),
+        ("CHILD-S", sleepy),
+        (PARENT, {"say": "Too slow — killing it.", "kind": "kill", "n": 1}),
+        (PARENT, finish(summary="killed the slowpoke")),
+    ], slug="killer")
+    assert status == "ok"
+    kill_obs = next(e for e in events if e["type"] == "observation"
+                    and e["payload"]["kind"] == "kill")
+    assert kill_obs["payload"].get("killed") or kill_obs["payload"].get("already_finished")
+    sub_end = next(e for e in events if e["type"] == "subrun_end")
+    assert sub_end["payload"]["status"] == "aborted"
+
+
+def test_children_never_outlive_parent(make_routine, scripted):
+    def sleepy():
+        time.sleep(0.8)
+        return finish(summary="late child")
+
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        (PARENT, spawn("CHILD-L: long job.", label="long")),
+        ("CHILD-L", sleepy),
+        (PARENT, finish(summary="parent leaves early")),
+    ], slug="leaver")
+    assert status == "ok"
+    fin = events[-1]
+    assert "terminated at run end" in fin["payload"]["summary"]
+    sub_end = next(e for e in events if e["type"] == "subrun_end")
+    assert sub_end["payload"]["status"] == "aborted"
+
+
+def test_spawn_caps(make_routine, scripted):
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        (PARENT, spawn("CHILD-1: quick job.")),
+        ("CHILD-1: quick job.", spawn("GRANDCHILD: deeper.")),  # child hits the depth cap
+        ("CHILD-1: quick job.", finish(summary="child done")),
+        (PARENT, wait_(all_=True)),
+        (PARENT, spawn("CHILD-2: second.")),
+        ("CHILD-2: second.", finish(summary="child2 done")),
+        (PARENT, wait_(all_=True)),
+        (PARENT, spawn("CHILD-3: third.")),   # total cap (max_subruns 2) → rejected
+        (PARENT, finish(summary="parent done")),
+    ], slug="capped")
+    assert status == "ok"
+    parent_rejects = [e for e in events if e["type"] == "observation"
+                      and e["payload"]["kind"] == "spawn" and e["payload"].get("rejected")]
+    assert len(parent_rejects) == 1 and "budget" in parent_rejects[0]["payload"]["reason"]
     sub_events, _ = read_events(run_dir / "sub" / "1" / "transcript.jsonl")
-    child_rejects = [e for e in sub_events
-                     if e["type"] == "observation" and "depth" in e["payload"].get("summary", "")]
-    assert child_rejects
+    child_reject = [e for e in sub_events if e["type"] == "observation"
+                    and e["payload"].get("kind") == "spawn" and e["payload"].get("rejected")]
+    assert child_reject and "depth" in child_reject[0]["payload"]["reason"]
+
+
+def test_spawn_picks_library_workflow(make_routine, scripted, tmp_path):
+    lib = tmp_path / "lib"
+    (lib / "workflows").mkdir(parents=True)
+    (lib / "workflows" / "echo-task.md").write_text(
+        "---\nname: Echo\nslug: echo-task\ndescription: d\nwhen_to_use: w\n"
+        "version: 1\nstatus: stable\nparams: []\n---\n\n## Run flow\n"
+        "1. MARKER-ECHO-BODY: do the echo.\n## Phases\n- only\n## Completion criteria\n- done\n")
+    d = make_routine(slug="libpick")
+    server = ServerConfig()
+    server.library_home = lib
+    ep = scripted([
+        (PARENT, spawn("CHILD-E: echo it.", workflow="echo-task")),
+        ("CHILD-E", finish(summary="echoed")),
+        (PARENT, wait_(all_=True)),
+        (PARENT, finish(summary="done")),
+    ])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "ok"
+    child_system = next(c for c in ep.calls if "CHILD-E" in c["messages"][0]["content"])
+    assert "MARKER-ECHO-BODY" in child_system["messages"][0]["content"]
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    start = next(e for e in events if e["type"] == "subrun_start")
+    assert start["payload"]["workflow"] == "echo-task"
 
 
 def test_llm_subcall(make_routine, scripted):

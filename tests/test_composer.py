@@ -78,8 +78,15 @@ def test_format_observation_variants():
     assert "llm reply" in format_observation({"kind": "llm", "reply": "r"})
     assert "filed as deferred" in format_observation({"kind": "ask_user", "qid": "q", "mode": "deferred"})
     assert "user answered" in format_observation({"kind": "ask_user", "answered": True, "answer": "A"})
-    assert "status ok" in format_observation({"kind": "subinstruction", "label": "l", "status": "ok",
-                                              "turns": 3, "summary": "s"})
+    assert "parallel" in format_observation({"kind": "spawn", "n": 1, "label": "l",
+                                             "workflow": "general-task", "running": 1})
+    assert "REJECTED" in format_observation({"kind": "spawn", "rejected": True, "reason": "cap"})
+    assert "#2" in format_observation({"kind": "subruns", "rows": [
+        {"n": 2, "label": "x", "workflow": "w", "state": "running", "turns": 1,
+         "elapsed_s": 2.0, "summary_head": ""}]})
+    assert "terminated" in format_observation({"kind": "kill", "n": 2, "killed": True, "status": "aborted"})
+    assert "FINISHED" in format_observation({"kind": "wait", "finished": [
+        {"n": 1, "label": "x", "status": "ok", "turns": 2, "summary": "s"}], "timed_out": False})
 
 
 def test_compaction_deterministic_and_bounded():

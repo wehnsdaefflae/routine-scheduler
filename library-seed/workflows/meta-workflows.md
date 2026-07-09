@@ -6,7 +6,7 @@ when_to_use: >
   Internal: the standing meta routine that maintains ~/.local/share/workflow-library. Not a
   template for user routines. Requires fs_read_roots over the routines home and
   fs_read/write_roots over the library, plus "uv run *" in the shell allowlist.
-version: 1
+version: 2
 status: stable
 params: []
 default_budgets: {max_turns: 80, max_wall_clock_min: 60}
@@ -18,9 +18,9 @@ includes: [ask-policy, ledger-discipline, hygiene]
 1. **Orient.** Read `state/last_seen.json` ({routine: last run ts analyzed}). List routines
    (`ls ~/routines`, skip dot-dirs and yourself) and each one's `runs/` for run dirs newer
    than last seen. No new runs anywhere → note it, still do step 6 on one workflow, finish.
-2. **Ingest evidence per routine** (cap: the ~5 newest unseen runs each; use `subinstruction`
-   sub-agents for bulk reading — one per routine, prompt = the transcript paths + the rubric
-   below, so your own context stays small). From each top-level `transcript.jsonl` and
+2. **Ingest evidence per routine** (cap: the ~5 newest unseen runs each; `spawn` parallel
+   sub-workflows for bulk reading — one per routine, prompt = the transcript paths + the
+   rubric below, then `wait` with all: true — so your own context stays small). From each top-level `transcript.jsonl` and
    LEDGER.md, collect:
    - outcome (finish status; authored or forced by budget?)
    - schema-retry storms, repeated-action warnings, fabrication-guard rejections

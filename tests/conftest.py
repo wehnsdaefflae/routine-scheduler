@@ -1,10 +1,14 @@
 """Shared fixtures: tmp routine dirs and the ScriptedEndpoint — the engine's main test
 harness. It replays a queue of canned replies (dict = action, str = raw text, Exception =
-raised, callable = side-effect hook returning any of those) for every completion call."""
+raised, callable = side-effect hook returning any of those) for every completion call.
+An entry may be routed: a ("marker", item) tuple is consumed only by conversations whose
+SYSTEM prompt contains the marker — that makes parallel sub-workflow tests deterministic
+(each child's system prompt embeds its own spawn prompt)."""
 
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -36,16 +40,30 @@ class ScriptedEndpoint:
     def __init__(self, replies: list):
         self.replies = list(replies)
         self.calls: list[dict] = []
+        self.lock = threading.Lock()
         self.name = "scripted"
         self.context_chars = 200_000
         self.supports_schema = True
 
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None, timeout=600):
-        self.calls.append({"messages": [dict(m) for m in messages], "model": model,
-                           "schema": schema})
-        if not self.replies:
-            raise AssertionError("ScriptedEndpoint ran out of replies")
-        item = self.replies.pop(0)
+        system = messages[0]["content"] if messages else ""
+        with self.lock:
+            self.calls.append({"messages": [dict(m) for m in messages], "model": model,
+                               "schema": schema})
+            item = None
+            for i, entry in enumerate(self.replies):
+                if isinstance(entry, tuple):
+                    marker, candidate = entry
+                    if marker in system:
+                        item = candidate
+                        self.replies.pop(i)
+                        break
+                else:
+                    item = entry
+                    self.replies.pop(i)
+                    break
+            if item is None:
+                raise AssertionError("ScriptedEndpoint ran out of matching replies")
         if callable(item):
             item = item()
         if isinstance(item, Exception):
@@ -122,3 +140,23 @@ def finish(status="ok", summary="done"):
 
 def shell(command, say="Running a command."):
     return {"say": say, "kind": "shell", "command": command}
+
+
+def spawn(prompt, label=None, workflow=None, say="Delegating."):
+    action = {"say": say, "kind": "spawn", "prompt": prompt}
+    if label:
+        action["label"] = label
+    if workflow:
+        action["workflow"] = workflow
+    return action
+
+
+def wait_(n=None, all_=False, timeout_s=None, say="Waiting for children."):
+    action = {"say": say, "kind": "wait"}
+    if n is not None:
+        action["n"] = n
+    if all_:
+        action["all"] = True
+    if timeout_s is not None:
+        action["timeout_s"] = timeout_s
+    return action

@@ -28,7 +28,7 @@ includes: [ask-policy, ledger-discipline, self-audit, improvement, fresh-eyes, h
 Body sections, all three REQUIRED:
 ## Run flow — numbered natural-language steps for ONE run (the orchestrator LLM follows
 them literally; tools are `gu` utils via shell, read_file/write_file, llm subcalls,
-subinstruction sub-agents, ask_user, finish).
+spawn/subruns/kill/wait for parallel library sub-workflows, ask_user, finish).
 ## Phases — how the routine progresses across runs toward final delivery (persist the
 current phase in state/phase.json), or "- **steady** — no cross-run milestones."
 ## Completion criteria — what "done for this run" and "done overall" mean."""

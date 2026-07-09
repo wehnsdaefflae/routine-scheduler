@@ -6,8 +6,9 @@ import { el, toast } from "/static/util.js";
 export async function render(view) {
   view.append(el("h1", {}, "Settings — LLM endpoints"),
     el("div", { class: "muted" },
-      "Direct chat-completion APIs only (openai-compatible or anthropic). The scheduler is ",
-      "the harness — wrapped agent runtimes are rejected. Keys live in ~/.credentials/*.env."));
+      "Endpoints are model transports: openai-compatible / anthropic APIs, or claude-cli ",
+      "(subscription-billed `claude -p`, fully stripped — no tools, our system prompt). The ",
+      "scheduler stays the only harness. Keys live in ~/.credentials/*.env."));
   const listBox = el("div", { class: "mt" });
   view.append(listBox);
 
@@ -63,7 +64,8 @@ export async function render(view) {
   function addForm() {
     const f = {
       name: el("input", { type: "text", placeholder: "name (e.g. vllm-box)" }),
-      kind: el("select", {}, el("option", {}, "openai"), el("option", {}, "anthropic")),
+      kind: el("select", {}, el("option", {}, "openai"), el("option", {}, "anthropic"),
+               el("option", {}, "claude-cli")),
       base_url: el("input", { type: "text", placeholder: "https://host/v1" }),
       key_env_file: el("input", { type: "text", placeholder: "~/.credentials/foo.env (optional)" }),
       key_var: el("input", { type: "text", placeholder: "KEY_VAR (optional)" }),

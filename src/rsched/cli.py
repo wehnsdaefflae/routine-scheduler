@@ -23,7 +23,10 @@ def _render_event(obj: dict) -> str | None:
     if t == "assistant_action":
         say = p.get("say", "")
         brief = {"shell": p.get("command"), "read_file": p.get("path"), "write_file": p.get("path"),
-                 "llm": (p.get("prompt") or "")[:60], "subinstruction": p.get("label") or "",
+                 "llm": (p.get("prompt") or "")[:60],
+                 "spawn": f"{p.get('label') or ''} [{p.get('workflow') or 'general-task'}]",
+                 "kill": f"#{p.get('n')}", "wait": "all" if p.get("all") else
+                 (f"#{p.get('n')}" if p.get("n") else "any"),
                  "ask_user": (p.get("question") or "")[:60],
                  "finish": f"{p.get('status')}", }.get(p.get("kind"), "")
         return f"[{obj.get('turn')}] {say}\n    → {p.get('kind')}: {brief}"
@@ -34,8 +37,12 @@ def _render_event(obj: dict) -> str | None:
             return f"    ← shell {tag}"
         if kind == "llm":
             return "    ← llm reply" + (" (error)" if p.get("error") else "")
-        if kind == "subinstruction":
-            return f"    ← subrun {p.get('label')!r}: {p.get('status')} ({p.get('turns')} turns)"
+        if kind == "spawn":
+            return (f"    ← spawn REJECTED: {p.get('reason')}" if p.get("rejected")
+                    else f"    ← sub-workflow #{p.get('n')} started")
+        if kind == "wait":
+            done = ", ".join(f"#{f['n']}:{f['status']}" for f in p.get("finished", []))
+            return f"    ← wait → {done or ('timeout' if p.get('timed_out') else 'nothing new')}"
         return f"    ← {kind}"
     if t == "question":
         return f"    ? [{p.get('mode')}] {p.get('question')}"

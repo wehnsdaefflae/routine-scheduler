@@ -151,8 +151,10 @@ def test_settings_endpoints_crud(client):
     assert raw["endpoints"]["vllm"]["base_url"] == "http://10.0.0.5:8000/v1"
     names = {e["name"] for e in c.get("/api/settings/endpoints").json()["endpoints"]}
     assert names == {"dummy", "vllm"}
-    # wrapped agent runtimes are rejected as endpoint kinds
+    # unknown/harness kinds are rejected; claude-cli (stripped transport) is allowed
+    r = c.post("/api/settings/endpoints", json={"name": "cc", "kind": "agент-sdk"})
+    assert r.status_code == 400
     r = c.post("/api/settings/endpoints", json={"name": "cc", "kind": "claude-cli"})
-    assert r.status_code == 400 and "direct model APIs" in r.json()["detail"]
+    assert r.status_code == 200
     assert c.delete("/api/settings/endpoints/vllm").status_code == 200
     assert c.delete("/api/settings/endpoints/vllm").status_code == 404
