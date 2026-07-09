@@ -72,13 +72,18 @@ To clone/pull/push your (private) library + source repos, click **Connect GitHub
 
 No container terminal, no PAT to mint. Skip only if all your repos are public and you never push.
 
-## 5. Point at your repos  (Settings → Library repositories + Source repository)
+## 5. Set up your libraries  (Settings → Library repositories)
 
-Paste each git URL and click **Test** — it runs `git ls-remote` and reports:
+Workflows, fragments, and utils each live in a git repo on your account. On a fresh deploy each row
+offers two buttons (do §4 first — both need GitHub):
 
-- **✓ reachable — N branch(es)** → good, *save*.
-- **✗ authentication required** → private repo, do §4 first (or the URL is wrong).
-- **✗ repository not found / timed out** → check the URL / network.
+- **Clone existing** — enter `owner/name` of a repo you already have → its content is pulled in.
+- **Create + seed** — enter a new name → a **private** repo is created on your account, seeded with
+  the built-in defaults, and pushed. Future generated workflows/fragments/utils auto-sync there.
+
+Once a library has content its row switches to a **remote** field with a **Test** button
+(`git ls-remote` → **✓ reachable** / **✗ authentication required** / **✗ not found**). The
+**Source repository** (self-audit's push target) works the same way.
 
 ## 6. Finish
 
