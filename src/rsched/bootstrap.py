@@ -83,8 +83,9 @@ def seed_library(name: str, home: Path) -> None:
     root = repo_root()
     home.mkdir(parents=True, exist_ok=True)
     if name == "workflows":
-        if (root / "library-seed").is_dir():
-            shutil.copytree(root / "library-seed", home, dirs_exist_ok=True)
+        src = root / "library-seed" / "workflows"      # NOT the whole seed — fragments live in their own repo
+        if src.is_dir():
+            shutil.copytree(src, home / "workflows", dirs_exist_ok=True)
     elif name == "fragments":
         for f in sorted((root / "library-seed" / "fragments").glob("*.md")):
             shutil.copy(f, home / f.name)
