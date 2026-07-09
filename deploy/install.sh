@@ -32,6 +32,8 @@ if [ -d "${REPO}/library-seed" ] && [ -n "$(find "${REPO}/library-seed" -type f 
   mkdir -p "${LIBRARY}"
   cp -r "${REPO}/library-seed/." "${LIBRARY}/"
   git -C "${LIBRARY}" init -q -b main
+  git -C "${LIBRARY}" config user.name "routine-scheduler"
+  git -C "${LIBRARY}" config user.email "noreply@routine-scheduler.local"
   git -C "${LIBRARY}" add -A
   git -C "${LIBRARY}" commit -qm "seed workflow library"
   echo "workflow library seeded: ${LIBRARY}"

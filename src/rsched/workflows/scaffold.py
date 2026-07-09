@@ -70,9 +70,9 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     if shell_allowlist:
         cfg["shell_allowlist"] = shell_allowlist
     if fs_read_roots:
-        cfg["fs_read_roots"] = fs_read_roots
+        cfg["fs_read_roots"] = [_tilde(p) for p in fs_read_roots]
     if fs_write_roots:
-        cfg["fs_write_roots"] = fs_write_roots
+        cfg["fs_write_roots"] = [_tilde(p) for p in fs_write_roots]
     (routine_dir / "routine.yaml").write_text(
         yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
@@ -80,15 +80,34 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     return routine_dir
 
 
-def _git_init(routine_dir: Path, message: str) -> None:
+def _tilde(path: str) -> str:
+    """Collapse $HOME → ~ so an absolute path never embeds the account/home-dir name."""
+    home = str(Path.home())
+    return "~" + path[len(home):] if path.startswith(home) else path
+
+
+# Neutral identity for managed repos — the user's real name never authors a commit.
+GIT_IDENTITY = (("user.name", "routine-scheduler"),
+                ("user.email", "noreply@routine-scheduler.local"))
+
+
+def init_repo(repo_dir: Path, message: str) -> None:
+    """git init a managed repo with the neutral identity + best-effort push hook, then
+    make the first commit. Shared by routine and util-library scaffolding."""
     try:
-        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=routine_dir,
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo_dir,
                        capture_output=True, timeout=30)
-        hook = routine_dir / ".git" / "hooks" / "post-commit"
+        for key, val in GIT_IDENTITY:
+            subprocess.run(["git", "config", key, val], cwd=repo_dir, capture_output=True, timeout=15)
+        hook = repo_dir / ".git" / "hooks" / "post-commit"
         hook.write_text(POST_COMMIT_HOOK, encoding="utf-8")
         os.chmod(hook, 0o755)
-        subprocess.run(["git", "add", "-A"], cwd=routine_dir, capture_output=True, timeout=30)
-        subprocess.run(["git", "commit", "-qm", message], cwd=routine_dir,
+        subprocess.run(["git", "add", "-A"], cwd=repo_dir, capture_output=True, timeout=30)
+        subprocess.run(["git", "commit", "-qm", message], cwd=repo_dir,
                        capture_output=True, timeout=30)
     except OSError:
-        pass  # a routine without git still runs; the workflow can git init later
+        pass  # a routine without git still runs; the workflow can init later
+
+
+def _git_init(routine_dir: Path, message: str) -> None:
+    init_repo(routine_dir, message)
