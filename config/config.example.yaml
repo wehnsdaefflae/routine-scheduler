@@ -38,7 +38,7 @@ endpoints:
     base_url: "https://openrouter.ai/api/v1"
     key_env_file: ~/.credentials/open_router.env  # line: OPENROUTER_KEY=sk-or-v1-...
     key_var: OPENROUTER_KEY
-    schema_mode: json_object   # provider json_schema grammars mangle optional fields (empty-pad, drop content)
+    schema_mode: json_schema   # provider json_schema grammars mangle optional fields (empty-pad, drop content)
     context_chars: 400000
   ollama-local:
     kind: openai
