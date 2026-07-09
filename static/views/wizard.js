@@ -116,11 +116,13 @@ export async function render(view, resumeWid) {
       picksRow);
     renderPicks();
 
+    // Schedule is routine CONFIG, set here (or later on the routine page) — it is never
+    // part of the instruction and never suggested by the model.
     const f = {
       slug: el("input", { type: "text", value: wr.suggested_slug || "" }),
       name: el("input", { type: "text", value: wr.suggested_name || "" }),
-      cron: el("input", { type: "text", value: wr.suggested_cron || "" }),
-      tz: el("input", { type: "text", value: wr.suggested_tz || "Europe/Berlin" }),
+      cron: el("input", { type: "text", value: "", placeholder: "e.g. 0 7 * * 1 — empty = manual runs only" }),
+      tz: el("input", { type: "text", value: "Europe/Berlin" }),
     };
     const runNow = el("input", { type: "checkbox", checked: true });
     const create = el("button", { class: "btn primary" }, "create routine");
