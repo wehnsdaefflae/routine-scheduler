@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         > /etc/apt/sources.list.d/github-cli.list \
     # Node 20 (for the claude CLI)
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs gh \
+    && apt-get install -y --no-install-recommends nodejs gh gosu \
     && npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
@@ -51,12 +51,17 @@ RUN git config --system user.name "routine-scheduler" \
     && mkdir -p /opt/rsched-venv && chown -R "${UID}:${GID}" /opt/rsched-venv
 
 WORKDIR /home/mark/git-repos/routine-scheduler
-USER mark
 
-# Pre-bake the daemon's dependencies (incl. dev → pytest, for self-audit's test gate) into the
-# image from the lockfile alone. The package itself installs editable from the bind-mounted source
-# at run time, so `uv run` still re-syncs on a self-audit dependency change, exactly like systemd did.
-COPY --chown=${UID}:${GID} pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-install-project
+# Pre-bake the daemon's dependencies (incl. dev → pytest, for self-audit's test gate) from the
+# lockfile alone (as root; chowned to mark after). The package itself installs editable from the
+# bind-mounted source at run time, so `uv run` still re-syncs on a self-audit dependency change.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project \
+    && chown -R mark:mark /opt/rsched-venv /home/mark
 
+# Entrypoint runs as ROOT to make bind mounts writable (Docker creates missing ones root-owned),
+# then drops to `mark` and starts the daemon (which generates config+token on a fresh deploy).
+COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["uv", "run", "rsched", "daemon"]

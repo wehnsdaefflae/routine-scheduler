@@ -74,6 +74,23 @@ def _remote_of(home) -> str:
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
+def _library_has_content(name: str, home) -> bool:
+    """True once a library actually holds items — the daemon auto-git-inits empty fragment/util
+    scaffolds, so a bare .git is NOT 'set up'. This drives the provision-vs-remote UI."""
+    from .. import fragments_lib, utils_lib
+    from ..workflows.library import list_workflows
+    try:
+        if name == "workflows":
+            return bool(list_workflows(home))
+        if name == "fragments":
+            return bool(fragments_lib.list_fragments(home))
+        if name == "utils":
+            return bool(utils_lib.list_utils(home))
+    except Exception:
+        return False
+    return False
+
+
 @router.get("/settings/libraries")
 def list_libraries(request: Request) -> dict:
     s = _server(request)
@@ -82,7 +99,8 @@ def list_libraries(request: Request) -> dict:
             ("utils", s.utils_home, s.utils_remote)]
     return {"libraries": [{"name": n, "home": str(h),
                            "remote": _remote_of(h) or r,
-                           "exists": (h / ".git").is_dir()} for n, h, r in libs]}
+                           "exists": (h / ".git").is_dir(),
+                           "provisioned": _library_has_content(n, h)} for n, h, r in libs]}
 
 
 class LibraryRemote(BaseModel):
@@ -115,6 +133,51 @@ def set_library_remote(request: Request, name: str, body: LibraryRemote) -> dict
         if push.returncode != 0:
             result["push_error"] = push.stderr.strip()[:200]
     return result
+
+
+# --- first-run library provisioning: clone an existing repo, or seed + create a new one ---------
+
+class Provision(BaseModel):
+    repo: str                 # "owner/name", "name", or a full URL
+    mode: str                 # "clone" (existing content) | "create" (new private repo, seeded)
+
+
+@router.post("/settings/libraries/{name}/provision")
+def provision_library(request: Request, name: str, body: Provision) -> dict:
+    from .. import bootstrap
+    s = _server(request)
+    homes = {"workflows": s.library_home, "fragments": s.fragments_home, "utils": s.utils_home}
+    if name not in homes:
+        raise HTTPException(404, f"unknown library {name!r}")
+    home = homes[name]
+    repo = body.repo.strip()
+    if not repo:
+        raise HTTPException(400, "enter a repo (owner/name or URL)")
+    if _library_has_content(name, home):
+        raise HTTPException(409, f"{name} already has content — use its remote field instead")
+    if not shutil.which("gh"):
+        raise HTTPException(400, "the `gh` CLI is not available")
+    if body.mode == "clone":
+        home.mkdir(parents=True, exist_ok=True)
+        for item in list(home.iterdir()):          # drop any empty scaffold so the clone target is clean
+            shutil.rmtree(item) if item.is_dir() else item.unlink()
+        r = subprocess.run(["gh", "repo", "clone", repo, str(home)],
+                           capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            raise HTTPException(502, f"clone failed (connect GitHub first?): {r.stderr.strip()[:300]}")
+        bootstrap.install_push_hook(home)
+    elif body.mode == "create":
+        try:
+            bootstrap.seed_library(name, home)          # copy defaults + git init + commit + hook
+        except OSError as exc:
+            raise HTTPException(500, f"could not seed {name}: {exc}") from exc
+        r = subprocess.run(["gh", "repo", "create", repo, "--private", "--source", str(home),
+                            "--remote", "origin", "--push"], capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            raise HTTPException(502, f"repo create failed (connect GitHub first?): {r.stderr.strip()[:300]}")
+    else:
+        raise HTTPException(400, "mode must be 'clone' or 'create'")
+    return {"ok": True, "mode": body.mode, "remote": _remote_of(home)}
 
 
 # --- scheduler source repository (where self-audit commits + pushes code) -------------

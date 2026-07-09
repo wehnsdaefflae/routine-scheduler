@@ -82,6 +82,30 @@ def test_tags_on_library_elements():
     assert utils["websearch"]["tags"] == ["web", "research", "search"]
 
 
+def test_bootstrap_generates_config_with_token(tmp_path, monkeypatch):
+    """Fresh deploy must never serve an open API: ensure_config writes a real token."""
+    import yaml
+    cfg = tmp_path / "config.yaml"
+    monkeypatch.setattr("rsched.bootstrap.config_file", lambda: cfg)
+    from rsched.bootstrap import ensure_config
+    assert ensure_config() is True and cfg.exists()
+    token = yaml.safe_load(cfg.read_text())["token"]
+    assert token and token not in ("", "change-me")
+    assert ensure_config() is False                 # idempotent — no-op once present
+
+
+def test_bootstrap_seeds_libraries(tmp_path):
+    """seed_library populates an empty library from the built-in defaults + git-inits it."""
+    from rsched.bootstrap import seed_library
+    wf = tmp_path / "wf"
+    seed_library("workflows", wf)
+    assert (wf / "workflows").is_dir() and list((wf / "workflows").glob("*.md"))
+    assert (wf / ".git").is_dir()
+    ut = tmp_path / "ut"
+    seed_library("utils", ut)
+    assert (ut / "utils").is_dir() and any((ut / "utils").iterdir())
+
+
 def test_util_declares_secrets(tmp_path):
     """A util's `secrets:` header line is parsed → the UI can tell users which vars to set."""
     from rsched import utils_lib

@@ -1,4 +1,5 @@
-# The image only needs pyproject.toml + uv.lock at build; everything else is bind-mounted at run.
+# The image only needs pyproject.toml + uv.lock + the entrypoint at build; the rest is bind-mounted.
 *
 !pyproject.toml
 !uv.lock
+!deploy/docker-entrypoint.sh

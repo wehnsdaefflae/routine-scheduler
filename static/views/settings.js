@@ -163,8 +163,32 @@ export async function render(view) {
   try {
     const { libraries } = await api("/api/settings/libraries");
     libBox.append(el("div", { class: "muted", style: "font-size:12.5px;margin-bottom:6px" },
-      "Each library git-syncs to its remote. Set a repo URL to back it up and share it."));
+      "Workflows, fragments, and utils each live in a git repo on your account. Not set up yet? ",
+      "Clone your existing repo, or create a new private one seeded with the built-in defaults. ",
+      "(Connect GitHub above first.)"));
     for (const lib of libraries) {
+      if (!lib.provisioned) {
+        const repoIn = el("input", { type: "text", placeholder: "owner/name or full URL", style: "flex:1" });
+        const cloneB = el("button", { class: "btn small" }, "clone existing");
+        const createB = el("button", { class: "btn small primary" }, "create + seed");
+        const doProv = async (mode) => {
+          const repo = repoIn.value.trim();
+          if (!repo) { toast("enter a repo (owner/name or URL)"); return; }
+          cloneB.disabled = createB.disabled = true;
+          try {
+            await api(`/api/settings/libraries/${lib.name}/provision`, { method: "POST", body: { repo, mode } });
+            toast(`${lib.name}: ${mode === "clone" ? "cloned" : "created + seeded"}`); location.reload();
+          } catch (err) { toast(err.message, 7000); cloneB.disabled = createB.disabled = false; }
+        };
+        cloneB.onclick = () => doProv("clone");
+        createB.onclick = () => doProv("create");
+        libBox.append(el("div", { class: "row", style: "margin:9px 0" },
+          el("span", { class: "ref-tag", style: "min-width:90px;text-align:center" }, lib.name),
+          repoIn, cloneB, createB));
+        libBox.append(el("div", { class: "muted", style: "margin:-4px 0 8px 98px;font-size:11px" },
+          "not set up yet"));
+        continue;
+      }
       const input = el("input", { type: "text", value: lib.remote || "",
         placeholder: "https://github.com/<you>/<repo>.git — empty = local only" });
       const save = el("button", { class: "btn small primary" }, "save + push");

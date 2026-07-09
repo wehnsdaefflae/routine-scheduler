@@ -159,6 +159,8 @@ def cmd_daemon(_args) -> int:
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    from .bootstrap import ensure_config
+    ensure_config()                       # fresh deploy: generate config+token so the API isn't open
     server, problems = load_server_config()
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
