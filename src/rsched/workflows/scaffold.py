@@ -55,17 +55,25 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     active = [f for f in active if f in available]
     commit = library.head_commit(server.library_home)
 
-    from .adapt import fill_params, materialize
+    from .. import frontmatter
+    from .adapt import decompose
 
     for sub in ("state", "steps", "inbox", "fragments"):
         (routine_dir / sub).mkdir(parents=True)
-    # the recipe → the routine's OWN main.md (self-contained; the library is not read at run time)
-    main_content, _ = materialize(server.library_home, workflow_slug, params=params)
-    (routine_dir / "main.md").write_text(main_content, encoding="utf-8")
-    # the recipe's step modules (params filled) → steps/
-    for mod in library.list_modules(server.library_home, workflow_slug):
-        content = library.read_module(server.library_home, workflow_slug, mod) or ""
-        (routine_dir / "steps" / f"{mod}.md").write_text(fill_params(content, params), encoding="utf-8")
+    # DECOMPOSE the single-file workflow (applied to the instruction) into the routine's OWN main.md
+    # (entry state machine) + one markdown module per step/state. Self-contained: the library is
+    # never read at run time. Degrades to the whole workflow as main.md if no endpoint is available.
+    result = decompose(server, workflow_slug, instruction, params=params)
+    main_meta = {
+        "name": name, "slug": slug,
+        "materialized_from": {"slug": workflow_slug, "commit": commit, "version": meta.get("version", 0)},
+        "modules": sorted(result["modules"]),
+        "includes": active,
+        **({"tags": list(tags)} if tags else {}),
+    }
+    (routine_dir / "main.md").write_text(frontmatter.dump(main_meta, result["main"]), encoding="utf-8")
+    for mod_name, mod_body in result["modules"].items():
+        (routine_dir / "steps" / f"{mod_name}.md").write_text(mod_body.rstrip() + "\n", encoding="utf-8")
     # active fragments → editable routine copies
     for slug_f in active:
         content = fragments_lib.read_fragment(server.fragments_home, slug_f)

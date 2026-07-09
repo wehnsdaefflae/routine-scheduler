@@ -30,30 +30,28 @@ when_to_use: w
 version: 1
 status: wild
 includes: [nope]
-modules: [ghost]
 params: []
 ---
 ## Run flow
 1. do {{undeclared}} things
 """
-    problems = lint_workflow_text(bad, filename="wrongdir/main.md", fragment_slugs=frags, module_slugs=[])
+    problems = lint_workflow_text(bad, filename="bad.md", fragment_slugs=frags)
     text = " | ".join(problems)
-    for needle in ("does not match recipe dir", "status must be", "does not resolve",
-                   "module 'ghost'", "## Completion criteria", "undeclared"):
+    for needle in ("filename does not match", "status must be", "does not resolve",
+                   "## Phases", "## Completion criteria", "undeclared"):
         assert needle in text, needle
-    assert lint_workflow_text("no frontmatter at all", filename="x/main.md", fragment_slugs=[])
+    assert lint_workflow_text("no frontmatter at all", filename="x.md", fragment_slugs=[])
 
 
-def test_materialize_carries_recipe_and_provenance():
+def test_materialize_carries_workflow_and_provenance():
     from rsched import frontmatter
 
+    # materialize = the un-decomposed baseline: the whole single-file workflow becomes main.md
     content, prov = materialize(SEED, "general-task")
-    assert prov["slug"] == "general-task" and prov["version"] == 6
+    assert prov["slug"] == "general-task" and prov["version"] == 5
     meta, body = frontmatter.parse(content)
-    assert meta["materialized_from"]["slug"] == "general-task"
-    assert meta["name"] == "General task" and meta["modules"] == ["bootstrap", "steady", "wrap-up"]
+    assert meta["materialized_from"]["slug"] == "general-task" and meta["name"] == "General task"
     assert "## Run flow" in body and "## Completion criteria" in body
-    # fragments and step modules are NOT inlined — they stay as separate files copied by scaffold
     assert "## Standard practices" not in content and "### fragment:" not in content
     assert lint_materialized_text(content) == []
 
@@ -117,9 +115,9 @@ def test_materialize_missing_param(tmp_path):
     home = tmp_path
     shutil.copytree(SEED / "workflows", home / "workflows")
     shutil.copytree(SEED / "fragments", home / "fragments")
-    main = home / "workflows" / "general-task" / "main.md"          # a recipe is a dir now
-    text = main.read_text().replace("params: []", "params: [deliverable]")
-    main.write_text(text.replace("## Run flow", "## Run flow\nDeliver {{deliverable}}."))
+    wf = home / "workflows" / "general-task.md"                     # a workflow is a single file
+    text = wf.read_text().replace("params: []", "params: [deliverable]")
+    wf.write_text(text.replace("## Run flow", "## Run flow\nDeliver {{deliverable}}."))
     with pytest.raises(KeyError):
         materialize(home, "general-task")
     content, _ = materialize(home, "general-task", params={"deliverable": "a weekly report"})
@@ -140,8 +138,9 @@ def test_scaffold_creates_valid_routine(tmp_path):
     assert cfg.cron == "0 8 * * 1" and cfg.workflow_slug == "general-task"
     assert (d / ".git").is_dir()
     assert (d / ".git" / "hooks" / "post-commit").stat().st_mode & 0o111
-    # the recipe is MATERIALIZED into the routine (main.md + step modules) — self-contained
-    assert (d / "main.md").exists() and (d / "steps" / "steady.md").exists()
+    # the workflow is materialized into the routine's OWN main.md — self-contained (no library
+    # at run time). Without a generator endpoint, decompose falls back to the whole workflow.
+    assert (d / "main.md").exists()
     raw = yaml.safe_load((d / "routine.yaml").read_text())
     assert raw["budgets"]["max_turns"] == 60 and "self" not in raw
     # active fragments = the workflow's includes, materialized as editable routine files
@@ -163,11 +162,11 @@ def test_scaffold_writes_step_modules(tmp_path):
     server.routines_home.mkdir()
     server.library_home = SEED
     server.fragments_home = SEED / "fragments"
+    # the wizard passes extra step modules; they land in the routine's steps/ (the LLM-decomposed
+    # modules would too, but there's no generator endpoint in this test)
     d = scaffold(server, slug="split-routine", name="Split",
                  instruction="# Entry\n\nSteps in steps/.", workflow_slug="general-task",
                  playbook={"discover": "# Discover step\n\nHow to discover.",
                            "compose.md": "# Compose step\n\nHow to compose."})
-    # the recipe's own modules + the wizard's extra step files all land in steps/
-    assert (d / "steps" / "steady.md").exists() and (d / "steps" / "bootstrap.md").exists()
     assert (d / "steps" / "discover.md").read_text().startswith("# Discover step")
     assert (d / "steps" / "compose.md").read_text().startswith("# Compose step")

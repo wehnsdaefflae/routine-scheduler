@@ -131,18 +131,11 @@ class SubrunManager:
         a real on-disk routine while it runs. Returns (effective slug, note). Fragments stay OFF —
         a sub-routine reports through its finish summary; it keeps no LEDGER/audit of its own."""
         try:
-            from ..workflows import library
             from ..workflows.adapt import materialize
 
-            home = self.parent.ctx.server.library_home
-            main_content, _ = materialize(home, slug)
+            # a sub-routine is not decomposed (no per-spawn LLM) — the whole workflow is its main.md
+            main_content, _ = materialize(self.parent.ctx.server.library_home, slug)
             (sub_dir / "main.md").write_text(main_content, encoding="utf-8")
-            mods = library.list_modules(home, slug)
-            if mods:
-                (sub_dir / "steps").mkdir(exist_ok=True)
-                for mod in mods:
-                    (sub_dir / "steps" / f"{mod}.md").write_text(
-                        library.read_module(home, slug, mod) or "", encoding="utf-8")
             (sub_dir / "instruction.md").write_text(prompt, encoding="utf-8")
             return slug, ""
         except Exception as exc:  # missing library/recipe/params → degrade, don't fail

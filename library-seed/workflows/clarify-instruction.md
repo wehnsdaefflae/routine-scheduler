@@ -9,7 +9,6 @@ when_to_use: >
 version: 3
 status: stable
 tags: [meta, wizard]
-modules: []
 params: []
 default_budgets: {max_turns: 25, max_wall_clock_min: 30}
 requires: {schema_output: false}

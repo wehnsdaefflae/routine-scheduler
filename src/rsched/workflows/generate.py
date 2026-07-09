@@ -11,29 +11,26 @@ from ..ids import slugify
 from .library import git_commit, list_fragments, read_workflow, workflows_dir
 from .lint import lint_workflow_text
 
-FORMAT_SPEC = """A recipe is a directory workflows/<slug>/ whose entry file is main.md (markdown
-with YAML frontmatter). Draft ONLY main.md as a single-file recipe (a maintainer can later split
-steps into steps/<name>.md and list them in `modules`):
+FORMAT_SPEC = """A library workflow file is markdown with YAML frontmatter:
 ---
 name: <Human name>
-slug: <kebab-case, the recipe dir name>
-description: <one line: what this recipe does>
+slug: <kebab-case, becomes the filename>
+description: <one line: what this workflow does>
 when_to_use: >
-  <2-4 sentences a matcher uses to pair instructions with this recipe>
+  <2-4 sentences a matcher uses to pair instructions with this workflow>
 version: 1
 status: draft
-tags: [<a few kebab-case tags>]
-params: []            # optional {{placeholder}} names filled at generation
-modules: []           # single-file recipe; step modules can be added later under steps/
+params: []            # optional {{placeholder}} names filled at adaptation
 default_budgets: {max_turns: 60, max_wall_clock_min: 45}
 requires: {schema_output: false}
-includes: [ask-policy, communication, global-utils, ledger-discipline, self-audit, improvement, fresh-eyes, hygiene]
+includes: [ask-policy, ledger-discipline, self-audit, improvement, fresh-eyes, hygiene]
 ---
-Body sections, both REQUIRED:
-## Run flow — numbered natural-language steps for ONE run (the orchestrator LLM follows them
-literally; tools are `gu` utils via the util action, read_file/write_file, llm subcalls, and
-spawn/subruns/kill/wait for parallel sub-routines, ask_user, finish). If the recipe has states,
-describe them and route via state/phase.json.
+Body sections, all three REQUIRED:
+## Run flow — numbered natural-language steps for ONE run (the orchestrator LLM follows
+them literally; tools are `gu` utils via shell, read_file/write_file, llm subcalls,
+spawn/subruns/kill/wait for parallel library sub-workflows, ask_user, finish).
+## Phases — how the routine progresses across runs toward final delivery (persist the
+current phase in state/phase.json), or "- **steady** — no cross-run milestones."
 ## Completion criteria — what "done for this run" and "done overall" mean."""
 
 
@@ -61,16 +58,15 @@ def generate(server: ServerConfig, instruction: str, hint: str = "") -> tuple[st
 
     for attempt in range(2):
         slug = _slug_of(draft) or slugify(instruction[:40])
-        problems = lint_workflow_text(draft, filename=f"{slug}/main.md", fragment_slugs=frags, module_slugs=[])
+        problems = lint_workflow_text(draft, filename=f"{slug}.md", fragment_slugs=frags)
         if not problems:
-            rdir = workflows_dir(home) / slug
-            if rdir.exists():
+            path = workflows_dir(home) / f"{slug}.md"
+            if path.exists():
                 slug = f"{slug}-2"
                 draft = draft.replace(f"slug: {_slug_of(draft)}", f"slug: {slug}", 1)
-                rdir = workflows_dir(home) / slug
-            rdir.mkdir(parents=True, exist_ok=True)
-            (rdir / "main.md").write_text(draft.rstrip() + "\n", encoding="utf-8")
-            git_commit(home, f"draft recipe {slug} (generated on demand)")
+                path = workflows_dir(home) / f"{slug}.md"
+            path.write_text(draft.rstrip() + "\n", encoding="utf-8")
+            git_commit(home, f"draft workflow {slug} (generated on demand)")
             return slug, ""
         if attempt == 0:
             fix = endpoint.complete([{"role": "user", "content":

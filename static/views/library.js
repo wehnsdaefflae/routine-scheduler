@@ -71,16 +71,8 @@ export async function render(view, sub) {
 
   async function openWorkflow(slug) {
     const d = await api(`/api/workflows/${slug}`);
-    showEditor(`recipe: ${slug} · main.md`, d.content, d.log, async (content) =>
+    showEditor(`workflow: ${slug}`, d.content, d.log, async (content) =>
       api(`/api/workflows/${slug}`, { method: "PUT", body: { content } }));
-    if (d.modules?.length) editor.append(el("div", { class: "row mt" },
-      el("span", { class: "muted", style: "font-family:var(--mono);font-size:12px" }, "step modules:"),
-      ...d.modules.map((m) => el("button", { class: "btn small", onclick: () => openModule(slug, m) }, m))));
-  }
-  async function openModule(slug, module) {
-    const d = await api(`/api/workflows/${slug}?module=${encodeURIComponent(module)}`);
-    showEditor(`recipe: ${slug} · steps/${module}.md`, d.content, d.log, async (content) =>
-      api(`/api/workflows/${slug}`, { method: "PUT", body: { content, module } }));
   }
   async function openFragment(slug) {
     const d = await api(`/api/library/fragments/${slug}`);
