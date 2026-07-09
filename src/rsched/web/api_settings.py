@@ -112,6 +112,48 @@ def set_library_remote(request: Request, name: str, body: LibraryRemote) -> dict
     return result
 
 
+# --- scheduler source repository (where self-audit commits + pushes code) -------------
+
+@router.get("/settings/source")
+def get_source_repo(request: Request) -> dict:
+    s = _server(request)
+    home = s.source_repo
+    is_git = (home / ".git").is_dir()
+    branch = ""
+    if is_git:
+        r = subprocess.run(["git", "-C", str(home), "rev-parse", "--abbrev-ref", "HEAD"],
+                           capture_output=True, text=True)
+        branch = r.stdout.strip() if r.returncode == 0 else ""
+    return {"home": str(home), "remote": _remote_of(home) or s.source_remote,
+            "exists": is_git, "branch": branch or "main"}
+
+
+@router.put("/settings/source")
+def set_source_remote(request: Request, body: LibraryRemote) -> dict:
+    s = _server(request)
+    home = s.source_repo
+    # persist into config.yaml
+    path = _config_path(request)
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw["source_remote"] = body.remote
+    path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    s.source_remote = body.remote
+    # point origin at it — SAFE: set-url (add if absent), never remove; this is the live code repo
+    result = {"ok": True, "pushed": False}
+    if body.remote and (home / ".git").is_dir():
+        set_url = subprocess.run(["git", "-C", str(home), "remote", "set-url", "origin", body.remote],
+                                 capture_output=True, text=True)
+        if set_url.returncode != 0:                     # no origin yet → add it
+            subprocess.run(["git", "-C", str(home), "remote", "add", "origin", body.remote],
+                           capture_output=True)
+        push = subprocess.run(["git", "-C", str(home), "push", "-u", "origin", "HEAD"],
+                              capture_output=True, text=True, timeout=60)
+        result["pushed"] = push.returncode == 0
+        if push.returncode != 0:
+            result["push_error"] = push.stderr.strip()[:200]
+    return result
+
+
 class EndpointBody(BaseModel):
     name: str
     kind: str

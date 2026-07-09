@@ -29,6 +29,32 @@ export async function render(view) {
     }
   } catch (err) { libBox.append(el("div", { class: "muted" }, err.message)); }
 
+  // -- scheduler source repository (self-audit's push target) ---------------------
+  view.append(el("h2", {}, "Source repository"));
+  const srcBox = el("div", { class: "panel" });
+  view.append(srcBox);
+  try {
+    const src = await api("/api/settings/source");
+    srcBox.append(el("div", { class: "muted", style: "font-size:12.5px;margin-bottom:6px" },
+      "The scheduler's own code repo — where the self-audit routine commits and pushes its changes. ",
+      "Set the remote to the fork those autonomous pushes should target."));
+    const input = el("input", { type: "text", value: src.remote || "",
+      placeholder: "https://github.com/<you>/routine-scheduler.git — empty = local only" });
+    const save = el("button", { class: "btn small primary" }, "save + push");
+    save.onclick = async () => {
+      try {
+        const r = await api("/api/settings/source", { method: "PUT", body: { remote: input.value.trim() } });
+        toast(r.pushed ? "source: saved + pushed"
+          : r.push_error ? `source: saved (push failed: ${r.push_error})` : "source: saved");
+      } catch (err) { toast(err.message, 5000); }
+    };
+    srcBox.append(el("div", { class: "row", style: "margin:9px 0" },
+      el("span", { class: "ref-tag", style: "min-width:90px;text-align:center" }, src.branch),
+      input, save));
+    srcBox.append(el("div", { class: "muted", style: "font-family:var(--mono);font-size:11px" },
+      src.home + (src.exists ? "" : "  ⚠ not a git repo")));
+  } catch (err) { srcBox.append(el("div", { class: "muted" }, err.message)); }
+
   // -- endpoints ------------------------------------------------------------------
   view.append(el("h2", {}, "LLM endpoints"),
     el("div", { class: "muted", style: "margin-bottom:8px;font-size:12.5px" },

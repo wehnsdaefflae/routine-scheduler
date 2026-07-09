@@ -213,3 +213,41 @@ def test_settings_endpoints_crud(client):
     assert r.status_code == 200
     assert c.delete("/api/settings/endpoints/vllm").status_code == 200
     assert c.delete("/api/settings/endpoints/vllm").status_code == 404
+
+
+def test_source_repo_settings(tmp_path):
+    """The self-audit push target: GET reports the scheduler's own repo; PUT points origin
+    at a fork + pushes. Uses a throwaway repo + local bare remote — never the real tree."""
+    import subprocess
+
+    def git(d, *a):
+        subprocess.run(["git", "-C", str(d), *a], check=True, capture_output=True)
+
+    src = tmp_path / "src_repo"
+    src.mkdir()
+    git(src, "init", "-q", "-b", "main")
+    git(src, "config", "user.email", "t@t")
+    git(src, "config", "user.name", "t")
+    (src / "f.txt").write_text("x")
+    git(src, "add", "-A")
+    git(src, "commit", "-qm", "init")
+    bare = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+    (tmp_path / "routines").mkdir()
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.safe_dump({
+        "token": TOKEN, "routines_home": str(tmp_path / "routines"), "source_repo": str(src)}))
+    server, problems = load_server_config(cfg_path)
+    assert not problems and server.source_repo == src
+    app = create_app(server, with_scheduler=False)
+    with TestClient(app) as c:
+        c.headers["Authorization"] = f"Bearer {TOKEN}"
+        g = c.get("/api/settings/source").json()
+        assert g["home"] == str(src) and g["exists"] is True
+        assert g["branch"] == "main" and g["remote"] == ""        # no origin yet
+        # PUT points origin at the fork, pushes, and persists the choice to config.yaml
+        r = c.put("/api/settings/source", json={"remote": str(bare)}).json()
+        assert r["ok"] and r["pushed"] is True, r
+        assert yaml.safe_load(cfg_path.read_text())["source_remote"] == str(bare)
+        assert c.get("/api/settings/source").json()["remote"] == str(bare)   # now visible as origin

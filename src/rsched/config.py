@@ -81,6 +81,8 @@ class ServerConfig:
     fragments_remote: str = ""          # optional: clone-from / sync-to for the fragment library
     utils_home: Path = field(default_factory=lambda: expand("~/.local/share/global-utils"))
     utils_remote: str = ""              # optional: clone-from / sync-to for the util library
+    source_repo: Path = field(default_factory=lambda: Path(__file__).resolve().parents[2])
+    source_remote: str = ""             # optional: push target for self-audit's autonomous code commits
     confirm_util_changes: bool = True   # ask the user before a util is created/revised (req 7)
     max_concurrent_runs: int = 2
     registry_rescan_s: int = 30
@@ -121,9 +123,12 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
         cfg.utils_home = expand(raw["utils_home"])
     if "fragments_home" in raw:
         cfg.fragments_home = expand(raw["fragments_home"])
+    if "source_repo" in raw:
+        cfg.source_repo = expand(raw["source_repo"])
     cfg.library_remote = str(raw.get("library_remote", "") or "")
     cfg.fragments_remote = str(raw.get("fragments_remote", "") or "")
     cfg.utils_remote = str(raw.get("utils_remote", "") or "")
+    cfg.source_remote = str(raw.get("source_remote", "") or "")
     cfg.confirm_util_changes = bool(raw.get("confirm_util_changes", cfg.confirm_util_changes))
     cfg.max_concurrent_runs = int(raw.get("max_concurrent_runs", cfg.max_concurrent_runs))
     cfg.registry_rescan_s = int(raw.get("registry_rescan_s", cfg.registry_rescan_s))
