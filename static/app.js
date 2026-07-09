@@ -72,7 +72,20 @@ function globalStream() {
 }
 
 window.addEventListener("hashchange", route);
-route();
+
+// First launch: send the user to setup (Settings) until they finish it. The redirect fires a
+// hashchange → route(), so we don't call route() again in that branch.
+(async function boot() {
+  try {
+    const s = await api("/api/status");
+    if (s.needs_setup && !location.hash.startsWith("#/settings")) {
+      toast("Welcome! Finish setup: add a model provider, connect GitHub, and point at your repos", 6000);
+      location.hash = "#/settings";
+      return;
+    }
+  } catch {}
+  route();
+})();
 refreshBadges();
 globalStream();
 setInterval(refreshBadges, 30000);

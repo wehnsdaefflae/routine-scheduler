@@ -27,6 +27,24 @@ export async function render(view) {
     return { btn, result };
   }
 
+  // -- first-run setup banner -----------------------------------------------------
+  const st = await api("/api/status").catch(() => ({}));
+  if (st.needs_setup) {
+    const banner = el("div", { class: "panel", style: "border-color:var(--warn);margin-bottom:14px" });
+    const done = el("button", { class: "btn small primary" }, "finish setup");
+    done.onclick = async () => {
+      try { await api("/api/setup/complete", { method: "POST" }); toast("setup complete — no more first-run redirect"); banner.remove(); }
+      catch (err) { toast(err.message, 5000); }
+    };
+    banner.append(
+      el("strong", {}, "👋 First-run setup"),
+      el("div", { class: "muted mt", style: "font-size:12.5px" },
+        "Add a model provider (LLM endpoints, below), connect GitHub, and point at your repos — ",
+        "Test each remote. When you're set:"),
+      el("div", { class: "row mt" }, done));
+    view.append(banner);
+  }
+
   // -- library repositories -------------------------------------------------------
   view.append(el("h2", {}, "Library repositories"));
   const libBox = el("div", { class: "panel" });

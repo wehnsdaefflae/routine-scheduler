@@ -82,12 +82,27 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.include_router(api_workflows.router, prefix="/api", dependencies=deps)
     app.include_router(api_wizard.router, prefix="/api", dependencies=deps)
 
+    def _setup_marker():
+        return (server.source.parent / ".setup-complete") if server.source else None
+
     @app.get("/api/status", dependencies=deps)
     def status() -> dict:
         from .. import __version__
         from ..schedule import server_tz
 
-        return {"version": __version__, "server_tz": server_tz(), **scheduler.snapshot()}
+        marker = _setup_marker()
+        needs_setup = not (marker and marker.exists())
+        return {"version": __version__, "server_tz": server_tz(),
+                "needs_setup": needs_setup, **scheduler.snapshot()}
+
+    @app.post("/api/setup/complete", dependencies=deps)
+    def setup_complete() -> dict:
+        """The first-run setup flow calls this once the user has configured (or chosen to skip)
+        providers + repos — it stops the first-launch redirect to Settings."""
+        marker = _setup_marker()
+        if marker:
+            marker.write_text("done\n", encoding="utf-8")
+        return {"ok": True}
 
     @app.get("/api/events", dependencies=deps)
     async def global_events():

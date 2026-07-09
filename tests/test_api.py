@@ -215,6 +215,15 @@ def test_settings_endpoints_crud(client):
     assert c.delete("/api/settings/endpoints/vllm").status_code == 404
 
 
+def test_first_run_setup_flag(client):
+    """Fresh install → needs_setup true (drives the redirect); completing it writes the marker."""
+    c, tmp = client
+    assert c.get("/api/status").json()["needs_setup"] is True
+    assert c.post("/api/setup/complete").json()["ok"] is True
+    assert (tmp / ".setup-complete").exists()
+    assert c.get("/api/status").json()["needs_setup"] is False
+
+
 def test_test_remote_endpoint(client):
     """The Settings 'Test' button: reachable+authorized remote → ok; junk → surfaced error."""
     import subprocess
