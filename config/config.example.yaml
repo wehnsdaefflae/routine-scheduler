@@ -13,7 +13,7 @@ library_remote: ""     # e.g. https://github.com/<you>/routine-workflow-library.
 
 # Global-util library — the ONLY way routines run code (there is no shell). Starts empty-
 # capable; routines generate utils on demand. Set utils_remote to bootstrap from / sync to a repo.
-utils_home: ~/.local/share/routine-utils
+utils_home: ~/.local/share/global-utils
 utils_remote: ""       # e.g. https://github.com/<you>/routine-utils.git
 confirm_util_changes: true   # ask the user to approve before a util is created/revised (req 7)
 

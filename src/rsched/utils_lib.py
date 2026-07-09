@@ -124,12 +124,15 @@ def _configure_repo(home: Path) -> None:
 
 
 def _install_dispatcher(home: Path) -> None:
+    """Install our minimal `gu` dispatcher + push hook — but NEVER overwrite an existing one.
+    When utils_home points at a pre-existing library (e.g. the user's ~/.local/share/global-utils
+    with its own richer `gu`), we leave its dispatcher and hook untouched and just use them."""
     gu = home / "gu"
-    if gu.read_text(encoding="utf-8") != DISPATCHER if gu.exists() else True:
+    if not gu.exists():
         gu.write_text(DISPATCHER, encoding="utf-8")
-    os.chmod(gu, 0o755)
+        os.chmod(gu, 0o755)
     hook = home / ".git" / "hooks" / "post-commit"
-    if (home / ".git").is_dir():
+    if (home / ".git").is_dir() and not hook.exists():
         hook.write_text(POST_COMMIT_HOOK, encoding="utf-8")
         os.chmod(hook, 0o755)
 
@@ -172,8 +175,13 @@ def catalog_text(home: Path) -> str:
     if not utils:
         return ("(no global utils yet — create one with the write_util action when you need "
                 "to run code; there is NO shell action)")
-    lines = [f"- {u['name']} — {u['summary']}" + (f"\n    {u['usage']}" if u["usage"] else "")
-             for u in utils]
+    # summary is the util's first docstring line, already in '<name> — <summary>' form.
+    lines = []
+    for u in utils:
+        head = u["summary"] or u["name"]
+        if not head.startswith(u["name"]):
+            head = f"{u['name']} — {head}"
+        lines.append(f"- {head}" + (f"\n    {u['usage']}" if u["usage"] else ""))
     return "\n".join(lines)
 
 

@@ -8,7 +8,7 @@ CONFIG_DIR="${HOME}/.config/routine-scheduler"
 CONFIG="${CONFIG_DIR}/config.yaml"
 ROUTINES="${HOME}/routines"
 LIBRARY="${HOME}/.local/share/workflow-library"
-UTILS="${HOME}/.local/share/routine-utils"
+UTILS="${HOME}/.local/share/global-utils"
 UNIT_DIR="${HOME}/.config/systemd/user"
 
 echo "== rsched install (${REPO})"

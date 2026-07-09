@@ -23,6 +23,13 @@ export function fmtTs(ts) {
   return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : (ts || "");
 }
 
+export function fmtTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
 export function relTime(iso) {
   if (!iso) return "";
   const diff = (new Date(iso) - Date.now()) / 1000;

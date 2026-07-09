@@ -16,7 +16,7 @@ export async function render(view, resumeWid) {
   function stageDraft() {
     stage.innerHTML = "";
     const ta = el("textarea", { class: "code", style: "min-height:160px",
-      placeholder: "Describe what the routine should do, in your own words…\n\ne.g. Every Monday collect new AI-agent papers from arxiv and keep a reading list with one-line takes." });
+      placeholder: "Describe the TASK the routine should do, in your own words — not when it runs.\n\ne.g. Collect new AI-agent papers from arxiv and keep a reading list with one-line takes.\n\n(You'll set the schedule, workflow, and standards separately in the next steps.)" });
     const go = el("button", { class: "btn primary" }, "start clarification");
     go.onclick = async () => {
       if (!ta.value.trim()) return;

@@ -11,7 +11,7 @@ status: stable
 params: []
 default_budgets: {max_turns: 60, max_wall_clock_min: 45}
 requires: {schema_output: false}
-includes: [ask-policy, ledger-discipline, self-audit, improvement, fresh-eyes, hygiene]
+includes: [ask-policy, global-utils, ledger-discipline, self-audit, improvement, fresh-eyes, hygiene]
 ---
 
 ## Run flow

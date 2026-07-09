@@ -1,7 +1,7 @@
 // Shared transcript event renderer — one function per event type, keyed off the
 // transcript JSONL contract (assistant_action/observation pairs render as one turn box).
 
-import { el, fmtTokens } from "/static/util.js";
+import { el, fmtTime, fmtTokens } from "/static/util.js";
 
 const BRIEF_FIELD = { util: "name", write_util: "name", read_file: "path", write_file: "path",
                       llm: "prompt", spawn: "label", kill: "n", wait: "n",
@@ -16,7 +16,10 @@ export function createTranscript(container) {
     const a = ev.payload;
     const brief = String(a[BRIEF_FIELD[a.kind]] ?? "").slice(0, 200);
     const turn = el("div", { class: "turn" },
-      el("div", { class: "say" }, el("span", { class: "n" }, `turn ${ev.turn ?? "?"}`), a.say || ""),
+      el("div", { class: "say" },
+        el("span", { class: "n" }, `turn ${ev.turn ?? "?"}`),
+        ev.ts ? el("span", { class: "ts", title: ev.ts }, fmtTime(ev.ts)) : null,
+        el("span", { class: "saytext" }, a.say || "")),
       el("div", { class: "act" },
         el("span", {}, a.kind),
         el("span", { class: "muted" }, brief),
@@ -26,6 +29,19 @@ export function createTranscript(container) {
     root.append(turn);
     openTurn = a.kind === "finish" ? null : turn;
     return turn;
+  }
+
+  // util + subrun results can be long — collapse them by default (expandable).
+  const COLLAPSED_KINDS = new Set(["util", "subinstruction", "wait"]);
+
+  function obsBody(kind, text) {
+    if (COLLAPSED_KINDS.has(kind)) {
+      const firstLine = (text.split("\n")[0] || "").slice(0, 90);
+      return el("details", { class: "obs-collapse" },
+        el("summary", {}, `result — ${firstLine}${text.length > firstLine.length ? " …" : ""}`),
+        el("div", { class: "obs" }, text));
+    }
+    return el("div", { class: "obs" }, text);
   }
 
   function addObservation(ev) {
@@ -65,7 +81,7 @@ export function createTranscript(container) {
     } else {
       text = JSON.stringify(o, null, 1);
     }
-    const obs = el("div", { class: "obs" }, text);
+    const obs = obsBody(o.kind, text);
     if (openTurn) { openTurn.append(obs); openTurn = null; }
     else root.append(el("div", { class: "turn" }, obs));
   }
@@ -83,7 +99,10 @@ export function createTranscript(container) {
     subrun_start: (ev) => el("div", { class: "ev subrun" },
       `↳ subrun ${ev.payload.n} "${ev.payload.label}" started (depth ${ev.payload.depth})`),
     subrun_end: (ev) => el("div", { class: "ev subrun" },
-      `↰ subrun ${ev.payload.n} "${ev.payload.label}" ${ev.payload.status} — ${ev.payload.turns} turns, ${fmtTokens(ev.payload.usage)}`),
+      el("details", { class: "obs-collapse" },
+        el("summary", {},
+          `↰ subrun ${ev.payload.n} "${ev.payload.label}" ${ev.payload.status} — ${ev.payload.turns} turns, ${fmtTokens(ev.payload.usage)}`),
+        el("div", { class: "obs" }, ev.payload.summary || "(no summary)"))),
     header: (ev) => el("div", { class: "ev system" },
       `run ${ev.run_id} · ${ev.orchestrator?.endpoint}:${ev.orchestrator?.model} · workflow ${ev.workflow?.slug || "?"}`),
   };

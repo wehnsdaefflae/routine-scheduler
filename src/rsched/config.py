@@ -64,7 +64,7 @@ class ServerConfig:
     routines_home: Path = field(default_factory=lambda: expand("~/routines"))
     library_home: Path = field(default_factory=lambda: expand("~/.local/share/workflow-library"))
     library_remote: str = ""            # optional: clone-from / sync-to for the workflow library
-    utils_home: Path = field(default_factory=lambda: expand("~/.local/share/routine-utils"))
+    utils_home: Path = field(default_factory=lambda: expand("~/.local/share/global-utils"))
     utils_remote: str = ""              # optional: clone-from / sync-to for the util library
     confirm_util_changes: bool = True   # ask the user before a util is created/revised (req 7)
     max_concurrent_runs: int = 2
