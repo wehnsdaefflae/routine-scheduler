@@ -11,6 +11,10 @@ routines_home: ~/routines
 library_home: ~/.local/share/workflow-library
 library_remote: ""     # e.g. https://github.com/<you>/routine-workflow-library.git
 
+# Fragment library (reusable routine standards: self-management, tool use). Toggled per routine.
+fragments_home: ~/.local/share/routine-fragments
+fragments_remote: ""   # e.g. https://github.com/<you>/routine-fragments-lib.git
+
 # Global-util library — the ONLY way routines run code (there is no shell). Starts empty-
 # capable; routines generate utils on demand. Set utils_remote to bootstrap from / sync to a repo.
 utils_home: ~/.local/share/global-utils

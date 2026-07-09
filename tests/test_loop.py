@@ -20,6 +20,7 @@ def _server(routine_dir) -> ServerConfig:
     # util actions on a missing name return a "missing" observation. confirm off so
     # write_util tests don't block on approval.
     s.library_home = routine_dir.parent.parent / "no-library"
+    s.fragments_home = routine_dir.parent.parent / "no-fragments"
     s.utils_home = routine_dir.parent.parent / "utils-home"
     s.confirm_util_changes = False
     return s

@@ -8,6 +8,7 @@ CONFIG_DIR="${HOME}/.config/routine-scheduler"
 CONFIG="${CONFIG_DIR}/config.yaml"
 ROUTINES="${HOME}/routines"
 LIBRARY="${HOME}/.local/share/workflow-library"
+FRAGMENTS="${HOME}/.local/share/routine-fragments"
 UTILS="${HOME}/.local/share/global-utils"
 UNIT_DIR="${HOME}/.config/systemd/user"
 
@@ -41,6 +42,20 @@ if [ -d "${REPO}/library-seed" ] && [ -n "$(find "${REPO}/library-seed" -type f 
 fi
 if [ -d "${LIBRARY}/.git" ]; then
   install -m 0755 "${REPO}/deploy/post-commit" "${LIBRARY}/.git/hooks/post-commit"
+fi
+
+# Fragment library — reusable routine standards, seeded from library-seed/fragments.
+if [ ! -d "${FRAGMENTS}" ]; then
+  mkdir -p "${FRAGMENTS}"
+  cp "${REPO}/library-seed/fragments/"*.md "${FRAGMENTS}/" 2>/dev/null || true
+  git -C "${FRAGMENTS}" init -q -b main
+  git -C "${FRAGMENTS}" config user.name "routine-scheduler"
+  git -C "${FRAGMENTS}" config user.email "noreply@routine-scheduler.local"
+  git -C "${FRAGMENTS}" add -A && git -C "${FRAGMENTS}" commit -qm "seed fragment library" 2>/dev/null || true
+  echo "fragment library seeded: ${FRAGMENTS}"
+fi
+if [ -d "${FRAGMENTS}/.git" ]; then
+  install -m 0755 "${REPO}/deploy/post-commit" "${FRAGMENTS}/.git/hooks/post-commit"
 fi
 
 # Global-util library — the scheduler's own, separate from any personal ~/.local/share/global-utils.

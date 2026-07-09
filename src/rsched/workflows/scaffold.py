@@ -1,5 +1,5 @@
-"""Create a routine directory: materialized workflow, routine.yaml, seeds, its own git repo
-with the best-effort auto-push hook."""
+"""Create a routine directory: workflow REFERENCE (edited in the library), editable fragment
+copies, playbook step files, instruction; its own git repo with the auto-push hook."""
 
 from __future__ import annotations
 
@@ -9,9 +9,8 @@ from pathlib import Path
 
 import yaml
 
-from ..config import DEFAULT_BUDGETS, DEFAULT_SELF, ServerConfig
+from ..config import DEFAULT_BUDGETS, ServerConfig
 from ..ids import is_slug
-from .adapt import materialize
 
 GITIGNORE = "runs/\ninbox/\nquestions/\n"
 
@@ -30,33 +29,45 @@ exit 0
 def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
              workflow_slug: str, cron: str = "", tz: str = "Europe/Berlin",
              params: dict | None = None, budgets: dict | None = None,
-             self_flags: dict | None = None, shell_allowlist: list[str] | None = None,
+             fragments: list[str] | None = None, shell_allowlist: list[str] | None = None,
              fs_read_roots: list[str] | None = None,
              fs_write_roots: list[str] | None = None,
              playbook: dict[str, str] | None = None, enabled: bool = True) -> Path:
-    """Create ~/routines/<slug>. Raises ValueError on a bad/taken slug, KeyError on
-    missing workflow params."""
+    """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
+    the routine gets editable fragment copies + playbook step files + instruction."""
+    from .. import fragments_lib
+    from . import library
+
     if not is_slug(slug):
         raise ValueError(f"slug {slug!r} is not kebab-case")
     routine_dir = server.routines_home / slug
     if routine_dir.exists():
         raise ValueError(f"routine dir {routine_dir} already exists")
 
-    self_flags = {**DEFAULT_SELF, **(self_flags or {})}
-    content, provenance = materialize(server.library_home, workflow_slug,
-                                      params=params, self_flags=self_flags)
+    # active fragments default to the workflow's `includes`; validate against the fragment library
+    try:
+        meta, _, _ = library.read_workflow(server.library_home, workflow_slug)
+    except FileNotFoundError as exc:
+        raise ValueError(f"workflow {workflow_slug!r} not found in the library") from exc
+    available = set(fragments_lib.slugs(server.fragments_home))
+    active = fragments if fragments is not None else (meta.get("includes") or [])
+    active = [f for f in active if f in available]
+    commit = library.head_commit(server.library_home)
 
-    for sub in ("state", "playbook", "inbox"):
+    for sub in ("state", "playbook", "inbox", "fragments"):
         (routine_dir / sub).mkdir(parents=True)
-    # Purpose-specific step files (the routine's on-demand playbook), if the wizard split them out.
+    # active fragments → editable routine copies
+    for slug_f in active:
+        content = fragments_lib.read_fragment(server.fragments_home, slug_f)
+        if content:
+            (routine_dir / "fragments" / f"{slug_f}.md").write_text(content, encoding="utf-8")
+    # purpose-specific step files (the routine's on-demand playbook), from the wizard
     for fname, fcontent in (playbook or {}).items():
         safe = fname if fname.endswith(".md") else f"{fname}.md"
         (routine_dir / "playbook" / Path(safe).name).write_text(fcontent, encoding="utf-8")
-    (routine_dir / "workflow.md").write_text(content, encoding="utf-8")
     (routine_dir / "instruction.md").write_text(instruction.rstrip() + "\n", encoding="utf-8")
     (routine_dir / "LEDGER.md").write_text(
-        f"# LEDGER — {name}\n\n### seed — routine scaffolded from workflow "
-        f"'{workflow_slug}' v{provenance.get('version')} @ {provenance.get('commit')}\n",
+        f"# LEDGER — {name}\n\n### seed — scaffolded from workflow '{workflow_slug}' @ {commit}\n",
         encoding="utf-8")
     (routine_dir / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
 
@@ -65,10 +76,9 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
         "slug": slug,
         "enabled": enabled,
         "schedule": {"cron": cron, "tz": tz, "catchup": "skip"},
-        "workflow": {"library_slug": workflow_slug,
-                     "library_commit": provenance.get("commit", "")},
+        "workflow": {"library_slug": workflow_slug, "library_commit": commit},
+        "fragments": active,
         "budgets": {**DEFAULT_BUDGETS, **(budgets or {})},
-        "self": self_flags,
         "notifications": "ui",
         "retention": {"keep_runs": 30},
     }

@@ -74,18 +74,24 @@ def lint_materialized_text(raw: str, *, filename: str = "workflow.md") -> list[s
     return problems
 
 
-def lint_all(home: Path) -> dict[str, list[str]]:
-    """path-relative-name → problems. Empty lists mean clean."""
+def lint_all(home: Path, fragments_home: Path | None = None) -> dict[str, list[str]]:
+    """path-relative-name → problems. Empty lists mean clean. Fragments now live in their own
+    library (fragments_home); fall back to the workflow library's fragments/ for legacy setups."""
+    from .. import fragments_lib
+
     results: dict[str, list[str]] = {}
-    frags = list_fragments(home)
+    if fragments_home and fragments_home.is_dir():
+        frags = fragments_lib.slugs(fragments_home)
+        frag_files = [(f"fragments/{p.name}", p) for p in sorted(fragments_home.glob("*.md"))]
+    else:
+        frags = list_fragments(home)
+        fdir = fragments_dir(home)
+        frag_files = [(f"fragments/{p.name}", p) for p in sorted(fdir.glob("*.md"))] if fdir.is_dir() else []
     wdir = workflows_dir(home)
     if wdir.is_dir():
         for path in sorted(wdir.glob("*.md")):
             results[f"workflows/{path.name}"] = lint_workflow_text(
                 path.read_text(encoding="utf-8"), filename=path.name, fragment_slugs=frags)
-    fdir = fragments_dir(home)
-    if fdir.is_dir():
-        for path in sorted(fdir.glob("*.md")):
-            results[f"fragments/{path.name}"] = lint_fragment_text(
-                path.read_text(encoding="utf-8"), filename=path.name)
+    for name, path in frag_files:
+        results[name] = lint_fragment_text(path.read_text(encoding="utf-8"), filename=path.name)
     return results

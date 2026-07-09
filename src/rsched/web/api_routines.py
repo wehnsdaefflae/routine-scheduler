@@ -78,29 +78,36 @@ def list_routines(request: Request) -> list[dict]:
 
 @router.get("/routines/{slug}")
 def routine_detail(request: Request, slug: str) -> dict:
+    from .. import fragments_lib
+
     info = _info(request, slug)
+    server = _state(request).server
     d = info.cfg.dir
     ledger = d / "LEDGER.md"
     ledger_tail = ""
     if ledger.exists():
         lines = ledger.read_text(encoding="utf-8").splitlines()
         ledger_tail = "\n".join(lines[-100:])
+    # editable routine files by directory (playbook step files + fragment copies)
     files = {}
-    for sub in ("state", "playbook"):
+    for sub in ("playbook", "fragments", "state"):
         subdir = d / sub
-        files[sub] = ([{"name": p.name, "size": p.stat().st_size}
-                       for p in sorted(subdir.iterdir()) if p.is_file()]
+        files[sub] = ([p.name for p in sorted(subdir.iterdir()) if p.is_file() and p.suffix == ".md"]
                       if subdir.is_dir() else [])
+    # all library fragments → toggle list; active ones are this routine's
+    all_frags = fragments_lib.list_fragments(server.fragments_home)
+    active = set(info.cfg.fragments)
+    fragments = [{"slug": f["slug"], "summary": f["summary"], "title": f["title"],
+                  "active": f["slug"] in active} for f in all_frags]
     return {
         **_card(request, info),
         "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
         "server_tz": schedule.server_tz(),
-        "confirm_util_changes": info.cfg.confirm_utils(_state(request).server),
-        "routine_yaml": (d / "routine.yaml").read_text(encoding="utf-8"),
+        "confirm_util_changes": info.cfg.confirm_utils(server),
+        "workflow_ref": {"slug": info.cfg.workflow_slug, "commit": info.cfg.workflow_commit},
+        "fragments": fragments,
         "instruction": (d / "instruction.md").read_text(encoding="utf-8")
         if (d / "instruction.md").exists() else "",
-        "workflow": (d / "workflow.md").read_text(encoding="utf-8")
-        if (d / "workflow.md").exists() else "",
         "ledger_tail": ledger_tail,
         "files": files,
         "questions": info.open_questions,
@@ -108,16 +115,80 @@ def routine_detail(request: Request, slug: str) -> dict:
                   "summary": r.summary[:200], "turn": r.turn, "usage": r.usage}
                  for r in info.runs[:50]],
         "budgets": info.cfg.budgets,
-        "self": info.cfg.self_flags,
-        "shell_allowlist": info.cfg.shell_allowlist,
     }
+
+
+@router.get("/routines/{slug}/file")
+def get_routine_file(request: Request, slug: str, path: str) -> dict:
+    info = _info(request, slug)
+    try:
+        p = resolve_rel(info.cfg.dir, path)
+        return {"path": path, "content": p.read_text(encoding="utf-8")}
+    except (PermissionError, OSError) as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+class RoutineFileBody(BaseModel):
+    path: str
+    content: str
+
+
+@router.put("/routines/{slug}/file")
+def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict:
+    """Edit any routine file EXCEPT the workflow (which lives only in the library)."""
+    info = _info(request, slug)
+    _guard_not_active(request, info)
+    if Path(body.path).name == "workflow.md" or body.path.startswith("workflow"):
+        raise HTTPException(400, "the workflow is edited only in the Library tab, not per routine")
+    try:
+        p = resolve_rel(info.cfg.dir, body.path)
+    except PermissionError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body.content, encoding="utf-8")
+    _git_commit(info.cfg.dir, f"edit {body.path} via web")
+    return {"ok": True}
+
+
+class FragmentsBody(BaseModel):
+    active: list[str]
+
+
+@router.put("/routines/{slug}/fragments")
+def set_fragments(request: Request, slug: str, body: FragmentsBody) -> dict:
+    """Set the routine's active fragments: copy newly-active ones from the library into
+    fragments/, remove deactivated ones, and record the list in routine.yaml."""
+    from .. import fragments_lib
+
+    info = _info(request, slug)
+    _guard_not_active(request, info)
+    server = _state(request).server
+    available = set(fragments_lib.slugs(server.fragments_home))
+    active = [f for f in body.active if f in available]
+    frag_dir = info.cfg.dir / "fragments"
+    frag_dir.mkdir(exist_ok=True)
+    for slug_f in active:
+        target = frag_dir / f"{slug_f}.md"
+        if not target.exists():
+            content = fragments_lib.read_fragment(server.fragments_home, slug_f)
+            if content:
+                target.write_text(content, encoding="utf-8")
+    for existing in frag_dir.glob("*.md"):
+        if existing.stem not in active:
+            existing.unlink()
+    path = info.cfg.dir / "routine.yaml"
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw["fragments"] = active
+    raw.pop("self", None)
+    path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    _git_commit(info.cfg.dir, f"fragments: {', '.join(active)}")
+    return {"ok": True, "active": active}
 
 
 class RoutinePatch(BaseModel):
     enabled: bool | None = None
     schedule: dict | None = None            # {"friendly": {...}} — converted to cron server-side
     budgets: dict | None = None
-    self: dict | None = None
     confirm_util_changes: bool | None = None
     endpoints: dict | None = None
     notifications: str | None = None
@@ -158,11 +229,6 @@ class FileBody(BaseModel):
 @router.put("/routines/{slug}/instruction")
 def put_instruction(request: Request, slug: str, body: FileBody) -> dict:
     return _put_doc(request, slug, "instruction.md", body.content)
-
-
-@router.put("/routines/{slug}/workflow")
-def put_workflow(request: Request, slug: str, body: FileBody) -> dict:
-    return _put_doc(request, slug, "workflow.md", body.content)
 
 
 def _put_doc(request: Request, slug: str, filename: str, content: str) -> dict:

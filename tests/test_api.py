@@ -60,7 +60,8 @@ def test_routine_cards_and_detail(client):
     assert len(cards) == 1 and cards[0]["slug"] == "apir" and cards[0]["cron"] == "0 7 * * 1"
     detail = c.get("/api/routines/apir").json()
     assert "Test instruction" in detail["instruction"]
-    assert "## Run flow" in detail["workflow"]
+    assert detail["workflow_ref"]["slug"] == "test-flow"   # workflow is REFERENCED, not a routine file
+    assert isinstance(detail["fragments"], list)
     assert detail["runs"][0]["state"] == "finished"
     assert c.get("/api/routines/nope").status_code == 404
 

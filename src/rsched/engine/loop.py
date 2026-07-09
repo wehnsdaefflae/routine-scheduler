@@ -72,10 +72,11 @@ class RunAborted(Exception):
 
 class EngineLoop:
     def __init__(self, ctx: RunContext, workflow_body: str, instruction: str,
-                 abort_event: threading.Event | None = None):
+                 abort_event: threading.Event | None = None, fragments_text: str = ""):
         self.ctx = ctx
         self.workflow_body = workflow_body
         self.instruction = instruction
+        self.fragments_text = fragments_text
         self.abort_event = abort_event or threading.Event()
         self.subruns = SubrunManager(self)
         self.messages: list[dict] = []
@@ -84,6 +85,17 @@ class EngineLoop:
         self.consumed_dir = ctx.root_run_dir / "consumed"
         self.final_summary = ""
         self.executed_actions = 0  # actions that produced an observation this run
+        self.util_reminder = self._build_util_reminder()
+
+    def _build_util_reminder(self) -> str:
+        # Per-turn nudge, only when the global-utils fragment is active for this routine (req 2).
+        if "global-utils" not in (self.ctx.routine.fragments or []):
+            return ""
+        create = ("write_util to create/revise one"
+                  + (" (needs your approval first)"
+                     if self.ctx.routine.confirm_utils(self.ctx.server) else ""))
+        return ("\n[tools: the GLOBAL UTILS section lists your tools — or run util name=list to "
+                f"see them all and their usage; if none fits, {create}.]")
 
     def _aborted(self) -> bool:
         return _ABORT["flag"] or self.abort_event.is_set()
@@ -155,6 +167,7 @@ class EngineLoop:
                 if REPEAT_WARN <= repeat_streak < REPEAT_FAIL:
                     text += (f"\n[ENGINE WARNING: this exact action has now run {repeat_streak} times "
                              f"in a row — {REPEAT_FAIL} identical actions fail the run. Change course.]")
+                text += self.util_reminder
                 self.messages.append({"role": "user", "content": text})
                 ctx.write_status()
         except RunAborted:
@@ -182,7 +195,8 @@ class EngineLoop:
         phase = read_json(ctx.routine.dir / "state" / "phase.json")
         if isinstance(phase, dict) and phase.get("phase"):
             ctx.phase = str(phase["phase"])
-        system = build_system_prompt(ctx, self.workflow_body, self.instruction, digest, msgs)
+        system = build_system_prompt(ctx, self.workflow_body, self.instruction, digest, msgs,
+                                     fragments_text=self.fragments_text)
         self.messages = [{"role": "system", "content": system},
                          {"role": "user", "content": kickoff_message(ctx)}]
         ctx.write_status("running")
@@ -374,11 +388,44 @@ class EngineLoop:
 # --- top-level entry ------------------------------------------------------------------
 
 
-def load_workflow(routine_dir: Path) -> tuple[str, dict]:
-    meta, body = load_frontmatter(routine_dir / "workflow.md")
-    prov = meta.get("materialized_from") or {}
-    return body, {"slug": prov.get("slug", ""), "commit": prov.get("commit", ""),
-                  "version": prov.get("version", 0)}
+def load_workflow(routine_dir, cfg, server) -> tuple[str, str, dict]:
+    """Load the workflow BODY from the library (referenced by routine.yaml), plus the routine's
+    active FRAGMENTS. Returns (workflow_body, fragments_text, provenance).
+
+    The workflow is edited only in the library (req 8). Fragments are the routine's editable
+    copies under fragments/; if that dir is empty we fall back to the library by cfg.fragments."""
+    from .. import fragments_lib
+    from ..workflows import library
+
+    body, prov = "", {"slug": cfg.workflow_slug, "commit": cfg.workflow_commit, "version": 0}
+    try:
+        meta, wbody, _ = library.read_workflow(server.library_home, cfg.workflow_slug)
+        body = wbody.strip()
+        prov = {"slug": cfg.workflow_slug, "commit": library.head_commit(server.library_home),
+                "version": meta.get("version", 0)}
+    except (FileNotFoundError, OSError):
+        # legacy fallback: a materialized workflow.md in the routine (pre-refactor routines)
+        legacy = routine_dir / "workflow.md"
+        if legacy.exists():
+            _, body = load_frontmatter(legacy)
+            body = body.strip()
+        else:
+            raise RuntimeError(
+                f"workflow {cfg.workflow_slug!r} not found in the library and no legacy "
+                f"workflow.md — cannot run") from None
+
+    # active fragments: prefer the routine's editable copies, else the library
+    parts: list[str] = []
+    frag_dir = routine_dir / "fragments"
+    files = sorted(frag_dir.glob("*.md")) if frag_dir.is_dir() else []
+    if files:
+        parts = [p.read_text(encoding="utf-8").strip() for p in files]
+    else:
+        for slug in cfg.fragments:
+            content = fragments_lib.read_fragment(server.fragments_home, slug)
+            if content:
+                parts.append(content.strip())
+    return body, "\n\n".join(parts), prov
 
 
 def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None = None,
@@ -411,10 +458,9 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     ctx = RunContext(routine=cfg, server=server, registry=registry, run_ts=ts,
                      run_dir=run_dir, transcript=transcript,
                      budgets=Budgets.from_config(cfg.budgets))
-    body, prov = load_workflow(routine_dir)
+    body, fragments_text, prov = load_workflow(routine_dir, cfg, server)
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8")
-    transcript.header(run_id=ctx.run_id, routine=cfg.slug,
-                      workflow=prov or {"slug": cfg.workflow_slug, "commit": cfg.workflow_commit},
+    transcript.header(run_id=ctx.run_id, routine=cfg.slug, workflow=prov,
                       orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model})
-    status = EngineLoop(ctx, body, instruction).run()
+    status = EngineLoop(ctx, body, instruction, fragments_text=fragments_text).run()
     return status, run_dir

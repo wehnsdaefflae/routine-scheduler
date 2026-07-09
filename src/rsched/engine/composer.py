@@ -145,7 +145,7 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
 
 
 def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
-                        digest: str, inbox_msgs: list[str]) -> str:
+                        digest: str, inbox_msgs: list[str], fragments_text: str = "") -> str:
     from .. import utils_lib
 
     sections = [
@@ -156,8 +156,11 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
         + utils_lib.catalog_text(ctx.server.utils_home),
         "# WORKFLOW (the control flow you follow)\n" + workflow_body.strip(),
         "# INSTRUCTION (what this routine is for)\n" + instruction.strip(),
-        "# STATE DIGEST (fresh at run start)\n" + digest,
     ]
+    if fragments_text.strip():
+        sections.append("# STANDARD PRACTICES (the standards active for this routine)\n"
+                        + fragments_text.strip())
+    sections.append("# STATE DIGEST (fresh at run start)\n" + digest)
     if inbox_msgs:
         joined = "\n\n".join(f"--- message {i + 1} ---\n{m}" for i, m in enumerate(inbox_msgs))
         sections.append("# MESSAGES FROM THE USER (consume now)\n" + joined)

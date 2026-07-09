@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import time
 
 import yaml
@@ -58,6 +59,57 @@ def list_endpoints(request: Request) -> dict:
     return {"endpoints": [_endpoint_view(n, e) for n, e in server.endpoints.items()],
             "default_roles": {r: {"endpoint": ref.endpoint, "model": ref.model}
                               for r, ref in server.default_roles.items()}}
+
+
+# --- library repositories (workflows / fragments / global utils) ---------------------
+
+def _remote_of(home) -> str:
+    r = subprocess.run(["git", "-C", str(home), "remote", "get-url", "origin"],
+                       capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+@router.get("/settings/libraries")
+def list_libraries(request: Request) -> dict:
+    s = _server(request)
+    libs = [("workflows", s.library_home, s.library_remote),
+            ("fragments", s.fragments_home, s.fragments_remote),
+            ("utils", s.utils_home, s.utils_remote)]
+    return {"libraries": [{"name": n, "home": str(h),
+                           "remote": _remote_of(h) or r,
+                           "exists": (h / ".git").is_dir()} for n, h, r in libs]}
+
+
+class LibraryRemote(BaseModel):
+    remote: str
+
+
+@router.put("/settings/libraries/{name}")
+def set_library_remote(request: Request, name: str, body: LibraryRemote) -> dict:
+    s = _server(request)
+    homes = {"workflows": (s.library_home, "library_remote"),
+             "fragments": (s.fragments_home, "fragments_remote"),
+             "utils": (s.utils_home, "utils_remote")}
+    if name not in homes:
+        raise HTTPException(404, f"unknown library {name!r}")
+    home, cfg_key = homes[name]
+    # write into config.yaml
+    path = _config_path(request)
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw[cfg_key] = body.remote
+    path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    setattr(s, cfg_key, body.remote)
+    # point the local repo's origin at it (best-effort)
+    result = {"ok": True, "pushed": False}
+    if body.remote and (home / ".git").is_dir():
+        subprocess.run(["git", "-C", str(home), "remote", "remove", "origin"], capture_output=True)
+        subprocess.run(["git", "-C", str(home), "remote", "add", "origin", body.remote], capture_output=True)
+        push = subprocess.run(["git", "-C", str(home), "push", "-u", "origin", "main"],
+                              capture_output=True, text=True, timeout=60)
+        result["pushed"] = push.returncode == 0
+        if push.returncode != 0:
+            result["push_error"] = push.stderr.strip()[:200]
+    return result
 
 
 class EndpointBody(BaseModel):

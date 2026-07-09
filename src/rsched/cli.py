@@ -196,10 +196,10 @@ def cmd_abort(args) -> int:
 
 
 def cmd_lint(args) -> int:
-    from .workflows.lint import lint_all, lint_materialized_text
+    from .workflows.lint import lint_all
 
     server, _ = load_server_config()
-    results = lint_all(server.library_home)
+    results = lint_all(server.library_home, server.fragments_home)
     bad = 0
     for name, problems in sorted(results.items()):
         if args.target and args.target not in name:
@@ -208,17 +208,6 @@ def cmd_lint(args) -> int:
         for p in problems:
             print(f"  - {p}")
             bad += 1
-    if not args.target and server.routines_home.is_dir():
-        for d in sorted(server.routines_home.iterdir()):
-            wf = d / "workflow.md"
-            if d.name.startswith(".") or not wf.exists():
-                continue
-            problems = lint_materialized_text(wf.read_text(encoding="utf-8"),
-                                              filename=f"{d.name}/workflow.md")
-            print(f"routines/{d.name}: {'ok' if not problems else 'PROBLEMS'}")
-            for p in problems:
-                print(f"  - {p}")
-                bad += 1
     return 1 if bad else 0
 
 

@@ -77,17 +77,23 @@ def test_scaffold_creates_valid_routine(tmp_path):
     server.routines_home = tmp_path / "routines"
     server.routines_home.mkdir()
     server.library_home = SEED
+    server.fragments_home = SEED / "fragments"
     d = scaffold(server, slug="papers-radar", name="Papers radar",
-                 instruction="# Instruction\n\nCollect papers weekly.",
+                 instruction="# Instruction\n\nCollect papers.",
                  workflow_slug="general-task", cron="0 8 * * 1")
     cfg, problems = load_routine(d)
     assert cfg is not None and problems == [], problems
     assert cfg.cron == "0 8 * * 1" and cfg.workflow_slug == "general-task"
     assert (d / ".git").is_dir()
     assert (d / ".git" / "hooks" / "post-commit").stat().st_mode & 0o111
+    # the workflow is REFERENCED, not materialized into the routine
+    assert not (d / "workflow.md").exists()
     raw = yaml.safe_load((d / "routine.yaml").read_text())
-    assert raw["budgets"]["max_turns"] == 60 and raw["self"]["audit"] is True
-    assert lint_materialized_text((d / "workflow.md").read_text()) == []
+    assert raw["budgets"]["max_turns"] == 60 and "self" not in raw
+    # active fragments = the workflow's includes, materialized as editable routine files
+    assert set(cfg.fragments) == set(raw["fragments"])
+    assert "self-audit" in cfg.fragments and "global-utils" in cfg.fragments
+    assert (d / "fragments" / "self-audit.md").exists()
     assert (d / ".gitignore").read_text().startswith("runs/")
     with pytest.raises(ValueError):
         scaffold(server, slug="papers-radar", name="dup", instruction="x",
@@ -102,6 +108,7 @@ def test_scaffold_writes_playbook_step_files(tmp_path):
     server.routines_home = tmp_path / "routines"
     server.routines_home.mkdir()
     server.library_home = SEED
+    server.fragments_home = SEED / "fragments"
     d = scaffold(server, slug="split-routine", name="Split",
                  instruction="# Entry\n\nSteps in playbook/.", workflow_slug="general-task",
                  playbook={"discover": "# Discover step\n\nHow to discover.",

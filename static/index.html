@@ -3,13 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>routine-scheduler</title>
+<title>routines · ops console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/styles.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128260;</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='34' fill='none' stroke='%23f5a623' stroke-width='8'/><circle cx='50' cy='16' r='9' fill='%23f5a623'/></svg>">
 </head>
 <body>
+<div class="grain" aria-hidden="true"></div>
 <header class="topbar">
-  <a class="brand" href="#/">&#128260; routines</a>
+  <a class="brand" href="#/">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">ROUTINES</span>
+    <span class="brand-sub">ops&nbsp;console</span>
+  </a>
   <nav>
     <a href="#/" data-nav="dashboard">Dashboard</a>
     <a href="#/questions" data-nav="questions">Questions <span id="q-badge" class="badge" hidden></span></a>
@@ -18,7 +26,7 @@
   </nav>
   <div class="topbar-right">
     <a class="btn primary" href="#/wizard">+ New routine</a>
-    <span id="daemon-dot" class="dot" title="daemon"></span>
+    <span id="daemon-dot" class="dot" title="daemon link"></span>
   </div>
 </header>
 <main id="view"></main>

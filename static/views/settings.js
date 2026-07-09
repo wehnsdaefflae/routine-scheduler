@@ -4,12 +4,37 @@ import { api } from "/static/api.js";
 import { el, toast } from "/static/util.js";
 
 export async function render(view) {
-  view.append(el("h1", {}, "Settings — LLM endpoints"),
-    el("div", { class: "muted" },
-      "Endpoints are model transports: openai-compatible / anthropic APIs, or claude-cli ",
-      "(subscription-billed `claude -p`, fully stripped — no tools, our system prompt). The ",
-      "scheduler stays the only harness. Keys live in ~/.credentials/*.env."));
-  const listBox = el("div", { class: "mt" });
+  view.append(el("div", { class: "page-head" }, el("h1", {}, "Settings")));
+
+  // -- library repositories -------------------------------------------------------
+  view.append(el("h2", {}, "Library repositories"));
+  const libBox = el("div", { class: "panel" });
+  view.append(libBox);
+  try {
+    const { libraries } = await api("/api/settings/libraries");
+    libBox.append(el("div", { class: "muted", style: "font-size:12.5px;margin-bottom:6px" },
+      "Each library git-syncs to its remote. Set a repo URL to back it up and share it."));
+    for (const lib of libraries) {
+      const input = el("input", { type: "text", value: lib.remote || "",
+        placeholder: "https://github.com/<you>/<repo>.git — empty = local only" });
+      const save = el("button", { class: "btn small primary" }, "save + push");
+      save.onclick = async () => {
+        try { const r = await api(`/api/settings/libraries/${lib.name}`, { method: "PUT", body: { remote: input.value.trim() } });
+          toast(r.pushed ? `${lib.name}: saved + pushed` : r.push_error ? `${lib.name}: saved (push failed: ${r.push_error})` : `${lib.name}: saved`); }
+        catch (err) { toast(err.message, 5000); }
+      };
+      libBox.append(el("div", { class: "row", style: "margin:9px 0" },
+        el("span", { class: "ref-tag", style: "min-width:90px;text-align:center" }, lib.name),
+        input, save));
+    }
+  } catch (err) { libBox.append(el("div", { class: "muted" }, err.message)); }
+
+  // -- endpoints ------------------------------------------------------------------
+  view.append(el("h2", {}, "LLM endpoints"),
+    el("div", { class: "muted", style: "margin-bottom:8px;font-size:12.5px" },
+      "Model transports only (openai-compatible / anthropic / claude-cli). The scheduler is the ",
+      "only harness. Keys live in ~/.credentials/*.env."));
+  const listBox = el("div", {});
   view.append(listBox);
 
   async function load() {

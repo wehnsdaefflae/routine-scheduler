@@ -41,6 +41,17 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
+        from .. import fragments_lib, utils_lib
+
+        # bootstrap the libraries (clone from remote if configured + absent, else init/leave).
+        for ensure, home, remote in (
+            (fragments_lib.ensure_library, server.fragments_home, server.fragments_remote),
+            (utils_lib.ensure_library, server.utils_home, server.utils_remote),
+        ):
+            try:
+                ensure(home, remote=remote)
+            except Exception as exc:  # never block startup on a library hiccup
+                log.warning("library bootstrap %s: %s", home, exc)
         task = None
         if with_scheduler and not os.environ.get("RSCHED_NO_SCHEDULER"):
             task = asyncio.create_task(app.state.scheduler.run_forever())

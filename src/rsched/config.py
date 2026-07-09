@@ -27,6 +27,19 @@ DEFAULT_BUDGETS = {
 }
 DEFAULT_SELF = {"audit": True, "improve": True, "ledger": True, "fresh_eyes": True, "hygiene": True}
 DEFAULT_ALLOWLIST = ["gu *", "git *", "uv run --script *"]
+# legacy self-toggle → fragment slug
+SELF_FRAGMENT = {"audit": "self-audit", "improve": "improvement", "ledger": "ledger-discipline",
+                 "fresh_eyes": "fresh-eyes", "hygiene": "hygiene"}
+# always active regardless of the legacy toggles (util guidance + ask policy)
+BASE_FRAGMENTS = ["ask-policy", "global-utils"]
+
+
+def fragments_from_self(self_flags: dict) -> list[str]:
+    frags = list(BASE_FRAGMENTS)
+    for flag, slug in SELF_FRAGMENT.items():
+        if self_flags.get(flag, True):
+            frags.append(slug)
+    return frags
 ROLES = ("orchestrator", "subcall", "cheap")
 # Endpoints are model TRANSPORTS, never a second harness. "claude-cli" is the Claude Code
 # CLI in fully stripped print mode (tools off, our system prompt replaces its own) — a
@@ -64,6 +77,8 @@ class ServerConfig:
     routines_home: Path = field(default_factory=lambda: expand("~/routines"))
     library_home: Path = field(default_factory=lambda: expand("~/.local/share/workflow-library"))
     library_remote: str = ""            # optional: clone-from / sync-to for the workflow library
+    fragments_home: Path = field(default_factory=lambda: expand("~/.local/share/routine-fragments"))
+    fragments_remote: str = ""          # optional: clone-from / sync-to for the fragment library
     utils_home: Path = field(default_factory=lambda: expand("~/.local/share/global-utils"))
     utils_remote: str = ""              # optional: clone-from / sync-to for the util library
     confirm_util_changes: bool = True   # ask the user before a util is created/revised (req 7)
@@ -104,7 +119,10 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
         cfg.library_home = expand(raw["library_home"])
     if "utils_home" in raw:
         cfg.utils_home = expand(raw["utils_home"])
+    if "fragments_home" in raw:
+        cfg.fragments_home = expand(raw["fragments_home"])
     cfg.library_remote = str(raw.get("library_remote", "") or "")
+    cfg.fragments_remote = str(raw.get("fragments_remote", "") or "")
     cfg.utils_remote = str(raw.get("utils_remote", "") or "")
     cfg.confirm_util_changes = bool(raw.get("confirm_util_changes", cfg.confirm_util_changes))
     cfg.max_concurrent_runs = int(raw.get("max_concurrent_runs", cfg.max_concurrent_runs))
@@ -158,7 +176,8 @@ class RoutineConfig:
     workflow_commit: str = ""
     roles: dict[str, RoleRef] = field(default_factory=dict)  # overrides; server defaults fill gaps
     budgets: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_BUDGETS))
-    self_flags: dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_SELF))
+    fragments: list[str] = field(default_factory=list)       # active fragment slugs (the source of truth)
+    self_flags: dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_SELF))  # legacy migration source
     shell_allowlist: list[str] = field(default_factory=lambda: list(DEFAULT_ALLOWLIST))  # legacy, unused (no shell)
     fs_read_roots: list[Path] = field(default_factory=list)
     fs_write_roots: list[Path] = field(default_factory=list)
@@ -246,6 +265,13 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
             continue
         cfg.self_flags[key] = bool(val)
 
+    # Fragments are the source of truth for a routine's standards. Explicit list wins;
+    # otherwise migrate from the legacy `self` toggles (+ the always-on defaults).
+    if isinstance(raw.get("fragments"), list):
+        cfg.fragments = [str(f) for f in raw["fragments"]]
+    else:
+        cfg.fragments = fragments_from_self(cfg.self_flags)
+
     if "shell_allowlist" in raw:
         al = raw["shell_allowlist"]
         if isinstance(al, list) and all(isinstance(x, str) for x in al):
@@ -266,8 +292,9 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
         except (TypeError, ValueError):
             problems.append("retention.keep_runs: expected an integer")
 
-    if not (routine_dir / "workflow.md").exists():
-        problems.append("workflow.md missing")
+    # workflow.md is NOT a routine file — the workflow lives in the library, referenced here.
+    if not cfg.workflow_slug and not (routine_dir / "workflow.md").exists():
+        problems.append("no workflow reference (workflow.library_slug) and no legacy workflow.md")
     if not (routine_dir / "instruction.md").exists():
         problems.append("instruction.md missing")
     return cfg, problems

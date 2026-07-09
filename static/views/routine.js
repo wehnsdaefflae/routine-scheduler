@@ -1,36 +1,36 @@
-// Routine detail: docs, schedule + toggles editor, state files, LEDGER, runs list.
+// Routine detail: schedule, fragment standards (toggle + edit), workflow reference,
+// editable instruction / playbook / fragment files, state, runs.
 
 import { api } from "/static/api.js";
-import { chip, el, fmtTokens, fmtTs, scheduleEditor, toast, TOGGLE_INFO } from "/static/util.js";
+import { chip, el, fmtTokens, fmtTs, scheduleEditor, toast } from "/static/util.js";
 
 export async function render(view, slug) {
   let d;
   try { d = await api(`/api/routines/${slug}`); }
   catch (err) { view.append(el("div", { class: "empty" }, err.message)); return; }
 
-  const head = el("div", { class: "row spread" },
-    el("h1", {}, d.name || slug, " ",
-      d.active_state ? chip(d.active_state, d.active_state) : d.enabled ? chip("idle") : chip("disabled", "disabled")),
-    el("div", { class: "row" },
+  const stateChip = d.active_state ? chip(d.active_state, d.active_state)
+    : d.enabled ? chip("idle", "idle") : chip("disabled", "disabled");
+  view.append(el("div", { class: "page-head" },
+    el("h1", {}, d.name || slug),
+    el("div", { class: "row" }, stateChip,
       d.active_run
-        ? el("a", { class: "btn primary", href: `#/run/${d.active_run}` }, "watch live")
+        ? el("a", { class: "btn primary", href: `#/run/${d.active_run}` }, "◉ watch live")
         : el("button", { class: "btn primary", onclick: runNow }, "▶ run now"),
-      el("button", { class: "btn danger", onclick: archive }, "archive")));
-  view.append(head);
+      el("button", { class: "btn danger", onclick: archive }, "archive"))));
   if (d.problems?.length) {
-    view.append(el("div", { class: "panel", style: "border-color:var(--err)" },
+    view.append(el("div", { class: "panel", style: "border-color:var(--err);margin-top:14px" },
       d.problems.map((p) => el("div", { style: "color:var(--err)" }, `⚠ ${p}`))));
   }
 
   async function runNow(e) {
     e.target.disabled = true;
-    try {
-      const r = await api(`/api/routines/${slug}/run`, { method: "POST" });
-      location.hash = `#/run/${r.run_id}`;
-    } catch (err) { toast(err.message); e.target.disabled = false; }
+    try { const r = await api(`/api/routines/${slug}/run`, { method: "POST" });
+      location.hash = `#/run/${r.run_id}`; }
+    catch (err) { toast(err.message); e.target.disabled = false; }
   }
   async function archive() {
-    if (!confirm(`Archive routine "${slug}"? It disappears from the scheduler (dir moves to .archive).`)) return;
+    if (!confirm(`Archive "${slug}"? It leaves the scheduler (dir moves to .archive).`)) return;
     try { await api(`/api/routines/${slug}/archive`, { method: "POST" }); location.hash = "#/"; }
     catch (err) { toast(err.message); }
   }
@@ -39,90 +39,118 @@ export async function render(view, slug) {
   const sched = scheduleEditor(d.schedule_friendly || { frequency: "manual" }, d.server_tz);
   const enabledBox = el("input", { type: "checkbox", checked: d.enabled || null });
   view.append(el("h2", {}, "Schedule"),
-    el("div", { class: "panel" },
-      sched.node,
-      el("label", { class: "row mt", style: "gap:6px" }, enabledBox, "enabled"),
-      el("div", { class: "row mt" },
-        el("button", {
-          class: "btn primary",
-          onclick: async (e) => {
-            try {
-              await api(`/api/routines/${slug}`, { method: "PATCH", body: {
-                enabled: enabledBox.checked, schedule: { friendly: sched.value() },
-              }});
-              toast("schedule saved");
-              setTimeout(() => location.reload(), 400);
-            } catch (err) { toast(err.message); }
-          },
-        }, "save schedule")),
-      d.next_fire ? el("div", { class: "muted mt" }, `next run: ${new Date(d.next_fire).toLocaleString()}`) : null));
-
-  // -- standards (described toggles) ----------------------------------------------
-  const toggles = { ...d.self, confirm_util_changes: d.confirm_util_changes };
-  const boxes = {};
-  const toggleRows = Object.entries(TOGGLE_INFO).map(([key, [title, desc]]) => {
-    const box = el("input", { type: "checkbox", checked: toggles[key] ? "" : null });
-    boxes[key] = box;
-    return el("label", { class: "toggle-row" }, box,
-      el("div", {}, el("div", { style: "font-weight:600" }, title),
-        el("div", { class: "muted", style: "font-size:12.5px" }, desc)));
-  });
-  view.append(el("h2", {}, "Self-management standards"),
-    el("div", { class: "panel" }, toggleRows,
+    el("div", { class: "panel" }, sched.node,
+      el("label", { class: "row mt", style: "gap:8px" }, enabledBox, "enabled"),
       el("div", { class: "row mt" }, el("button", {
         class: "btn primary",
         onclick: async () => {
-          const self = {}; ["audit", "improve", "ledger", "fresh_eyes", "hygiene"].forEach(
-            (k) => (self[k] = boxes[k].checked));
           try {
-            await api(`/api/routines/${slug}`, { method: "PATCH", body: {
-              self, confirm_util_changes: boxes.confirm_util_changes.checked,
-            }});
-            toast("standards saved");
+            await api(`/api/routines/${slug}`, { method: "PATCH",
+              body: { enabled: enabledBox.checked, schedule: { friendly: sched.value() } } });
+            toast("schedule saved"); setTimeout(() => location.reload(), 400);
           } catch (err) { toast(err.message); }
+        },
+      }, "save schedule")),
+      d.next_fire ? el("div", { class: "muted mt", style: "font-family:var(--mono);font-size:12px" },
+        `next run · ${new Date(d.next_fire).toLocaleString()}`) : null));
+
+  // -- workflow (referenced, edited only in Library) ------------------------------
+  view.append(el("h2", {}, "Workflow"),
+    el("div", { class: "panel row spread" },
+      el("div", {},
+        el("span", { class: "ref-tag" }, d.workflow_ref?.slug || "—"),
+        el("span", { class: "muted", style: "margin-left:10px;font-size:12.5px" },
+          "the control-flow pattern this routine follows")),
+      el("a", { class: "btn small", href: `#/library/workflow/${d.workflow_ref?.slug || ""}` },
+        "view / edit in Library →")));
+
+  // -- standards = fragments (toggle + edit) --------------------------------------
+  const boxes = {};
+  const fragRows = (d.fragments || []).map((f) => {
+    const box = el("input", { type: "checkbox", checked: f.active ? "" : null });
+    boxes[f.slug] = box;
+    const editLink = f.active
+      ? el("a", { href: "#", class: "muted", style: "font-size:11.5px;font-family:var(--mono)",
+                  onclick: (e) => { e.preventDefault(); editFile(`fragments/${f.slug}.md`, `fragment: ${f.slug}`); } },
+          "edit this routine's copy")
+      : null;
+    return el("label", { class: "toggle-row" }, box,
+      el("div", {},
+        el("div", { class: "t-title" }, f.slug),
+        el("div", { class: "muted", style: "font-size:12.5px" }, f.summary || ""),
+        editLink));
+  });
+  view.append(el("h2", {}, "Standards (fragments)"),
+    el("div", { class: "panel" },
+      fragRows.length ? fragRows : el("div", { class: "muted" }, "no fragments in the library"),
+      el("div", { class: "row mt" }, el("button", {
+        class: "btn primary",
+        onclick: async () => {
+          const active = Object.entries(boxes).filter(([, b]) => b.checked).map(([s]) => s);
+          try { await api(`/api/routines/${slug}/fragments`, { method: "PUT", body: { active } });
+            toast("standards saved"); setTimeout(() => location.reload(), 400); }
+          catch (err) { toast(err.message); }
         },
       }, "save standards"))));
 
-  // -- docs -----------------------------------------------------------------------
-  view.append(el("h2", {}, "Instruction & workflow"));
-  view.append(docEditor("instruction", d.instruction), docEditor("workflow", d.workflow));
+  // -- editable files: instruction + playbook -------------------------------------
+  view.append(el("h2", {}, "Instruction"));
+  view.append(docEditor("Instruction (the task)", d.instruction, async (content) => {
+    await api(`/api/routines/${slug}/instruction`, { method: "PUT", body: { content } });
+  }));
 
-  function docEditor(kind, content) {
-    const ta = el("textarea", { class: "code" }, content);
-    const save = el("button", { class: "btn" }, `save ${kind}`);
-    save.onclick = async () => {
-      try {
-        await api(`/api/routines/${slug}/${kind}`, { method: "PUT", body: { content: ta.value } });
-        toast(`${kind} saved + committed`);
-      } catch (err) { toast(err.message); }
+  const pbFiles = (d.files?.playbook) || [];
+  view.append(el("h2", {}, "Playbook step files"),
+    el("div", { class: "panel" },
+      pbFiles.length
+        ? el("div", { class: "row" }, pbFiles.map((n) =>
+            el("button", { class: "btn small", onclick: () => editFile(`playbook/${n}`, n) }, n)))
+        : el("div", { class: "muted" }, "none — the workflow's steps are inline in the instruction")));
+
+  const fileEditor = el("div", {});
+  view.append(fileEditor);
+
+  async function editFile(path, label) {
+    let data; try { data = await api(`/api/routines/${slug}/file?path=${encodeURIComponent(path)}`); }
+    catch (err) { toast(err.message); return; }
+    fileEditor.innerHTML = "";
+    const node = docEditor(label, data.content, async (content) => {
+      await api(`/api/routines/${slug}/file`, { method: "PUT", body: { path, content } });
+    });
+    fileEditor.append(node);
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  function docEditor(label, content, save) {
+    const ta = el("textarea", { class: "code" }, content || "");
+    const btn = el("button", { class: "btn primary" }, "save");
+    btn.onclick = async () => {
+      try { await save(ta.value); toast(`${label} saved`); } catch (err) { toast(err.message, 5000); }
     };
-    return el("details", { class: "panel mt", open: kind === "instruction" ? "" : null },
-      el("summary", { style: "cursor:pointer;font-weight:600" }, `${kind}.md`),
-      el("div", { class: "mt" }, ta, el("div", { class: "row mt" }, save)));
+    return el("div", { class: "panel mt" },
+      el("div", { class: "muted", style: "font-family:var(--mono);font-size:12px;margin-bottom:8px" }, label),
+      ta, el("div", { class: "row mt" }, btn));
   }
 
   // -- questions ------------------------------------------------------------------
   if (d.questions?.length) {
     view.append(el("h2", {}, "Open questions"),
       el("div", { class: "panel" }, d.questions.map((q) =>
-        el("div", { class: "row spread", style: "padding:4px 0" },
+        el("div", { class: "row spread", style: "padding:5px 0" },
           el("span", {}, `❓ ${q.question}`),
           el("a", { class: "btn small", href: "#/questions" }, "answer")))));
   }
 
-  // -- state files + ledger ---------------------------------------------------------
-  const fileList = [];
-  for (const [sub, files] of Object.entries(d.files || {})) {
-    for (const f of files) fileList.push(`${sub}/${f.name} (${f.size}B)`);
-  }
-  view.append(el("h2", {}, "State"),
+  // -- state + ledger -------------------------------------------------------------
+  const stateFiles = (d.files?.state) || [];
+  view.append(el("h2", {}, "State & memory"),
     el("div", { class: "panel" },
-      el("div", { class: "muted" }, fileList.length ? fileList.join(" · ") : "no state files yet"),
-      el("details", { class: "mt" },
-        el("summary", { style: "cursor:pointer" }, "LEDGER tail"),
-        el("pre", { class: "doc" }, d.ledger_tail || "(empty)"))));
+      el("div", { class: "muted", style: "font-family:var(--mono);font-size:12px" },
+        stateFiles.length ? `state/ · ${stateFiles.join("  ·  ")}` : "no state files yet"),
+      el("details", { class: "mt" }, el("summary", { style: "cursor:pointer" }, "LEDGER tail"),
+        el("pre", { class: "doc mt" }, d.ledger_tail || "(empty)"))));
 
-  // -- runs -------------------------------------------------------------------------
+  // -- runs -----------------------------------------------------------------------
   view.append(el("h2", {}, "Runs"));
   const rows = (d.runs || []).map((r) => el("tr", {},
     el("td", {}, el("a", { href: `#/run/${r.run_id}` }, fmtTs(r.ts))),
