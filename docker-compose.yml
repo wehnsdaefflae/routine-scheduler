@@ -30,7 +30,7 @@ services:
       - ${RSCHED_HOME:-/home/mark}/git-repos/routine-scheduler:/home/mark/git-repos/routine-scheduler
       - ${RSCHED_HOME:-/home/mark}/.config/routine-scheduler:/home/mark/.config/routine-scheduler
       - ${RSCHED_HOME:-/home/mark}/.config/gh:/home/mark/.config/gh          # `gh auth login` persists here
-      - ${RSCHED_HOME:-/home/mark}/.credentials:/home/mark/.credentials:ro
+      - ${RSCHED_HOME:-/home/mark}/.credentials:/home/mark/.credentials:ro    # optional file-based secrets (read-only)
       - ${RSCHED_HOME:-/home/mark}/routines:/home/mark/routines
       - ${RSCHED_HOME:-/home/mark}/.local/share/workflow-library:/home/mark/.local/share/workflow-library
       - ${RSCHED_HOME:-/home/mark}/.local/share/routine-fragments:/home/mark/.local/share/routine-fragments

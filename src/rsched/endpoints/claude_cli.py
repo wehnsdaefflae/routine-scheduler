@@ -135,7 +135,8 @@ class ClaudeCliEndpoint:
         cli = find_cli()
         if not cli:
             raise EndpointError("claude-cli: claude CLI not found on PATH (or set $CLAUDE_CLI)")
-        token = resolve_token(self.credentials_env, self.oauth_token)
+        from ..secrets import load_secrets
+        token = resolve_token(self.credentials_env, self.oauth_token or load_secrets().get(TOKEN_VAR, ""))
         if not token:
             raise EndpointError(
                 f"claude-cli: no subscription token — paste one in Settings, set {TOKEN_VAR}, or "

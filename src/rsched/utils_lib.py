@@ -200,9 +200,10 @@ def write_util_file(home: Path, name: str, content: str) -> None:
 
 
 def _child_env() -> dict:
-    env = dict(os.environ)
+    from .secrets import load_secrets
+    env = {**os.environ, **load_secrets()}      # central secrets store → utils (env-first)
     for k in STRIP_VARS:
-        env.pop(k, None)
+        env.pop(k, None)                         # …but never LLM keys: utils bill only via `gu claude`
     return env
 
 

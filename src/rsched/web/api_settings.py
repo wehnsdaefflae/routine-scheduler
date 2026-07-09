@@ -14,6 +14,7 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from .. import secrets as secret_store
 from ..config import ENDPOINT_KINDS, EndpointConfig, load_server_config
 from ..endpoints import EndpointRegistry, make_endpoint
 from ..endpoints.base import EndpointError
@@ -276,6 +277,39 @@ def _gh_store_token(token: str) -> str:
         raise HTTPException(502, f"gh auth login failed: {login.stderr.strip()[:200]}")
     subprocess.run(["gh", "auth", "setup-git"], capture_output=True, timeout=15, env=env)
     return _gh_login() or "connected"
+
+
+# --- central secrets store: one KEY=VALUE store injected into utils + endpoints + claude-cli -----
+# Set any credential here (a util's token, a username, an API key, the Claude subscription token as
+# CLAUDE_CODE_OAUTH_TOKEN). The engine injects it into every util + endpoint at run time. Values are
+# write-only: the API returns key NAMES, never the values.
+
+@router.get("/settings/secrets")
+def list_secrets(_request: Request) -> dict:
+    return {"keys": secret_store.secret_keys(), "path": str(secret_store.secrets_path())}
+
+
+class SecretBody(BaseModel):
+    key: str
+    value: str
+
+
+@router.put("/settings/secrets")
+def put_secret(_request: Request, body: SecretBody) -> dict:
+    try:
+        secret_store.set_secret(body.key.strip(), body.value)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(500, f"cannot write the secrets store: {exc}") from exc
+    return {"ok": True, "keys": secret_store.secret_keys()}
+
+
+@router.delete("/settings/secrets/{key}")
+def remove_secret(_request: Request, key: str) -> dict:
+    if not secret_store.delete_secret(key):
+        raise HTTPException(404, f"no secret {key!r}")
+    return {"ok": True, "keys": secret_store.secret_keys()}
 
 
 class EndpointBody(BaseModel):

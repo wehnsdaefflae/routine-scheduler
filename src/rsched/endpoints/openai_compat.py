@@ -42,6 +42,9 @@ class OpenAICompatEndpoint:
     def _resolve_key(self) -> str:
         if self.api_key:                                  # inline key (UI-set) wins over a file
             return self.api_key
+        from ..secrets import load_secrets                # then the central secrets store
+        if self.key_var and (k := load_secrets().get(self.key_var)):
+            return k
         if self.key_env_file:
             key = key_from_env_file(self.key_env_file, self.key_var)
             if not key:

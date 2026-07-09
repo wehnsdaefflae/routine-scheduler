@@ -93,6 +93,47 @@ export async function render(view) {
   }
   await renderGithub();
 
+  // -- central secrets store ------------------------------------------------------
+  view.append(el("h2", {}, "Secrets"));
+  const secBox = el("div", { class: "panel" });
+  view.append(secBox);
+  async function renderSecrets() {
+    secBox.innerHTML = "";
+    let s;
+    try { s = await api("/api/settings/secrets"); }
+    catch (err) { secBox.append(el("div", { class: "muted" }, err.message)); return; }
+    secBox.append(el("div", { class: "muted", style: "font-size:12.5px;margin-bottom:6px" },
+      "One store for every credential — injected into all utils, LLM endpoints, and the Claude ",
+      "subscription (as CLAUDE_CODE_OAUTH_TOKEN) at run time. Add whatever a util needs (a token, ",
+      "a username, an API key). Values are write-only — never shown back."));
+    if (s.keys.length) {
+      secBox.append(el("table", { class: "list" }, el("tbody", {}, s.keys.map((k) => {
+        const del = el("button", { class: "btn small danger" }, "delete");
+        del.onclick = async () => {
+          if (!confirm(`Delete secret ${k}?`)) return;
+          try { await api(`/api/settings/secrets/${encodeURIComponent(k)}`, { method: "DELETE" }); renderSecrets(); }
+          catch (err) { toast(err.message); }
+        };
+        return el("tr", {}, el("td", { class: "mono" }, k), el("td", { class: "muted" }, "••••••••"), el("td", {}, del));
+      }))));
+    } else {
+      secBox.append(el("div", { class: "muted", style: "font-size:12px" }, "no secrets set yet"));
+    }
+    const keyIn = el("input", { type: "text", placeholder: "KEY (e.g. CLAUDE_CODE_OAUTH_TOKEN)", style: "flex:1" });
+    const valIn = el("input", { type: "password", placeholder: "value", style: "flex:1" });
+    const save = el("button", { class: "btn small primary" }, "set");
+    save.onclick = async () => {
+      const key = keyIn.value.trim();
+      if (!key || !valIn.value) { toast("enter a KEY and a value"); return; }
+      try {
+        await api("/api/settings/secrets", { method: "PUT", body: { key, value: valIn.value } });
+        toast(`${key} saved`); keyIn.value = ""; valIn.value = ""; renderSecrets();
+      } catch (err) { toast(err.message, 5000); }
+    };
+    secBox.append(el("div", { class: "row mt" }, keyIn, valIn, save));
+  }
+  await renderSecrets();
+
   // -- library repositories -------------------------------------------------------
   view.append(el("h2", {}, "Library repositories"));
   const libBox = el("div", { class: "panel" });
@@ -189,25 +230,33 @@ export async function render(view) {
       try { await api(`/api/settings/endpoints/${ep.name}`, { method: "DELETE" }); await load(); }
       catch (err) { toast(err.message); }
     };
-    // paste an API key / OAuth token straight into the endpoint — saved to config.yaml, never
-    // echoed back (the view only reports has_inline_key). No host filesystem access needed.
-    const isClaude = ep.kind === "claude-cli";
-    const keyInput = el("input", { type: "password", style: "flex:1",
-      placeholder: ep.has_inline_key ? "saved ✓ — paste to replace"
-        : isClaude ? "paste Claude OAuth token (from `claude setup-token`)" : "paste API key" });
-    const saveKey = el("button", { class: "btn small primary" }, "save key");
-    saveKey.onclick = async () => {
-      if (!keyInput.value.trim()) { toast("paste a key first"); return; }
-      try {
-        await api(`/api/settings/endpoints/${ep.name}`, { method: "PUT", body: {
-          name: ep.name, kind: ep.kind, base_url: ep.base_url || "",
-          key_env_file: ep.key_env_file || "", key_var: ep.key_var || "",
-          schema_mode: ep.schema_mode, context_chars: ep.context_chars,
-          api_key: keyInput.value.trim(),
-        }});
-        toast(`${ep.name}: key saved`); keyInput.value = ""; await load();
-      } catch (err) { toast(err.message, 5000); }
-    };
+    // claude-cli uses the SUBSCRIPTION token from the Secrets store (so `gu claude` gets it too),
+    // not a per-endpoint key. openai/anthropic take an inline key here OR their key_var from Secrets.
+    let keyRow;
+    if (ep.kind === "claude-cli") {
+      keyRow = el("div", { class: "muted mt", style: "font-size:12px" },
+        "Uses your Claude subscription — set ", el("code", {}, "CLAUDE_CODE_OAUTH_TOKEN"),
+        " in Secrets above (mint it with ", el("code", {}, "claude setup-token"),
+        "). Feeds this endpoint and ", el("code", {}, "gu claude"), ".");
+    } else {
+      const keyInput = el("input", { type: "password", style: "flex:1",
+        placeholder: ep.has_inline_key ? "saved ✓ — paste to replace"
+          : `paste API key (or set ${ep.key_var || "its key"} in Secrets)` });
+      const saveKey = el("button", { class: "btn small primary" }, "save key");
+      saveKey.onclick = async () => {
+        if (!keyInput.value.trim()) { toast("paste a key first"); return; }
+        try {
+          await api(`/api/settings/endpoints/${ep.name}`, { method: "PUT", body: {
+            name: ep.name, kind: ep.kind, base_url: ep.base_url || "",
+            key_env_file: ep.key_env_file || "", key_var: ep.key_var || "",
+            schema_mode: ep.schema_mode, context_chars: ep.context_chars,
+            api_key: keyInput.value.trim(),
+          }});
+          toast(`${ep.name}: key saved`); keyInput.value = ""; await load();
+        } catch (err) { toast(err.message, 5000); }
+      };
+      keyRow = el("div", { class: "row mt" }, keyInput, saveKey);
+    }
     return el("div", { class: "panel mt" },
       el("div", { class: "row spread" },
         el("div", {},
@@ -219,7 +268,7 @@ export async function render(view) {
         `schema_mode=${ep.schema_mode} · context_chars=${ep.context_chars}` +
         (ep.key_env_file ? ` · key file: ${ep.key_var} @ ${ep.key_env_file}` : "") +
         (ep.has_inline_key ? " · 🔑 key set" : "")),
-      el("div", { class: "row mt" }, keyInput, saveKey),
+      keyRow,
       el("div", { class: "row mt" }, modelInput, testBtn, result));
   }
 

@@ -242,6 +242,41 @@ def test_endpoints_prefer_inline_key(monkeypatch):
     assert resolve_token("/nonexistent.env", "") is None
 
 
+def test_secrets_store(client, tmp_path, monkeypatch):
+    """Central secrets: write-only via the API (values never echoed), readable by the engine."""
+    c, _ = client
+    store = tmp_path / "secrets.env"
+    monkeypatch.setattr("rsched.secrets.secrets_path", lambda: store)
+    from rsched.secrets import load_secrets
+
+    assert c.get("/api/settings/secrets").json()["keys"] == []
+    assert c.put("/api/settings/secrets", json={"key": "FOO_TOKEN", "value": "abc123"}).status_code == 200
+    j = c.get("/api/settings/secrets").json()
+    assert j["keys"] == ["FOO_TOKEN"] and "abc123" not in str(j)      # names only, never the value
+    assert load_secrets()["FOO_TOKEN"] == "abc123"                    # the engine reads the value
+    assert c.put("/api/settings/secrets", json={"key": "bad key", "value": "x"}).status_code == 400
+    assert c.delete("/api/settings/secrets/FOO_TOKEN").status_code == 200
+    assert load_secrets() == {} and c.delete("/api/settings/secrets/FOO_TOKEN").status_code == 404
+
+
+def test_secrets_injected_into_utils_and_endpoints(tmp_path, monkeypatch):
+    """Store → util env (env-first) but LLM keys stay stripped; endpoints read their key_var."""
+    monkeypatch.setattr("rsched.secrets.secrets_path", lambda: tmp_path / "secrets.env")
+    from rsched.secrets import set_secret
+    set_secret("FOO_TOKEN", "tok")
+    set_secret("OPENROUTER_KEY", "sk-or-xyz")
+
+    from rsched.utils_lib import _child_env
+    env = _child_env()
+    assert env["FOO_TOKEN"] == "tok"                 # a util credential flows through
+    assert "OPENROUTER_KEY" not in env               # …but LLM keys never reach utils
+
+    from rsched.config import EndpointConfig
+    from rsched.endpoints import make_endpoint
+    ep = make_endpoint(EndpointConfig(name="or", kind="openai", key_var="OPENROUTER_KEY"))
+    assert ep._resolve_key() == "sk-or-xyz"          # the endpoint picks it up from the store
+
+
 def test_github_device_poll_unknown_flow(client):
     """Polling an unknown/expired device flow is rejected before any network call."""
     c, _ = client
