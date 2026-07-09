@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone
 
 from ..config import ServerConfig
-from . import registry
+from . import registry, restart
 from .events import EventBus
 from .runner import Runner
 
@@ -34,6 +34,8 @@ class Scheduler:
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
         self._last_scan = 0.0
+        self._shutting_down = False
+        self._deferred_logged = False
 
     def rescan(self) -> None:
         self.catalog = registry.scan(self.server)
@@ -67,6 +69,8 @@ class Scheduler:
                  {s: t.isoformat(timespec='minutes') for s, t in self.next_fires.items()})
         while True:
             await asyncio.sleep(TICK_S)
+            if self._maybe_restart():
+                continue  # draining / shutting down: fire nothing this tick
             if loop.time() - self._last_scan >= self.server.registry_rescan_s:
                 self.rescan()
                 self._last_scan = loop.time()
@@ -81,10 +85,41 @@ class Scheduler:
                 self.next_fires[slug] = registry.next_fire(info.cfg, now) or due
                 await self.runner.fire(info.cfg, reason="schedule")
 
+    def _maybe_restart(self) -> bool:
+        """Drive the graceful self-restart state machine. Returns True when the scheduler
+        should fire nothing this tick (draining or shutting down)."""
+        if self._shutting_down:
+            return True
+        action = restart.restart_action(
+            restart.restart_requested(self.server), self.runner.active_states(), self.runner.draining)
+        if action == "idle":
+            if self.runner.draining:
+                log.info("restart request withdrawn — resuming normal scheduling")
+                self.runner.draining = False
+            self._deferred_logged = False
+            return False
+        if action == "defer":
+            if not self._deferred_logged:
+                log.info("restart requested, but a run is parked (waiting_user/paused) — deferring")
+                self._deferred_logged = True
+            return False  # not draining: keep scheduling normally until cleanly drainable
+        if action == "drain":
+            if not self.runner.draining:
+                log.warning("restart requested — draining: no new runs will start until active ones finish")
+                self.runner.draining = True
+            return True
+        # action == "restart": drained, nothing active
+        self.runner.draining = True
+        self._shutting_down = True
+        restart.clear_request(self.server)
+        restart.trigger_shutdown()
+        return True
+
     def snapshot(self) -> dict:
         """For /api/status and the dashboard."""
         return {
             "routines": len(self.catalog),
             "active_runs": {slug: run.run_id for slug, run in self.runner.active.items()},
             "next_fires": {s: t.isoformat() for s, t in sorted(self.next_fires.items())},
+            "draining": self.runner.draining,
         }

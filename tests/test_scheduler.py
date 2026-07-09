@@ -28,10 +28,14 @@ class FakeRunner:
     def __init__(self):
         self.fired: list[tuple[str, str]] = []
         self.active: dict = {}
+        self.draining = False
 
     async def fire(self, cfg, *, reason="schedule"):
         self.fired.append((cfg.slug, reason))
         return f"{cfg.slug}:x"
+
+    def active_states(self):
+        return []
 
     def recover_orphans(self, catalog):
         return 0

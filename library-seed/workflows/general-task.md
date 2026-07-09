@@ -6,12 +6,12 @@ when_to_use: >
   Fits most recurring instructions that don't have a more specific pattern: collect/produce/
   maintain something on a schedule, tend a long-running goal, run a periodic check. If the
   instruction mostly says WHAT to deliver and the HOW is ordinary tool work, this is the one.
-version: 3
+version: 4
 status: stable
 params: []
 default_budgets: {max_turns: 60, max_wall_clock_min: 45}
 requires: {schema_output: false}
-includes: [ask-policy, global-utils, ledger-discipline, self-audit, improvement, fresh-eyes, hygiene]
+includes: [ask-policy, global-utils, web-research, ledger-discipline, self-audit, improvement, fresh-eyes, hygiene]
 ---
 
 ## Run flow
@@ -24,8 +24,10 @@ includes: [ask-policy, global-utils, ledger-discipline, self-audit, improvement,
 3. **Execute in small verified steps.** You have NO shell — run code only through the `util`
    action (the GLOBAL UTILS section lists what exists). If nothing fits, `write_util` to
    create one (a selftested PEP 723 script; it may call sibling utils), then call it. Read
-   files with read_file, write them with write_file. Verify what you produce (read it back,
-   check the util's exit code, count results) — never claim unverified outcomes. Delegate
+   files with read_file, write them with write_file. When the work turns on external facts
+   you're not certain of, verify them by searching rather than guessing (web-research). Verify
+   what you produce (read it back, check the util's exit code, count results) — never claim
+   unverified outcomes. Delegate
    separable chunks (research, bulk processing) to parallel sub-workflows: `spawn` them (pick
    a fitting library workflow; give each a self-contained prompt and disjoint outputs), keep
    working, monitor with `subruns`, collect via the finish notifications or `wait`. Use `llm`

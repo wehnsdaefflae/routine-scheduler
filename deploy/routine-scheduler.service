@@ -1,12 +1,19 @@
 [Unit]
 Description=LLM agent routine scheduler (rsched daemon + web UI)
 After=network-online.target
+# Cap a crash loop (e.g. new code that fails to boot) so systemd gives up rather than thrashing.
+# Bad code shouldn't reach here: self-edits are gated on a green suite that constructs the app.
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 Type=simple
 WorkingDirectory=%h/git-repos/routine-scheduler
 ExecStart=%h/.local/bin/uv run --project %h/git-repos/routine-scheduler rsched daemon
-Restart=on-failure
+# Restart=always (not on-failure): the self-audit routine restarts the daemon to pick up code
+# it committed, by draining and exiting cleanly (exit 0) — which on-failure would NOT relaunch.
+# `uv run` re-syncs deps on relaunch, so a dependency change is picked up too.
+Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 

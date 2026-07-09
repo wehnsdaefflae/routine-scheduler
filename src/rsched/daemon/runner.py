@@ -48,13 +48,25 @@ class Runner:
         self.bus = bus
         self.semaphore = asyncio.Semaphore(server.max_concurrent_runs)
         self.active: dict[str, ActiveRun] = {}  # slug → run
+        self.draining = False  # set while quiescing for a self-update restart: no new runs fire
 
     def is_active(self, slug: str) -> bool:
         return slug in self.active
 
+    def active_states(self) -> list[str]:
+        """Current state of each active run (read from status.json) — for the drain check."""
+        states: list[str] = []
+        for run in self.active.values():
+            st = read_json(run.run_dir / "status.json")
+            states.append(st.get("state", "unknown") if isinstance(st, dict) else "unknown")
+        return states
+
     async def fire(self, cfg: RoutineConfig, *, reason: str = "schedule") -> str | None:
         """Queue a run unless one is already active for this routine. The subprocess is
         spawned only once a concurrency slot is held. Returns the run_id."""
+        if self.draining:
+            log.info("fire_refused_draining routine=%s reason=%s", cfg.slug, reason)
+            return None
         if cfg.slug in self.active:
             log.info("overrun_skipped routine=%s reason=%s", cfg.slug, reason)
             return None

@@ -45,10 +45,11 @@ params: []
 
 def test_materialize_inlines_fragments_and_provenance():
     content, prov = materialize(SEED, "general-task", self_flags={"fresh_eyes": False})
-    assert prov["slug"] == "general-task" and prov["version"] == 3
+    assert prov["slug"] == "general-task" and prov["version"] == 4
     assert "## Standard practices" in content
     assert "### fragment: self-audit" in content
     assert "### fragment: ask-policy" in content
+    assert "### fragment: web-research" in content         # always-on (no self-flag)
     assert "fragment: fresh-eyes" not in content          # toggled off
     assert "materialized_from" in content
     assert lint_materialized_text(content) == []

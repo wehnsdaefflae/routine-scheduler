@@ -97,6 +97,8 @@ def test_runs_and_transcript(client):
     _mk_run(tmp / "routines", "apir", "20260707-070000", "finished")
     runs = c.get("/api/runs", params={"routine": "apir"}).json()
     assert runs[0]["run_id"] == "apir:20260707-070000"
+    assert runs[0]["routine"] == "apir"          # log-tab feed keys off this
+    assert "updated" in runs[0]
     tr = c.get("/api/runs/apir:20260707-070000/transcript").json()
     assert [e["type"] for e in tr["events"]] == ["header", "assistant_action"]
     tr2 = c.get("/api/runs/apir:20260707-070000/transcript",
@@ -138,6 +140,47 @@ def test_questions_flow(client):
     ans = read_json(routines / "apir" / "inbox" / "answer-q-old-1.json")
     assert ans["text"] == "option a"
     assert c.post("/api/questions/q-unknown/answer", json={"text": "x"}).status_code == 404
+
+
+def test_audit_report_and_feedback(client):
+    c, tmp = client
+    routines = tmp / "routines"
+    # no self-audit routine yet → friendly empty payload
+    assert c.get("/api/audit").json() == {"exists": False, "report": None, "changelog": [], "last_run": None}
+
+    adir = routines / "self-audit" / "audit"
+    adir.mkdir(parents=True)
+    report = {"schema": 1, "run_id": "self-audit:20260709-090000", "generated": "2026-07-09T09:00:00+02:00",
+              "since": {"commit": "abc1234f", "window": "2 runs"}, "summary": "healthy",
+              "findings": [{"id": "F1", "severity": "problem", "title": "t", "detail": "d", "evidence": ["x:1"]}],
+              "decisions": [{"id": "D1", "title": "q", "detail": "c", "options": ["a", "b", "leave as-is"]}]}
+    (adir / "report.json").write_text(json.dumps(report))
+    (adir / "changelog.jsonl").write_text(
+        json.dumps({"ts": "2026-07-01T09:00:00+02:00", "commit": "0000001", "summary": "old change"}) + "\n" +
+        json.dumps({"ts": "2026-07-08T09:00:00+02:00", "commit": "def5678a", "summary": "recent change"}) + "\n")
+
+    a = c.get("/api/audit").json()
+    assert a["exists"] is True
+    assert a["report"]["findings"][0]["id"] == "F1"
+    assert a["changelog"][0]["summary"] == "recent change"  # newest-first
+
+    def inbox_texts():
+        return [read_json(p)["text"] for p in (routines / "self-audit" / "inbox").glob("msg-*.json")]
+
+    r = c.post("/api/audit/feedback", json={"kind": "comment", "target": "F1", "text": "please fix"})
+    assert r.status_code == 200 and r.json()["delivery"] == "next-run"
+    assert c.post("/api/audit/feedback",
+                  json={"kind": "decision", "target": "D1", "choice": "a", "text": "do it"}).status_code == 200
+    assert c.post("/api/audit/feedback", json={"kind": "general", "text": "focus on speed"}).status_code == 200
+    texts = inbox_texts()
+    assert len(texts) == 3  # unique filenames — no clobbering within the same second
+    assert "[AUDIT feedback · finding F1] please fix" in texts
+    assert "[AUDIT decision · D1] selected: a — do it" in texts
+    assert "[AUDIT note] focus on speed" in texts
+
+    # validation + missing-routine guard
+    assert c.post("/api/audit/feedback", json={"kind": "comment", "target": "F1"}).status_code == 400
+    assert c.post("/api/audit/feedback", json={"kind": "bogus", "text": "x"}).status_code == 400
 
 
 def test_settings_endpoints_crud(client):

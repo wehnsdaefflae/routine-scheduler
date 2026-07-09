@@ -36,8 +36,9 @@ def run_index(request: Request, routine: str | None = None, limit: int = 30) -> 
              list(catalog.values()) if not routine else [])
     runs = [r for info in infos for r in info.runs]
     runs.sort(key=lambda r: r.ts, reverse=True)
-    return [{"run_id": r.run_id, "ts": r.ts, "state": r.state, "turn": r.turn,
-             "summary": r.summary[:200], "usage": r.usage} for r in runs[:limit]]
+    return [{"run_id": r.run_id, "routine": r.run_id.split(":", 1)[0], "ts": r.ts,
+             "state": r.state, "turn": r.turn, "summary": r.summary[:200],
+             "usage": r.usage, "updated": r.updated} for r in runs[:limit]]
 
 
 @router.get("/runs/{run_id}")

@@ -5,6 +5,8 @@ import { toast } from "/static/util.js";
 
 const routes = [
   [/^#?\/?$/, () => import("/static/views/dashboard.js")],
+  [/^#\/log$/, () => import("/static/views/log.js")],
+  [/^#\/audit$/, () => import("/static/views/audit.js")],
   [/^#\/routine\/([a-z0-9-]+)$/, () => import("/static/views/routine.js")],
   [/^#\/run\/([a-z0-9-]+:[0-9-]+)$/, () => import("/static/views/run.js")],
   [/^#\/questions$/, () => import("/static/views/questions.js")],
@@ -36,7 +38,9 @@ async function route() {
 }
 
 function updateNav(hash) {
-  const key = hash.startsWith("#/questions") ? "questions"
+  const key = hash.startsWith("#/log") ? "log"
+    : hash.startsWith("#/questions") ? "questions"
+    : hash.startsWith("#/audit") ? "audit"
     : hash.startsWith("#/library") ? "library"
     : hash.startsWith("#/settings") ? "settings" : "dashboard";
   document.querySelectorAll("[data-nav]").forEach((a) =>

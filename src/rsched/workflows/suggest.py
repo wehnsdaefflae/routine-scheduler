@@ -29,7 +29,7 @@ SUGGEST_SCHEMA = {
     },
 }
 
-INTERNAL = {"clarify-instruction", "meta-workflows"}
+INTERNAL = {"clarify-instruction", "meta-workflows", "self-audit-code"}
 
 
 def suggest(server: ServerConfig, instruction: str) -> dict:
