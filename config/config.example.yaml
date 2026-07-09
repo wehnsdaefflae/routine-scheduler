@@ -44,7 +44,7 @@ endpoints:
     kind: openai
     base_url: "http://127.0.0.1:11434/v1"
     api_key: "ollama"                             # Ollama ignores the key; no file needed
-    schema_mode: json_object   # grammar mode pads other kinds' fields into actions (like openrouter)
+    schema_mode: ollama_native   # grammar mode pads other kinds' fields into actions (like openrouter)
     context_chars: 36000
     temperature: 0.2
   anthropic:

@@ -33,7 +33,11 @@ class OpenAICompatEndpoint:
         self.schema_mode = cfg.schema_mode
         self.context_chars = cfg.context_chars
         self.temperature = cfg.temperature
-        self.supports_schema = cfg.schema_mode == "json_schema"
+        # ollama_native: use Ollama's native /api/chat `format` field for REAL constrained
+        # decoding to the schema (the OpenAI-compat response_format is not enforced by Ollama).
+        self.native = cfg.schema_mode == "ollama_native"
+        self.native_url = self.base_url.removesuffix("/v1") + "/api/chat"
+        self.supports_schema = cfg.schema_mode in ("json_schema", "ollama_native")
 
     def _resolve_key(self) -> str:
         if self.key_env_file:
@@ -59,6 +63,8 @@ class OpenAICompatEndpoint:
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
                  timeout: int = DEFAULT_TIMEOUT) -> Completion:
+        if self.native and schema is not None:
+            return self._complete_native(messages, model, schema, max_tokens, timeout)
         body: dict = {"model": model, "messages": messages}
         if self.temperature is not None:
             body["temperature"] = self.temperature
@@ -87,6 +93,35 @@ class OpenAICompatEndpoint:
                 if degraded.keys() != body.keys():
                     resp = self._post(degraded, headers, timeout)
             return self._parse(resp)
+
+        return with_retries(call)
+
+    def _complete_native(self, messages, model, schema, max_tokens, timeout) -> Completion:
+        """Ollama native /api/chat with `format` = the JSON schema → constrained decoding."""
+        # num_ctx MUST be set: Ollama's default context is tiny, so a large prompt gets
+        # silently truncated and schema enforcement degrades (the model emits stray keys).
+        options = {"num_ctx": max(8192, self.context_chars // 4)}
+        if self.temperature is not None:
+            options["temperature"] = self.temperature
+        if max_tokens:
+            options["num_predict"] = max_tokens
+        body = {"model": model, "messages": messages, "format": schema, "stream": False,
+                "options": options}
+
+        def call() -> Completion:
+            try:
+                resp = httpx.post(self.native_url, json=body, timeout=timeout)
+            except httpx.HTTPError as exc:
+                raise EndpointError(f"{self.name}: {exc}", retryable=True) from exc
+            if resp.status_code == 429 or resp.status_code >= 500:
+                raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}", retryable=True)
+            if resp.status_code != 200:
+                raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}")
+            data = resp.json()
+            text = (data.get("message") or {}).get("content", "") or ""
+            return Completion(text=text,
+                              usage={"in": int(data.get("prompt_eval_count") or 0),
+                                     "out": int(data.get("eval_count") or 0)})
 
         return with_retries(call)
 

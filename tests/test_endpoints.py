@@ -143,6 +143,30 @@ def test_openai_reasoning_fallback_on_empty_content(monkeypatch):
     assert '"kind":"finish"' in c.text  # reasoning text surfaced instead of empty content
 
 
+def test_ollama_native_structured_output(monkeypatch):
+    ep = OpenAICompatEndpoint(EndpointConfig(
+        name="ollama", kind="openai", base_url="http://x/v1", api_key="ollama",
+        schema_mode="ollama_native", context_chars=36000, temperature=0.2))
+    seen = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        seen.update(url=url, body=json)
+        return FakeResponse(payload={"message": {"content": '{"say":"s","kind":"finish"}'},
+                                     "prompt_eval_count": 12, "eval_count": 5})
+
+    monkeypatch.setattr(oai_mod.httpx, "post", fake_post)
+    c = ep.complete(MESSAGES, model="gemma4:latest", schema={"type": "object"}, max_tokens=999)
+    assert seen["url"] == "http://x/api/chat"          # native endpoint, not /v1/chat/completions
+    assert seen["body"]["format"] == {"type": "object"}  # the schema drives constrained decoding
+    assert seen["body"]["options"]["num_ctx"] == 9000    # context_chars // 4, prevents truncation
+    assert seen["body"]["options"]["num_predict"] == 999
+    assert c.text == '{"say":"s","kind":"finish"}' and c.usage == {"in": 12, "out": 5}
+    # without a schema the native path is skipped (plain /v1 generation)
+    monkeypatch.setattr(oai_mod.httpx, "post",
+                        lambda *a, **k: FakeResponse(payload={"choices": [{"message": {"content": "x"}}]}))
+    assert ep.complete(MESSAGES, model="m").text == "x"
+
+
 def test_openai_error_mapping(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda s: None)
     codes = iter([500, 500, 500])

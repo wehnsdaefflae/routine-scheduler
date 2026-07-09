@@ -45,7 +45,7 @@ ROLES = ("orchestrator", "subcall", "cheap")
 # CLI in fully stripped print mode (tools off, our system prompt replaces its own) — a
 # subscription-billed completion function; the engine remains the only agent loop.
 ENDPOINT_KINDS = ("openai", "anthropic", "claude-cli")
-SCHEMA_MODES = ("json_schema", "json_object", "none")
+SCHEMA_MODES = ("json_schema", "json_object", "ollama_native", "none")
 
 
 @dataclass
