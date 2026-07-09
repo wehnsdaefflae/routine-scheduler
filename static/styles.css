@@ -73,6 +73,10 @@ h2::before { content: ""; width: 6px; height: 6px; background: var(--amber); box
 }
 .topbar nav a:hover { color: var(--text); background: #ffffff08; }
 .topbar nav a.active { color: var(--bg); background: var(--amber); }
+/* Routine setup in progress: the rest of the console is locked until it finishes or is canceled. */
+.topbar nav a.locked, .brand.locked { opacity: 0.35; cursor: not-allowed; }
+.topbar nav a.locked:hover { background: none; color: var(--muted); }
+#nav-new-routine.resuming { background: var(--warn); border-color: var(--warn); color: var(--bg); }
 .topbar-right { display: flex; align-items: center; gap: 16px; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--err); box-shadow: 0 0 8px var(--err); }
 .dot.on { background: var(--phos); box-shadow: 0 0 9px var(--phos); }
@@ -103,6 +107,18 @@ main { max-width: 1120px; margin: 0 auto; padding: 30px 26px 100px; }
 .chip.sev-improvement { color: var(--phos); border-color: #2c5c53; background: #10201d; }
 .chip.sev-info { color: var(--muted); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  display: inline-block; width: 14px; height: 14px; border: 2px solid #ffffff22;
+  border-top-color: var(--amber); border-radius: 50%; animation: spin .8s linear infinite;
+  flex: 0 0 auto;
+}
+/* "waiting on the model" banner — shown at every wizard step that blocks on an LLM response. */
+.busy {
+  display: flex; align-items: center; gap: 10px; color: var(--warn);
+  font-size: 13.5px; padding: 11px 13px; margin: 10px 0;
+  background: #221c0c; border: 1px solid #5a4a1a; border-radius: 8px;
+}
 
 /* ---------- tags ---------- */
 .tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }

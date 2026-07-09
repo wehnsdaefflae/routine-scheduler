@@ -17,8 +17,29 @@ const routes = [
 
 let teardown = null;
 
+// Routine-setup lock: while a wizard session is live, the rest of the console is off-limits —
+// the process must be finished or canceled first. The wizard view emits rsched-wizard-active.
+const WIZ_KEY = "rsched_wizard";
+let wizardLocked = false;
+const wizardActive = () => {
+  try { return !!JSON.parse(localStorage.getItem(WIZ_KEY) || "null"); } catch { return false; }
+};
+
+function lockNav(active) {
+  wizardLocked = active;
+  document.querySelectorAll(".topbar nav a[data-nav]").forEach((a) => a.classList.toggle("locked", active));
+  document.querySelector(".brand")?.classList.toggle("locked", active);
+  const nb = document.getElementById("nav-new-routine");     // stays live — it's the way back
+  if (nb) { nb.classList.toggle("resuming", active); nb.textContent = active ? "↩ Resume setup" : "+ New routine"; }
+}
+
 async function route() {
   const hash = location.hash || "#/";
+  if (wizardLocked && !hash.startsWith("#/wizard")) {
+    toast("Finish or cancel the routine setup first", 3200);
+    location.hash = "#/wizard";               // bounce back to the in-progress wizard
+    return;
+  }
   for (const [pattern, load] of routes) {
     const m = pattern.exec(hash);
     if (!m) continue;
@@ -72,6 +93,7 @@ function globalStream() {
 }
 
 window.addEventListener("hashchange", route);
+window.addEventListener("rsched-wizard-active", (e) => lockNav(!!e.detail?.active));
 
 // First launch: send the user to setup (Settings) until they finish it. The redirect fires a
 // hashchange → route(), so we don't call route() again in that branch.
@@ -90,6 +112,7 @@ function gateNav(ready) {
       return;
     }
   } catch {}
+  lockNav(wizardActive());        // restore the setup-lock after a reload mid-wizard
   route();
 })();
 refreshBadges();

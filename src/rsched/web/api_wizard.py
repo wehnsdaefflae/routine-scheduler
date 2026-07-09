@@ -160,11 +160,14 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
     try:
         cron = schedule.friendly_to_cron(body.friendly or {"frequency": "manual"})
         playbook = result.get("playbook") if isinstance(result.get("playbook"), dict) else None
-        routine_dir = scaffold(server, slug=body.slug, name=body.name,
-                               instruction=result["refined_instruction"],
-                               workflow_slug=body.workflow_slug, cron=cron,
-                               tz=schedule.server_tz(), params=body.params, playbook=playbook,
-                               tags=normalize_tags(body.tags) or None, fragments=body.fragments)
+        # scaffold() calls decompose(), which makes a BLOCKING LLM call (up to 180s). Run it off
+        # the event loop or it freezes the whole web server until the model responds.
+        routine_dir = await asyncio.to_thread(
+            scaffold, server, slug=body.slug, name=body.name,
+            instruction=result["refined_instruction"],
+            workflow_slug=body.workflow_slug, cron=cron,
+            tz=schedule.server_tz(), params=body.params, playbook=playbook,
+            tags=normalize_tags(body.tags) or None, fragments=body.fragments)
     except (ValueError, KeyError, FileNotFoundError) as exc:
         raise HTTPException(422, str(exc)) from exc
     # keep the wizard conversation as provenance inside the new routine

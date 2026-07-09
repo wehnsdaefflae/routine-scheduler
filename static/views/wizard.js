@@ -2,7 +2,12 @@
 
 import { api, sse } from "/static/api.js";
 import { createTranscript } from "/static/components/transcript.js";
-import { el, scheduleEditor, toast } from "/static/util.js";
+import { busy, el, scheduleEditor, toast } from "/static/util.js";
+
+// While a clarify/creation session is live, the rest of the console is locked (app.js listens).
+// This keeps the user from silently wandering off mid-process and losing track of how to return.
+const setActive = (active) =>
+  window.dispatchEvent(new CustomEvent("rsched-wizard-active", { detail: { active } }));
 
 export async function render(view, resumeWid) {
   view.append(el("h1", {}, "New routine"));
@@ -22,10 +27,10 @@ export async function render(view, resumeWid) {
   // Persist the in-progress session (id + chosen fragments) so switching tabs doesn't lose it.
   const KEY = "rsched_wizard";
   const saved = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; } };
-  const clearSaved = () => localStorage.removeItem(KEY);
+  const clearSaved = () => { localStorage.removeItem(KEY); setActive(false); };
 
   const resume = resumeWid || saved()?.wid;
-  if (resume) stageChat(resume);        // resume an existing session (replays chat / jumps to suggest)
+  if (resume) { setActive(true); stageChat(resume); }   // resume a live session (replays chat / jumps to suggest)
   else stageDraft();
 
   function stageDraft() {
@@ -41,6 +46,7 @@ export async function render(view, resumeWid) {
       try {
         const r = await api("/api/wizard/start", { method: "POST", body: { draft: ta.value } });
         localStorage.setItem(KEY, JSON.stringify({ wid: r.wid, fragments: chosen() }));
+        setActive(true);              // lock the rest of the console until finished or canceled
         stageChat(r.wid);
       } catch (err) { toast(err.message); go.disabled = false; }
     };
@@ -64,19 +70,23 @@ export async function render(view, resumeWid) {
 
   function stageChat(wid) {
     stage.innerHTML = "";
-    const discard = el("button", { class: "btn small danger",
-      onclick: () => { if (source) source.close(); clearSaved(); stageDraft(); } }, "discard");
+    const cancel = el("button", { class: "btn small danger",
+      onclick: () => { if (source) source.close(); clearSaved(); stageDraft(); } }, "cancel setup");
     stage.append(el("div", { class: "row spread" },
-      el("h2", {}, "Clarification — answer the questions"), discard));
-    const chatBox = el("div", { class: "mt" });
+      el("h2", {}, "Clarification — answer the questions"), cancel));
+    const thinkBox = el("div", {});     // "waiting on the model" while it works between questions
     const qBox = el("div", {});
-    stage.append(qBox, chatBox);
+    const chatBox = el("div", { class: "mt" });
+    stage.append(thinkBox, qBox, chatBox);
     const transcript = createTranscript(chatBox);
     let gotAny = false;
 
+    const setThinking = (msg) => { thinkBox.innerHTML = ""; if (msg) thinkBox.append(busy(msg)); };
+    setThinking("Waiting for the model — reading your task and working out what to ask…");
+
     function showQuestion(q) {
+      setThinking(null);                // a question is on screen → no longer waiting on the model
       qBox.innerHTML = "";
-      if (!q) return;
       const input = el("input", { type: "text", placeholder: "your answer…", style: "flex:1" });
       const send = el("button", { class: "btn primary" }, "answer");
       const submit = async () => {
@@ -85,6 +95,7 @@ export async function render(view, resumeWid) {
           await api(`/api/wizard/${wid}/answer`, { method: "POST",
             body: { qid: q.qid, text: input.value } });
           qBox.innerHTML = "";
+          setThinking("Waiting for the model — considering your answer…");
         } catch (err) { toast(err.message); }
       };
       send.onclick = submit;
@@ -99,11 +110,12 @@ export async function render(view, resumeWid) {
 
     source = sse(`/api/wizard/${wid}/events`, {
       transcript: (ev) => { gotAny = true; transcript.add(ev); },
-      state: (st) => { gotAny = true; showQuestion(st.question); },
-      end: () => { source.close(); stageSuggest(wid); },
+      state: (st) => { gotAny = true; if (st.question) showQuestion(st.question); else setThinking("Waiting for the model…"); },
+      end: () => { setThinking(null); source.close(); stageSuggest(wid); },
       onerror: () => {
         if (gotAny) return;                    // transient mid-stream error — ignore
         if (source) source.close();            // couldn't attach → the session is gone
+        setThinking(null);
         qBox.innerHTML = "";
         qBox.append(el("div", { class: "panel", style: "border-color:var(--warn)" },
           "This wizard session is no longer available.",
@@ -114,16 +126,25 @@ export async function render(view, resumeWid) {
   }
 
   async function stageSuggest(wid) {
+    stage.innerHTML = "";
+    stage.append(busy(
+      "Waiting for the model — turning the conversation into a refined instruction and "
+      + "matching it to the workflow library…"));
     let data;
     try { data = await api(`/api/wizard/${wid}/suggest`, { method: "POST" }); }
     catch (err) {
-      stage.append(el("div", { class: "panel mt", style: "border-color:var(--err)" },
-        `clarify run ended without a result: ${err.message}`));
+      stage.innerHTML = "";
+      stage.append(el("div", { class: "panel", style: "border-color:var(--err)" },
+        `clarify run ended without a result: ${err.message}`,
+        el("div", { class: "row mt" },
+          el("button", { class: "btn small", onclick: () => { clearSaved(); stageDraft(); } }, "start over"))));
       return;
     }
     const wr = data.wizard_result;
     stage.innerHTML = "";
-    stage.append(el("h2", {}, "Refined instruction"),
+    stage.append(el("div", { class: "row spread" },
+      el("h2", {}, "Refined instruction"),
+      el("button", { class: "btn small danger", onclick: () => { clearSaved(); stageDraft(); } }, "cancel setup")),
       el("pre", { class: "doc" }, wr.refined_instruction));
 
     const picked = { slug: data.suggestions[0]?.slug || "" };
@@ -169,9 +190,14 @@ export async function render(view, resumeWid) {
     const sched = scheduleEditor({ frequency: "manual" }, status.server_tz);
     const runNow = el("input", { type: "checkbox", checked: true });
     const create = el("button", { class: "btn primary" }, "create routine");
+    const createStatus = el("div", {});
     create.onclick = async () => {
       if (!picked.slug) { toast("pick a workflow"); return; }
       create.disabled = true;
+      createStatus.innerHTML = "";
+      createStatus.append(busy(
+        "Building the routine — the model is decomposing the workflow into steps. "
+        + "This can take up to a couple of minutes; you'll be taken to the routine automatically."));
       try {
         const r = await api(`/api/wizard/${wid}/finalize`, { method: "POST", body: {
           slug: f.slug.value.trim(), name: f.name.value.trim() || f.slug.value.trim(),
@@ -182,7 +208,7 @@ export async function render(view, resumeWid) {
         clearSaved();
         toast(`routine ${r.slug} created`);
         location.hash = r.run_id ? `#/run/${r.run_id}` : `#/routine/${r.slug}`;
-      } catch (err) { toast(err.message, 6000); create.disabled = false; }
+      } catch (err) { createStatus.innerHTML = ""; toast(err.message, 6000); create.disabled = false; }
     };
     stage.append(el("h2", {}, "Create"),
       el("div", { class: "panel" },
@@ -196,7 +222,8 @@ export async function render(view, resumeWid) {
         wr.notes ? el("div", { class: "muted mt" }, `wizard notes: ${wr.notes}`) : null,
         el("div", { class: "row mt" },
           el("label", { class: "row", style: "gap:4px" }, runNow, "first run immediately"),
-          create)));
+          create),
+        createStatus));
   }
 
   return () => { if (source) source.close(); };

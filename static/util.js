@@ -51,6 +51,14 @@ export function chip(text, cls = "") {
   return el("span", { class: `chip ${cls}` }, text);
 }
 
+// An inline "waiting on the model" indicator — a spinner + message. Used at every wizard step
+// where the UI blocks on an LLM endpoint response, so the wait is never silent.
+export function busy(message) {
+  return el("div", { class: "busy" },
+    el("span", { class: "spinner", "aria-hidden": "true" }),
+    el("span", {}, message));
+}
+
 // A tag pill. onClick makes it a filter toggle (active → highlighted); onRemove adds an × for
 // inline editing. `meta` is styled distinctly.
 export function tagChip(text, { onClick, onRemove, active } = {}) {
