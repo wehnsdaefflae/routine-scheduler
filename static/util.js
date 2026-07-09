@@ -51,6 +51,19 @@ export function chip(text, cls = "") {
   return el("span", { class: `chip ${cls}` }, text);
 }
 
+// A tag pill. onClick makes it a filter toggle (active → highlighted); onRemove adds an × for
+// inline editing. `meta` is styled distinctly.
+export function tagChip(text, { onClick, onRemove, active } = {}) {
+  const cls = ["tag", text === "meta" ? "meta" : "", onClick ? "click" : "", active ? "on" : ""]
+    .filter(Boolean).join(" ");
+  const attrs = { class: cls };
+  if (onClick) attrs.onclick = onClick;
+  const node = el("span", attrs, text);
+  if (onRemove) node.append(el("span", { class: "x", title: "remove",
+    onclick: (e) => { e.stopPropagation(); onRemove(); } }, "×"));
+  return node;
+}
+
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 // A friendly schedule builder. `initial` is a friendly spec {frequency, time, weekday, ...}.

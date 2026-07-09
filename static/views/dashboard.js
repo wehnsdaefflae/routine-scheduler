@@ -1,26 +1,73 @@
 // Dashboard: routine cards with status, next fire, last outcome, run-now.
+// A tag filter bar sits on top: meta routines are tucked away by default; click tags to filter.
 
 import { api } from "/static/api.js";
-import { chip, el, fmtTs, relTime, toast } from "/static/util.js";
+import { chip, el, fmtTs, relTime, tagChip, toast } from "/static/util.js";
+
+const FILTER_KEY = "rsched_dash_tags";
 
 export async function render(view) {
   view.append(el("h1", {}, "Routines"));
+  const filterBar = el("div", { class: "filterbar" });
   const grid = el("div", { class: "grid" });
-  view.append(grid);
+  view.append(filterBar, grid);
 
-  async function load() {
-    const cards = await api("/api/routines");
+  let cards = [];
+  const active = new Set(JSON.parse(localStorage.getItem(FILTER_KEY) || "[]"));
+
+  function visible(c) {
+    const tags = c.tags || [];
+    if (!active.size) return !tags.includes("meta");   // default view tucks meta away
+    return tags.some((t) => active.has(t));
+  }
+
+  function renderFilterBar() {
+    const all = [...new Set(cards.flatMap((c) => c.tags || []))]
+      .sort((a, b) => (a === "meta" ? -1 : b === "meta" ? 1 : a.localeCompare(b)));
+    filterBar.innerHTML = "";
+    if (!all.length) return;
+    filterBar.append(el("span", { class: "lbl" }, "filter"));
+    for (const t of all) {
+      filterBar.append(tagChip(t, {
+        active: active.has(t),
+        onClick: () => {
+          active.has(t) ? active.delete(t) : active.add(t);
+          localStorage.setItem(FILTER_KEY, JSON.stringify([...active]));
+          renderFilterBar(); renderGrid();
+        },
+      }));
+    }
+    if (active.size) filterBar.append(el("a", {
+      href: "#", class: "muted", style: "font-family:var(--mono);font-size:11px",
+      onclick: (e) => { e.preventDefault(); active.clear(); localStorage.setItem(FILTER_KEY, "[]"); renderFilterBar(); renderGrid(); },
+    }, "clear"));
+    else if (cards.some((c) => (c.tags || []).includes("meta")))
+      filterBar.append(el("span", { class: "muted", style: "font-size:11.5px;font-family:var(--mono)" },
+        "· meta hidden"));
+  }
+
+  function renderGrid() {
+    const shown = cards.filter(visible);
     grid.innerHTML = "";
     if (!cards.length) {
       grid.append(el("div", { class: "empty" },
         "No routines yet — create the first one with “+ New routine”."));
       return;
     }
-    for (const c of cards) grid.append(card(c));
+    if (!shown.length) {
+      grid.append(el("div", { class: "empty" }, "No routines match this tag filter."));
+      return;
+    }
+    for (const c of shown) grid.append(card(c));
+  }
+
+  async function load() {
+    cards = await api("/api/routines");
+    renderFilterBar();
+    renderGrid();
   }
 
   function card(c) {
-    const state = c.active_state || (c.enabled ? "idle" : "disabled");
     const stateChip = c.active_state ? chip(c.active_state, c.active_state)
       : c.enabled ? chip("idle") : chip("disabled", "disabled");
     const last = c.last_run;
@@ -28,6 +75,7 @@ export async function render(view) {
       el("div", { class: "title" },
         el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
         stateChip),
+      (c.tags || []).length ? el("div", { class: "tags" }, c.tags.map((t) => tagChip(t))) : null,
       el("div", { class: "meta" },
         el("span", {}, `⏱ ${c.schedule_desc || "Manual"}`),
         c.next_fire ? el("span", {}, `next ${relTime(c.next_fire)}`) : null,

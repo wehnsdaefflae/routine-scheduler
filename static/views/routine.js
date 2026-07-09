@@ -2,7 +2,7 @@
 // editable instruction / playbook / fragment files, state, runs.
 
 import { api } from "/static/api.js";
-import { chip, el, fmtTokens, fmtTs, scheduleEditor, toast } from "/static/util.js";
+import { chip, el, fmtTokens, fmtTs, scheduleEditor, tagChip, toast } from "/static/util.js";
 
 export async function render(view, slug) {
   let d;
@@ -34,6 +34,38 @@ export async function render(view, slug) {
     try { await api(`/api/routines/${slug}/archive`, { method: "POST" }); location.hash = "#/"; }
     catch (err) { toast(err.message); }
   }
+
+  // -- tags -----------------------------------------------------------------------
+  let tags = [...(d.tags || [])];
+  const tagsRow = el("div", { class: "tags" });
+  const tagInput = el("input", { type: "text", placeholder: "add tag…", style: "width:130px" });
+  function renderTags() {
+    tagsRow.innerHTML = "";
+    tags.forEach((t) => tagsRow.append(tagChip(t,
+      { onRemove: () => { tags = tags.filter((x) => x !== t); renderTags(); } })));
+    tagsRow.append(tagInput);
+  }
+  function addTag() {
+    const v = tagInput.value.trim().toLowerCase().replace(/\s+/g, "-");
+    if (v && !tags.includes(v)) { tags.push(v); tagInput.value = ""; renderTags(); }
+    tagInput.focus();
+  }
+  tagInput.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } };
+  renderTags();
+  view.append(el("h2", {}, "Tags"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted", style: "font-family:var(--mono);font-size:12px;margin-bottom:8px" },
+        "freeform labels for filtering on the Dashboard (e.g. meta tucks a routine away by default)"),
+      tagsRow,
+      el("div", { class: "row mt" },
+        el("button", { class: "btn small", onclick: addTag }, "+ add"),
+        el("button", {
+          class: "btn primary",
+          onclick: async () => {
+            try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { tags } }); toast("tags saved"); }
+            catch (err) { toast(err.message); }
+          },
+        }, "save tags"))));
 
   // -- schedule -------------------------------------------------------------------
   const sched = scheduleEditor(d.schedule_friendly || { frequency: "manual" }, d.server_tz);
