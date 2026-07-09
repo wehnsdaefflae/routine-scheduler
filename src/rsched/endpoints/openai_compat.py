@@ -98,9 +98,14 @@ class OpenAICompatEndpoint:
             raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}")
         data = resp.json()
         try:
-            text = data["choices"][0]["message"]["content"] or ""
+            message = data["choices"][0]["message"]
+            text = message.get("content") or ""
         except (KeyError, IndexError, TypeError) as exc:
             raise EndpointError(f"{self.name}: malformed response: {json.dumps(data)[:300]}") from exc
+        if not text.strip():
+            # Reasoning models sometimes spend the whole output budget "thinking" and leave
+            # content empty; the answer (or at least the JSON) often sits in `reasoning`.
+            text = message.get("reasoning") or ""
         usage = data.get("usage") or {}
         return Completion(
             text=text,

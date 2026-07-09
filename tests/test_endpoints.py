@@ -131,6 +131,15 @@ def test_openai_response_format_degradation_on_400(monkeypatch):
     assert c.text == '{"ok":1}'
 
 
+def test_openai_reasoning_fallback_on_empty_content(monkeypatch):
+    monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
+        "choices": [{"message": {"content": "",
+                                 "reasoning": 'thinking… the action is {"say":"s","kind":"finish"}'}}],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 9}}))
+    c = _oai().complete(MESSAGES, model="m")
+    assert '"kind":"finish"' in c.text  # reasoning text surfaced instead of empty content
+
+
 def test_openai_error_mapping(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda s: None)
     codes = iter([500, 500, 500])

@@ -75,7 +75,7 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
         messages.append({"role": "user", "content": action["prompt"]})
         completion = endpoint.complete(
             messages, model=ref.model, schema=action.get("response_schema"),
-            effort=ref.effort,
+            effort=ref.effort, max_tokens=16_384,
         )
     except EndpointError as exc:
         return {"kind": "llm", "role": role, "error": str(exc)}

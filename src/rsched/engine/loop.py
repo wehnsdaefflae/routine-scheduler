@@ -165,8 +165,11 @@ class EngineLoop:
             ctx.transcript.event("compaction", cinfo)
         usage_sum = {"in": 0, "out": 0}
         for attempt in range(1, MAX_SCHEMA_ATTEMPTS + 1):
+            # Generous output cap: reasoning models need room to think AND answer — a
+            # provider's small default can swallow the content entirely.
             completion = endpoint.complete(self.messages, model=ref.model,
-                                           schema=ACTION_SCHEMA, effort=ref.effort)
+                                           schema=ACTION_SCHEMA, effort=ref.effort,
+                                           max_tokens=16_384)
             usage_sum["in"] += completion.usage["in"]
             usage_sum["out"] += completion.usage["out"]
             try:
