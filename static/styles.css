@@ -142,3 +142,8 @@ details.raw pre { margin: 0; padding: 8px 13px; overflow-x: auto; background: #1
 pre.doc { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
           padding: 12px; white-space: pre-wrap; max-height: 420px; overflow: auto; }
 .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+.toggle-row { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0;
+              border-bottom: 1px solid var(--line); }
+.toggle-row:last-child { border-bottom: none; }
+.toggle-row input { margin-top: 3px; }
+input[type=time], input[type=number] { width: auto; }

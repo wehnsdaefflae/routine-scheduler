@@ -2,7 +2,7 @@
 
 import { api, sse } from "/static/api.js";
 import { createTranscript } from "/static/components/transcript.js";
-import { el, toast } from "/static/util.js";
+import { el, scheduleEditor, toast } from "/static/util.js";
 
 export async function render(view, resumeWid) {
   view.append(el("h1", {}, "New routine"));
@@ -121,9 +121,9 @@ export async function render(view, resumeWid) {
     const f = {
       slug: el("input", { type: "text", value: wr.suggested_slug || "" }),
       name: el("input", { type: "text", value: wr.suggested_name || "" }),
-      cron: el("input", { type: "text", value: "", placeholder: "e.g. 0 7 * * 1 — empty = manual runs only" }),
-      tz: el("input", { type: "text", value: "Europe/Berlin" }),
     };
+    const status = await api("/api/status").catch(() => ({}));
+    const sched = scheduleEditor({ frequency: "manual" }, status.server_tz);
     const runNow = el("input", { type: "checkbox", checked: true });
     const create = el("button", { class: "btn primary" }, "create routine");
     create.onclick = async () => {
@@ -132,8 +132,7 @@ export async function render(view, resumeWid) {
       try {
         const r = await api(`/api/wizard/${wid}/finalize`, { method: "POST", body: {
           slug: f.slug.value.trim(), name: f.name.value.trim() || f.slug.value.trim(),
-          workflow_slug: picked.slug, cron: f.cron.value.trim(), tz: f.tz.value.trim(),
-          run_now: runNow.checked,
+          workflow_slug: picked.slug, friendly: sched.value(), run_now: runNow.checked,
         }});
         toast(`routine ${r.slug} created`);
         location.hash = r.run_id ? `#/run/${r.run_id}` : `#/routine/${r.slug}`;
@@ -144,10 +143,8 @@ export async function render(view, resumeWid) {
         el("div", { class: "field-row" },
           el("label", { class: "field" }, el("span", {}, "slug"), f.slug),
           el("label", { class: "field" }, el("span", {}, "name"), f.name)),
-        el("div", { class: "field-row" },
-          el("label", { class: "field" }, el("span", {}, "cron"), f.cron),
-          el("label", { class: "field" }, el("span", {}, "timezone"), f.tz)),
-        wr.notes ? el("div", { class: "muted" }, `wizard notes: ${wr.notes}`) : null,
+        el("label", { class: "field" }, el("span", {}, "schedule"), sched.node),
+        wr.notes ? el("div", { class: "muted mt" }, `wizard notes: ${wr.notes}`) : null,
         el("div", { class: "row mt" },
           el("label", { class: "row", style: "gap:4px" }, runNow, "first run immediately"),
           create)));

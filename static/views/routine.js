@@ -1,7 +1,7 @@
 // Routine detail: docs, schedule + toggles editor, state files, LEDGER, runs list.
 
 import { api } from "/static/api.js";
-import { chip, el, fmtTokens, fmtTs, toast } from "/static/util.js";
+import { chip, el, fmtTokens, fmtTs, scheduleEditor, toast, TOGGLE_INFO } from "/static/util.js";
 
 export async function render(view, slug) {
   let d;
@@ -35,35 +35,53 @@ export async function render(view, slug) {
     catch (err) { toast(err.message); }
   }
 
-  // -- schedule + toggles ---------------------------------------------------------
-  const cronInput = el("input", { type: "text", value: d.cron || "" });
-  const tzInput = el("input", { type: "text", value: d.tz || "Europe/Berlin" });
+  // -- schedule -------------------------------------------------------------------
+  const sched = scheduleEditor(d.schedule_friendly || { frequency: "manual" }, d.server_tz);
   const enabledBox = el("input", { type: "checkbox", checked: d.enabled || null });
-  const selfBoxes = Object.fromEntries(Object.entries(d.self).map(([k, v]) =>
-    [k, el("input", { type: "checkbox", checked: v || null })]));
-  view.append(el("h2", {}, "Schedule & standards"),
+  view.append(el("h2", {}, "Schedule"),
     el("div", { class: "panel" },
-      el("div", { class: "field-row" },
-        el("label", { class: "field" }, el("span", {}, "cron"), cronInput),
-        el("label", { class: "field" }, el("span", {}, "timezone"), tzInput),
-        el("label", { class: "field" }, el("span", {}, "enabled"), enabledBox)),
-      el("div", { class: "row" },
-        Object.entries(selfBoxes).map(([k, box]) =>
-          el("label", { class: "row", style: "gap:4px" }, box, k)),
+      sched.node,
+      el("label", { class: "row mt", style: "gap:6px" }, enabledBox, "enabled"),
+      el("div", { class: "row mt" },
         el("button", {
-          class: "btn primary", style: "margin-left:auto",
+          class: "btn primary",
           onclick: async (e) => {
             try {
               await api(`/api/routines/${slug}`, { method: "PATCH", body: {
-                enabled: enabledBox.checked,
-                schedule: { cron: cronInput.value.trim(), tz: tzInput.value.trim() },
-                self: Object.fromEntries(Object.entries(selfBoxes).map(([k, b]) => [k, b.checked])),
+                enabled: enabledBox.checked, schedule: { friendly: sched.value() },
               }});
-              toast("saved");
+              toast("schedule saved");
+              setTimeout(() => location.reload(), 400);
             } catch (err) { toast(err.message); }
           },
-        }, "save")),
-      d.next_fire ? el("div", { class: "muted mt" }, `next fire: ${new Date(d.next_fire).toLocaleString()}`) : null));
+        }, "save schedule")),
+      d.next_fire ? el("div", { class: "muted mt" }, `next run: ${new Date(d.next_fire).toLocaleString()}`) : null));
+
+  // -- standards (described toggles) ----------------------------------------------
+  const toggles = { ...d.self, confirm_util_changes: d.confirm_util_changes };
+  const boxes = {};
+  const toggleRows = Object.entries(TOGGLE_INFO).map(([key, [title, desc]]) => {
+    const box = el("input", { type: "checkbox", checked: toggles[key] ? "" : null });
+    boxes[key] = box;
+    return el("label", { class: "toggle-row" }, box,
+      el("div", {}, el("div", { style: "font-weight:600" }, title),
+        el("div", { class: "muted", style: "font-size:12.5px" }, desc)));
+  });
+  view.append(el("h2", {}, "Self-management standards"),
+    el("div", { class: "panel" }, toggleRows,
+      el("div", { class: "row mt" }, el("button", {
+        class: "btn primary",
+        onclick: async () => {
+          const self = {}; ["audit", "improve", "ledger", "fresh_eyes", "hygiene"].forEach(
+            (k) => (self[k] = boxes[k].checked));
+          try {
+            await api(`/api/routines/${slug}`, { method: "PATCH", body: {
+              self, confirm_util_changes: boxes.confirm_util_changes.checked,
+            }});
+            toast("standards saved");
+          } catch (err) { toast(err.message); }
+        },
+      }, "save standards"))));
 
   // -- docs -----------------------------------------------------------------------
   view.append(el("h2", {}, "Instruction & workflow"));

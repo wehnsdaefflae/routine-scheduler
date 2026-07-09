@@ -73,8 +73,9 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     @app.get("/api/status", dependencies=deps)
     def status() -> dict:
         from .. import __version__
+        from ..schedule import server_tz
 
-        return {"version": __version__, **scheduler.snapshot()}
+        return {"version": __version__, "server_tz": server_tz(), **scheduler.snapshot()}
 
     @app.get("/api/events", dependencies=deps)
     async def global_events():

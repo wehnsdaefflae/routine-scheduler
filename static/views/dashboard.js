@@ -29,7 +29,7 @@ export async function render(view) {
         el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
         stateChip),
       el("div", { class: "meta" },
-        el("span", {}, c.cron ? `⏱ ${c.cron} (${c.tz})` : "no schedule"),
+        el("span", {}, `⏱ ${c.schedule_desc || "Manual"}`),
         c.next_fire ? el("span", {}, `next ${relTime(c.next_fire)}`) : null,
         c.open_questions ? el("span", { class: "badge" }, `${c.open_questions} ?`) : null),
       last ? el("div", { class: "summary", title: last.summary },

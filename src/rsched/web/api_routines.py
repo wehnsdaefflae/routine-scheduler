@@ -11,6 +11,7 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from .. import schedule
 from ..daemon import registry
 from ..ids import now_iso, run_ts
 from ..paths import resolve_rel
@@ -58,6 +59,7 @@ def _card(request: Request, info: registry.RoutineInfo) -> dict:
         "enabled": info.cfg.enabled,
         "cron": info.cfg.cron,
         "tz": info.cfg.tz,
+        "schedule_desc": schedule.describe(info.cfg.cron),
         "next_fire": (sched.next_fires.get(info.slug).isoformat()
                       if sched.next_fires.get(info.slug) else None),
         "active_run": info.active_run.run_id if info.active_run else None,
@@ -91,6 +93,9 @@ def routine_detail(request: Request, slug: str) -> dict:
                       if subdir.is_dir() else [])
     return {
         **_card(request, info),
+        "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
+        "server_tz": schedule.server_tz(),
+        "confirm_util_changes": info.cfg.confirm_utils(_state(request).server),
         "routine_yaml": (d / "routine.yaml").read_text(encoding="utf-8"),
         "instruction": (d / "instruction.md").read_text(encoding="utf-8")
         if (d / "instruction.md").exists() else "",
@@ -110,10 +115,10 @@ def routine_detail(request: Request, slug: str) -> dict:
 
 class RoutinePatch(BaseModel):
     enabled: bool | None = None
-    schedule: dict | None = None
+    schedule: dict | None = None            # {"friendly": {...}} — converted to cron server-side
     budgets: dict | None = None
     self: dict | None = None
-    shell_allowlist: list[str] | None = None
+    confirm_util_changes: bool | None = None
     endpoints: dict | None = None
     notifications: str | None = None
     name: str | None = None
@@ -126,6 +131,15 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     updates = patch.model_dump(exclude_none=True)
+    # Translate the friendly schedule → cron + the server's own timezone (never asked of the user).
+    if "schedule" in updates and "friendly" in updates["schedule"]:
+        try:
+            cron = schedule.friendly_to_cron(updates["schedule"]["friendly"])
+        except ValueError as exc:
+            raise HTTPException(400, f"invalid schedule: {exc}") from exc
+        raw.setdefault("schedule", {})
+        raw["schedule"].update(cron=cron, tz=schedule.server_tz())
+        updates.pop("schedule")
     for key, val in updates.items():
         if isinstance(val, dict) and isinstance(raw.get(key), dict):
             raw[key].update(val)

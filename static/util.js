@@ -44,6 +44,63 @@ export function chip(text, cls = "") {
   return el("span", { class: `chip ${cls}` }, text);
 }
 
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+// A friendly schedule builder. `initial` is a friendly spec {frequency, time, weekday, ...}.
+// Returns { node, value() } where value() yields the current friendly spec for the API.
+export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "") {
+  const spec = { time: "07:00", weekday: 1, day: 1, minute: 0, ...initial };
+  const freq = el("select", {},
+    ...["manual", "hourly", "daily", "weekly", "monthly"].map((f) =>
+      el("option", { value: f, ...(spec.frequency === f ? { selected: true } : {}) },
+        f[0].toUpperCase() + f.slice(1))));
+  const time = el("input", { type: "time", value: spec.time });
+  const minute = el("input", { type: "number", min: 0, max: 59, value: spec.minute, style: "width:70px" });
+  const weekday = el("select", {}, ...WEEKDAYS.map((d, i) =>
+    el("option", { value: i, ...(spec.weekday === i ? { selected: true } : {}) }, d)));
+  const day = el("input", { type: "number", min: 1, max: 31, value: spec.day, style: "width:70px" });
+  const detail = el("span", { class: "row", style: "gap:6px" });
+
+  function sync() {
+    const f = freq.value;
+    detail.innerHTML = "";
+    if (f === "hourly") detail.append(document.createTextNode("at minute"), minute);
+    else if (f === "daily") detail.append(document.createTextNode("at"), time);
+    else if (f === "weekly") detail.append(document.createTextNode("on"), weekday, document.createTextNode("at"), time);
+    else if (f === "monthly") detail.append(document.createTextNode("on day"), day, document.createTextNode("at"), time);
+    else if (f === "manual") detail.append(el("span", { class: "muted" }, "runs only when you click Run now"));
+  }
+  freq.addEventListener("change", sync);
+  sync();
+
+  const node = el("div", {},
+    el("div", { class: "row", style: "gap:8px" }, freq, detail),
+    serverTz ? el("div", { class: "muted", style: "font-size:12px;margin-top:4px" },
+      `times are in the server's timezone (${serverTz})`) : null);
+
+  return {
+    node,
+    value() {
+      const f = freq.value;
+      if (f === "manual") return { frequency: "manual" };
+      if (f === "hourly") return { frequency: "hourly", minute: Number(minute.value) };
+      if (f === "daily") return { frequency: "daily", time: time.value };
+      if (f === "weekly") return { frequency: "weekly", time: time.value, weekday: Number(weekday.value) };
+      return { frequency: "monthly", time: time.value, day: Number(day.value) };
+    },
+  };
+}
+
+// Human-readable descriptions for the self-* standards + util confirmation, shown in the UI.
+export const TOGGLE_INFO = {
+  audit: ["Self-audit", "Each run, judge the routine's own health across six lenses (goal drift, broken steps, improvement openings) before finishing."],
+  improve: ["Self-improvement", "Act on the audit in the same run — heal broken steps, correct drift, tune configuration. Turn this off to freeze the routine's process."],
+  ledger: ["Change journal (LEDGER)", "Keep an append-only record of what changed each run and why, so the routine never re-tries a known dead end."],
+  fresh_eyes: ["Fresh-eyes review", "Periodically re-read the routine's accumulated output as a first-time reader to catch slow drift and 'functional but bad' rot."],
+  hygiene: ["File hygiene", "Keep the routine's own files small, present-tense, and consolidated as they grow."],
+  confirm_util_changes: ["Approve new tools", "Ask you to approve before the routine creates or revises a global util. Off = the routine adds tools autonomously (still selftested)."],
+};
+
 let toastTimer = null;
 export function toast(msg, ms = 2600) {
   const t = document.getElementById("toast");

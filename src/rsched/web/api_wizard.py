@@ -140,24 +140,26 @@ class FinalizeBody(BaseModel):
     slug: str
     name: str
     workflow_slug: str
-    cron: str = ""
-    tz: str = "Europe/Berlin"
+    friendly: dict = {}          # friendly schedule spec → cron + server tz
     params: dict = {}
     run_now: bool = False
 
 
 @router.post("/wizard/{wid}/finalize")
 async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
+    from .. import schedule
+
     d = _wizard_dir(request, wid)
     server = request.app.state.server
     result = _read_wizard_result(d)
     if not isinstance(result, dict) or not result.get("refined_instruction"):
         raise HTTPException(409, "no refined instruction to finalize")
     try:
+        cron = schedule.friendly_to_cron(body.friendly or {"frequency": "manual"})
         routine_dir = scaffold(server, slug=body.slug, name=body.name,
                                instruction=result["refined_instruction"],
-                               workflow_slug=body.workflow_slug, cron=body.cron, tz=body.tz,
-                               params=body.params)
+                               workflow_slug=body.workflow_slug, cron=cron,
+                               tz=schedule.server_tz(), params=body.params)
     except (ValueError, KeyError, FileNotFoundError) as exc:
         raise HTTPException(422, str(exc)) from exc
     # keep the wizard conversation as provenance inside the new routine
