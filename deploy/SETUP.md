@@ -24,18 +24,19 @@ Endpoints are **model transports only**. Add the ones you use (OpenAI-compatible
 `claude-cli`) and put the API keys in `~/.credentials/*.env` on the host (they're bind-mounted, never
 baked into the image). Set the default roles (orchestrator / subcall / cheap).
 
-## 3. Authenticate GitHub  — one-time, for private repos + pushing
+## 3. Connect GitHub  — Settings → GitHub
 
 Your workflow / fragment / util libraries and the source repo live in git. To clone/pull/push them
-(especially if they're **private**), authenticate `gh` inside the container — it persists in the
-mounted `~/.config/gh`:
+(especially if they're **private**), click **Connect GitHub** and follow the on-screen device flow:
 
-```bash
-docker exec -it rsched gh auth login        # choose GitHub.com → HTTPS → device flow, paste the code
-docker exec    rsched gh auth setup-git      # makes git use gh's credentials for clone/pull/push
-```
+1. The UI shows a one-time code and a link to `github.com/login/device`.
+2. Open it in your browser, paste the code, authorize.
+3. The scheduler stores the token via `gh` (persisted in the mounted `~/.config/gh`) and wires `git`.
 
-> Skip this only if all your repos are public and you never push.
+No container terminal needed. Skip this only if all your repos are public and you never push.
+
+> Advanced: to brand the authorize screen, register your own GitHub OAuth App (device flow enabled)
+> and set `github_client_id` in `config.yaml`. Otherwise it uses the GitHub CLI's public app.
 
 ## 4. Point at your repos  — Settings → Library repositories + Source repository
 

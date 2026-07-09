@@ -45,6 +45,54 @@ export async function render(view) {
     view.append(banner);
   }
 
+  // -- GitHub connection (device flow — no container terminal) ---------------------
+  view.append(el("h2", {}, "GitHub"));
+  const ghBox = el("div", { class: "panel" });
+  view.append(ghBox);
+  async function renderGithub() {
+    ghBox.innerHTML = "";
+    let g;
+    try { g = await api("/api/settings/github"); }
+    catch (err) { ghBox.append(el("div", { class: "muted" }, err.message)); return; }
+    if (!g.gh) { ghBox.append(el("div", { class: "muted" }, g.error || "gh CLI not available")); return; }
+    ghBox.append(el("div", { class: "muted", style: "font-size:12.5px;margin-bottom:6px" },
+      "Authorize GitHub so the scheduler can clone / pull / push your (private) library + source ",
+      "repos. You enter a code on github.com in your own browser — no terminal needed."));
+    const status = el("span", { style: "font-family:var(--mono);font-size:12.5px" });
+    status.style.color = g.connected ? "var(--ok)" : "";
+    status.textContent = g.connected ? `✓ connected as ${g.login}` : "not connected";
+    const connect = el("button", { class: "btn small primary" }, g.connected ? "reconnect" : "connect GitHub");
+    const flowArea = el("div", { class: "mt" });
+    connect.onclick = async () => {
+      connect.disabled = true; flowArea.innerHTML = "";
+      let f;
+      try { f = await api("/api/settings/github/device-start", { method: "POST" }); }
+      catch (err) { toast(err.message, 6000); connect.disabled = false; return; }
+      const wait = el("div", { class: "muted mt" }, "waiting for you to authorize…");
+      flowArea.append(el("div", { class: "panel", style: "border-color:var(--warn)" },
+        el("div", {}, "1. Open ",
+          el("a", { href: f.verification_uri, target: "_blank", rel: "noopener" }, f.verification_uri)),
+        el("div", { class: "mt" }, "2. Enter code: ",
+          el("code", { style: "font-size:18px;letter-spacing:2px;user-select:all" }, f.user_code),
+          el("button", { class: "btn small", style: "margin-left:8px",
+            onclick: () => { navigator.clipboard?.writeText(f.user_code); toast("code copied"); } }, "copy")),
+        wait));
+      const deadline = Date.now() + (f.expires_in || 900) * 1000;
+      const tick = async () => {
+        if (Date.now() > deadline) { wait.style.color = "var(--err)"; wait.textContent = "code expired — try again"; connect.disabled = false; return; }
+        let p;
+        try { p = await api("/api/settings/github/device-poll", { method: "POST", body: { flow_id: f.flow_id } }); }
+        catch (err) { wait.style.color = "var(--err)"; wait.textContent = `✗ ${err.message}`; connect.disabled = false; return; }
+        if (p.status === "connected") { toast(`GitHub connected as ${p.login}`); connect.disabled = false; renderGithub(); return; }
+        if (p.status === "error") { wait.style.color = "var(--err)"; wait.textContent = `✗ ${p.error}`; connect.disabled = false; return; }
+        setTimeout(tick, (f.interval || 5) * 1000);
+      };
+      setTimeout(tick, (f.interval || 5) * 1000);
+    };
+    ghBox.append(el("div", { class: "row", style: "margin:6px 0" }, status, connect), flowArea);
+  }
+  await renderGithub();
+
   // -- library repositories -------------------------------------------------------
   view.append(el("h2", {}, "Library repositories"));
   const libBox = el("div", { class: "panel" });

@@ -215,6 +215,12 @@ def test_settings_endpoints_crud(client):
     assert c.delete("/api/settings/endpoints/vllm").status_code == 404
 
 
+def test_github_device_poll_unknown_flow(client):
+    """Polling an unknown/expired device flow is rejected before any network call."""
+    c, _ = client
+    assert c.post("/api/settings/github/device-poll", json={"flow_id": "nope"}).status_code == 404
+
+
 def test_first_run_setup_flag(client):
     """Fresh install → needs_setup true (drives the redirect); completing it writes the marker."""
     c, tmp = client
