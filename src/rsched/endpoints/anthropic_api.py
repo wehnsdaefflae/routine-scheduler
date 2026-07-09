@@ -32,16 +32,20 @@ class AnthropicEndpoint:
     def __init__(self, cfg: EndpointConfig):
         self.name = cfg.name
         self.base_url = (cfg.base_url or "https://api.anthropic.com").rstrip("/")
+        self.api_key = cfg.api_key
         self.key_env_file = cfg.key_env_file
         self.key_var = cfg.key_var
         self.context_chars = cfg.context_chars
         self.supports_schema = True
 
     def _api_key(self) -> str:
+        if self.api_key:                                  # inline key (UI-set) wins over a file
+            return self.api_key
         key = key_from_env_file(self.key_env_file, self.key_var) if self.key_env_file else None
         if not key:
             raise EndpointError(
-                f"{self.name}: no API key ({self.key_var} not found in {self.key_env_file})", auth=True
+                f"{self.name}: no API key — paste one in Settings, or put "
+                f"`{self.key_var}=...` into {self.key_env_file}", auth=True
             )
         return key
 

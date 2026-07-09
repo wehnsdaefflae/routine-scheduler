@@ -40,15 +40,18 @@ class OpenAICompatEndpoint:
         self.supports_schema = cfg.schema_mode in ("json_schema", "ollama_native")
 
     def _resolve_key(self) -> str:
+        if self.api_key:                                  # inline key (UI-set) wins over a file
+            return self.api_key
         if self.key_env_file:
             key = key_from_env_file(self.key_env_file, self.key_var)
             if not key:
                 raise EndpointError(
-                    f"{self.name}: no API key — put `{self.key_var}=...` into {self.key_env_file}",
+                    f"{self.name}: no API key — paste one in Settings, or put "
+                    f"`{self.key_var}=...` into {self.key_env_file}",
                     auth=True,
                 )
             return key
-        return self.api_key or "none"
+        return "none"
 
     def _response_format(self, schema: dict | None) -> dict | None:
         if schema is None or self.schema_mode == "none":

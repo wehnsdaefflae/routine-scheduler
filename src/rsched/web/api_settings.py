@@ -300,6 +300,9 @@ def upsert_endpoint(request: Request, body: EndpointBody, name: str | None = Non
     def mutate(endpoints: dict) -> None:
         spec = {k: v for k, v in body.model_dump().items()
                 if k != "name" and v not in ("", None)}
+        # keep a previously-saved inline key when the editor submits the key field blank
+        if not spec.get("api_key") and endpoints.get(key, {}).get("api_key"):
+            spec["api_key"] = endpoints[key]["api_key"]
         endpoints[key] = spec
 
     return _rewrite_endpoints(request, mutate)

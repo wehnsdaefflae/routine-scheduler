@@ -189,6 +189,25 @@ export async function render(view) {
       try { await api(`/api/settings/endpoints/${ep.name}`, { method: "DELETE" }); await load(); }
       catch (err) { toast(err.message); }
     };
+    // paste an API key / OAuth token straight into the endpoint — saved to config.yaml, never
+    // echoed back (the view only reports has_inline_key). No host filesystem access needed.
+    const isClaude = ep.kind === "claude-cli";
+    const keyInput = el("input", { type: "password", style: "flex:1",
+      placeholder: ep.has_inline_key ? "saved ✓ — paste to replace"
+        : isClaude ? "paste Claude OAuth token (from `claude setup-token`)" : "paste API key" });
+    const saveKey = el("button", { class: "btn small primary" }, "save key");
+    saveKey.onclick = async () => {
+      if (!keyInput.value.trim()) { toast("paste a key first"); return; }
+      try {
+        await api(`/api/settings/endpoints/${ep.name}`, { method: "PUT", body: {
+          name: ep.name, kind: ep.kind, base_url: ep.base_url || "",
+          key_env_file: ep.key_env_file || "", key_var: ep.key_var || "",
+          schema_mode: ep.schema_mode, context_chars: ep.context_chars,
+          api_key: keyInput.value.trim(),
+        }});
+        toast(`${ep.name}: key saved`); keyInput.value = ""; await load();
+      } catch (err) { toast(err.message, 5000); }
+    };
     return el("div", { class: "panel mt" },
       el("div", { class: "row spread" },
         el("div", {},
@@ -198,8 +217,9 @@ export async function render(view) {
         delBtn),
       el("div", { class: "muted", style: "font-size:12px" },
         `schema_mode=${ep.schema_mode} · context_chars=${ep.context_chars}` +
-        (ep.key_env_file ? ` · key: ${ep.key_var} @ ${ep.key_env_file}` : "") +
-        (ep.has_inline_key ? " · inline key" : "")),
+        (ep.key_env_file ? ` · key file: ${ep.key_var} @ ${ep.key_env_file}` : "") +
+        (ep.has_inline_key ? " · 🔑 key set" : "")),
+      el("div", { class: "row mt" }, keyInput, saveKey),
       el("div", { class: "row mt" }, modelInput, testBtn, result));
   }
 

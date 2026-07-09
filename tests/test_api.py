@@ -215,6 +215,33 @@ def test_settings_endpoints_crud(client):
     assert c.delete("/api/settings/endpoints/vllm").status_code == 404
 
 
+def test_endpoint_inline_key_saved_and_preserved(client):
+    """Paste an API key in the UI → stored in config, never echoed back, kept across edits."""
+    c, tmp = client
+    assert c.put("/api/settings/endpoints/dummy", json={
+        "name": "dummy", "kind": "openai", "base_url": "http://x/v1", "api_key": "sk-secret"}).status_code == 200
+    ep = next(e for e in c.get("/api/settings/endpoints").json()["endpoints"] if e["name"] == "dummy")
+    assert ep["has_inline_key"] is True and "api_key" not in ep          # flagged, never returned
+    assert yaml.safe_load((tmp / "config.yaml").read_text())["endpoints"]["dummy"]["api_key"] == "sk-secret"
+    # editing another field with the key box left blank keeps the saved key
+    c.put("/api/settings/endpoints/dummy", json={"name": "dummy", "kind": "openai", "base_url": "http://y/v1"})
+    assert yaml.safe_load((tmp / "config.yaml").read_text())["endpoints"]["dummy"]["api_key"] == "sk-secret"
+
+
+def test_endpoints_prefer_inline_key(monkeypatch):
+    """Inline key (UI-set) wins over a missing key_env_file, for openai + claude-cli."""
+    from rsched.config import EndpointConfig
+    from rsched.endpoints import make_endpoint
+    from rsched.endpoints.claude_cli import resolve_token
+
+    ep = make_endpoint(EndpointConfig(name="x", kind="openai", api_key="inline-123",
+                                      key_env_file="/nonexistent.env", key_var="K"))
+    assert ep._resolve_key() == "inline-123"
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    assert resolve_token("/nonexistent.env", "tok-abc") == "tok-abc"
+    assert resolve_token("/nonexistent.env", "") is None
+
+
 def test_github_device_poll_unknown_flow(client):
     """Polling an unknown/expired device flow is rejected before any network call."""
     c, _ = client

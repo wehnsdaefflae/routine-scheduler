@@ -20,9 +20,12 @@ Browse to `http://<host>:8321` and paste the token when prompted.
 
 ## 2. Add your model providers  — Settings → LLM endpoints
 
-Endpoints are **model transports only**. Add the ones you use (OpenAI-compatible / Anthropic /
-`claude-cli`) and put the API keys in `~/.credentials/*.env` on the host (they're bind-mounted, never
-baked into the image). Set the default roles (orchestrator / subcall / cheap).
+Endpoints are **model transports only**. The fresh config already lists `openrouter`, `anthropic`,
+and `claude-cli` — for each one you use, **paste the key straight into its "save key" box** (an
+OpenRouter/Anthropic API key, or a Claude OAuth token from `claude setup-token`). It's stored in the
+mounted `config.yaml` and never echoed back — no host files, no container terminal. (You can still
+put keys in `~/.credentials/*.env` instead if you prefer file-based secrets.) Then set the default
+roles (orchestrator / subcall / cheap).
 
 ## 3. Connect GitHub  — Settings → GitHub
 

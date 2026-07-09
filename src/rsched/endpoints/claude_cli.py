@@ -33,10 +33,12 @@ def find_cli() -> str | None:
     return shutil.which("claude")
 
 
-def resolve_token(credentials_env: str) -> str | None:
-    """$CLAUDE_CODE_OAUTH_TOKEN, else the env-file — the path that works headless."""
+def resolve_token(credentials_env: str, inline: str = "") -> str | None:
+    """$CLAUDE_CODE_OAUTH_TOKEN, else an inline token (UI-set), else the env-file — all headless."""
     if os.environ.get(TOKEN_VAR):
         return os.environ[TOKEN_VAR]
+    if inline:
+        return inline
     path = expand(credentials_env)
     if path.exists():
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -123,6 +125,7 @@ class ClaudeCliEndpoint:
     def __init__(self, cfg: EndpointConfig):
         self.name = cfg.name
         self.credentials_env = cfg.credentials_env
+        self.oauth_token = cfg.api_key            # inline token pasted in Settings (optional)
         self.context_chars = cfg.context_chars
         self.supports_schema = True
 
@@ -132,11 +135,11 @@ class ClaudeCliEndpoint:
         cli = find_cli()
         if not cli:
             raise EndpointError("claude-cli: claude CLI not found on PATH (or set $CLAUDE_CLI)")
-        token = resolve_token(self.credentials_env)
+        token = resolve_token(self.credentials_env, self.oauth_token)
         if not token:
             raise EndpointError(
-                f"claude-cli: no subscription token ({TOKEN_VAR} not in env or "
-                f"{self.credentials_env}) — run `gu claude-login`; refusing metered API billing",
+                f"claude-cli: no subscription token — paste one in Settings, set {TOKEN_VAR}, or "
+                f"put it in {self.credentials_env} (run `claude setup-token`); refusing API billing",
                 auth=True,
             )
         system, rest = split_system(messages)
