@@ -24,44 +24,14 @@ confirm_util_changes: true   # ask the user to approve before a util is created/
 max_concurrent_runs: 2
 registry_rescan_s: 30
 
-# Chat-completion endpoints — model TRANSPORTS only; this scheduler's engine is the one
-# and only harness. kind: openai | anthropic | claude-cli
-#   claude-cli = Claude Code CLI in fully stripped print mode (tools off, no settings/MCP/
-#   session, OUR system prompt replaces its own) — a subscription-billed completion
-#   function, never an agent loop.
-#   context_chars — compaction threshold (chars; ~4 chars ≈ 1 token)
-#   schema_mode (openai kind) — json_schema | json_object | none
-# API keys live in ~/.credentials/*.env files (VAR=value lines), never in this file.
-endpoints:
-  openrouter:
-    kind: openai
-    base_url: "https://openrouter.ai/api/v1"
-    key_env_file: ~/.credentials/open_router.env  # line: OPENROUTER_KEY=sk-or-v1-...
-    key_var: OPENROUTER_KEY
-    schema_mode: json_schema   # provider json_schema grammars mangle optional fields (empty-pad, drop content)
-    context_chars: 400000
-  ollama-local:
-    kind: openai
-    base_url: "http://127.0.0.1:11434/v1"
-    api_key: "ollama"                             # Ollama ignores the key; no file needed
-    schema_mode: ollama_native   # grammar mode pads other kinds' fields into actions (like openrouter)
-    context_chars: 36000
-    temperature: 0.2
-  anthropic:
-    kind: anthropic                               # direct Messages API (metered billing)
-    base_url: https://api.anthropic.com
-    key_env_file: ~/.credentials/anthropic.env    # line: ANTHROPIC_KEY=sk-ant-...
-    key_var: ANTHROPIC_KEY
-    context_chars: 400000
-  claude-cli:
-    kind: claude-cli                              # subscription-billed transport (see above)
-    credentials_env: ~/.credentials/claude-code-oauth.env   # minted by `gu claude-login`
-    context_chars: 400000                         # models: opus | sonnet | haiku | full names
-
-# Model roles routines refer to (each routine.yaml may override). Claude models are
-# reachable via `claude-cli` (subscription), `anthropic` (metered), or openrouter
-# "anthropic/..." models (metered).
-default_roles:
-  orchestrator: {endpoint: openrouter, model: "z-ai/glm-5.2", effort: low}
-  subcall:      {endpoint: openrouter, model: "z-ai/glm-5.2", effort: low}
-  cheap:        {endpoint: ollama-local, model: "gemma4:latest"}
+# Chat-completion endpoints — model TRANSPORTS only; this scheduler's engine is the one and only
+# harness. NONE are configured by default: add the ones you use in the web UI (Settings → LLM
+# endpoints), which explains what credential each kind needs. kind: openai | anthropic | claude-cli
+#   openai     — any OpenAI-compatible API (OpenRouter, vLLM, …). Needs an API key.
+#   anthropic  — Anthropic's Messages API, METERED per-token billing. Needs an sk-ant-… API key.
+#   claude-cli — your Claude Max/Pro SUBSCRIPTION (no per-token billing). Uses the
+#                CLAUDE_CODE_OAUTH_TOKEN from Secrets (mint it with `claude setup-token`).
+# Once you add endpoints, set the model roles (orchestrator / subcall / cheap) in the same page.
+#
+# endpoints: {}          # populated from the UI
+# default_roles: {}      # set from the UI once endpoints exist

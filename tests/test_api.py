@@ -194,6 +194,20 @@ def test_routine_tags(client):
     assert apir2["tags"] == ["meta", "demo"]  # reflected back on the card
 
 
+def test_roles_and_llm_ready(client):
+    """Assigning the orchestrator role to a live endpoint is what flips llm_ready true."""
+    c, tmp = client
+    assert c.get("/api/status").json()["llm_ready"] is True          # fixture: orchestrator → dummy
+    # a role must point at a real endpoint
+    assert c.put("/api/settings/roles", json={"role": "cheap", "endpoint": "nope", "model": "m"}).status_code == 400
+    r = c.put("/api/settings/roles", json={"role": "cheap", "endpoint": "dummy", "model": "x"})
+    assert r.status_code == 200 and r.json()["default_roles"]["cheap"]["endpoint"] == "dummy"
+    assert yaml.safe_load((tmp / "config.yaml").read_text())["default_roles"]["cheap"]["endpoint"] == "dummy"
+    # remove the only endpoint → the orchestrator role dangles → no longer ready
+    c.delete("/api/settings/endpoints/dummy")
+    assert c.get("/api/status").json()["llm_ready"] is False
+
+
 def test_settings_endpoints_crud(client):
     c, tmp = client
     eps = c.get("/api/settings/endpoints").json()

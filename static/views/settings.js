@@ -234,125 +234,195 @@ export async function render(view) {
   } catch (err) { srcBox.append(el("div", { class: "muted" }, err.message)); }
 
   // -- endpoints ------------------------------------------------------------------
+  // Each kind needs a DIFFERENT credential — spelled out per endpoint so the subscription token
+  // and metered API keys don't get confused (they land in different places).
+  const KIND = {
+    openai: { title: "OpenAI-compatible API (OpenRouter, vLLM, together, …)", keyLabel: "API key",
+      subscription: false, hint: "Needs an API key — paste it below, or set its key_var in Secrets." },
+    anthropic: { title: "Anthropic Messages API — ⚠ METERED, per-token billing", keyLabel: "Anthropic API key (sk-ant-…)",
+      subscription: false, hint: "Needs an sk-ant-… API key. This is NOT your Claude subscription." },
+    "claude-cli": { title: "Claude subscription — no per-token billing", keyLabel: "subscription token",
+      subscription: true, hint: "Uses your Claude Max/Pro subscription. Paste the token from `claude setup-token`." },
+  };
+  const KINDS = ["openai", "anthropic", "claude-cli"];
+  const SCHEMA_MODES = ["json_schema", "json_object", "ollama_native", "none"];
+
   view.append(el("h2", {}, "LLM endpoints"),
     el("div", { class: "muted", style: "margin-bottom:8px;font-size:12.5px" },
-      "Model transports only (openai-compatible / anthropic / claude-cli). The scheduler is the ",
-      "only harness. Keys live in ~/.credentials/*.env."));
+      "Model transports only — the scheduler is the only harness. None are configured by default; ",
+      "add the ones you use. Each kind needs a different credential (shown per endpoint)."));
   const listBox = el("div", {});
   view.append(listBox);
 
   async function load() {
-    const data = await api("/api/settings/endpoints");
+    const [data, secrets] = await Promise.all([
+      api("/api/settings/endpoints"),
+      api("/api/settings/secrets").catch(() => ({ keys: [] })),
+    ]);
     listBox.innerHTML = "";
-    for (const ep of data.endpoints) listBox.append(item(ep, data.default_roles));
+    if (!data.endpoints.length)
+      listBox.append(el("div", { class: "muted", style: "font-size:12px" }, "no endpoints yet — add one below."));
+    for (const ep of data.endpoints) listBox.append(item(ep, data.default_roles, secrets.keys || []));
     listBox.append(addForm());
-    const roles = Object.entries(data.default_roles)
-      .map(([r, v]) => `${r} → ${v.endpoint}:${v.model}`).join("  ·  ");
-    listBox.append(el("div", { class: "muted mt" }, `default roles: ${roles || "(none)"}`));
+    listBox.append(rolesEditor(data.endpoints, data.default_roles));
   }
 
-  function item(ep, roles) {
+  // Assign an endpoint + model to each role. Assigning the orchestrator is what makes the
+  // instance "llm_ready" — routines can't run until then.
+  function rolesEditor(endpoints, roles) {
+    const box = el("div", { class: "panel mt" });
+    box.append(
+      el("div", { style: "font-weight:600;font-size:12.5px" }, "Model roles"),
+      el("div", { class: "muted", style: "font-size:11.5px;margin:2px 0 6px" },
+        "Which endpoint + model routines use by default. ",
+        el("strong", {}, "orchestrator"), " = the routine's main loop (required to run anything); ",
+        el("strong", {}, "subcall"), " = scoped llm calls; ", el("strong", {}, "cheap"), " = light tasks."));
+    if (!endpoints.length) {
+      box.append(el("div", { class: "muted", style: "font-size:12px" }, "add an endpoint above first"));
+      return box;
+    }
+    for (const role of ["orchestrator", "subcall", "cheap"]) {
+      const cur = roles[role] || {};
+      const epSel = el("select", {}, endpoints.map((e) => el("option", {}, e.name)));
+      if (cur.endpoint) epSel.value = cur.endpoint;
+      const modelIn = el("input", { type: "text", value: cur.model || "", placeholder: "model id (e.g. opus)", style: "width:200px" });
+      const save = el("button", { class: "btn small primary" }, cur.endpoint ? "update" : "assign");
+      save.onclick = async () => {
+        if (!modelIn.value.trim()) { toast("enter a model id"); return; }
+        try {
+          await api("/api/settings/roles", { method: "PUT", body: { role, endpoint: epSel.value, model: modelIn.value.trim() } });
+          toast(`${role} → ${epSel.value} / ${modelIn.value.trim()}`); await load();
+        } catch (err) { toast(err.message, 5000); }
+      };
+      box.append(el("div", { class: "row", style: "margin:5px 0" },
+        el("span", { class: "ref-tag", style: "min-width:100px;text-align:center" }, role), epSel, modelIn, save));
+    }
+    return box;
+  }
+
+  function item(ep, roles, secretKeys) {
+    const info = KIND[ep.kind] || { title: ep.kind, keyLabel: "key", subscription: false, hint: "" };
     const modelGuess = Object.values(roles).find((r) => r.endpoint === ep.name)?.model || "";
-    const modelInput = el("input", { type: "text", value: modelGuess, placeholder: "model id", style: "width:220px" });
+    const modelInput = el("input", { type: "text", value: modelGuess, placeholder: "model id (e.g. opus)", style: "width:220px" });
     const result = el("span", { class: "muted" });
     const testBtn = el("button", { class: "btn small" }, "test");
     testBtn.onclick = async () => {
       if (!modelInput.value.trim()) { toast("enter a model id to test"); return; }
-      testBtn.disabled = true;
-      result.textContent = "…";
+      testBtn.disabled = true; result.textContent = "…";
       try {
-        const r = await api(`/api/settings/endpoints/${ep.name}/test`,
-                            { method: "POST", body: { model: modelInput.value.trim() } });
-        result.textContent = r.ok
-          ? `✓ ${r.latency_ms}ms · schema ${r.schema_ok ? "ok" : "VIOLATED"} · answer=${r.answer}`
-          : `✗ ${r.error}`;
+        const r = await api(`/api/settings/endpoints/${ep.name}/test`, { method: "POST", body: { model: modelInput.value.trim() } });
+        result.textContent = r.ok ? `✓ ${r.latency_ms}ms · schema ${r.schema_ok ? "ok" : "VIOLATED"} · answer=${r.answer}` : `✗ ${r.error}`;
         result.style.color = r.ok && r.schema_ok ? "var(--ok)" : "var(--err)";
       } catch (err) { result.textContent = `✗ ${err.message}`; result.style.color = "var(--err)"; }
       testBtn.disabled = false;
     };
     const delBtn = el("button", { class: "btn small danger" }, "delete");
     delBtn.onclick = async () => {
-      if (!confirm(`Delete endpoint "${ep.name}" from config.yaml?`)) return;
+      if (!confirm(`Delete endpoint "${ep.name}"?`)) return;
       try { await api(`/api/settings/endpoints/${ep.name}`, { method: "DELETE" }); await load(); }
       catch (err) { toast(err.message); }
     };
-    // claude-cli uses the SUBSCRIPTION token from the Secrets store (so `gu claude` gets it too),
-    // not a per-endpoint key. openai/anthropic take an inline key here OR their key_var from Secrets.
+
+    // credential row: subscription token → Secrets (CLAUDE_CODE_OAUTH_TOKEN); else API key → endpoint
     let keyRow;
-    if (ep.kind === "claude-cli") {
-      keyRow = el("div", { class: "muted mt", style: "font-size:12px" },
-        "Uses your Claude subscription — set ", el("code", {}, "CLAUDE_CODE_OAUTH_TOKEN"),
-        " in Secrets above (mint it with ", el("code", {}, "claude setup-token"),
-        "). Feeds this endpoint and ", el("code", {}, "gu claude"), ".");
+    if (info.subscription) {
+      const hasTok = secretKeys.includes("CLAUDE_CODE_OAUTH_TOKEN");
+      const tokIn = el("input", { type: "password", style: "flex:1",
+        placeholder: hasTok ? "token set ✓ — paste to replace" : "paste token from `claude setup-token`" });
+      const saveTok = el("button", { class: "btn small primary" }, "save subscription token");
+      saveTok.onclick = async () => {
+        if (!tokIn.value.trim()) { toast("paste the token first"); return; }
+        try { await api("/api/settings/secrets", { method: "PUT", body: { key: "CLAUDE_CODE_OAUTH_TOKEN", value: tokIn.value.trim() } });
+          toast("subscription token saved (Secrets → CLAUDE_CODE_OAUTH_TOKEN)"); tokIn.value = ""; await load(); }
+        catch (err) { toast(err.message, 5000); }
+      };
+      keyRow = el("div", {}, el("div", { class: "row mt" }, tokIn, saveTok),
+        el("div", { class: "muted", style: "font-size:11px" }, "stored in Secrets — feeds this endpoint and `gu claude`"));
     } else {
       const keyInput = el("input", { type: "password", style: "flex:1",
-        placeholder: ep.has_inline_key ? "saved ✓ — paste to replace"
-          : `paste API key (or set ${ep.key_var || "its key"} in Secrets)` });
+        placeholder: ep.has_inline_key ? `${info.keyLabel} set ✓ — paste to replace` : `paste ${info.keyLabel} (or set ${ep.key_var || "its key_var"} in Secrets)` });
       const saveKey = el("button", { class: "btn small primary" }, "save key");
       saveKey.onclick = async () => {
         if (!keyInput.value.trim()) { toast("paste a key first"); return; }
         try {
           await api(`/api/settings/endpoints/${ep.name}`, { method: "PUT", body: {
-            name: ep.name, kind: ep.kind, base_url: ep.base_url || "",
-            key_env_file: ep.key_env_file || "", key_var: ep.key_var || "",
-            schema_mode: ep.schema_mode, context_chars: ep.context_chars,
-            api_key: keyInput.value.trim(),
-          }});
+            name: ep.name, kind: ep.kind, base_url: ep.base_url || "", key_env_file: ep.key_env_file || "",
+            key_var: ep.key_var || "", schema_mode: ep.schema_mode, context_chars: ep.context_chars, api_key: keyInput.value.trim() } });
           toast(`${ep.name}: key saved`); keyInput.value = ""; await load();
         } catch (err) { toast(err.message, 5000); }
       };
       keyRow = el("div", { class: "row mt" }, keyInput, saveKey);
     }
+
+    // editable fields (name is the identity, immutable)
+    const kindSel = el("select", {}, KINDS.map((k) => el("option", {}, k))); kindSel.value = ep.kind;
+    const schemaSel = el("select", {}, SCHEMA_MODES.map((m) => el("option", {}, m))); schemaSel.value = ep.schema_mode || "json_schema";
+    const baseIn = el("input", { type: "text", value: ep.base_url || "", placeholder: "https://host/v1" });
+    const keyVarIn = el("input", { type: "text", value: ep.key_var || "", placeholder: "KEY_VAR in Secrets (optional)" });
+    const ctxIn = el("input", { type: "number", value: ep.context_chars });
+    const saveEdit = el("button", { class: "btn small primary" }, "save changes");
+    saveEdit.onclick = async () => {
+      try {
+        await api(`/api/settings/endpoints/${ep.name}`, { method: "PUT", body: {
+          name: ep.name, kind: kindSel.value, base_url: baseIn.value.trim(), key_env_file: ep.key_env_file || "",
+          key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 100000 } });
+        toast(`${ep.name}: updated`); await load();
+      } catch (err) { toast(err.message, 5000); }
+    };
+    const editForm = el("details", { class: "mt" },
+      el("summary", { style: "cursor:pointer;font-size:12px" }, "edit fields"),
+      el("div", { class: "field-row mt" },
+        el("label", { class: "field" }, el("span", {}, "kind"), kindSel),
+        el("label", { class: "field" }, el("span", {}, "base_url"), baseIn)),
+      el("div", { class: "field-row" },
+        el("label", { class: "field" }, el("span", {}, "key_var (Secrets)"), keyVarIn),
+        el("label", { class: "field" }, el("span", {}, "schema_mode"), schemaSel),
+        el("label", { class: "field" }, el("span", {}, "context_chars"), ctxIn)),
+      el("div", { class: "row" }, saveEdit));
+
     return el("div", { class: "panel mt" },
       el("div", { class: "row spread" },
-        el("div", {},
-          el("strong", {}, ep.name), " ",
-          el("span", { class: "chip" }, ep.kind), " ",
+        el("div", {}, el("strong", {}, ep.name), " ", el("span", { class: "chip" }, ep.kind), " ",
           el("span", { class: "muted mono" }, ep.base_url || "")),
         delBtn),
-      el("div", { class: "muted", style: "font-size:12px" },
-        `schema_mode=${ep.schema_mode} · context_chars=${ep.context_chars}` +
-        (ep.key_env_file ? ` · key file: ${ep.key_var} @ ${ep.key_env_file}` : "") +
-        (ep.has_inline_key ? " · 🔑 key set" : "")),
+      el("div", { style: "font-size:12px" }, info.title),
+      el("div", { class: "muted", style: "font-size:11.5px;margin-bottom:2px" }, info.hint),
       keyRow,
-      el("div", { class: "row mt" }, modelInput, testBtn, result));
+      el("div", { class: "row mt" }, modelInput, testBtn, result),
+      editForm);
   }
 
   function addForm() {
-    const f = {
-      name: el("input", { type: "text", placeholder: "name (e.g. vllm-box)" }),
-      kind: el("select", {}, el("option", {}, "openai"), el("option", {}, "anthropic"),
-               el("option", {}, "claude-cli")),
-      base_url: el("input", { type: "text", placeholder: "https://host/v1" }),
-      key_env_file: el("input", { type: "text", placeholder: "~/.credentials/foo.env (optional)" }),
-      key_var: el("input", { type: "text", placeholder: "KEY_VAR (optional)" }),
-      schema_mode: el("select", {}, el("option", {}, "json_schema"), el("option", {}, "json_object"),
-                      el("option", {}, "none")),
-      context_chars: el("input", { type: "number", value: "100000" }),
-    };
+    const nameIn = el("input", { type: "text", placeholder: "name (e.g. openrouter)" });
+    const kindSel = el("select", {}, KINDS.map((k) => el("option", {}, k)));
+    const baseIn = el("input", { type: "text", placeholder: "https://host/v1" });
+    const keyVarIn = el("input", { type: "text", placeholder: "KEY_VAR in Secrets (optional)" });
+    const schemaSel = el("select", {}, SCHEMA_MODES.map((m) => el("option", {}, m)));
+    const ctxIn = el("input", { type: "number", value: "200000" });
+    const hint = el("div", { class: "muted", style: "font-size:11.5px" });
+    const setHint = () => { const k = KIND[kindSel.value]; hint.textContent = k ? `${k.title} — ${k.hint}` : ""; };
+    kindSel.onchange = setHint; setHint();
     const save = el("button", { class: "btn primary" }, "add endpoint");
     save.onclick = async () => {
+      if (!nameIn.value.trim()) { toast("name it"); return; }
       try {
         await api("/api/settings/endpoints", { method: "POST", body: {
-          name: f.name.value.trim(), kind: f.kind.value, base_url: f.base_url.value.trim(),
-          key_env_file: f.key_env_file.value.trim(), key_var: f.key_var.value.trim(),
-          schema_mode: f.schema_mode.value, context_chars: Number(f.context_chars.value) || 100000,
-        }});
-        toast("endpoint added");
-        await load();
+          name: nameIn.value.trim(), kind: kindSel.value, base_url: baseIn.value.trim(),
+          key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 200000 } });
+        toast(`endpoint ${nameIn.value.trim()} added — set its ${KIND[kindSel.value]?.keyLabel || "key"} on its card`); await load();
       } catch (err) { toast(err.message); }
     };
     return el("details", { class: "panel mt" },
       el("summary", { style: "cursor:pointer;font-weight:600" }, "+ add endpoint"),
       el("div", { class: "field-row mt" },
-        el("label", { class: "field" }, el("span", {}, "name"), f.name),
-        el("label", { class: "field" }, el("span", {}, "kind"), f.kind),
-        el("label", { class: "field" }, el("span", {}, "base_url"), f.base_url)),
-      el("div", { class: "field-row" },
-        el("label", { class: "field" }, el("span", {}, "key env file"), f.key_env_file),
-        el("label", { class: "field" }, el("span", {}, "key var"), f.key_var),
-        el("label", { class: "field" }, el("span", {}, "schema mode"), f.schema_mode),
-        el("label", { class: "field" }, el("span", {}, "context chars"), f.context_chars)),
+        el("label", { class: "field" }, el("span", {}, "name"), nameIn),
+        el("label", { class: "field" }, el("span", {}, "kind"), kindSel)),
+      hint,
+      el("div", { class: "field-row mt" },
+        el("label", { class: "field" }, el("span", {}, "base_url"), baseIn),
+        el("label", { class: "field" }, el("span", {}, "key_var (Secrets)"), keyVarIn),
+        el("label", { class: "field" }, el("span", {}, "schema_mode"), schemaSel),
+        el("label", { class: "field" }, el("span", {}, "context_chars"), ctxIn)),
       el("div", { class: "row" }, save));
   }
 

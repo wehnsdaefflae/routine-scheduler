@@ -75,9 +75,15 @@ window.addEventListener("hashchange", route);
 
 // First launch: send the user to setup (Settings) until they finish it. The redirect fires a
 // hashchange → route(), so we don't call route() again in that branch.
+function gateNav(ready) {
+  const a = document.getElementById("nav-new-routine");   // dim (but keep clickable → gated wizard)
+  if (a) { a.style.opacity = ready ? "" : "0.55"; a.title = ready ? "" : "connect an LLM endpoint in Settings first"; }
+}
+
 (async function boot() {
   try {
     const s = await api("/api/status");
+    gateNav(s.llm_ready !== false);
     if (s.needs_setup && !location.hash.startsWith("#/settings")) {
       toast("Welcome! Finish setup: add a model provider, connect GitHub, and point at your repos", 6000);
       location.hash = "#/settings";

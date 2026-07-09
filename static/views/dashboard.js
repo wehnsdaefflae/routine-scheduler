@@ -8,11 +8,12 @@ const FILTER_KEY = "rsched_dash_tags";
 
 export async function render(view) {
   view.append(el("h1", {}, "Routines"));
+  const banner = el("div", {});
   const filterBar = el("div", { class: "filterbar" });
   const grid = el("div", { class: "grid" });
-  view.append(filterBar, grid);
+  view.append(banner, filterBar, grid);
 
-  let cards = [];
+  let cards = [], llmReady = true;
   const active = new Set(JSON.parse(localStorage.getItem(FILTER_KEY) || "[]"));
 
   function visible(c) {
@@ -62,7 +63,17 @@ export async function render(view) {
   }
 
   async function load() {
-    cards = await api("/api/routines");
+    const [routines, status] = await Promise.all([
+      api("/api/routines"), api("/api/status").catch(() => ({})),
+    ]);
+    cards = routines;
+    llmReady = status.llm_ready !== false;
+    banner.innerHTML = "";
+    if (!llmReady) banner.append(el("div", { class: "panel", style: "border-color:var(--warn);margin-bottom:12px" },
+      el("strong", {}, "⚠ No model connected — "),
+      el("span", { class: "muted" }, "add an endpoint and assign the orchestrator role in "),
+      el("a", { href: "#/settings" }, "Settings"),
+      el("span", { class: "muted" }, " to create or run routines.")));
     renderFilterBar();
     renderGrid();
   }
@@ -90,6 +101,8 @@ export async function render(view) {
           ? el("a", { class: "btn small", href: `#/run/${c.active_run}` }, "watch live")
           : el("button", {
               class: "btn small primary",
+              disabled: !llmReady,
+              title: llmReady ? "" : "connect an LLM endpoint in Settings first",
               onclick: async (e) => {
                 e.target.disabled = true;
                 try {

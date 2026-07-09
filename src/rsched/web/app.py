@@ -92,8 +92,12 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
 
         marker = _setup_marker()
         needs_setup = not (marker and marker.exists())
+        # llm_ready: the orchestrator role is assigned to a configured endpoint. Until then,
+        # nothing that needs an LLM (create/run a routine) can work — the UI disables those.
+        orch = server.default_roles.get("orchestrator")
+        llm_ready = bool(orch and orch.endpoint in server.endpoints)
         return {"version": __version__, "server_tz": server_tz(),
-                "needs_setup": needs_setup, **scheduler.snapshot()}
+                "needs_setup": needs_setup, "llm_ready": llm_ready, **scheduler.snapshot()}
 
     @app.post("/api/setup/complete", dependencies=deps)
     def setup_complete() -> dict:

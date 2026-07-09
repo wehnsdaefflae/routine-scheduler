@@ -6,6 +6,15 @@ import { el, scheduleEditor, toast } from "/static/util.js";
 
 export async function render(view, resumeWid) {
   view.append(el("h1", {}, "New routine"));
+  const st = await api("/api/status").catch(() => ({}));
+  if (st.llm_ready === false) {
+    view.append(el("div", { class: "panel", style: "border-color:var(--warn)" },
+      el("strong", {}, "No model connected"),
+      el("div", { class: "muted mt" },
+        "Creating a routine runs a clarification through your LLM. Add an endpoint and assign the ",
+        el("code", {}, "orchestrator"), " role in ", el("a", { href: "#/settings" }, "Settings"), " first.")));
+    return;
+  }
   const stage = el("div", {});
   view.append(stage);
   let source = null;

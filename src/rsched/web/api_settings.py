@@ -424,6 +424,37 @@ def delete_endpoint(request: Request, name: str) -> dict:
     return _rewrite_endpoints(request, mutate)
 
 
+class RoleBody(BaseModel):
+    role: str
+    endpoint: str
+    model: str
+    effort: str | None = None
+
+
+@router.put("/settings/roles")
+def set_role(request: Request, body: RoleBody) -> dict:
+    """Assign an endpoint+model to a default model role (orchestrator/subcall/cheap). Assigning the
+    orchestrator is what makes the instance 'llm_ready' — until then LLM features stay disabled."""
+    if body.role not in ("orchestrator", "subcall", "cheap"):
+        raise HTTPException(400, "role must be one of orchestrator|subcall|cheap")
+    s = _server(request)
+    if body.endpoint not in s.endpoints:
+        raise HTTPException(400, f"unknown endpoint {body.endpoint!r} — add it first")
+    path = _config_path(request)
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    roles = raw.get("default_roles") or {}
+    spec = {"endpoint": body.endpoint, "model": body.model}
+    if body.effort:
+        spec["effort"] = body.effort
+    roles[body.role] = spec
+    raw["default_roles"] = roles
+    path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    fresh, _ = load_server_config(path)
+    s.default_roles = fresh.default_roles
+    return {"ok": True, "default_roles": {r: {"endpoint": v.endpoint, "model": v.model}
+                                          for r, v in s.default_roles.items()}}
+
+
 class TestBody(BaseModel):
     model: str
 

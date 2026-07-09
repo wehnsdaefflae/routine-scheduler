@@ -5,9 +5,10 @@ import { api } from "/static/api.js";
 import { chip, el, fmtTokens, fmtTs, scheduleEditor, tagChip, toast } from "/static/util.js";
 
 export async function render(view, slug) {
-  let d;
-  try { d = await api(`/api/routines/${slug}`); }
+  let d, st;
+  try { [d, st] = await Promise.all([api(`/api/routines/${slug}`), api("/api/status").catch(() => ({}))]); }
   catch (err) { view.append(el("div", { class: "empty" }, err.message)); return; }
+  const llmReady = st.llm_ready !== false;
 
   const stateChip = d.active_state ? chip(d.active_state, d.active_state)
     : d.enabled ? chip("idle", "idle") : chip("disabled", "disabled");
@@ -16,7 +17,8 @@ export async function render(view, slug) {
     el("div", { class: "row" }, stateChip,
       d.active_run
         ? el("a", { class: "btn primary", href: `#/run/${d.active_run}` }, "◉ watch live")
-        : el("button", { class: "btn primary", onclick: runNow }, "▶ run now"),
+        : el("button", { class: "btn primary", disabled: !llmReady,
+            title: llmReady ? "" : "connect an LLM endpoint in Settings first", onclick: runNow }, "▶ run now"),
       el("button", { class: "btn danger", onclick: archive }, "archive"))));
   if (d.problems?.length) {
     view.append(el("div", { class: "panel", style: "border-color:var(--err);margin-top:14px" },
