@@ -22,6 +22,8 @@ def do_util(action: dict, ctx: RunContext) -> dict:
     name = action["name"]
     args = [str(a) for a in (action.get("args") or [])]
     home = ctx.server.utils_home
+    if name == "list":  # discovery: `gu list` — the catalog is derived live, never in-prompt
+        return {"kind": "util", "name": "list", "listing": utils_lib.catalog_text(home)}
     if not utils_lib.exists(home, name):
         return {"kind": "util", "name": name, "missing": True,
                 "available": [u["name"] for u in utils_lib.list_utils(home)]}

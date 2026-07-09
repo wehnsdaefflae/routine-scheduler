@@ -60,10 +60,11 @@ def test_build_system_prompt_sections(make_routine, tmp_path):
     ctx = _ctx(make_routine, tmp_path, slug="sects")
     sp = build_system_prompt(ctx, "## Run flow\n1. step", "The instruction.",
                              "digest text", ["inbox msg one"])
-    for needle in ("# ACTION SCHEMA", "# EXAMPLE", "# GLOBAL UTILS", "# WORKFLOW", "## Run flow",
+    for needle in ("# ACTION SCHEMA", "# EXAMPLE", "# WORKFLOW", "## Run flow",
                    "# INSTRUCTION", "The instruction.", "# STATE DIGEST",
                    "# MESSAGES FROM THE USER", "inbox msg one"):
         assert needle in sp, needle
+    assert "# GLOBAL UTILS" not in sp   # catalog is discovered via `util list`, never dumped
 
 
 def test_truncate_head_tail():
@@ -78,6 +79,8 @@ def test_format_observation_variants():
                                            "stdout": "out", "stderr": ""})
     assert "does not exist" in format_observation({"kind": "util", "name": "nope",
                                                    "missing": True, "available": []})
+    assert "available global utils" in format_observation(
+        {"kind": "util", "name": "list", "listing": "- websearch — search"})
     assert "selftest passed" in format_observation({"kind": "write_util", "name": "u",
                                                     "selftest_ok": True, "created": True})
     assert "selftest FAILED" in format_observation({"kind": "write_util", "name": "u",

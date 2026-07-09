@@ -78,7 +78,8 @@ forced one.
 
 Action kinds:
 - util: run a global util — name + optional args (append "--json" for structured output).
-Observation = exit code + captured output. Utils are your primary tools.
+Utils are your primary tools, but they are NOT listed here — run `util name=list` to see what \
+exists and each util's usage before relying on one. Observation = exit code + captured output.
 - write_util: create or revise a global util — name (kebab-case) + content (a complete
 PEP 723 script: `# /// script` deps block, a module docstring whose first line is
 `<name> — <one-line summary>` then a `usage:` line, a `--json` flag, a `--selftest` that runs
@@ -146,20 +147,13 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
 
 def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
                         digest: str, inbox_msgs: list[str], fragments_text: str = "") -> str:
-    from .. import utils_lib
-
+    # The util catalog is NEVER dumped into the prompt — the model discovers tools on demand
+    # with `util name=list` (taught by the global-utils fragment). Keeps the prompt lean and
+    # avoids priming weak models toward tool-call formats.
     sections = [
         harness_contract(ctx),
         "# ACTION SCHEMA (your every reply matches this)\n" + json.dumps(ACTION_SCHEMA, indent=1),
         "# EXAMPLE of a valid reply\n" + json.dumps(example_action(), indent=1),
-    ]
-    # The util catalog loads only for routines that work with the toolbox (the global-utils
-    # fragment). Minimal routines get a lean prompt — and it keeps weak models from being
-    # primed toward tool-call formats by a long tool list.
-    if "global-utils" in (ctx.routine.fragments or []):
-        sections.append("# GLOBAL UTILS (run with the util action; write_util to add one)\n"
-                        + utils_lib.catalog_text(ctx.server.utils_home))
-    sections += [
         "# WORKFLOW (the control flow you follow)\n" + workflow_body.strip(),
         "# INSTRUCTION (what this routine is for)\n" + instruction.strip(),
     ]
@@ -182,9 +176,11 @@ def kickoff_message(ctx: RunContext) -> str:
 def format_observation(obs: dict) -> str:
     kind = obs.get("kind")
     if kind == "util":
+        if obs.get("listing") is not None:
+            return "OBSERVATION (util list — available global utils):\n" + obs["listing"]
         if obs.get("missing"):
-            return (f"OBSERVATION (util {obs['name']!r} does not exist). Available: "
-                    f"{obs.get('available')}. Write it with write_util, then call it.")
+            return (f"OBSERVATION (util {obs['name']!r} does not exist). Run `util name=list` to "
+                    "see what exists, or write it with write_util, then call it.")
         head = f"OBSERVATION (util {obs['name']}, exit {obs['exit']})"
         body = obs.get("stdout") or "(no stdout)"
         if obs.get("stderr"):

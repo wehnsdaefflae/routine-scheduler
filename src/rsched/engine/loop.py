@@ -94,8 +94,8 @@ class EngineLoop:
         create = ("write_util to create/revise one"
                   + (" (needs your approval first)"
                      if self.ctx.routine.confirm_utils(self.ctx.server) else ""))
-        return ("\n[tools: the GLOBAL UTILS section lists your tools — or run util name=list to "
-                f"see them all and their usage; if none fits, {create}.]")
+        return ("\n[tools: run `util name=list` to see the available global utils and their "
+                f"usage; if none fits, {create}.]")
 
     def _aborted(self) -> bool:
         return _ABORT["flag"] or self.abort_event.is_set()

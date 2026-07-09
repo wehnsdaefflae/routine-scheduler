@@ -117,6 +117,13 @@ def normalize_action(obj: dict) -> dict:
         elif tool in KINDS:
             obj = {**{k: v for k, v in obj.items() if k not in ("tool_name", "tool", "name")},
                    "kind": tool}
+    # weak models often add a stray narration key alongside `say` — fold it in, don't fail on it
+    for stray in ("thought", "thinking", "reasoning"):
+        if stray in obj:
+            if not obj.get("say"):
+                obj["say"] = obj[stray]
+            obj = {k: v for k, v in obj.items() if k != stray}
+
     kind = obj.get("kind")
     required = set(_KIND_FIELDS.get(kind, ((), ()))[0])
     out = {}
@@ -152,10 +159,9 @@ def validate_action(obj: dict) -> list[str]:
 
 
 def example_action() -> dict:
-    """The few-shot example embedded in the harness contract."""
+    """The few-shot example embedded in the harness contract — also models tool discovery."""
     return {
-        "say": "The instruction needs current web results, and the util catalog lists a websearch util. I run it for structured output.",
+        "say": "Before choosing a tool I list what global utils exist, so I use the right one.",
         "kind": "util",
-        "name": "websearch",
-        "args": ["LLM agent papers 2026", "--json"],
+        "name": "list",
     }

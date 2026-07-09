@@ -94,3 +94,10 @@ def test_normalize_action_strips_grammar_padding():
     # meaningful values survive
     keep = normalize_action({"say": "s", "kind": "wait", "all": True, "timeout_s": 60})
     assert keep["all"] is True and keep["timeout_s"] == 60
+    # a stray narration key folds into say and does not trip additionalProperties
+    strayed = normalize_action({"kind": "util", "name": "list", "thought": "let me look"})
+    assert strayed == {"say": "let me look", "kind": "util", "name": "list"}
+    assert validate_action(strayed) == []
+    # tool-call envelope unwraps to a flat action
+    wrapped = normalize_action({"tool_name": "util", "parameters": {"say": "s", "name": "list"}})
+    assert wrapped["kind"] == "util" and wrapped["name"] == "list"

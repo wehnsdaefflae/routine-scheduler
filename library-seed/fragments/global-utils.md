@@ -1,13 +1,13 @@
 # fragment: global utils — your tools, and how to build more
 
 You have NO shell. Every bit of code you run is a **global util** — a small, named,
-selftested script shared across all routines. The GLOBAL UTILS section of your system prompt
-lists what exists right now.
+selftested script shared across all routines.
 
-**Using a util.** Run it with the `util` action: `name` + optional `args`; append `--json`
-to an arg list for structured output you can parse. Read a util's `usage:` line (in the
-catalog) for its flags. If the catalog looks stale or incomplete, run the `util` action with
-name `list` — the dispatcher prints every util and its one-line summary.
+**Discover, then use.** The available utils are NOT listed in your prompt — run the `util`
+action with name `list` to see every util and its one-line summary. Pick the one you need and
+run it with the `util` action (`name` + optional `args`; append `--json` for structured
+output you can parse); its `usage:` line names its flags. Prefer an existing util over
+building one.
 
 **Composing.** Utils call each other, so prefer building on what exists: a new util can shell
 out to `gu <other-util> --json` internally. Don't reimplement a capability another util
