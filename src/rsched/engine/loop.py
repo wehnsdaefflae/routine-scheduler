@@ -164,14 +164,25 @@ class EngineLoop:
         if cinfo:
             ctx.transcript.event("compaction", cinfo)
         usage_sum = {"in": 0, "out": 0}
+        schema = ACTION_SCHEMA
         for attempt in range(1, MAX_SCHEMA_ATTEMPTS + 1):
             # Generous output cap: reasoning models need room to think AND answer — a
             # provider's small default can swallow the content entirely.
             completion = endpoint.complete(self.messages, model=ref.model,
-                                           schema=ACTION_SCHEMA, effort=ref.effort,
+                                           schema=schema, effort=ref.effort,
                                            max_tokens=16_384)
             usage_sum["in"] += completion.usage["in"]
             usage_sum["out"] += completion.usage["out"]
+            if completion.parsed is None and not completion.text.strip():
+                # Empty reply = provider hiccup, not a model mistake: retry cleanly (no
+                # poisoned context); the last attempt drops the provider-side format
+                # constraint entirely — the contract in the system prompt still demands JSON.
+                ctx.transcript.event("error", {"where": "endpoint", "attempt": attempt,
+                                               "message": "empty completion (no content/reasoning)"})
+                if attempt == MAX_SCHEMA_ATTEMPTS - 1:
+                    schema = None
+                time.sleep(1.5 * attempt)
+                continue
             try:
                 if completion.parsed is not None:
                     problems = validate(completion.parsed, ACTION_SCHEMA) or validate_action(completion.parsed)

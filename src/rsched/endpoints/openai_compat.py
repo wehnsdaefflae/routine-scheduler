@@ -64,6 +64,12 @@ class OpenAICompatEndpoint:
             body["temperature"] = self.temperature
         if max_tokens:
             body["max_tokens"] = max_tokens
+        if effort:
+            # Reasoning models can burn the whole output budget "thinking" (truncated or
+            # empty content). The role's effort maps to the reasoning knob (OpenRouter/
+            # OpenAI style); providers that reject it get a degraded retry below.
+            body["reasoning"] = {"effort": "low" if effort == "low" else
+                                 "high" if effort in ("high", "xhigh", "max") else "medium"}
         rf = self._response_format(schema)
         if rf:
             body["response_format"] = rf
@@ -71,13 +77,15 @@ class OpenAICompatEndpoint:
 
         def call() -> Completion:
             resp = self._post(body, headers, timeout)
-            if resp.status_code == 400 and "response_format" in body and any(
-                hint in resp.text.lower() for hint in _RF_ERROR_HINTS
-            ):
-                # This provider/model rejects structured output — degrade for this call;
-                # the schema guard downstream validates the reply anyway.
-                degraded = {k: v for k, v in body.items() if k != "response_format"}
-                resp = self._post(degraded, headers, timeout)
+            if resp.status_code == 400:
+                low = resp.text.lower()
+                degraded = dict(body)
+                if "response_format" in degraded and any(h in low for h in _RF_ERROR_HINTS):
+                    degraded.pop("response_format")
+                if "reasoning" in degraded and "reasoning" in low:
+                    degraded.pop("reasoning")
+                if degraded.keys() != body.keys():
+                    resp = self._post(degraded, headers, timeout)
             return self._parse(resp)
 
         return with_retries(call)

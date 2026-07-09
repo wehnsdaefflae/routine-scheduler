@@ -42,6 +42,6 @@ endpoints:
 # Model roles routines refer to (each routine.yaml may override). Claude models are
 # reachable directly via `anthropic` (or as openrouter "anthropic/..." models).
 default_roles:
-  orchestrator: {endpoint: openrouter, model: "z-ai/glm-5.2"}
-  subcall:      {endpoint: openrouter, model: "z-ai/glm-5.2"}
+  orchestrator: {endpoint: openrouter, model: "z-ai/glm-5.2", effort: low}
+  subcall:      {endpoint: openrouter, model: "z-ai/glm-5.2", effort: low}
   cheap:        {endpoint: ollama-local, model: "gemma4:latest"}
