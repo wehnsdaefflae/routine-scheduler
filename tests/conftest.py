@@ -138,8 +138,15 @@ def finish(status="ok", summary="done"):
     return {"say": "Wrapping up.", "kind": "finish", "status": status, "summary": summary}
 
 
-def shell(command, say="Running a command."):
-    return {"say": say, "kind": "shell", "command": command}
+def util(name, args=None, say="Running a util."):
+    action = {"say": say, "kind": "util", "name": name}
+    if args:
+        action["args"] = args
+    return action
+
+
+def write_file(path, content="x", say="Writing a file."):
+    return {"say": say, "kind": "write_file", "path": path, "content": content}
 
 
 def spawn(prompt, label=None, workflow=None, say="Delegating."):

@@ -22,8 +22,9 @@ def _render_event(obj: dict) -> str | None:
         return f"── run {obj.get('run_id')} · {o.get('endpoint')}:{o.get('model')} ──"
     if t == "assistant_action":
         say = p.get("say", "")
-        brief = {"shell": p.get("command"), "read_file": p.get("path"), "write_file": p.get("path"),
-                 "llm": (p.get("prompt") or "")[:60],
+        brief = {"util": f"{p.get('name')} {' '.join(p.get('args') or [])}".strip(),
+                 "write_util": p.get("name"), "read_file": p.get("path"),
+                 "write_file": p.get("path"), "llm": (p.get("prompt") or "")[:60],
                  "spawn": f"{p.get('label') or ''} [{p.get('workflow') or 'general-task'}]",
                  "kill": f"#{p.get('n')}", "wait": "all" if p.get("all") else
                  (f"#{p.get('n')}" if p.get("n") else "any"),
@@ -32,9 +33,14 @@ def _render_event(obj: dict) -> str | None:
         return f"[{obj.get('turn')}] {say}\n    → {p.get('kind')}: {brief}"
     if t == "observation":
         kind = p.get("kind")
-        if kind == "shell":
-            tag = "REJECTED" if p.get("rejected") else f"exit {p.get('exit')}"
-            return f"    ← shell {tag}"
+        if kind == "util":
+            return f"    ← util {p.get('name')}: " + ("missing" if p.get("missing")
+                                                      else f"exit {p.get('exit')}")
+        if kind == "write_util":
+            state = ("pending approval" if p.get("pending_approval") else "declined"
+                     if p.get("declined") else "selftest ok" if p.get("selftest_ok")
+                     else "selftest failed")
+            return f"    ← write_util {p.get('name')}: {state}"
         if kind == "llm":
             return "    ← llm reply" + (" (error)" if p.get("error") else "")
         if kind == "spawn":

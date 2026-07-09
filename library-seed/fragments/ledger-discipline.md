@@ -12,4 +12,5 @@ and re-proposing rejected ideas — **check it before exploring anything new**.
 - **Rotation:** when LEDGER.md exceeds ~40 entries, move the oldest ~30 into
   `archive/ledger-<date>.md` and fold their gist into a few summary lines at the top of
   LEDGER.md. Git history is the real archive — prune freely; nothing is lost.
-- Commit the LEDGER with the rest of the run's changes (`git add -A && git commit`).
+- The engine commits your working directory (LEDGER included) automatically at run end —
+  you never run git yourself.

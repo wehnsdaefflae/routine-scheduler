@@ -19,7 +19,8 @@ def test_schema_compiles_and_example_passes():
 @pytest.mark.parametrize(
     "action",
     [
-        {"say": "s", "kind": "shell", "command": "gu list"},
+        {"say": "s", "kind": "util", "name": "websearch", "args": ["q", "--json"]},
+        {"say": "s", "kind": "write_util", "name": "my-util", "content": "# script"},
         {"say": "s", "kind": "read_file", "path": "LEDGER.md", "max_lines": 40},
         {"say": "s", "kind": "write_file", "path": "state/x.json", "content": "{}", "append": False},
         {"say": "s", "kind": "llm", "prompt": "p", "role": "cheap", "response_schema": {"type": "object"}},
@@ -39,11 +40,12 @@ def test_valid_actions_pass_both_layers(action):
 @pytest.mark.parametrize(
     "action,fragment",
     [
-        ({"say": "s", "kind": "shell"}, "command"),
-        ({"say": "s", "kind": "shell", "command": "   "}, "command"),
+        ({"say": "s", "kind": "util"}, "name"),
+        ({"say": "s", "kind": "util", "name": "   "}, "name"),
+        ({"say": "s", "kind": "write_util", "name": "x"}, "content"),
         ({"say": "s", "kind": "write_file", "path": "x"}, "content"),
         ({"say": "s", "kind": "finish", "status": "ok"}, "summary"),
-        ({"say": "s", "kind": "ask_user", "question": "q?", "command": "ls"}, "do not belong"),
+        ({"say": "s", "kind": "ask_user", "question": "q?", "args": ["ls"]}, "do not belong"),
         ({"say": "s", "kind": "llm", "prompt": "p", "path": "x"}, "do not belong"),
     ],
 )
@@ -56,7 +58,7 @@ def test_schema_layer_rejects_unknown_kind_and_extra_props():
     with pytest.raises(SchemaViolation):
         parse_reply(json.dumps({"say": "s", "kind": "dance"}), ACTION_SCHEMA, validate_action)
     with pytest.raises(SchemaViolation):
-        parse_reply(json.dumps({"say": "s", "kind": "shell", "command": "ls", "extra": 1}),
+        parse_reply(json.dumps({"say": "s", "kind": "util", "name": "ls", "extra": 1}),
                     ACTION_SCHEMA, validate_action)
 
 
@@ -66,7 +68,7 @@ def test_extract_json_tolerates_fences_and_prose():
     assert extract_json(fenced) == inner
     prosed = f"I will finish now. {json.dumps(inner)} That is all."
     assert extract_json(prosed) == inner
-    nested = json.dumps({"say": "uses {braces} inside", "kind": "shell", "command": "echo '{}'"})
+    nested = json.dumps({"say": "uses {braces} inside", "kind": "util", "name": "echo"})
     assert extract_json("prefix " + nested) == json.loads(nested)
 
 

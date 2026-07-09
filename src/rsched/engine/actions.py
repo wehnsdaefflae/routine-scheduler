@@ -11,8 +11,8 @@ prose-outside-JSON failures.
 
 from __future__ import annotations
 
-KINDS = ("shell", "read_file", "write_file", "llm", "spawn", "subruns", "kill", "wait",
-         "ask_user", "finish")
+KINDS = ("util", "write_util", "read_file", "write_file", "llm", "spawn", "subruns",
+         "kill", "wait", "ask_user", "finish")
 
 ACTION_SCHEMA: dict = {
     "type": "object",
@@ -24,14 +24,18 @@ ACTION_SCHEMA: dict = {
             "description": "1-3 sentences: what you observed, what you decided, why this action now.",
         },
         "kind": {"type": "string", "enum": list(KINDS)},
-        # shell
-        "command": {
+        # util / write_util (the ONLY way to run code — there is no shell)
+        "name": {
             "type": "string",
-            "description": "shell: full command line; runs in the routine dir; must start with an allowlisted program",
+            "description": "util/write_util: the global util's name (kebab-case) · also kill/wait target uses 'n'",
+        },
+        "args": {
+            "type": "array", "items": {"type": "string"},
+            "description": "util: command-line arguments passed to the util (append '--json' for structured output)",
         },
         "timeout_s": {
             "type": "integer", "minimum": 1, "maximum": 600,
-            "description": "shell: seconds before kill (default 120) · wait: max seconds to block (default 600)",
+            "description": "util: seconds before the util is killed (default 300) · wait: max seconds to block (default 600)",
         },
         # read_file / write_file
         "path": {
@@ -43,7 +47,8 @@ ACTION_SCHEMA: dict = {
             "type": "integer", "minimum": 1, "maximum": 500,
             "description": "read_file: line cap (default 200)",
         },
-        "content": {"type": "string", "description": "write_file: full new content"},
+        "content": {"type": "string",
+                    "description": "write_file: full new content · write_util: the complete PEP 723 script (see contract)"},
         "append": {"type": "boolean", "description": "write_file: append instead of overwrite (default false)"},
         # llm / spawn
         "prompt": {"type": "string",
@@ -81,7 +86,8 @@ ACTION_SCHEMA: dict = {
 
 # kind → (required fields, allowed extra fields beyond say/kind)
 _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
-    "shell": (("command",), ("timeout_s",)),
+    "util": (("name",), ("args", "timeout_s")),
+    "write_util": (("name", "content"), ()),
     "read_file": (("path",), ("start_line", "max_lines")),
     "write_file": (("path", "content"), ("append",)),
     "llm": (("prompt",), ("system", "role", "response_schema")),
@@ -136,8 +142,8 @@ def validate_action(obj: dict) -> list[str]:
 def example_action() -> dict:
     """The few-shot example embedded in the harness contract."""
     return {
-        "say": "State digest shows no phase file yet, so this is the first run. I start by listing the working directory to orient.",
-        "kind": "shell",
-        "command": "ls -la",
-        "timeout_s": 30,
+        "say": "The instruction needs current web results, and the util catalog lists a websearch util. I run it for structured output.",
+        "kind": "util",
+        "name": "websearch",
+        "args": ["LLM agent papers 2026", "--json"],
     }

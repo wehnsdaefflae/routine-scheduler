@@ -3,7 +3,7 @@
 import json
 import time
 
-from conftest import finish, shell, spawn, wait_
+from conftest import finish, spawn, util, wait_, write_file
 
 from rsched.config import ServerConfig
 from rsched.endpoints.base import EndpointError
@@ -16,9 +16,18 @@ TS = "20260708-070000"
 
 def _server(routine_dir) -> ServerConfig:
     s = ServerConfig()
-    # hermetic: no library on disk → sub-workflows use the builtin fallback body
+    # hermetic: no library/utils on disk → sub-workflows use the builtin fallback body;
+    # util actions on a missing name return a "missing" observation. confirm off so
+    # write_util tests don't block on approval.
     s.library_home = routine_dir.parent.parent / "no-library"
+    s.utils_home = routine_dir.parent.parent / "utils-home"
+    s.confirm_util_changes = False
     return s
+
+
+def probe(say="Doing work."):
+    """A generic successful effectful action (replaces the old shell no-op)."""
+    return write_file("state/probe.txt", content="probe", say=say)
 
 
 def _run(make_routine, scripted, replies, *, slug="testr", ts=TS, **routine_kwargs):
@@ -50,23 +59,86 @@ def test_happy_path(make_routine, scripted):
     assert "# WORKFLOW" in system and "Test instruction" in system and "no previous runs" in system
 
 
-def test_shell_and_guard_rejection(make_routine, scripted):
+def test_util_missing_then_continue(make_routine, scripted):
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
-        shell("echo hi"),                       # not allowlisted → rejected, run continues
-        shell("git status"),                    # allowlisted (not a repo → nonzero exit, still fine)
+        util("nonexistent-util", ["arg"]),      # no such util → missing observation, run continues
+        probe(),
         finish(),
     ])
     assert status == "ok"
     obs = [e for e in events if e["type"] == "observation"]
-    assert obs[0]["payload"]["rejected"] is True
-    assert "REJECTED" in ep.calls[1]["messages"][-1]["content"]
-    assert obs[1]["payload"].get("rejected") is None and "exit" in obs[1]["payload"]
+    assert obs[0]["payload"]["missing"] is True and obs[0]["payload"]["name"] == "nonexistent-util"
+    assert "does not exist" in ep.calls[1]["messages"][-1]["content"]
+
+
+def test_write_util_gating_and_commit(make_routine, scripted, monkeypatch):
+    import rsched.utils_lib as ul
+
+    seen = {}
+    monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
+    monkeypatch.setattr(ul, "exists", lambda home, name: False)  # always "creating"
+    monkeypatch.setattr(ul, "write_util_file",
+                        lambda home, name, content: seen.update(name=name, content=content))
+    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (True, "selftest: ok"))
+    monkeypatch.setattr(ul, "git_commit", lambda home, msg: seen.update(commit=msg) or True)
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        {"say": "No util fits — creating one.", "kind": "write_util", "name": "adder",
+         "content": "# /// script\n# ///\n\"\"\"adder — add.\"\"\"\n"},
+        finish(summary="created adder"),
+    ], slug="wu")
+    assert status == "ok"
+    assert seen["name"] == "adder" and "create adder" in seen["commit"]
+    wu = next(e for e in events if e["type"] == "observation" and e["payload"]["kind"] == "write_util")
+    assert wu["payload"]["selftest_ok"] and wu["payload"]["created"]
+
+
+def test_write_util_selftest_failure_not_committed(make_routine, scripted, monkeypatch):
+    import rsched.utils_lib as ul
+
+    committed = []
+    monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
+    monkeypatch.setattr(ul, "exists", lambda home, name: False)
+    monkeypatch.setattr(ul, "write_util_file", lambda home, name, content: None)
+    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (False, "AssertionError: boom"))
+    monkeypatch.setattr(ul, "git_commit", lambda home, msg: committed.append(msg) or True)
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        {"say": "Create it.", "kind": "write_util", "name": "bad", "content": "# broken"},
+        finish(status="partial", summary="util did not pass selftest"),
+    ], slug="wubad")
+    assert status == "partial" and committed == []
+    wu = next(e for e in events if e["type"] == "observation" and e["payload"]["kind"] == "write_util")
+    assert wu["payload"]["selftest_ok"] is False and "boom" in wu["payload"]["output"]
+    assert "selftest FAILED" in ep.calls[1]["messages"][-1]["content"]
+
+
+def test_write_util_confirmation_declined(make_routine, scripted, monkeypatch):
+    import rsched.utils_lib as ul
+
+    monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
+    monkeypatch.setattr(ul, "exists", lambda home, name: False)
+    wrote = []
+    monkeypatch.setattr(ul, "write_util_file", lambda *a: wrote.append(a))
+    d = make_routine(slug="wuconfirm")
+    qid = f"q-{TS}-1"
+    atomic_write_json(d / "inbox" / f"answer-{qid}.json", {"qid": qid, "text": "decline"})
+    server = _server(d)
+    server.confirm_util_changes = True   # gate ON
+    ep = scripted([
+        {"say": "Propose a util.", "kind": "write_util", "name": "risky", "content": "# x"},
+        finish(status="partial", summary="util declined"),
+    ])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "partial" and wrote == []          # never written — user declined
+    assert any(e["type"] == "question" for e in events)  # approval was requested (blocking)
+    wu = next(e for e in events if e["type"] == "observation" and e["payload"]["kind"] == "write_util")
+    assert wu["payload"]["declined"]
 
 
 def test_invalid_json_retry_then_ok(make_routine, scripted):
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
         "utter prose, no JSON at all",
-        shell("git status"),
+        probe(),
         finish(),
     ])
     assert status == "ok"
@@ -87,7 +159,7 @@ def test_three_invalid_attempts_fail_run(make_routine, scripted):
 def test_turn_budget_forces_partial_finish(make_routine, scripted):
     d, ep, status, run_dir, events = _run(
         make_routine, scripted,
-        [shell("git status", say=f"s{i}") for i in range(3)],
+        [probe(say=f"s{i}") for i in range(3)],
         budgets={"max_turns": 2})
     assert status == "partial"
     fin = events[-1]["payload"]
@@ -96,7 +168,7 @@ def test_turn_budget_forces_partial_finish(make_routine, scripted):
 
 
 def test_repeated_action_warn_then_fail(make_routine, scripted):
-    same = shell("git status", say="again")
+    same = probe(say="again")
     d, ep, status, run_dir, events = _run(make_routine, scripted, [same, same, same, same, same])
     assert status == "failed"
     fin = events[-1]["payload"]
@@ -110,7 +182,7 @@ def test_repeated_action_warn_then_fail(make_routine, scripted):
 def test_fabricated_finish_rejected(make_routine, scripted):
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
         finish(summary="All done! Committed everything."),   # turn 1: pure fabrication
-        shell("git status"),
+        probe(),
         finish(summary="Now actually done."),
     ], slug="fabber")
     assert status == "ok"
@@ -175,7 +247,7 @@ def test_deferred_answer_reaches_next_run_digest(make_routine, scripted):
     ], slug="qcarry")
     qid = read_json(next((d / "questions" / "pending").glob("*.json")))["qid"]
     atomic_write_json(d / "inbox" / f"answer-{qid}.json", {"qid": qid, "text": "teal"})
-    ep2 = scripted([shell("git status"), finish(summary="noted teal")])
+    ep2 = scripted([probe(), finish(summary="noted teal")])
     status2, run_dir2 = run_routine(d, ServerConfig(), run_ts="20260709-070000")
     assert status2 == "ok"
     system = ep2.calls[0]["messages"][0]["content"]
@@ -217,14 +289,18 @@ def test_parallel_children_notify_at_boundary(make_routine, scripted):
             return finish(summary=summary)
         return reply
 
+    def slow_probe():          # a slow PARENT turn so both children finish during it
+        time.sleep(0.4)
+        return probe()
+
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
         (PARENT, spawn("CHILD-A: research alpha.", label="a")),
         (PARENT, spawn("CHILD-B: research beta.", label="b")),
         ("CHILD-A: research alpha.", slow_child("alpha result ready")),
         ("CHILD-B: research beta.", slow_child("beta result ready")),
-        (PARENT, shell("sleep 0.4")),   # parent works while both children finish
+        (PARENT, slow_probe),   # parent works while both children finish
         (PARENT, finish(summary="collected both")),
-    ], slug="par", allowlist=["sleep *", "git *", "gu *"])
+    ], slug="par")
     assert status == "ok"
     assert len([e for e in events if e["type"] == "subrun_end"]) == 2
     # both finish notifications reached the parent before its last completion
@@ -336,7 +412,7 @@ def test_injection_mid_run(make_routine, scripted):
 
     def action_then_inject():
         atomic_write_json(d / "inbox" / "msg-1.json", {"text": "also mention the moon"})
-        return shell("git status")
+        return probe()
 
     ep = scripted([action_then_inject, finish()])
     status, run_dir = run_routine(d, ServerConfig(), run_ts=TS)
@@ -352,7 +428,7 @@ def test_injection_mid_run(make_routine, scripted):
 def test_boot_inbox_message_lands_in_system_prompt(make_routine, scripted):
     d = make_routine(slug="bootmsg")
     atomic_write_json(d / "inbox" / "msg-0.json", {"text": "priority: check the deploy"})
-    ep = scripted([shell("git status"), finish()])
+    ep = scripted([probe(), finish()])
     status, _ = run_routine(d, ServerConfig(), run_ts=TS)
     assert status == "ok"
     assert "priority: check the deploy" in ep.calls[0]["messages"][0]["content"]
@@ -363,7 +439,7 @@ def test_abort_flag(make_routine, scripted):
 
     def act_then_abort():
         loop_mod._ABORT["flag"] = True
-        return shell("git status")
+        return probe()
 
     d = make_routine(slug="aborted")
     ep = scripted([act_then_abort, finish()])
@@ -392,7 +468,7 @@ def test_pause_gate(make_routine, scripted):
         rd = d / "runs" / TS
         run_dir_holder["rd"] = rd
         atomic_write_json(rd / "control.json", {"pause": True})
-        return shell("git status")
+        return probe()
 
     def unpause_soon():
         # runs inside the SECOND completion call — by then the engine must have gone

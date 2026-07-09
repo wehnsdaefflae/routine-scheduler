@@ -6,7 +6,7 @@ when_to_use: >
   Fits most recurring instructions that don't have a more specific pattern: collect/produce/
   maintain something on a schedule, tend a long-running goal, run a periodic check. If the
   instruction mostly says WHAT to deliver and the HOW is ordinary tool work, this is the one.
-version: 2
+version: 3
 status: stable
 params: []
 default_budgets: {max_turns: 60, max_wall_clock_min: 45}
@@ -21,21 +21,22 @@ includes: [ask-policy, ledger-discipline, self-audit, improvement, fresh-eyes, h
 2. **Pick the run's work.** From the instruction, the current phase, and anything the user
    sent: what does THIS run deliver? Prefer finishing in-progress work over starting new
    work. Guard standing obligations first (anything the instruction says must never slip).
-3. **Execute in small verified steps.** Global utils (`gu <name> … --json`) are the primary
-   tools; check `gu list` before hand-rolling anything. Verify what you produce (read the
-   file back, check the exit code, count the results) — never claim unverified outcomes.
-   Delegate separable chunks (research, bulk processing) to parallel sub-workflows:
-   `spawn` them (pick a fitting library workflow; give each a fully self-contained
-   prompt and disjoint outputs), keep working, monitor with `subruns`, and collect
-   results via the automatic finish notifications or `wait`. Use `llm` subcalls for
-   scoped one-shot judgments.
+3. **Execute in small verified steps.** You have NO shell — run code only through the `util`
+   action (the GLOBAL UTILS section lists what exists). If nothing fits, `write_util` to
+   create one (a selftested PEP 723 script; it may call sibling utils), then call it. Read
+   files with read_file, write them with write_file. Verify what you produce (read it back,
+   check the util's exit code, count results) — never claim unverified outcomes. Delegate
+   separable chunks (research, bulk processing) to parallel sub-workflows: `spawn` them (pick
+   a fitting library workflow; give each a self-contained prompt and disjoint outputs), keep
+   working, monitor with `subruns`, collect via the finish notifications or `wait`. Use `llm`
+   subcalls for scoped one-shot judgments.
 4. **Record.** Update `state/phase.json` and any state files; append the LEDGER entry
    (ledger-discipline). Keep artifacts the user reads coherent (fresh-eyes).
 5. **Self-audit** (self-audit fragment) — determine only.
 6. **Improve** (improvement fragment) — act on the audit, same run.
-7. **Close out.** `git add -A && git commit -m "<run id>: <one line>"`. Then `finish` with a
-   3-10 line summary: what was delivered, decisions taken, open ends. The summary is what
-   the user and the next run see.
+7. **Close out.** `finish` with a 3-10 line summary: what was delivered, decisions taken,
+   open ends. The engine commits your working directory automatically — you never run git.
+   The summary is what the user and the next run see.
 
 ## Phases
 Track the current phase in `state/phase.json` as `{"phase": "...", "note": "..."}`.

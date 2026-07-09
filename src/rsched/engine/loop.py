@@ -37,10 +37,33 @@ REPEAT_WARN = 3
 REPEAT_FAIL = 5
 
 _ABORT = {"flag": False}
+_APPROVE_WORDS = ("approve", "approved", "yes", "y", "ok", "okay", "go", "accept", "confirm")
 
 
 def request_abort() -> None:
     _ABORT["flag"] = True
+
+
+def _is_approval(text: str) -> bool:
+    return text.strip().lower().split()[0] in _APPROVE_WORDS if text.strip() else False
+
+
+def _autocommit(routine_dir: Path, message: str) -> None:
+    """Commit the routine's working dir at run end with the neutral identity (best-effort).
+    Routines have no shell, so the engine owns version control of their state/outputs."""
+    import subprocess
+
+    if not (routine_dir / ".git").is_dir():
+        return
+    try:
+        subprocess.run(["git", "-C", str(routine_dir), "add", "-A"],
+                       capture_output=True, timeout=30)
+        subprocess.run(["git", "-C", str(routine_dir),
+                        "-c", "user.name=routine-scheduler",
+                        "-c", "user.email=noreply@routine-scheduler.local",
+                        "commit", "-qm", message], capture_output=True, timeout=30)
+    except OSError:
+        pass
 
 
 class RunAborted(Exception):
@@ -114,6 +137,8 @@ class EngineLoop:
                     return self._finish_run(action["status"], action["summary"], authored=True)
                 if action["kind"] == "ask_user":
                     obs = self._handle_ask(action)
+                elif action["kind"] == "write_util":
+                    obs = self._handle_write_util(action)
                 elif action["kind"] == "spawn":
                     obs = self.subruns.spawn(action)
                 elif action["kind"] == "subruns":
@@ -180,6 +205,7 @@ class EngineLoop:
         self.final_summary = self.final_summary or summary
         if ctx.depth == 0:
             (ctx.run_dir / "result.md").write_text(summary + "\n", encoding="utf-8")
+            _autocommit(ctx.routine.dir, f"{ctx.run_id}: {status}")  # routines never run git
             state = {"ok": "finished", "partial": "finished", "failed": "failed",
                      "aborted": "aborted"}.get(status, "finished")
             ctx.write_status(state, question=None)
@@ -230,9 +256,9 @@ class EngineLoop:
         return None, usage_sum
 
     def _record_turn(self, action: dict) -> None:
-        brief_field = {"shell": "command", "read_file": "path", "write_file": "path",
-                       "llm": "prompt", "spawn": "label", "kill": "n", "wait": "n",
-                       "ask_user": "question", "finish": "status"}.get(action["kind"], "")
+        brief_field = {"util": "name", "write_util": "name", "read_file": "path",
+                       "write_file": "path", "llm": "prompt", "spawn": "label", "kill": "n",
+                       "wait": "n", "ask_user": "question", "finish": "status"}.get(action["kind"], "")
         brief = str(action.get(brief_field, ""))[:80]
         self.turn_records.append({"turn": self.ctx.turn, "kind": action["kind"],
                                   "brief": json.dumps(brief, ensure_ascii=False),
@@ -277,6 +303,36 @@ class EngineLoop:
                                   "content": f"USER MESSAGE (injected mid-run):\n{text}"})
 
     # --- control-flow kinds ---------------------------------------------------------
+
+    def _handle_write_util(self, action: dict) -> dict:
+        from .. import utils_lib
+
+        ctx = self.ctx
+        name, content = action["name"], action["content"]
+        if ctx.depth > 0:
+            return {"kind": "write_util", "name": name, "declined": True,
+                    "reason": "sub-workflows cannot create/revise utils — use existing ones"}
+        home = ctx.server.utils_home
+        utils_lib.ensure_library(home, remote=ctx.server.utils_remote)
+        creating = not utils_lib.exists(home, name)
+        if ctx.routine.confirm_utils(ctx.server):
+            verb = "create" if creating else "revise"
+            ask = self._handle_ask({
+                "question": f"Approve {verb} of global util '{name}'? First lines:\n"
+                            f"{content.strip()[:400]}",
+                "mode": "blocking", "options": ["approve", "decline"]})
+            if not ask.get("answered"):
+                return {"kind": "write_util", "name": name, "pending_approval": True,
+                        "qid": ask.get("qid")}
+            if not _is_approval(ask["answer"]):
+                return {"kind": "write_util", "name": name, "declined": True}
+        utils_lib.write_util_file(home, name, content)
+        ok, output = utils_lib.selftest(home, name)
+        if not ok:
+            return {"kind": "write_util", "name": name, "created": creating,
+                    "selftest_ok": False, "output": output[:2000]}
+        utils_lib.git_commit(home, f"{'create' if creating else 'revise'} {name}")
+        return {"kind": "write_util", "name": name, "created": creating, "selftest_ok": True}
 
     def _handle_ask(self, action: dict) -> dict:
         ctx = self.ctx

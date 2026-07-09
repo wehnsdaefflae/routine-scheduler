@@ -47,6 +47,9 @@ def harness_contract(ctx: RunContext) -> str:
     if r.fs_read_roots or r.fs_write_roots:
         extra = (f"\nAdditional readable roots: {[str(p) for p in r.fs_read_roots]}; "
                  f"writable roots: {[str(p) for p in r.fs_write_roots]}.")
+    util_confirm = (" Creating/revising a util needs the user's approval (a blocking "
+                    "question is filed automatically) before it takes effect."
+                    if r.confirm_utils(ctx.server) else "")
     return f"""You are the orchestrator of the routine "{r.name}" ({r.slug}), run {ctx.run_id}\
 {f" (schedule: {r.cron})" if r.cron else ""}. This conversation IS the run: every turn you reply with \
 EXACTLY one JSON object matching the action schema below — no prose outside the JSON. Narrate what \
@@ -58,8 +61,11 @@ summarize results that no observation here has shown; finishing with claims of u
 the single worst failure this system knows. The engine rejects a finish(ok) before any action ran.
 
 Working directory: {r.dir}. All relative paths resolve there.{extra}
-Shell commands run there; every command segment must match the allowlist: {r.shell_allowlist}. \
-Global utils are your primary tools: `gu <name> ... --json` (run `gu list` for the catalog).
+
+You have NO shell. The ONLY way to run code is a global util (the `util` action). If no util
+does what you need, WRITE one (the `write_util` action) and then call it — utils are reusable,
+selftested, and shared across all routines. You never run git yourself: the engine commits your
+working directory automatically at run end.
 
 Budgets for this run: {b.max_turns} turns, {b.max_wall_clock_min} minutes, {b.max_total_tokens} \
 total tokens, at most {b.max_subruns} subruns (depth ≤ {b.max_subrun_depth}). Spend them on the \
@@ -67,7 +73,13 @@ workflow's priorities and `finish` DELIBERATELY before they expire — a finish 
 forced one.
 
 Action kinds:
-- shell: run one command line (allowlisted). Observation = exit code + captured output.
+- util: run a global util — name + optional args (append "--json" for structured output).
+Observation = exit code + captured output. Utils are your primary tools.
+- write_util: create or revise a global util — name (kebab-case) + content (a complete
+PEP 723 script: `# /// script` deps block, a module docstring whose first line is
+`<name> — <one-line summary>` then a `usage:` line, a `--json` flag, a `--selftest` that runs
+built-in checks, data on stdout / diagnostics on stderr / exit 0 on success). The engine runs
+`--selftest` and only commits if it passes; a util may call sibling utils via `gu <name>`.{util_confirm}
 - read_file / write_file: read or write a file (within the working dir or an allowed root).
 - llm: one scoped, stateless LLM subcall (role "subcall" or "cheap"). It sees ONLY your prompt/\
 system — include everything it needs; set response_schema for structured replies.
@@ -125,10 +137,14 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
 
 def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
                         digest: str, inbox_msgs: list[str]) -> str:
+    from .. import utils_lib
+
     sections = [
         harness_contract(ctx),
         "# ACTION SCHEMA (your every reply matches this)\n" + json.dumps(ACTION_SCHEMA, indent=1),
         "# EXAMPLE of a valid reply\n" + json.dumps(example_action(), indent=1),
+        "# GLOBAL UTILS (run with the util action; write_util to add one)\n"
+        + utils_lib.catalog_text(ctx.server.utils_home),
         "# WORKFLOW (the control flow you follow)\n" + workflow_body.strip(),
         "# INSTRUCTION (what this routine is for)\n" + instruction.strip(),
         "# STATE DIGEST (fresh at run start)\n" + digest,
@@ -147,16 +163,27 @@ def kickoff_message(ctx: RunContext) -> str:
 
 def format_observation(obs: dict) -> str:
     kind = obs.get("kind")
-    if kind == "shell":
-        if obs.get("rejected"):
-            return ("OBSERVATION (shell REJECTED — command not run):\n"
-                    + "\n".join(f"- {p}" for p in obs["problems"]))
-        head = f"OBSERVATION (shell, exit {obs['exit']}, {obs['duration_s']:.1f}s"
-        head += ", TIMED OUT" if obs.get("timed_out") else ""
+    if kind == "util":
+        if obs.get("missing"):
+            return (f"OBSERVATION (util {obs['name']!r} does not exist). Available: "
+                    f"{obs.get('available')}. Write it with write_util, then call it.")
+        head = f"OBSERVATION (util {obs['name']}, exit {obs['exit']})"
         body = obs.get("stdout") or "(no stdout)"
         if obs.get("stderr"):
             body += f"\n[stderr]\n{obs['stderr']}"
-        return f"{head}):\n{body}"
+        return f"{head}:\n{body}"
+    if kind == "write_util":
+        if obs.get("pending_approval"):
+            return (f"OBSERVATION (write_util {obs['name']!r}): approval requested from the user "
+                    f"({obs['qid']}). It is NOT active yet; continue with other work or wait.")
+        if obs.get("declined"):
+            return f"OBSERVATION (write_util {obs['name']!r} DECLINED by the user). Do not retry it."
+        if not obs.get("selftest_ok"):
+            return (f"OBSERVATION (write_util {obs['name']!r}: selftest FAILED — not committed):\n"
+                    f"{obs.get('output', '')}\nFix the script and write_util again.")
+        return (f"OBSERVATION (write_util {obs['name']!r}: selftest passed, "
+                f"{'created' if obs.get('created') else 'revised'} and committed). "
+                "You can now run it with the util action.")
     if kind == "read_file":
         if err := obs.get("error"):
             return f"OBSERVATION (read_file {obs.get('path')} FAILED): {err}"

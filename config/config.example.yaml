@@ -6,7 +6,16 @@ port: 8321
 token: "change-me"     # bearer token for the web UI / API (install.sh generates one)
 
 routines_home: ~/routines
+
+# Workflow library (control-flow patterns). Set library_remote to clone-from / sync-to a repo.
 library_home: ~/.local/share/workflow-library
+library_remote: ""     # e.g. https://github.com/<you>/routine-workflow-library.git
+
+# Global-util library — the ONLY way routines run code (there is no shell). Starts empty-
+# capable; routines generate utils on demand. Set utils_remote to bootstrap from / sync to a repo.
+utils_home: ~/.local/share/routine-utils
+utils_remote: ""       # e.g. https://github.com/<you>/routine-utils.git
+confirm_util_changes: true   # ask the user to approve before a util is created/revised (req 7)
 
 max_concurrent_runs: 2
 registry_rescan_s: 30

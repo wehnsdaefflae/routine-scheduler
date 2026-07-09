@@ -8,28 +8,29 @@ the next user message.
 
 from __future__ import annotations
 
+from .. import utils_lib
 from ..endpoints.base import EndpointError
 from ..paths import resolve_rel
-from . import shell_guard
 from .composer import truncate
 from .run_context import RunContext
 
 READ_DEFAULT_MAX_LINES = 200
+UTIL_DEFAULT_TIMEOUT_S = 300
 
 
-def do_shell(action: dict, ctx: RunContext) -> dict:
-    command = action["command"]
-    problems = shell_guard.vet(command, ctx.routine.shell_allowlist)
-    if problems:
-        return {"kind": "shell", "rejected": True, "problems": problems, "command": command}
-    result = shell_guard.run_shell(
-        command, cwd=ctx.routine.dir, timeout_s=int(action.get("timeout_s") or shell_guard.DEFAULT_TIMEOUT_S)
-    )
-    stdout, trunc_out = truncate(result.stdout)
-    stderr, trunc_err = truncate(result.stderr, cap=2000)
-    return {"kind": "shell", "command": command, "exit": result.exit,
-            "stdout": stdout, "stderr": stderr, "duration_s": round(result.duration_s, 2),
-            "timed_out": result.timed_out, "truncated": trunc_out or trunc_err}
+def do_util(action: dict, ctx: RunContext) -> dict:
+    name = action["name"]
+    args = [str(a) for a in (action.get("args") or [])]
+    home = ctx.server.utils_home
+    if not utils_lib.exists(home, name):
+        return {"kind": "util", "name": name, "missing": True,
+                "available": [u["name"] for u in utils_lib.list_utils(home)]}
+    code, out, err = utils_lib.run_util(
+        home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S))
+    stdout, trunc_out = truncate(out)
+    stderr, trunc_err = truncate(err, cap=2000)
+    return {"kind": "util", "name": name, "args": args, "exit": code,
+            "stdout": stdout, "stderr": stderr, "truncated": trunc_out or trunc_err}
 
 
 def do_read_file(action: dict, ctx: RunContext) -> dict:
@@ -91,7 +92,7 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
 
 
 DISPATCH = {
-    "shell": do_shell,
+    "util": do_util,
     "read_file": do_read_file,
     "write_file": do_write_file,
     "llm": do_llm,

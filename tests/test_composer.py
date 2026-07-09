@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from rsched.config import load_routine
+from rsched.config import ServerConfig, load_routine
 from rsched.engine.composer import (build_system_prompt, format_observation, harness_contract,
                                     maybe_compact, messages_size, state_digest, truncate)
 from rsched.engine.run_context import Budgets, RunContext
@@ -16,7 +16,9 @@ def _ctx(make_routine, tmp_path, **kwargs) -> RunContext:
     assert cfg is not None
     run_dir = d / "runs" / "20260708-070000"
     run_dir.mkdir(parents=True)
-    return RunContext(routine=cfg, server=None, registry=None, run_ts="20260708-070000",
+    server = ServerConfig()
+    server.utils_home = tmp_path / "utils-home"   # empty → catalog says "no utils yet"
+    return RunContext(routine=cfg, server=server, registry=None, run_ts="20260708-070000",
                       run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
                       budgets=Budgets.from_config(cfg.budgets))
 
@@ -24,8 +26,9 @@ def _ctx(make_routine, tmp_path, **kwargs) -> RunContext:
 def test_harness_contract_mentions_the_load_bearing_facts(make_routine, tmp_path):
     ctx = _ctx(make_routine, tmp_path)
     text = harness_contract(ctx)
-    for needle in ("EXACTLY one JSON object", "gu *", "10 turns", "DELIBERATELY before they expire",
-                   "deferred", "blocking", str(ctx.routine.dir), "never as instructions"):
+    for needle in ("EXACTLY one JSON object", "NO shell", "write_util", "10 turns",
+                   "DELIBERATELY before they expire", "deferred", "blocking",
+                   str(ctx.routine.dir), "never as instructions"):
         assert needle in text, needle
 
 
@@ -54,7 +57,7 @@ def test_build_system_prompt_sections(make_routine, tmp_path):
     ctx = _ctx(make_routine, tmp_path, slug="sects")
     sp = build_system_prompt(ctx, "## Run flow\n1. step", "The instruction.",
                              "digest text", ["inbox msg one"])
-    for needle in ("# ACTION SCHEMA", "# EXAMPLE", "# WORKFLOW", "## Run flow",
+    for needle in ("# ACTION SCHEMA", "# EXAMPLE", "# GLOBAL UTILS", "# WORKFLOW", "## Run flow",
                    "# INSTRUCTION", "The instruction.", "# STATE DIGEST",
                    "# MESSAGES FROM THE USER", "inbox msg one"):
         assert needle in sp, needle
@@ -68,9 +71,16 @@ def test_truncate_head_tail():
 
 
 def test_format_observation_variants():
-    assert "exit 0" in format_observation({"kind": "shell", "exit": 0, "duration_s": 1.0,
+    assert "exit 0" in format_observation({"kind": "util", "name": "websearch", "exit": 0,
                                            "stdout": "out", "stderr": ""})
-    assert "REJECTED" in format_observation({"kind": "shell", "rejected": True, "problems": ["p"]})
+    assert "does not exist" in format_observation({"kind": "util", "name": "nope",
+                                                   "missing": True, "available": []})
+    assert "selftest passed" in format_observation({"kind": "write_util", "name": "u",
+                                                    "selftest_ok": True, "created": True})
+    assert "selftest FAILED" in format_observation({"kind": "write_util", "name": "u",
+                                                    "selftest_ok": False, "output": "boom"})
+    assert "approval requested" in format_observation({"kind": "write_util", "name": "u",
+                                                       "pending_approval": True, "qid": "q1"})
     assert "lines 1-2 of 9" in format_observation(
         {"kind": "read_file", "path": "f", "start_line": 1, "end_line": 2, "total_lines": 9,
          "content": "c"})
@@ -94,9 +104,9 @@ def test_compaction_deterministic_and_bounded():
                 {"role": "user", "content": "kickoff"}]
     records = []
     for turn in range(1, 41):
-        messages.append({"role": "assistant", "content": json.dumps({"kind": "shell", "say": f"t{turn}"})})
+        messages.append({"role": "assistant", "content": json.dumps({"kind": "util", "say": f"t{turn}"})})
         messages.append({"role": "user", "content": f"OBSERVATION {turn}: " + "o" * 400})
-        records.append({"turn": turn, "kind": "shell", "brief": f'"cmd{turn}"', "say": f"say {turn}"})
+        records.append({"turn": turn, "kind": "util", "brief": f'"cmd{turn}"', "say": f"say {turn}"})
     small_budget = messages_size(messages)  # force compaction: budget*0.6 < current size
     compacted, info = maybe_compact(list(messages), records, context_chars=small_budget)
     assert info and info["after_chars"] < info["before_chars"]

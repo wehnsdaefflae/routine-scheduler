@@ -3,7 +3,7 @@
 
 import { el, fmtTokens } from "/static/util.js";
 
-const BRIEF_FIELD = { shell: "command", read_file: "path", write_file: "path",
+const BRIEF_FIELD = { util: "name", write_util: "name", read_file: "path", write_file: "path",
                       llm: "prompt", spawn: "label", kill: "n", wait: "n",
                       ask_user: "question", finish: "status" };
 
@@ -31,9 +31,14 @@ export function createTranscript(container) {
   function addObservation(ev) {
     const o = ev.payload;
     let text;
-    if (o.kind === "shell") {
-      text = o.rejected ? `REJECTED: ${(o.problems || []).join("; ")}`
-        : `exit ${o.exit} (${o.duration_s}s)\n${o.stdout || ""}${o.stderr ? `\n[stderr] ${o.stderr}` : ""}`;
+    if (o.kind === "util") {
+      text = o.missing ? `util "${o.name}" does not exist (available: ${(o.available || []).join(", ")})`
+        : `${o.name} → exit ${o.exit}\n${o.stdout || ""}${o.stderr ? `\n[stderr] ${o.stderr}` : ""}`;
+    } else if (o.kind === "write_util") {
+      text = o.pending_approval ? `write_util "${o.name}": awaiting user approval`
+        : o.declined ? `write_util "${o.name}": declined`
+        : o.selftest_ok ? `write_util "${o.name}": selftest passed, committed`
+        : `write_util "${o.name}": selftest FAILED\n${o.output || ""}`;
     } else if (o.kind === "read_file") {
       text = o.error || o.content || "";
     } else if (o.kind === "llm") {

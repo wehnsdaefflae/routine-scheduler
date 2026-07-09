@@ -11,10 +11,12 @@ default (each toggleable in `routine.yaml`).
 
 **The workflow is the harness.** Runs execute on a provider-agnostic engine: the
 orchestrator LLM follows the workflow document and acts only by returning one JSON action
-per turn — run a global util (`gu …`), read/write a file, make a scoped `llm` subcall,
-`spawn` parallel sub-workflows from the library (monitor with `subruns`, `kill` them, `wait`
-for them; their exits are announced automatically and they never outlive the parent), ask
-the user (blocking or deferred), or finish. Endpoints are
+per turn. Routines have **no shell** — the only way to run code is a global util (the `util`
+action); if none fits, the routine writes one (`write_util`, selftest-gated, optionally
+requiring your approval). Other actions: read/write a file, a scoped `llm` subcall, `spawn`
+parallel sub-workflows from the library (monitor with `subruns`, `kill`, `wait`; exits are
+announced automatically and children never outlive the parent), ask the user (blocking or
+deferred), or finish. The engine commits each routine's working dir automatically. Endpoints are
 model **transports** only: OpenRouter, local Ollama, other OpenAI-compatible servers, the
 Anthropic Messages API — or the Claude Code CLI in fully stripped print mode (`--tools ""`,
 no settings/MCP/session, our system prompt replacing its own) as a subscription-billed

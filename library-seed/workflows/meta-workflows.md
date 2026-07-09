@@ -5,8 +5,8 @@ description: Ingests the top-level transcripts and LEDGERs of all routines, find
 when_to_use: >
   Internal: the standing meta routine that maintains ~/.local/share/workflow-library. Not a
   template for user routines. Requires fs_read_roots over the routines home and
-  fs_read/write_roots over the library, plus "uv run *" in the shell allowlist.
-version: 2
+  fs_read/write_roots over the library (it commits via the git-sync util).
+version: 3
 status: stable
 params: []
 default_budgets: {max_turns: 80, max_wall_clock_min: 60}
@@ -33,10 +33,9 @@ includes: [ask-policy, ledger-discipline, hygiene]
    deferred question naming the routine, don't edit foreign routines).
 4. **Small safe edits — apply now.** Ambiguous or contradictory wording, a missing hint that
    several runs stumbled over, a stale reference: edit `workflows/<slug>.md` (or a fragment)
-   in the library, bump `version:` in its frontmatter, run
-   `uv run --project ~/git-repos/routine-scheduler rsched lint` (must pass), then
-   `git -C ~/.local/share/workflow-library add -A && git -C ~/.local/share/workflow-library
-   commit -m "meta: <slug> v<n> — <one line>"` (the post-commit hook pushes).
+   in the library with write_file (keep the three required sections and resolvable includes;
+   bump `version:` in its frontmatter), then commit + push it with the git-sync util:
+   `util git-sync ~/.local/share/workflow-library -m "meta: <slug> v<n> — <one line>"`.
 5. **Big changes — propose, don't apply.** Restructuring a workflow, changing its phase
    model, retiring one: write `proposals/<date>-<slug>.md` in the library (problem →
    evidence → proposed change → blast radius: which routines materialized from it), commit
@@ -46,7 +45,7 @@ includes: [ask-policy, ledger-discipline, hygiene]
    fitting workflow, draft `workflows/<new-slug>.md` with `status: draft` frontmatter, lint
    it, commit. Drafts become `stable` only after a proposal question is accepted.
 7. **Record.** Update `state/last_seen.json`; append the LEDGER entry (edits, proposals,
-   rejected candidates); `git add -A && git commit` in your own directory; finish with a
+   rejected candidates). The engine commits your own directory automatically. Finish with a
    summary of findings → actions.
 
 ## Phases

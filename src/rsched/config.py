@@ -63,6 +63,10 @@ class ServerConfig:
     token: str = ""
     routines_home: Path = field(default_factory=lambda: expand("~/routines"))
     library_home: Path = field(default_factory=lambda: expand("~/.local/share/workflow-library"))
+    library_remote: str = ""            # optional: clone-from / sync-to for the workflow library
+    utils_home: Path = field(default_factory=lambda: expand("~/.local/share/routine-utils"))
+    utils_remote: str = ""              # optional: clone-from / sync-to for the util library
+    confirm_util_changes: bool = True   # ask the user before a util is created/revised (req 7)
     max_concurrent_runs: int = 2
     registry_rescan_s: int = 30
     endpoints: dict[str, EndpointConfig] = field(default_factory=dict)
@@ -98,6 +102,11 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
         cfg.routines_home = expand(raw["routines_home"])
     if "library_home" in raw:
         cfg.library_home = expand(raw["library_home"])
+    if "utils_home" in raw:
+        cfg.utils_home = expand(raw["utils_home"])
+    cfg.library_remote = str(raw.get("library_remote", "") or "")
+    cfg.utils_remote = str(raw.get("utils_remote", "") or "")
+    cfg.confirm_util_changes = bool(raw.get("confirm_util_changes", cfg.confirm_util_changes))
     cfg.max_concurrent_runs = int(raw.get("max_concurrent_runs", cfg.max_concurrent_runs))
     cfg.registry_rescan_s = int(raw.get("registry_rescan_s", cfg.registry_rescan_s))
 
@@ -150,9 +159,10 @@ class RoutineConfig:
     roles: dict[str, RoleRef] = field(default_factory=dict)  # overrides; server defaults fill gaps
     budgets: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_BUDGETS))
     self_flags: dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_SELF))
-    shell_allowlist: list[str] = field(default_factory=lambda: list(DEFAULT_ALLOWLIST))
+    shell_allowlist: list[str] = field(default_factory=lambda: list(DEFAULT_ALLOWLIST))  # legacy, unused (no shell)
     fs_read_roots: list[Path] = field(default_factory=list)
     fs_write_roots: list[Path] = field(default_factory=list)
+    confirm_util_changes: bool | None = None  # None = inherit the server default
     notifications: str = "ui"
     keep_runs: int = 30
 
@@ -160,6 +170,10 @@ class RoutineConfig:
         roles = dict(server.default_roles)
         roles.update(self.roles)
         return roles
+
+    def confirm_utils(self, server: ServerConfig) -> bool:
+        return server.confirm_util_changes if self.confirm_util_changes is None \
+            else self.confirm_util_changes
 
 
 def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
@@ -242,6 +256,8 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
         for item in raw.get(key) or []:
             target.append(expand(item))
 
+    if "confirm_util_changes" in raw:
+        cfg.confirm_util_changes = bool(raw["confirm_util_changes"])
     cfg.notifications = str(raw.get("notifications", cfg.notifications))
     ret = raw.get("retention") or {}
     if isinstance(ret, dict) and "keep_runs" in ret:

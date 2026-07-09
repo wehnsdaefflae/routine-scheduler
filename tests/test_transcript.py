@@ -11,9 +11,9 @@ def test_roundtrip_and_offsets(tmp_path):
     t = Transcript(path)
     t.header(run_id="r:20260708-070000", routine="r", workflow={"slug": "w"},
              orchestrator={"endpoint": "e", "model": "m"})
-    t.event("assistant_action", {"kind": "shell", "command": "ls", "say": "s"}, turn=1,
+    t.event("assistant_action", {"kind": "util", "name": "ls", "say": "s"}, turn=1,
             usage={"in": 1, "out": 2})
-    t.event("observation", {"kind": "shell", "exit": 0}, turn=1)
+    t.event("observation", {"kind": "util", "name": "ls", "exit": 0}, turn=1)
     t.close()
 
     events, offset = read_events(path)

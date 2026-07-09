@@ -41,7 +41,7 @@ def _mk_run(routines, slug, ts, state, question=None):
     with open(run_dir / "transcript.jsonl", "w") as fh:
         fh.write(json.dumps({"type": "header", "run_id": f"{slug}:{ts}"}) + "\n")
         fh.write(json.dumps({"ts": "t", "type": "assistant_action", "turn": 1,
-                             "payload": {"say": "s", "kind": "shell", "command": "gu list"}}) + "\n")
+                             "payload": {"say": "s", "kind": "util", "name": "gu-list"}}) + "\n")
     return run_dir
 
 

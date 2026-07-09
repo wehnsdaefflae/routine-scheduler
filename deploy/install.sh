@@ -8,6 +8,7 @@ CONFIG_DIR="${HOME}/.config/routine-scheduler"
 CONFIG="${CONFIG_DIR}/config.yaml"
 ROUTINES="${HOME}/routines"
 LIBRARY="${HOME}/.local/share/workflow-library"
+UTILS="${HOME}/.local/share/routine-utils"
 UNIT_DIR="${HOME}/.config/systemd/user"
 
 echo "== rsched install (${REPO})"
@@ -40,6 +41,23 @@ if [ -d "${REPO}/library-seed" ] && [ -n "$(find "${REPO}/library-seed" -type f 
 fi
 if [ -d "${LIBRARY}/.git" ]; then
   install -m 0755 "${REPO}/deploy/post-commit" "${LIBRARY}/.git/hooks/post-commit"
+fi
+
+# Global-util library — the scheduler's own, separate from any personal ~/.local/share/global-utils.
+# Starts from the seed (websearch + git-sync) but works empty; routines generate more on demand.
+if [ ! -d "${UTILS}" ]; then
+  mkdir -p "${UTILS}/utils"
+  [ -d "${REPO}/util-seed/utils" ] && cp -r "${REPO}/util-seed/utils/." "${UTILS}/utils/"
+  # the `gu` dispatcher + git repo are created by the engine (utils_lib.ensure_library) on
+  # first use; do a minimal init here so the seed is versioned immediately.
+  git -C "${UTILS}" init -q -b main
+  git -C "${UTILS}" config user.name "routine-scheduler"
+  git -C "${UTILS}" config user.email "noreply@routine-scheduler.local"
+  git -C "${UTILS}" add -A && git -C "${UTILS}" commit -qm "seed util library" 2>/dev/null || true
+  echo "util library seeded: ${UTILS}"
+fi
+if [ -d "${UTILS}/.git" ]; then
+  install -m 0755 "${REPO}/deploy/post-commit" "${UTILS}/.git/hooks/post-commit"
 fi
 
 # systemd user service + linger (so the daemon survives logout / starts at boot).
