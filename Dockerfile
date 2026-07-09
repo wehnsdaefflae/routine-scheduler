@@ -4,16 +4,25 @@
 # migrates as a tarball of those directories. Rebuild the image on any dependency/tooling change.
 FROM python:3.12-slim-bookworm
 
-# Runtime tools the routines actually use:
-#   git    — libraries + routines are git repos; git-sync / git-restore / pytest-run utils
+# Runtime tools the routines + setup need:
+#   git       — libraries + routines are git repos; git-sync / git-restore / pytest-run utils
+#   gh        — GitHub CLI: users run `gh auth login` at setup to clone/pull/push their (private) repos
 #   node + @anthropic-ai/claude-code — the `claude-cli` transport (self-audit) and the `gu claude` util
-#   curl/ca-certificates — uv download + HTTPS to OpenRouter/Anthropic
+#   curl/ca-certificates/gnupg — uv download, apt keys, HTTPS to OpenRouter/Anthropic
 # (No browser: none of the routines drive one. To enable the personal CDP utils later, add a
 #  Chromium/Playwright layer here — see deploy/DOCKER.md.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git curl ca-certificates \
+        git curl ca-certificates gnupg \
+    # GitHub CLI apt repo
+    && mkdir -p -m 755 /etc/apt/keyrings \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    # Node 20 (for the claude CLI)
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get install -y --no-install-recommends nodejs gh \
     && npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 import time
 
@@ -152,6 +153,42 @@ def set_source_remote(request: Request, body: LibraryRemote) -> dict:
         if push.returncode != 0:
             result["push_error"] = push.stderr.strip()[:200]
     return result
+
+
+class RemoteTest(BaseModel):
+    remote: str
+
+
+@router.post("/settings/test-remote")
+def test_remote(_request: Request, body: RemoteTest) -> dict:
+    """Validate that a git remote is reachable AND authorized, for the Settings 'Test' button.
+    Runs `git ls-remote` with prompts disabled so a private repo without credentials fails fast
+    (rather than hanging), and surfaces the git error verbatim (auth failure, no such repo, DNS)."""
+    url = body.remote.strip()
+    if not url:
+        return {"ok": False, "error": "no remote URL configured"}
+    # GIT_TERMINAL_PROMPT=0 → never block on a username/password prompt; fail with the auth error.
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
+    try:
+        r = subprocess.run(["git", "ls-remote", "--heads", url],
+                           capture_output=True, text=True, timeout=30, env=env)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "timed out after 30s — host unreachable?"}
+    if r.returncode == 0:
+        branches = [ln.split("refs/heads/")[-1] for ln in r.stdout.splitlines() if ln.strip()]
+        return {"ok": True, "branches": len(branches),
+                "detail": f"reachable — {len(branches)} branch(es)" + (f": {branches[0]}…" if branches else "")}
+    raw = r.stderr.strip() or "git ls-remote failed"
+    last = raw.splitlines()[-1][:300]
+    low = raw.lower()
+    # actionable hints for the two errors users actually hit on first setup
+    if any(s in low for s in ("could not read username", "authentication failed", "terminal prompts disabled")):
+        return {"ok": False, "error": "authentication required — is it a private repo? run "
+                "`gh auth login` in the container (see deploy/SETUP.md)", "detail": last}
+    if "not found" in low:
+        return {"ok": False, "error": "repository not found (or no access) — check the URL and auth",
+                "detail": last}
+    return {"ok": False, "error": last}
 
 
 class EndpointBody(BaseModel):

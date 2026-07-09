@@ -6,6 +6,27 @@ import { el, toast } from "/static/util.js";
 export async function render(view) {
   view.append(el("div", { class: "page-head" }, el("h1", {}, "Settings")));
 
+  // Test button + inline result for a git-remote input — surfaces reachability/auth errors
+  // (e.g. a private repo before `gh auth login`) instead of failing silently later.
+  function remoteTester(input) {
+    const result = el("span", { style: "font-size:12px;font-family:var(--mono)" });
+    const btn = el("button", { class: "btn small" }, "test");
+    btn.onclick = async () => {
+      const remote = input.value.trim();
+      if (!remote) { result.style.color = ""; result.textContent = "enter a URL first"; return; }
+      btn.disabled = true; result.style.color = ""; result.textContent = "testing…";
+      try {
+        const r = await api("/api/settings/test-remote", { method: "POST", body: { remote } });
+        result.style.color = r.ok ? "var(--ok)" : "var(--err)";
+        result.textContent = r.ok ? `✓ ${r.detail || "reachable"}` : `✗ ${r.error}`;
+        result.title = r.detail || "";        // raw git error on hover
+
+      } catch (err) { result.style.color = "var(--err)"; result.textContent = `✗ ${err.message}`; }
+      btn.disabled = false;
+    };
+    return { btn, result };
+  }
+
   // -- library repositories -------------------------------------------------------
   view.append(el("h2", {}, "Library repositories"));
   const libBox = el("div", { class: "panel" });
@@ -23,9 +44,11 @@ export async function render(view) {
           toast(r.pushed ? `${lib.name}: saved + pushed` : r.push_error ? `${lib.name}: saved (push failed: ${r.push_error})` : `${lib.name}: saved`); }
         catch (err) { toast(err.message, 5000); }
       };
+      const t = remoteTester(input);
       libBox.append(el("div", { class: "row", style: "margin:9px 0" },
         el("span", { class: "ref-tag", style: "min-width:90px;text-align:center" }, lib.name),
-        input, save));
+        input, t.btn, save));
+      libBox.append(el("div", { style: "margin:-4px 0 8px 98px" }, t.result));
     }
   } catch (err) { libBox.append(el("div", { class: "muted" }, err.message)); }
 
@@ -48,9 +71,11 @@ export async function render(view) {
           : r.push_error ? `source: saved (push failed: ${r.push_error})` : "source: saved");
       } catch (err) { toast(err.message, 5000); }
     };
+    const t = remoteTester(input);
     srcBox.append(el("div", { class: "row", style: "margin:9px 0" },
       el("span", { class: "ref-tag", style: "min-width:90px;text-align:center" }, src.branch),
-      input, save));
+      input, t.btn, save));
+    srcBox.append(el("div", { style: "margin:-4px 0 8px 98px" }, t.result));
     srcBox.append(el("div", { class: "muted", style: "font-family:var(--mono);font-size:11px" },
       src.home + (src.exists ? "" : "  ⚠ not a git repo")));
   } catch (err) { srcBox.append(el("div", { class: "muted" }, err.message)); }

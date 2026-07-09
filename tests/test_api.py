@@ -215,6 +215,34 @@ def test_settings_endpoints_crud(client):
     assert c.delete("/api/settings/endpoints/vllm").status_code == 404
 
 
+def test_test_remote_endpoint(client):
+    """The Settings 'Test' button: reachable+authorized remote → ok; junk → surfaced error."""
+    import subprocess
+    c, tmp = client
+
+    def git(d, *a):
+        subprocess.run(["git", "-C", str(d), *a], check=True, capture_output=True)
+
+    assert c.post("/api/settings/test-remote", json={"remote": ""}).json()["ok"] is False
+
+    bare = tmp / "r.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+    work = tmp / "w"
+    work.mkdir()
+    git(work, "init", "-q", "-b", "main")
+    git(work, "config", "user.email", "t@t")
+    git(work, "config", "user.name", "t")
+    (work / "f").write_text("x")
+    git(work, "add", "-A")
+    git(work, "commit", "-qm", "i")
+    git(work, "push", "-q", str(bare), "main")
+
+    ok = c.post("/api/settings/test-remote", json={"remote": str(bare)}).json()
+    assert ok["ok"] is True and ok["branches"] >= 1, ok
+    bad = c.post("/api/settings/test-remote", json={"remote": str(tmp / "nope.git")}).json()
+    assert bad["ok"] is False and bad["error"], bad
+
+
 def test_source_repo_settings(tmp_path):
     """The self-audit push target: GET reports the scheduler's own repo; PUT points origin
     at a fork + pushes. Uses a throwaway repo + local bare remote — never the real tree."""
