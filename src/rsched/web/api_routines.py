@@ -57,6 +57,7 @@ def _card(request: Request, info: registry.RoutineInfo) -> dict:
         "slug": info.slug,
         "name": info.cfg.name,
         "enabled": info.cfg.enabled,
+        "tags": info.cfg.tags,
         "cron": info.cfg.cron,
         "tz": info.cfg.tz,
         "schedule_desc": schedule.describe(info.cfg.cron),
@@ -193,6 +194,7 @@ class RoutinePatch(BaseModel):
     endpoints: dict | None = None
     notifications: str | None = None
     name: str | None = None
+    tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
 
 
 @router.patch("/routines/{slug}")

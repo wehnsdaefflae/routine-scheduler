@@ -9,7 +9,14 @@ import re
 import subprocess
 from pathlib import Path
 
+from . import frontmatter
+
 FRAGMENT_RE = re.compile(r"^#\s*fragment:\s*(?P<slug>[a-z0-9-]+)\s*(?:—|-)\s*(?P<summary>.+)$", re.M)
+
+
+def fragment_body(raw: str) -> str:
+    """The fragment text as inlined into a prompt — frontmatter (tags, etc.) stripped."""
+    return frontmatter.parse(raw)[1]
 
 
 def ensure_library(home: Path, *, remote: str = "") -> None:
@@ -44,10 +51,12 @@ def list_fragments(home: Path) -> list[dict]:
     out = []
     for path in sorted(home.glob("*.md")):
         text = path.read_text(encoding="utf-8")
+        meta, _ = frontmatter.parse(text)
         m = FRAGMENT_RE.search(text)
         out.append({"slug": path.stem,
                     "summary": (m.group("summary").strip() if m else ""),
-                    "title": _title(path.stem, m)})
+                    "title": _title(path.stem, m),
+                    "tags": meta.get("tags") or []})
     return out
 
 

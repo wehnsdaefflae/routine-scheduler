@@ -233,7 +233,7 @@ def cmd_scaffold(args) -> int:
             instruction=Path(args.instruction_file).read_text(encoding="utf-8")
             if args.instruction_file else f"# Instruction\n\n(fill in) — scaffolded for {args.slug}",
             workflow_slug=args.workflow, cron=args.cron or "", tz=args.tz,
-            shell_allowlist=args.allow or None,
+            shell_allowlist=args.allow or None, tags=args.tag or None,
             fs_read_roots=args.read_root or None, fs_write_roots=args.write_root or None,
         )
     except (ValueError, KeyError, FileNotFoundError) as exc:
@@ -286,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("--name", default="")
     sc.add_argument("--instruction-file", help="file whose content becomes instruction.md")
     sc.add_argument("--allow", action="append", help="shell allowlist entry (repeatable)")
+    sc.add_argument("--tag", action="append", help="tag for filtering, e.g. meta (repeatable)")
     sc.add_argument("--read-root", action="append", help="extra fs read root (repeatable)")
     sc.add_argument("--write-root", action="append", help="extra fs write root (repeatable)")
     sc.set_defaults(fn=cmd_scaffold)

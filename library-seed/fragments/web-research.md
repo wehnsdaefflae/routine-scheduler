@@ -1,3 +1,6 @@
+---
+tags: [tool-use, research]
+---
 # fragment: web-research — verify external facts by searching, don't guess from memory
 
 When a step turns on a fact about the outside world you are not certain of, **look it up

@@ -1,3 +1,6 @@
+---
+tags: [policy]
+---
 # fragment: ask policy — when and how to involve the user
 
 The user is not watching. Questions are expensive (each one blocks a decision on a human);

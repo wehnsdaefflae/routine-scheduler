@@ -1,3 +1,6 @@
+---
+tags: [self-management]
+---
 # fragment: improvement — act on the self-audit, same run
 
 Immediately after the self-audit determined, **act** on what it found. Check LEDGER.md first

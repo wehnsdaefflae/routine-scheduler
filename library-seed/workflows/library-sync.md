@@ -7,6 +7,7 @@ when_to_use: >
   local changes, so libraries stay consistent across machines. Not a template for user tasks.
 version: 1
 status: stable
+tags: [meta, maintenance, sync]
 params: []
 default_budgets: {max_turns: 12, max_wall_clock_min: 15}
 requires: {schema_output: false}

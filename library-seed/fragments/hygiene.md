@@ -1,3 +1,6 @@
+---
+tags: [self-management]
+---
 # fragment: hygiene — files stay small, present-tense, and consolidated
 
 Apply to every file you touch in a run (workflow.md, playbook/, state/, outputs):

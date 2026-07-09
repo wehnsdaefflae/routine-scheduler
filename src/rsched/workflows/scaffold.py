@@ -32,7 +32,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
              fragments: list[str] | None = None, shell_allowlist: list[str] | None = None,
              fs_read_roots: list[str] | None = None,
              fs_write_roots: list[str] | None = None,
-             playbook: dict[str, str] | None = None, enabled: bool = True) -> Path:
+             playbook: dict[str, str] | None = None, enabled: bool = True,
+             tags: list[str] | None = None) -> Path:
     """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
     the routine gets editable fragment copies + playbook step files + instruction."""
     from .. import fragments_lib
@@ -75,6 +76,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
         "name": name,
         "slug": slug,
         "enabled": enabled,
+        **({"tags": list(tags)} if tags else {}),
         "schedule": {"cron": cron, "tz": tz, "catchup": "skip"},
         "workflow": {"library_slug": workflow_slug, "library_commit": commit},
         "fragments": active,

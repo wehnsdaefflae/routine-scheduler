@@ -37,6 +37,9 @@ def lint_workflow_text(raw: str, *, filename: str, fragment_slugs: list[str]) ->
     params = meta.get("params")
     if params is not None and not isinstance(params, list):
         problems.append(f"{filename}: params must be a list")
+    tags = meta.get("tags")
+    if tags is not None and not isinstance(tags, list):
+        problems.append(f"{filename}: tags must be a list")
     for frag in meta.get("includes") or []:
         if frag not in fragment_slugs:
             problems.append(f"{filename}: include {frag!r} does not resolve to fragments/{frag}.md")
@@ -52,8 +55,11 @@ def lint_workflow_text(raw: str, *, filename: str, fragment_slugs: list[str]) ->
 
 def lint_fragment_text(raw: str, *, filename: str) -> list[str]:
     problems = []
-    if not raw.strip().startswith("# fragment:"):
-        problems.append(f"{filename}: must start with '# fragment: <slug> — <summary>'")
+    meta, body = frontmatter.parse(raw)
+    if not body.strip().startswith("# fragment:"):
+        problems.append(f"{filename}: body must start with '# fragment: <slug> — <summary>' (after any frontmatter)")
+    if "tags" in meta and not isinstance(meta.get("tags"), list):
+        problems.append(f"{filename}: tags must be a list")
     if len(raw.strip().splitlines()) < 4:
         problems.append(f"{filename}: suspiciously short for a standard practice")
     return problems

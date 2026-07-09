@@ -1,3 +1,6 @@
+---
+tags: [tool-use]
+---
 # fragment: global utils — your tools, and how to build more
 
 You have NO shell. Every bit of code you run is a **global util** — a small, named,

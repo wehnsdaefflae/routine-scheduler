@@ -169,6 +169,7 @@ class RoutineConfig:
     dir: Path
     name: str = ""
     enabled: bool = True
+    tags: list[str] = field(default_factory=list)  # freeform, for filtering (e.g. "meta")
     cron: str = ""
     tz: str = "Europe/Berlin"
     catchup: str = "skip"  # skip | run_once
@@ -217,6 +218,7 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
         problems.append(f"slug {slug!r} does not match directory name {routine_dir.name!r}")
     cfg.name = str(raw.get("name") or slug)
     cfg.enabled = bool(raw.get("enabled", True))
+    cfg.tags = [str(t).strip() for t in (raw.get("tags") or []) if str(t).strip()]
 
     sched = raw.get("schedule") or {}
     if isinstance(sched, dict):

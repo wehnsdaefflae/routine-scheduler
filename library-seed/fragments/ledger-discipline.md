@@ -1,3 +1,6 @@
+---
+tags: [self-management]
+---
 # fragment: LEDGER discipline — the routine's memory of its own changes
 
 LEDGER.md is the append-only change journal. It is how a run avoids re-exploring dead ends

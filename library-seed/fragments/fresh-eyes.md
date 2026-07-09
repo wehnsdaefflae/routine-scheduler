@@ -1,3 +1,6 @@
+---
+tags: [self-management]
+---
 # fragment: fresh eyes — holistic artifact audit with health budgets
 
 Per-run checks are structurally blind to **slow drift**: each run's +1 card, +1 note, +1

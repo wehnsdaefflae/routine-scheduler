@@ -183,6 +183,17 @@ def test_audit_report_and_feedback(client):
     assert c.post("/api/audit/feedback", json={"kind": "bogus", "text": "x"}).status_code == 400
 
 
+def test_routine_tags(client):
+    c, tmp = client
+    apir = next(r for r in c.get("/api/routines").json() if r["slug"] == "apir")
+    assert "tags" in apir  # present on the card (possibly empty)
+    r = c.patch("/api/routines/apir", json={"tags": ["meta", "demo"]})
+    assert r.status_code == 200 and "tags" in r.json()["updated"]
+    assert yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())["tags"] == ["meta", "demo"]
+    apir2 = next(r for r in c.get("/api/routines").json() if r["slug"] == "apir")
+    assert apir2["tags"] == ["meta", "demo"]  # reflected back on the card
+
+
 def test_settings_endpoints_crud(client):
     c, tmp = client
     eps = c.get("/api/settings/endpoints").json()

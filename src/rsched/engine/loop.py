@@ -419,12 +419,12 @@ def load_workflow(routine_dir, cfg, server) -> tuple[str, str, dict]:
     frag_dir = routine_dir / "fragments"
     files = sorted(frag_dir.glob("*.md")) if frag_dir.is_dir() else []
     if files:
-        parts = [p.read_text(encoding="utf-8").strip() for p in files]
+        parts = [fragments_lib.fragment_body(p.read_text(encoding="utf-8")).strip() for p in files]
     else:
         for slug in cfg.fragments:
             content = fragments_lib.read_fragment(server.fragments_home, slug)
             if content:
-                parts.append(content.strip())
+                parts.append(fragments_lib.fragment_body(content).strip())
     return body, "\n\n".join(parts), prov
 
 

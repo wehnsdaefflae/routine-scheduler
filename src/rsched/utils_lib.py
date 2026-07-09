@@ -167,7 +167,9 @@ def _parse_header(src: str) -> dict:
     lines = [ln.strip() for ln in doc.splitlines() if ln.strip()]
     summary = lines[0] if lines else ""
     usage = next((ln for ln in lines if ln.lower().startswith("usage:")), "")
-    return {"summary": summary, "usage": usage}
+    tags_line = next((ln for ln in lines if ln.lower().startswith("tags:")), "")
+    tags = [t.strip() for t in tags_line[len("tags:"):].split(",") if t.strip()] if tags_line else []
+    return {"summary": summary, "usage": usage, "tags": tags}
 
 
 def catalog_text(home: Path) -> str:

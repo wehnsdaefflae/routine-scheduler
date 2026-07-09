@@ -52,7 +52,61 @@ def test_materialize_inlines_fragments_and_provenance():
     assert "### fragment: web-research" in content         # always-on (no self-flag)
     assert "fragment: fresh-eyes" not in content          # toggled off
     assert "materialized_from" in content
+    assert "tags:" not in content                          # fragment frontmatter must not leak into the prompt
     assert lint_materialized_text(content) == []
+
+
+def test_tags_on_library_elements():
+    from rsched import fragments_lib, utils_lib
+    from rsched.workflows.library import list_workflows
+
+    wfs = {w["slug"]: w for w in list_workflows(SEED)}
+    assert "meta" in wfs["self-audit-code"]["tags"] and "meta" in wfs["meta-workflows"]["tags"]
+    assert wfs["general-task"]["tags"] == ["general"]      # not meta → stays user-facing
+
+    frags = {f["slug"]: f for f in fragments_lib.list_fragments(SEED / "fragments")}
+    assert frags["web-research"]["tags"] == ["tool-use", "research"]
+    assert frags["ask-policy"]["tags"] == ["policy"]
+    # a fragment's frontmatter is stripped before its body is inlined into a prompt
+    raw = (SEED / "fragments" / "web-research.md").read_text()
+    assert raw.startswith("---") and fragments_lib.fragment_body(raw).lstrip().startswith("# fragment:")
+
+    utils = {u["name"]: u for u in utils_lib.list_utils(SEED.parent / "util-seed")}
+    assert utils["pytest-run"]["tags"] == ["dev", "testing"]
+    assert utils["websearch"]["tags"] == ["web", "research"]
+
+
+def test_suggest_candidate_filter_uses_meta_tag():
+    from rsched.workflows.library import list_workflows
+    from rsched.workflows.suggest import INTERNAL_TAG
+
+    candidates = [w["slug"] for w in list_workflows(SEED)
+                  if INTERNAL_TAG not in (w.get("tags") or []) and w["status"] == "stable"]
+    assert "general-task" in candidates
+    assert "meta-workflows" not in candidates and "self-audit-code" not in candidates
+
+
+def test_lint_rejects_non_list_tags():
+    from rsched.workflows.lint import lint_fragment_text
+
+    bad_wf = ("---\nname: X\nslug: x\ndescription: d\nwhen_to_use: w\nversion: 1\n"
+              "status: draft\ntags: not-a-list\n---\n## Run flow\n## Phases\n## Completion criteria\n")
+    assert any("tags must be a list" in p for p in lint_workflow_text(bad_wf, filename="x.md", fragment_slugs=[]))
+    bad_frag = "---\ntags: nope\n---\n# fragment: x — y\n\nbody line one\nbody line two\n"
+    assert any("tags must be a list" in p for p in lint_fragment_text(bad_frag, filename="x.md"))
+
+
+def test_scaffold_writes_and_loads_tags(tmp_path):
+    server = ServerConfig()
+    server.routines_home = tmp_path / "routines"
+    server.routines_home.mkdir()
+    server.library_home = SEED
+    server.fragments_home = SEED / "fragments"
+    d = scaffold(server, slug="tagged", name="Tagged", instruction="x",
+                 workflow_slug="general-task", tags=["meta", "custom"])
+    cfg, problems = load_routine(d)
+    assert problems == [] and cfg.tags == ["meta", "custom"]
+    assert yaml.safe_load((d / "routine.yaml").read_text())["tags"] == ["meta", "custom"]
 
 
 def test_materialize_missing_param():

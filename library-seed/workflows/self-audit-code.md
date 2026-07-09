@@ -11,6 +11,7 @@ when_to_use: >
   instruction.
 version: 2
 status: stable
+tags: [meta, maintenance, code]
 params: []
 default_budgets: {max_turns: 80, max_wall_clock_min: 60}
 requires: {schema_output: false}

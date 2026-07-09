@@ -38,7 +38,9 @@ def materialize(home: Path, slug: str, *, params: dict | None = None,
         flag = FRAGMENT_FLAGS.get(frag)
         if flag is not None and self_flags.get(flag, True) is False:
             continue
-        included.append((frag, read_fragment(home, frag).strip()))
+        # strip the fragment's own frontmatter (tags, …) so only its body inlines
+        _, frag_body = frontmatter.parse(read_fragment(home, frag))
+        included.append((frag, frag_body.strip()))
     if included:
         parts = ["## Standard practices",
                  "The following standing practices apply to every run (they are steps of the "

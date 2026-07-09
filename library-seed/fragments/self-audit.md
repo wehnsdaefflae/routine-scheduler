@@ -1,3 +1,6 @@
+---
+tags: [self-management]
+---
 # fragment: self-audit — determine the routine's health
 
 Run this near the end of every run, after the main work. This phase **determines**; it does

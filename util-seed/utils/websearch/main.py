@@ -5,6 +5,7 @@
 
 usage: gu websearch QUERY [--max N] [--region us-en] [--json]
 calls: (none)
+tags: web, research
 
 Returns title / url / snippet for the top results. No API key required. With --json emits a
 structured list; otherwise a readable digest. Network is needed for a live query; --selftest

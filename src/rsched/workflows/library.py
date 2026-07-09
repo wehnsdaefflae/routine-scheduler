@@ -33,7 +33,8 @@ def list_workflows(home: Path) -> list[dict]:
                     "when_to_use": str(meta.get("when_to_use", "")).strip(),
                     "version": meta.get("version", 0),
                     "status": meta.get("status", "draft"),
-                    "includes": meta.get("includes") or []})
+                    "includes": meta.get("includes") or [],
+                    "tags": meta.get("tags") or []})
     return out
 
 
