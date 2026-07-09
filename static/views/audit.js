@@ -95,17 +95,21 @@ export async function render(view) {
   }
 
   function generalSection() {
-    const box = el("textarea", { class: "code", placeholder: "anything not tied to a finding or decision above — direction, priorities, ideas…" });
-    const send = el("button", { class: "btn primary mt" }, "send to the routine");
+    const box = el("textarea", { class: "code",
+      placeholder: "e.g. “add structured logging to the daemon runner”, or a priority/direction — a free-text prompt for the next self-audit run to act on" });
+    const send = el("button", { class: "btn primary mt" }, "send to the next run");
     send.onclick = async () => {
       if (!box.value.trim()) return;
       send.disabled = true;
-      try { await submit({ kind: "general", text: box.value }, "note sent"); box.value = ""; }
+      try { await submit({ kind: "general", text: box.value }, "prompt sent"); box.value = ""; }
       catch (err) { toast(err.message); }
       finally { send.disabled = false; }
     };
-    return el("div", {}, el("h2", {}, "Anything else"),
-      el("div", { class: "panel" }, box, el("div", { class: "row" }, send)));
+    return el("div", {}, el("h2", {}, "Note for the next run"),
+      el("div", { class: "panel" },
+        el("div", { class: "muted", style: "font-family:var(--mono);font-size:12px;margin-bottom:8px" },
+          "a prompt the self-audit routine reads on its next run — code changes to make, priorities, or anything not tied to a finding/decision above"),
+        box, el("div", { class: "row" }, send)));
   }
 
   // ---- load ----------------------------------------------------------------
@@ -121,33 +125,34 @@ export async function render(view) {
       return;
     }
     const r = data.report;
-    if (!r) {
-      body.append(changelogSection(data.changelog),
-        el("div", { class: "empty" },
-          data.last_run
-            ? `No report yet — the last run (${fmtTs(data.last_run.ts)}) is ${data.last_run.state}.`
-            : "The self-audit routine is set up but hasn't produced a report yet — it will after its first run."));
-      return;
+    if (r) {
+      const meta = [r.since?.window, r.generated ? `generated ${fmtTime(r.generated)}` : "",
+                    r.since?.commit ? `since ${String(r.since.commit).slice(0, 8)}` : ""].filter(Boolean).join("  ·  ");
+      if (meta) body.append(el("div", { class: "muted", style: "font-family:var(--mono);font-size:12px;margin-bottom:4px" }, meta));
+      if (r.summary) body.append(el("div", { class: "panel" }, r.summary));
     }
-
-    const meta = [r.since?.window, r.generated ? `generated ${fmtTime(r.generated)}` : "",
-                  r.since?.commit ? `since ${String(r.since.commit).slice(0, 8)}` : ""].filter(Boolean).join("  ·  ");
-    if (meta) body.append(el("div", { class: "muted", style: "font-family:var(--mono);font-size:12px;margin-bottom:4px" }, meta));
-    if (r.summary) body.append(el("div", { class: "panel" }, r.summary));
 
     body.append(changelogSection(data.changelog));
 
-    const findings = r.findings || [];
-    body.append(el("h2", {}, `Findings${findings.length ? ` · ${findings.length}` : ""}`));
-    body.append(findings.length ? el("div", {}, ...findings.map(findingPanel))
-      : el("div", { class: "muted", style: "font-family:var(--mono);font-size:12.5px;padding:6px 0" }, "No findings this run — all clear."));
-
-    const decisions = r.decisions || [];
-    if (decisions.length) {
-      body.append(el("h2", {}, `Decisions for you · ${decisions.length}`));
-      body.append(el("div", {}, ...decisions.map(decisionPanel)));
+    if (r) {
+      const findings = r.findings || [];
+      body.append(el("h2", {}, `Findings${findings.length ? ` · ${findings.length}` : ""}`));
+      body.append(findings.length ? el("div", {}, ...findings.map(findingPanel))
+        : el("div", { class: "muted", style: "font-family:var(--mono);font-size:12.5px;padding:6px 0" }, "No findings this run — all clear."));
+      const decisions = r.decisions || [];
+      if (decisions.length) {
+        body.append(el("h2", {}, `Decisions for you · ${decisions.length}`));
+        body.append(el("div", {}, ...decisions.map(decisionPanel)));
+      }
+    } else {
+      body.append(el("div", { class: "empty", style: "padding:22px 0" },
+        data.last_run
+          ? `No report yet — the last run (${fmtTs(data.last_run.ts)}) is ${data.last_run.state}. Leave a prompt below; the next run picks it up.`
+          : "No report yet — the self-audit routine runs on its schedule (or hit ▶ run now on it). You can already leave a prompt below for its first run."));
     }
 
+    // The note field is always available while the routine exists — leave a prompt any time,
+    // report or not.
     body.append(generalSection());
   }
 

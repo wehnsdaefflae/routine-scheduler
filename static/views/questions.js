@@ -4,7 +4,9 @@ import { api } from "/static/api.js";
 import { chip, el, toast } from "/static/util.js";
 
 export async function render(view) {
-  view.append(el("h1", {}, "Open questions"));
+  view.append(el("h1", {}, "Decisions"),
+    el("div", { class: "muted", style: "font-size:13px" },
+      "decisions the routines need from you — blocking ones first"));
   const list = el("div", { class: "mt" });
   view.append(list);
 
@@ -13,7 +15,7 @@ export async function render(view) {
     qs.sort((a, b) => (a.mode === "blocking" ? -1 : 1) - (b.mode === "blocking" ? -1 : 1));
     list.innerHTML = "";
     if (!qs.length) {
-      list.append(el("div", { class: "empty" }, "Nothing to answer — the routines are self-sufficient right now."));
+      list.append(el("div", { class: "empty" }, "No decisions to make right now — the routines are self-sufficient."));
       return;
     }
     for (const q of qs) list.append(item(q));

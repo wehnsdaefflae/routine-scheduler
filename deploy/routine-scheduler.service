@@ -15,6 +15,9 @@ ExecStart=%h/.local/bin/uv run --project %h/git-repos/routine-scheduler rsched d
 # `uv run` re-syncs deps on relaunch, so a dependency change is picked up too.
 Restart=always
 RestartSec=5
+# Backstop: uvicorn bounds its own graceful shutdown to ~10s (timeout_graceful_shutdown), so a
+# manual `systemctl restart` should never wait the 90s default on a lingering SSE stream.
+TimeoutStopSec=20
 Environment=PYTHONUNBUFFERED=1
 
 [Install]

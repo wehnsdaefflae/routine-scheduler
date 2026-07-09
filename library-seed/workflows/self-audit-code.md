@@ -9,13 +9,13 @@ when_to_use: >
   `.control/` dir (to drop the restart sentinel). Orchestrator should be a strong model
   (Opus via the claude-cli endpoint). Paths (scheduler repo, routines home) come from the
   instruction.
-version: 2
+version: 3
 status: stable
 tags: [meta, maintenance, code]
 params: []
 default_budgets: {max_turns: 80, max_wall_clock_min: 60}
 requires: {schema_output: false}
-includes: [ask-policy, global-utils, ledger-discipline, web-research]
+includes: [ask-policy, communication, global-utils, ledger-discipline, web-research]
 ---
 
 ## Run flow

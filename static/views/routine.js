@@ -166,7 +166,7 @@ export async function render(view, slug) {
 
   // -- questions ------------------------------------------------------------------
   if (d.questions?.length) {
-    view.append(el("h2", {}, "Open questions"),
+    view.append(el("h2", {}, "Decisions"),
       el("div", { class: "panel" }, d.questions.map((q) =>
         el("div", { class: "row spread", style: "padding:5px 0" },
           el("span", {}, `❓ ${q.question}`),

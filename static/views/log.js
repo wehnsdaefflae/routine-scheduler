@@ -127,7 +127,7 @@ export async function render(view) {
       statCard(waiting, "waiting on you", "warn", () => setStatusFilter("waiting_user")),
       statCard(failed, "failed · 24h", "err", () => setStatusFilter("failed")),
       statCard(inWindow, `runs · ${filters.window}`, "amber", () => setStatusFilter("")),
-      statCard(questions.length, "open questions", "warn", () => { location.hash = "#/questions"; }));
+      statCard(questions.length, "open decisions", "warn", () => { location.hash = "#/questions"; }));
   }
 
   // ---- feed ----------------------------------------------------------------

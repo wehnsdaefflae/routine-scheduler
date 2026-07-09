@@ -6,13 +6,13 @@ when_to_use: >
   Fits most recurring instructions that don't have a more specific pattern: collect/produce/
   maintain something on a schedule, tend a long-running goal, run a periodic check. If the
   instruction mostly says WHAT to deliver and the HOW is ordinary tool work, this is the one.
-version: 4
+version: 5
 status: stable
 tags: [general]
 params: []
 default_budgets: {max_turns: 60, max_wall_clock_min: 45}
 requires: {schema_output: false}
-includes: [ask-policy, global-utils, web-research, ledger-discipline, self-audit, improvement, fresh-eyes, hygiene]
+includes: [ask-policy, communication, global-utils, web-research, ledger-discipline, self-audit, improvement, fresh-eyes, hygiene]
 ---
 
 ## Run flow
