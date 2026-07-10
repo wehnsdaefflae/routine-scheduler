@@ -9,8 +9,8 @@ git repo under `~/routines/<slug>`. Runs execute on a provider-agnostic engine w
 is the harness* — the orchestrator LLM follows the workflow document and acts only through one JSON
 action per turn. **A second AGENT LOOP in the path is banned**: it fights this harness and hides the
 conversation. Endpoints are model TRANSPORTS only (see Endpoints). Routines have **no shell** — the
-only way to run code is a global util. The instruction contains only the task; schedule, self-*
-toggles, workdir, budgets, and model roles are routine config (`routine.yaml` / UI).
+only way to run code is a global util. The instruction contains only the task; schedule, active
+fragments (standards), workdir, budgets, and model roles are routine config (`routine.yaml` / UI).
 
 ## Commands
 
@@ -36,9 +36,16 @@ schema-retries) → dispatch → append the observation → repeat until `finish
   + example → workflow body (the routine's own `main.md`) → instruction → active fragments → **state
   digest** (phase, `state/`, step modules, last result, LEDGER tail, open/answered questions, inbox
   messages). Effect actions (`util`/`read_file`/`write_file`/`llm`) run through `engine/executor.py`.
-- **Compaction is deterministic and LLM-free** (`composer.maybe_compact`): when the prompt exceeds ~60%
-  of the endpoint's `context_chars`, the middle turns collapse to a one-line-per-turn digest. The on-disk
-  transcript keeps everything; only the prompt shrinks.
+- **Compaction archives context to a navigable on-disk history** (`composer.compact_to_history`): when
+  the prompt exceeds ~60% of the endpoint's `context_chars`, the middle turns are reorganized by the model
+  into a set of markdown files (~≤100 lines each) under `runs/<ts>/history/` + `INDEX.md`; the prompt keeps
+  only a pointer, and every later turn is reminded to consult the index (read_file). Falls back to the
+  deterministic one-line digest (`composer.maybe_compact`) on any failure. The on-disk transcript keeps
+  everything regardless.
+- **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
+  transcript is replayed into the message list (`composer.replay_messages`) with a fresh budget window
+  (`budget_base_turn`). The **model can be switched mid-run** — a `control.json` `switch_model` signal
+  applied at the turn boundary (`for_model` re-resolves every turn).
 
 ## Core contracts — extend, never repurpose
 
@@ -71,7 +78,7 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (main / subroutine / tool_call),
   `fragments:` (active standards), `budgets:` (max_turns / wall_clock_min / total_tokens / subruns /
-  subrun_depth / ask_timeout_h), `fs_read_roots` / `fs_write_roots`, `self:` toggles, retention, notifications.
+  subrun_depth / ask_timeout_h), `fs_read_roots` / `fs_write_roots`, retention, notifications.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
   routes to `steps/<name>.md` modules, read on demand). `instruction.md` — the task. `fragments/*.md` —
   editable routine-local copies of the active fragments.
@@ -97,14 +104,25 @@ routine), **global-utils** (the ONLY way routines run code). Repo seeds: `librar
 fragments), `util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `library-sync`,
 `meta-workflows` — installed **disabled**). `bootstrap.py` seeds on first boot; `deploy/install.sh` for
 host installs.
-- **Workflows** are markdown + frontmatter (`slug / description / when_to_use / version / status /
-  includes / tags`, optional `tools:` allowlist) with `## Run flow`, `## Phases`, `## Completion
-  criteria`. A `tools:` list restricts which action kinds the engine will run for that workflow
-  (`finish` is always allowed) — this is how `clarify-instruction` (the library workflow that drives
-  the new-routine wizard) is held to ask/read/write/finish. `workflows/lint.py` gates every library
-  change; `adapt.decompose` materializes a routine's `main.md` + `steps/` (`materialize` = whole
-  workflow, no decompose — used by sub-routines and the wizard); `scaffold` creates the routine repo;
-  `suggest` / `generate` rank / draft via the `system_model`.
+- **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
+  never executed, parsed statically with `ast` (`workflows/pyworkflow.py`). Each has a `META = {...}` dict
+  (`slug / name / description / when_to_use / version / status / tags / includes`, optional `tools:`
+  allowlist), `PHASES` / `COMPLETION` literals, a top-level `run()` whose body is the per-run control flow,
+  one function per step, and dummy parameter imports (`from routine.params import …`) naming the routine's
+  parameters by type+meaning. Legacy markdown workflows are still read (`.py` preferred). The runtime is
+  unchanged — routines are still the markdown `main.md`+`steps/` the orchestrator interprets: `adapt.decompose`
+  turns a Python pattern into that markdown at scaffold; `materialize` renders it whole (sub-routines/fallback).
+  A `tools:` list restricts action kinds (`finish` always allowed) — how `clarify-instruction` is held to
+  ask/read/write/finish. `workflows/lint.py` gates every change; `suggest`/`generate` rank/draft via the
+  `system_model`. The **new-routine wizard** runs `clarify-instruction`, which now SUGGESTS a pattern (or
+  asks to generate one) and MARRIES the task to it — asking questions that overlay the task on the pattern's
+  control flow + parameters (candidates written to the session's `state/candidates.md`).
+- **Fragments** (`routine-fragments`): reusable standards inlined per routine. The improvement standards are
+  five **after-run passes** — `improve-bugfix / -research / -features / -ui / -efficiency` — each infers the
+  routine's intention from the run just completed and acts in its lens (fresh-eyes throughout), asking a
+  deferred question (→ Decisions page) when unsure. `ledger-discipline` (cross-run memory) + `ask-policy` /
+  `global-utils` / `web-research` / `communication` are the standing standards. `DEFAULT_FRAGMENTS` (config)
+  is the source of truth; the legacy `self:` toggle system is retired.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`, `calls:`),
   a `secrets: NAME,…` declaration line, and a `--selftest` the engine runs before saving (`write_util` is
   selftest-gated, and approval-gated when `confirm_util_changes`). Discover with the `util` action `name: list`.
