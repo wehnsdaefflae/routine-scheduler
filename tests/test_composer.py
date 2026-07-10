@@ -32,14 +32,6 @@ def test_harness_contract_mentions_the_load_bearing_facts(make_routine, tmp_path
         assert needle in text, needle
 
 
-def test_self_toggles_line(make_routine, tmp_path):
-    ctx = _ctx(make_routine, tmp_path, self_flags={"audit": False, "fresh_eyes": False})
-    text = harness_contract(ctx)
-    assert "SKIP" in text and "self-audit" in text and "fresh-eyes artifact audit" in text
-    ctx_all_on = _ctx(make_routine, tmp_path, slug="allon")
-    assert "SKIP" not in harness_contract(ctx_all_on)
-
-
 def test_state_digest_contents(make_routine, tmp_path):
     d = make_routine(slug="dig")
     (d / "state" / "phase.json").write_text('{"phase": "steady", "note": "n"}')

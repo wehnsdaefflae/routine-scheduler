@@ -235,8 +235,8 @@ def test_scaffold_creates_valid_routine(tmp_path):
     assert raw["budgets"]["max_turns"] == 60 and "self" not in raw
     # active fragments = the workflow's includes, materialized as editable routine files
     assert set(cfg.fragments) == set(raw["fragments"])
-    assert "self-audit" in cfg.fragments and "global-utils" in cfg.fragments
-    assert (d / "fragments" / "self-audit.md").exists()
+    assert "improve-bugfix" in cfg.fragments and "global-utils" in cfg.fragments
+    assert (d / "fragments" / "improve-bugfix.md").exists()
     assert (d / ".gitignore").read_text().startswith("runs/")
     with pytest.raises(ValueError):
         scaffold(server, slug="papers-radar", name="dup", instruction="x",

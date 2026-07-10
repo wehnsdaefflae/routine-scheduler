@@ -119,16 +119,6 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "")
   };
 }
 
-// Human-readable descriptions for the self-* standards + util confirmation, shown in the UI.
-export const TOGGLE_INFO = {
-  audit: ["Self-audit", "Each run, judge the routine's own health across six lenses (goal drift, broken steps, improvement openings) before finishing."],
-  improve: ["Self-improvement", "Act on the audit in the same run — heal broken steps, correct drift, tune configuration. Turn this off to freeze the routine's process."],
-  ledger: ["Change journal (LEDGER)", "Keep an append-only record of what changed each run and why, so the routine never re-tries a known dead end."],
-  fresh_eyes: ["Fresh-eyes review", "Periodically re-read the routine's accumulated output as a first-time reader to catch slow drift and 'functional but bad' rot."],
-  hygiene: ["File hygiene", "Keep the routine's own files small, present-tense, and consolidated as they grow."],
-  confirm_util_changes: ["Approve new tools", "Ask you to approve before the routine creates or revises a global util. Off = the routine adds tools autonomously (still selftested)."],
-};
-
 let toastTimer = null;
 export function toast(msg, ms = 2600) {
   const t = document.getElementById("toast");

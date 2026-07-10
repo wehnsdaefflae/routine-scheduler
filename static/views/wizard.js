@@ -95,7 +95,8 @@ export async function render(view, resumeWid) {
       fragBox.innerHTML = "";
       fragBox.append(el("div", { class: "muted", style: "font-size:12px;margin-bottom:3px" },
         "Standards — reusable behaviours the routine applies every run (self-management, tool safety, research). Toggle the ones that fit:"));
-      const DEFAULT = new Set(["global-utils", "web-research", "ledger-discipline", "ask-policy"]);
+      const DEFAULT = new Set(["ask-policy", "global-utils", "ledger-discipline", "web-research",
+        "improve-bugfix", "improve-research", "improve-features", "improve-ui", "improve-efficiency"]);
       for (const f of (lib.fragments || [])) {
         const cb = el("input", { type: "checkbox" });
         cb.checked = DEFAULT.has(f.slug); cb.dataset.slug = f.slug;

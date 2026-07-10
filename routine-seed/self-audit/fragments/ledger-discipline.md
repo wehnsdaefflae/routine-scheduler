@@ -8,7 +8,7 @@ and re-proposing rejected ideas — **check it before exploring anything new**.
   process / outward act), why, decisions taken, and **candidates rejected + why** (negative
   evidence is as valuable as the change itself).
 - Entries record the *why behind the current state*; the files themselves stay present-tense
-  (see the hygiene fragment). History lives here and in git, never inline in specs.
+  (see improve-efficiency). History lives here and in git, never inline in specs.
 - **Rotation:** when LEDGER.md exceeds ~40 entries, move the oldest ~30 into
   `archive/ledger-<date>.md` and fold their gist into a few summary lines at the top of
   LEDGER.md. Git history is the real archive — prune freely; nothing is lost.

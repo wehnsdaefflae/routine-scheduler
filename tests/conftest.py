@@ -88,7 +88,7 @@ class ScriptedRegistry(EndpointRegistry):
 @pytest.fixture
 def make_routine(tmp_path):
     def _make(slug: str = "testr", *, budgets: dict | None = None, allowlist=None,
-              self_flags: dict | None = None, workflow_md: str = WORKFLOW_MD,
+              workflow_md: str = WORKFLOW_MD,
               instruction: str = "Test instruction: do the minimal thing.") -> Path:
         d = tmp_path / "routines" / slug
         (d / "state").mkdir(parents=True)
@@ -104,8 +104,6 @@ def make_routine(tmp_path):
         }
         if allowlist is not None:
             cfg["shell_allowlist"] = allowlist
-        if self_flags:
-            cfg["self"] = self_flags
         (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
         (d / "instruction.md").write_text(instruction, encoding="utf-8")
         (d / "main.md").write_text(workflow_md, encoding="utf-8")   # the routine's materialized recipe

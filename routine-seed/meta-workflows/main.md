@@ -16,11 +16,12 @@ modules:
 includes:
 - ask-policy
 - global-utils
-- self-audit
-- improvement
 - ledger-discipline
-- fresh-eyes
-- hygiene
+- improve-bugfix
+- improve-research
+- improve-features
+- improve-ui
+- improve-efficiency
 tags:
 - meta
 - maintenance

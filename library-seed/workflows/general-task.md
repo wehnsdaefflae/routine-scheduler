@@ -1,7 +1,7 @@
 ---
 name: General task
 slug: general-task
-description: The sane default — orient, do the instruction's work in small verified steps, record, self-audit, improve, commit.
+description: The sane default — orient, do the instruction's work in small verified steps, record, run the improvement passes, commit.
 when_to_use: >
   Fits most recurring instructions that don't have a more specific pattern: collect/produce/
   maintain something on a schedule, tend a long-running goal, run a periodic check. If the
@@ -12,7 +12,7 @@ tags: [general, research, tool-use]
 params: []
 default_budgets: {max_turns: 60, max_wall_clock_min: 45}
 requires: {schema_output: false}
-includes: [ask-policy, communication, global-utils, web-research, ledger-discipline, self-audit, improvement, fresh-eyes, hygiene]
+includes: [ask-policy, global-utils, web-research, ledger-discipline, improve-bugfix, improve-research, improve-features, improve-ui, improve-efficiency]
 ---
 
 ## Run flow
@@ -34,10 +34,12 @@ includes: [ask-policy, communication, global-utils, web-research, ledger-discipl
    working, monitor with `subruns`, collect via the finish notifications or `wait`. Use `llm`
    subcalls for scoped one-shot judgments.
 4. **Record.** Update `state/phase.json` and any state files; append the LEDGER entry
-   (ledger-discipline). Keep artifacts the user reads coherent (fresh-eyes).
-5. **Self-audit** (self-audit fragment) — determine only.
-6. **Improve** (improvement fragment) — act on the audit, same run.
-7. **Close out.** `finish` with a 3-10 line summary: what was delivered, decisions taken,
+   (ledger-discipline).
+5. **Improvement passes.** After the main work, run each active improvement standard
+   (improve-bugfix / -research / -features / -ui / -efficiency): infer the routine's intention
+   from this run, then fix what's broken, sharpen inputs, grow the deliverable, tidy the
+   user-facing output, and cut waste — acting where safe, filing a deferred question when unsure.
+6. **Close out.** `finish` with a 3-10 line summary: what was delivered, decisions taken,
    open ends. The engine commits your working directory automatically — you never run git.
    The summary is what the user and the next run see.
 

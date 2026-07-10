@@ -20,12 +20,6 @@ budgets:
   max_subruns: 8
   max_subrun_depth: 2
   ask_timeout_h: 8
-self:
-  audit: true
-  improve: true
-  ledger: true
-  fresh_eyes: true
-  hygiene: true
 notifications: ui
 retention:
   keep_runs: 30

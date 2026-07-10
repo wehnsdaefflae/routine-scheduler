@@ -25,21 +25,13 @@ DEFAULT_BUDGETS = {
     "max_subrun_depth": 2,
     "ask_timeout_h": 8,
 }
-DEFAULT_SELF = {"audit": True, "improve": True, "ledger": True, "fresh_eyes": True, "hygiene": True}
 DEFAULT_ALLOWLIST = ["gu *", "git *", "uv run --script *"]
-# legacy self-toggle → fragment slug
-SELF_FRAGMENT = {"audit": "self-audit", "improve": "improvement", "ledger": "ledger-discipline",
-                 "fresh_eyes": "fresh-eyes", "hygiene": "hygiene"}
-# always active regardless of the legacy toggles (util guidance + ask policy)
-BASE_FRAGMENTS = ["ask-policy", "global-utils"]
-
-
-def fragments_from_self(self_flags: dict) -> list[str]:
-    frags = list(BASE_FRAGMENTS)
-    for flag, slug in SELF_FRAGMENT.items():
-        if self_flags.get(flag, True):
-            frags.append(slug)
-    return frags
+# The standards a new routine gets when its routine.yaml names no explicit `fragments:` list:
+# the always-useful base (ask policy, tool use, memory, fact-checking) plus the five after-run
+# improvement passes. `communication` is available but opt-in (it needs a Discord util).
+DEFAULT_FRAGMENTS = ["ask-policy", "global-utils", "ledger-discipline", "web-research",
+                     "improve-bugfix", "improve-research", "improve-features",
+                     "improve-ui", "improve-efficiency"]
 # Each routine picks its own three models: the MAIN orchestrator loop, the model spawned
 # SUBROUTINEs run their main loop on, and the model TOOL_CALLs (the `llm` action) use.
 MODEL_KINDS = ("main", "subroutine", "tool_call")
@@ -201,7 +193,6 @@ class RoutineConfig:
     models: dict[str, ModelRef] = field(default_factory=dict)  # main/subroutine/tool_call
     budgets: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_BUDGETS))
     fragments: list[str] = field(default_factory=list)       # active fragment slugs (the source of truth)
-    self_flags: dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_SELF))  # legacy migration source
     shell_allowlist: list[str] = field(default_factory=lambda: list(DEFAULT_ALLOWLIST))  # legacy, unused (no shell)
     fs_read_roots: list[Path] = field(default_factory=list)
     fs_write_roots: list[Path] = field(default_factory=list)
@@ -282,18 +273,13 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
         except (TypeError, ValueError):
             problems.append(f"budgets.{key}: expected an integer")
 
-    for key, val in (raw.get("self") or {}).items():
-        if key not in DEFAULT_SELF:
-            problems.append(f"self.{key}: unknown toggle")
-            continue
-        cfg.self_flags[key] = bool(val)
-
-    # Fragments are the source of truth for a routine's standards. Explicit list wins;
-    # otherwise migrate from the legacy `self` toggles (+ the always-on defaults).
+    # Fragments are the source of truth for a routine's standards. An explicit list wins;
+    # otherwise a new routine gets the default set. (A legacy `self:` toggle block in an old
+    # routine.yaml is simply ignored — standards are fragments now.)
     if isinstance(raw.get("fragments"), list):
         cfg.fragments = [str(f) for f in raw["fragments"]]
     else:
-        cfg.fragments = fragments_from_self(cfg.self_flags)
+        cfg.fragments = list(DEFAULT_FRAGMENTS)
 
     if "shell_allowlist" in raw:
         al = raw["shell_allowlist"]

@@ -13,7 +13,6 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ..config import DEFAULT_SELF
 from ..daemon import registry
 from ..daemon.runner import _pid_alive, abort_process
 from ..ids import now_iso, run_ts as make_run_ts
@@ -170,7 +169,7 @@ async def start(request: Request, body: StartBody) -> dict:
         "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
         "workflow": {"library_slug": "clarify-instruction", "library_commit": commit},
         "budgets": WIZARD_BUDGETS,
-        "self": {k: False for k in DEFAULT_SELF},
+        "fragments": ["ask-policy"],
     }, sort_keys=False), encoding="utf-8")
     # Persist the session's meta so it survives a daemon/container restart: /api/wizard can list it
     # and finalize can recover the chosen standards without depending on the client or in-memory state.

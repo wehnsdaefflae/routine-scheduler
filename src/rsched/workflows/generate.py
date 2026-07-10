@@ -23,7 +23,7 @@ status: draft
 params: []            # optional {{placeholder}} names filled at adaptation
 default_budgets: {max_turns: 60, max_wall_clock_min: 45}
 requires: {schema_output: false}
-includes: [ask-policy, ledger-discipline, self-audit, improvement, fresh-eyes, hygiene]
+includes: [ask-policy, global-utils, ledger-discipline, improve-bugfix, improve-research, improve-features, improve-ui, improve-efficiency]
 ---
 Body sections, all three REQUIRED:
 ## Run flow — numbered natural-language steps for ONE run (the orchestrator LLM follows
