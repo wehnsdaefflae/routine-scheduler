@@ -276,6 +276,7 @@ def test_claude_cli_complete(monkeypatch, tmp_path):
             {"is_error": False, "result": "ok", "usage": {"input_tokens": 3, "output_tokens": 4}}), stderr="")
 
     monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
+    monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {})   # hermetic: ignore the machine's real secrets store
     c = ep.complete(MESSAGES, model="opus", effort="medium")
     assert c.text == "ok" and c.usage == {"in": 3, "out": 4}
     assert seen["env"][TOKEN_VAR] == "tok" and "<<USER>>" in seen["input"]
