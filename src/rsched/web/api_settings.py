@@ -298,10 +298,29 @@ def github_device_start(request: Request) -> dict:
         raise HTTPException(502, f"github device/code failed: {r.text[:200]}")
     d = r.json()
     flow_id = secrets.token_urlsafe(8)
-    _device_flows[flow_id] = {"device_code": d["device_code"], "client_id": client_id}
-    return {"flow_id": flow_id, "user_code": d["user_code"],
-            "verification_uri": d.get("verification_uri", "https://github.com/login/device"),
-            "interval": d.get("interval", 5), "expires_in": d.get("expires_in", 900)}
+    verification_uri = d.get("verification_uri", "https://github.com/login/device")
+    interval = d.get("interval", 5)
+    # Keep the display fields so a reloaded UI can resume the SAME flow via GET (below) instead of
+    # losing the one-time code — the device-flow state is then addressable as #/settings?flow=<id>.
+    _device_flows[flow_id] = {"device_code": d["device_code"], "client_id": client_id,
+                              "user_code": d["user_code"], "verification_uri": verification_uri,
+                              "interval": interval, "expires_at": time.time() + int(d.get("expires_in", 900))}
+    return {"flow_id": flow_id, "user_code": d["user_code"], "verification_uri": verification_uri,
+            "interval": interval, "expires_in": d.get("expires_in", 900)}
+
+
+@router.get("/settings/github/device-flow/{flow_id}")
+def github_device_flow(_request: Request, flow_id: str) -> dict:
+    """Resume a pending device flow after a reload: return its still-valid code + URL, or 404 if
+    it's unknown/expired (the UI then just shows the normal connect button)."""
+    flow = _device_flows.get(flow_id)
+    remaining = int(flow["expires_at"] - time.time()) if flow else 0
+    if not flow or remaining <= 0:
+        _device_flows.pop(flow_id, None)
+        raise HTTPException(404, "unknown or expired flow — start again")
+    return {"flow_id": flow_id, "user_code": flow["user_code"],
+            "verification_uri": flow["verification_uri"],
+            "interval": flow.get("interval", 5), "expires_in": remaining}
 
 
 class DevicePoll(BaseModel):

@@ -1,10 +1,30 @@
 // Settings: endpoint list, add/edit, delete, live test call. Direct model APIs only.
 
 import { api } from "/static/api.js";
+import { setQuery } from "/static/router.js";
 import { el, toast } from "/static/util.js";
 
-export async function render(view) {
+export async function render(view, query = {}) {
   view.append(el("div", { class: "page-head" }, el("h1", {}, "Settings")));
+
+  // Section nav — a visible location indicator within Settings; the active sub-section is in the
+  // URL (#/settings?section=endpoints), so a deep link / reload lands on the same section.
+  const SECTIONS = [["github", "GitHub"], ["secrets", "Secrets"], ["libraries", "Libraries"],
+                    ["source", "Source"], ["endpoints", "Endpoints"]];
+  const secNav = el("div", { class: "filterbar" });
+  view.append(secNav);
+  const sectionHead = (id, title) => el("h2", { id: `sec-${id}` }, title);
+  const goSection = (id, smooth = true) => {
+    setQuery({ section: id });
+    document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+    [...secNav.children].forEach((b) => b.dataset && b.classList.toggle("on", b.dataset.sec === id));
+  };
+  secNav.append(el("span", { class: "lbl" }, "section"));
+  for (const [id, label] of SECTIONS) {
+    const b = el("span", { class: "tag click", onclick: () => goSection(id) }, label);
+    b.dataset.sec = id;
+    secNav.append(b);
+  }
 
   // Test button + inline result for a git-remote input — surfaces reachability/auth errors
   // (e.g. a private repo before `gh auth login`) instead of failing silently later.
@@ -46,7 +66,7 @@ export async function render(view) {
   }
 
   // -- GitHub connection (device flow — no container terminal) ---------------------
-  view.append(el("h2", {}, "GitHub"));
+  view.append(sectionHead("github", "GitHub"));
   const ghBox = el("div", { class: "panel" });
   view.append(ghBox);
   async function renderGithub() {
@@ -63,11 +83,12 @@ export async function render(view) {
     status.textContent = g.connected ? `✓ connected as ${g.login}` : "not connected";
     const connect = el("button", { class: "btn small primary" }, g.connected ? "reconnect" : "connect GitHub");
     const flowArea = el("div", { class: "mt" });
-    connect.onclick = async () => {
-      connect.disabled = true; flowArea.innerHTML = "";
-      let f;
-      try { f = await api("/api/settings/github/device-start", { method: "POST" }); }
-      catch (err) { toast(err.message, 6000); connect.disabled = false; return; }
+
+    // Render + poll an active device flow. `f` = {flow_id, user_code, verification_uri, interval,
+    // expires_in}. The flow_id is kept in the URL (?flow=) so a reload resumes the SAME code.
+    function runFlow(f) {
+      connect.disabled = true;
+      flowArea.innerHTML = "";
       const wait = el("div", { class: "muted mt" }, "waiting for you to authorize…");
       flowArea.append(el("div", { class: "panel", style: "border-color:var(--warn)" },
         el("div", {}, "1. Open ",
@@ -77,24 +98,41 @@ export async function render(view) {
           el("button", { class: "btn small", style: "margin-left:8px",
             onclick: () => { navigator.clipboard?.writeText(f.user_code); toast("code copied"); } }, "copy")),
         wait));
+      const stop = (msg, color) => { wait.style.color = color; wait.textContent = msg; connect.disabled = false; setQuery({ flow: "" }); };
       const deadline = Date.now() + (f.expires_in || 900) * 1000;
       const tick = async () => {
-        if (Date.now() > deadline) { wait.style.color = "var(--err)"; wait.textContent = "code expired — try again"; connect.disabled = false; return; }
+        if (Date.now() > deadline) { stop("code expired — try again", "var(--err)"); return; }
         let p;
         try { p = await api("/api/settings/github/device-poll", { method: "POST", body: { flow_id: f.flow_id } }); }
-        catch (err) { wait.style.color = "var(--err)"; wait.textContent = `✗ ${err.message}`; connect.disabled = false; return; }
-        if (p.status === "connected") { toast(`GitHub connected as ${p.login}`); connect.disabled = false; renderGithub(); return; }
-        if (p.status === "error") { wait.style.color = "var(--err)"; wait.textContent = `✗ ${p.error}`; connect.disabled = false; return; }
+        catch (err) { stop(`✗ ${err.message}`, "var(--err)"); return; }
+        if (p.status === "connected") { toast(`GitHub connected as ${p.login}`); connect.disabled = false; setQuery({ flow: "" }); renderGithub(); return; }
+        if (p.status === "error") { stop(`✗ ${p.error}`, "var(--err)"); return; }
         setTimeout(tick, (f.interval || 5) * 1000);
       };
       setTimeout(tick, (f.interval || 5) * 1000);
+    }
+
+    connect.onclick = async () => {
+      connect.disabled = true; flowArea.innerHTML = "";
+      let f;
+      try { f = await api("/api/settings/github/device-start", { method: "POST" }); }
+      catch (err) { toast(err.message, 6000); connect.disabled = false; return; }
+      setQuery({ section: "github", flow: f.flow_id });   // make the connect-in-progress addressable
+      runFlow(f);
     };
     ghBox.append(el("div", { class: "row", style: "margin:6px 0" }, status, connect), flowArea);
+
+    // Resume an in-progress flow after a reload: fetch the still-valid code and pick polling back up.
+    if (query.flow && !g.connected) {
+      api(`/api/settings/github/device-flow/${query.flow}`)
+        .then((f) => runFlow(f))
+        .catch(() => setQuery({ flow: "" }));   // gone/expired → just show the connect button
+    }
   }
   await renderGithub();
 
   // -- central secrets store ------------------------------------------------------
-  view.append(el("h2", {}, "Secrets"));
+  view.append(sectionHead("secrets", "Secrets"));
   const secBox = el("div", { class: "panel" });
   view.append(secBox);
   async function renderSecrets() {
@@ -157,7 +195,7 @@ export async function render(view) {
   await renderSecrets();
 
   // -- library repositories -------------------------------------------------------
-  view.append(el("h2", {}, "Library repositories"));
+  view.append(sectionHead("libraries", "Library repositories"));
   const libBox = el("div", { class: "panel" });
   view.append(libBox);
   try {
@@ -206,7 +244,7 @@ export async function render(view) {
   } catch (err) { libBox.append(el("div", { class: "muted" }, err.message)); }
 
   // -- scheduler source repository (self-audit's push target) ---------------------
-  view.append(el("h2", {}, "Source repository"));
+  view.append(sectionHead("source", "Source repository"));
   const srcBox = el("div", { class: "panel" });
   view.append(srcBox);
   try {
@@ -247,7 +285,7 @@ export async function render(view) {
   const KINDS = ["openai", "anthropic", "claude-cli"];
   const SCHEMA_MODES = ["json_schema", "json_object", "ollama_native", "none"];
 
-  view.append(el("h2", {}, "LLM endpoints"),
+  view.append(sectionHead("endpoints", "LLM endpoints"),
     el("div", { class: "muted", style: "margin-bottom:8px;font-size:12.5px" },
       "Model transports only — the scheduler is the only harness. None are configured by default; ",
       "add the ones you use. Each kind needs a different credential (shown per endpoint)."));
@@ -427,4 +465,8 @@ export async function render(view) {
   }
 
   await load();
+
+  // Land on the requested section (deep link / reload). Everything above is now in the DOM, so
+  // the anchor exists; jump without smooth-scroll on first paint.
+  if (query.section) goSection(query.section, false);
 }

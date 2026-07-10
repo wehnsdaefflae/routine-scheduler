@@ -317,6 +317,30 @@ def test_github_device_poll_unknown_flow(client):
     assert c.post("/api/settings/github/device-poll", json={"flow_id": "nope"}).status_code == 404
 
 
+def test_github_device_flow_resume(client):
+    """A pending device flow is resumable by id after a reload (the UI keeps ?flow=<id> in the URL);
+    unknown/expired flows 404 and are evicted. The device_code is never echoed back."""
+    import time
+
+    from rsched.web import api_settings
+
+    c, _ = client
+    assert c.get("/api/settings/github/device-flow/nope").status_code == 404
+    api_settings._device_flows["fl-resume"] = {
+        "device_code": "dc", "client_id": "cid", "user_code": "WXYZ-1234",
+        "verification_uri": "https://github.com/login/device", "interval": 5,
+        "expires_at": time.time() + 300}
+    try:
+        j = c.get("/api/settings/github/device-flow/fl-resume").json()
+        assert j["user_code"] == "WXYZ-1234" and j["expires_in"] > 0 and "device_code" not in j
+        api_settings._device_flows["fl-exp"] = {"user_code": "X", "verification_uri": "u",
+                                                "expires_at": time.time() - 1}
+        assert c.get("/api/settings/github/device-flow/fl-exp").status_code == 404
+        assert "fl-exp" not in api_settings._device_flows          # expired → evicted
+    finally:
+        api_settings._device_flows.pop("fl-resume", None)
+
+
 def test_first_run_setup_flag(client):
     """Fresh install → needs_setup true (drives the redirect); completing it writes the marker."""
     c, tmp = client
