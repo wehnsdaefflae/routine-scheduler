@@ -42,7 +42,16 @@ export async function render(view, runId, query = {}) {
   let paused = false;
   const pauseBtn = el("button", { class: "btn small" }, "⏸ pause");
   const abortBtn = el("button", { class: "btn small danger" }, "✕ abort");
-  controls.append(pauseBtn, abortBtn);
+  const resumeBtn = el("button", { class: "btn small", hidden: true }, "↻ resume run");
+  resumeBtn.onclick = async () => {
+    resumeBtn.disabled = true;
+    try {
+      await api(`/api/runs/${runId}/resume-run`, { method: "POST" });
+      toast("resuming where it left off — reconnecting…");
+      setTimeout(() => location.reload(), 800);
+    } catch (err) { toast(err.message); resumeBtn.disabled = false; }
+  };
+  controls.append(pauseBtn, abortBtn, resumeBtn);
 
   // Live model + mid-run switch (applies at the next turn; the engine re-resolves every turn).
   const modelSpan = el("span", { class: "muted", style: "font-family:var(--mono);font-size:11.5px" });
@@ -153,7 +162,9 @@ export async function render(view, runId, query = {}) {
     stateChip.className = `chip ${state}`;
     const terminal = TERMINAL.has(state);
     pauseBtn.disabled = abortBtn.disabled = terminal;
-    switchBox.hidden = terminal;                 // no mid-run switch once the run has ended
+    pauseBtn.hidden = abortBtn.hidden = terminal;   // controls for a live run
+    resumeBtn.hidden = !terminal;                   // resume only a terminal run
+    switchBox.hidden = terminal;                     // no mid-run switch once the run has ended
     injectBtn.textContent = terminal ? "queue for next run" : "send";
     if (state === "paused") { paused = true; pauseBtn.textContent = "▶ resume"; }
     else if (paused && state !== "paused") { paused = false; pauseBtn.textContent = "⏸ pause"; }

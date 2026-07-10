@@ -26,7 +26,7 @@ from ..schema_guard import SchemaViolation, extract_json, retry_message, validat
 from . import executor, inbox
 from .actions import ACTION_SCHEMA, normalize_action, validate_action
 from .composer import (build_system_prompt, format_observation, kickoff_message,
-                       maybe_compact, state_digest, truncate)
+                       maybe_compact, replay_messages, state_digest, truncate)
 from .run_context import Budgets, RunContext
 from .subruns import SubrunManager
 from .transcript import Transcript
@@ -73,11 +73,12 @@ class RunAborted(Exception):
 class EngineLoop:
     def __init__(self, ctx: RunContext, workflow_body: str, instruction: str,
                  abort_event: threading.Event | None = None, fragments_text: str = "",
-                 allowed_tools: list[str] | None = None):
+                 allowed_tools: list[str] | None = None, resume: bool = False):
         self.ctx = ctx
         self.workflow_body = workflow_body
         self.instruction = instruction
         self.fragments_text = fragments_text
+        self.resume = resume     # rehydrate the prior transcript into the prompt instead of a clean start
         # A workflow may restrict which action kinds it may use (frontmatter `tools:`); `finish`
         # is always permitted so a run can end. None = every tool allowed.
         self.allowed_tools = set(allowed_tools) | {"finish"} if allowed_tools else None
@@ -212,8 +213,23 @@ class EngineLoop:
             ctx.phase = str(phase["phase"])
         system = build_system_prompt(ctx, self.workflow_body, self.instruction, digest, msgs,
                                      fragments_text=self.fragments_text)
-        self.messages = [{"role": "system", "content": system},
-                         {"role": "user", "content": kickoff_message(ctx)}]
+        if self.resume and ctx.depth == 0:
+            from .transcript import read_events
+            events, _ = read_events(ctx.run_dir / "transcript.jsonl", 0)
+            replayed, last_turn, records = replay_messages(events, self.util_reminder)
+            self.messages = [{"role": "system", "content": system}, *replayed]
+            self.turn_records = records
+            ctx.turn = last_turn
+            ctx.budget_base_turn = last_turn        # a fresh budget window from the resume point
+            ctx.transcript.event("user_injection", {"text": "run resumed after interruption",
+                                                    "source": "engine"})
+            self.messages.append({"role": "user", "content":
+                "ENGINE NOTE: this run was interrupted (budget/error) and is now RESUMED. The "
+                "conversation above is the run so far — continue from the last observation; do NOT "
+                "restart from step 1. Re-orient briefly, then proceed."})
+        else:
+            self.messages = [{"role": "system", "content": system},
+                             {"role": "user", "content": kickoff_message(ctx)}]
         ctx.write_status("running")
 
     def _announce_finished_subruns(self) -> None:
@@ -468,9 +484,12 @@ def load_workflow(routine_dir, cfg, server) -> tuple[str, str, dict, list[str] |
 
 
 def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None = None,
-                model_overrides: dict | None = None, on_event=None) -> tuple[str, Path]:
+                model_overrides: dict | None = None, on_event=None,
+                resume_from: str | None = None) -> tuple[str, Path]:
     """Execute one run of the routine at routine_dir. Returns (final status, run dir).
-    on_event(obj) is called for every transcript event (used by `rsched run-once`)."""
+    on_event(obj) is called for every transcript event (used by `rsched run-once`). When
+    resume_from is a prior run's ts, that run dir is reused and its transcript is rehydrated
+    into the prompt so the run continues where it left off (with a fresh budget window)."""
     cfg, problems = load_routine(routine_dir)
     if cfg is None:
         raise RuntimeError("; ".join(problems))
@@ -480,10 +499,12 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     if model_overrides:
         cfg.models.update(model_overrides)
     registry = EndpointRegistry(server)
-    ts = run_ts or make_run_ts()
+    ts = resume_from or run_ts or make_run_ts()
     run_dir = routine_dir / "runs" / ts
+    if resume_from and not run_dir.is_dir():
+        raise RuntimeError(f"cannot resume {ts}: run dir not found")
     run_dir.mkdir(parents=True, exist_ok=True)
-    transcript = Transcript(run_dir / "transcript.jsonl")
+    transcript = Transcript(run_dir / "transcript.jsonl")   # append mode — resume adds after the tail
     if on_event:
         transcript.on_event = on_event  # type: ignore[attr-defined]
         _orig_write = transcript.write
@@ -499,8 +520,9 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                      budgets=Budgets.from_config(cfg.budgets))
     body, fragments_text, prov, allowed_tools = load_workflow(routine_dir, cfg, server)
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8")
-    transcript.header(run_id=ctx.run_id, routine=cfg.slug, workflow=prov,
-                      orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model})
+    if not resume_from:            # a resumed run keeps the original header (transcript is append-only)
+        transcript.header(run_id=ctx.run_id, routine=cfg.slug, workflow=prov,
+                          orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model})
     status = EngineLoop(ctx, body, instruction, fragments_text=fragments_text,
-                        allowed_tools=allowed_tools).run()
+                        allowed_tools=allowed_tools, resume=bool(resume_from)).run()
     return status, run_dir

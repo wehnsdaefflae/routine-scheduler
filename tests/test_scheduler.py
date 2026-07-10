@@ -85,7 +85,7 @@ def _stub_engine(monkeypatch, script: str):
     """Replace the engine subprocess with a bash stub. The stub runs with cwd=<routine dir>;
     $1 is the run ts (script references runs/$TS/...)."""
 
-    def cmd(slug, run_ts):
+    def cmd(slug, run_ts, *, resume=False):
         return ["bash", "-c", script.replace("{TS}", run_ts)]
 
     monkeypatch.setattr(runner_mod, "engine_cmd", cmd)

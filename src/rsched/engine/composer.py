@@ -15,6 +15,11 @@ from .actions import ACTION_SCHEMA, example_action
 from .run_context import RunContext
 
 OBS_CAP_CHARS = 8_000
+
+# The one-line "brief" field per action kind (shared by turn records + transcript replay).
+BRIEF_FIELD = {"util": "name", "write_util": "name", "read_file": "path", "write_file": "path",
+               "llm": "prompt", "spawn": "label", "kill": "n", "wait": "n",
+               "ask_user": "question", "finish": "status"}
 COMPACT_AT_FRACTION = 0.6
 KEEP_HEAD_MSGS = 6    # system + kickoff + first 2 turn pairs
 KEEP_TAIL_MSGS = 24   # ~ last 12 turn pairs
@@ -272,3 +277,32 @@ def maybe_compact(messages: list[dict], turn_records: list[dict], context_chars:
     info = {"elided_messages": elided, "digest_chars": len(digest),
             "before_chars": messages_size(messages), "after_chars": messages_size(new_messages)}
     return new_messages, info
+
+
+def replay_messages(events: list[dict], util_reminder: str = "") -> tuple[list[dict], int, list[dict]]:
+    """Rebuild the (turn-pair) message list from a run's transcript events — for RESUME. Returns
+    (messages, last_turn, turn_records); the caller prepends the freshly-composed system message.
+    Every turn is replayed (compaction events are ignored — this reconstitutes the full
+    conversation and maybe_compact re-compacts it on the next turn if it's too big)."""
+    messages: list[dict] = []
+    records: list[dict] = []
+    last_turn = 0
+    for ev in events:
+        kind_ev = ev.get("type")
+        p = ev.get("payload") or {}
+        if kind_ev == "assistant_action":
+            messages.append({"role": "assistant", "content": json.dumps(p, ensure_ascii=False)})
+            turn = ev.get("turn")
+            if isinstance(turn, int):
+                last_turn = turn
+                brief = str(p.get(BRIEF_FIELD.get(p.get("kind"), ""), ""))[:80]
+                records.append({"turn": turn, "kind": p.get("kind", "?"),
+                                "brief": json.dumps(brief, ensure_ascii=False), "say": p.get("say", "")})
+        elif kind_ev == "observation":
+            messages.append({"role": "user", "content": format_observation(p) + util_reminder})
+        elif kind_ev == "user_injection":
+            messages.append({"role": "user", "content": f"USER MESSAGE (injected mid-run): {p.get('text', '')}"})
+        elif kind_ev == "answer":
+            messages.append({"role": "user", "content": f"ANSWER: {p.get('text', '')}"})
+        # header / question / compaction / finish / error / subrun_* are not part of the prompt
+    return messages, last_turn, records

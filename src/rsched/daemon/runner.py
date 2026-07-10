@@ -28,8 +28,11 @@ KILL_GRACE_S = 10
 STATUS_POLL_S = 2.0
 
 
-def engine_cmd(slug: str, run_ts: str) -> list[str]:
-    return [sys.executable, "-m", "rsched.cli", "engine-run", slug, "--run-ts", run_ts]
+def engine_cmd(slug: str, run_ts: str, *, resume: bool = False) -> list[str]:
+    cmd = [sys.executable, "-m", "rsched.cli", "engine-run", slug, "--run-ts", run_ts]
+    if resume:
+        cmd.append("--resume")
+    return cmd
 
 
 @dataclass
@@ -82,13 +85,31 @@ class Runner:
         asyncio.create_task(self._supervise(run, cfg, reason))
         return run.run_id
 
-    async def _supervise(self, run: ActiveRun, cfg: RoutineConfig, reason: str) -> None:
+    async def resume(self, cfg: RoutineConfig, ts: str, *, reason: str = "resume") -> str | None:
+        """Re-run an interrupted (terminal) run in place, rehydrating its transcript so it continues
+        where it left off. Refuses if draining, the routine already has an active run, or the run
+        dir is gone."""
+        if self.draining or cfg.slug in self.active:
+            return None
+        run_dir = cfg.dir / "runs" / ts
+        if not run_dir.is_dir():
+            return None
+        run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir)
+        atomic_write_json(run_dir / "status.json",
+                          {"run_id": run.run_id, "state": "queued", "started": ts,
+                           "updated": now_iso(), "turn": 0, "question": None, "usage": {"in": 0, "out": 0}})
+        self.active[cfg.slug] = run
+        asyncio.create_task(self._supervise(run, cfg, reason, resume=True))
+        return run.run_id
+
+    async def _supervise(self, run: ActiveRun, cfg: RoutineConfig, reason: str,
+                         resume: bool = False) -> None:
         await self.semaphore.acquire()
         run.holds_slot = True
         stderr = b""
         try:
             run.proc = await asyncio.create_subprocess_exec(
-                *engine_cmd(cfg.slug, run.run_ts),
+                *engine_cmd(cfg.slug, run.run_ts, resume=resume),
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,

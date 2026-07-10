@@ -48,6 +48,26 @@ def test_state_digest_contents(make_routine, tmp_path):
         assert needle in digest, needle
 
 
+def test_replay_messages_rebuilds_conversation():
+    from rsched.engine.composer import replay_messages
+
+    events = [
+        {"type": "header", "run_id": "r:1"},
+        {"type": "assistant_action", "turn": 1, "payload": {"kind": "write_file", "path": "a.txt", "say": "s1"}},
+        {"type": "observation", "turn": 1, "payload": {"kind": "write_file", "path": "a.txt", "bytes": 3}},
+        {"type": "user_injection", "payload": {"text": "hi there"}},
+        {"type": "compaction", "payload": {"elided_messages": 5}},
+        {"type": "assistant_action", "turn": 2, "payload": {"kind": "finish", "status": "partial", "say": "s2"}},
+        {"type": "finish", "payload": {"status": "partial"}},
+    ]
+    msgs, last_turn, records = replay_messages(events, util_reminder=" [rm]")
+    assert last_turn == 2 and len(records) == 2                 # header/compaction/finish don't add turns
+    assert [m["role"] for m in msgs] == ["assistant", "user", "user", "assistant"]
+    assert "a.txt" in msgs[0]["content"]
+    assert "wrote 3 bytes" in msgs[1]["content"] and msgs[1]["content"].endswith("[rm]")
+    assert "hi there" in msgs[2]["content"]
+
+
 def test_build_system_prompt_sections(make_routine, tmp_path):
     ctx = _ctx(make_routine, tmp_path, slug="sects")
     sp = build_system_prompt(ctx, "## Run flow\n1. step", "The instruction.",

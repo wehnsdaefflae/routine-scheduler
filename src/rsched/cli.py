@@ -124,7 +124,8 @@ def cmd_engine_run(args) -> int:
     routine_dir = _routine_dir(server, args.routine)
     signal.signal(signal.SIGTERM, lambda *a: request_abort())
     try:
-        status, _ = run_routine(routine_dir, server, run_ts=args.run_ts)
+        status, _ = run_routine(routine_dir, server, run_ts=args.run_ts,
+                                resume_from=args.run_ts if getattr(args, "resume", False) else None)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -273,6 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     e = sub.add_parser("engine-run", help="internal: run a routine (spawned by the daemon)")
     e.add_argument("routine")
     e.add_argument("--run-ts", required=True)
+    e.add_argument("--resume", action="store_true", help="rehydrate the run's transcript and continue it")
     e.set_defaults(fn=cmd_engine_run)
 
     v = sub.add_parser("validate", help="validate server config and routine.yaml files")

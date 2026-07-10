@@ -161,6 +161,25 @@ def test_model_switch_endpoint(client):
     assert c.post(f"/api/runs/{rid}/model", json={"endpoint": "dummy", "model": "m"}).status_code == 409
 
 
+def test_resume_run_endpoint(client, monkeypatch):
+    """A terminal run can be resumed (delegates to runner.resume with the same ts); an active run
+    cannot."""
+    c, tmp = client
+    routines = tmp / "routines"
+    _mk_run(routines, "apir", "20260710-160000", "failed")
+    calls = {}
+
+    async def fake_resume(cfg, ts, *, reason="resume"):
+        calls["ts"], calls["slug"] = ts, cfg.slug
+        return f"{cfg.slug}:{ts}"
+    monkeypatch.setattr(c.app.state.runner, "resume", fake_resume)
+
+    r = c.post("/api/runs/apir:20260710-160000/resume-run")
+    assert r.status_code == 200 and calls == {"ts": "20260710-160000", "slug": "apir"}
+    _mk_run(routines, "apir", "20260710-170000", "running")
+    assert c.post("/api/runs/apir:20260710-170000/resume-run").status_code == 409
+
+
 def test_questions_flow(client):
     c, tmp = client
     routines = tmp / "routines"

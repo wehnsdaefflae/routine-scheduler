@@ -137,6 +137,25 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
     return {"ok": True, "switch": f"{body.kind} → {body.endpoint}/{body.model}"}
 
 
+@router.post("/runs/{run_id}/resume-run")
+async def resume_run(request: Request, run_id: str) -> dict:
+    """Resume an interrupted run in place: re-spawn the engine on the SAME run dir, rehydrating its
+    transcript so it continues where it left off (fresh budget window). Only terminal runs."""
+    slug, run_dir = _run_dir(request, run_id)
+    st = read_json(run_dir / "status.json")
+    if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:
+        raise HTTPException(409, "run is still active — only a finished / failed / aborted run resumes")
+    from ..config import load_routine
+
+    cfg, _ = load_routine(request.app.state.server.routines_home / slug)
+    if cfg is None:
+        raise HTTPException(404, f"routine {slug!r} not found")
+    rid = await request.app.state.runner.resume(cfg, run_dir.name, reason="user")
+    if not rid:
+        raise HTTPException(409, "could not resume (already running, draining, or run dir gone)")
+    return {"ok": True, "run_id": rid}
+
+
 @router.post("/runs/{run_id}/abort")
 async def abort(request: Request, run_id: str) -> dict:
     slug, run_dir = _run_dir(request, run_id)

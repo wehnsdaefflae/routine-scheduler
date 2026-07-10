@@ -79,6 +79,30 @@ def test_apply_model_switch(make_routine):
     assert any(e["type"] == "user_injection" and "model switched" in e["payload"]["text"] for e in events)
 
 
+def test_resume_rehydrates_and_continues(make_routine, scripted):
+    """A resumed run reuses the same run dir, replays the prior transcript into its prompt, and
+    continues (appending to the transcript) rather than restarting from step 1."""
+    d = make_routine(slug="res")
+    scripted([probe("first work"), finish(summary="first pass done")])
+    status1, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status1 == "ok"
+    n1 = len(read_events(run_dir / "transcript.jsonl")[0])
+
+    ep2 = scripted([write_file("state/more.txt", content="more", say="continuing"),
+                    finish(summary="resumed and finished")])
+    status2, run_dir2 = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    assert status2 == "ok" and run_dir2 == run_dir
+    assert (d / "state" / "more.txt").read_text() == "more"
+    events2, _ = read_events(run_dir / "transcript.jsonl")
+    assert len(events2) > n1                                    # appended, not restarted
+    assert any(e["type"] == "user_injection" and "resumed" in e["payload"]["text"] for e in events2)
+    # the resumed run's FIRST prompt carried the prior conversation + the resume note
+    joined = " ".join(m["content"] for m in ep2.calls[0]["messages"])
+    assert "state/probe.txt" in joined and "ENGINE NOTE" in joined
+    st = read_json(run_dir / "status.json")
+    assert st["state"] == "finished" and st["turn"] == 4      # continued past the first run's 2 turns
+
+
 def test_happy_path(make_routine, scripted):
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
         {"say": "Write the artifact.", "kind": "write_file", "path": "state/out.txt",
