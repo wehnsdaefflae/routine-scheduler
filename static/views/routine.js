@@ -2,9 +2,10 @@
 // editable instruction / steps / fragment files, state, runs.
 
 import { api } from "/static/api.js";
+import { setQuery } from "/static/router.js";
 import { chip, el, fmtTokens, fmtTs, scheduleEditor, tagChip, toast } from "/static/util.js";
 
-export async function render(view, slug) {
+export async function render(view, slug, query = {}) {
   let d, st;
   try { [d, st] = await Promise.all([api(`/api/routines/${slug}`), api("/api/status").catch(() => ({}))]); }
   catch (err) { view.append(el("div", { class: "empty" }, err.message)); return; }
@@ -199,16 +200,20 @@ export async function render(view, slug) {
   const fileEditor = el("div", {});
   view.append(fileEditor);
 
-  async function editFile(path, label) {
+  // The open file-editor is addressable as #/routine/<slug>?file=<path>, so a reload / shared link
+  // reopens the exact file. `silent` skips the URL write + scroll when we're restoring from the URL.
+  async function editFile(path, label, silent = false) {
     let data; try { data = await api(`/api/routines/${slug}/file?path=${encodeURIComponent(path)}`); }
     catch (err) { toast(err.message); return; }
     fileEditor.innerHTML = "";
-    const node = docEditor(label, data.content, async (content) => {
+    const node = docEditor(label || path, data.content, async (content) => {
       await api(`/api/routines/${slug}/file`, { method: "PUT", body: { path, content } });
     });
     fileEditor.append(node);
-    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (!silent) { setQuery({ file: path }); node.scrollIntoView({ behavior: "smooth", block: "center" }); }
   }
+
+  if (query.file) editFile(query.file, query.file, true);   // restore an open editor from the URL
 
   function docEditor(label, content, save) {
     const ta = el("textarea", { class: "code" }, content || "");

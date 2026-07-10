@@ -3,6 +3,7 @@
 // transcript renderer, the global bus, and /api/runs + /api/status + /api/questions.
 
 import { api, sse } from "/static/api.js";
+import { setQuery } from "/static/router.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { chip, el, fmtTs } from "/static/util.js";
 
@@ -32,8 +33,17 @@ function runDuration(r) {
   return end && end >= start ? fmtDur((end - start) / 1000) : "";
 }
 
-export async function render(view) {
-  const filters = { routine: "", status: "", window: "7d", search: "", live: true };
+export async function render(view, query = {}) {
+  // Filters + expanded rows live in the URL query, so the feed is shareable and survives reload.
+  const DEFAULT_WINDOW = "7d";
+  const filters = {
+    routine: query.routine || "", status: query.status || "",
+    window: query.window || DEFAULT_WINDOW, search: query.search || "", live: true };
+  const expandedIds = new Set((query.expand || "").split(",").filter(Boolean));
+  const syncURL = () => setQuery({
+    routine: filters.routine, status: filters.status,
+    window: filters.window === DEFAULT_WINDOW ? "" : filters.window,
+    search: filters.search, expand: [...expandedIds].join(",") });
   const rows = new Map();          // run_id -> row controller (persists across refreshes)
   let allRuns = [], routineMeta = {}, statusData = { active_runs: {} }, questions = [];
   let optionsBuilt = false;
@@ -60,16 +70,18 @@ export async function render(view) {
     ["", "All statuses"], ["running", "Running"], ["waiting_user", "Waiting"],
     ["finished", "Finished"], ["failed", "Failed"], ["aborted", "Aborted"],
   ].map(([v, l]) => el("option", { value: v }, l)));
+  statusSel.value = filters.status;
   const windowSel = el("select", {}, ...Object.entries({
     "24h": "Last 24h", "7d": "Last 7 days", "30d": "Last 30 days", all: "All time",
   }).map(([v, l]) => el("option", { value: v, ...(v === filters.window ? { selected: true } : {}) }, l)));
-  const searchInp = el("input", { type: "text", class: "search", placeholder: "search routine · run · summary…" });
+  const searchInp = el("input", { type: "text", class: "search", value: filters.search,
+    placeholder: "search routine · run · summary…" });
   const liveChk = el("input", { type: "checkbox", checked: true });
 
-  routineSel.onchange = () => { filters.routine = routineSel.value; renderFeed(); };
-  statusSel.onchange = () => { filters.status = statusSel.value; renderFeed(); };
-  windowSel.onchange = () => { filters.window = windowSel.value; renderStats(); renderFeed(); };
-  searchInp.oninput = () => { filters.search = searchInp.value.trim().toLowerCase(); renderFeed(); };
+  routineSel.onchange = () => { filters.routine = routineSel.value; syncURL(); renderFeed(); };
+  statusSel.onchange = () => { filters.status = statusSel.value; syncURL(); renderFeed(); };
+  windowSel.onchange = () => { filters.window = windowSel.value; syncURL(); renderStats(); renderFeed(); };
+  searchInp.oninput = () => { filters.search = searchInp.value.trim().toLowerCase(); syncURL(); renderFeed(); };
   liveChk.onchange = () => { filters.live = liveChk.checked; };
 
   view.append(el("div", { class: "logbar" },
@@ -80,7 +92,7 @@ export async function render(view) {
   const feed = el("div", { class: "feed" });
   view.append(feed);
 
-  function setStatusFilter(v) { filters.status = v; statusSel.value = v; renderFeed(); }
+  function setStatusFilter(v) { filters.status = v; statusSel.value = v; syncURL(); renderFeed(); }
 
   // ---- data ----------------------------------------------------------------
   async function load() {
@@ -107,6 +119,7 @@ export async function render(view) {
   function buildRoutineOptions(routines) {
     for (const r of [...routines].sort((a, b) => (a.name || a.slug).localeCompare(b.name || b.slug)))
       routineSel.append(el("option", { value: r.slug }, r.name || r.slug));
+    routineSel.value = filters.routine;   // restore the URL's routine once its option exists
     optionsBuilt = true;
   }
 
@@ -150,6 +163,7 @@ export async function render(view) {
       let ctrl = rows.get(r.run_id);
       if (!ctrl) { ctrl = makeRow(r); rows.set(r.run_id, ctrl); }
       ctrl.update(r);
+      if (expandedIds.has(r.run_id)) ctrl.ensureOpen();   // restore expansion from the URL
       return ctrl.el;
     });
     for (const [id, ctrl] of rows)
@@ -210,19 +224,24 @@ export async function render(view) {
     }
 
     function closeSource() { if (source) { source.close(); source = null; } }
+    function doExpand() {
+      if (expanded) return;
+      expanded = true; rowEl.classList.add("open"); body.hidden = false;
+      build();
+    }
     function collapse() {
       expanded = false; built = false; transcript = null;
       rowEl.classList.remove("open"); body.hidden = true; body.innerHTML = "";
       closeSource();
     }
     head.onclick = () => {
-      if (expanded) return collapse();
-      expanded = true; rowEl.classList.add("open"); body.hidden = false;
-      build();
+      if (expanded) { collapse(); expandedIds.delete(r0.run_id); }
+      else { doExpand(); expandedIds.add(r0.run_id); }
+      syncURL();
     };
 
     update(r0);
-    return { el: rowEl, update, dispose: closeSource };
+    return { el: rowEl, update, dispose: closeSource, ensureOpen: doExpand };
   }
 
   // ---- live wiring ---------------------------------------------------------

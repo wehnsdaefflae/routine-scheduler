@@ -3,12 +3,19 @@
 // Deep-link #/library/workflow/<slug> opens an editor directly.
 
 import { api } from "/static/api.js";
+import { replaceHash } from "/static/router.js";
 import { chip, el, tagChip, toast } from "/static/util.js";
 
-export async function render(view, sub) {
+export async function render(view, sub, query = {}) {
   let data;
   try { data = await api("/api/library"); }
   catch (err) { view.append(el("div", { class: "empty" }, err.message)); return; }
+
+  // Both the tag filter and the open editor are kept in the URL (#/library/<kind>/<slug>?tags=…)
+  // so the view is shareable and restores on reload — without tearing itself down on each change.
+  let openSub = sub || null;
+  const updateURL = () => replaceHash(openSub ? `#/library/${openSub}` : "#/library",
+    { tags: [...active].join(",") });
 
   view.append(el("div", { class: "page-head" },
     el("h1", {}, "Library"),
@@ -20,7 +27,7 @@ export async function render(view, sub) {
   const editor = el("div", {});
   view.append(filterBar, sections, editor);
 
-  const active = new Set();
+  const active = new Set((query.tags || "").split(",").filter(Boolean));
   const matches = (tags) => !active.size || (tags || []).some((t) => active.has(t));
 
   function renderFilterBar() {
@@ -31,11 +38,11 @@ export async function render(view, sub) {
     filterBar.append(el("span", { class: "lbl" }, "filter"));
     for (const t of all) filterBar.append(tagChip(t, {
       active: active.has(t),
-      onClick: () => { active.has(t) ? active.delete(t) : active.add(t); renderFilterBar(); renderSections(); },
+      onClick: () => { active.has(t) ? active.delete(t) : active.add(t); updateURL(); renderFilterBar(); renderSections(); },
     }));
     if (active.size) filterBar.append(el("a", {
       href: "#", class: "muted", style: "font-family:var(--mono);font-size:11px",
-      onclick: (e) => { e.preventDefault(); active.clear(); renderFilterBar(); renderSections(); },
+      onclick: (e) => { e.preventDefault(); active.clear(); updateURL(); renderFilterBar(); renderSections(); },
     }, "clear"));
   }
 
@@ -70,16 +77,19 @@ export async function render(view, sub) {
   }
 
   async function openWorkflow(slug) {
+    openSub = `workflow/${slug}`; updateURL();
     const d = await api(`/api/workflows/${slug}`);
     showEditor(`workflow: ${slug}`, d.content, d.log, async (content) =>
       api(`/api/workflows/${slug}`, { method: "PUT", body: { content } }));
   }
   async function openFragment(slug) {
+    openSub = `fragment/${slug}`; updateURL();
     const d = await api(`/api/library/fragments/${slug}`);
     showEditor(`fragment: ${slug}`, d.content, d.log, async (content) =>
       api(`/api/library/fragments/${slug}`, { method: "PUT", body: { content } }));
   }
   async function openUtil(name) {
+    openSub = `util/${name}`; updateURL();
     const d = await api(`/api/library/utils/${name}`);
     showEditor(`util: ${name} (selftest-gated)`, d.content, null, async (content) =>
       api(`/api/library/utils/${name}`, { method: "PUT", body: { content } }));

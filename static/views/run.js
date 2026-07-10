@@ -1,11 +1,19 @@
-// Run view: live SSE transcript (or drained past transcript), intervention controls.
+// Run view: live SSE transcript (or drained past transcript), intervention controls, and a
+// sub-run selector. Which sub-run you're reading — and the transcript offset — live in the URL
+// (#/run/{id}?sub=N&offset=M), so a deep link reopens the exact view.
 
 import { api, sse } from "/static/api.js";
+import { setQuery } from "/static/router.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { chip, el, fmtTokens, fmtTs, toast } from "/static/util.js";
 
-export async function render(view, runId) {
+const TERMINAL = new Set(["finished", "failed", "aborted"]);
+
+export async function render(view, runId, query = {}) {
   const [slug, ts] = runId.split(":");
+  const initialSub = query.sub != null && query.sub !== "" ? Number(query.sub) : null;
+  const initialOffset = Number(query.offset) || 0;
+
   const head = el("div", { class: "row spread" },
     el("h1", {}, el("a", { href: `#/routine/${slug}` }, slug), ` · run ${fmtTs(ts)}`),
     el("div", { class: "row" }));
@@ -18,9 +26,12 @@ export async function render(view, runId) {
   const questionBox = el("div", {});
   view.append(questionBox);
 
+  // sub-run selector (main + each spawned child); hidden until there is at least one sub-run
+  const subBar = el("div", { class: "row mt", hidden: true });
+  view.append(subBar);
+
   const body = el("div", { class: "mt" });
   view.append(body);
-  const transcript = createTranscript(body);
 
   const injectRow = el("div", { class: "row mt" });
   const injectInput = el("input", { type: "text", placeholder: "inject a message into the run…", style: "flex:1" });
@@ -33,10 +44,88 @@ export async function render(view, runId) {
   const abortBtn = el("button", { class: "btn small danger" }, "✕ abort");
   controls.append(pauseBtn, abortBtn);
 
+  // ---- transcript sources: main run = SSE; a sub-run = paged fetch + poll while active ---------
+  let curState = "";
+  const subs = new Map();          // n -> label
+  let viewingSub = null;           // null = main, else sub-run number
+  let source = null;               // the always-on main SSE (state, and main transcript)
+  let subPoll = null, subOffset = 0;
+  let transcript = createTranscript(body);
+  let autoscroll = true;
+  const scrollDown = () => { if (autoscroll) window.scrollTo(0, document.body.scrollHeight); };
+
+  function resetBody() { body.innerHTML = ""; transcript = createTranscript(body); }
+  function stopSubPoll() { if (subPoll) { clearInterval(subPoll); subPoll = null; } }
+  function closeSource() { if (source) { source.close(); source = null; } }
+
+  function renderSubBar() {
+    if (!subs.size) { subBar.hidden = true; subBar.innerHTML = ""; return; }
+    subBar.hidden = false;
+    subBar.innerHTML = "";
+    subBar.append(el("span", { class: "muted", style: "font-family:var(--mono);font-size:11px" }, "transcript:"));
+    const tab = (n, text) => el("button",
+      { class: `btn small ${viewingSub === n ? "primary" : ""}`, onclick: () => selectSub(n) }, text);
+    subBar.append(tab(null, "main"));
+    for (const [n, label] of [...subs.entries()].sort((a, b) => a[0] - b[0]))
+      subBar.append(tab(n, `#${n} ${label}`));
+  }
+
+  function addSubTab(n, label) {
+    if (!subs.has(n) || (label && subs.get(n) !== label)) {
+      subs.set(n, label || subs.get(n) || `sub ${n}`);
+      renderSubBar();
+    }
+  }
+
+  function selectSub(n) {
+    if (viewingSub === n) return;
+    viewingSub = n;
+    setQuery({ sub: n == null ? "" : String(n), offset: "" });   // offset is a load-time deep link only
+    stopSubPoll();
+    resetBody();
+    renderSubBar();
+    if (n == null) reopenMainSSE(0);         // replay the main transcript into the fresh renderer
+    else mountSubPolling(n, 0);
+  }
+
+  function reopenMainSSE(offset) {
+    closeSource();
+    source = sse(`/api/runs/${runId}/events?offset=${offset}`, {
+      transcript: (ev) => {
+        if (ev.type === "subrun_start") addSubTab(ev.payload.n, ev.payload.label);
+        if (viewingSub == null) { transcript.add(ev); scrollDown(); }
+      },
+      state: (s) => {
+        setState(s.state);
+        if (s.usage) usageSpan.textContent = fmtTokens(s.usage);
+        showQuestion(s.question);
+      },
+      end: () => closeSource(),
+      onerror: () => {},
+    });
+  }
+
+  function mountSubPolling(n, startOffset) {
+    stopSubPoll();
+    subOffset = startOffset || 0;
+    const pull = async () => {
+      try {
+        const { events, offset } = await api(`/api/runs/${runId}/transcript?sub=${n}&offset=${subOffset}`);
+        subOffset = offset;
+        for (const ev of events) transcript.add(ev);
+        scrollDown();
+      } catch { /* transient — keep polling */ }
+    };
+    pull();
+    subPoll = setInterval(() => { TERMINAL.has(curState) ? stopSubPoll() : pull(); }, 3000);
+  }
+
+  // ---- state + controls -----------------------------------------------------------------------
   function setState(state) {
+    curState = state;
     stateChip.textContent = state;
     stateChip.className = `chip ${state}`;
-    const terminal = ["finished", "failed", "aborted"].includes(state);
+    const terminal = TERMINAL.has(state);
     pauseBtn.disabled = abortBtn.disabled = terminal;
     injectBtn.textContent = terminal ? "queue for next run" : "send";
     if (state === "paused") { paused = true; pauseBtn.textContent = "▶ resume"; }
@@ -84,30 +173,25 @@ export async function render(view, runId) {
   injectBtn.onclick = doInject;
   injectInput.onkeydown = (e) => { if (e.key === "Enter") doInject(); };
 
+  // ---- boot -----------------------------------------------------------------------------------
   const detail = await api(`/api/runs/${runId}`);
   setState(detail.state);
   usageSpan.textContent = fmtTokens(detail.usage);
   showQuestion(detail.question);
+  for (const n of detail.subruns || []) subs.set(n, `sub ${n}`);
+  viewingSub = (initialSub != null && (detail.subruns || []).includes(initialSub)) ? initialSub : null;
+  renderSubBar();
+  if (viewingSub == null) {
+    reopenMainSSE(initialOffset);
+  } else {
+    reopenMainSSE(0);                          // keep the state stream live while reading a sub
+    mountSubPolling(viewingSub, initialOffset);
+  }
 
-  const source = sse(`/api/runs/${runId}/events`, {
-    transcript: (ev) => {
-      transcript.add(ev);
-      if (autoscroll) window.scrollTo(0, document.body.scrollHeight);
-    },
-    state: (st) => {
-      setState(st.state);
-      if (st.usage) usageSpan.textContent = fmtTokens(st.usage);
-      showQuestion(st.question);
-    },
-    end: () => source.close(),
-    onerror: () => {},
-  });
-
-  let autoscroll = true;
   const onScroll = () => {
     autoscroll = window.innerHeight + window.scrollY >= document.body.scrollHeight - 60;
   };
   window.addEventListener("scroll", onScroll);
 
-  return () => { source.close(); window.removeEventListener("scroll", onScroll); };
+  return () => { closeSource(); stopSubPoll(); window.removeEventListener("scroll", onScroll); };
 }

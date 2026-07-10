@@ -42,3 +42,9 @@ export function setQuery(updates, { push = false } = {}) {
 export function navigate(path, query = {}) {
   location.hash = buildHash(path, query);
 }
+
+// Rewrite the whole hash (path + query) in place — no hashchange, no re-render. For a view that
+// wants its deep state (e.g. an open editor) addressable without tearing itself down.
+export function replaceHash(path, query = {}) {
+  history.replaceState(history.state, "", location.pathname + location.search + buildHash(path, query));
+}
