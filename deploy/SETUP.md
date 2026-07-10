@@ -39,7 +39,9 @@ the engine surfaces it. This is also required of every `write_util`-generated ut
 The fresh config lists `openrouter`, `anthropic`, and `claude-cli`. Each OpenAI/Anthropic endpoint
 reads its key from **Secrets** via its `key_var` (e.g. `openrouter` → `OPENROUTER_KEY`) — so just set
 that key in §2 and the endpoint works. (You can also paste a per-endpoint inline key if you prefer.)
-Then set the default roles (orchestrator / subcall / cheap).
+Then set the **system model** — the one fallback the new-routine wizard and workflow generation
+use. Each routine you create afterwards picks its own three models (main / subroutine / tool-call)
+on its page or in the creation wizard.
 
 ### Using your Claude subscription (`claude-cli`) — where the token comes from
 

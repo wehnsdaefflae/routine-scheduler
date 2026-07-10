@@ -15,6 +15,7 @@ from ..config import DEFAULT_SELF
 from ..ids import now_iso, run_ts as make_run_ts
 from ..paths import atomic_write_json
 from ..schema_guard import loads_tolerant
+from ..workflows.adapt import materialize
 from ..workflows.generate import generate
 from ..workflows.scaffold import GITIGNORE, scaffold
 from ..workflows.suggest import normalize_tags, suggest, suggest_tags
@@ -63,16 +64,23 @@ async def start(request: Request, body: StartBody) -> dict:
     d = server.routines_home / wid
     (d / "state").mkdir(parents=True)
     (d / "inbox").mkdir()
-    # Clarify is HARD-WIRED (not a library workflow) — internal machinery, tools disabled.
-    main_content = (Path(__file__).resolve().parents[1] / "clarify.md").read_text(encoding="utf-8")
+    # Clarify is a normal LIBRARY workflow (clarify-instruction). Materialize it — no decompose LLM,
+    # just the whole workflow as main.md — so the wizard runs the ordinary engine path. Its
+    # frontmatter `tools:` allowlist is what keeps the clarifier to ask/read/write/finish.
+    try:
+        main_content, prov = materialize(server.library_home, "clarify-instruction")
+        commit = prov.get("commit", "")
+    except (FileNotFoundError, KeyError) as exc:
+        raise HTTPException(503, f"clarify-instruction workflow not in the library: {exc}") from exc
     (d / "main.md").write_text(main_content, encoding="utf-8")
     (d / "instruction.md").write_text(body.draft.rstrip() + "\n", encoding="utf-8")
     (d / "LEDGER.md").write_text("# LEDGER — wizard session\n", encoding="utf-8")
     (d / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
     (d / "routine.yaml").write_text(yaml.safe_dump({
         "name": "New-routine wizard", "slug": slug, "enabled": False,
+        "description": "New-routine clarification wizard session.",
         "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
-        "workflow": {"library_slug": "clarify-instruction", "library_commit": ""},
+        "workflow": {"library_slug": "clarify-instruction", "library_commit": commit},
         "budgets": WIZARD_BUDGETS,
         "self": {k: False for k in DEFAULT_SELF},
     }, sort_keys=False), encoding="utf-8")
@@ -141,6 +149,8 @@ class FinalizeBody(BaseModel):
     slug: str
     name: str
     workflow_slug: str
+    description: str = ""         # one-line UI summary; defaults to the clarifier's, then the name
+    models: dict | None = None    # {main|subroutine|tool_call: {endpoint, model}} picked in the wizard
     friendly: dict = {}          # friendly schedule spec → cron + server tz
     params: dict = {}
     tags: list[str] = []         # >=3 tags, suggested (reuse-first) then user-editable
@@ -160,6 +170,9 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
     try:
         cron = schedule.friendly_to_cron(body.friendly or {"frequency": "manual"})
         steps = result.get("steps") if isinstance(result.get("steps"), dict) else None
+        # Always end up with a description: the wizard's chosen text, else the clarifier's
+        # one-liner, else the name (scaffold's own final fallback).
+        description = body.description.strip() or str(result.get("description") or "").strip()
         # scaffold() calls decompose(), which makes a BLOCKING LLM call (up to 180s). Run it off
         # the event loop or it freezes the whole web server until the model responds.
         routine_dir = await asyncio.to_thread(
@@ -167,6 +180,7 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
             instruction=result["refined_instruction"],
             workflow_slug=body.workflow_slug, cron=cron,
             tz=schedule.server_tz(), params=body.params, steps=steps,
+            description=description, models=body.models,
             tags=normalize_tags(body.tags) or None, fragments=body.fragments)
     except (ValueError, KeyError, FileNotFoundError) as exc:
         raise HTTPException(422, str(exc)) from exc

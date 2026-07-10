@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import schedule
+from ..config import MODEL_KINDS
 from ..daemon import registry
 from ..ids import now_iso, run_ts
 from ..paths import resolve_rel
@@ -56,6 +57,7 @@ def _card(request: Request, info: registry.RoutineInfo) -> dict:
     return {
         "slug": info.slug,
         "name": info.cfg.name,
+        "description": info.cfg.description,
         "enabled": info.cfg.enabled,
         "tags": info.cfg.tags,
         "cron": info.cfg.cron,
@@ -100,12 +102,19 @@ def routine_detail(request: Request, slug: str) -> dict:
     active = set(info.cfg.fragments)
     fragments = [{"slug": f["slug"], "summary": f["summary"], "title": f["title"],
                   "active": f["slug"] in active} for f in all_frags]
+    sm = server.system_model
     return {
         **_card(request, info),
         "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
         "server_tz": schedule.server_tz(),
         "confirm_util_changes": info.cfg.confirm_utils(server),
         "workflow_ref": {"slug": info.cfg.workflow_slug, "commit": info.cfg.workflow_commit},
+        # Per-routine models (main/subroutine/tool_call). A kind left null falls back to the
+        # server system_model, shown so the UI can label the effective model.
+        "models": {k: ({"endpoint": r.endpoint, "model": r.model, "effort": r.effort}
+                       if (r := info.cfg.models.get(k)) else None) for k in MODEL_KINDS},
+        "endpoints": list(server.endpoints.keys()),
+        "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None,
         "fragments": fragments,
         "instruction": (d / "instruction.md").read_text(encoding="utf-8")
         if (d / "instruction.md").exists() else "",
@@ -190,9 +199,10 @@ class RoutinePatch(BaseModel):
     schedule: dict | None = None            # {"friendly": {...}} — converted to cron server-side
     budgets: dict | None = None
     confirm_util_changes: bool | None = None
-    endpoints: dict | None = None
+    models: dict | None = None              # {main|subroutine|tool_call: {endpoint, model, effort?}}
     notifications: str | None = None
     name: str | None = None
+    description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
 
 
@@ -203,6 +213,14 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     updates = patch.model_dump(exclude_none=True)
+    # Validate per-routine models: known kinds, pointing at configured endpoints.
+    if "models" in updates:
+        server = _state(request).server
+        for kind, spec in (updates["models"] or {}).items():
+            if kind not in MODEL_KINDS:
+                raise HTTPException(400, f"unknown model kind {kind!r} (expected one of {MODEL_KINDS})")
+            if not isinstance(spec, dict) or spec.get("endpoint") not in server.endpoints:
+                raise HTTPException(400, f"models.{kind}: 'endpoint' must be a configured endpoint")
     # Translate the friendly schedule → cron + the server's own timezone (never asked of the user).
     if "schedule" in updates and "friendly" in updates["schedule"]:
         try:

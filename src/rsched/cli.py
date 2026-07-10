@@ -10,7 +10,7 @@ import signal
 import sys
 from pathlib import Path
 
-from .config import RoleRef, load_server_config
+from .config import MODEL_KINDS, ModelRef, load_server_config
 from .paths import expand
 
 
@@ -65,15 +65,17 @@ def _render_event(obj: dict) -> str | None:
     return None
 
 
-def _parse_role_overrides(values: list[str]) -> dict[str, RoleRef]:
-    """--role orchestrator=ollama-local:gemma4:latest (model may itself contain colons)."""
-    out: dict[str, RoleRef] = {}
+def _parse_model_overrides(values: list[str]) -> dict[str, ModelRef]:
+    """--model main=ollama-local:gemma4:latest (model may itself contain colons)."""
+    out: dict[str, ModelRef] = {}
     for val in values or []:
-        role, _, rest = val.partition("=")
+        kind, _, rest = val.partition("=")
         endpoint, _, model = rest.partition(":")
-        if not (role and endpoint and model):
-            raise SystemExit(f"--role expects role=endpoint:model, got {val!r}")
-        out[role] = RoleRef(endpoint=endpoint, model=model)
+        if not (kind and endpoint and model):
+            raise SystemExit(f"--model expects kind=endpoint:model, got {val!r}")
+        if kind not in MODEL_KINDS:
+            raise SystemExit(f"--model kind must be one of {MODEL_KINDS}, got {kind!r}")
+        out[kind] = ModelRef(endpoint=endpoint, model=model)
     return out
 
 
@@ -105,7 +107,7 @@ def cmd_run_once(args) -> int:
 
     try:
         status, run_dir = run_routine(routine_dir, server,
-                                      role_overrides=_parse_role_overrides(args.role),
+                                      model_overrides=_parse_model_overrides(args.model),
                                       on_event=None if args.quiet else on_event)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -246,6 +248,7 @@ def cmd_scaffold(args) -> int:
             instruction=Path(args.instruction_file).read_text(encoding="utf-8")
             if args.instruction_file else f"# Instruction\n\n(fill in) — scaffolded for {args.slug}",
             workflow_slug=args.workflow, cron=args.cron or "", tz=args.tz,
+            description=args.description or "",
             shell_allowlist=args.allow or None, tags=args.tag or None,
             fs_read_roots=args.read_root or None, fs_write_roots=args.write_root or None,
         )
@@ -262,8 +265,8 @@ def main(argv: list[str] | None = None) -> int:
 
     r = sub.add_parser("run-once", help="execute one routine run now, streaming events")
     r.add_argument("routine", help="routine slug (under routines_home) or a directory path")
-    r.add_argument("--role", action="append",
-                   help="override a model role: role=endpoint:model (repeatable)")
+    r.add_argument("--model", action="append",
+                   help="override a routine model: kind=endpoint:model (kind: main|subroutine|tool_call, repeatable)")
     r.add_argument("--quiet", action="store_true", help="no event stream on stdout")
     r.set_defaults(fn=cmd_run_once)
 
@@ -297,6 +300,7 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("--cron", default="")
     sc.add_argument("--tz", default="Europe/Berlin")
     sc.add_argument("--name", default="")
+    sc.add_argument("--description", default="", help="one-line description shown in the UI (defaults to name)")
     sc.add_argument("--instruction-file", help="file whose content becomes instruction.md")
     sc.add_argument("--allow", action="append", help="shell allowlist entry (repeatable)")
     sc.add_argument("--tag", action="append", help="tag for filtering, e.g. meta (repeatable)")

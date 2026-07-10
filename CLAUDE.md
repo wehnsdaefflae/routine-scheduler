@@ -59,15 +59,19 @@ Chat-completion adapters implementing one `ChatEndpoint.complete(...)` (`base.py
   replacing its own, `--json-schema`), SUBSCRIPTION-billed via `CLAUDE_CODE_OAUTH_TOKEN`. Metered-auth env
   vars are scrubbed so it can't silently fall back to API billing.
 
-Per-routine **model roles** resolve to endpoint+model: `orchestrator` (the loop), plus `subcall` and
-`cheap` (selectable via the `llm` action's `role`). Set them in Settings → LLM endpoints.
+Each **routine sets its own three models** (`routine.yaml` `models:`): `main` (the loop),
+`subroutine` (a spawned child's main model), `tool_call` (the `llm` action). A model a routine
+leaves unset falls back to the server's single `system_model` — the ONE model for pre-routine
+machine work (the clarify wizard + workflow generation/suggestion). There is no server "roles"
+concept. `EndpointRegistry.for_model(kind, routine.models)` / `.for_system()` resolve them.
 
 ## Routines on disk
 
 A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is NEVER read at run time:
-- `routine.yaml` — schedule (cron + tz + catchup), `workflow: {library_slug, library_commit}` (provenance
-  only), `fragments:` (active standards), `budgets:` (max_turns / wall_clock_min / total_tokens / subruns
-  / subrun_depth / ask_timeout_h), `fs_read_roots` / `fs_write_roots`, `self:` toggles, retention, notifications.
+- `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
+  `workflow: {library_slug, library_commit}` (provenance only), `models:` (main / subroutine / tool_call),
+  `fragments:` (active standards), `budgets:` (max_turns / wall_clock_min / total_tokens / subruns /
+  subrun_depth / ask_timeout_h), `fs_read_roots` / `fs_write_roots`, `self:` toggles, retention, notifications.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
   routes to `steps/<name>.md` modules, read on demand). `instruction.md` — the task. `fragments/*.md` —
   editable routine-local copies of the active fragments.
@@ -94,9 +98,13 @@ fragments), `util-seed/` (utils), `routine-seed/` (bundled meta routines `self-a
 `meta-workflows` — installed **disabled**). `bootstrap.py` seeds on first boot; `deploy/install.sh` for
 host installs.
 - **Workflows** are markdown + frontmatter (`slug / description / when_to_use / version / status /
-  includes / tags`) with `## Run flow`, `## Phases`, `## Completion criteria`. `workflows/lint.py` gates
-  every library change; `adapt.decompose` materializes a routine's `main.md` + `steps/`; `scaffold`
-  creates the routine repo; `suggest` / `generate` rank / draft via an LLM.
+  includes / tags`, optional `tools:` allowlist) with `## Run flow`, `## Phases`, `## Completion
+  criteria`. A `tools:` list restricts which action kinds the engine will run for that workflow
+  (`finish` is always allowed) — this is how `clarify-instruction` (the library workflow that drives
+  the new-routine wizard) is held to ask/read/write/finish. `workflows/lint.py` gates every library
+  change; `adapt.decompose` materializes a routine's `main.md` + `steps/` (`materialize` = whole
+  workflow, no decompose — used by sub-routines and the wizard); `scaffold` creates the routine repo;
+  `suggest` / `generate` rank / draft via the `system_model`.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`, `calls:`),
   a `secrets: NAME,…` declaration line, and a `--selftest` the engine runs before saving (`write_util` is
   selftest-gated, and approval-gated when `confirm_util_changes`). Discover with the `util` action `name: list`.

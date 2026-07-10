@@ -51,7 +51,7 @@ def suggest(server: ServerConfig, instruction: str) -> dict:
         "Reply with ONLY one JSON object matching this schema (no prose):\n"
         + json.dumps(SUGGEST_SCHEMA)
     )
-    endpoint, ref = EndpointRegistry(server).for_role("subcall", {})
+    endpoint, ref = EndpointRegistry(server).for_system()
     messages = [{"role": "user", "content": prompt}]
     obj = None
     for _attempt in range(2):
@@ -133,7 +133,7 @@ def suggest_tags(server: ServerConfig, instruction: str) -> list[str]:
         f"EXISTING VOCABULARY ({len(vocab)} tags): {', '.join(vocab) or '(none yet)'}\n\n"
         "Reply with ONLY one JSON object matching this schema (no prose):\n" + json.dumps(TAGS_SCHEMA)
     )
-    endpoint, ref = EndpointRegistry(server).for_role("subcall", {})
+    endpoint, ref = EndpointRegistry(server).for_system()
     messages = [{"role": "user", "content": prompt}]
     for _attempt in range(2):
         try:

@@ -88,7 +88,7 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
     try:
         from ..endpoints import EndpointRegistry
 
-        endpoint, ref = EndpointRegistry(server).for_role("subcall", {})
+        endpoint, ref = EndpointRegistry(server).for_system()
         prompt = _DECOMPOSE_PROMPT.format(workflow=body, instruction=instruction)
         comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
                                  schema=DECOMPOSE_SCHEMA, effort=ref.effort, timeout=180)

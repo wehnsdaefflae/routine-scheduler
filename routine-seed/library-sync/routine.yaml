@@ -1,4 +1,5 @@
 name: Library sync
+description: Periodically syncs the shared workflow/fragment/util library with its git remote (pull, then push local changes).
 tags:
 - meta
 - maintenance

@@ -1,4 +1,5 @@
 name: Self audit
+description: Weekly review of the routine-scheduler code and routines — files fixes directly and larger changes as proposals.
 tags:
 - meta
 - maintenance

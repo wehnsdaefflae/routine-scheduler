@@ -396,8 +396,7 @@ def test_spawn_picks_library_workflow(make_routine, scripted, tmp_path):
 
 def test_llm_subcall(make_routine, scripted):
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
-        {"say": "Scoped call.", "kind": "llm", "prompt": "Summarize: hello world",
-         "role": "cheap"},
+        {"say": "Scoped call.", "kind": "llm", "prompt": "Summarize: hello world"},
         "a plain text llm reply",   # ← consumed by the subcall (no schema → text)
         finish(),
     ])

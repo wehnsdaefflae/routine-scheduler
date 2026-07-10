@@ -40,7 +40,9 @@ def fragments_from_self(self_flags: dict) -> list[str]:
         if self_flags.get(flag, True):
             frags.append(slug)
     return frags
-ROLES = ("orchestrator", "subcall", "cheap")
+# Each routine picks its own three models: the MAIN orchestrator loop, the model spawned
+# SUBROUTINEs run their main loop on, and the model TOOL_CALLs (the `llm` action) use.
+MODEL_KINDS = ("main", "subroutine", "tool_call")
 # Endpoints are model TRANSPORTS, never a second harness. "claude-cli" is the Claude Code
 # CLI in fully stripped print mode (tools off, our system prompt replaces its own) — a
 # subscription-billed completion function; the engine remains the only agent loop.
@@ -63,7 +65,7 @@ class EndpointConfig:
 
 
 @dataclass
-class RoleRef:
+class ModelRef:
     endpoint: str
     model: str
     effort: str | None = None
@@ -88,16 +90,18 @@ class ServerConfig:
     max_concurrent_runs: int = 2
     registry_rescan_s: int = 30
     endpoints: dict[str, EndpointConfig] = field(default_factory=dict)
-    default_roles: dict[str, RoleRef] = field(default_factory=dict)
+    # The ONE fallback model for machine work that isn't a routine yet: workflow
+    # generation/suggestion and the new-routine clarify wizard. Routines set their own models.
+    system_model: ModelRef | None = None
     source: Path | None = None
 
 
-def _role_ref(raw: object, problems: list[str], where: str) -> RoleRef | None:
+def _model_ref(raw: object, problems: list[str], where: str) -> ModelRef | None:
     if not isinstance(raw, dict) or "endpoint" not in raw or "model" not in raw:
         problems.append(f"{where}: expected mapping with 'endpoint' and 'model'")
         return None
-    return RoleRef(endpoint=str(raw["endpoint"]), model=str(raw["model"]),
-                   effort=raw.get("effort"))
+    return ModelRef(endpoint=str(raw["endpoint"]), model=str(raw["model"]),
+                    effort=raw.get("effort"))
 
 
 def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str]]:
@@ -157,15 +161,12 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
             ep.temperature = float(spec["temperature"])
         cfg.endpoints[name] = ep
 
-    for role, spec in (raw.get("default_roles") or {}).items():
-        if role not in ROLES:
-            problems.append(f"default_roles.{role}: unknown role (expected one of {ROLES})")
-            continue
-        ref = _role_ref(spec, problems, f"default_roles.{role}")
+    if "system_model" in raw and raw["system_model"]:
+        ref = _model_ref(raw["system_model"], problems, "system_model")
         if ref:
             if ref.endpoint not in cfg.endpoints:
-                problems.append(f"default_roles.{role}: endpoint {ref.endpoint!r} is not configured")
-            cfg.default_roles[role] = ref
+                problems.append(f"system_model: endpoint {ref.endpoint!r} is not configured")
+            cfg.system_model = ref
 
     return cfg, problems
 
@@ -182,7 +183,8 @@ class RoutineConfig:
     catchup: str = "skip"  # skip | run_once
     workflow_slug: str = ""
     workflow_commit: str = ""
-    roles: dict[str, RoleRef] = field(default_factory=dict)  # overrides; server defaults fill gaps
+    description: str = ""  # one-line human summary shown in the UI (always present)
+    models: dict[str, ModelRef] = field(default_factory=dict)  # main/subroutine/tool_call
     budgets: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_BUDGETS))
     fragments: list[str] = field(default_factory=list)       # active fragment slugs (the source of truth)
     self_flags: dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_SELF))  # legacy migration source
@@ -192,11 +194,6 @@ class RoutineConfig:
     confirm_util_changes: bool | None = None  # None = inherit the server default
     notifications: str = "ui"
     keep_runs: int = 30
-
-    def resolve_roles(self, server: ServerConfig) -> dict[str, RoleRef]:
-        roles = dict(server.default_roles)
-        roles.update(self.roles)
-        return roles
 
     def confirm_utils(self, server: ServerConfig) -> bool:
         return server.confirm_util_changes if self.confirm_util_changes is None \
@@ -224,6 +221,9 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     if slug != routine_dir.name:
         problems.append(f"slug {slug!r} does not match directory name {routine_dir.name!r}")
     cfg.name = str(raw.get("name") or slug)
+    cfg.description = str(raw.get("description") or "").strip()
+    if not cfg.description:
+        problems.append("description is empty — every routine needs a one-line description (shown in the UI)")
     cfg.enabled = bool(raw.get("enabled", True))
     cfg.tags = [str(t).strip() for t in (raw.get("tags") or []) if str(t).strip()]
 
@@ -251,13 +251,13 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
         cfg.workflow_slug = str(wf.get("library_slug", "") or "")
         cfg.workflow_commit = str(wf.get("library_commit", "") or "")
 
-    for role, spec in (raw.get("endpoints") or {}).items():
-        if role not in ROLES:
-            problems.append(f"endpoints.{role}: unknown role (expected one of {ROLES})")
+    for kind, spec in (raw.get("models") or {}).items():
+        if kind not in MODEL_KINDS:
+            problems.append(f"models.{kind}: unknown model kind (expected one of {MODEL_KINDS})")
             continue
-        ref = _role_ref(spec, problems, f"endpoints.{role}")
+        ref = _model_ref(spec, problems, f"models.{kind}")
         if ref:
-            cfg.roles[role] = ref
+            cfg.models[kind] = ref
 
     for key, val in (raw.get("budgets") or {}).items():
         if key not in DEFAULT_BUDGETS:

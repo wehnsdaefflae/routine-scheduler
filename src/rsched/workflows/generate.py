@@ -50,7 +50,7 @@ def generate(server: ServerConfig, instruction: str, hint: str = "") -> tuple[st
         "separate), keep steps concrete and tool-oriented, status: draft, version: 1. "
         "Reply with ONLY the complete file content, starting with '---'."
     )
-    endpoint, ref = EndpointRegistry(server).for_role("subcall", {})
+    endpoint, ref = EndpointRegistry(server).for_system()
     draft = endpoint.complete([{"role": "user", "content": prompt}],
                               model=ref.model, timeout=180).text.strip()
     if draft.startswith("```"):

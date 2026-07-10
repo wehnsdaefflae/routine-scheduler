@@ -23,7 +23,7 @@ def test_schema_compiles_and_example_passes():
         {"say": "s", "kind": "write_util", "name": "my-util", "content": "# script"},
         {"say": "s", "kind": "read_file", "path": "LEDGER.md", "max_lines": 40},
         {"say": "s", "kind": "write_file", "path": "state/x.json", "content": "{}", "append": False},
-        {"say": "s", "kind": "llm", "prompt": "p", "role": "cheap", "response_schema": {"type": "object"}},
+        {"say": "s", "kind": "llm", "prompt": "p", "system": "sys", "response_schema": {"type": "object"}},
         {"say": "s", "kind": "spawn", "prompt": "do x", "label": "research", "workflow": "general-task"},
         {"say": "s", "kind": "subruns"},
         {"say": "s", "kind": "kill", "n": 2},

@@ -72,11 +72,15 @@ class RunAborted(Exception):
 
 class EngineLoop:
     def __init__(self, ctx: RunContext, workflow_body: str, instruction: str,
-                 abort_event: threading.Event | None = None, fragments_text: str = ""):
+                 abort_event: threading.Event | None = None, fragments_text: str = "",
+                 allowed_tools: list[str] | None = None):
         self.ctx = ctx
         self.workflow_body = workflow_body
         self.instruction = instruction
         self.fragments_text = fragments_text
+        # A workflow may restrict which action kinds it may use (frontmatter `tools:`); `finish`
+        # is always permitted so a run can end. None = every tool allowed.
+        self.allowed_tools = set(allowed_tools) | {"finish"} if allowed_tools else None
         self.abort_event = abort_event or threading.Event()
         self.subruns = SubrunManager(self)
         self.messages: list[dict] = []
@@ -147,6 +151,15 @@ class EngineLoop:
                         continue
                     self.final_summary = action["summary"]
                     return self._finish_run(action["status"], action["summary"], authored=True)
+                if self.allowed_tools is not None and action["kind"] not in self.allowed_tools:
+                    obs = {"kind": action["kind"], "not_allowed": True,
+                           "allowed": sorted(self.allowed_tools)}
+                    ctx.transcript.event("observation", obs, turn=ctx.turn)
+                    self.messages.append({"role": "user", "content":
+                        f"OBSERVATION ({action['kind']} NOT AVAILABLE): this workflow permits only "
+                        f"{sorted(self.allowed_tools)}. Use one of those — do not attempt other tools."})
+                    ctx.write_status()
+                    continue
                 if action["kind"] == "ask_user":
                     obs = self._handle_ask(action)
                 elif action["kind"] == "write_util":
@@ -229,7 +242,7 @@ class EngineLoop:
 
     def _next_action(self) -> tuple[dict | None, dict]:
         ctx = self.ctx
-        endpoint, ref = ctx.registry.for_role("orchestrator", ctx.routine.roles)
+        endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
         self.messages, cinfo = maybe_compact(self.messages, self.turn_records, endpoint.context_chars)
         if cinfo:
             ctx.transcript.event("compaction", cinfo)
@@ -388,9 +401,9 @@ class EngineLoop:
 # --- top-level entry ------------------------------------------------------------------
 
 
-def load_workflow(routine_dir, cfg, server) -> tuple[str, str, dict]:
+def load_workflow(routine_dir, cfg, server) -> tuple[str, str, dict, list[str] | None]:
     """Load the routine's OWN main.md body (the recipe was materialized into it at generation)
-    plus its active FRAGMENTS. Returns (main_body, fragments_text, provenance).
+    plus its active FRAGMENTS. Returns (main_body, fragments_text, provenance, allowed_tools).
 
     A routine is self-contained: nothing is read from the workflow library at run time. Fragments
     are the routine's editable copies under fragments/; if that dir is empty we fall back to the
@@ -420,11 +433,12 @@ def load_workflow(routine_dir, cfg, server) -> tuple[str, str, dict]:
             content = fragments_lib.read_fragment(server.fragments_home, slug)
             if content:
                 parts.append(fragments_lib.fragment_body(content).strip())
-    return body, "\n\n".join(parts), prov
+    tools = meta.get("tools") if isinstance(meta.get("tools"), list) else None
+    return body, "\n\n".join(parts), prov, tools
 
 
 def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None = None,
-                role_overrides: dict | None = None, on_event=None) -> tuple[str, Path]:
+                model_overrides: dict | None = None, on_event=None) -> tuple[str, Path]:
     """Execute one run of the routine at routine_dir. Returns (final status, run dir).
     on_event(obj) is called for every transcript event (used by `rsched run-once`)."""
     cfg, problems = load_routine(routine_dir)
@@ -433,8 +447,8 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     fatal = [p for p in problems if "missing" in p]
     if fatal:
         raise RuntimeError(f"routine {routine_dir.name}: " + "; ".join(fatal))
-    if role_overrides:
-        cfg.roles.update(role_overrides)
+    if model_overrides:
+        cfg.models.update(model_overrides)
     registry = EndpointRegistry(server)
     ts = run_ts or make_run_ts()
     run_dir = routine_dir / "runs" / ts
@@ -449,13 +463,14 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
             on_event(obj)
 
         transcript.write = write_and_echo  # type: ignore[method-assign]
-    _, orch_ref = registry.for_role("orchestrator", cfg.roles)
+    _, orch_ref = registry.for_model("main", cfg.models)
     ctx = RunContext(routine=cfg, server=server, registry=registry, run_ts=ts,
                      run_dir=run_dir, transcript=transcript,
                      budgets=Budgets.from_config(cfg.budgets))
-    body, fragments_text, prov = load_workflow(routine_dir, cfg, server)
+    body, fragments_text, prov, allowed_tools = load_workflow(routine_dir, cfg, server)
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8")
     transcript.header(run_id=ctx.run_id, routine=cfg.slug, workflow=prov,
                       orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model})
-    status = EngineLoop(ctx, body, instruction, fragments_text=fragments_text).run()
+    status = EngineLoop(ctx, body, instruction, fragments_text=fragments_text,
+                        allowed_tools=allowed_tools).run()
     return status, run_dir

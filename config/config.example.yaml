@@ -31,7 +31,9 @@ registry_rescan_s: 30
 #   anthropic  — Anthropic's Messages API, METERED per-token billing. Needs an sk-ant-… API key.
 #   claude-cli — your Claude Max/Pro SUBSCRIPTION (no per-token billing). Uses the
 #                CLAUDE_CODE_OAUTH_TOKEN from Secrets (mint it with `claude setup-token`).
-# Once you add endpoints, set the model roles (orchestrator / subcall / cheap) in the same page.
+# Each ROUTINE picks its own three models (main / subroutine / tool_call) in the UI or its
+# routine.yaml. The only server-level model is the system_model below: the ONE fallback used for
+# machine work that isn't a routine yet — the new-routine clarify wizard and workflow generation.
 #
 # endpoints: {}          # populated from the UI
-# default_roles: {}      # set from the UI once endpoints exist
+# system_model: {}       # {endpoint: <name>, model: <id>} — set from the UI once endpoints exist

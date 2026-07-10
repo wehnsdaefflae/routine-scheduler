@@ -86,7 +86,7 @@ class SubrunManager:
         # instruction) that exists while it runs, so its module reads resolve under its own dir.
         recipe_slug, note = self._materialize_to_disk(recipe_slug, sub_dir, action["prompt"])
         transcript = Transcript(sub_dir / "transcript.jsonl")
-        _, sub_ref = ctx.registry.for_role("subcall", ctx.routine.roles)
+        _, sub_ref = ctx.registry.for_model("subroutine", ctx.routine.models)
         child_ctx = RunContext(
             routine=_sub_routine(ctx.routine, sub_dir, sub_ref),
             server=ctx.server, registry=ctx.registry, run_ts=ctx.run_ts,
@@ -99,7 +99,7 @@ class SubrunManager:
                           depth=ctx.depth + 1, parent=ctx.run_id)
         from .loop import EngineLoop, load_workflow  # local import: loop imports this module
 
-        body, _frag, _prov = load_workflow(sub_dir, child_ctx.routine, ctx.server)
+        body, _frag, _prov, _tools = load_workflow(sub_dir, child_ctx.routine, ctx.server)
         abort_event = threading.Event()
         child_loop = EngineLoop(child_ctx, body, action["prompt"], abort_event=abort_event)
         sub = Subrun(n=n, label=label, workflow=recipe_slug, thread=None,  # type: ignore[arg-type]
@@ -237,13 +237,14 @@ class SubrunManager:
 
 def _sub_routine(routine, sub_dir, ref):
     """A child sub-routine config: its OWN dir (so main.md + read_file/write_file resolve under
-    sub_dir), the parent's fs roots inherited, the subcall model as orchestrator, fragments off
-    (a sub-routine reports through its finish summary and keeps no LEDGER/audit)."""
+    sub_dir), the parent's fs roots inherited, the parent's SUBROUTINE model as the child's MAIN
+    model (subroutine/tool_call inherited so the child can spawn/llm too), fragments off (a
+    sub-routine reports through its finish summary and keeps no LEDGER/audit)."""
     import copy
 
     r = copy.copy(routine)
     r.dir = sub_dir
-    r.roles = dict(routine.roles)
-    r.roles["orchestrator"] = ref
+    r.models = dict(routine.models)
+    r.models["main"] = ref
     r.fragments = []
     return r

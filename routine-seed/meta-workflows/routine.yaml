@@ -1,4 +1,5 @@
 name: 'Meta: workflow library'
+description: Reviews all routines' transcripts and ledgers, then fixes and improves the shared workflow library.
 tags:
 - meta
 - maintenance

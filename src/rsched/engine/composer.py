@@ -89,8 +89,8 @@ needs a secret (token, password, API key), read it env-first — `os.environ["NA
 or prompt for it, AND declare the names in a header `secrets: NAME1, NAME2` line so the UI tells the \
 user what to set (they set it once in the Secrets store; the engine injects it).{util_confirm}
 - read_file / write_file: read or write a file (within the working dir or an allowed root).
-- llm: one scoped, stateless LLM subcall (role "subcall" or "cheap"). It sees ONLY your prompt/\
-system — include everything it needs; set response_schema for structured replies.
+- llm: one scoped, stateless LLM subcall (runs on this routine's tool-call model). It sees ONLY \
+your prompt/system — include everything it needs; set response_schema for structured replies.
 - spawn: start a SUB-WORKFLOW that runs IN PARALLEL with you — pick its "workflow" from the \
 library (default general-task) and give it a fully self-contained "prompt" as its instruction; \
 it sees nothing else and returns only its finish summary. You keep working while it runs; you \

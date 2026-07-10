@@ -293,16 +293,24 @@ def test_merge_consecutive_same_role():
     assert merged[0]["content"] == "a\n\nb"
 
 
-def test_registry_role_resolution():
-    from rsched.config import RoleRef, ServerConfig
+def test_registry_model_resolution():
+    from rsched.config import ModelRef, ServerConfig
     server = ServerConfig()
     server.endpoints = {"e1": EndpointConfig(name="e1", kind="openai", base_url="http://x")}
-    server.default_roles = {"orchestrator": RoleRef("e1", "m1"), "subcall": RoleRef("e1", "m2")}
+    server.system_model = ModelRef("e1", "sys")
     reg = EndpointRegistry(server)
-    ep, ref = reg.for_role("cheap", {})           # falls back to subcall
-    assert ref.model == "m2"
-    ep, ref = reg.for_role("subcall", {"subcall": RoleRef("e1", "override")})
+    # a kind the routine didn't set falls back to system_model
+    ep, ref = reg.for_model("main", {})
+    assert ref.model == "sys"
+    # a routine's own model wins
+    ep, ref = reg.for_model("main", {"main": ModelRef("e1", "override")})
     assert ref.model == "override"
+    # for_system returns the system_model
+    _, sref = reg.for_system()
+    assert sref.model == "sys"
+    # no system_model and no routine model → error
+    with pytest.raises(EndpointError):
+        EndpointRegistry(ServerConfig()).for_model("main", {})
     with pytest.raises(EndpointError):
         EndpointRegistry(ServerConfig()).get("nope")
 

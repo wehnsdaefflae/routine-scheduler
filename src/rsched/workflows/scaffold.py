@@ -28,6 +28,7 @@ exit 0
 
 def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
              workflow_slug: str, cron: str = "", tz: str = "Europe/Berlin",
+             description: str = "", models: dict[str, dict] | None = None,
              params: dict | None = None, budgets: dict | None = None,
              fragments: list[str] | None = None, shell_allowlist: list[str] | None = None,
              fs_read_roots: list[str] | None = None,
@@ -35,7 +36,9 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
              steps: dict[str, str] | None = None, enabled: bool = True,
              tags: list[str] | None = None) -> Path:
     """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
-    the routine gets editable fragment copies + steps/ modules + instruction."""
+    the routine gets editable fragment copies + steps/ modules + instruction. A one-line
+    `description` (for the UI) is always written, falling back to the name; `models` sets the
+    routine's own main/subroutine/tool_call models (else they fall back to the server system_model)."""
     from .. import fragments_lib
     from . import library
 
@@ -92,10 +95,12 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     cfg = {
         "name": name,
         "slug": slug,
+        "description": (description or "").strip() or name,
         "enabled": enabled,
         **({"tags": list(tags)} if tags else {}),
         "schedule": {"cron": cron, "tz": tz, "catchup": "skip"},
         "workflow": {"library_slug": workflow_slug, "library_commit": commit},
+        **({"models": models} if models else {}),
         "fragments": active,
         "budgets": {**DEFAULT_BUDGETS, **(budgets or {})},
         "notifications": "ui",

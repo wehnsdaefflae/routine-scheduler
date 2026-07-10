@@ -47,7 +47,7 @@ def _rewrite_endpoints(request: Request, mutate) -> dict:
     # live-reload the shared ServerConfig (daemon side; engine subprocesses read it fresh)
     fresh, problems = load_server_config(path)
     request.app.state.server.endpoints = fresh.endpoints
-    request.app.state.server.default_roles = fresh.default_roles
+    request.app.state.server.system_model = fresh.system_model
     return {"ok": True, "problems": problems}
 
 
@@ -61,9 +61,9 @@ def _endpoint_view(name: str, ep: EndpointConfig) -> dict:
 @router.get("/settings/endpoints")
 def list_endpoints(request: Request) -> dict:
     server = _server(request)
+    sm = server.system_model
     return {"endpoints": [_endpoint_view(n, e) for n, e in server.endpoints.items()],
-            "default_roles": {r: {"endpoint": ref.endpoint, "model": ref.model}
-                              for r, ref in server.default_roles.items()}}
+            "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None}
 
 
 # --- library repositories (workflows / fragments / global utils) ---------------------
@@ -426,35 +426,31 @@ def delete_endpoint(request: Request, name: str) -> dict:
     return _rewrite_endpoints(request, mutate)
 
 
-class RoleBody(BaseModel):
-    role: str
+class SystemModelBody(BaseModel):
     endpoint: str
     model: str
     effort: str | None = None
 
 
-@router.put("/settings/roles")
-def set_role(request: Request, body: RoleBody) -> dict:
-    """Assign an endpoint+model to a default model role (orchestrator/subcall/cheap). Assigning the
-    orchestrator is what makes the instance 'llm_ready' — until then LLM features stay disabled."""
-    if body.role not in ("orchestrator", "subcall", "cheap"):
-        raise HTTPException(400, "role must be one of orchestrator|subcall|cheap")
+@router.put("/settings/system-model")
+def set_system_model(request: Request, body: SystemModelBody) -> dict:
+    """Set the ONE fallback model for machine work that isn't a routine yet — workflow
+    generation/suggestion and the new-routine clarify wizard. Setting it is what makes the
+    instance 'llm_ready'; routines otherwise pick their own models."""
     s = _server(request)
     if body.endpoint not in s.endpoints:
         raise HTTPException(400, f"unknown endpoint {body.endpoint!r} — add it first")
     path = _config_path(request)
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    roles = raw.get("default_roles") or {}
     spec = {"endpoint": body.endpoint, "model": body.model}
     if body.effort:
         spec["effort"] = body.effort
-    roles[body.role] = spec
-    raw["default_roles"] = roles
+    raw["system_model"] = spec
     path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
     fresh, _ = load_server_config(path)
-    s.default_roles = fresh.default_roles
-    return {"ok": True, "default_roles": {r: {"endpoint": v.endpoint, "model": v.model}
-                                          for r, v in s.default_roles.items()}}
+    s.system_model = fresh.system_model
+    sm = s.system_model
+    return {"ok": True, "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None}
 
 
 class TestBody(BaseModel):

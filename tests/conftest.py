@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from rsched.config import RoleRef, ServerConfig
+from rsched.config import ModelRef, ServerConfig
 from rsched.endpoints import EndpointRegistry
 from rsched.endpoints.base import Completion
 
@@ -77,8 +77,7 @@ class ScriptedEndpoint:
 class ScriptedRegistry(EndpointRegistry):
     def __init__(self, endpoint: ScriptedEndpoint):
         server = ServerConfig()
-        server.default_roles = {r: RoleRef("scripted", "test-model") for r in
-                                ("orchestrator", "subcall", "cheap")}
+        server.system_model = ModelRef("scripted", "test-model")
         super().__init__(server)
         self.endpoint = endpoint
 
@@ -96,6 +95,7 @@ def make_routine(tmp_path):
         (d / "inbox").mkdir()
         cfg = {
             "name": f"Test {slug}", "slug": slug, "enabled": True,
+            "description": "A test routine.",
             "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin", "catchup": "skip"},
             "workflow": {"library_slug": "test-flow", "library_commit": "abc123"},
             "budgets": {"max_turns": 10, "max_wall_clock_min": 5, "max_total_tokens": 100_000,

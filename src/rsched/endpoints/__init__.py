@@ -8,7 +8,7 @@ MCP/session) — a subscription-billed completion function, never an agent loop.
 
 from __future__ import annotations
 
-from ..config import EndpointConfig, RoleRef, ServerConfig
+from ..config import EndpointConfig, ModelRef, ServerConfig
 from .anthropic_api import AnthropicEndpoint
 from .base import ChatEndpoint, Completion, EndpointError
 from .claude_cli import ClaudeCliEndpoint
@@ -43,12 +43,18 @@ class EndpointRegistry:
             self._cache[name] = make_endpoint(cfg)
         return self._cache[name]
 
-    def for_role(self, role: str, overrides: dict[str, RoleRef]) -> tuple[ChatEndpoint, RoleRef]:
-        """Resolve a role (orchestrator/subcall/cheap) through routine overrides + server
-        defaults. Unknown roles fall back to subcall, then orchestrator."""
-        merged = dict(self.server.default_roles)
-        merged.update(overrides)
-        ref = merged.get(role) or merged.get("subcall") or merged.get("orchestrator")
+    def for_model(self, kind: str, models: dict[str, ModelRef]) -> tuple[ChatEndpoint, ModelRef]:
+        """Resolve one of a routine's models (main/subroutine/tool_call). A model the routine
+        didn't set falls back to the server's single system_model."""
+        ref = models.get(kind) or self.server.system_model
         if ref is None:
-            raise EndpointError(f"no endpoint configured for role {role!r} (and no fallback)")
+            raise EndpointError(f"no model configured for {kind!r} (and no system_model fallback)")
+        return self.get(ref.endpoint), ref
+
+    def for_system(self) -> tuple[ChatEndpoint, ModelRef]:
+        """The one model for pre-routine machine work (workflow generation/suggestion, the
+        clarify wizard)."""
+        ref = self.server.system_model
+        if ref is None:
+            raise EndpointError("no system_model configured")
         return self.get(ref.endpoint), ref

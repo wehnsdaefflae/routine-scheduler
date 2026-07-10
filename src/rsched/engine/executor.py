@@ -69,9 +69,8 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
 
 
 def do_llm(action: dict, ctx: RunContext) -> dict:
-    role = action.get("role") or "subcall"
     try:
-        endpoint, ref = ctx.registry.for_role(role, ctx.routine.roles)
+        endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models)
         messages = []
         if action.get("system"):
             messages.append({"role": "system", "content": action["system"]})
@@ -81,7 +80,7 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
             effort=ref.effort, max_tokens=16_384,
         )
     except EndpointError as exc:
-        return {"kind": "llm", "role": role, "error": str(exc)}
+        return {"kind": "llm", "error": str(exc)}
     ctx.add_usage(completion.usage)
     reply = completion.text
     if completion.parsed is not None:
@@ -89,7 +88,7 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
 
         reply = json.dumps(completion.parsed, ensure_ascii=False, indent=1)
     reply, truncated = truncate(reply)
-    return {"kind": "llm", "role": role, "endpoint": ref.endpoint, "model": ref.model,
+    return {"kind": "llm", "endpoint": ref.endpoint, "model": ref.model,
             "reply": reply, "usage": completion.usage, "truncated": truncated}
 
 
