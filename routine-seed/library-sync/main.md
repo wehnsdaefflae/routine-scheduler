@@ -4,7 +4,7 @@ slug: library-sync
 materialized_from:
   slug: library-sync
   commit: 4567d70
-  version: 1
+  version: 2
 modules:
 - record-and-report
 - sync-sweep
@@ -22,15 +22,13 @@ name: sync-scheduler-libraries
 phase_file: state/phase.json
 ---
 
-# Routine: Sync scheduler library repos
+# Routine: Sync scheduler library repo
 
-Keep the scheduler's three library repositories in sync with their remotes by
-running the `git-sync` util on each, then report per-repo outcomes.
+Keep the scheduler's merged library repository in sync with its remote by running
+the `git-sync` util on it, then report the outcome.
 
-The three library repo paths (in order):
-1. `~/.local/share/workflow-library`
-2. `~/.local/share/routine-fragments`
-3. `~/.local/share/global-utils`
+The library repo path:
+- `~/.local/share/routine-scheduler-libraries` (one repo holding workflows/, fragments/, utils/)
 
 ## Run flow
 
@@ -45,14 +43,14 @@ persisted phase.
 There is a single phase — **only** — every run is the same sweep. Its states run
 in this order:
 
-- `steps/sync-sweep.md` — run `git-sync` on each of the three repos and read each result.
-- `steps/record-and-report.md` — append the LEDGER line and finish with a per-repo summary.
+- `steps/sync-sweep.md` — run `git-sync` on the merged library repo and read the result.
+- `steps/record-and-report.md` — append the LEDGER line and finish with the outcome.
 
 Start at `sync-sweep` if `state/phase.json` has no current state.
 
 ## Completion criteria
 
-- Each of the three library repos has been sync'd via `git-sync` (or its conflict
-  reported without any resolution attempt).
-- The run finished `ok` with a one-line-per-repo summary listing, for each path,
-  one of: pulled / pushed / up-to-date / conflict.
+- The merged library repo has been sync'd via `git-sync` (or its conflict reported
+  without any resolution attempt).
+- The run finished `ok` with a one-line summary of the outcome: one of
+  pulled / pushed / up-to-date / conflict.

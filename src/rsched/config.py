@@ -83,6 +83,11 @@ class ServerConfig:
     fragments_remote: str = ""          # optional: clone-from / sync-to for the fragment library
     utils_home: Path = field(default_factory=lambda: expand("~/.local/share/global-utils"))
     utils_remote: str = ""              # optional: clone-from / sync-to for the util library
+    # ONE merged git repo holding workflows/, fragments/, utils/ (+ gu, README). When set it is the
+    # single source of truth: library_home & utils_home become its root, fragments_home its
+    # fragments/ subdir. The per-library homes/remotes above are the legacy (three-repo) fallback.
+    libraries_home: Path | None = None
+    libraries_remote: str = ""          # clone-from / sync-to for the merged library repo
     source_repo: Path = field(default_factory=lambda: Path(__file__).resolve().parents[2])
     source_remote: str = ""             # optional: push target for self-audit's autonomous code commits
     github_client_id: str = ""          # OAuth app client_id for the in-UI device flow (default: gh CLI's)
@@ -133,6 +138,15 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
     cfg.library_remote = str(raw.get("library_remote", "") or "")
     cfg.fragments_remote = str(raw.get("fragments_remote", "") or "")
     cfg.utils_remote = str(raw.get("utils_remote", "") or "")
+    # A single merged library repo overrides the three separate homes (workflows + utils at its
+    # root, fragments in its fragments/ subdir). This is the current, one-repo layout.
+    cfg.libraries_remote = str(raw.get("libraries_remote", "") or "")
+    if raw.get("libraries_home"):
+        root = expand(raw["libraries_home"])
+        cfg.libraries_home = root
+        cfg.library_home = root
+        cfg.utils_home = root
+        cfg.fragments_home = root / "fragments"
     cfg.source_remote = str(raw.get("source_remote", "") or "")
     cfg.github_client_id = str(raw.get("github_client_id", "") or "")
     cfg.confirm_util_changes = bool(raw.get("confirm_util_changes", cfg.confirm_util_changes))

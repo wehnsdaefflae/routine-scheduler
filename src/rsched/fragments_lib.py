@@ -22,7 +22,10 @@ def fragment_body(raw: str) -> str:
 
 
 def ensure_library(home: Path, *, remote: str = "") -> None:
-    if home.exists() and (home / ".git").exists():
+    # In the merged-library layout, fragments live in <libraries_home>/fragments — a subdir of an
+    # already-managed git repo. Don't init/clone it; just make sure the directory exists.
+    if (home / ".git").exists() or (home.parent / ".git").exists():
+        home.mkdir(parents=True, exist_ok=True)
         return
     home.parent.mkdir(parents=True, exist_ok=True)
     if remote and not home.exists():
