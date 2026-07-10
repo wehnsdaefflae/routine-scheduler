@@ -55,13 +55,30 @@ def render_markdown(source: str, meta: dict) -> str:
     phase_lines = ("\n".join(f"- {p}" for p in phases) if phases
                    else "- steady — no cross-run milestones")
     completion = str(meta.get("completion") or "").strip() or "(see the pattern's finish conditions)"
+    # Lead with the steps as prose (each step function's docstring first line), so a weak model can
+    # follow them without parsing the raw source dump below — which was what tripped up direct runs.
+    step_lines = []
+    try:
+        tree = ast.parse(source)
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name != "run":
+                first = (ast.get_docstring(node) or "").strip().split("\n")[0].strip()
+                if first:
+                    step_lines.append(f"- **{node.name}** — {first}")
+    except SyntaxError:
+        pass
+    steps_md = ("\nThe steps (act each out as engine actions, in the order + control flow of `run()`):\n"
+                + "\n".join(step_lines) + "\n") if step_lines else ""
     fence = "```"
     return (
         "## Run flow\n"
         "Follow the control-flow PATTERN below. It is written as Python for precision — you do NOT\n"
-        "execute it; you act it out, one engine action per turn, following its branches, loops and\n"
-        "error handling. The dummy imports name this routine's parameters; each function's docstring\n"
-        "is that step's detail.\n\n"
+        "execute it; you ACT IT OUT one engine action per turn, following its branches, loops and\n"
+        "error handling. A function call like `write_file(path, content)` means emit a `write_file`\n"
+        "ACTION with those fields (per the ACTION SCHEMA) — never put a call's arguments at the top\n"
+        "level of the action. The dummy imports name this routine's parameters; each function's\n"
+        "docstring is that step's detail.\n"
+        f"{steps_md}\n"
         f"{fence}python\n{source.strip()}\n{fence}\n\n"
         "## Phases\n"
         "Track the current phase in `state/phase.json` as `{\"phase\": \"...\", \"note\": \"...\"}`.\n"
