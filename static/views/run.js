@@ -5,7 +5,7 @@
 import { api, sse } from "/static/api.js";
 import { setQuery } from "/static/router.js";
 import { createTranscript } from "/static/components/transcript.js";
-import { chip, el, fmtTokens, fmtTs, toast } from "/static/util.js";
+import { busy, chip, el, fmtTokens, fmtTs, toast } from "/static/util.js";
 
 const TERMINAL = new Set(["finished", "failed", "aborted"]);
 
@@ -33,11 +33,21 @@ export async function render(view, runId, query = {}) {
   const body = el("div", { class: "mt" });
   view.append(body);
 
+  // "waiting for the model" spinner — lives at the BOTTOM of the conversation while the run works.
+  const waitingBox = el("div", { class: "mt" });
+  view.append(waitingBox);
+
   const injectRow = el("div", { class: "row mt" });
   const injectInput = el("input", { type: "text", placeholder: "inject a message into the run…", style: "flex:1" });
   const injectBtn = el("button", { class: "btn" }, "send");
   injectRow.append(injectInput, injectBtn);
   view.append(injectRow);
+
+  // Auto-scroll ("follow"): on by default; the user can toggle it, and scrolling up pauses it.
+  const followChk = el("input", { type: "checkbox", checked: true });
+  followChk.onchange = () => { autoscroll = followChk.checked; if (autoscroll) scrollDown(); };
+  view.append(el("label", { class: "row mt", style: "gap:6px;font-size:12px;color:var(--muted)" },
+    followChk, el("span", {}, "auto-scroll to the newest message")));
 
   let paused = false;
   const pauseBtn = el("button", { class: "btn small" }, "⏸ pause");
@@ -87,6 +97,10 @@ export async function render(view, runId, query = {}) {
   let transcript = createTranscript(body);
   let autoscroll = true;
   const scrollDown = () => { if (autoscroll) window.scrollTo(0, document.body.scrollHeight); };
+  const setWaiting = (active) => {   // shown only for the main run (a sub-run is polled, not live)
+    waitingBox.innerHTML = "";
+    if (active && viewingSub == null) waitingBox.append(busy("waiting for the model…"));
+  };
 
   function resetBody() { body.innerHTML = ""; transcript = createTranscript(body); }
   function stopSubPoll() { if (subPoll) { clearInterval(subPoll); subPoll = null; } }
@@ -118,6 +132,7 @@ export async function render(view, runId, query = {}) {
     stopSubPoll();
     resetBody();
     renderSubBar();
+    setWaiting(["running", "starting", "queued"].includes(curState));   // main only; cleared for a sub
     if (n == null) reopenMainSSE(0);         // replay the main transcript into the fresh renderer
     else mountSubPolling(n, 0);
   }
@@ -168,6 +183,8 @@ export async function render(view, runId, query = {}) {
     injectBtn.textContent = terminal ? "queue for next run" : "send";
     if (state === "paused") { paused = true; pauseBtn.textContent = "▶ resume"; }
     else if (paused && state !== "paused") { paused = false; pauseBtn.textContent = "⏸ pause"; }
+    setWaiting(["running", "starting", "queued"].includes(state));   // the model is working
+    scrollDown();
   }
 
   function showQuestion(q) {
@@ -227,8 +244,10 @@ export async function render(view, runId, query = {}) {
     mountSubPolling(viewingSub, initialOffset);
   }
 
+  // Manual scroll pauses following; scrolling back to the bottom resumes it (the checkbox mirrors it).
   const onScroll = () => {
-    autoscroll = window.innerHeight + window.scrollY >= document.body.scrollHeight - 60;
+    const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 60;
+    if (atBottom !== followChk.checked) { followChk.checked = atBottom; autoscroll = atBottom; }
   };
   window.addEventListener("scroll", onScroll);
 

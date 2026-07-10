@@ -31,17 +31,14 @@ export function createTranscript(container) {
     return turn;
   }
 
-  // util + subrun results can be long — collapse them by default (expandable).
-  const COLLAPSED_KINDS = new Set(["util", "subinstruction", "wait"]);
-
+  // Tool/observation return values are collapsed by default (expandable). The summary carries the
+  // first line, so short one-line results stay fully readable without expanding.
   function obsBody(kind, text) {
-    if (COLLAPSED_KINDS.has(kind)) {
-      const firstLine = (text.split("\n")[0] || "").slice(0, 90);
-      return el("details", { class: "obs-collapse" },
-        el("summary", {}, `result — ${firstLine}${text.length > firstLine.length ? " …" : ""}`),
-        el("div", { class: "obs" }, text));
-    }
-    return el("div", { class: "obs" }, text);
+    const firstLine = (text.split("\n")[0] || "").slice(0, 120);
+    const more = text.length > firstLine.length;
+    return el("details", { class: "obs-collapse" },
+      el("summary", {}, `result — ${firstLine}${more ? " …" : ""}`),
+      el("div", { class: "obs" }, text));
   }
 
   function addObservation(ev) {
