@@ -37,10 +37,12 @@ async def run_stream(run_dir: Path, start_offset: int = 0):
     last_state = None
     terminal_grace = 3  # extra polls after terminal state to drain the file tail
     while True:
-        events, offset = read_events(transcript, offset)
+        # disk reads happen off the loop — an SSE generator runs ON it, and a slow
+        # (networked) filesystem would otherwise stall every other request per poll
+        events, offset = await asyncio.to_thread(read_events, transcript, offset)
         for ev in events:
             yield format_sse(ev, "transcript")
-        st = read_json(run_dir / "status.json")
+        st = await asyncio.to_thread(read_json, run_dir / "status.json")
         state = st.get("state") if isinstance(st, dict) else None
         if state and state != last_state:
             last_state = state

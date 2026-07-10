@@ -358,23 +358,33 @@ def test_github_device_flow_resume(client):
     unknown/expired flows 404 and are evicted. The device_code is never echoed back."""
     import time
 
-    from rsched.web import api_settings
+    from rsched.web.settings import github
 
     c, _ = client
     assert c.get("/api/settings/github/device-flow/nope").status_code == 404
-    api_settings._device_flows["fl-resume"] = {
+    github._device_flows["fl-resume"] = {
         "device_code": "dc", "client_id": "cid", "user_code": "WXYZ-1234",
         "verification_uri": "https://github.com/login/device", "interval": 5,
         "expires_at": time.time() + 300}
     try:
         j = c.get("/api/settings/github/device-flow/fl-resume").json()
         assert j["user_code"] == "WXYZ-1234" and j["expires_in"] > 0 and "device_code" not in j
-        api_settings._device_flows["fl-exp"] = {"user_code": "X", "verification_uri": "u",
-                                                "expires_at": time.time() - 1}
+        github._device_flows["fl-exp"] = {"user_code": "X", "verification_uri": "u",
+                                          "expires_at": time.time() - 1}
         assert c.get("/api/settings/github/device-flow/fl-exp").status_code == 404
-        assert "fl-exp" not in api_settings._device_flows          # expired → evicted
+        assert "fl-exp" not in github._device_flows          # expired → evicted
     finally:
-        api_settings._device_flows.pop("fl-resume", None)
+        github._device_flows.pop("fl-resume", None)
+
+
+def test_status_meta_routines(client):
+    """/api/status lists meta-tagged routines with their enabled state — the UI's
+    'self-improvement is off' first-launch notice keys off this."""
+    c, _ = client
+    assert c.get("/api/status").json()["meta_routines"] == []     # nothing meta-tagged yet
+    assert c.patch("/api/routines/apir",
+                   json={"enabled": False, "tags": ["meta", "demo"]}).status_code == 200
+    assert c.get("/api/status").json()["meta_routines"] == [{"slug": "apir", "enabled": False}]
 
 
 def test_first_run_setup_flag(client):
@@ -447,7 +457,7 @@ def test_build_routine_threads_params_and_fragments(client, monkeypatch):
     threads them into scaffold; on failure it records the error and stays retryable."""
     import asyncio
 
-    from rsched.web import api_wizard
+    from rsched.web import api_wizard, wizard_store
 
     c, tmp = client
     wid, d = _mk_wizard(tmp / "routines", "20260710-130000",
@@ -463,7 +473,7 @@ def test_build_routine_threads_params_and_fragments(client, monkeypatch):
 
     body = api_wizard.FinalizeBody(slug="newr", name="New R", workflow_slug="general-task",
                                    friendly={"frequency": "manual"}, tags=["a", "b", "c"], run_now=False)
-    asyncio.run(api_wizard._build_routine(c.app.state, wid, d, body, api_wizard._read_wizard_result(d)))
+    asyncio.run(api_wizard._build_routine(c.app.state, wid, d, body, wizard_store.read_result(d)))
     assert captured["fragments"] == ["global-utils", "ledger-discipline"]
     assert captured["params"] == {"DELIVERABLE": "a weekly report"}
     fin = read_json(d / "state" / "finalize.json")           # failure recorded, session retryable
@@ -473,7 +483,7 @@ def test_build_routine_threads_params_and_fragments(client, monkeypatch):
 def test_wizard_suggest_leads_with_clarifier_choice(client, monkeypatch):
     """The clarifier suggested a pattern; /suggest returns it at the head of the pick list (so the
     wizard pre-selects it) and passes through the resolved params."""
-    from rsched.web import api_wizard
+    from rsched.web import api_wizard, wizard_store
 
     c, tmp = client
     wid, _ = _mk_wizard(tmp / "routines", "20260710-140000",
@@ -481,7 +491,7 @@ def test_wizard_suggest_leads_with_clarifier_choice(client, monkeypatch):
                                 "workflow_choice": {"slug": "general-task"},
                                 "params": {"DELIVERABLE": "a report"}})
     monkeypatch.setattr(api_wizard, "suggest_tags", lambda *a, **k: ["a", "b", "c"])
-    monkeypatch.setattr(api_wizard, "_candidate_patterns", lambda server: [
+    monkeypatch.setattr(wizard_store, "candidate_patterns", lambda server: [
         {"slug": "other-flow", "description": "another"},
         {"slug": "general-task", "description": "the default"}])
     r = c.post(f"/api/wizard/{wid}/suggest").json()
@@ -495,13 +505,13 @@ def test_wizard_candidates_inline_pattern_source(tmp_path):
     from pathlib import Path
 
     from rsched.config import ServerConfig
-    from rsched.web import api_wizard
+    from rsched.web import wizard_store
 
     server = ServerConfig()
     server.libraries_home = Path(__file__).resolve().parents[1] / "library-seed"
     d = tmp_path / "wiz"
     (d / "state").mkdir(parents=True)
-    api_wizard._write_candidates(server, d)
+    wizard_store.write_candidates(server, d)
     text = (d / "state" / "candidates.md").read_text()
     assert "general-task" in text and "```python" in text and "def main():" in text
     assert "clarify-instruction" not in text          # meta patterns are excluded from candidates

@@ -16,7 +16,6 @@ from ..config import MODEL_KINDS
 from ..daemon import registry
 from ..ids import now_iso, run_ts
 from ..paths import resolve_rel
-from .sse import TERMINAL_STATES  # noqa: F401  (re-exported for api_runs)
 
 router = APIRouter(tags=["routines"])
 

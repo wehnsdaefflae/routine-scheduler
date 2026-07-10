@@ -68,15 +68,15 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.state.runner = runner
     app.state.scheduler = scheduler
 
-    from . import (api_audit, api_questions, api_routines, api_runs, api_settings,
-                   api_wizard, api_workflows)
+    from . import (api_audit, api_questions, api_routines, api_runs, api_wizard,
+                   api_workflows, settings)
 
     deps = [Depends(require_auth)]
     app.include_router(api_routines.router, prefix="/api", dependencies=deps)
     app.include_router(api_runs.router, prefix="/api", dependencies=deps)
     app.include_router(api_questions.router, prefix="/api", dependencies=deps)
     app.include_router(api_audit.router, prefix="/api", dependencies=deps)
-    app.include_router(api_settings.router, prefix="/api", dependencies=deps)
+    app.include_router(settings.router, prefix="/api", dependencies=deps)
     app.include_router(api_workflows.router, prefix="/api", dependencies=deps)
     app.include_router(api_wizard.router, prefix="/api", dependencies=deps)
 
@@ -86,6 +86,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     @app.get("/api/status", dependencies=deps)
     def status() -> dict:
         from .. import __version__
+        from ..daemon import registry
         from ..schedule import server_tz
 
         marker = _setup_marker()
@@ -95,8 +96,13 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         # routine works — the UI disables those. (Routines pick their own models to run.)
         sm = server.system_model
         llm_ready = bool(sm and sm.endpoint in server.endpoints)
+        # the seeded meta routines install disabled and carry the "meta" tag — the UI uses this
+        # to notice that self-improvement is off on a fresh instance
+        meta_routines = [{"slug": info.slug, "enabled": info.cfg.enabled}
+                         for info in registry.scan(server).values() if "meta" in info.cfg.tags]
         return {"version": __version__, "server_tz": server_tz(),
-                "needs_setup": needs_setup, "llm_ready": llm_ready, **scheduler.snapshot()}
+                "needs_setup": needs_setup, "llm_ready": llm_ready,
+                "meta_routines": meta_routines, **scheduler.snapshot()}
 
     @app.post("/api/setup/complete", dependencies=deps)
     def setup_complete() -> dict:

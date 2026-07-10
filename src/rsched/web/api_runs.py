@@ -25,7 +25,7 @@ def _run_dir(request: Request, run_id: str) -> tuple[str, Path]:
         raise HTTPException(400, str(exc)) from exc
     run_dir = request.app.state.server.routines_home / slug / "runs" / ts
     if not run_dir.is_dir():
-        raise HTTPException(404, f"no run {run_id}")
+        raise HTTPException(404, f"no run {run_id!r}")
     return slug, run_dir
 
 
