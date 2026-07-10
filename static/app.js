@@ -103,16 +103,12 @@ const STAGE_LABEL = { chat: "clarifying", suggest: "choosing a workflow", error:
 
 async function refreshSetupBanner() {
   const banner = document.getElementById("setup-banner");
-  const newBtn = document.getElementById("nav-new-routine");
   let sessions = [];
   try { sessions = await api("/api/wizard"); } catch { return; }   // stay quiet on transient errors
   const active = Array.isArray(sessions) ? sessions : [];
   const cur = active[0];   // newest first
-  if (newBtn) {
-    newBtn.classList.toggle("resuming", !!cur);
-    newBtn.textContent = cur ? "↩ Resume setup" : "+ New routine";
-    newBtn.setAttribute("href", cur ? `#/wizard/${cur.wid}` : "#/wizard");
-  }
+  // "+ New routine" always starts fresh (→ the draft page, which itself lists sessions to resume);
+  // the banner below is the sole resume affordance, so the primary action is never hijacked.
   if (!cur) { banner.hidden = true; banner.innerHTML = ""; return; }
   const more = active.length > 1 ? ` (+${active.length - 1} more)` : "";
   banner.innerHTML = "";
