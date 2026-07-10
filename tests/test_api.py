@@ -386,36 +386,21 @@ def test_first_run_setup_flag(client):
     assert c.get("/api/status").json()["needs_setup"] is False
 
 
-def test_finalize_offloads_blocking_scaffold(client, monkeypatch):
-    """finalize() runs scaffold() — which makes a blocking decompose LLM call (up to 180s) — and
-    MUST run it off the event loop, or a single 'create routine' freezes the whole web server."""
-    import asyncio
-
-    from rsched.web import api_wizard
-
+def test_finalize_launches_background_build(client):
+    """finalize() returns immediately (the slow decompose build runs in the background) and rejects
+    an obvious conflict up front — a routine already using that slug."""
     c, tmp = client
     wid = ".wizard-20260101-000000"
     d = tmp / "routines" / wid
     (d / "state").mkdir(parents=True)
     atomic_write_json(d / "state" / "wizard_result.json",
-                      {"refined_instruction": "do the thing", "suggested_slug": "x", "suggested_name": "X"})
-
-    probe = {}
-
-    def fake_scaffold(*a, **k):
-        try:
-            asyncio.get_running_loop()
-            probe["offloaded"] = False       # executing ON the event loop → the freeze bug
-        except RuntimeError:
-            probe["offloaded"] = True        # executing in a worker thread → correct
-        raise ValueError("probe stop")       # short-circuit the rest of finalize
-    monkeypatch.setattr(api_wizard, "scaffold", fake_scaffold)
-
-    r = c.post(f"/api/wizard/{wid}/finalize", json={
-        "slug": "newr", "name": "New R", "workflow_slug": "general-task",
-        "friendly": {"frequency": "manual"}, "tags": ["a", "b", "c"], "run_now": False})
-    assert r.status_code == 422              # reached the (patched) scaffold
-    assert probe.get("offloaded") is True    # ...and it ran off the event loop
+                      {"refined_instruction": "do the thing", "suggested_slug": "x"})
+    body = {"slug": "newr", "name": "New R", "workflow_slug": "general-task",
+            "friendly": {"frequency": "manual"}, "tags": ["a", "b", "c"], "run_now": False}
+    r = c.post(f"/api/wizard/{wid}/finalize", json=body)
+    assert r.status_code == 200 and r.json()["building"] is True and r.json()["slug"] == "newr"
+    (tmp / "routines" / "taken").mkdir()                       # up-front slug conflict → 409
+    assert c.post(f"/api/wizard/{wid}/finalize", json={**body, "slug": "taken"}).status_code == 409
 
 
 def test_wizard_list_detail_and_stage(client):
@@ -457,30 +442,32 @@ def test_wizard_cancel_archives_session(client):
     assert c.delete(f"/api/wizard/{wid}").status_code == 404
 
 
-def test_finalize_recovers_fragments_and_params(client, monkeypatch):
-    """Finalize with no fragments/params in the body recovers the standards from the session meta
-    and the clarifier's resolved parameters from wizard_result — so decompose tailors to them."""
+def test_build_routine_threads_params_and_fragments(client, monkeypatch):
+    """The background build recovers the session's fragments + the clarifier's resolved params and
+    threads them into scaffold; on failure it records the error and stays retryable."""
+    import asyncio
+
     from rsched.web import api_wizard
 
     c, tmp = client
-    wid, _ = _mk_wizard(tmp / "routines", "20260710-130000",
+    wid, d = _mk_wizard(tmp / "routines", "20260710-130000",
                         result={"refined_instruction": "do the thing", "suggested_slug": "x",
                                 "params": {"DELIVERABLE": "a weekly report"}},
                         fragments=("global-utils", "ledger-discipline"))
     captured = {}
 
     def fake_scaffold(*a, **k):
-        captured["fragments"] = k.get("fragments")
-        captured["params"] = k.get("params")
+        captured.update(k)
         raise ValueError("probe stop")
     monkeypatch.setattr(api_wizard, "scaffold", fake_scaffold)
 
-    r = c.post(f"/api/wizard/{wid}/finalize", json={
-        "slug": "newr", "name": "New R", "workflow_slug": "general-task",
-        "friendly": {"frequency": "manual"}, "tags": ["a", "b", "c"], "run_now": False})
-    assert r.status_code == 422
+    body = api_wizard.FinalizeBody(slug="newr", name="New R", workflow_slug="general-task",
+                                   friendly={"frequency": "manual"}, tags=["a", "b", "c"], run_now=False)
+    asyncio.run(api_wizard._build_routine(c.app.state, wid, d, body, api_wizard._read_wizard_result(d)))
     assert captured["fragments"] == ["global-utils", "ledger-discipline"]
     assert captured["params"] == {"DELIVERABLE": "a weekly report"}
+    fin = read_json(d / "state" / "finalize.json")           # failure recorded, session retryable
+    assert fin["state"] == "error" and "probe stop" in fin["error"]
 
 
 def test_wizard_suggest_leads_with_clarifier_choice(client, monkeypatch):

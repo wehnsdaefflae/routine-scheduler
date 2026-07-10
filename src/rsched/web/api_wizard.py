@@ -71,11 +71,20 @@ def _snapshot(request: Request, d: Path) -> dict:
     """Reconstruct a wizard session's live state from disk — works in a fresh process that never
     saw it (after a reload / daemon restart). The stage is derived, not stored, so it is always
     consistent with what is actually on disk:
-      chat    → clarify run is live and has not produced a result yet
-      suggest → state/wizard_result.json holds a refined instruction (ready to pick + create)
-      error   → the clarify run reached a terminal state without ever producing a result
+      chat     → clarify run is live and has not produced a result yet
+      suggest  → state/wizard_result.json holds a refined instruction (ready to pick + create)
+      building → the routine is being scaffolded in the background (finalize.json state)
+      done     → the routine was created (finalize.json state; excluded from the in-flight list)
+      error    → the clarify run, or the build, failed
     """
     meta = _wizard_meta(d)
+    fin = read_json(d / "state" / "finalize.json")
+    if isinstance(fin, dict) and fin.get("state"):        # finalize started → its state wins
+        return {"wid": d.name, "run_ts": meta.get("run_ts", ""), "created": meta.get("created", ""),
+                "fragments": meta.get("fragments", []), "draft": _draft_preview(d),
+                "stage": fin["state"], "state": fin["state"], "has_result": True,
+                "slug": fin.get("slug"), "run_id": fin.get("run_id"), "error": fin.get("error"),
+                "question": None, "alive": None}
     result = _read_wizard_result(d)
     has_result = isinstance(result, dict) and bool(result.get("refined_instruction"))
     ts = (_wizards(request).get(d.name) or {}).get("run_ts") or meta.get("run_ts") or _latest_run_ts(d)
@@ -101,9 +110,11 @@ def wizard_list(request: Request) -> list[dict]:
             if not d.is_dir():
                 continue
             try:
-                out.append(_snapshot(request, d))
+                snap = _snapshot(request, d)
             except Exception:  # a half-written dir must never break the list
                 continue
+            if snap.get("stage") != "done":       # completed builds aren't in-flight
+                out.append(snap)
     return out
 
 
@@ -288,6 +299,10 @@ class FinalizeBody(BaseModel):
 
 @router.post("/wizard/{wid}/finalize")
 async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
+    """Kick off the routine build in the BACKGROUND and return immediately — building calls
+    decompose(), a blocking LLM step that can take a minute or two. Progress is tracked in
+    state/finalize.json (building | done | error) so the client (or a reloaded one) can poll
+    /wizard/{wid}; a bus event announces completion. Fast, obvious errors are still returned here."""
     from .. import schedule
 
     d = _wizard_dir(request, wid)
@@ -295,48 +310,66 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
     result = _read_wizard_result(d)
     if not isinstance(result, dict) or not result.get("refined_instruction"):
         raise HTTPException(409, "no refined instruction to finalize")
+    if (server.routines_home / body.slug).exists():
+        raise HTTPException(409, f"a routine {body.slug!r} already exists — pick another slug")
+    try:
+        schedule.friendly_to_cron(body.friendly or {"frequency": "manual"})
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(422, f"bad schedule: {exc}") from exc
+    atomic_write_json(d / "state" / "finalize.json", {"state": "building", "slug": body.slug})
+    _wizards(request).pop(wid, None)     # the clarify process is done; drop the in-memory handle
+    asyncio.create_task(_build_routine(request.app.state, wid, d, body, result))
+    return {"building": True, "slug": body.slug, "wid": wid}
+
+
+async def _build_routine(app_state, wid: str, d: Path, body: "FinalizeBody", result: dict) -> None:
+    """Background: scaffold the routine (the slow decompose call), fire the first run if asked, and
+    record the outcome to state/finalize.json + a bus event. Errors leave the session recoverable."""
+    from .. import schedule
+    from ..config import load_routine
+
+    server, scheduler, runner, bus = (app_state.server, app_state.scheduler,
+                                      app_state.runner, app_state.bus)
+    status_path = d / "state" / "finalize.json"
     try:
         cron = schedule.friendly_to_cron(body.friendly or {"frequency": "manual"})
         steps = result.get("steps") if isinstance(result.get("steps"), dict) else None
-        # Always end up with a description: the wizard's chosen text, else the clarifier's
-        # one-liner, else the name (scaffold's own final fallback).
         description = body.description.strip() or str(result.get("description") or "").strip()
-        # Standards: prefer what the client sent, else recover them from the session meta on disk
-        # (so a resumed-after-restart finalize still applies the fragments chosen on the draft page).
         fragments = body.fragments if body.fragments is not None else (_wizard_meta(d).get("fragments") or None)
-        # Parameters the clarifier fixed with the user (the pattern's parameter contract) — pass them
-        # to decompose so it tailors the routine's steps to the resolved values.
         params = body.params or (result.get("params") if isinstance(result.get("params"), dict) else {})
-        # scaffold() calls decompose(), which makes a BLOCKING LLM call (up to 180s). Run it off
-        # the event loop or it freezes the whole web server until the model responds.
         routine_dir = await asyncio.to_thread(
             scaffold, server, slug=body.slug, name=body.name,
-            instruction=result["refined_instruction"],
-            workflow_slug=body.workflow_slug, cron=cron,
-            tz=schedule.server_tz(), params=params, steps=steps,
-            description=description, models=body.models,
-            tags=normalize_tags(body.tags) or None, fragments=fragments)
-    except (ValueError, KeyError, FileNotFoundError) as exc:
-        raise HTTPException(422, str(exc)) from exc
-    # keep the wizard conversation as provenance inside the new routine
+            instruction=result["refined_instruction"], workflow_slug=body.workflow_slug, cron=cron,
+            tz=schedule.server_tz(), params=params, steps=steps, description=description,
+            models=body.models, tags=normalize_tags(body.tags) or None, fragments=fragments)
+    except Exception as exc:   # scaffold/decompose failure — the session stays so the user can retry
+        partial = server.routines_home / body.slug   # clean up a half-built dir so the retry isn't blocked
+        if partial.is_dir() and not (partial / "routine.yaml").exists():
+            shutil.rmtree(partial, ignore_errors=True)
+        atomic_write_json(status_path, {"state": "error", "slug": body.slug, "error": str(exc)[:300]})
+        bus.publish({"event": "routine_failed", "wid": wid, "slug": body.slug, "error": str(exc)[:300]})
+        return
+    # keep the clarify conversation as provenance inside the new routine
     provenance = routine_dir / "state" / "wizard"
     provenance.mkdir(parents=True, exist_ok=True)
-    ts = (_wizards(request).pop(wid, None) or {}).get("run_ts") or _latest_run_ts(d)
+    ts = _latest_run_ts(d)
     if ts and (d / "runs" / ts / "transcript.jsonl").exists():
-        (provenance / "clarify-transcript.jsonl").write_bytes(
-            (d / "runs" / ts / "transcript.jsonl").read_bytes())
-    archive = server.routines_home / ".archive"
-    archive.mkdir(exist_ok=True)
-    shutil.move(str(d), str(archive / wid.lstrip(".")))
-    request.app.state.scheduler.rescan()
+        (provenance / "clarify-transcript.jsonl").write_bytes((d / "runs" / ts / "transcript.jsonl").read_bytes())
+    scheduler.rescan()
     run_id = None
     if body.run_now:
-        from ..config import load_routine
-
         cfg, _ = load_routine(routine_dir)
         if cfg:
-            run_id = await request.app.state.runner.fire(cfg, reason="wizard")
-    return {"ok": True, "slug": body.slug, "run_id": run_id}
+            run_id = await runner.fire(cfg, reason="wizard")
+    atomic_write_json(status_path, {"state": "done", "slug": body.slug, "run_id": run_id})
+    bus.publish({"event": "routine_created", "wid": wid, "slug": body.slug, "run_id": run_id})
+    # archive the finished session (also excluded from the in-flight list via its 'done' state)
+    archive = server.routines_home / ".archive"
+    archive.mkdir(exist_ok=True)
+    dest = archive / wid.lstrip(".")
+    if dest.exists():
+        dest = archive / f"{wid.lstrip('.')}-{make_run_ts()}"
+    shutil.move(str(d), str(dest))
 
 
 def _latest_run_ts(d: Path) -> str | None:

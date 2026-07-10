@@ -99,7 +99,8 @@ function renderCrumbs(path) {
 // ---- in-flight setup banner (replaces the old hard nav-lock) --------------------------------
 // While any new-routine wizard session is live, show a persistent, always-visible way back to it
 // on every view. Driven by /api/wizard so it is correct across reloads, tabs, and daemon restarts.
-const STAGE_LABEL = { chat: "clarifying", suggest: "choosing a workflow", error: "needs attention" };
+const STAGE_LABEL = { chat: "clarifying", suggest: "choosing a workflow",
+                      building: "building the routine", error: "needs attention" };
 
 async function refreshSetupBanner() {
   const banner = document.getElementById("setup-banner");
@@ -138,6 +139,8 @@ function globalStream() {
     bus: (ev) => {
       if (ev.event === "run_started") toast(`run started: ${ev.run_id}`);
       if (ev.event === "run_finished") toast(`run ${ev.state}: ${ev.run_id}`);
+      if (ev.event === "routine_created") { toast(`✓ routine ${ev.slug} is ready`, 5000); refreshSetupBanner(); }
+      if (ev.event === "routine_failed") { toast(`routine ${ev.slug} build failed`, 7000); refreshSetupBanner(); }
       refreshBadges();
       window.dispatchEvent(new CustomEvent("rsched-bus", { detail: ev }));
     },

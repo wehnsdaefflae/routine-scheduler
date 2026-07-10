@@ -28,6 +28,8 @@ export async function render(view, resumeWid) {
   view.append(stage);
   let source = null;
   const closeSource = () => { if (source) { try { source.close(); } catch {} source = null; } };
+  let buildingCleanup = null;   // stops the background-build poll + bus listener
+  const clearBuilding = () => { if (buildingCleanup) { buildingCleanup(); buildingCleanup = null; } };
 
   if (resumeWid) resumeSession(resumeWid);   // #/wizard/{wid} → reconstruct the live session
   else stageDraft();
@@ -46,8 +48,11 @@ export async function render(view, resumeWid) {
           el("button", { class: "btn small primary", onclick: () => navigate("#/wizard") }, "start over"))));
       return;
     }
-    if (snap.stage === "suggest") stageSuggest(wid);
-    else if (snap.stage === "error") stageError(wid, "The clarification run ended without a result.");
+    if (snap.stage === "building") stageBuilding(wid, snap);
+    else if (snap.stage === "done") navigate(snap.run_id ? `#/run/${snap.run_id}` : `#/routine/${snap.slug}`);
+    else if (snap.stage === "suggest") stageSuggest(wid);
+    else if (snap.stage === "error")
+      stageError(wid, snap.error ? `couldn't build the routine: ${snap.error}` : "The clarification run ended without a result.");
     else stageChat(wid, snap);
   }
 
@@ -179,6 +184,45 @@ export async function render(view, resumeWid) {
         el("button", { class: "btn small", onclick: () => cancelSession(wid) }, "start over"))));
   }
 
+  // ---- stage: building (the routine is scaffolding in the background) -------------------------
+  function stageBuilding(wid, snap) {
+    closeSource();
+    clearBuilding();
+    stage.innerHTML = "";
+    stage.append(el("h2", {}, "Building the routine"),
+      busy("Building the routine — the model is decomposing the workflow into steps tailored to your "
+        + "task. This usually takes a minute or two. You can leave this page; you'll be taken to the "
+        + "routine when it's ready, and the banner up top brings you back."));
+    let done = false;
+    const goTo = (runId, slug) => {
+      if (done) return; done = true; clearBuilding(); notifyChanged();
+      navigate(runId ? `#/run/${runId}` : `#/routine/${slug}`);
+    };
+    const failed = (msg) => {   // put the user back on the create form to retry
+      if (done) return; done = true; clearBuilding(); notifyChanged();
+      toast(msg, 7000); stageSuggest(wid);
+    };
+    const onBus = (e) => {
+      const ev = e.detail || {};
+      if (ev.wid !== wid) return;
+      if (ev.event === "routine_created") goTo(ev.run_id, ev.slug);
+      else if (ev.event === "routine_failed") failed(`couldn't build the routine: ${ev.error || "unknown error"}`);
+    };
+    window.addEventListener("rsched-bus", onBus);   // instant hand-off when the build finishes
+    const started = Date.now();
+    const poll = setInterval(async () => {          // robust fallback (survives a missed event / reload)
+      if (done) return;
+      let s;
+      try { s = await api(`/api/wizard/${encodeURIComponent(wid)}`); }
+      catch { goTo(null, snap?.slug || ""); return; }   // 404 → session archived → the routine exists
+      if (s.stage === "done") goTo(s.run_id, s.slug);
+      else if (s.stage === "error") failed(`couldn't build the routine: ${s.error || "unknown error"}`);
+      else if (Date.now() - started > 300000)
+        failed("the build is taking unusually long — it may be stuck. Try creating it again.");
+    }, 3000);
+    buildingCleanup = () => { clearInterval(poll); window.removeEventListener("rsched-bus", onBus); };
+  }
+
   // ---- stage: suggest + finalize -------------------------------------------------------------
   async function stageSuggest(wid) {
     closeSource();
@@ -222,9 +266,10 @@ export async function render(view, resumeWid) {
       genBtn.disabled = false; genBtn.textContent = "✨ generate a new workflow";
       renderPicks();
     };
-    stage.append(el("h2", {}, "Workflow"),
-      data.none_fit ? el("div", { class: "muted" }, `suggester: ${data.new_workflow_hint || "nothing fits well"}`) : null,
-      picksRow);
+    stage.append(el("h2", {}, "Workflow"));
+    if (data.none_fit)   // append conditionally — a bare `null` here renders as the text "null"
+      stage.append(el("div", { class: "muted" }, `suggester: ${data.new_workflow_hint || "nothing fits well"}`));
+    stage.append(picksRow);
     renderPicks();
 
     // Schedule is routine CONFIG, set here (or later on the routine page) — it is never
@@ -243,21 +288,17 @@ export async function render(view, resumeWid) {
     create.onclick = async () => {
       if (!picked.slug) { toast("pick a workflow"); return; }
       create.disabled = true;
-      createStatus.innerHTML = "";
-      createStatus.append(busy(
-        "Building the routine — the model is decomposing the workflow into steps. "
-        + "This can take up to a couple of minutes; you'll be taken to the routine automatically."));
       try {
+        // The build runs in the BACKGROUND (decompose is a slow LLM step) — this returns at once.
         const r = await api(`/api/wizard/${encodeURIComponent(wid)}/finalize`, { method: "POST", body: {
           slug: f.slug.value.trim(), name: f.name.value.trim() || f.slug.value.trim(),
           workflow_slug: picked.slug, friendly: sched.value(), run_now: runNow.checked,
           tags: f.tags.value.split(",").map((t) => t.trim()).filter(Boolean),
           // fragments are recovered from the session meta on the backend (chosen on the draft page)
         }});
-        notifyChanged();
-        toast(`routine ${r.slug} created`);
-        navigate(r.run_id ? `#/run/${r.run_id}` : `#/routine/${r.slug}`);
-      } catch (err) { createStatus.innerHTML = ""; toast(err.message, 6000); create.disabled = false; }
+        notifyChanged();                 // the top banner now shows the build in progress
+        stageBuilding(wid, { slug: r.slug });
+      } catch (err) { toast(err.message, 6000); create.disabled = false; }
     };
     stage.append(el("h2", {}, "Create"),
       el("div", { class: "panel" },
@@ -283,7 +324,8 @@ export async function render(view, resumeWid) {
     navigate("#/wizard");
   }
 
-  return () => closeSource();
+  return () => { closeSource(); clearBuilding(); };
 }
 
-const STAGE_TEXT = { chat: "clarifying", suggest: "ready to create", error: "needs attention" };
+const STAGE_TEXT = { chat: "clarifying", suggest: "ready to create", building: "building the routine",
+                     error: "needs attention" };
