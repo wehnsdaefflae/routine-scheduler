@@ -122,14 +122,16 @@ export async function render(view, resumeWid) {
       stage.append(el("div", { class: "panel", style: "border-color:var(--warn)" },
         "This session's clarification process is no longer running, so answers won't be picked up. ",
         el("button", { class: "btn small", onclick: () => cancelSession(wid) }, "cancel and start over")));
-    const thinkBox = el("div", {});     // "waiting on the model" while it works between questions
-    const qBox = el("div", {});
-    const chatBox = el("div", { class: "mt" });
-    stage.append(thinkBox, qBox, chatBox);
+    // conversation first, then the "waiting" spinner / question input at the BOTTOM (auto-scrolled to).
+    const chatBox = el("div", {});
+    const thinkBox = el("div", { class: "mt" });     // "waiting on the model" while it works
+    const qBox = el("div", { class: "mt" });
+    stage.append(chatBox, thinkBox, qBox);
     const transcript = createTranscript(chatBox);
+    const scrollDown = () => window.scrollTo(0, document.body.scrollHeight);
     let gotAny = false;
 
-    const setThinking = (msg) => { thinkBox.innerHTML = ""; if (msg) thinkBox.append(busy(msg)); };
+    const setThinking = (msg) => { thinkBox.innerHTML = ""; if (msg) thinkBox.append(busy(msg)); scrollDown(); };
     setThinking("Waiting for the model — reading your task and working out what to ask…");
 
     function showQuestion(q) {
@@ -154,12 +156,13 @@ export async function render(view, resumeWid) {
           q.options.map((o) => el("button", { class: "btn small", onclick: () => { input.value = o; } }, o))) : null,
         el("div", { class: "row mt" }, input, send)));
       input.focus();
+      scrollDown();
     }
 
     if (snap && snap.question) showQuestion(snap.question);   // seed a resumed pending question
 
     source = sse(`/api/wizard/${encodeURIComponent(wid)}/events`, {
-      transcript: (ev) => { gotAny = true; transcript.add(ev); },
+      transcript: (ev) => { gotAny = true; transcript.add(ev); scrollDown(); },
       state: (s) => { gotAny = true; if (s.question) showQuestion(s.question); else setThinking("Waiting for the model…"); },
       end: () => { setThinking(null); closeSource(); stageSuggest(wid); },
       onerror: () => {
