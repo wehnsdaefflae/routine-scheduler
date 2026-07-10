@@ -37,6 +37,22 @@ export async function render(view, slug) {
     catch (err) { toast(err.message); }
   }
 
+  // -- description (always present; shown here + on the dashboard) ----------------
+  const descInput = el("input", { type: "text", value: d.description || "", placeholder: "one-line description",
+    style: "width:100%;max-width:640px" });
+  view.append(el("h2", {}, "Description"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted", style: "font-size:12px;margin-bottom:8px" },
+        "a one-line summary of what this routine does — shown on the dashboard and here"),
+      descInput,
+      el("div", { class: "row mt" }, el("button", { class: "btn primary",
+        onclick: async () => {
+          const v = descInput.value.trim();
+          if (!v) { toast("description can't be empty"); return; }
+          try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { description: v } }); toast("description saved"); }
+          catch (err) { toast(err.message); }
+        } }, "save description"))));
+
   // -- tags -----------------------------------------------------------------------
   let tags = [...(d.tags || [])];
   const tagsRow = el("div", { class: "tags" });
@@ -126,6 +142,45 @@ export async function render(view, slug) {
           catch (err) { toast(err.message); }
         },
       }, "save standards"))));
+
+  // -- models (per routine: main / subroutine / tool_call) -----------------------
+  const MODEL_KINDS = [["main", "the orchestrator loop"], ["subroutine", "spawned sub-workflows"],
+                       ["tool_call", "the llm action"]];
+  const endpointNames = d.endpoints || [];
+  const sysM = d.system_model;
+  const modelInputs = {};
+  const modelRows = MODEL_KINDS.map(([kind, desc]) => {
+    const cur = (d.models && d.models[kind]) || null;
+    const epSel = el("select", {}, [el("option", { value: "" }, "— system default —"),
+      ...endpointNames.map((n) => el("option", { value: n }, n))]);
+    if (cur?.endpoint) epSel.value = cur.endpoint;
+    const modelIn = el("input", { type: "text", value: cur?.model || "",
+      placeholder: sysM ? `${sysM.endpoint} / ${sysM.model}` : "model id", style: "width:200px" });
+    modelInputs[kind] = { epSel, modelIn };
+    return el("div", { class: "row", style: "margin:5px 0;align-items:center" },
+      el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, kind),
+      el("span", { class: "muted", style: "font-size:11.5px;min-width:150px" }, desc),
+      epSel, modelIn);
+  });
+  view.append(el("h2", {}, "Models"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted", style: "font-size:12px;margin-bottom:8px" },
+        endpointNames.length
+          ? "which endpoint + model this routine uses for each role — leave blank to fall back to the system model"
+          : "add an endpoint in Settings first"),
+      ...modelRows,
+      el("div", { class: "row mt" }, el("button", { class: "btn primary",
+        onclick: async () => {
+          const models = {};
+          for (const [kind, { epSel, modelIn }] of Object.entries(modelInputs)) {
+            const ep = epSel.value.trim(), m = modelIn.value.trim();
+            if (ep && m) models[kind] = { endpoint: ep, model: m };
+            else if (ep || m) { toast(`${kind}: set both endpoint and model, or clear both`); return; }
+          }
+          try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { models } });
+            toast("models saved"); setTimeout(() => location.reload(), 400); }
+          catch (err) { toast(err.message); }
+        } }, "save models"))));
 
   // -- editable files: instruction + steps -------------------------------------
   view.append(el("h2", {}, "Instruction"));

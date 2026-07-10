@@ -87,6 +87,7 @@ export async function render(view) {
         el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
         stateChip),
       (c.tags || []).length ? el("div", { class: "tags" }, c.tags.map((t) => tagChip(t))) : null,
+      c.description ? el("div", { class: "muted", style: "font-size:12.5px;margin:1px 0 3px" }, c.description) : null,
       el("div", { class: "meta" },
         el("span", {}, `⏱ ${c.schedule_desc || "Manual"}`),
         c.next_fire ? el("span", {}, `next ${relTime(c.next_fire)}`) : null,

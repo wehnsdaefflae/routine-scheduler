@@ -213,7 +213,8 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     updates = patch.model_dump(exclude_none=True)
-    # Validate per-routine models: known kinds, pointing at configured endpoints.
+    # Validate per-routine models: known kinds, pointing at configured endpoints. Models REPLACE
+    # wholesale (not merge) so blanking a kind clears it back to the system_model fallback.
     if "models" in updates:
         server = _state(request).server
         for kind, spec in (updates["models"] or {}).items():
@@ -221,6 +222,7 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
                 raise HTTPException(400, f"unknown model kind {kind!r} (expected one of {MODEL_KINDS})")
             if not isinstance(spec, dict) or spec.get("endpoint") not in server.endpoints:
                 raise HTTPException(400, f"models.{kind}: 'endpoint' must be a configured endpoint")
+        raw["models"] = updates.pop("models")
     # Translate the friendly schedule → cron + the server's own timezone (never asked of the user).
     if "schedule" in updates and "friendly" in updates["schedule"]:
         try:

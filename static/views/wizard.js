@@ -37,7 +37,7 @@ export async function render(view, resumeWid) {
     stage.innerHTML = "";
     const ta = el("textarea", { class: "code", style: "min-height:160px",
       placeholder: "Describe the TASK the routine should do, in your own words — not when it runs.\n\ne.g. Collect new AI-agent papers from arxiv and keep a reading list with one-line takes." });
-    const fragBox = el("div", { class: "mt" }, el("div", { class: "muted", style: "font-size:12px" }, "Standards to apply: loading…"));
+    const fragBox = el("div", { class: "mt" }, el("div", { class: "muted", style: "font-size:12px" }, "Standards — loading…"));
     const chosen = () => Array.from(fragBox.querySelectorAll("input:checked")).map((c) => c.dataset.slug);
     const go = el("button", { class: "btn primary" }, "start clarification");
     go.onclick = async () => {
@@ -52,12 +52,15 @@ export async function render(view, resumeWid) {
     };
     stage.append(el("div", { class: "panel" },
       el("div", { class: "muted", style: "margin-bottom:8px" },
-        "Describe the task; the wizard clarifies it, then creates the routine with the standards you pick here."),
+        "Describe the task in your own words. The wizard asks a few clarifying questions, then builds the ",
+        "routine. Below, choose its standards — reusable habits it follows every run (keeping a LEDGER, ",
+        "self-auditing, safe tool use). You can change these, its schedule and its models afterwards."),
       ta, fragBox, el("div", { class: "row mt" }, go)));
     // fill the fragment picker (default-check the common ones)
     api("/api/library").then((lib) => {
       fragBox.innerHTML = "";
-      fragBox.append(el("div", { class: "muted", style: "font-size:12px;margin-bottom:3px" }, "Standards to apply:"));
+      fragBox.append(el("div", { class: "muted", style: "font-size:12px;margin-bottom:3px" },
+        "Standards — reusable behaviours the routine applies every run (self-management, tool safety, research). Toggle the ones that fit:"));
       const DEFAULT = new Set(["global-utils", "web-research", "ledger-discipline", "ask-policy"]);
       for (const f of (lib.fragments || [])) {
         const cb = el("input", { type: "checkbox" });

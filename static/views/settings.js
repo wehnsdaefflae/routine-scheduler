@@ -262,47 +262,47 @@ export async function render(view) {
     listBox.innerHTML = "";
     if (!data.endpoints.length)
       listBox.append(el("div", { class: "muted", style: "font-size:12px" }, "no endpoints yet — add one below."));
-    for (const ep of data.endpoints) listBox.append(item(ep, data.default_roles, secrets.keys || []));
+    for (const ep of data.endpoints) listBox.append(item(ep, data.system_model, secrets.keys || []));
     listBox.append(addForm());
-    listBox.append(rolesEditor(data.endpoints, data.default_roles));
+    listBox.append(systemModelEditor(data.endpoints, data.system_model));
   }
 
-  // Assign an endpoint + model to each role. Assigning the orchestrator is what makes the
-  // instance "llm_ready" — routines can't run until then.
-  function rolesEditor(endpoints, roles) {
+  // The ONE fallback model for machine work that isn't a routine yet (the new-routine clarify
+  // wizard + workflow generation). Setting it is what makes the instance "llm_ready". Each
+  // routine picks its own three models (main / subroutine / tool-call) on its own page.
+  function systemModelEditor(endpoints, systemModel) {
     const box = el("div", { class: "panel mt" });
     box.append(
-      el("div", { style: "font-weight:600;font-size:12.5px" }, "Model roles"),
+      el("div", { style: "font-weight:600;font-size:12.5px" }, "System model"),
       el("div", { class: "muted", style: "font-size:11.5px;margin:2px 0 6px" },
-        "Which endpoint + model routines use by default. ",
-        el("strong", {}, "orchestrator"), " = the routine's main loop (required to run anything); ",
-        el("strong", {}, "subcall"), " = scoped llm calls; ", el("strong", {}, "cheap"), " = light tasks."));
+        "The one fallback model for setup-time work that isn't a routine yet — the new-routine ",
+        "clarify wizard and workflow generation. Required before you can create routines. ",
+        "Each routine then picks its own ", el("strong", {}, "main"), " / ",
+        el("strong", {}, "subroutine"), " / ", el("strong", {}, "tool-call"), " models on its page."));
     if (!endpoints.length) {
       box.append(el("div", { class: "muted", style: "font-size:12px" }, "add an endpoint above first"));
       return box;
     }
-    for (const role of ["orchestrator", "subcall", "cheap"]) {
-      const cur = roles[role] || {};
-      const epSel = el("select", {}, endpoints.map((e) => el("option", {}, e.name)));
-      if (cur.endpoint) epSel.value = cur.endpoint;
-      const modelIn = el("input", { type: "text", value: cur.model || "", placeholder: "model id (e.g. opus)", style: "width:200px" });
-      const save = el("button", { class: "btn small primary" }, cur.endpoint ? "update" : "assign");
-      save.onclick = async () => {
-        if (!modelIn.value.trim()) { toast("enter a model id"); return; }
-        try {
-          await api("/api/settings/roles", { method: "PUT", body: { role, endpoint: epSel.value, model: modelIn.value.trim() } });
-          toast(`${role} → ${epSel.value} / ${modelIn.value.trim()}`); await load();
-        } catch (err) { toast(err.message, 5000); }
-      };
-      box.append(el("div", { class: "row", style: "margin:5px 0" },
-        el("span", { class: "ref-tag", style: "min-width:100px;text-align:center" }, role), epSel, modelIn, save));
-    }
+    const cur = systemModel || {};
+    const epSel = el("select", {}, endpoints.map((e) => el("option", {}, e.name)));
+    if (cur.endpoint) epSel.value = cur.endpoint;
+    const modelIn = el("input", { type: "text", value: cur.model || "", placeholder: "model id (e.g. z-ai/glm-5.2)", style: "width:220px" });
+    const save = el("button", { class: "btn small primary" }, cur.endpoint ? "update" : "set");
+    save.onclick = async () => {
+      if (!modelIn.value.trim()) { toast("enter a model id"); return; }
+      try {
+        await api("/api/settings/system-model", { method: "PUT", body: { endpoint: epSel.value, model: modelIn.value.trim() } });
+        toast(`system model → ${epSel.value} / ${modelIn.value.trim()}`); await load();
+      } catch (err) { toast(err.message, 5000); }
+    };
+    box.append(el("div", { class: "row", style: "margin:5px 0" },
+      el("span", { class: "ref-tag", style: "min-width:100px;text-align:center" }, "system"), epSel, modelIn, save));
     return box;
   }
 
-  function item(ep, roles, secretKeys) {
+  function item(ep, systemModel, secretKeys) {
     const info = KIND[ep.kind] || { title: ep.kind, keyLabel: "key", subscription: false, hint: "" };
-    const modelGuess = Object.values(roles).find((r) => r.endpoint === ep.name)?.model || "";
+    const modelGuess = (systemModel && systemModel.endpoint === ep.name) ? systemModel.model : "";
     const modelInput = el("input", { type: "text", value: modelGuess, placeholder: "model id (e.g. opus)", style: "width:220px" });
     const result = el("span", { class: "muted" });
     const testBtn = el("button", { class: "btn small" }, "test");
