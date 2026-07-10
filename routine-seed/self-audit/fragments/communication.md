@@ -1,30 +1,27 @@
----
-tags: [communication, policy, tool-use]
----
-# fragment: communication — reach the user for a blocking decision, then escalate
+# fragment: communication — Discord for blocking questions only
 
-When you hit a **minimal but blocking** decision — a small choice only the user can make, without
-which this run can't sensibly continue — don't just file it and move on. Reach the user directly,
-wait briefly, and escalate only if they're away.
+This fragment authorizes ONE channel beside the web UI: **Discord** (the `discord` util), and
+only for **blocking questions** — a decision without which this run cannot sensibly continue.
+Everything else — progress, status, FYI, results, non-blocking decisions — stays in the UI
+(deferred `ask_user`, the LEDGER, the finish summary). Never send noise to Discord.
 
-**Channel: Discord (a phone notification).** If a Discord util exists (`util name=list` — e.g.
-`discord`), use it:
+The one round, when a genuinely blocking question comes up:
 
-1. **Send** the decision as ONE self-contained message with the concrete options:
-   `util discord send "<the decision + its 2–4 options, one per line + the default you'll take if
-   there's no reply>" --title "<routine>: decision"`. Make it answerable from a phone in one line.
-2. **Wait** up to five minutes for a live reply, keyed to THIS routine so you never consume another
-   routine's messages: `util discord wait --timeout 300 --cursor <your routine slug>` (set the
-   action's `timeout_s` a little above 300, e.g. 320).
-3. **Reply arrived** → treat it as the decision, act on it, and record it in the LEDGER.
-4. **No reply within 5 min** → **escalate**: file the SAME decision as a deferred `ask_user` (it
-   lands in the Decisions inbox), note in the LEDGER that Discord went unanswered, and take your
-   stated default or defer that thread to the next run — never block the whole run waiting longer.
+1. **Check LEDGER.md first** — if a past run already got this answer (or an equivalent one),
+   reuse it instead of asking again.
+2. **Batch** every blocking question of this run into ONE minimal, self-contained message —
+   readable with zero run context, answerable from a phone in one line. State the concrete
+   options and the default you will take if there is no reply:
+   `util discord send "<question + options + default>" --title "<routine slug>: decision"`.
+3. **Wait, bounded**: `util discord wait --timeout 300 --cursor <your routine slug>` (the cursor
+   keys replies to THIS routine; set the action's `timeout_s` a little above, e.g. 320). One
+   wait of ~5 minutes — never longer, never a second round in the same run.
+4. **Reply arrived** → act on it and record question + answer in LEDGER.md so no future run
+   re-asks. **No reply** → fall back to the SAME question as a deferred `ask_user` (it lands on
+   the Decisions page), note the unanswered Discord attempt in the LEDGER, and proceed on your
+   stated default — never block the run any further.
 
-**No Discord util available** → skip straight to the deferred `ask_user` (the Decisions inbox); the
-escalation path is the fallback, so the routine still works without the channel.
-
-**Restraint.** This is for genuinely blocking, minimal decisions — not progress updates or anything
-you can decide yourself (respect the ask cap in the ask-policy fragment). A 5-minute wait spends
-wall-clock budget: batch every blocking decision into ONE message and send at most one blocking
-Discord round per run.
+**If the `discord` util is missing** (`util name=list` to check), skip straight to the deferred
+`ask_user`. Routines WITHOUT this fragment must not touch Discord at all — for them the UI is
+the only channel (plain `ask_user`). Keep total user interaction minimal: batch, remember
+answers via the LEDGER, and respect the ask cap in the ask-policy fragment.

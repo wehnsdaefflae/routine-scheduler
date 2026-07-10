@@ -5,7 +5,7 @@ Make the run incremental and finish.
 ## Do
 1. **Advance the anchor** — update `state/audit.json`:
    - `last_commit` = HEAD of `/home/mark/git-repos/routine-scheduler` after this run's commits
-     (read it back via the git-log util).
+     (read it back via the git-log util from gather-evidence; `write_util` one if it is missing).
    - `last_ts` = now (iso8601), the new "since" watermark for routine runs.
    - `last_run` = this run id.
 2. **Append the LEDGER entry**: findings by severity, edits committed (with hashes), any reverts,

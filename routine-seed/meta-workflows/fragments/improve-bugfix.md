@@ -1,6 +1,3 @@
----
-tags: [improvement, bugfix, quality]
----
 # fragment: improve-bugfix — find and fix what's broken or wrong
 
 Run this after the main work, as one of the routine's improvement passes. First, **infer the

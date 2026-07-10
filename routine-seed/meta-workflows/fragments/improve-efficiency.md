@@ -1,6 +1,3 @@
----
-tags: [improvement, efficiency, quality]
----
 # fragment: improve-efficiency — a leaner process and tidier files
 
 Run this after the main work, as one of the routine's improvement passes. First, **infer the

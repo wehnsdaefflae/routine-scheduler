@@ -1,5 +1,5 @@
 name: Library sync
-description: Periodically syncs the shared workflow/fragment/util library with its git remote (pull, then push local changes).
+description: Publishes the whole instance to the library repo — stages routines and sanitized config into the repo tree, then commits/pulls/pushes workflows, fragments, utils, routines, and config to the remote.
 tags:
 - meta
 - maintenance

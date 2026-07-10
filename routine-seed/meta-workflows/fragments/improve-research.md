@@ -1,6 +1,3 @@
----
-tags: [improvement, research, quality]
----
 # fragment: improve-research — sharpen the routine's inputs and knowledge
 
 Run this after the main work, as one of the routine's improvement passes. First, **infer the

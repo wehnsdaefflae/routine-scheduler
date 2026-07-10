@@ -4,10 +4,11 @@ slug: library-sync
 materialized_from:
   slug: library-sync
   commit: 4567d70
-  version: 2
+  version: 3
 modules:
+- export-instance
 - record-and-report
-- sync-sweep
+- sync-repo
 includes:
 - global-utils
 - ledger-discipline
@@ -22,13 +23,15 @@ name: sync-scheduler-libraries
 phase_file: state/phase.json
 ---
 
-# Routine: Sync scheduler library repo
+# Routine: Sync the instance to its library repo
 
-Keep the scheduler's merged library repository in sync with its remote by running
-the `git-sync` util on it, then report the outcome.
+Publish everything this instance has acquired to the one library repository and keep it in
+sync with its remote: stage the routines + sanitized server config into the repo tree
+(`instance-export`), then commit/pull/push the repo (`git-sync`), then report.
 
 The library repo path:
-- `~/.local/share/routine-scheduler-libraries` (one repo holding workflows/, fragments/, utils/)
+- `~/.local/share/routine-scheduler-libraries` (one repo holding workflows/, fragments/,
+  utils/ — and, after the export, routines/ and config/)
 
 ## Run flow
 
@@ -43,14 +46,19 @@ persisted phase.
 There is a single phase — **only** — every run is the same sweep. Its states run
 in this order:
 
-- `steps/sync-sweep.md` — run `git-sync` on the merged library repo and read the result.
+- `steps/export-instance.md` — run `instance-export` to stage routines + sanitized config
+  into the repo tree, and read the result.
+- `steps/sync-repo.md` — run `git-sync` on the repo and read the result.
 - `steps/record-and-report.md` — append the LEDGER line and finish with the outcome.
 
-Start at `sync-sweep` if `state/phase.json` has no current state.
+Start at `export-instance` if `state/phase.json` has no current state.
 
 ## Completion criteria
 
-- The merged library repo has been sync'd via `git-sync` (or its conflict reported
-  without any resolution attempt).
-- The run finished `ok` with a one-line summary of the outcome: one of
-  pulled / pushed / up-to-date / conflict.
+- `instance-export` has run against the repo tree (or its error was recorded, without any
+  repair attempt).
+- The repo has been sync'd via `git-sync` (or its conflict reported without any resolution
+  attempt).
+- The run finished with a one-line summary: what was exported, and one repo status of
+  pulled / pushed / up-to-date / conflict. `ok` when both calls succeeded; `partial` when
+  either reported an error or a conflict.

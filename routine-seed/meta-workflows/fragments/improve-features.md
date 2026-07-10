@@ -1,6 +1,3 @@
----
-tags: [improvement, features, quality]
----
 # fragment: improve-features — grow what the routine delivers
 
 Run this after the main work, as one of the routine's improvement passes. First, **infer the

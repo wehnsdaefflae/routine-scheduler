@@ -1,6 +1,3 @@
----
-tags: [improvement, user-interface, quality]
----
 # fragment: improve-ui — the artifacts the user actually reads
 
 Run this after the main work, as one of the routine's improvement passes. First, **infer the

@@ -4,7 +4,7 @@ Only if the evidence shows a **recurring instruction shape with no fitting workf
 
 ## Do
 1. Draft `workflows/<new-slug>.py` — a Python pattern file with a complete `META` dict (`"status": "draft"`), `PHASES` / `COMPLETION` literals, and a top-level `main()`.
-2. Lint it.
+2. Lint it (the same lint util / gate as in `apply-small-edits`).
 3. Commit it (git-sync).
 
 A draft only becomes `stable` after a proposal question is accepted — so if you want it adopted, also file a proposal + deferred question via the pattern in `propose-big-changes` (or note it for the next sweep). Do not promote a draft to stable in this run.

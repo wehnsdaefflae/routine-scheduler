@@ -17,7 +17,8 @@ If APPLY is empty, skip straight to Next (a no-change run is a good run — say 
 Run `util pytest-run /home/mark/git-repos/routine-scheduler`.
 - **GREEN** →
   1. `util git-sync /home/mark/git-repos/routine-scheduler -m "self-audit: <one line>"` (commit+push).
-  2. Read the new commit hash back (git-log util).
+  2. Read the new commit hash back (the git-log util from gather-evidence; if none exists,
+     `write_util` a small one).
   3. Append one line to `audit/changelog.jsonl`:
      `{"ts":"<iso>","commit":"<hash>","summary":"<what changed & why>","run_id":"<this run>"}`.
   4. Set a flag `committed_code=true` (drives the restart request).

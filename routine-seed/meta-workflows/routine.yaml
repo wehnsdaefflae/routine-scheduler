@@ -13,6 +13,15 @@ schedule:
 workflow:
   library_slug: meta-workflows
   library_commit: eab87b5
+fragments:
+- ask-policy
+- global-utils
+- ledger-discipline
+- improve-bugfix
+- improve-research
+- improve-features
+- improve-ui
+- improve-efficiency
 budgets:
   max_turns: 60
   max_wall_clock_min: 45

@@ -1,13 +1,14 @@
-# State: sync-sweep
+# State: sync-repo
 
-Sync the merged library repo with a single `git-sync` call. Do NOT resolve conflicts here.
+Sync the library repo with a single `git-sync` call. Do NOT resolve conflicts here.
 
 ## Do
 
 Run the util action `git-sync` once, with args
-`["~/.local/share/routine-scheduler-libraries", "--json"]`.
+`["~/.local/share/routine-scheduler-libraries", "-m", "instance sync", "--json"]`.
 
-The call commits local changes, pulls (rebase) from the remote, and pushes.
+The call commits everything in the tree — workflows, fragments, utils, and the routines/ +
+config/ just staged by `instance-export` — pulls (rebase) from the remote, and pushes.
 
 ## Read the result
 
