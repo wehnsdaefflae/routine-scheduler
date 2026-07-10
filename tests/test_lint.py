@@ -45,7 +45,7 @@ def test_lint_catches_defects():
 
 
 def test_materialize_carries_workflow_and_provenance():
-    from rsched import frontmatter
+    import frontmatter
 
     # materialize = the un-decomposed baseline: the Python workflow rendered into main.md (the
     # orchestrator acts the pattern out; the pattern is fenced in the body).
@@ -228,7 +228,7 @@ def test_scaffold_writes_and_loads_tags(tmp_path):
 def test_scaffold_stamps_tools_allowlist(tmp_path):
     """A workflow META `tools:` allowlist lands in the routine's main.md frontmatter, where
     the engine reads and enforces it at run time (clarify-instruction is the shipped case)."""
-    from rsched import frontmatter
+    import frontmatter
 
     server = ServerConfig()
     server.routines_home = tmp_path / "routines"
@@ -236,12 +236,12 @@ def test_scaffold_stamps_tools_allowlist(tmp_path):
     server.libraries_home = SEED
     d = scaffold(server, slug="clarify-sess", name="Clarify", instruction="x",
                  workflow_slug="clarify-instruction")
-    meta, _ = frontmatter.load(d / "main.md")
+    meta = frontmatter.load(d / "main.md").metadata
     assert meta["tools"] == ["ask_user", "read_file", "write_file", "finish"]
     # general-task has no tools META → no allowlist is stamped (unrestricted)
     d2 = scaffold(server, slug="unrestricted", name="U", instruction="x",
                   workflow_slug="general-task")
-    meta2, _ = frontmatter.load(d2 / "main.md")
+    meta2 = frontmatter.load(d2 / "main.md").metadata
     assert "tools" not in meta2
 
 
@@ -295,3 +295,22 @@ def test_scaffold_writes_step_modules(tmp_path):
                         "compose.md": "# Compose step\n\nHow to compose."})
     assert (d / "steps" / "discover.md").read_text().startswith("# Discover step")
     assert (d / "steps" / "compose.md").read_text().startswith("# Compose step")
+
+
+def test_dump_markdown_roundtrips_through_engine_parse():
+    """What scaffold/adapt/runtime write is exactly what the engine parses back —
+    nested provenance, key order, and a body containing its own '---' lines."""
+    import frontmatter
+
+    from rsched.workflows.adapt import dump_markdown
+
+    meta = {"name": "N", "slug": "s",
+            "materialized_from": {"slug": "wf", "commit": "abc123", "version": 3},
+            "adapted": "2026-07-10", "modules": ["a-step", "b-step"],
+            "tools": ["ask_user", "finish"]}
+    body = "## Run flow\n1. x\n\n---\n\n## Completion criteria\n- done\n"
+    text = dump_markdown(meta, body)
+    meta2, body2 = frontmatter.parse(text)
+    assert meta2 == meta and list(meta2) == list(meta)     # values AND key order survive
+    assert body2 == body.strip()                           # later --- stays in the body
+    assert text.endswith("\n") and not text.endswith("\n\n")

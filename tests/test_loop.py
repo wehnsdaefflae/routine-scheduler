@@ -98,8 +98,8 @@ def test_ensure_decomposed_builds_main_on_run(make_routine, monkeypatch):
     cfg, _ = load_routine(d)
     runtime_mod._ensure_decomposed(d, cfg, _server(d))
     assert (d / "main.md").exists() and (d / "steps" / "ask-step.md").read_text().startswith("ask the user")
-    from rsched import frontmatter
-    meta, _ = frontmatter.load(d / "main.md")
+    import frontmatter
+    meta = frontmatter.load(d / "main.md").metadata
     assert meta["tools"] == ["ask_user", "write_file", "finish"]              # allowlist carried through
     assert meta["materialized_from"]["slug"] == cfg.workflow_slug
 

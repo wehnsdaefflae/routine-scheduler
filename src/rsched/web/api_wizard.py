@@ -12,6 +12,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from sse_starlette import EventSourceResponse
 
 from ..daemon.runner import abort_process
 from ..ids import now_iso
@@ -20,7 +21,7 @@ from ..workflows.generate import generate
 from ..workflows.scaffold import scaffold
 from ..workflows.suggest import normalize_tags, suggest_tags
 from . import wizard_store
-from .sse import run_stream, sse_response
+from .sse import run_stream
 
 router = APIRouter(tags=["wizard"])
 
@@ -91,7 +92,7 @@ async def events(request: Request, wid: str):
     ts = sess.get("run_ts") or wizard_store.latest_run_ts(d)
     if ts is None:
         raise HTTPException(404, "wizard session has no run")
-    return sse_response(run_stream(d / "runs" / ts))
+    return EventSourceResponse(run_stream(d / "runs" / ts))
 
 
 class AnswerBody(BaseModel):

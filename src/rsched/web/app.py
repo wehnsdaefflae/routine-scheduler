@@ -115,9 +115,11 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
 
     @app.get("/api/events", dependencies=deps)
     async def global_events():
-        from .sse import bus_stream, sse_response
+        from sse_starlette import EventSourceResponse
 
-        return sse_response(bus_stream(bus))
+        from .sse import bus_stream
+
+        return EventSourceResponse(bus_stream(bus))
 
     @app.get("/", include_in_schema=False)
     def index():

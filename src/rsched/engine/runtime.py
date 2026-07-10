@@ -11,9 +11,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import frontmatter
+import yaml
+
 from ..config import ServerConfig, load_routine
 from ..endpoints import EndpointRegistry
-from ..frontmatter import load as load_frontmatter
 from ..ids import run_ts as make_run_ts
 from .loop import EngineLoop
 from .run_context import Budgets, RunContext
@@ -27,9 +29,8 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
     raw pattern. Degrades to the whole workflow rendered as main.md if no endpoint is available."""
     if (routine_dir / "main.md").exists() or not cfg.workflow_slug:
         return
-    from .. import frontmatter
     from ..workflows import library
-    from ..workflows.adapt import decompose
+    from ..workflows.adapt import decompose, dump_markdown
 
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8") \
         if (routine_dir / "instruction.md").exists() else ""
@@ -50,7 +51,7 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
     (routine_dir / "steps").mkdir(exist_ok=True)
     for mod_name, mod_body in result["modules"].items():
         (routine_dir / "steps" / f"{mod_name}.md").write_text(mod_body.rstrip() + "\n", encoding="utf-8")
-    (routine_dir / "main.md").write_text(frontmatter.dump(main_meta, result["main"]), encoding="utf-8")
+    (routine_dir / "main.md").write_text(dump_markdown(main_meta, result["main"]), encoding="utf-8")
 
 
 def load_workflow(routine_dir, cfg) -> tuple[str, str, dict, list[str] | None]:
@@ -65,7 +66,10 @@ def load_workflow(routine_dir, cfg) -> tuple[str, str, dict, list[str] | None]:
     main = routine_dir / "main.md"
     if not main.exists():
         raise RuntimeError(f"routine {cfg.slug!r} has no main.md — cannot run")
-    meta, mbody = load_frontmatter(main)
+    try:
+        meta, mbody = frontmatter.parse(main.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:  # fail loud: silently losing meta would drop the tools allowlist
+        raise RuntimeError(f"routine {cfg.slug!r}: main.md frontmatter is invalid YAML: {exc}") from exc
     body = mbody.strip()
     src = meta.get("materialized_from") if isinstance(meta.get("materialized_from"), dict) else {}
     prov = {"slug": src.get("slug", cfg.workflow_slug),

@@ -7,13 +7,14 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from sse_starlette import EventSourceResponse
 
 from ..daemon import registry
 from ..daemon.runner import abort_process
 from ..engine.transcript import read_events
 from ..ids import now_iso, parse_run_id
 from ..paths import atomic_write_json, read_json
-from .sse import TERMINAL_STATES, run_stream, sse_response
+from .sse import TERMINAL_STATES, run_stream
 
 router = APIRouter(tags=["runs"])
 
@@ -65,7 +66,7 @@ def run_transcript(request: Request, run_id: str, offset: int = 0, sub: int | No
 @router.get("/runs/{run_id}/events")
 async def run_events(request: Request, run_id: str, offset: int = 0):
     _, run_dir = _run_dir(request, run_id)
-    return sse_response(run_stream(run_dir, offset))
+    return EventSourceResponse(run_stream(run_dir, offset))
 
 
 class Inject(BaseModel):

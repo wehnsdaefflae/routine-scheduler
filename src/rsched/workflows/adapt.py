@@ -13,9 +13,19 @@ import json
 from datetime import date
 from pathlib import Path
 
-from .. import frontmatter
+import frontmatter
+
 from ..ids import is_slug
 from .library import head_commit, read_workflow
+
+
+def dump_markdown(meta: dict, body: str) -> str:
+    """meta + markdown body → the main.md document: '---\\n<yaml>\\n---\\n\\n<body>' with key
+    order preserved and exactly one trailing newline. The single writer-side counterpart of
+    frontmatter.parse, so materialized files always round-trip."""
+    post = frontmatter.Post(body.strip())
+    post.metadata = dict(meta)
+    return frontmatter.dumps(post, sort_keys=False) + "\n"
 
 
 def _routine_frontmatter(meta: dict, slug: str, provenance: dict, adapted: str) -> dict:
@@ -38,8 +48,8 @@ def materialize(home: Path, slug: str, *, today: str | None = None) -> tuple[str
     meta, _, raw = read_workflow(home, slug)
     provenance = {"slug": slug, "commit": head_commit(home), "version": meta.get("version", 0)}
     adapted = today or date.today().isoformat()
-    return frontmatter.dump(_routine_frontmatter(meta, slug, provenance, adapted),
-                            render_markdown(raw, meta)), provenance
+    return dump_markdown(_routine_frontmatter(meta, slug, provenance, adapted),
+                         render_markdown(raw, meta)), provenance
 
 
 DECOMPOSE_SCHEMA = {

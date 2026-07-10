@@ -1,16 +1,19 @@
 """Server config (~/.config/routine-scheduler/config.yaml) and routine.yaml loading.
 
-Both loaders validate strictly enough to catch typos early and return dataclasses with
-defaults applied. Validation problems are collected into lists so callers (registry,
-`rsched validate`) can report all of them at once.
+Both loaders validate through pydantic, leniently: every invalid key is reported into a
+problems list (so callers — registry, `rsched validate` — can show all of them at once)
+and falls back to its default instead of failing the whole load.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated, Literal, get_args
 
 import yaml
+from pydantic import (AliasPath, BaseModel, BeforeValidator, ConfigDict, Field,
+                      ValidationError, field_validator)
 
 from .ids import is_slug
 from .paths import config_file, expand
@@ -37,20 +40,31 @@ MODEL_KINDS = ("main", "subroutine", "tool_call")
 # Endpoints are model TRANSPORTS, never a second harness. "claude-cli" is the Claude Code
 # CLI in fully stripped print mode (tools off, our system prompt replaces its own) — a
 # subscription-billed completion function; the engine remains the only agent loop.
-ENDPOINT_KINDS = ("openai", "anthropic", "claude-cli")
-SCHEMA_MODES = ("json_schema", "json_object", "ollama_native", "none")
+EndpointKind = Literal["openai", "anthropic", "claude-cli"]
+SchemaMode = Literal["json_schema", "json_object", "ollama_native", "none"]
+ENDPOINT_KINDS = get_args(EndpointKind)
+SCHEMA_MODES = get_args(SchemaMode)
+
+# YAML-friendly coercions: a bare `key:` (null) reads as the empty string; path strings
+# expand `~` and $VARS.
+BlankableStr = Annotated[str, BeforeValidator(lambda v: "" if v is None else v)]
+HomePath = Annotated[Path, BeforeValidator(lambda v: expand(v) if isinstance(v, str) else v)]
 
 
-@dataclass
-class EndpointConfig:
-    name: str
-    kind: str
-    base_url: str = ""
-    api_key: str = ""
-    key_env_file: str = ""
+class _Config(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True,
+                              coerce_numbers_to_str=True)
+
+
+class EndpointConfig(_Config):
+    name: str = ""  # filled from the `endpoints:` mapping key
+    kind: EndpointKind
+    base_url: BlankableStr = ""
+    api_key: BlankableStr = ""
+    key_env_file: BlankableStr = ""
     key_var: str = "ANTHROPIC_API_KEY"
     credentials_env: str = "~/.credentials/claude-code-oauth.env"  # claude-cli kind
-    schema_mode: str = "json_schema"  # openai kind only
+    schema_mode: SchemaMode = "json_schema"  # openai kind only
     context_chars: int = 100_000
     temperature: float | None = None
 
@@ -62,23 +76,22 @@ class ModelRef:
     effort: str | None = None
 
 
-@dataclass
-class ServerConfig:
+class ServerConfig(_Config):
     bind: str = "127.0.0.1"
     port: int = 8321
-    token: str = ""
-    routines_home: Path = field(default_factory=lambda: expand("~/routines"))
+    token: BlankableStr = ""
+    routines_home: HomePath = Field(default_factory=lambda: expand("~/routines"))
     # ONE git repo holding workflows/, fragments/, utils/ (+ gu, README) — the library.
-    libraries_home: Path = field(
+    libraries_home: HomePath = Field(
         default_factory=lambda: expand("~/.local/share/routine-scheduler-libraries"))
-    libraries_remote: str = ""          # clone-from / sync-to for the library repo
-    source_repo: Path = field(default_factory=lambda: Path(__file__).resolve().parents[2])
-    source_remote: str = ""             # optional: push target for self-audit's autonomous code commits
-    github_client_id: str = ""          # OAuth app client_id for the in-UI device flow (default: gh CLI's)
-    confirm_util_changes: bool = True   # ask the user before a util is created/revised (req 7)
+    libraries_remote: BlankableStr = ""  # clone-from / sync-to for the library repo
+    source_repo: HomePath = Field(default_factory=lambda: Path(__file__).resolve().parents[2])
+    source_remote: BlankableStr = ""     # optional: push target for self-audit's autonomous code commits
+    github_client_id: BlankableStr = ""  # OAuth app client_id for the in-UI device flow (default: gh CLI's)
+    confirm_util_changes: bool = True    # ask the user before a util is created/revised (req 7)
     max_concurrent_runs: int = 2
     registry_rescan_s: int = 30
-    endpoints: dict[str, EndpointConfig] = field(default_factory=dict)
+    endpoints: dict[str, EndpointConfig] = Field(default_factory=dict)
     # The ONE fallback model for machine work that isn't a routine yet: workflow
     # generation/suggestion and the new-routine clarify wizard. Routines set their own models.
     system_model: ModelRef | None = None
@@ -100,18 +113,36 @@ class ServerConfig:
         return self.libraries_home
 
 
-def _model_ref(raw: object, problems: list[str], where: str) -> ModelRef | None:
-    if not isinstance(raw, dict) or "endpoint" not in raw or "model" not in raw:
-        problems.append(f"{where}: expected mapping with 'endpoint' and 'model'")
-        return None
-    return ModelRef(endpoint=str(raw["endpoint"]), model=str(raw["model"]),
-                    effort=raw.get("effort"))
+def _pop(data: dict, loc: tuple) -> None:
+    """Remove the value at a (possibly nested) error location from the raw input."""
+    for key in loc[:-1]:
+        data = data.get(key) if isinstance(data, dict) else None
+    if isinstance(data, dict) and loc:
+        data.pop(loc[-1], None)
+
+
+def _validate_lenient(model: type[_Config], data: dict, problems: list[str]):
+    """model_validate that degrades per key: report every invalid key, drop it (or its
+    parent, when a required subfield is missing) and retry so the rest still loads."""
+    for round_no in range(4):
+        try:
+            return model.model_validate(data)
+        except ValidationError as exc:
+            for err in exc.errors():
+                if round_no == 0:  # later rounds only see errors derived from a drop
+                    where = ".".join(str(p) for p in err["loc"]) or "(root)"
+                    problems.append(f"{where}: {err['msg'].removeprefix('Value error, ')}")
+                loc = err["loc"][:-1] if err["type"] == "missing" else err["loc"]
+                if not loc:
+                    return None
+                _pop(data, loc)
+    return None
 
 
 def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str]]:
     path = path or config_file()
     problems: list[str] = []
-    raw: dict = {}
+    raw: object = {}
     if path.exists():
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -119,80 +150,84 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
             return ServerConfig(source=path), [f"{path}: invalid YAML: {exc}"]
     else:
         problems.append(f"{path}: not found (using defaults; run deploy/install.sh)")
+    if not isinstance(raw, dict):
+        return ServerConfig(source=path), [f"{path}: expected a mapping at top level"]
 
-    cfg = ServerConfig(source=path)
-    cfg.bind = str(raw.get("bind", cfg.bind))
-    cfg.port = int(raw.get("port", cfg.port))
-    cfg.token = str(raw.get("token", "") or "")
-    if "routines_home" in raw:
-        cfg.routines_home = expand(raw["routines_home"])
-    if "libraries_home" in raw:
-        cfg.libraries_home = expand(raw["libraries_home"])
-    cfg.libraries_remote = str(raw.get("libraries_remote", "") or "")
-    if "source_repo" in raw:
-        cfg.source_repo = expand(raw["source_repo"])
-    cfg.source_remote = str(raw.get("source_remote", "") or "")
-    cfg.github_client_id = str(raw.get("github_client_id", "") or "")
-    cfg.confirm_util_changes = bool(raw.get("confirm_util_changes", cfg.confirm_util_changes))
-    cfg.max_concurrent_runs = int(raw.get("max_concurrent_runs", cfg.max_concurrent_runs))
-    cfg.registry_rescan_s = int(raw.get("registry_rescan_s", cfg.registry_rescan_s))
-
-    for name, spec in (raw.get("endpoints") or {}).items():
-        if not isinstance(spec, dict):
-            problems.append(f"endpoints.{name}: expected a mapping")
-            continue
-        kind = spec.get("kind", "")
-        if kind not in ENDPOINT_KINDS:
-            problems.append(f"endpoints.{name}: kind must be one of {ENDPOINT_KINDS}, got {kind!r}")
-            continue
-        ep = EndpointConfig(name=name, kind=kind)
-        for key in ("base_url", "api_key", "key_env_file", "key_var", "credentials_env",
-                    "schema_mode"):
-            if key in spec:
-                setattr(ep, key, str(spec[key]))
-        if ep.schema_mode not in SCHEMA_MODES:
-            problems.append(f"endpoints.{name}: schema_mode must be one of {SCHEMA_MODES}")
-            ep.schema_mode = "none"
-        if "context_chars" in spec:
-            ep.context_chars = int(spec["context_chars"])
-        if "temperature" in spec:
-            ep.temperature = float(spec["temperature"])
-        cfg.endpoints[name] = ep
-
-    if "system_model" in raw and raw["system_model"]:
-        ref = _model_ref(raw["system_model"], problems, "system_model")
-        if ref:
-            if ref.endpoint not in cfg.endpoints:
-                problems.append(f"system_model: endpoint {ref.endpoint!r} is not configured")
-            cfg.system_model = ref
-
+    cfg = _validate_lenient(ServerConfig, {**raw, "source": path}, problems) \
+        or ServerConfig(source=path)
+    for name, ep in cfg.endpoints.items():
+        ep.name = name
+    if cfg.system_model and cfg.system_model.endpoint not in cfg.endpoints:
+        problems.append(f"system_model: endpoint {cfg.system_model.endpoint!r} is not configured")
     return cfg, problems
 
 
-@dataclass
-class RoutineConfig:
+class RoutineConfig(_Config):
     slug: str
     dir: Path
-    name: str = ""
+    name: BlankableStr = ""
     enabled: bool = True
-    tags: list[str] = field(default_factory=list)  # freeform, for filtering (e.g. "meta")
-    cron: str = ""
-    tz: str = "Europe/Berlin"
-    catchup: str = "skip"  # skip | run_once
-    workflow_slug: str = ""
-    workflow_commit: str = ""
-    description: str = ""  # one-line human summary shown in the UI (always present)
-    models: dict[str, ModelRef] = field(default_factory=dict)  # main/subroutine/tool_call
-    budgets: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_BUDGETS))
-    fragments: list[str] = field(default_factory=list)       # active fragment slugs (the source of truth)
-    fs_read_roots: list[Path] = field(default_factory=list)
-    fs_write_roots: list[Path] = field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)  # freeform, for filtering (e.g. "meta")
+    cron: BlankableStr = Field("", validation_alias=AliasPath("schedule", "cron"))
+    tz: str = Field("Europe/Berlin", validation_alias=AliasPath("schedule", "tz"))
+    catchup: Literal["skip", "run_once"] = Field(
+        "skip", validation_alias=AliasPath("schedule", "catchup"))
+    workflow_slug: BlankableStr = Field("", validation_alias=AliasPath("workflow", "library_slug"))
+    workflow_commit: BlankableStr = Field(
+        "", validation_alias=AliasPath("workflow", "library_commit"))
+    description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
+    models: dict[str, ModelRef] = Field(default_factory=dict)  # main/subroutine/tool_call
+    budgets: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_BUDGETS))
+    # Fragments are the source of truth for a routine's standards. An explicit list wins;
+    # otherwise a new routine gets the default set.
+    fragments: list[str] = Field(default_factory=lambda: list(DEFAULT_FRAGMENTS))
+    fs_read_roots: list[HomePath] = Field(default_factory=list)
+    fs_write_roots: list[HomePath] = Field(default_factory=list)
     confirm_util_changes: bool | None = None  # None = inherit the server default
-    keep_runs: int = 30
+    keep_runs: int = Field(30, validation_alias=AliasPath("retention", "keep_runs"))
 
     def confirm_utils(self, server: ServerConfig) -> bool:
         return server.confirm_util_changes if self.confirm_util_changes is None \
             else self.confirm_util_changes
+
+    @field_validator("cron")
+    @classmethod
+    def _croniter_accepts(cls, v: str) -> str:
+        if v:
+            from croniter import croniter
+
+            try:
+                croniter(v)
+            except (ValueError, KeyError) as exc:
+                raise ValueError(str(exc)) from exc
+        return v
+
+    @field_validator("description")
+    @classmethod
+    def _stripped(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _clean_tags(cls, v: object) -> object:
+        if v is None:
+            return []
+        return [str(t).strip() for t in v if str(t).strip()] if isinstance(v, list) else v
+
+    @field_validator("fs_read_roots", "fs_write_roots", "models", mode="before")
+    @classmethod
+    def _none_as_absent(cls, v: object) -> object:
+        return cls.model_fields["models"].default_factory() if v is None else v
+
+    @field_validator("budgets", mode="before")
+    @classmethod
+    def _merged_over_defaults(cls, v: object) -> object:
+        return {**DEFAULT_BUDGETS, **v} if isinstance(v, dict) else v
+
+    @field_validator("fragments", mode="before")
+    @classmethod
+    def _default_unless_list(cls, v: object) -> object:
+        return [str(f) for f in v] if isinstance(v, list) else list(DEFAULT_FRAGMENTS)
 
 
 def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
@@ -210,78 +245,24 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
         return None, [f"{path}: expected a mapping at top level"]
 
     slug = str(raw.get("slug") or routine_dir.name)
-    cfg = RoutineConfig(slug=slug, dir=routine_dir)
     if not is_slug(slug):
         problems.append(f"slug {slug!r} is not kebab-case")
     if slug != routine_dir.name:
         problems.append(f"slug {slug!r} does not match directory name {routine_dir.name!r}")
-    cfg.name = str(raw.get("name") or slug)
-    cfg.description = str(raw.get("description") or "").strip()
+    if not isinstance(raw.get("schedule") or {}, dict):
+        problems.append("schedule: expected a mapping")
+
+    cfg = _validate_lenient(RoutineConfig, {**raw, "slug": slug, "dir": routine_dir}, problems) \
+        or RoutineConfig(slug=slug, dir=routine_dir)
+    cfg.name = cfg.name or slug
     if not cfg.description:
         problems.append("description is empty — every routine needs a one-line description (shown in the UI)")
-    cfg.enabled = bool(raw.get("enabled", True))
-    cfg.tags = [str(t).strip() for t in (raw.get("tags") or []) if str(t).strip()]
-
-    sched = raw.get("schedule") or {}
-    if isinstance(sched, dict):
-        cfg.cron = str(sched.get("cron", "") or "")
-        cfg.tz = str(sched.get("tz", cfg.tz))
-        cfg.catchup = str(sched.get("catchup", cfg.catchup))
-        if cfg.catchup not in ("skip", "run_once"):
-            problems.append(f"schedule.catchup must be skip|run_once, got {cfg.catchup!r}")
-            cfg.catchup = "skip"
-    else:
-        problems.append("schedule: expected a mapping")
-    if cfg.cron:
-        try:
-            from croniter import croniter
-
-            croniter(cfg.cron)
-        except (ValueError, KeyError) as exc:
-            problems.append(f"schedule.cron {cfg.cron!r}: {exc}")
-            cfg.cron = ""
-
-    wf = raw.get("workflow") or {}
-    if isinstance(wf, dict):
-        cfg.workflow_slug = str(wf.get("library_slug", "") or "")
-        cfg.workflow_commit = str(wf.get("library_commit", "") or "")
-
-    for kind, spec in (raw.get("models") or {}).items():
-        if kind not in MODEL_KINDS:
-            problems.append(f"models.{kind}: unknown model kind (expected one of {MODEL_KINDS})")
-            continue
-        ref = _model_ref(spec, problems, f"models.{kind}")
-        if ref:
-            cfg.models[kind] = ref
-
-    for key, val in (raw.get("budgets") or {}).items():
-        if key not in DEFAULT_BUDGETS:
-            problems.append(f"budgets.{key}: unknown budget")
-            continue
-        try:
-            cfg.budgets[key] = int(val)
-        except (TypeError, ValueError):
-            problems.append(f"budgets.{key}: expected an integer")
-
-    # Fragments are the source of truth for a routine's standards. An explicit list wins;
-    # otherwise a new routine gets the default set.
-    if isinstance(raw.get("fragments"), list):
-        cfg.fragments = [str(f) for f in raw["fragments"]]
-    else:
-        cfg.fragments = list(DEFAULT_FRAGMENTS)
-
-    for key, target in (("fs_read_roots", cfg.fs_read_roots), ("fs_write_roots", cfg.fs_write_roots)):
-        for item in raw.get(key) or []:
-            target.append(expand(item))
-
-    if "confirm_util_changes" in raw:
-        cfg.confirm_util_changes = bool(raw["confirm_util_changes"])
-    ret = raw.get("retention") or {}
-    if isinstance(ret, dict) and "keep_runs" in ret:
-        try:
-            cfg.keep_runs = int(ret["keep_runs"])
-        except (TypeError, ValueError):
-            problems.append("retention.keep_runs: expected an integer")
+    for kind in [k for k in cfg.models if k not in MODEL_KINDS]:
+        problems.append(f"models.{kind}: unknown model kind (expected one of {MODEL_KINDS})")
+        del cfg.models[kind]
+    for key in [k for k in cfg.budgets if k not in DEFAULT_BUDGETS]:
+        problems.append(f"budgets.{key}: unknown budget")
+        del cfg.budgets[key]
 
     # A routine is self-contained: its recipe is materialized into main.md at generation, and the
     # workflow.library_slug is kept only as "generated-from" provenance.

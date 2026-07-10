@@ -9,16 +9,26 @@ import re
 import subprocess
 from pathlib import Path
 
-from . import frontmatter
+import frontmatter
+import yaml
 
 # Title before the em-dash may be a kebab slug OR a readable phrase ("ask policy"); the summary is
 # whatever follows the em-dash. (Splitting on a bare hyphen would swallow hyphens inside a slug.)
 FRAGMENT_RE = re.compile(r"^#\s*fragment:\s*(?P<slug>.+?)\s*—\s*(?P<summary>.+)$", re.M)
 
 
+def _parse(text: str) -> tuple[dict, str]:
+    """frontmatter.parse for user-editable files: broken YAML reads as no frontmatter, so a
+    bad edit never crashes a run or the fragment listing."""
+    try:
+        return frontmatter.parse(text)
+    except yaml.YAMLError:
+        return {}, text
+
+
 def fragment_body(raw: str) -> str:
     """The fragment text as inlined into a prompt — frontmatter (tags, etc.) stripped."""
-    return frontmatter.parse(raw)[1]
+    return _parse(raw)[1]
 
 
 def ensure_library(home: Path) -> None:
@@ -37,7 +47,7 @@ def list_fragments(home: Path) -> list[dict]:
     out = []
     for path in sorted(home.glob("*.md")):
         text = path.read_text(encoding="utf-8")
-        meta, _ = frontmatter.parse(text)
+        meta, _ = _parse(text)
         m = FRAGMENT_RE.search(text)
         out.append({"slug": path.stem,
                     "summary": (m.group("summary").strip() if m else ""),

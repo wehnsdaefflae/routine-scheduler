@@ -58,8 +58,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     active = [f for f in active if f in available]
     commit = library.head_commit(server.library_home)
 
-    from .. import frontmatter
-    from .adapt import decompose
+    from .adapt import decompose, dump_markdown
 
     for sub in ("state", "steps", "inbox", "fragments"):
         (routine_dir / sub).mkdir(parents=True)
@@ -76,7 +75,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
         **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {}),
         **({"tags": list(tags)} if tags else {}),
     }
-    (routine_dir / "main.md").write_text(frontmatter.dump(main_meta, result["main"]), encoding="utf-8")
+    (routine_dir / "main.md").write_text(dump_markdown(main_meta, result["main"]), encoding="utf-8")
     for mod_name, mod_body in result["modules"].items():
         (routine_dir / "steps" / f"{mod_name}.md").write_text(mod_body.rstrip() + "\n", encoding="utf-8")
     # active fragments → editable routine copies

@@ -10,7 +10,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .. import frontmatter
+import frontmatter
+import yaml
+
 from ..ids import is_slug
 from .library import fragments_dir, workflows_dir
 
@@ -58,7 +60,10 @@ def lint_workflow_py(source: str, *, filename: str, fragment_slugs: list[str]) -
 
 def lint_fragment_text(raw: str, *, filename: str) -> list[str]:
     problems = []
-    meta, body = frontmatter.parse(raw)
+    try:
+        meta, body = frontmatter.parse(raw)
+    except yaml.YAMLError as exc:
+        return [f"{filename}: invalid YAML frontmatter: {exc}"]
     if not body.strip().startswith("# fragment:"):
         problems.append(f"{filename}: body must start with '# fragment: <slug> — <summary>' (after any frontmatter)")
     tags = meta.get("tags")
@@ -73,7 +78,10 @@ def lint_fragment_text(raw: str, *, filename: str) -> list[str]:
 
 def lint_materialized_text(raw: str, *, filename: str = "main.md") -> list[str]:
     problems = []
-    meta, body = frontmatter.parse(raw)
+    try:
+        meta, body = frontmatter.parse(raw)
+    except yaml.YAMLError as exc:
+        return [f"{filename}: invalid YAML frontmatter: {exc}"]
     prov = meta.get("materialized_from")
     if not isinstance(prov, dict) or "slug" not in prov:
         problems.append(f"{filename}: frontmatter missing materialized_from.slug provenance")
