@@ -25,8 +25,9 @@ from ..paths import read_json
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
 from . import executor, inbox
 from .actions import ACTION_SCHEMA, normalize_action, validate_action
-from .composer import (build_system_prompt, format_observation, kickoff_message,
-                       maybe_compact, replay_messages, state_digest, truncate)
+from .composer import (COMPACT_AT_FRACTION, KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, build_system_prompt,
+                       compact_to_history, format_observation, kickoff_message, maybe_compact,
+                       messages_size, replay_messages, state_digest, truncate)
 from .run_context import Budgets, RunContext
 from .subruns import SubrunManager
 from .transcript import Transcript
@@ -92,6 +93,16 @@ class EngineLoop:
         self.executed_actions = 0  # actions that produced an observation this run
         self.util_reminder = self._build_util_reminder()
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
+        # Once the conversation has been archived to on-disk history, every turn reminds the model
+        # to consult its index (compaction-proof — re-appended to the observation each turn).
+        self._history_active = False
+        try:
+            hist_rel = str((ctx.run_dir / "history").relative_to(ctx.routine.dir))
+        except ValueError:
+            hist_rel = "history"
+        self._hist_rel = hist_rel
+        self._history_note = (f"\n[history: earlier turns are archived under {hist_rel}/INDEX.md — "
+                              "read_file the index and the relevant files before relying on memory.]")
 
     def _build_util_reminder(self) -> str:
         # Per-turn nudge, only when the global-utils fragment is active for this routine (req 2).
@@ -184,6 +195,8 @@ class EngineLoop:
                     text += (f"\n[ENGINE WARNING: this exact action has now run {repeat_streak} times "
                              f"in a row — {REPEAT_FAIL} identical actions fail the run. Change course.]")
                 text += self.util_reminder
+                if self._history_active:
+                    text += self._history_note
                 self.messages.append({"role": "user", "content": text})
                 ctx.write_status()
         except RunAborted:
@@ -262,9 +275,7 @@ class EngineLoop:
         ctx = self.ctx
         endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
         ctx.main_model = f"{ref.endpoint}/{ref.model}"     # surfaced in status.json; updates on a switch
-        self.messages, cinfo = maybe_compact(self.messages, self.turn_records, endpoint.context_chars)
-        if cinfo:
-            ctx.transcript.event("compaction", cinfo)
+        self._compact_if_needed(endpoint, ref)
         usage_sum = {"in": 0, "out": 0}
         schema = ACTION_SCHEMA
         for attempt in range(1, MAX_SCHEMA_ATTEMPTS + 1):
@@ -300,6 +311,29 @@ class EngineLoop:
                 self.messages.append({"role": "assistant", "content": raw[:4000]})
                 self.messages.append({"role": "user", "content": retry_message(exc.problems)})
         return None, usage_sum
+
+    def _compact_if_needed(self, endpoint, ref) -> None:
+        """When the prompt exceeds ~60% of context, archive the middle to a navigable on-disk
+        history via the LLM (compact_to_history); fall back to the deterministic one-line digest if
+        that fails, so a run never stalls on compaction."""
+        ctx = self.ctx
+        if (messages_size(self.messages) <= COMPACT_AT_FRACTION * endpoint.context_chars
+                or len(self.messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS):
+            return
+        cinfo = None
+        try:
+            result = compact_to_history(self.messages, self.turn_records, endpoint, ref,
+                                        ctx.run_dir, self._hist_rel)
+        except Exception as exc:
+            ctx.transcript.event("error", {"where": "compaction", "message": str(exc)[:300]})
+            result = None
+        if result is not None:
+            self.messages, cinfo = result
+            self._history_active = True
+        else:
+            self.messages, cinfo = maybe_compact(self.messages, self.turn_records, endpoint.context_chars)
+        if cinfo:
+            ctx.transcript.event("compaction", cinfo)
 
     def _record_turn(self, action: dict) -> None:
         brief_field = {"util": "name", "write_util": "name", "read_file": "path",

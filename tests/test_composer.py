@@ -117,6 +117,40 @@ def test_format_observation_variants():
         {"n": 1, "label": "x", "status": "ok", "turns": 2, "summary": "s"}], "timed_out": False})
 
 
+def test_compact_to_history_writes_navigable_files(tmp_path):
+    from rsched.config import ModelRef
+    from rsched.engine.composer import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history
+
+    class _Comp:
+        parsed = {"files": [{"name": "Research Notes!", "content": "found X\nfound Y"},
+                            {"name": "decisions", "content": "chose Z"}],
+                  "index": "- research-notes: what we found\n- decisions: choices made"}
+        text, usage = "", {"in": 1, "out": 1}
+
+    class _Ep:
+        def complete(self, messages, **k):
+            return _Comp()
+
+    run_dir = tmp_path / "runs" / "20260710-070000"
+    run_dir.mkdir(parents=True)
+    head = [{"role": "system", "content": "S"}] + [{"role": "user", "content": f"h{i}"} for i in range(KEEP_HEAD_MSGS - 1)]
+    middle = [{"role": "assistant", "content": f"m{i}"} for i in range(20)]
+    tail = [{"role": "user", "content": f"t{i}"} for i in range(KEEP_TAIL_MSGS)]
+    records = [{"turn": 12, "kind": "util", "brief": '"x"', "say": "s"}]
+    result = compact_to_history(head + middle + tail, records, _Ep(), ModelRef("e", "m"),
+                                run_dir, "runs/20260710-070000/history")
+    assert result is not None
+    new_msgs, info = result
+    assert info["mode"] == "llm-history" and info["history_files"] == 2
+    assert len(new_msgs) == KEEP_HEAD_MSGS + 1 + KEEP_TAIL_MSGS     # head + pointer + tail
+    assert "INDEX.md" in new_msgs[KEEP_HEAD_MSGS]["content"]        # the pointer replaces the middle
+    hist = run_dir / "history"
+    assert (hist / "INDEX.md").read_text().startswith("- research-notes")
+    names = sorted(p.name for p in hist.glob("*.md"))              # safe-slugged, turn-prefixed
+    assert names == ["INDEX.md", "t12-decisions.md", "t12-research-notes.md"]
+    assert (hist / "t12-research-notes.md").read_text().strip() == "found X\nfound Y"
+
+
 def test_compaction_deterministic_and_bounded():
     messages = [{"role": "system", "content": "S" * 100},
                 {"role": "user", "content": "kickoff"}]

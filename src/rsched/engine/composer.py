@@ -9,6 +9,7 @@ the transcript on disk keeps everything, only the *prompt* shrinks.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from .actions import ACTION_SCHEMA, example_action
@@ -275,6 +276,81 @@ def maybe_compact(messages: list[dict], turn_records: list[dict], context_chars:
               f"({elided} messages). One line per elided turn:\n" + "\n".join(lines))
     new_messages = head + [{"role": "user", "content": digest}] + tail
     info = {"elided_messages": elided, "digest_chars": len(digest),
+            "before_chars": messages_size(messages), "after_chars": messages_size(new_messages)}
+    return new_messages, info
+
+
+_HISTORY_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["files", "index"],
+    "properties": {
+        "files": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["name", "content"],
+            "properties": {
+                "name": {"type": "string", "description": "kebab-case topic name (no extension)"},
+                "content": {"type": "string",
+                            "description": "markdown, AT MOST ~100 lines — split into more files if longer"}}}},
+        "index": {"type": "string",
+                  "description": "INDEX.md markdown: one line per file — what it holds + when to read it"},
+    },
+}
+
+_HISTORY_PROMPT = """You are archiving the middle of an agent run's conversation so the live context
+stays small while NOTHING is lost — the agent will read_file the pieces it needs later.
+
+Reorganize the conversation below into a NAVIGABLE set of markdown files:
+- Split it whatever way makes things easiest to find later — chronological, or by task/topic. Each
+  file AT MOST ~100 lines; if a part is longer, split it into more files rather than truncating.
+- Do NOT summarize heavily. Preserve the actual substance — what was done, decided, found, the key
+  observations and outputs — just organized and stripped of obvious noise. The agent navigates to
+  what's relevant, so keep the content.
+- Write an INDEX.md listing each file with a one-line description of what it holds and when to
+  consult it, so a reader can jump straight to the right file.{existing_note}
+CONVERSATION (the middle turns being archived):
+---
+{convo}
+---
+Return ONLY the JSON object {{files: [{{name, content}}], index}}."""
+
+
+def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint, ref,
+                       run_dir: Path, hist_rel: str) -> tuple[list[dict], dict] | None:
+    """LLM-driven compaction: reorganize the elided middle into a navigable set of markdown files
+    (each ~≤100 lines) under runs/<ts>/history/ + INDEX.md, and replace the middle with a short
+    pointer telling the agent to consult the index. Returns (new_messages, info), or None on any
+    failure (the caller falls back to the deterministic digest)."""
+    head, tail = messages[:KEEP_HEAD_MSGS], messages[-KEEP_TAIL_MSGS:]
+    middle = messages[KEEP_HEAD_MSGS:len(messages) - KEEP_TAIL_MSGS]
+    if not middle:
+        return None
+    hist_dir = run_dir / "history"
+    prior = (hist_dir / "INDEX.md").read_text(encoding="utf-8") if (hist_dir / "INDEX.md").exists() else ""
+    existing_note = (f"\nThere is already a history index — KEEP its entries and add the new files to it:\n"
+                     f"---\n{prior}\n---\n" if prior else "\n")
+    convo = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in middle)
+    comp = endpoint.complete([{"role": "user", "content":
+                               _HISTORY_PROMPT.format(existing_note=existing_note, convo=convo)}],
+                             model=ref.model, schema=_HISTORY_SCHEMA, effort=ref.effort, timeout=180)
+    data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
+    files = [f for f in (data.get("files") or []) if isinstance(f, dict) and str(f.get("content", "")).strip()]
+    index = str(data.get("index") or "").strip()
+    if not files or not index:
+        return None
+    hist_dir.mkdir(parents=True, exist_ok=True)
+    turn = max((r["turn"] for r in turn_records), default=0)   # unique prefix per compaction
+    written = []
+    for f in files:
+        stem = re.sub(r"[^a-z0-9-]+", "-", str(f.get("name", "part")).lower()).strip("-") or "part"
+        name = f"t{turn}-{stem}.md"
+        (hist_dir / name).write_text(str(f["content"]).rstrip() + "\n", encoding="utf-8")
+        written.append(name)
+    (hist_dir / "INDEX.md").write_text(index.rstrip() + "\n", encoding="utf-8")
+    pointer = {"role": "user", "content":
+        f"CONTEXT COMPACTED — {len(middle)} earlier messages have been archived to an on-disk, "
+        f"navigable history. Read `{hist_rel}/INDEX.md` (read_file) to see what's there, then read "
+        f"the specific {hist_rel}/*.md files relevant to your current step. Do not rely on memory of "
+        f"the archived turns — consult the index."}
+    new_messages = head + [pointer] + tail
+    info = {"elided_messages": len(middle), "history_files": len(written), "mode": "llm-history",
             "before_chars": messages_size(messages), "after_chars": messages_size(new_messages)}
     return new_messages, info
 
