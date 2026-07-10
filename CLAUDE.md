@@ -18,20 +18,25 @@ fragments (standards), workdir, budgets, and model roles are routine config (`ro
 - `uv run pytest -q` — full suite (fast, no network). Single test: `uv run pytest tests/test_loop.py -q`
   or `-k <name>`. Live endpoint smoke tests run only with `RSCHED_LIVE_TESTS=1`.
 - `uv run rsched run-once <slug>` — execute one run from the CLI (slug under `routines_home`, or a dir
-  path), streaming events. `--role role=endpoint:model` overrides a model role; `--quiet` drops the stream.
+  path), streaming events. `--model kind=endpoint:model` overrides a model role; `--quiet` drops the stream.
 - `uv run rsched daemon` — scheduler + web UI in one process (what systemd runs).
 - `uv run rsched validate | lint | suggest --instruction … | scaffold <slug> --workflow … | abort <slug>[:<ts>]`
   — see `rsched --help`. `engine-run` is internal (daemon-spawned).
 
 ## How a run works (engine/)
 
-The turn loop (`engine/loop.py`) is the heart. Each turn: check budgets → pause gate → drain injected
-user messages (`inbox.py`) → announce finished subruns → get ONE valid action from the model (up to 3
-schema-retries) → dispatch → append the observation → repeat until `finish`.
+The turn loop (`engine/loop.py`) is the heart; `engine/runtime.py` is the entry above it
+(`run_routine`, workflow loading/decomposition), `engine/control.py` the between-turns control plane
+(abort, pause gate, `control.json` model switch, injection drain, subrun announcements), and
+`engine/interact.py` the user-conversing handlers (`ask_user`, approval-gated `write_util`). Each turn:
+check budgets → pause gate → drain injected user messages (`inbox.py`) → announce finished subruns →
+get ONE valid action from the model (up to 3 schema-retries) → dispatch → append the observation →
+repeat until `finish`.
 - **One action per turn** is enforced: the model returns a single JSON object matching `ACTION_SCHEMA`;
   `normalize_action` + `validate_action` (`engine/actions.py`) repair grammar debris from weak/constrained
   models and return precise per-kind errors. `actions.py` is the single source of truth for what a turn
-  may do — adapters, UI, and the CLI event renderer all key off it.
+  may do — adapters, UI, and the CLI event renderer all key off it. A workflow's `tools:` allowlist is
+  enforced there too: a disallowed kind is corrected inside the schema-retry cycle, never becomes a turn.
 - **The system prompt is composed once at boot** (`engine/composer.py`): harness contract → action schema
   + example → workflow body (the routine's own `main.md`) → instruction → active fragments → **state
   digest** (phase, `state/`, step modules, last result, LEDGER tail, open/answered questions, inbox
@@ -58,10 +63,13 @@ schema-retries) → dispatch → append the observation → repeat until `finish
 
 ## Endpoints (endpoints/) — transports, not agents
 
-Chat-completion adapters implementing one `ChatEndpoint.complete(...)` (`base.py`). Three kinds:
+Chat-completion adapters implementing one `ChatEndpoint.complete(...)` (`base.py` — tenacity retries on
+retryable `EndpointError`s; a 200 with an unparseable body is one of them). All three honor
+`ModelRef.effort`. Three kinds:
 - **openai** — any OpenAI-compatible API (OpenRouter, vLLM, Ollama). Schema via json_schema / json_object
   / ollama-native; degrades gracefully (retries without `response_format`/`reasoning` on a 400).
-- **anthropic** — Messages API, METERED per-token billing. Schema via a single forced tool-use.
+- **anthropic** — Messages API, METERED per-token billing. Schema via a single forced tool-use; effort via
+  `output_config`, degraded on a 400 that names it.
 - **claude-cli** — `claude -p` fully stripped (`--tools ""`, no MCP/settings/session, our `--system-prompt`
   replacing its own, `--json-schema`), SUBSCRIPTION-billed via `CLAUDE_CODE_OAUTH_TOKEN`. Metered-auth env
   vars are scrubbed so it can't silently fall back to API billing.
@@ -103,8 +111,11 @@ seedable from the repo and syncable to a remote, holding **workflows/** (control
 **fragments/** (reusable standards inlined per routine), and **utils/** (the ONLY way routines run
 code, with the `gu` dispatcher at the root). Repo seeds: `library-seed/` (workflows + fragments),
 `util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `library-sync`,
-`meta-workflows` — installed **disabled**). `bootstrap.py` seeds on first boot; `deploy/install.sh` for
-host installs.
+`meta-workflows` — installed **disabled**; the dashboard shows a notice until enabled). `library-sync`
+syncs the WHOLE instance into that one repo: `instance-export` copies each routine's working tree
+(minus `runs/`, `.git`, transient inbox/question state) into `routines/<slug>/` and the server config —
+token and api_key values redacted — into `config/`, then `git-sync` pushes. `bootstrap.py` seeds on
+first boot; `deploy/install.sh` for host installs.
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
   never executed, parsed statically with `ast` (`workflows/pyworkflow.py`). Each has a `META = {...}` dict
   (`slug / name / description / when_to_use / version / status / tags / includes`, optional `tools:`
@@ -146,8 +157,11 @@ host installs.
 ## Standards
 
 - One responsibility per file, ≤ ~350 lines. Split rather than grow.
+- Prefer a fitting, well-maintained package over hand-rolled plumbing (pydantic validates config,
+  tenacity retries, python-frontmatter parses frontmatter, sse-starlette speaks SSE). The bar is net
+  reduction AND net clarity — `paths.atomic_write` and `schema_guard` stay bespoke on purpose.
 - Cross-process files are written atomic (tmp+rename) via `paths.atomic_write` — never ad-hoc.
-- `static/` is no-build vanilla-JS ES modules (no bundler, no node). Keep it that way.
+- `static/` is no-build vanilla-JS ES modules (no bundler, no node, no external assets). Keep it that way.
 - Tests accompany every module in the same commit; `ScriptedEndpoint` in `tests/conftest.py` replays
   canned actions and is the main engine harness. Endpoint adapters are mock-tested; anything touching the
   network hides behind `RSCHED_LIVE_TESTS=1`.
@@ -160,4 +174,4 @@ or Docker (`docker compose up -d` — a disposable engine-only image; source, co
 those dirs). Server config: `~/.config/routine-scheduler/config.yaml` (generated with a random token on
 first boot by `bootstrap.ensure_config`, so a fresh deploy is never an open API). Web UI on `:8321`,
 bearer-token auth; `RSCHED_BIND` / `RSCHED_PORT` override for containers. First launch redirects to
-Settings until setup (Secrets, endpoints + roles, GitHub device-flow, libraries) is finished.
+Settings until setup (secrets, endpoints + system model, GitHub device-flow, the library) is finished.
