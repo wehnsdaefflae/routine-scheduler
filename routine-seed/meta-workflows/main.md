@@ -27,7 +27,7 @@ tags:
 - maintenance
 ---
 
-You maintain the workflow library at `~/.local/share/workflow-library` by sweeping the
+You maintain the workflow library at `~/.local/share/routine-scheduler-libraries/workflows` by sweeping the
 run transcripts of every routine under `~/routines` and turning what you find into safe
 edits, proposals, or drafts.
 

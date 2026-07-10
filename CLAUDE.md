@@ -78,7 +78,7 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (main / subroutine / tool_call),
   `fragments:` (active standards), `budgets:` (max_turns / wall_clock_min / total_tokens / subruns /
-  subrun_depth / ask_timeout_h), `fs_read_roots` / `fs_write_roots`, retention, notifications.
+  subrun_depth / ask_timeout_h), `fs_read_roots` / `fs_write_roots`, retention.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
   routes to `steps/<name>.md` modules, read on demand). `instruction.md` — the task. `fragments/*.md` —
   editable routine-local copies of the active fragments.
@@ -98,10 +98,11 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
 
 ## Libraries & seeds
 
-Three git-backed libraries under `~/.local/share/`, each seedable from the repo and syncable to a remote:
-**workflow-library** (control-flow patterns), **routine-fragments** (reusable standards inlined per
-routine), **global-utils** (the ONLY way routines run code). Repo seeds: `library-seed/` (workflows +
-fragments), `util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `library-sync`,
+ONE git-backed library repo (`libraries_home`, default `~/.local/share/routine-scheduler-libraries`),
+seedable from the repo and syncable to a remote, holding **workflows/** (control-flow patterns),
+**fragments/** (reusable standards inlined per routine), and **utils/** (the ONLY way routines run
+code, with the `gu` dispatcher at the root). Repo seeds: `library-seed/` (workflows + fragments),
+`util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `library-sync`,
 `meta-workflows` — installed **disabled**). `bootstrap.py` seeds on first boot; `deploy/install.sh` for
 host installs.
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
@@ -109,7 +110,7 @@ host installs.
   (`slug / name / description / when_to_use / version / status / tags / includes`, optional `tools:`
   allowlist), `PHASES` / `COMPLETION` literals, a top-level `run()` whose body is the per-run control flow,
   one function per step, and dummy parameter imports (`from routine.params import …`) naming the routine's
-  parameters by type+meaning. Legacy markdown workflows are still read (`.py` preferred). The runtime is
+  parameters by type+meaning. The runtime is
   unchanged — routines are still the markdown `main.md`+`steps/` the orchestrator interprets: `adapt.decompose`
   turns a Python pattern into that markdown at scaffold; `materialize` renders it whole (sub-routines/fallback).
   A `tools:` list restricts action kinds (`finish` always allowed) — how `clarify-instruction` is held to
@@ -117,12 +118,12 @@ host installs.
   `system_model`. The **new-routine wizard** runs `clarify-instruction`, which now SUGGESTS a pattern (or
   asks to generate one) and MARRIES the task to it — asking questions that overlay the task on the pattern's
   control flow + parameters (candidates written to the session's `state/candidates.md`).
-- **Fragments** (`routine-fragments`): reusable standards inlined per routine. The improvement standards are
+- **Fragments**: reusable standards inlined per routine. The improvement standards are
   five **after-run passes** — `improve-bugfix / -research / -features / -ui / -efficiency` — each infers the
   routine's intention from the run just completed and acts in its lens (fresh-eyes throughout), asking a
   deferred question (→ Decisions page) when unsure. `ledger-discipline` (cross-run memory) + `ask-policy` /
   `global-utils` / `web-research` / `communication` are the standing standards. `DEFAULT_FRAGMENTS` (config)
-  is the source of truth; the legacy `self:` toggle system is retired.
+  is the source of truth.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`, `calls:`),
   a `secrets: NAME,…` declaration line, and a `--selftest` the engine runs before saving (`write_util` is
   selftest-gated, and approval-gated when `confirm_util_changes`). Discover with the `util` action `name: list`.
@@ -155,7 +156,7 @@ host installs.
 
 `deploy/install.sh` (idempotent host install: venv, config + token, seeds, systemd user service + linger)
 or Docker (`docker compose up -d` — a disposable engine-only image; source, config, `~/.credentials`,
-`~/routines`, and the three libraries are all bind-mounted, so the whole system migrates as a tarball of
+`~/routines`, and the library repo are all bind-mounted, so the whole system migrates as a tarball of
 those dirs). Server config: `~/.config/routine-scheduler/config.yaml` (generated with a random token on
 first boot by `bootstrap.ensure_config`, so a fresh deploy is never an open API). Web UI on `:8321`,
 bearer-token auth; `RSCHED_BIND` / `RSCHED_PORT` override for containers. First launch redirects to

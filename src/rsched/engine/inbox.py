@@ -9,7 +9,6 @@ Consumed files move to <run_dir>/consumed/ for the audit trail.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from ..paths import read_json

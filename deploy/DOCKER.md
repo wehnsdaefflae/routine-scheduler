@@ -1,9 +1,9 @@
 # Running rsched in Docker + migrating to another host
 
 The container is the **engine environment only** — Python + `uv` + `git` + Node + the `claude` CLI.
-Everything mutable (the source tree, `config.yaml`, `~/.credentials`, `~/routines`, and the three
-libraries) is **bind-mounted**, so the whole system moves as a tarball of those directories and the
-container itself stays disposable.
+Everything mutable (the source tree, `config.yaml`, `~/.credentials`, `~/routines`, and the
+library repo) is **bind-mounted**, so the whole system moves as a tarball of those directories and
+the container itself stays disposable.
 
 Container paths are always `/home/mark/...` (routines and config bake absolute paths, so they must
 not change). Host paths are `${RSCHED_HOME}`-relative (default `/home/mark`).

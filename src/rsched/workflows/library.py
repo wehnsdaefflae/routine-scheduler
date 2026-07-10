@@ -1,11 +1,9 @@
-"""Workflow library access: flat markdown files in a git repo, catalog derived live."""
+"""Workflow library access: flat Python pattern files in a git repo, catalog derived live."""
 
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-
-from .. import frontmatter
 
 
 def workflows_dir(home: Path) -> Path:
@@ -21,16 +19,9 @@ def proposals_dir(home: Path) -> Path:
 
 
 def _workflow_paths(home: Path) -> list[Path]:
-    """Every workflow file, one per slug, preferring `.py` over a legacy `.md` of the same slug."""
+    """Every workflow file, one `<slug>.py` pattern per slug."""
     d = workflows_dir(home)
-    if not d.is_dir():
-        return []
-    by_slug: dict[str, Path] = {}
-    for path in sorted(d.glob("*.md")):
-        by_slug[path.stem] = path
-    for path in sorted(d.glob("*.py")):          # .py wins over a same-slug .md
-        by_slug[path.stem] = path
-    return [by_slug[s] for s in sorted(by_slug)]
+    return sorted(d.glob("*.py")) if d.is_dir() else []
 
 
 def list_workflows(home: Path) -> list[dict]:
@@ -49,17 +40,12 @@ def list_workflows(home: Path) -> list[dict]:
 
 
 def _read_meta(path: Path) -> dict:
-    """Parse a workflow file's metadata by extension (Python META vs markdown frontmatter)."""
-    if path.suffix == ".py":
-        from .pyworkflow import parse_py
-        try:
-            return parse_py(path.read_text(encoding="utf-8"))
-        except (SyntaxError, ValueError):
-            return {}
-    meta, _ = frontmatter.load(path)
-    meta = dict(meta)
-    meta["format"] = "md"
-    return meta
+    """Parse a workflow pattern's META (statically; unparseable files list with empty meta)."""
+    from .pyworkflow import parse_py
+    try:
+        return parse_py(path.read_text(encoding="utf-8"))
+    except (SyntaxError, ValueError):
+        return {}
 
 
 def list_fragments(home: Path) -> list[str]:
@@ -68,20 +54,11 @@ def list_fragments(home: Path) -> list[str]:
 
 
 def read_workflow(home: Path, slug: str) -> tuple[dict, str, str]:
-    """(meta, body, raw). For a Python workflow, meta['format']=='py' and body==raw==the source
-    (the whole file is the pattern); for a legacy markdown workflow, body is the post-frontmatter
-    markdown. Prefers `<slug>.py`, falls back to `<slug>.md`. Raises FileNotFoundError."""
-    py = workflows_dir(home) / f"{slug}.py"
-    if py.exists():
-        from .pyworkflow import parse_py
-        raw = py.read_text(encoding="utf-8")
-        return parse_py(raw), raw, raw
-    path = workflows_dir(home) / f"{slug}.md"
-    raw = path.read_text(encoding="utf-8")
-    meta, body = frontmatter.parse(raw)
-    meta = dict(meta)
-    meta["format"] = "md"
-    return meta, body, raw
+    """(meta, body, raw) for `<slug>.py`. body==raw==the source — the whole file is the pattern.
+    Raises FileNotFoundError."""
+    from .pyworkflow import parse_py
+    raw = (workflows_dir(home) / f"{slug}.py").read_text(encoding="utf-8")
+    return parse_py(raw), raw, raw
 
 
 def read_fragment(home: Path, slug: str) -> str:

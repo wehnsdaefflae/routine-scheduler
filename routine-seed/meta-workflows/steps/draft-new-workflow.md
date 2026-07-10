@@ -3,7 +3,7 @@
 Only if the evidence shows a **recurring instruction shape with no fitting workflow** (`cursor.clusters.missing_shape`, or your single-workflow review in a no-new-runs sweep).
 
 ## Do
-1. Draft `workflows/<new-slug>.md` with `status: draft` frontmatter and the three required sections.
+1. Draft `workflows/<new-slug>.py` — a Python pattern file with a complete `META` dict (`"status": "draft"`), `PHASES` / `COMPLETION` literals, and a top-level `main()`.
 2. Lint it.
 3. Commit it (git-sync).
 

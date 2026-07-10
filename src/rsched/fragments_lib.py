@@ -1,6 +1,6 @@
-"""Fragment library — reusable standards (self-management + how-to-use-utils) that routines
-toggle on. A first-class git-backed library like the workflow and util libraries; routines
-keep editable copies of their active fragments under <routine>/fragments/.
+"""Fragment access — reusable standards (self-management + how-to-use-utils) that routines
+toggle on. Fragments live in the library repo's fragments/ subdir; routines keep editable
+copies of their active fragments under <routine>/fragments/.
 """
 
 from __future__ import annotations
@@ -21,29 +21,10 @@ def fragment_body(raw: str) -> str:
     return frontmatter.parse(raw)[1]
 
 
-def ensure_library(home: Path, *, remote: str = "") -> None:
-    # In the merged-library layout, fragments live in <libraries_home>/fragments — a subdir of an
-    # already-managed git repo. Don't init/clone it; just make sure the directory exists.
-    if (home / ".git").exists() or (home.parent / ".git").exists():
-        home.mkdir(parents=True, exist_ok=True)
-        return
-    home.parent.mkdir(parents=True, exist_ok=True)
-    if remote and not home.exists():
-        r = subprocess.run(["git", "clone", "--quiet", remote, str(home)],
-                           capture_output=True, text=True, timeout=120)
-        if r.returncode == 0:
-            _configure(home)
-            return
+def ensure_library(home: Path) -> None:
+    """Fragments live in the library repo's fragments/ subdir — the repo itself is managed by
+    utils_lib.ensure_library; here we only make sure the directory exists."""
     home.mkdir(parents=True, exist_ok=True)
-    _git(home, "init", "-q", "-b", "main")
-    _configure(home)
-    if remote:
-        _git(home, "remote", "add", "origin", remote)
-
-
-def _configure(home: Path) -> None:
-    _git(home, "config", "user.name", "routine-scheduler")
-    _git(home, "config", "user.email", "noreply@routine-scheduler.local")
 
 
 def _git(home: Path, *args: str) -> subprocess.CompletedProcess:

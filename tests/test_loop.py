@@ -16,12 +16,10 @@ TS = "20260708-070000"
 
 def _server(routine_dir) -> ServerConfig:
     s = ServerConfig()
-    # hermetic: no library/utils on disk → sub-workflows use the builtin fallback body;
+    # hermetic: no library on disk → sub-workflows use the builtin fallback body;
     # util actions on a missing name return a "missing" observation. confirm off so
     # write_util tests don't block on approval.
-    s.library_home = routine_dir.parent.parent / "no-library"
-    s.fragments_home = routine_dir.parent.parent / "no-fragments"
-    s.utils_home = routine_dir.parent.parent / "utils-home"
+    s.libraries_home = routine_dir.parent.parent / "no-library"
     s.confirm_util_changes = False
     return s
 
@@ -458,13 +456,20 @@ def test_spawn_caps(make_routine, scripted):
 def test_spawn_picks_library_workflow(make_routine, scripted, tmp_path):
     lib = tmp_path / "lib"
     (lib / "workflows").mkdir(parents=True)
-    (lib / "workflows" / "echo-task.md").write_text(
-        "---\nname: Echo\nslug: echo-task\ndescription: d\nwhen_to_use: w\n"
-        "version: 1\nstatus: stable\nparams: []\n---\n\n## Run flow\n"
-        "1. MARKER-ECHO-BODY: do the echo.\n## Phases\n- only\n## Completion criteria\n- done\n")
+    (lib / "workflows" / "echo-task.py").write_text(
+        '"""Echo pattern."""\n'
+        'META = {"name": "Echo", "slug": "echo-task", "description": "d", "when_to_use": "w",\n'
+        '        "version": 1, "status": "stable", "tags": ["a", "b", "c"]}\n'
+        'PHASES = ["only"]\n'
+        'COMPLETION = "done"\n'
+        "def main():\n"
+        '    """MARKER-ECHO-BODY: do the echo."""\n'
+        "    echo()\n"
+        "def echo():\n"
+        '    """Do the echo."""\n')
     d = make_routine(slug="libpick")
     server = ServerConfig()
-    server.library_home = lib
+    server.libraries_home = lib
     ep = scripted([
         (PARENT, spawn("CHILD-E: echo it.", workflow="echo-task")),
         ("CHILD-E", finish(summary="echoed")),

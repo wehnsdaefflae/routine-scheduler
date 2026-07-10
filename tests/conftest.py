@@ -21,7 +21,6 @@ from rsched.endpoints.base import Completion
 WORKFLOW_MD = """---
 materialized_from: {slug: test-flow, commit: abc123, version: 1}
 adapted: 2026-07-08
-params: {}
 ---
 
 ## Run flow
@@ -43,7 +42,6 @@ class ScriptedEndpoint:
         self.lock = threading.Lock()
         self.name = "scripted"
         self.context_chars = 200_000
-        self.supports_schema = True
 
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None, timeout=600):
         system = messages[0]["content"] if messages else ""
@@ -87,7 +85,7 @@ class ScriptedRegistry(EndpointRegistry):
 
 @pytest.fixture
 def make_routine(tmp_path):
-    def _make(slug: str = "testr", *, budgets: dict | None = None, allowlist=None,
+    def _make(slug: str = "testr", *, budgets: dict | None = None,
               workflow_md: str = WORKFLOW_MD,
               instruction: str = "Test instruction: do the minimal thing.") -> Path:
         d = tmp_path / "routines" / slug
@@ -102,8 +100,6 @@ def make_routine(tmp_path):
                         "max_subruns": 2, "max_subrun_depth": 1, "ask_timeout_h": 1,
                         **(budgets or {})},
         }
-        if allowlist is not None:
-            cfg["shell_allowlist"] = allowlist
         (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
         (d / "instruction.md").write_text(instruction, encoding="utf-8")
         (d / "main.md").write_text(workflow_md, encoding="utf-8")   # the routine's materialized recipe

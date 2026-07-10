@@ -188,7 +188,6 @@ def set_fragments(request: Request, slug: str, body: FragmentsBody) -> dict:
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     raw["fragments"] = active
-    raw.pop("self", None)
     path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
     _git_commit(info.cfg.dir, f"fragments: {', '.join(active)}")
     return {"ok": True, "active": active}
@@ -200,7 +199,6 @@ class RoutinePatch(BaseModel):
     budgets: dict | None = None
     confirm_util_changes: bool | None = None
     models: dict | None = None              # {main|subroutine|tool_call: {endpoint, model, effort?}}
-    notifications: str | None = None
     name: str | None = None
     description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])

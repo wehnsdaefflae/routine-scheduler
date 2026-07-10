@@ -16,9 +16,7 @@ PATHS=(
   .config/routine-scheduler            # config.yaml (token, endpoints, source_repo)
   .credentials                         # SECRETS: endpoint keys + claude-code OAuth token
   routines                             # the routine repos, their runs, state, ledgers
-  .local/share/workflow-library        # workflows library (git)
-  .local/share/routine-fragments       # fragments library (git)
-  .local/share/global-utils            # global utils library (git)
+  .local/share/routine-scheduler-libraries   # the library repo: workflows/ + fragments/ + utils/ (git)
 )
 
 for p in "${PATHS[@]}"; do

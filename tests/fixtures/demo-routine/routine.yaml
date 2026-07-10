@@ -1,11 +1,9 @@
 name: Demo haiku
-slug: demo
+slug: demo-routine
+description: Writes a fresh haiku into haiku.txt once a week.
 enabled: true
 schedule: {cron: "0 7 * * 1", tz: Europe/Berlin, catchup: skip}
 workflow: {library_slug: demo-haiku, library_commit: ""}
 budgets: {max_turns: 12, max_wall_clock_min: 10, max_total_tokens: 200000,
           max_subruns: 2, max_subrun_depth: 1, ask_timeout_h: 1}
-self: {audit: false, improve: false, ledger: true, fresh_eyes: false, hygiene: false}
-shell_allowlist: ["gu *", "git *", "uv run --script *"]
-notifications: ui
 retention: {keep_runs: 10}

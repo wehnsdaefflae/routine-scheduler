@@ -66,7 +66,10 @@ def list_endpoints(request: Request) -> dict:
             "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None}
 
 
-# --- library repositories (workflows / fragments / global utils) ---------------------
+# --- the library repository (ONE git repo: workflows/ + fragments/ + utils/) ---------------------
+
+LIBRARY_NAME = "library"
+
 
 def _remote_of(home) -> str:
     r = subprocess.run(["git", "-C", str(home), "remote", "get-url", "origin"],
@@ -74,33 +77,26 @@ def _remote_of(home) -> str:
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
-def _library_has_content(name: str, home) -> bool:
-    """True once a library actually holds items — the daemon auto-git-inits empty fragment/util
-    scaffolds, so a bare .git is NOT 'set up'. This drives the provision-vs-remote UI."""
+def _library_has_content(home) -> bool:
+    """True once the library actually holds items — the daemon auto-git-inits an empty
+    scaffold, so a bare .git is NOT 'set up'. This drives the provision-vs-remote UI."""
     from .. import fragments_lib, utils_lib
     from ..workflows.library import list_workflows
     try:
-        if name == "workflows":
-            return bool(list_workflows(home))
-        if name == "fragments":
-            return bool(fragments_lib.list_fragments(home))
-        if name == "utils":
-            return bool(utils_lib.list_utils(home))
+        return bool(list_workflows(home) or fragments_lib.list_fragments(home / "fragments")
+                    or utils_lib.list_utils(home))
     except Exception:
         return False
-    return False
 
 
 @router.get("/settings/libraries")
 def list_libraries(request: Request) -> dict:
     s = _server(request)
-    libs = [("workflows", s.library_home, s.library_remote),
-            ("fragments", s.fragments_home, s.fragments_remote),
-            ("utils", s.utils_home, s.utils_remote)]
-    return {"libraries": [{"name": n, "home": str(h),
-                           "remote": _remote_of(h) or r,
-                           "exists": (h / ".git").is_dir(),
-                           "provisioned": _library_has_content(n, h)} for n, h, r in libs]}
+    home = s.libraries_home
+    return {"libraries": [{"name": LIBRARY_NAME, "home": str(home),
+                           "remote": _remote_of(home) or s.libraries_remote,
+                           "exists": (home / ".git").is_dir(),
+                           "provisioned": _library_has_content(home)}]}
 
 
 class LibraryRemote(BaseModel):
@@ -110,18 +106,15 @@ class LibraryRemote(BaseModel):
 @router.put("/settings/libraries/{name}")
 def set_library_remote(request: Request, name: str, body: LibraryRemote) -> dict:
     s = _server(request)
-    homes = {"workflows": (s.library_home, "library_remote"),
-             "fragments": (s.fragments_home, "fragments_remote"),
-             "utils": (s.utils_home, "utils_remote")}
-    if name not in homes:
+    if name != LIBRARY_NAME:
         raise HTTPException(404, f"unknown library {name!r}")
-    home, cfg_key = homes[name]
+    home = s.libraries_home
     # write into config.yaml
     path = _config_path(request)
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    raw[cfg_key] = body.remote
+    raw["libraries_remote"] = body.remote
     path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    setattr(s, cfg_key, body.remote)
+    s.libraries_remote = body.remote
     # point the local repo's origin at it (best-effort)
     result = {"ok": True, "pushed": False}
     if body.remote and (home / ".git").is_dir():
@@ -146,15 +139,14 @@ class Provision(BaseModel):
 def provision_library(request: Request, name: str, body: Provision) -> dict:
     from .. import bootstrap
     s = _server(request)
-    homes = {"workflows": s.library_home, "fragments": s.fragments_home, "utils": s.utils_home}
-    if name not in homes:
+    if name != LIBRARY_NAME:
         raise HTTPException(404, f"unknown library {name!r}")
-    home = homes[name]
+    home = s.libraries_home
     repo = body.repo.strip()
     if not repo:
         raise HTTPException(400, "enter a repo (owner/name or URL)")
-    if _library_has_content(name, home):
-        raise HTTPException(409, f"{name} already has content — use its remote field instead")
+    if _library_has_content(home):
+        raise HTTPException(409, "the library already has content — use its remote field instead")
     if not shutil.which("gh"):
         raise HTTPException(400, "the `gh` CLI is not available")
     if body.mode == "clone":
@@ -170,9 +162,9 @@ def provision_library(request: Request, name: str, body: Provision) -> dict:
         bootstrap.install_push_hook(home)
     elif body.mode == "create":
         try:
-            bootstrap.seed_library(name, home)          # copy defaults + git init + commit + hook
+            bootstrap.seed_libraries(home)          # copy defaults + git init + commit + hook
         except OSError as exc:
-            raise HTTPException(500, f"could not seed {name}: {exc}") from exc
+            raise HTTPException(500, f"could not seed the library: {exc}") from exc
         r = subprocess.run(["gh", "repo", "create", repo, "--private", "--source", str(home),
                             "--remote", "origin", "--push"], capture_output=True, text=True, timeout=120)
         if r.returncode != 0:

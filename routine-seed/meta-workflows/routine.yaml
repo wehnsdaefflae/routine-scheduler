@@ -20,16 +20,10 @@ budgets:
   max_subruns: 8
   max_subrun_depth: 2
   ask_timeout_h: 8
-notifications: ui
 retention:
   keep_runs: 30
-shell_allowlist:
-- gu *
-- git *
-- uv run *
-- ls *
 fs_read_roots:
 - ~/routines
-- ~/.local/share/workflow-library
+- ~/.local/share/routine-scheduler-libraries
 fs_write_roots:
-- ~/.local/share/workflow-library
+- ~/.local/share/routine-scheduler-libraries

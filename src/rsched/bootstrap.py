@@ -78,27 +78,24 @@ def seed_routines(routines_home: Path) -> int:
     return n
 
 
-def seed_library(name: str, home: Path) -> None:
-    """Populate an empty library from the built-in seed + git-init it (matches deploy/install.sh)."""
+def seed_libraries(home: Path) -> None:
+    """Populate an empty library repo (workflows/ + fragments/ + utils/) from the built-in seeds
+    + git-init it (matches deploy/install.sh). The `gu` dispatcher is installed by
+    utils_lib.ensure_library on first use."""
     root = repo_root()
     home.mkdir(parents=True, exist_ok=True)
-    if name == "workflows":
-        src = root / "library-seed" / "workflows"      # NOT the whole seed — fragments live in their own repo
-        if src.is_dir():
-            shutil.copytree(src, home / "workflows", dirs_exist_ok=True)
-    elif name == "fragments":
-        for f in sorted((root / "library-seed" / "fragments").glob("*.md")):
-            shutil.copy(f, home / f.name)
-    elif name == "utils":
-        (home / "utils").mkdir(exist_ok=True)
-        if (root / "util-seed" / "utils").is_dir():
-            shutil.copytree(root / "util-seed" / "utils", home / "utils", dirs_exist_ok=True)
-    else:
-        raise ValueError(f"unknown library {name!r}")
+    if (root / "library-seed" / "workflows").is_dir():
+        shutil.copytree(root / "library-seed" / "workflows", home / "workflows", dirs_exist_ok=True)
+    (home / "fragments").mkdir(exist_ok=True)
+    for f in sorted((root / "library-seed" / "fragments").glob("*.md")):
+        shutil.copy(f, home / "fragments" / f.name)
+    (home / "utils").mkdir(exist_ok=True)
+    if (root / "util-seed" / "utils").is_dir():
+        shutil.copytree(root / "util-seed" / "utils", home / "utils", dirs_exist_ok=True)
     if not (home / ".git").is_dir():
         _git(home, "init", "-q", "-b", "main")
     _git(home, "config", "user.name", "routine-scheduler")
     _git(home, "config", "user.email", "noreply@routine-scheduler.local")
     _git(home, "add", "-A")
-    _git(home, "commit", "-qm", f"seed {name} library")
+    _git(home, "commit", "-qm", "seed library repo")
     install_push_hook(home)

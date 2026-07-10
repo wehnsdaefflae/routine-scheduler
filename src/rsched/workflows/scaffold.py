@@ -30,7 +30,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
              workflow_slug: str, cron: str = "", tz: str = "Europe/Berlin",
              description: str = "", models: dict[str, dict] | None = None,
              params: dict | None = None, budgets: dict | None = None,
-             fragments: list[str] | None = None, shell_allowlist: list[str] | None = None,
+             fragments: list[str] | None = None,
              fs_read_roots: list[str] | None = None,
              fs_write_roots: list[str] | None = None,
              steps: dict[str, str] | None = None, enabled: bool = True,
@@ -103,11 +103,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
         **({"models": models} if models else {}),
         "fragments": active,
         "budgets": {**DEFAULT_BUDGETS, **(budgets or {})},
-        "notifications": "ui",
         "retention": {"keep_runs": 30},
     }
-    if shell_allowlist:
-        cfg["shell_allowlist"] = shell_allowlist
     if fs_read_roots:
         cfg["fs_read_roots"] = [_tilde(p) for p in fs_read_roots]
     if fs_write_roots:

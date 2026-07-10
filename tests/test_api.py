@@ -20,7 +20,7 @@ def client(tmp_path, make_routine):
     cfg_path.write_text(yaml.safe_dump({
         "token": TOKEN,
         "routines_home": str(tmp_path / "routines"),
-        "library_home": str(tmp_path / "library"),
+        "libraries_home": str(tmp_path / "library"),
         "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
         "system_model": {"endpoint": "dummy", "model": "m"},
     }))
@@ -498,7 +498,7 @@ def test_wizard_candidates_inline_pattern_source(tmp_path):
     from rsched.web import api_wizard
 
     server = ServerConfig()
-    server.library_home = Path(__file__).resolve().parents[1] / "library-seed"
+    server.libraries_home = Path(__file__).resolve().parents[1] / "library-seed"
     d = tmp_path / "wiz"
     (d / "state").mkdir(parents=True)
     api_wizard._write_candidates(server, d)

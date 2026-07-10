@@ -220,9 +220,8 @@ def _write_candidates(server, d: Path) -> None:
             _, _, raw = library.read_workflow(server.library_home, w["slug"])
         except FileNotFoundError:
             continue
-        lang = "python" if w["file"].endswith(".py") else "markdown"
         parts += [f"## {w['slug']} — {w['description']}", f"when_to_use: {w['when_to_use']}", "",
-                  f"```{lang}", raw.strip(), "```", ""]
+                  "```python", raw.strip(), "```", ""]
     (d / "state" / "candidates.md").write_text("\n".join(parts), encoding="utf-8")
 
 

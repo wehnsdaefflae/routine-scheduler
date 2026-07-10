@@ -420,7 +420,7 @@ class EngineLoop:
             return {"kind": "write_util", "name": name, "declined": True,
                     "reason": "sub-workflows cannot create/revise utils — use existing ones"}
         home = ctx.server.utils_home
-        utils_lib.ensure_library(home, remote=ctx.server.utils_remote)
+        utils_lib.ensure_library(home, remote=ctx.server.libraries_remote)
         creating = not utils_lib.exists(home, name)
         if ctx.routine.confirm_utils(ctx.server):
             verb = "create" if creating else "revise"
@@ -514,13 +514,12 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
     (routine_dir / "main.md").write_text(frontmatter.dump(main_meta, result["main"]), encoding="utf-8")
 
 
-def load_workflow(routine_dir, cfg, server) -> tuple[str, str, dict, list[str] | None]:
+def load_workflow(routine_dir, cfg) -> tuple[str, str, dict, list[str] | None]:
     """Load the routine's OWN main.md body (the recipe was materialized into it at generation)
     plus its active FRAGMENTS. Returns (main_body, fragments_text, provenance, allowed_tools).
 
     A routine is self-contained: nothing is read from the workflow library at run time. Fragments
-    are the routine's editable copies under fragments/; if that dir is empty we fall back to the
-    library by cfg.fragments (transitional)."""
+    are the routine's editable copies under fragments/."""
     from .. import fragments_lib
 
     # The recipe is materialized into the routine's OWN main.md at generation, so a routine is
@@ -535,17 +534,10 @@ def load_workflow(routine_dir, cfg, server) -> tuple[str, str, dict, list[str] |
     prov = {"slug": src.get("slug", cfg.workflow_slug),
             "commit": src.get("commit", cfg.workflow_commit), "version": src.get("version", 0)}
 
-    # active fragments: prefer the routine's editable copies, else the library
-    parts: list[str] = []
+    # active fragments: the routine's editable copies under fragments/
     frag_dir = routine_dir / "fragments"
     files = sorted(frag_dir.glob("*.md")) if frag_dir.is_dir() else []
-    if files:
-        parts = [fragments_lib.fragment_body(p.read_text(encoding="utf-8")).strip() for p in files]
-    else:
-        for slug in cfg.fragments:
-            content = fragments_lib.read_fragment(server.fragments_home, slug)
-            if content:
-                parts.append(fragments_lib.fragment_body(content).strip())
+    parts = [fragments_lib.fragment_body(p.read_text(encoding="utf-8")).strip() for p in files]
     tools = meta.get("tools") if isinstance(meta.get("tools"), list) else None
     return body, "\n\n".join(parts), prov, tools
 
@@ -587,7 +579,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                      budgets=Budgets.from_config(cfg.budgets))
     if not resume_from:
         _ensure_decomposed(routine_dir, cfg, server)   # workflow + instruction → main.md, if not yet
-    body, fragments_text, prov, allowed_tools = load_workflow(routine_dir, cfg, server)
+    body, fragments_text, prov, allowed_tools = load_workflow(routine_dir, cfg)
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8")
     if not resume_from:            # a resumed run keeps the original header (transcript is append-only)
         transcript.header(run_id=ctx.run_id, routine=cfg.slug, workflow=prov,

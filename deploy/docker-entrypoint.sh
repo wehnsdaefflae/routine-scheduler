@@ -7,9 +7,7 @@ for d in \
   "/home/mark/.config/routine-scheduler" \
   "/home/mark/.config/gh" \
   "/home/mark/routines" \
-  "/home/mark/.local/share/workflow-library" \
-  "/home/mark/.local/share/routine-fragments" \
-  "/home/mark/.local/share/global-utils" ; do
+  "/home/mark/.local/share/routine-scheduler-libraries" ; do
   mkdir -p "$d"
   chown mark:mark "$d" 2>/dev/null || true
 done

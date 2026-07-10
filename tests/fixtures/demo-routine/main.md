@@ -1,7 +1,6 @@
 ---
 materialized_from: {slug: demo-haiku, commit: "", version: 1}
 adapted: 2026-07-08
-params: {}
 ---
 
 ## Run flow

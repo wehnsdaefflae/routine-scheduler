@@ -99,7 +99,7 @@ class SubrunManager:
                           depth=ctx.depth + 1, parent=ctx.run_id)
         from .loop import EngineLoop, load_workflow  # local import: loop imports this module
 
-        body, _frag, _prov, _tools = load_workflow(sub_dir, child_ctx.routine, ctx.server)
+        body, _frag, _prov, _tools = load_workflow(sub_dir, child_ctx.routine)
         abort_event = threading.Event()
         child_loop = EngineLoop(child_ctx, body, action["prompt"], abort_event=abort_event)
         sub = Subrun(n=n, label=label, workflow=recipe_slug, thread=None,  # type: ignore[arg-type]

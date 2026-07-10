@@ -7,10 +7,22 @@ import yaml
 
 from rsched.config import ServerConfig, load_routine
 from rsched.workflows.adapt import materialize
-from rsched.workflows.lint import (lint_all, lint_materialized_text, lint_workflow_text)
+from rsched.workflows.lint import lint_all, lint_materialized_text, lint_workflow_py
 from rsched.workflows.scaffold import scaffold
 
 SEED = Path(__file__).resolve().parents[1] / "library-seed"
+UTIL_SEED = Path(__file__).resolve().parents[1] / "util-seed"
+
+
+def merged_library(tmp_path) -> Path:
+    """A library-repo layout (workflows/ + fragments/ + utils/) built from the repo seeds."""
+    import shutil
+
+    home = tmp_path / "libraries"
+    shutil.copytree(SEED / "workflows", home / "workflows")
+    shutil.copytree(SEED / "fragments", home / "fragments")
+    shutil.copytree(UTIL_SEED / "utils", home / "utils")
+    return home
 
 
 def test_seed_library_is_clean():
@@ -22,25 +34,14 @@ def test_seed_library_is_clean():
 
 def test_lint_catches_defects():
     frags = ["ask-policy"]
-    bad = """---
-name: X
-slug: mismatch
-description: d
-when_to_use: w
-version: 1
-status: wild
-includes: [nope]
-params: []
----
-## Run flow
-1. do {{undeclared}} things
-"""
-    problems = lint_workflow_text(bad, filename="bad.md", fragment_slugs=frags)
+    bad = ('"""bad pattern"""\n'
+           'META = {"name": "X", "slug": "mismatch", "description": "d", "when_to_use": "w",\n'
+           '        "version": 1, "status": "wild", "includes": ["nope"], "tags": ["a", "b", "c"]}\n')
+    problems = lint_workflow_py(bad, filename="bad.py", fragment_slugs=frags)
     text = " | ".join(problems)
     for needle in ("filename does not match", "status must be", "does not resolve",
-                   "## Phases", "## Completion criteria", "undeclared"):
+                   "no top-level main()", "PHASES", "COMPLETION"):
         assert needle in text, needle
-    assert lint_workflow_text("no frontmatter at all", filename="x.md", fragment_slugs=[])
 
 
 def test_materialize_carries_workflow_and_provenance():
@@ -134,17 +135,15 @@ def test_bootstrap_seeds_meta_routines(tmp_path):
 
 
 def test_bootstrap_seeds_libraries(tmp_path):
-    """seed_library populates an empty library from the built-in defaults + git-inits it."""
-    from rsched.bootstrap import seed_library
-    wf = tmp_path / "wf"
-    seed_library("workflows", wf)
-    assert (wf / "workflows").is_dir() and list((wf / "workflows").glob("*.py"))  # Python patterns
-    assert (wf / ".git").is_dir()
-    # fragments live in their OWN repo — the workflow library must not carry a stray copy
-    assert not (wf / "fragments").exists()
-    ut = tmp_path / "ut"
-    seed_library("utils", ut)
-    assert (ut / "utils").is_dir() and any((ut / "utils").iterdir())
+    """seed_libraries populates an empty library repo (workflows/ + fragments/ + utils/) from the
+    built-in defaults + git-inits it."""
+    from rsched.bootstrap import seed_libraries
+    home = tmp_path / "libraries"
+    seed_libraries(home)
+    assert (home / "workflows").is_dir() and list((home / "workflows").glob("*.py"))  # Python patterns
+    assert (home / "fragments").is_dir() and list((home / "fragments").glob("*.md"))
+    assert (home / "utils").is_dir() and any((home / "utils").iterdir())
+    assert (home / ".git").is_dir()
 
 
 def test_util_declares_secrets(tmp_path):
@@ -161,13 +160,21 @@ def test_util_declares_secrets(tmp_path):
     assert utils_lib.list_utils(tmp_path)[0]["secrets"] == []
 
 
+def _py_workflow(tags: str) -> str:
+    return ('"""x pattern"""\n'
+            'META = {"name": "X", "slug": "x", "description": "d", "when_to_use": "w",\n'
+            f'        "version": 1, "status": "draft", "tags": {tags}}}\n'
+            'PHASES = ["steady"]\n'
+            'COMPLETION = "done"\n'
+            "def main():\n    pass\n")
+
+
 def test_lint_requires_three_tags():
-    from rsched.workflows.lint import lint_fragment_text, lint_workflow_text
-    two_tag_wf = ("---\nname: X\nslug: x\ndescription: d\nwhen_to_use: w\nversion: 1\n"
-                  "status: draft\ntags: [a, b]\n---\n## Run flow\n## Phases\n## Completion criteria\n")
-    assert any("at least 3 tags" in p for p in lint_workflow_text(two_tag_wf, filename="x.md", fragment_slugs=[]))
-    three_tag_wf = two_tag_wf.replace("[a, b]", "[a, b, c]")
-    assert not any("tags" in p for p in lint_workflow_text(three_tag_wf, filename="x.md", fragment_slugs=[]))
+    from rsched.workflows.lint import lint_fragment_text
+    assert any("at least 3 tags" in p
+               for p in lint_workflow_py(_py_workflow('["a", "b"]'), filename="x.py", fragment_slugs=[]))
+    assert not any("tags" in p
+                   for p in lint_workflow_py(_py_workflow('["a", "b", "c"]'), filename="x.py", fragment_slugs=[]))
     two_tag_frag = "---\ntags: [a, b]\n---\n# fragment: x — y\n\nbody line one\nbody line two\n"
     assert any("at least 3 tags" in p for p in lint_fragment_text(two_tag_frag, filename="x.md"))
 
@@ -180,10 +187,8 @@ def test_tag_suggestion_helpers(tmp_path):
     assert normalize_tags([]) == []
 
     server = ServerConfig()
-    server.library_home = SEED
-    server.fragments_home = SEED / "fragments"
-    server.utils_home = SEED.parent / "util-seed"
-    server.routines_home = tmp_path                      # no routines → vocab from library only
+    server.libraries_home = merged_library(tmp_path)
+    server.routines_home = tmp_path / "routines"         # no routines → vocab from library only
     vocab = existing_tags(server)
     assert vocab == sorted(set(vocab))                   # deduped + sorted
     for t in ("research", "web", "dev", "git"):          # spans workflows, fragments, utils
@@ -202,9 +207,8 @@ def test_suggest_candidate_filter_uses_meta_tag():
 def test_lint_rejects_non_list_tags():
     from rsched.workflows.lint import lint_fragment_text
 
-    bad_wf = ("---\nname: X\nslug: x\ndescription: d\nwhen_to_use: w\nversion: 1\n"
-              "status: draft\ntags: not-a-list\n---\n## Run flow\n## Phases\n## Completion criteria\n")
-    assert any("tags must be a list" in p for p in lint_workflow_text(bad_wf, filename="x.md", fragment_slugs=[]))
+    assert any("tags must be a list" in p
+               for p in lint_workflow_py(_py_workflow('"not-a-list"'), filename="x.py", fragment_slugs=[]))
     bad_frag = "---\ntags: nope\n---\n# fragment: x — y\n\nbody line one\nbody line two\n"
     assert any("tags must be a list" in p for p in lint_fragment_text(bad_frag, filename="x.md"))
 
@@ -213,8 +217,7 @@ def test_scaffold_writes_and_loads_tags(tmp_path):
     server = ServerConfig()
     server.routines_home = tmp_path / "routines"
     server.routines_home.mkdir()
-    server.library_home = SEED
-    server.fragments_home = SEED / "fragments"
+    server.libraries_home = SEED
     d = scaffold(server, slug="tagged", name="Tagged", instruction="x",
                  workflow_slug="general-task", tags=["meta", "custom"])
     cfg, problems = load_routine(d)
@@ -222,28 +225,17 @@ def test_scaffold_writes_and_loads_tags(tmp_path):
     assert yaml.safe_load((d / "routine.yaml").read_text())["tags"] == ["meta", "custom"]
 
 
-def test_materialize_missing_param(tmp_path):
-    # The legacy markdown workflow path still supports {{params}} + a missing-param KeyError.
-    # (Python workflows have no {{placeholders}} — their parameters are the dummy imports.)
-    home = tmp_path
-    (home / "workflows").mkdir(parents=True)
-    (home / "fragments").mkdir()
-    (home / "workflows" / "paramflow.md").write_text(
-        "---\nname: Param flow\nslug: paramflow\ndescription: d\nwhen_to_use: w\nversion: 1\n"
-        "status: draft\ntags: [a, b, c]\nparams: [deliverable]\n---\n"
-        "## Run flow\nDeliver {{deliverable}}.\n## Phases\n- steady\n## Completion criteria\ndone\n")
-    with pytest.raises(KeyError):
-        materialize(home, "paramflow")
-    content, _ = materialize(home, "paramflow", params={"deliverable": "a weekly report"})
-    assert "a weekly report" in content and "{{deliverable}}" not in content
+def test_materialize_unknown_workflow(tmp_path):
+    (tmp_path / "workflows").mkdir()
+    with pytest.raises(FileNotFoundError):
+        materialize(tmp_path, "no-such-flow")
 
 
 def test_scaffold_creates_valid_routine(tmp_path):
     server = ServerConfig()
     server.routines_home = tmp_path / "routines"
     server.routines_home.mkdir()
-    server.library_home = SEED
-    server.fragments_home = SEED / "fragments"
+    server.libraries_home = SEED
     d = scaffold(server, slug="papers-radar", name="Papers radar",
                  instruction="# Instruction\n\nCollect papers.",
                  workflow_slug="general-task", cron="0 8 * * 1")
@@ -256,7 +248,7 @@ def test_scaffold_creates_valid_routine(tmp_path):
     # at run time). Without a generator endpoint, decompose falls back to the whole workflow.
     assert (d / "main.md").exists()
     raw = yaml.safe_load((d / "routine.yaml").read_text())
-    assert raw["budgets"]["max_turns"] == 60 and "self" not in raw
+    assert raw["budgets"]["max_turns"] == 60
     # active fragments = the workflow's includes, materialized as editable routine files
     assert set(cfg.fragments) == set(raw["fragments"])
     assert "improve-bugfix" in cfg.fragments and "global-utils" in cfg.fragments
@@ -274,8 +266,7 @@ def test_scaffold_writes_step_modules(tmp_path):
     server = ServerConfig()
     server.routines_home = tmp_path / "routines"
     server.routines_home.mkdir()
-    server.library_home = SEED
-    server.fragments_home = SEED / "fragments"
+    server.libraries_home = SEED
     # the wizard passes extra step modules; they land in the routine's steps/ (the LLM-decomposed
     # modules would too, but there's no generator endpoint in this test)
     d = scaffold(server, slug="split-routine", name="Split",

@@ -7,18 +7,11 @@ token: "change-me"     # bearer token for the web UI / API (install.sh generates
 
 routines_home: ~/routines
 
-# Workflow library (control-flow patterns). Set library_remote to clone-from / sync-to a repo.
-library_home: ~/.local/share/workflow-library
-library_remote: ""     # e.g. https://github.com/<you>/routine-workflow-library.git
-
-# Fragment library (reusable routine standards: self-management, tool use). Toggled per routine.
-fragments_home: ~/.local/share/routine-fragments
-fragments_remote: ""   # e.g. https://github.com/<you>/routine-fragments-lib.git
-
-# Global-util library — the ONLY way routines run code (there is no shell). Starts empty-
-# capable; routines generate utils on demand. Set utils_remote to bootstrap from / sync to a repo.
-utils_home: ~/.local/share/global-utils
-utils_remote: ""       # e.g. https://github.com/<you>/routine-utils.git
+# The library — ONE git repo holding workflows/ (control-flow patterns), fragments/ (reusable
+# routine standards), and utils/ (global utils, the ONLY way routines run code — there is no
+# shell). Set libraries_remote to clone-from / sync-to a repo.
+libraries_home: ~/.local/share/routine-scheduler-libraries
+libraries_remote: ""   # e.g. https://github.com/<you>/routine-scheduler-libraries.git
 confirm_util_changes: true   # ask the user to approve before a util is created/revised (req 7)
 
 max_concurrent_runs: 2

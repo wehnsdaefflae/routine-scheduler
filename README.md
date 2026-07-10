@@ -4,10 +4,10 @@ Self-hosted scheduler for LLM agent **routines** with a web UI to manage them an
 or intervene in running conversations.
 
 A **routine** = one **instruction** (a user prompt refined through clarifying questions in
-the wizard) + one **workflow** (a natural-language control-flow pattern from a git-synced
-library) + a schedule. Each routine lives in its own git repository under `~/routines/<slug>`,
-defined by markdown files, with self-audit / self-improvement / self-healing standards on by
-default (each toggleable in `routine.yaml`).
+the wizard) + one **workflow** (a Python control-flow pattern from a git-synced library,
+decomposed into the routine's own markdown) + a schedule. Each routine lives in its own git
+repository under `~/routines/<slug>`, with reusable standards (**fragments**) active by
+default — the active set is per-routine config in `routine.yaml`.
 
 **The workflow is the harness.** Runs execute on a provider-agnostic engine: the
 orchestrator LLM follows the workflow document and acts only by returning one JSON action
@@ -31,7 +31,7 @@ drafts new workflows for recurring instruction shapes.
 ## Install
 
 ```bash
-./deploy/install.sh   # uv sync, config + token, workflow library seed, systemd user service, linger
+./deploy/install.sh   # uv sync, config + token, library seed, systemd user service, linger
 ```
 
 Web UI: `http://127.0.0.1:8321` — token in `~/.config/routine-scheduler/config.yaml`
@@ -69,8 +69,9 @@ deferred questions reach the routine's next run automatically.
   `daemon/` (cron scheduler + subprocess runner), `web/` (FastAPI + SSE),
   `workflows/` (library, lint, adapt, scaffold, suggest, generate)
 - `static/` — no-build vanilla-JS frontend
-- `library-seed/` — seeded to `~/.local/share/workflow-library` (its own git repo with a
-  best-effort auto-push hook; add an `origin` remote to enable backup)
+- `library-seed/` + `util-seed/` — seeded to `~/.local/share/routine-scheduler-libraries`,
+  ONE git repo holding `workflows/`, `fragments/` and `utils/` (best-effort auto-push hook;
+  add an `origin` remote to enable backup)
 - Routine dirs: `routine.yaml`, `instruction.md`, `main.md` (the workflow, materialized with
   provenance) + `steps/` modules, `fragments/`, `state/`, `LEDGER.md`, `inbox/`, `questions/`,
   `runs/<ts>/` (transcripts, gitignored, keep-last-N with gzip)

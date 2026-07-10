@@ -25,7 +25,6 @@ DEFAULT_BUDGETS = {
     "max_subrun_depth": 2,
     "ask_timeout_h": 8,
 }
-DEFAULT_ALLOWLIST = ["gu *", "git *", "uv run --script *"]
 # The standards a new routine gets when its routine.yaml names no explicit `fragments:` list:
 # the always-useful base (ask policy, tool use, memory, fact-checking) plus the five after-run
 # improvement passes. `communication` is available but opt-in (it needs a Discord util).
@@ -69,17 +68,10 @@ class ServerConfig:
     port: int = 8321
     token: str = ""
     routines_home: Path = field(default_factory=lambda: expand("~/routines"))
-    library_home: Path = field(default_factory=lambda: expand("~/.local/share/workflow-library"))
-    library_remote: str = ""            # optional: clone-from / sync-to for the workflow library
-    fragments_home: Path = field(default_factory=lambda: expand("~/.local/share/routine-fragments"))
-    fragments_remote: str = ""          # optional: clone-from / sync-to for the fragment library
-    utils_home: Path = field(default_factory=lambda: expand("~/.local/share/global-utils"))
-    utils_remote: str = ""              # optional: clone-from / sync-to for the util library
-    # ONE merged git repo holding workflows/, fragments/, utils/ (+ gu, README). When set it is the
-    # single source of truth: library_home & utils_home become its root, fragments_home its
-    # fragments/ subdir. The per-library homes/remotes above are the legacy (three-repo) fallback.
-    libraries_home: Path | None = None
-    libraries_remote: str = ""          # clone-from / sync-to for the merged library repo
+    # ONE git repo holding workflows/, fragments/, utils/ (+ gu, README) — the library.
+    libraries_home: Path = field(
+        default_factory=lambda: expand("~/.local/share/routine-scheduler-libraries"))
+    libraries_remote: str = ""          # clone-from / sync-to for the library repo
     source_repo: Path = field(default_factory=lambda: Path(__file__).resolve().parents[2])
     source_remote: str = ""             # optional: push target for self-audit's autonomous code commits
     github_client_id: str = ""          # OAuth app client_id for the in-UI device flow (default: gh CLI's)
@@ -91,6 +83,21 @@ class ServerConfig:
     # generation/suggestion and the new-routine clarify wizard. Routines set their own models.
     system_model: ModelRef | None = None
     source: Path | None = None
+
+    @property
+    def library_home(self) -> Path:
+        """The library repo root — workflows live in its workflows/ subdir."""
+        return self.libraries_home
+
+    @property
+    def fragments_home(self) -> Path:
+        """The library repo's fragments/ subdir."""
+        return self.libraries_home / "fragments"
+
+    @property
+    def utils_home(self) -> Path:
+        """The library repo root — utils live in its utils/ subdir (with `gu` at the root)."""
+        return self.libraries_home
 
 
 def _model_ref(raw: object, problems: list[str], where: str) -> ModelRef | None:
@@ -119,26 +126,11 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
     cfg.token = str(raw.get("token", "") or "")
     if "routines_home" in raw:
         cfg.routines_home = expand(raw["routines_home"])
-    if "library_home" in raw:
-        cfg.library_home = expand(raw["library_home"])
-    if "utils_home" in raw:
-        cfg.utils_home = expand(raw["utils_home"])
-    if "fragments_home" in raw:
-        cfg.fragments_home = expand(raw["fragments_home"])
+    if "libraries_home" in raw:
+        cfg.libraries_home = expand(raw["libraries_home"])
+    cfg.libraries_remote = str(raw.get("libraries_remote", "") or "")
     if "source_repo" in raw:
         cfg.source_repo = expand(raw["source_repo"])
-    cfg.library_remote = str(raw.get("library_remote", "") or "")
-    cfg.fragments_remote = str(raw.get("fragments_remote", "") or "")
-    cfg.utils_remote = str(raw.get("utils_remote", "") or "")
-    # A single merged library repo overrides the three separate homes (workflows + utils at its
-    # root, fragments in its fragments/ subdir). This is the current, one-repo layout.
-    cfg.libraries_remote = str(raw.get("libraries_remote", "") or "")
-    if raw.get("libraries_home"):
-        root = expand(raw["libraries_home"])
-        cfg.libraries_home = root
-        cfg.library_home = root
-        cfg.utils_home = root
-        cfg.fragments_home = root / "fragments"
     cfg.source_remote = str(raw.get("source_remote", "") or "")
     cfg.github_client_id = str(raw.get("github_client_id", "") or "")
     cfg.confirm_util_changes = bool(raw.get("confirm_util_changes", cfg.confirm_util_changes))
@@ -193,11 +185,9 @@ class RoutineConfig:
     models: dict[str, ModelRef] = field(default_factory=dict)  # main/subroutine/tool_call
     budgets: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_BUDGETS))
     fragments: list[str] = field(default_factory=list)       # active fragment slugs (the source of truth)
-    shell_allowlist: list[str] = field(default_factory=lambda: list(DEFAULT_ALLOWLIST))  # legacy, unused (no shell)
     fs_read_roots: list[Path] = field(default_factory=list)
     fs_write_roots: list[Path] = field(default_factory=list)
     confirm_util_changes: bool | None = None  # None = inherit the server default
-    notifications: str = "ui"
     keep_runs: int = 30
 
     def confirm_utils(self, server: ServerConfig) -> bool:
@@ -274,26 +264,18 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
             problems.append(f"budgets.{key}: expected an integer")
 
     # Fragments are the source of truth for a routine's standards. An explicit list wins;
-    # otherwise a new routine gets the default set. (A legacy `self:` toggle block in an old
-    # routine.yaml is simply ignored — standards are fragments now.)
+    # otherwise a new routine gets the default set.
     if isinstance(raw.get("fragments"), list):
         cfg.fragments = [str(f) for f in raw["fragments"]]
     else:
         cfg.fragments = list(DEFAULT_FRAGMENTS)
 
-    if "shell_allowlist" in raw:
-        al = raw["shell_allowlist"]
-        if isinstance(al, list) and all(isinstance(x, str) for x in al):
-            cfg.shell_allowlist = al
-        else:
-            problems.append("shell_allowlist: expected a list of strings")
     for key, target in (("fs_read_roots", cfg.fs_read_roots), ("fs_write_roots", cfg.fs_write_roots)):
         for item in raw.get(key) or []:
             target.append(expand(item))
 
     if "confirm_util_changes" in raw:
         cfg.confirm_util_changes = bool(raw["confirm_util_changes"])
-    cfg.notifications = str(raw.get("notifications", cfg.notifications))
     ret = raw.get("retention") or {}
     if isinstance(ret, dict) and "keep_runs" in ret:
         try:

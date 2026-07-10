@@ -74,16 +74,17 @@ To clone/pull/push your (private) library + source repos, click **Connect GitHub
 
 No container terminal, no PAT to mint. Skip only if all your repos are public and you never push.
 
-## 5. Set up your libraries  (Settings → Library repositories)
+## 5. Set up your library  (Settings → Library repository)
 
-Workflows, fragments, and utils each live in a git repo on your account. On a fresh deploy each row
-offers two buttons (do §4 first — both need GitHub):
+Workflows, fragments, and utils live together in ONE git repo on your account (subdirs
+`workflows/`, `fragments/`, `utils/`). On a fresh deploy its row offers two buttons (do §4
+first — both need GitHub):
 
 - **Clone existing** — enter `owner/name` of a repo you already have → its content is pulled in.
 - **Create + seed** — enter a new name → a **private** repo is created on your account, seeded with
   the built-in defaults, and pushed. Future generated workflows/fragments/utils auto-sync there.
 
-Once a library has content its row switches to a **remote** field with a **Test** button
+Once the library has content its row switches to a **remote** field with a **Test** button
 (`git ls-remote` → **✓ reachable** / **✗ authentication required** / **✗ not found**). The
 **Source repository** (self-audit's push target) works the same way.
 
@@ -99,5 +100,5 @@ Click **finish setup** in the banner (stops the first-launch redirect).
   trusted network (or front it with a reverse proxy + TLS).
 - **Secrets are plaintext on disk** (in the config dir, `0600`), like most self-hosted `.env` setups —
   fine on a trusted host; use disk encryption if you need at-rest protection.
-- **What's git-backed vs. local:** the three libraries + the source repo have remotes (GitHub); your
+- **What's git-backed vs. local:** the library repo + the source repo have remotes (GitHub); your
   **routines** (run history, ledgers) are local-only — back them up by copying `~/routines`.

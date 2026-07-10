@@ -1,11 +1,11 @@
 # rsched runtime image — the ENGINE ENVIRONMENT only. No app code, no state, no secrets are
-# baked in: the source repo, config, ~/.credentials, ~/routines and the three libraries are all
+# baked in: the source repo, config, ~/.credentials, ~/routines and the library repo are all
 # bind-mounted (see docker-compose.yml), so the container is disposable and the whole system
 # migrates as a tarball of those directories. Rebuild the image on any dependency/tooling change.
 FROM python:3.12-slim-bookworm
 
 # Runtime tools the routines + setup need:
-#   git       — libraries + routines are git repos; git-sync / git-restore / pytest-run utils
+#   git       — the library + routines are git repos; git-sync / git-restore / pytest-run utils
 #   gh        — GitHub CLI: users run `gh auth login` at setup to clone/pull/push their (private) repos
 #   node + @anthropic-ai/claude-code — the `claude-cli` transport (self-audit) and the `gu claude` util
 #   curl/ca-certificates/gnupg — uv download, apt keys, HTTPS to OpenRouter/Anthropic

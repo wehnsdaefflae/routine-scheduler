@@ -17,7 +17,7 @@ def _ctx(make_routine, tmp_path, **kwargs) -> RunContext:
     run_dir = d / "runs" / "20260708-070000"
     run_dir.mkdir(parents=True)
     server = ServerConfig()
-    server.utils_home = tmp_path / "utils-home"   # empty → catalog says "no utils yet"
+    server.libraries_home = tmp_path / "libraries"   # empty → catalog says "no utils yet"
     return RunContext(routine=cfg, server=server, registry=None, run_ts="20260708-070000",
                       run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
                       budgets=Budgets.from_config(cfg.budgets))

@@ -1,6 +1,6 @@
 # Instruction
 
-Maintain the workflow library at ~/.local/share/workflow-library.
+Maintain the workflow library at ~/.local/share/routine-scheduler-libraries/workflows.
 
 Each week, ingest the top-level run transcripts and LEDGERs of all routines under
 ~/routines (skip dot-directories and yourself), identify flaws and optimization potential

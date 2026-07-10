@@ -1,10 +1,10 @@
-"""Scheduler-managed global-util library — the ONLY way routines run code.
+"""Scheduler-managed global utils — the ONLY way routines run code.
 
-Mirrors the original global-utils pattern: each util is a PEP 723 script at
-<utils_home>/utils/<name>/main.py, run via `uv run --script`. A `gu` dispatcher lives at
-the library root so utils compose by calling each other (`gu <sibling> --json`). The
-library is git-backed (neutral identity, best-effort push hook) and can bootstrap from /
-sync to a remote. It works empty — routines generate the utils they need.
+Each util is a PEP 723 script at <library>/utils/<name>/main.py, run via `uv run --script`.
+A `gu` dispatcher lives at the library root so utils compose by calling each other
+(`gu <sibling> --json`). The library repo is git-backed (neutral identity, best-effort push
+hook) and can bootstrap from / sync to a remote. It works empty — routines generate the
+utils they need.
 
 Routines have NO shell action; all code execution is mediated here, through named,
 selftested, git-committed (and optionally human-approved) utils.
@@ -82,10 +82,6 @@ exit 0
 GITIGNORE = "__pycache__/\n*.pyc\n"
 
 
-def utils_home(server) -> Path:
-    return server.utils_home
-
-
 def _git(home: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(home), *args], capture_output=True,
                           text=True, timeout=30, check=check)
@@ -125,8 +121,8 @@ def _configure_repo(home: Path) -> None:
 
 def _install_dispatcher(home: Path) -> None:
     """Install our minimal `gu` dispatcher + push hook — but NEVER overwrite an existing one.
-    When utils_home points at a pre-existing library (e.g. the user's ~/.local/share/global-utils
-    with its own richer `gu`), we leave its dispatcher and hook untouched and just use them."""
+    When the library root already carries its own richer `gu`, we leave its dispatcher and
+    hook untouched and just use them."""
     gu = home / "gu"
     if not gu.exists():
         gu.write_text(DISPATCHER, encoding="utf-8")
@@ -223,8 +219,7 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300
     env = _child_env()
     env["PATH"] = f"{home}:{env.get('PATH', '')}"
     # Point the `gu` dispatcher (on PATH, for sibling calls) at THIS library, so a util that
-    # shells out to `gu <sibling>` resolves siblings here — not at gu's default ~/.local/share
-    # location. Essential once the library lives in the merged repo rather than that default path.
+    # shells out to `gu <sibling>` always resolves siblings here.
     env["GLOBAL_UTILS_HOME"] = str(home)
     try:
         r = subprocess.run(["uv", "run", "--script", str(util_dir(home, name) / "main.py"), *args],
