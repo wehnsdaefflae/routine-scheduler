@@ -31,6 +31,11 @@
     <span id="daemon-dot" class="dot" title="daemon link"></span>
   </div>
 </header>
+<!-- In-flight new-routine setup: a persistent, always-visible way back to the live wizard,
+     shown on every view while a session exists (populated by app.js from /api/wizard). -->
+<div id="setup-banner" class="setup-banner" hidden></div>
+<!-- Location indicator: where you are in the console, reflecting the deep path in the URL. -->
+<nav id="crumbs" class="crumbs" aria-label="breadcrumb"></nav>
 <main id="view"></main>
 <div id="toast" hidden></div>
 <script type="module" src="/static/app.js"></script>

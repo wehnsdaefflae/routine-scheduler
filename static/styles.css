@@ -81,7 +81,33 @@ h2::before { content: ""; width: 6px; height: 6px; background: var(--amber); box
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--err); box-shadow: 0 0 8px var(--err); }
 .dot.on { background: var(--phos); box-shadow: 0 0 9px var(--phos); }
 
-main { max-width: 1120px; margin: 0 auto; padding: 30px 26px 100px; }
+/* ---------- setup-in-progress banner ---------- */
+/* Always-visible while a new-routine wizard session is live — the in-flight backend work and
+   the way back, surfaced as a UI element (not just a locked nav). */
+.setup-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 9px 26px; font-family: var(--mono); font-size: 12.5px;
+  background: #221c0c; border-bottom: 1px solid #5a4a1a; color: var(--warn);
+  position: sticky; top: 61px; z-index: 19;
+}
+.setup-banner .sb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn);
+  box-shadow: 0 0 8px var(--warn); animation: pulse 1.4s infinite; flex: 0 0 auto; }
+.setup-banner .sb-text { flex: 1; min-width: 160px; color: var(--text); }
+.setup-banner .sb-text b { color: var(--warn); font-weight: 600; }
+
+/* ---------- breadcrumb / location indicator ---------- */
+.crumbs {
+  max-width: 1120px; margin: 0 auto; padding: 12px 26px 0;
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  font-family: var(--mono); font-size: 12px; color: var(--faint);
+}
+.crumbs:empty { display: none; }
+.crumbs a { color: var(--muted); }
+.crumbs a:hover { color: var(--amber); }
+.crumbs .sep { color: var(--line-bright); }
+.crumbs .here { color: var(--text); }
+
+main { max-width: 1120px; margin: 0 auto; padding: 22px 26px 100px; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 
 /* ---------- chips ---------- */
@@ -294,5 +320,7 @@ pre.doc { background: var(--bg2); border: 1px solid var(--line); border-radius: 
 @media (max-width: 640px) {
   .topbar { padding: 12px 16px; }
   main { padding: 22px 16px 80px; }
+  .crumbs { padding: 12px 16px 0; }
+  .setup-banner { padding: 9px 16px; top: 0; position: static; }
   .kv { grid-template-columns: 1fr; }
 }

@@ -1,7 +1,9 @@
-// Entry: hash router, nav state, global SSE (badges + daemon dot).
+// Entry: hash router (path + query), location indicators (active nav + breadcrumb),
+// the in-flight setup banner, and the global SSE stream (badges + daemon dot).
 
 import { api, sse } from "/static/api.js";
-import { toast } from "/static/util.js";
+import { parseHash } from "/static/router.js";
+import { el, fmtTs, toast } from "/static/util.js";
 
 const routes = [
   [/^#?\/?$/, () => import("/static/views/dashboard.js")],
@@ -17,55 +19,110 @@ const routes = [
 
 let teardown = null;
 
-// Routine-setup lock: while a wizard session is live, the rest of the console is off-limits —
-// the process must be finished or canceled first. The wizard view emits rsched-wizard-active.
-const WIZ_KEY = "rsched_wizard";
-let wizardLocked = false;
-const wizardActive = () => {
-  try { return !!JSON.parse(localStorage.getItem(WIZ_KEY) || "null"); } catch { return false; }
-};
-
-function lockNav(active) {
-  wizardLocked = active;
-  document.querySelectorAll(".topbar nav a[data-nav]").forEach((a) => a.classList.toggle("locked", active));
-  document.querySelector(".brand")?.classList.toggle("locked", active);
-  const nb = document.getElementById("nav-new-routine");     // stays live — it's the way back
-  if (nb) { nb.classList.toggle("resuming", active); nb.textContent = active ? "↩ Resume setup" : "+ New routine"; }
-}
-
 async function route() {
-  const hash = location.hash || "#/";
-  if (wizardLocked && !hash.startsWith("#/wizard")) {
-    toast("Finish or cancel the routine setup first", 3200);
-    location.hash = "#/wizard";               // bounce back to the in-progress wizard
-    return;
-  }
+  const { path, query } = parseHash();
   for (const [pattern, load] of routes) {
-    const m = pattern.exec(hash);
+    const m = pattern.exec(path);
     if (!m) continue;
     const view = document.getElementById("view");
     if (teardown) { try { teardown(); } catch {} teardown = null; }
     view.innerHTML = "";
     try {
       const mod = await load();
-      teardown = (await mod.render(view, ...m.slice(1))) || null;
+      // Views receive their path params spread, then the parsed query object last.
+      teardown = (await mod.render(view, ...m.slice(1), query)) || null;
     } catch (err) {
       view.innerHTML = `<div class="empty">view failed to load: ${err.message}</div>`;
     }
-    updateNav(hash);
+    updateLocation(path);
     return;
   }
   location.hash = "#/";
 }
 
-function updateNav(hash) {
-  const key = hash.startsWith("#/log") ? "log"
-    : hash.startsWith("#/questions") ? "questions"
-    : hash.startsWith("#/audit") ? "audit"
-    : hash.startsWith("#/library") ? "library"
-    : hash.startsWith("#/settings") ? "settings" : "dashboard";
+// ---- location indicators: active nav + breadcrumb -------------------------------------------
+function updateLocation(path) {
+  const key = path.startsWith("#/log") ? "log"
+    : path.startsWith("#/questions") ? "questions"
+    : path.startsWith("#/audit") ? "audit"
+    : path.startsWith("#/library") ? "library"
+    : path.startsWith("#/settings") ? "settings"
+    : path.startsWith("#/wizard") ? "wizard"
+    : (path.startsWith("#/routine") || path.startsWith("#/run") || path === "#/" || path === "#") ? "dashboard"
+    : "dashboard";
   document.querySelectorAll("[data-nav]").forEach((a) =>
     a.classList.toggle("active", a.dataset.nav === key));
+  renderCrumbs(path);
+}
+
+// Breadcrumb built from the URL alone (no extra fetches) — earlier segments link back up.
+function crumbsFor(path) {
+  const parts = path.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  const top = parts[0] || "";
+  switch (top) {
+    case "": return [{ label: "Dashboard" }];
+    case "log": return [{ label: "Log" }];
+    case "questions": return [{ label: "Decisions" }];
+    case "audit": return [{ label: "Audit" }];
+    case "settings": return [{ label: "Settings" }];
+    case "library": {
+      const c = [{ label: "Library", href: parts.length > 1 ? "#/library" : null }];
+      if (parts[1]) c.push({ label: parts[1] });
+      if (parts[2]) c.push({ label: parts[2] });
+      return c;
+    }
+    case "routine": return [{ label: "Routines", href: "#/" }, { label: parts[1] || "" }];
+    case "run": {
+      const [slug, ts] = (parts[1] || "").split(":");
+      return [{ label: "Routines", href: "#/" },
+        { label: slug || "run", href: slug ? `#/routine/${slug}` : null },
+        { label: ts ? `run ${fmtTs(ts)}` : "run" }];
+    }
+    case "wizard": return [{ label: "Routines", href: "#/" }, { label: "New routine" }];
+    default: return [{ label: "Dashboard" }];
+  }
+}
+
+function renderCrumbs(path) {
+  const bar = document.getElementById("crumbs");
+  if (!bar) return;
+  const segs = crumbsFor(path);
+  bar.innerHTML = "";
+  segs.forEach((s, i) => {
+    if (i) bar.append(el("span", { class: "sep" }, "›"));
+    bar.append(s.href && i < segs.length - 1
+      ? el("a", { href: s.href }, s.label)
+      : el("span", { class: i === segs.length - 1 ? "here" : "" }, s.label));
+  });
+}
+
+// ---- in-flight setup banner (replaces the old hard nav-lock) --------------------------------
+// While any new-routine wizard session is live, show a persistent, always-visible way back to it
+// on every view. Driven by /api/wizard so it is correct across reloads, tabs, and daemon restarts.
+const STAGE_LABEL = { chat: "clarifying", suggest: "choosing a workflow", error: "needs attention" };
+
+async function refreshSetupBanner() {
+  const banner = document.getElementById("setup-banner");
+  const newBtn = document.getElementById("nav-new-routine");
+  let sessions = [];
+  try { sessions = await api("/api/wizard"); } catch { return; }   // stay quiet on transient errors
+  const active = Array.isArray(sessions) ? sessions : [];
+  const cur = active[0];   // newest first
+  if (newBtn) {
+    newBtn.classList.toggle("resuming", !!cur);
+    newBtn.textContent = cur ? "↩ Resume setup" : "+ New routine";
+    newBtn.setAttribute("href", cur ? `#/wizard/${cur.wid}` : "#/wizard");
+  }
+  if (!cur) { banner.hidden = true; banner.innerHTML = ""; return; }
+  const more = active.length > 1 ? ` (+${active.length - 1} more)` : "";
+  banner.innerHTML = "";
+  banner.append(
+    el("span", { class: "sb-dot" }),
+    el("span", { class: "sb-text" },
+      el("b", {}, "Routine setup in progress"),
+      ` — ${STAGE_LABEL[cur.stage] || "working"}${more}. The backend is still running; pick up where you left off.`),
+    el("a", { class: "btn small primary", href: `#/wizard/${cur.wid}` }, "resume"));
+  banner.hidden = false;
 }
 
 async function refreshBadges() {
@@ -93,7 +150,9 @@ function globalStream() {
 }
 
 window.addEventListener("hashchange", route);
-window.addEventListener("rsched-wizard-active", (e) => lockNav(!!e.detail?.active));
+// The wizard view fires this when a session starts / is canceled / finalized, so the banner
+// updates immediately instead of waiting for the next poll.
+window.addEventListener("rsched-wizard-changed", () => refreshSetupBanner());
 
 // First launch: send the user to setup (Settings) until they finish it. The redirect fires a
 // hashchange → route(), so we don't call route() again in that branch.
@@ -112,9 +171,9 @@ function gateNav(ready) {
       return;
     }
   } catch {}
-  lockNav(wizardActive());        // restore the setup-lock after a reload mid-wizard
   route();
 })();
 refreshBadges();
+refreshSetupBanner();
 globalStream();
-setInterval(refreshBadges, 30000);
+setInterval(() => { refreshBadges(); refreshSetupBanner(); }, 30000);

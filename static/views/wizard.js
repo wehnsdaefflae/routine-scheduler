@@ -1,13 +1,17 @@
 // New-routine wizard: draft → clarify chat (a real engine run) → workflow pick → finalize.
+//
+// Fully URL-driven and resumable: a live session lives at #/wizard/{wid}. Navigating away or
+// reloading mid-creation never loses your place — the stage is reconstructed from the backend
+// (/api/wizard/{wid}), which derives it from what the clarify run has produced on disk. The
+// draft stage (#/wizard) also lists any in-flight sessions so you can resume instead of forking.
 
 import { api, sse } from "/static/api.js";
+import { navigate } from "/static/router.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, el, scheduleEditor, toast } from "/static/util.js";
 
-// While a clarify/creation session is live, the rest of the console is locked (app.js listens).
-// This keeps the user from silently wandering off mid-process and losing track of how to return.
-const setActive = (active) =>
-  window.dispatchEvent(new CustomEvent("rsched-wizard-active", { detail: { active } }));
+// Tell app.js a session started / was canceled / finalized so the setup banner updates at once.
+const notifyChanged = () => window.dispatchEvent(new CustomEvent("rsched-wizard-changed"));
 
 export async function render(view, resumeWid) {
   view.append(el("h1", {}, "New routine"));
@@ -16,25 +20,42 @@ export async function render(view, resumeWid) {
     view.append(el("div", { class: "panel", style: "border-color:var(--warn)" },
       el("strong", {}, "No model connected"),
       el("div", { class: "muted mt" },
-        "Creating a routine runs a clarification through your LLM. Add an endpoint and assign the ",
-        el("code", {}, "orchestrator"), " role in ", el("a", { href: "#/settings" }, "Settings"), " first.")));
+        "Creating a routine runs a clarification through your LLM. Set the ",
+        el("code", {}, "system model"), " in ", el("a", { href: "#/settings" }, "Settings"), " first.")));
     return;
   }
   const stage = el("div", {});
   view.append(stage);
   let source = null;
+  const closeSource = () => { if (source) { try { source.close(); } catch {} source = null; } };
 
-  // Persist the in-progress session (id + chosen fragments) so switching tabs doesn't lose it.
-  const KEY = "rsched_wizard";
-  const saved = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; } };
-  const clearSaved = () => { localStorage.removeItem(KEY); setActive(false); };
-
-  const resume = resumeWid || saved()?.wid;
-  if (resume) { setActive(true); stageChat(resume); }   // resume a live session (replays chat / jumps to suggest)
+  if (resumeWid) resumeSession(resumeWid);   // #/wizard/{wid} → reconstruct the live session
   else stageDraft();
 
-  function stageDraft() {
+  // ---- resume: fetch the session snapshot and jump to the right stage -----------------------
+  async function resumeSession(wid) {
     stage.innerHTML = "";
+    stage.append(busy("Reconnecting to your setup session…"));
+    let snap;
+    try { snap = await api(`/api/wizard/${encodeURIComponent(wid)}`); }
+    catch {
+      stage.innerHTML = "";
+      stage.append(el("div", { class: "panel", style: "border-color:var(--warn)" },
+        "This setup session is no longer available.",
+        el("div", { class: "row mt" },
+          el("button", { class: "btn small primary", onclick: () => navigate("#/wizard") }, "start over"))));
+      return;
+    }
+    if (snap.stage === "suggest") stageSuggest(wid);
+    else if (snap.stage === "error") stageError(wid, "The clarification run ended without a result.");
+    else stageChat(wid, snap);
+  }
+
+  // ---- stage: draft --------------------------------------------------------------------------
+  function stageDraft() {
+    closeSource();
+    stage.innerHTML = "";
+    const resumeBox = el("div", {});     // filled with any in-flight sessions to resume
     const ta = el("textarea", { class: "code", style: "min-height:160px",
       placeholder: "Describe the TASK the routine should do, in your own words — not when it runs.\n\ne.g. Collect new AI-agent papers from arxiv and keep a reading list with one-line takes." });
     const fragBox = el("div", { class: "mt" }, el("div", { class: "muted", style: "font-size:12px" }, "Standards — loading…"));
@@ -44,18 +65,31 @@ export async function render(view, resumeWid) {
       if (!ta.value.trim()) return;
       go.disabled = true;
       try {
-        const r = await api("/api/wizard/start", { method: "POST", body: { draft: ta.value } });
-        localStorage.setItem(KEY, JSON.stringify({ wid: r.wid, fragments: chosen() }));
-        setActive(true);              // lock the rest of the console until finished or canceled
-        stageChat(r.wid);
+        const r = await api("/api/wizard/start", { method: "POST", body: { draft: ta.value, fragments: chosen() } });
+        notifyChanged();
+        navigate(`#/wizard/${r.wid}`);       // the session's URL is now the source of truth
       } catch (err) { toast(err.message); go.disabled = false; }
     };
-    stage.append(el("div", { class: "panel" },
+    stage.append(resumeBox, el("div", { class: "panel" },
       el("div", { class: "muted", style: "margin-bottom:8px" },
         "Describe the task in your own words. The wizard asks a few clarifying questions, then builds the ",
         "routine. Below, choose its standards — reusable habits it follows every run (keeping a LEDGER, ",
         "self-auditing, safe tool use). You can change these, its schedule and its models afterwards."),
       ta, fragBox, el("div", { class: "row mt" }, go)));
+
+    // Surface any in-flight sessions so the user resumes instead of starting a second one.
+    api("/api/wizard").then((list) => {
+      if (!Array.isArray(list) || !list.length) return;
+      resumeBox.append(el("div", { class: "panel", style: "border-color:var(--warn);margin-bottom:14px" },
+        el("strong", {}, "Setup already in progress"),
+        el("div", { class: "muted", style: "font-size:12.5px;margin:4px 0 8px" },
+          "You have unfinished new-routine sessions — resume one instead of starting over:"),
+        ...list.map((w) => el("div", { class: "row spread", style: "padding:4px 0" },
+          el("span", { class: "muted", style: "font-size:12.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" },
+            `${STAGE_TEXT[w.stage] || w.stage} · ${w.draft || "(no description)"}`),
+          el("a", { class: "btn small primary", href: `#/wizard/${w.wid}` }, "resume")))));
+    }).catch(() => {});
+
     // fill the fragment picker (default-check the common ones)
     api("/api/library").then((lib) => {
       fragBox.innerHTML = "";
@@ -71,12 +105,17 @@ export async function render(view, resumeWid) {
     }).catch(() => { fragBox.innerHTML = ""; fragBox.append(el("div", { class: "muted" }, "(couldn't load fragments)")); });
   }
 
-  function stageChat(wid) {
+  // ---- stage: clarify chat -------------------------------------------------------------------
+  function stageChat(wid, snap) {
+    closeSource();
     stage.innerHTML = "";
-    const cancel = el("button", { class: "btn small danger",
-      onclick: () => { if (source) source.close(); clearSaved(); stageDraft(); } }, "cancel setup");
+    const cancel = el("button", { class: "btn small danger", onclick: () => cancelSession(wid) }, "cancel setup");
     stage.append(el("div", { class: "row spread" },
       el("h2", {}, "Clarification — answer the questions"), cancel));
+    if (snap && snap.alive === false)         // process died (e.g. across a restart) mid-conversation
+      stage.append(el("div", { class: "panel", style: "border-color:var(--warn)" },
+        "This session's clarification process is no longer running, so answers won't be picked up. ",
+        el("button", { class: "btn small", onclick: () => cancelSession(wid) }, "cancel and start over")));
     const thinkBox = el("div", {});     // "waiting on the model" while it works between questions
     const qBox = el("div", {});
     const chatBox = el("div", { class: "mt" });
@@ -95,7 +134,7 @@ export async function render(view, resumeWid) {
       const submit = async () => {
         if (!input.value.trim()) return;
         try {
-          await api(`/api/wizard/${wid}/answer`, { method: "POST",
+          await api(`/api/wizard/${encodeURIComponent(wid)}/answer`, { method: "POST",
             body: { qid: q.qid, text: input.value } });
           qBox.innerHTML = "";
           setThinking("Waiting for the model — considering your answer…");
@@ -111,43 +150,49 @@ export async function render(view, resumeWid) {
       input.focus();
     }
 
-    source = sse(`/api/wizard/${wid}/events`, {
+    if (snap && snap.question) showQuestion(snap.question);   // seed a resumed pending question
+
+    source = sse(`/api/wizard/${encodeURIComponent(wid)}/events`, {
       transcript: (ev) => { gotAny = true; transcript.add(ev); },
-      state: (st) => { gotAny = true; if (st.question) showQuestion(st.question); else setThinking("Waiting for the model…"); },
-      end: () => { setThinking(null); source.close(); stageSuggest(wid); },
+      state: (s) => { gotAny = true; if (s.question) showQuestion(s.question); else setThinking("Waiting for the model…"); },
+      end: () => { setThinking(null); closeSource(); stageSuggest(wid); },
       onerror: () => {
         if (gotAny) return;                    // transient mid-stream error — ignore
-        if (source) source.close();            // couldn't attach → the session is gone
+        closeSource();                          // couldn't attach → the session is gone
         setThinking(null);
         qBox.innerHTML = "";
         qBox.append(el("div", { class: "panel", style: "border-color:var(--warn)" },
           "This wizard session is no longer available.",
           el("div", { class: "row mt" },
-            el("button", { class: "btn small primary", onclick: () => { clearSaved(); stageDraft(); } }, "start over"))));
+            el("button", { class: "btn small primary", onclick: () => navigate("#/wizard") }, "start over"))));
       },
     });
   }
 
+  // ---- stage: error (clarify finished with no result) ----------------------------------------
+  function stageError(wid, msg) {
+    closeSource();
+    stage.innerHTML = "";
+    stage.append(el("div", { class: "panel", style: "border-color:var(--err)" }, msg,
+      el("div", { class: "row mt" },
+        el("button", { class: "btn small", onclick: () => cancelSession(wid) }, "start over"))));
+  }
+
+  // ---- stage: suggest + finalize -------------------------------------------------------------
   async function stageSuggest(wid) {
+    closeSource();
     stage.innerHTML = "";
     stage.append(busy(
       "Waiting for the model — turning the conversation into a refined instruction and "
       + "matching it to the workflow library…"));
     let data;
-    try { data = await api(`/api/wizard/${wid}/suggest`, { method: "POST" }); }
-    catch (err) {
-      stage.innerHTML = "";
-      stage.append(el("div", { class: "panel", style: "border-color:var(--err)" },
-        `clarify run ended without a result: ${err.message}`,
-        el("div", { class: "row mt" },
-          el("button", { class: "btn small", onclick: () => { clearSaved(); stageDraft(); } }, "start over"))));
-      return;
-    }
+    try { data = await api(`/api/wizard/${encodeURIComponent(wid)}/suggest`, { method: "POST" }); }
+    catch (err) { stageError(wid, `clarify run ended without a result: ${err.message}`); return; }
     const wr = data.wizard_result;
     stage.innerHTML = "";
     stage.append(el("div", { class: "row spread" },
       el("h2", {}, "Refined instruction"),
-      el("button", { class: "btn small danger", onclick: () => { clearSaved(); stageDraft(); } }, "cancel setup")),
+      el("button", { class: "btn small danger", onclick: () => cancelSession(wid) }, "cancel setup")),
       el("pre", { class: "doc" }, wr.refined_instruction));
 
     const picked = { slug: data.suggestions[0]?.slug || "" };
@@ -167,7 +212,7 @@ export async function render(view, resumeWid) {
     genBtn.onclick = async () => {
       genBtn.disabled = true; genBtn.textContent = "generating…";
       try {
-        const r = await api(`/api/wizard/${wid}/generate-workflow`, { method: "POST",
+        const r = await api(`/api/wizard/${encodeURIComponent(wid)}/generate-workflow`, { method: "POST",
           body: { hint: data.new_workflow_hint || "" } });
         data.suggestions.unshift({ slug: r.workflow_slug, confidence: 1, reason: "generated draft" });
         picked.slug = r.workflow_slug;
@@ -202,15 +247,15 @@ export async function render(view, resumeWid) {
         "Building the routine — the model is decomposing the workflow into steps. "
         + "This can take up to a couple of minutes; you'll be taken to the routine automatically."));
       try {
-        const r = await api(`/api/wizard/${wid}/finalize`, { method: "POST", body: {
+        const r = await api(`/api/wizard/${encodeURIComponent(wid)}/finalize`, { method: "POST", body: {
           slug: f.slug.value.trim(), name: f.name.value.trim() || f.slug.value.trim(),
           workflow_slug: picked.slug, friendly: sched.value(), run_now: runNow.checked,
           tags: f.tags.value.split(",").map((t) => t.trim()).filter(Boolean),
-          fragments: saved()?.fragments || [],
+          // fragments are recovered from the session meta on the backend (chosen on the draft page)
         }});
-        clearSaved();
+        notifyChanged();
         toast(`routine ${r.slug} created`);
-        location.hash = r.run_id ? `#/run/${r.run_id}` : `#/routine/${r.slug}`;
+        navigate(r.run_id ? `#/run/${r.run_id}` : `#/routine/${r.slug}`);
       } catch (err) { createStatus.innerHTML = ""; toast(err.message, 6000); create.disabled = false; }
     };
     stage.append(el("h2", {}, "Create"),
@@ -229,5 +274,15 @@ export async function render(view, resumeWid) {
         createStatus));
   }
 
-  return () => { if (source) source.close(); };
+  // ---- cancel: stop the backend session and return to a fresh draft --------------------------
+  async function cancelSession(wid) {
+    closeSource();
+    try { await api(`/api/wizard/${encodeURIComponent(wid)}`, { method: "DELETE" }); } catch {}
+    notifyChanged();
+    navigate("#/wizard");
+  }
+
+  return () => closeSource();
 }
+
+const STAGE_TEXT = { chat: "clarifying", suggest: "ready to create", error: "needs attention" };
