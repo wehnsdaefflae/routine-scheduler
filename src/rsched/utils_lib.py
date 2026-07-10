@@ -19,7 +19,6 @@ import subprocess
 from pathlib import Path
 
 from .ids import is_slug
-from .paths import expand
 
 # LLM-auth vars scrubbed from util subprocesses: a util that needs an LLM (e.g. a
 # `gu claude` equivalent) resolves its own credentials; it must never inherit the

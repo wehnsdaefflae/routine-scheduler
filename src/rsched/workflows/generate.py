@@ -3,7 +3,6 @@ saved as status: draft and committed. Workflows are Python-pattern files (`.py`)
 
 from __future__ import annotations
 
-from pathlib import Path
 
 from ..config import ServerConfig
 from ..endpoints import EndpointRegistry
