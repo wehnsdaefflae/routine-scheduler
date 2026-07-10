@@ -72,6 +72,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
         "materialized_from": {"slug": workflow_slug, "commit": commit, "version": meta.get("version", 0)},
         "modules": sorted(result["modules"]),
         "includes": active,
+        # the workflow's `tools:` allowlist rides along — the engine enforces it per turn
+        **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {}),
         **({"tags": list(tags)} if tags else {}),
     }
     (routine_dir / "main.md").write_text(frontmatter.dump(main_meta, result["main"]), encoding="utf-8")

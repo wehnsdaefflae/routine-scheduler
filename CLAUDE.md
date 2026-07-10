@@ -36,14 +36,14 @@ schema-retries) → dispatch → append the observation → repeat until `finish
   + example → workflow body (the routine's own `main.md`) → instruction → active fragments → **state
   digest** (phase, `state/`, step modules, last result, LEDGER tail, open/answered questions, inbox
   messages). Effect actions (`util`/`read_file`/`write_file`/`llm`) run through `engine/executor.py`.
-- **Compaction archives context to a navigable on-disk history** (`composer.compact_to_history`): when
+- **Compaction archives context to a navigable on-disk history** (`history.compact_to_history`): when
   the prompt exceeds ~60% of the endpoint's `context_chars`, the middle turns are reorganized by the model
   into a set of markdown files (~≤100 lines each) under `runs/<ts>/history/` + `INDEX.md`; the prompt keeps
   only a pointer, and every later turn is reminded to consult the index (read_file). Falls back to the
-  deterministic one-line digest (`composer.maybe_compact`) on any failure. The on-disk transcript keeps
+  deterministic one-line digest (`history.maybe_compact`) on any failure. The on-disk transcript keeps
   everything regardless.
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
-  transcript is replayed into the message list (`composer.replay_messages`) with a fresh budget window
+  transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`). The **model can be switched mid-run** — a `control.json` `switch_model` signal
   applied at the turn boundary (`for_model` re-resolves every turn).
 

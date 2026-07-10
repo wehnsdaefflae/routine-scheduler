@@ -1,15 +1,14 @@
-"""Orchestrator conversation assembly: harness contract, state digest, observation
-formatting, and deterministic (LLM-free) compaction.
+"""Orchestrator conversation assembly: harness contract, system prompt, state digest,
+and observation formatting.
 
 The system prompt is composed once at run start; the messages array then grows turn by
-turn. Compaction rewrites the middle of the array into one synthetic digest message —
-the transcript on disk keeps everything, only the *prompt* shrinks.
+turn (prompt-size management lives in history.py). format_observation turns every
+observation dict into the next user message — the transcript renderer's counterpart.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 from .actions import ACTION_SCHEMA, example_action
@@ -17,13 +16,6 @@ from .run_context import RunContext
 
 OBS_CAP_CHARS = 8_000
 
-# The one-line "brief" field per action kind (shared by turn records + transcript replay).
-BRIEF_FIELD = {"util": "name", "write_util": "name", "read_file": "path", "write_file": "path",
-               "llm": "prompt", "spawn": "label", "kill": "n", "wait": "n",
-               "ask_user": "question", "finish": "status"}
-COMPACT_AT_FRACTION = 0.6
-KEEP_HEAD_MSGS = 6    # system + kickoff + first 2 turn pairs
-KEEP_TAIL_MSGS = 24   # ~ last 12 turn pairs
 
 def truncate(text: str, cap: int = OBS_CAP_CHARS) -> tuple[str, bool]:
     if len(text) <= cap:
@@ -250,135 +242,3 @@ def format_observation(obs: dict) -> str:
         return (f"OBSERVATION (ask_user): question filed as deferred ({obs['qid']}). The user will "
                 "see it in the UI; the answer, if any, reaches a future run. Continue.")
     return f"OBSERVATION ({kind}): {json.dumps(obs, ensure_ascii=False)[:500]}"
-
-
-def messages_size(messages: list[dict]) -> int:
-    return sum(len(m["content"]) for m in messages)
-
-
-def maybe_compact(messages: list[dict], turn_records: list[dict], context_chars: int
-                  ) -> tuple[list[dict], dict | None]:
-    """Deterministic compaction. Returns (messages, compaction_info|None)."""
-    if messages_size(messages) <= COMPACT_AT_FRACTION * context_chars:
-        return messages, None
-    if len(messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS:
-        return messages, None
-    head = messages[:KEEP_HEAD_MSGS]
-    tail = messages[-KEEP_TAIL_MSGS:]
-    elided = len(messages) - len(head) - len(tail)
-    covered = {id(m) for m in head + tail}
-    # Digest from turn records whose messages fell in the middle: turns 3 .. N-12.
-    first_kept_tail_turn = max((r["turn"] for r in turn_records), default=0) - KEEP_TAIL_MSGS // 2 + 1
-    lines = [r_line for r in turn_records
-             if 2 < r["turn"] < first_kept_tail_turn
-             for r_line in [f"turn {r['turn']}: {r['kind']} {r['brief']} — say: \"{r['say'][:120]}\""]]
-    digest = ("CONTEXT COMPACTED — this replaces the elided middle of the conversation "
-              f"({elided} messages). One line per elided turn:\n" + "\n".join(lines))
-    new_messages = head + [{"role": "user", "content": digest}] + tail
-    info = {"elided_messages": elided, "digest_chars": len(digest),
-            "before_chars": messages_size(messages), "after_chars": messages_size(new_messages)}
-    return new_messages, info
-
-
-_HISTORY_SCHEMA = {
-    "type": "object", "additionalProperties": False, "required": ["files", "index"],
-    "properties": {
-        "files": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False, "required": ["name", "content"],
-            "properties": {
-                "name": {"type": "string", "description": "kebab-case topic name (no extension)"},
-                "content": {"type": "string",
-                            "description": "markdown, AT MOST ~100 lines — split into more files if longer"}}}},
-        "index": {"type": "string",
-                  "description": "INDEX.md markdown: one line per file — what it holds + when to read it"},
-    },
-}
-
-_HISTORY_PROMPT = """You are archiving the middle of an agent run's conversation so the live context
-stays small while NOTHING is lost — the agent will read_file the pieces it needs later.
-
-Reorganize the conversation below into a NAVIGABLE set of markdown files:
-- Split it whatever way makes things easiest to find later — chronological, or by task/topic. Each
-  file AT MOST ~100 lines; if a part is longer, split it into more files rather than truncating.
-- Do NOT summarize heavily. Preserve the actual substance — what was done, decided, found, the key
-  observations and outputs — just organized and stripped of obvious noise. The agent navigates to
-  what's relevant, so keep the content.
-- Write an INDEX.md listing each file with a one-line description of what it holds and when to
-  consult it, so a reader can jump straight to the right file.{existing_note}
-CONVERSATION (the middle turns being archived):
----
-{convo}
----
-Return ONLY the JSON object {{files: [{{name, content}}], index}}."""
-
-
-def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint, ref,
-                       run_dir: Path, hist_rel: str) -> tuple[list[dict], dict] | None:
-    """LLM-driven compaction: reorganize the elided middle into a navigable set of markdown files
-    (each ~≤100 lines) under runs/<ts>/history/ + INDEX.md, and replace the middle with a short
-    pointer telling the agent to consult the index. Returns (new_messages, info), or None on any
-    failure (the caller falls back to the deterministic digest)."""
-    head, tail = messages[:KEEP_HEAD_MSGS], messages[-KEEP_TAIL_MSGS:]
-    middle = messages[KEEP_HEAD_MSGS:len(messages) - KEEP_TAIL_MSGS]
-    if not middle:
-        return None
-    hist_dir = run_dir / "history"
-    prior = (hist_dir / "INDEX.md").read_text(encoding="utf-8") if (hist_dir / "INDEX.md").exists() else ""
-    existing_note = (f"\nThere is already a history index — KEEP its entries and add the new files to it:\n"
-                     f"---\n{prior}\n---\n" if prior else "\n")
-    convo = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in middle)
-    comp = endpoint.complete([{"role": "user", "content":
-                               _HISTORY_PROMPT.format(existing_note=existing_note, convo=convo)}],
-                             model=ref.model, schema=_HISTORY_SCHEMA, effort=ref.effort, timeout=180)
-    data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
-    files = [f for f in (data.get("files") or []) if isinstance(f, dict) and str(f.get("content", "")).strip()]
-    index = str(data.get("index") or "").strip()
-    if not files or not index:
-        return None
-    hist_dir.mkdir(parents=True, exist_ok=True)
-    turn = max((r["turn"] for r in turn_records), default=0)   # unique prefix per compaction
-    written = []
-    for f in files:
-        stem = re.sub(r"[^a-z0-9-]+", "-", str(f.get("name", "part")).lower()).strip("-") or "part"
-        name = f"t{turn}-{stem}.md"
-        (hist_dir / name).write_text(str(f["content"]).rstrip() + "\n", encoding="utf-8")
-        written.append(name)
-    (hist_dir / "INDEX.md").write_text(index.rstrip() + "\n", encoding="utf-8")
-    pointer = {"role": "user", "content":
-        f"CONTEXT COMPACTED — {len(middle)} earlier messages have been archived to an on-disk, "
-        f"navigable history. Read `{hist_rel}/INDEX.md` (read_file) to see what's there, then read "
-        f"the specific {hist_rel}/*.md files relevant to your current step. Do not rely on memory of "
-        f"the archived turns — consult the index."}
-    new_messages = head + [pointer] + tail
-    info = {"elided_messages": len(middle), "history_files": len(written), "mode": "llm-history",
-            "before_chars": messages_size(messages), "after_chars": messages_size(new_messages)}
-    return new_messages, info
-
-
-def replay_messages(events: list[dict], util_reminder: str = "") -> tuple[list[dict], int, list[dict]]:
-    """Rebuild the (turn-pair) message list from a run's transcript events — for RESUME. Returns
-    (messages, last_turn, turn_records); the caller prepends the freshly-composed system message.
-    Every turn is replayed (compaction events are ignored — this reconstitutes the full
-    conversation and maybe_compact re-compacts it on the next turn if it's too big)."""
-    messages: list[dict] = []
-    records: list[dict] = []
-    last_turn = 0
-    for ev in events:
-        kind_ev = ev.get("type")
-        p = ev.get("payload") or {}
-        if kind_ev == "assistant_action":
-            messages.append({"role": "assistant", "content": json.dumps(p, ensure_ascii=False)})
-            turn = ev.get("turn")
-            if isinstance(turn, int):
-                last_turn = turn
-                brief = str(p.get(BRIEF_FIELD.get(p.get("kind"), ""), ""))[:80]
-                records.append({"turn": turn, "kind": p.get("kind", "?"),
-                                "brief": json.dumps(brief, ensure_ascii=False), "say": p.get("say", "")})
-        elif kind_ev == "observation":
-            messages.append({"role": "user", "content": format_observation(p) + util_reminder})
-        elif kind_ev == "user_injection":
-            messages.append({"role": "user", "content": f"USER MESSAGE (injected mid-run): {p.get('text', '')}"})
-        elif kind_ev == "answer":
-            messages.append({"role": "user", "content": f"ANSWER: {p.get('text', '')}"})
-        # header / question / compaction / finish / error / subrun_* are not part of the prompt
-    return messages, last_turn, records

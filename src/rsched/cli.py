@@ -87,7 +87,8 @@ def _routine_dir(server, slug_or_path: str) -> Path:
 
 
 def cmd_run_once(args) -> int:
-    from .engine.loop import request_abort, run_routine
+    from .engine.control import request_abort
+    from .engine.runtime import run_routine
 
     server, problems = load_server_config()
     for pr in problems:
@@ -118,7 +119,8 @@ def cmd_run_once(args) -> int:
 
 def cmd_engine_run(args) -> int:
     """Internal: spawned by the daemon. Same as run-once but quiet, with a fixed run_ts."""
-    from .engine.loop import request_abort, run_routine
+    from .engine.control import request_abort
+    from .engine.runtime import run_routine
 
     server, _ = load_server_config()
     routine_dir = _routine_dir(server, args.routine)

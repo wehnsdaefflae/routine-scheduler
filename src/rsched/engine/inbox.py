@@ -9,9 +9,12 @@ Consumed files move to <run_dir>/consumed/ for the audit trail.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from ..paths import read_json
+
+log = logging.getLogger("rsched.inbox")
 
 
 def _consume(path: Path, consumed_dir: Path) -> None:
@@ -37,10 +40,14 @@ def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[str]:
         else:
             try:
                 text = path.read_text(encoding="utf-8").strip()
-                if text:
-                    out.append(text)
-            except OSError:
+            except OSError as exc:
+                log.warning("inbox: cannot read %s (%s) — leaving it for the next drain",
+                            path.name, exc)
                 continue
+            if text:
+                out.append(text)
+            else:
+                log.warning("inbox: %s carried no text — consumed without injection", path.name)
         _consume(path, consumed_dir)
     return out
 
@@ -66,6 +73,8 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path) -> list[dict
     for path in sorted(inbox.glob("answer-*.json")):
         obj = read_json(path)
         if not isinstance(obj, dict) or "text" not in obj:
+            log.warning("inbox: answer file %s is unreadable or has no text — skipping it",
+                        path.name)
             continue
         qid = str(obj.get("qid") or path.stem.removeprefix("answer-"))
         qfile = pending / f"{qid}.json"

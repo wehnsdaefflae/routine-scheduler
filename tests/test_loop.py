@@ -7,7 +7,7 @@ from conftest import finish, spawn, util, wait_, write_file
 
 from rsched.config import ServerConfig
 from rsched.endpoints.base import EndpointError
-from rsched.engine.loop import run_routine
+from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
 from rsched.paths import atomic_write_json, read_json
 
@@ -25,7 +25,7 @@ def _server(routine_dir) -> ServerConfig:
 
 
 def probe(say="Doing work."):
-    """A generic successful effectful action (replaces the old shell no-op)."""
+    """A generic successful effectful action."""
     return write_file("state/probe.txt", content="probe", say=say)
 
 
@@ -45,6 +45,7 @@ def test_apply_model_switch(make_routine):
     """The engine applies a mid-run model switch from control.json, edge-triggered on its ts, and
     ignores an unknown endpoint. for_model re-resolves every turn, so the next turn uses it."""
     from rsched.config import ModelRef, load_routine
+    from rsched.engine.control import apply_model_switch
     from rsched.engine.loop import EngineLoop
     from rsched.engine.run_context import Budgets, RunContext
     from rsched.engine.transcript import Transcript
@@ -60,18 +61,18 @@ def test_apply_model_switch(make_routine):
                      budgets=Budgets.from_config(cfg.budgets))
     loop = EngineLoop(ctx, "## Run flow", "instr")
 
-    loop._apply_model_switch()                                # no signal → no-op
+    apply_model_switch(loop)                                  # no signal → no-op
     assert "main" not in ctx.routine.models
     atomic_write_json(run_dir / "control.json", {"switch_model": {
         "main": {"endpoint": "slow", "model": "big", "effort": "high"}, "ts": "t1"}})
-    loop._apply_model_switch()
+    apply_model_switch(loop)
     assert ctx.routine.models["main"] == ModelRef("slow", "big", "high")
     ctx.routine.models["main"] = ModelRef("x", "y")           # same ts → not re-applied
-    loop._apply_model_switch()
+    apply_model_switch(loop)
     assert ctx.routine.models["main"] == ModelRef("x", "y")
     atomic_write_json(run_dir / "control.json", {"switch_model": {
         "main": {"endpoint": "ghost", "model": "z"}, "ts": "t2"}})   # unknown endpoint ignored
-    loop._apply_model_switch()
+    apply_model_switch(loop)
     assert ctx.routine.models["main"] == ModelRef("x", "y")
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert any(e["type"] == "user_injection" and "model switched" in e["payload"]["text"] for e in events)
@@ -81,7 +82,7 @@ def test_ensure_decomposed_builds_main_on_run(make_routine, monkeypatch):
     """A routine created as (workflow + instruction) with no main.md — the wizard's clarify session —
     is decomposed on run: main.md + steps written, carrying the workflow's tools allowlist through."""
     from rsched.config import load_routine
-    from rsched.engine import loop as loop_mod
+    from rsched.engine import runtime as runtime_mod
     from rsched.workflows import adapt as adapt_mod
     from rsched.workflows import library as lib_mod
 
@@ -95,12 +96,75 @@ def test_ensure_decomposed_builds_main_on_run(make_routine, monkeypatch):
         "main": "## Run flow\n1. ask\n## Completion criteria\ndone", "modules": {"ask-step": "ask the user"}})
 
     cfg, _ = load_routine(d)
-    loop_mod._ensure_decomposed(d, cfg, _server(d))
+    runtime_mod._ensure_decomposed(d, cfg, _server(d))
     assert (d / "main.md").exists() and (d / "steps" / "ask-step.md").read_text().startswith("ask the user")
     from rsched import frontmatter
     meta, _ = frontmatter.load(d / "main.md")
     assert meta["tools"] == ["ask_user", "write_file", "finish"]              # allowlist carried through
     assert meta["materialized_from"]["slug"] == cfg.workflow_slug
+
+
+TOOLED_MD = """---
+materialized_from: {slug: test-flow, commit: abc123, version: 1}
+tools: [read_file, write_file, ask_user]
+---
+
+## Run flow
+1. Only read_file / write_file / ask_user are available; do the work and finish.
+
+## Completion criteria
+- The instruction is fulfilled within the allowlist.
+"""
+
+
+def test_tools_allowlist_enforced_at_runtime(make_routine, scripted):
+    """A `tools:` frontmatter allowlist rejects other kinds inside the schema-retry cycle —
+    the model is told which kinds ARE allowed and the run continues on a permitted action."""
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        util("websearch"),                       # util is NOT in the allowlist
+        probe(),                                 # write_file is
+        finish(summary="stayed inside the allowlist"),
+    ], slug="tooled", workflow_md=TOOLED_MD)
+    assert status == "ok"
+    errs = [e for e in events if e["type"] == "error"]
+    assert len(errs) == 1 and errs[0]["payload"]["where"] == "schema"
+    assert "not available" in errs[0]["payload"]["message"]
+    retry = ep.calls[1]["messages"][-1]["content"]
+    for kind in ("ask_user", "finish", "read_file", "write_file"):
+        assert kind in retry                     # the model is told what it MAY use
+    assert (d / "state" / "probe.txt").exists()  # the permitted action then executed
+    # no observation was recorded for the disallowed attempt — it never became a turn
+    obs_kinds = [e["payload"]["kind"] for e in events if e["type"] == "observation"]
+    assert "util" not in obs_kinds
+
+
+def test_inbox_unreadable_message_logged_and_left(tmp_path, caplog):
+    """An unreadable inbox file is skipped with a log trace and left for the next drain."""
+    import logging
+    import os
+
+    import pytest
+
+    from rsched.engine import inbox as inbox_mod
+
+    if os.geteuid() == 0:
+        pytest.skip("permission-based unreadability needs a non-root user")
+
+    d = tmp_path / "r"
+    (d / "inbox").mkdir(parents=True)
+    good = d / "inbox" / "msg-1.json"
+    good.write_text('{"text": "hello"}', encoding="utf-8")
+    bad = d / "inbox" / "msg-2.json"
+    bad.write_text("secret", encoding="utf-8")
+    bad.chmod(0o000)
+    try:
+        with caplog.at_level(logging.WARNING, logger="rsched.inbox"):
+            out = inbox_mod.drain_messages(d, tmp_path / "consumed")
+    finally:
+        bad.chmod(0o600)
+    assert out == ["hello"]
+    assert bad.exists()                          # left in place for the next drain
+    assert "cannot read msg-2.json" in caplog.text
 
 
 def test_resume_rehydrates_and_continues(make_routine, scripted):

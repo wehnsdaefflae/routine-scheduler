@@ -1,11 +1,13 @@
-"""System prompt assembly, state digest, observation formatting, deterministic compaction."""
+"""System prompt assembly, state digest, observation formatting (composer.py) and
+compaction / on-disk history / transcript replay (history.py)."""
 
 import json
 from pathlib import Path
 
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.composer import (build_system_prompt, format_observation, harness_contract,
-                                    maybe_compact, messages_size, state_digest, truncate)
+                                    state_digest, truncate)
+from rsched.engine.history import maybe_compact, messages_size
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
 
@@ -49,7 +51,7 @@ def test_state_digest_contents(make_routine, tmp_path):
 
 
 def test_replay_messages_rebuilds_conversation():
-    from rsched.engine.composer import replay_messages
+    from rsched.engine.history import replay_messages
 
     events = [
         {"type": "header", "run_id": "r:1"},
@@ -117,27 +119,40 @@ def test_format_observation_variants():
         {"n": 1, "label": "x", "status": "ok", "turns": 2, "summary": "s"}], "timed_out": False})
 
 
-def test_compact_to_history_writes_navigable_files(tmp_path):
-    from rsched.config import ModelRef
-    from rsched.engine.composer import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history
-
+def _history_endpoint(payload):
     class _Comp:
-        parsed = {"files": [{"name": "Research Notes!", "content": "found X\nfound Y"},
-                            {"name": "decisions", "content": "chose Z"}],
-                  "index": "- research-notes: what we found\n- decisions: choices made"}
+        parsed = payload
         text, usage = "", {"in": 1, "out": 1}
 
     class _Ep:
         def complete(self, messages, **k):
+            self.last_prompt = messages[-1]["content"]
             return _Comp()
 
-    run_dir = tmp_path / "runs" / "20260710-070000"
-    run_dir.mkdir(parents=True)
-    head = [{"role": "system", "content": "S"}] + [{"role": "user", "content": f"h{i}"} for i in range(KEEP_HEAD_MSGS - 1)]
+    return _Ep()
+
+
+def _history_messages():
+    from rsched.engine.history import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
+
+    head = [{"role": "system", "content": "S"}] + [{"role": "user", "content": f"h{i}"}
+                                                   for i in range(KEEP_HEAD_MSGS - 1)]
     middle = [{"role": "assistant", "content": f"m{i}"} for i in range(20)]
     tail = [{"role": "user", "content": f"t{i}"} for i in range(KEEP_TAIL_MSGS)]
+    return head + middle + tail
+
+
+def test_compact_to_history_writes_navigable_files(tmp_path):
+    from rsched.config import ModelRef
+    from rsched.engine.history import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history
+
+    ep = _history_endpoint({"files": [{"name": "Research Notes!", "content": "found X\nfound Y"},
+                                      {"name": "decisions", "content": "chose Z"}],
+                            "index": "- research-notes: what we found\n- decisions: choices made"})
+    run_dir = tmp_path / "runs" / "20260710-070000"
+    run_dir.mkdir(parents=True)
     records = [{"turn": 12, "kind": "util", "brief": '"x"', "say": "s"}]
-    result = compact_to_history(head + middle + tail, records, _Ep(), ModelRef("e", "m"),
+    result = compact_to_history(_history_messages(), records, ep, ModelRef("e", "m"),
                                 run_dir, "runs/20260710-070000/history")
     assert result is not None
     new_msgs, info = result
@@ -149,6 +164,81 @@ def test_compact_to_history_writes_navigable_files(tmp_path):
     names = sorted(p.name for p in hist.glob("*.md"))              # safe-slugged, turn-prefixed
     assert names == ["INDEX.md", "t12-decisions.md", "t12-research-notes.md"]
     assert (hist / "t12-research-notes.md").read_text().strip() == "found X\nfound Y"
+
+
+def test_compact_to_history_second_pass_accumulates_atomically(tmp_path):
+    """A later compaction carries the earlier files over, rewrites INDEX.md, and leaves no
+    temp/displaced siblings behind — the swap is all-or-nothing."""
+    from rsched.config import ModelRef
+    from rsched.engine.history import compact_to_history
+
+    run_dir = tmp_path / "runs" / "20260710-080000"
+    run_dir.mkdir(parents=True)
+    ep1 = _history_endpoint({"files": [{"name": "alpha", "content": "first findings"}],
+                             "index": "- alpha: first findings"})
+    assert compact_to_history(_history_messages(), [{"turn": 10, "kind": "util", "brief": '"x"',
+                                                     "say": "s"}],
+                              ep1, ModelRef("e", "m"), run_dir, "history") is not None
+    ep2 = _history_endpoint({"files": [{"name": "beta", "content": "later findings"}],
+                             "index": "- alpha: first findings\n- beta: later findings"})
+    assert compact_to_history(_history_messages(), [{"turn": 20, "kind": "util", "brief": '"y"',
+                                                     "say": "s"}],
+                              ep2, ModelRef("e", "m"), run_dir, "history") is not None
+    assert "There is already a history index" in ep2.last_prompt   # prior INDEX fed to the LLM
+    hist = run_dir / "history"
+    names = sorted(p.name for p in hist.glob("*.md"))
+    assert names == ["INDEX.md", "t10-alpha.md", "t20-beta.md"]    # earlier file carried over
+    assert "beta" in (hist / "INDEX.md").read_text()
+    leftovers = [p.name for p in run_dir.iterdir() if p.name != "history"]
+    assert leftovers == []                                         # no tmp/displaced dirs remain
+
+
+def test_compact_to_history_failure_leaves_prior_history_intact(tmp_path, monkeypatch):
+    """If the swap fails mid-way, the pre-existing history survives untouched and the temp
+    build dir is cleaned up (the caller then falls back to the deterministic digest)."""
+    import os
+
+    from rsched.config import ModelRef
+    from rsched.engine.history import compact_to_history
+
+    run_dir = tmp_path / "runs" / "20260710-090000"
+    hist = run_dir / "history"
+    hist.mkdir(parents=True)
+    (hist / "INDEX.md").write_text("- t5-kept: prior notes\n", encoding="utf-8")
+    (hist / "t5-kept.md").write_text("prior notes\n", encoding="utf-8")
+    ep = _history_endpoint({"files": [{"name": "gamma", "content": "new stuff"}],
+                            "index": "- gamma: new stuff"})
+
+    def boom(src, dst):
+        raise OSError("disk went away")
+
+    monkeypatch.setattr(os, "replace", boom)
+    try:
+        compact_to_history(_history_messages(), [{"turn": 30, "kind": "util", "brief": '"z"',
+                                                  "say": "s"}],
+                           ep, ModelRef("e", "m"), run_dir, "history")
+    except OSError:
+        pass
+    else:
+        raise AssertionError("swap failure must propagate so the caller can fall back")
+    monkeypatch.undo()
+    assert sorted(p.name for p in hist.glob("*.md")) == ["INDEX.md", "t5-kept.md"]
+    assert (hist / "t5-kept.md").read_text() == "prior notes\n"
+    leftovers = [p.name for p in run_dir.iterdir() if p.name != "history"]
+    assert leftovers == []                                         # temp build dir was removed
+
+
+def test_compact_to_history_rejects_unusable_llm_output(tmp_path):
+    """Empty files/index → None (deterministic fallback) and nothing lands on disk."""
+    from rsched.config import ModelRef
+    from rsched.engine.history import compact_to_history
+
+    run_dir = tmp_path / "runs" / "20260710-100000"
+    run_dir.mkdir(parents=True)
+    ep = _history_endpoint({"files": [], "index": ""})
+    assert compact_to_history(_history_messages(), [], ep, ModelRef("e", "m"),
+                              run_dir, "history") is None
+    assert list(run_dir.iterdir()) == []
 
 
 def test_compaction_deterministic_and_bounded():

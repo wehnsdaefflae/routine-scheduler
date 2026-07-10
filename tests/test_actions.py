@@ -62,6 +62,22 @@ def test_schema_layer_rejects_unknown_kind_and_extra_props():
                     ACTION_SCHEMA, validate_action)
 
 
+def test_validate_action_enforces_workflow_allowlist():
+    """A workflow's `tools:` allowlist narrows the action vocabulary; the error names the
+    permitted kinds and `finish` is always allowed."""
+    allowed = {"ask_user", "read_file", "write_file", "finish"}
+    disallowed = {"say": "s", "kind": "util", "name": "websearch"}
+    problems = validate_action(disallowed, allowed_kinds=allowed)
+    assert len(problems) == 1 and "not available" in problems[0]
+    for kind in sorted(allowed):
+        assert kind in problems[0]                    # actionable: the allowed set is spelled out
+    fin = {"say": "s", "kind": "finish", "status": "ok", "summary": "d"}
+    assert validate_action(fin, allowed_kinds={"read_file"}) == []   # finish always permitted
+    assert validate_action(disallowed) == []                          # None → unrestricted
+    ok = {"say": "s", "kind": "read_file", "path": "LEDGER.md"}
+    assert validate_action(ok, allowed_kinds=allowed) == []
+
+
 def test_extract_json_tolerates_fences_and_prose():
     inner = {"say": "s", "kind": "finish", "status": "ok", "summary": "d"}
     fenced = f"Sure! Here is the action:\n```json\n{json.dumps(inner)}\n```\nHope that helps."

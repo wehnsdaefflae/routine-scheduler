@@ -1,10 +1,12 @@
-"""The engine run loop — the workflow-as-harness core.
+"""The engine turn loop — the workflow-as-harness core.
 
 Turn cycle: budget check → pause gate → inbox drain → sub-workflow exit notifications →
 compaction → one completion (schema-validated, ≤2 retries) → dispatch → observation.
-Control-flow kinds (spawn/subruns/kill/wait, ask_user, finish) are handled here; effect
-kinds go through executor.dispatch. Sub-workflows run in parallel threads (subruns.py)
-and never outlive the parent.
+Control-flow kinds (spawn/subruns/kill/wait) are handled here; ask_user and write_util in
+interact.py; effect kinds go through executor.dispatch. Between-turn concerns (pause,
+model switch, injections, subrun announcements) live in control.py; the top-level entry
+(run_routine) in runtime.py. Sub-workflows run in parallel threads (subruns.py) and never
+outlive the parent.
 """
 
 from __future__ import annotations
@@ -16,37 +18,26 @@ import time
 from collections import deque
 from pathlib import Path
 
-from ..config import ServerConfig, load_routine
-from ..endpoints import EndpointRegistry
 from ..endpoints.base import EndpointError
-from ..frontmatter import load as load_frontmatter
-from ..ids import question_id, run_ts as make_run_ts
 from ..paths import read_json
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import executor, inbox
-from .actions import ACTION_SCHEMA, normalize_action, validate_action
-from .composer import (COMPACT_AT_FRACTION, KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, build_system_prompt,
-                       compact_to_history, format_observation, kickoff_message, maybe_compact,
-                       messages_size, replay_messages, state_digest, truncate)
-from .run_context import Budgets, RunContext
+from . import executor, inbox, interact
+from .actions import ACTION_SCHEMA, BRIEF_FIELD, normalize_action, validate_action
+from .composer import build_system_prompt, format_observation, kickoff_message, state_digest
+from .control import (_ABORT, RunAborted, announce_finished_subruns, apply_model_switch,
+                      drain_injections, pause_gate, request_abort)
+from .history import (COMPACT_AT_FRACTION, KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history,
+                      maybe_compact, messages_size, replay_messages)
+from .run_context import RunContext
 from .subruns import SubrunManager
-from .transcript import Transcript
 
 POLL_S = 2.0
 MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
 REPEAT_WARN = 3
 REPEAT_FAIL = 5
 
-_ABORT = {"flag": False}
-_APPROVE_WORDS = ("approve", "approved", "yes", "y", "ok", "okay", "go", "accept", "confirm")
-
-
-def request_abort() -> None:
-    _ABORT["flag"] = True
-
-
-def _is_approval(text: str) -> bool:
-    return text.strip().lower().split()[0] in _APPROVE_WORDS if text.strip() else False
+__all__ = ["EngineLoop", "RunAborted", "request_abort", "POLL_S",
+           "MAX_SCHEMA_ATTEMPTS", "REPEAT_WARN", "REPEAT_FAIL"]
 
 
 def _autocommit(routine_dir: Path, message: str) -> None:
@@ -67,10 +58,6 @@ def _autocommit(routine_dir: Path, message: str) -> None:
         pass
 
 
-class RunAborted(Exception):
-    pass
-
-
 class EngineLoop:
     def __init__(self, ctx: RunContext, workflow_body: str, instruction: str,
                  abort_event: threading.Event | None = None, fragments_text: str = "",
@@ -81,7 +68,8 @@ class EngineLoop:
         self.fragments_text = fragments_text
         self.resume = resume     # rehydrate the prior transcript into the prompt instead of a clean start
         # A workflow may restrict which action kinds it may use (frontmatter `tools:`); `finish`
-        # is always permitted so a run can end. None = every tool allowed.
+        # is always permitted so a run can end. None = every tool allowed. Enforced per turn by
+        # validate_action, so the model is corrected within the schema-retry cycle.
         self.allowed_tools = set(allowed_tools) | {"finish"} if allowed_tools else None
         self.abort_event = abort_event or threading.Event()
         self.subruns = SubrunManager(self)
@@ -129,10 +117,10 @@ class EngineLoop:
                 if violation := ctx.budget_violation():
                     return self._finish_run("partial", f"Run stopped by the engine: {violation}. "
                                                        "Progress so far is in the transcript and LEDGER.")
-                self._pause_gate()
-                self._apply_model_switch()
-                self._drain_injections()
-                self._announce_finished_subruns()
+                pause_gate(self, poll_s=POLL_S)
+                apply_model_switch(self)
+                drain_injections(self)
+                announce_finished_subruns(self)
                 action, usage = self._next_action()
                 if self._aborted():
                     raise RunAborted()  # a kill during the completion preempts the action
@@ -165,19 +153,10 @@ class EngineLoop:
                         continue
                     self.final_summary = action["summary"]
                     return self._finish_run(action["status"], action["summary"], authored=True)
-                if self.allowed_tools is not None and action["kind"] not in self.allowed_tools:
-                    obs = {"kind": action["kind"], "not_allowed": True,
-                           "allowed": sorted(self.allowed_tools)}
-                    ctx.transcript.event("observation", obs, turn=ctx.turn)
-                    self.messages.append({"role": "user", "content":
-                        f"OBSERVATION ({action['kind']} NOT AVAILABLE): this workflow permits only "
-                        f"{sorted(self.allowed_tools)}. Use one of those — do not attempt other tools."})
-                    ctx.write_status()
-                    continue
                 if action["kind"] == "ask_user":
-                    obs = self._handle_ask(action)
+                    obs = interact.handle_ask(self, action, poll_s=POLL_S)
                 elif action["kind"] == "write_util":
-                    obs = self._handle_write_util(action)
+                    obs = interact.handle_write_util(self, action, poll_s=POLL_S)
                 elif action["kind"] == "spawn":
                     obs = self.subruns.spawn(action)
                 elif action["kind"] == "subruns":
@@ -245,14 +224,6 @@ class EngineLoop:
                              {"role": "user", "content": kickoff_message(ctx)}]
         ctx.write_status("running")
 
-    def _announce_finished_subruns(self) -> None:
-        """Turn-boundary notification: children that exited since the last boundary."""
-        for sub in self.subruns.take_finished_unannounced():
-            summary, _ = truncate(sub.summary, cap=4000)
-            self.messages.append({"role": "user", "content":
-                f"SUB-WORKFLOW FINISHED — #{sub.n} {sub.label!r} (workflow {sub.workflow}, "
-                f"status {sub.status}, {sub.ctx.turn} turns):\n{summary}"})
-
     def _finish_run(self, status: str, summary: str, *, authored: bool = False) -> str:
         ctx = self.ctx
         killed = self.subruns.kill_all(reason=f"parent run finished ({status})")
@@ -300,7 +271,8 @@ class EngineLoop:
                 candidate = (completion.parsed if completion.parsed is not None
                              else extract_json(completion.text))
                 candidate = normalize_action(candidate)
-                problems = validate(candidate, ACTION_SCHEMA) or validate_action(candidate)
+                problems = (validate(candidate, ACTION_SCHEMA)
+                            or validate_action(candidate, allowed_kinds=self.allowed_tools))
                 if problems:
                     raise SchemaViolation(problems)
                 return candidate, usage_sum
@@ -336,10 +308,7 @@ class EngineLoop:
             ctx.transcript.event("compaction", cinfo)
 
     def _record_turn(self, action: dict) -> None:
-        brief_field = {"util": "name", "write_util": "name", "read_file": "path",
-                       "write_file": "path", "llm": "prompt", "spawn": "label", "kill": "n",
-                       "wait": "n", "ask_user": "question", "finish": "status"}.get(action["kind"], "")
-        brief = str(action.get(brief_field, ""))[:80]
+        brief = str(action.get(BRIEF_FIELD.get(action["kind"], ""), ""))[:80]
         self.turn_records.append({"turn": self.ctx.turn, "kind": action["kind"],
                                   "brief": json.dumps(brief, ensure_ascii=False),
                                   "say": action.get("say", "")})
@@ -354,236 +323,3 @@ class EngineLoop:
                 break
             streak += 1
         return streak
-
-    def _apply_model_switch(self) -> None:
-        """Turn-boundary: honour a mid-run model switch written to control.json by the web layer.
-        Edge-triggered on the signal's `ts` so the engine never has to write control.json (which
-        stays web-owned). The switch lands on the NEXT completion, since for_model re-resolves
-        ctx.routine.models every turn — the model, its context size, and effort all self-correct."""
-        from ..config import ModelRef
-
-        ctx = self.ctx
-        obj = read_json(ctx.root_run_dir / "control.json")
-        sw = obj.get("switch_model") if isinstance(obj, dict) else None
-        if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == self._last_switch_ts:
-            return
-        self._last_switch_ts = str(sw["ts"])
-        applied = []
-        for kind in ("main", "subroutine", "tool_call"):
-            spec = sw.get(kind)
-            if (isinstance(spec, dict) and spec.get("endpoint") in ctx.server.endpoints
-                    and spec.get("model")):
-                ctx.routine.models[kind] = ModelRef(endpoint=str(spec["endpoint"]),
-                                                    model=str(spec["model"]), effort=spec.get("effort"))
-                applied.append(f"{kind} → {spec['endpoint']}/{spec['model']}")
-        if applied:
-            note = "model switched mid-run: " + "; ".join(applied)
-            ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
-            self.messages.append({"role": "user", "content":
-                f"ENGINE NOTE: {note}. Continue the run on the new model."})
-
-    def _pause_gate(self) -> None:
-        ctx = self.ctx
-        control = ctx.root_run_dir / "control.json"
-        obj = read_json(control)
-        if not (isinstance(obj, dict) and obj.get("pause")):
-            return
-        ctx.write_status("paused")
-        started = time.monotonic()
-        while True:
-            if self._aborted():
-                raise RunAborted()
-            time.sleep(POLL_S)
-            obj = read_json(control)
-            if not (isinstance(obj, dict) and obj.get("pause")):
-                break
-        ctx.credit_suspended(time.monotonic() - started)
-        ctx.write_status("running")
-
-    def _drain_injections(self) -> None:
-        ctx = self.ctx
-        if ctx.depth > 0:
-            return
-        for text in inbox.drain_messages(ctx.routine.dir, self.consumed_dir):
-            ctx.transcript.event("user_injection", {"text": text})
-            self.messages.append({"role": "user",
-                                  "content": f"USER MESSAGE (injected mid-run):\n{text}"})
-
-    # --- control-flow kinds ---------------------------------------------------------
-
-    def _handle_write_util(self, action: dict) -> dict:
-        from .. import utils_lib
-
-        ctx = self.ctx
-        name, content = action["name"], action["content"]
-        if ctx.depth > 0:
-            return {"kind": "write_util", "name": name, "declined": True,
-                    "reason": "sub-workflows cannot create/revise utils — use existing ones"}
-        home = ctx.server.utils_home
-        utils_lib.ensure_library(home, remote=ctx.server.libraries_remote)
-        creating = not utils_lib.exists(home, name)
-        if ctx.routine.confirm_utils(ctx.server):
-            verb = "create" if creating else "revise"
-            ask = self._handle_ask({
-                "question": f"Approve {verb} of global util '{name}'? First lines:\n"
-                            f"{content.strip()[:400]}",
-                "mode": "blocking", "options": ["approve", "decline"]})
-            if not ask.get("answered"):
-                return {"kind": "write_util", "name": name, "pending_approval": True,
-                        "qid": ask.get("qid")}
-            if not _is_approval(ask["answer"]):
-                return {"kind": "write_util", "name": name, "declined": True}
-        utils_lib.write_util_file(home, name, content)
-        ok, output = utils_lib.selftest(home, name)
-        if not ok:
-            return {"kind": "write_util", "name": name, "created": creating,
-                    "selftest_ok": False, "output": output[:2000]}
-        utils_lib.git_commit(home, f"{'create' if creating else 'revise'} {name}")
-        return {"kind": "write_util", "name": name, "created": creating, "selftest_ok": True}
-
-    def _handle_ask(self, action: dict) -> dict:
-        ctx = self.ctx
-        qid = question_id(ctx.run_ts, ctx.turn)
-        mode = action.get("mode") or "deferred"
-        if ctx.depth > 0:
-            mode = "deferred"  # subruns cannot block the run on the user
-        options = list(action.get("options") or [])
-        question = action["question"]
-        ctx.transcript.event("question", {"qid": qid, "mode": mode, "question": question,
-                                          "options": options})
-        if mode == "deferred":
-            inbox.file_deferred_question(ctx.routine.dir, qid, question, options, ctx.run_ts)
-            return {"kind": "ask_user", "qid": qid, "mode": mode}
-        ctx.write_status("waiting_user",
-                         question={"qid": qid, "question": question, "options": options,
-                                   "asked": ctx.run_ts})
-        deadline = time.monotonic() + ctx.budgets.ask_timeout_h * 3600
-        started = time.monotonic()
-        answer = None
-        while time.monotonic() < deadline:
-            if self._aborted():
-                raise RunAborted()
-            answer = inbox.take_answer(ctx.routine.dir, qid, self.consumed_dir)
-            if answer:
-                break
-            time.sleep(POLL_S)
-        ctx.credit_suspended(time.monotonic() - started)
-        ctx.write_status("running", question=None)
-        if answer:
-            ctx.transcript.event("answer", {"qid": qid, "text": answer["text"],
-                                            "source": answer.get("source", "web")})
-            return {"kind": "ask_user", "qid": qid, "mode": mode, "answered": True,
-                    "answer": answer["text"]}
-        inbox.file_deferred_question(ctx.routine.dir, qid, question, options, ctx.run_ts)
-        return {"kind": "ask_user", "qid": qid, "mode": mode, "timed_out": True,
-                "timeout_h": ctx.budgets.ask_timeout_h}
-
-# --- top-level entry ------------------------------------------------------------------
-
-
-def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
-    """A routine created as (workflow + instruction) but not yet turned into files — the wizard's
-    clarify session is exactly this — has no main.md. Decompose its workflow against its instruction
-    now (the SAME operation scaffold does at creation), so the run follows tailored MARKDOWN, never a
-    raw pattern. Degrades to the whole workflow rendered as main.md if no endpoint is available."""
-    if (routine_dir / "main.md").exists() or not cfg.workflow_slug:
-        return
-    from .. import frontmatter
-    from ..workflows import library
-    from ..workflows.adapt import decompose
-
-    instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8") \
-        if (routine_dir / "instruction.md").exists() else ""
-    result = decompose(server, cfg.workflow_slug, instruction)
-    try:
-        meta, _, _ = library.read_workflow(server.library_home, cfg.workflow_slug)
-    except FileNotFoundError:
-        meta = {}
-    main_meta = {"name": cfg.name, "slug": cfg.slug,
-                 "materialized_from": {"slug": cfg.workflow_slug,
-                                       "commit": library.head_commit(server.library_home),
-                                       "version": meta.get("version", 0)},
-                 "modules": sorted(result["modules"])}
-    if meta.get("tools") is not None:
-        main_meta["tools"] = meta["tools"]
-    if meta.get("includes"):
-        main_meta["includes"] = list(meta["includes"])
-    (routine_dir / "steps").mkdir(exist_ok=True)
-    for mod_name, mod_body in result["modules"].items():
-        (routine_dir / "steps" / f"{mod_name}.md").write_text(mod_body.rstrip() + "\n", encoding="utf-8")
-    (routine_dir / "main.md").write_text(frontmatter.dump(main_meta, result["main"]), encoding="utf-8")
-
-
-def load_workflow(routine_dir, cfg) -> tuple[str, str, dict, list[str] | None]:
-    """Load the routine's OWN main.md body (the recipe was materialized into it at generation)
-    plus its active FRAGMENTS. Returns (main_body, fragments_text, provenance, allowed_tools).
-
-    A routine is self-contained: nothing is read from the workflow library at run time. Fragments
-    are the routine's editable copies under fragments/."""
-    from .. import fragments_lib
-
-    # The recipe is materialized into the routine's OWN main.md at generation, so a routine is
-    # self-contained — the workflow library is NOT read at run time. The model reads the step
-    # modules under steps/ on demand via read_file (main.md routes to them).
-    main = routine_dir / "main.md"
-    if not main.exists():
-        raise RuntimeError(f"routine {cfg.slug!r} has no main.md — cannot run")
-    meta, mbody = load_frontmatter(main)
-    body = mbody.strip()
-    src = meta.get("materialized_from") if isinstance(meta.get("materialized_from"), dict) else {}
-    prov = {"slug": src.get("slug", cfg.workflow_slug),
-            "commit": src.get("commit", cfg.workflow_commit), "version": src.get("version", 0)}
-
-    # active fragments: the routine's editable copies under fragments/
-    frag_dir = routine_dir / "fragments"
-    files = sorted(frag_dir.glob("*.md")) if frag_dir.is_dir() else []
-    parts = [fragments_lib.fragment_body(p.read_text(encoding="utf-8")).strip() for p in files]
-    tools = meta.get("tools") if isinstance(meta.get("tools"), list) else None
-    return body, "\n\n".join(parts), prov, tools
-
-
-def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None = None,
-                model_overrides: dict | None = None, on_event=None,
-                resume_from: str | None = None) -> tuple[str, Path]:
-    """Execute one run of the routine at routine_dir. Returns (final status, run dir).
-    on_event(obj) is called for every transcript event (used by `rsched run-once`). When
-    resume_from is a prior run's ts, that run dir is reused and its transcript is rehydrated
-    into the prompt so the run continues where it left off (with a fresh budget window)."""
-    cfg, problems = load_routine(routine_dir)
-    if cfg is None:
-        raise RuntimeError("; ".join(problems))
-    fatal = [p for p in problems if "missing" in p]
-    if fatal:
-        raise RuntimeError(f"routine {routine_dir.name}: " + "; ".join(fatal))
-    if model_overrides:
-        cfg.models.update(model_overrides)
-    registry = EndpointRegistry(server)
-    ts = resume_from or run_ts or make_run_ts()
-    run_dir = routine_dir / "runs" / ts
-    if resume_from and not run_dir.is_dir():
-        raise RuntimeError(f"cannot resume {ts}: run dir not found")
-    run_dir.mkdir(parents=True, exist_ok=True)
-    transcript = Transcript(run_dir / "transcript.jsonl")   # append mode — resume adds after the tail
-    if on_event:
-        transcript.on_event = on_event  # type: ignore[attr-defined]
-        _orig_write = transcript.write
-
-        def write_and_echo(obj: dict) -> None:
-            _orig_write(obj)
-            on_event(obj)
-
-        transcript.write = write_and_echo  # type: ignore[method-assign]
-    _, orch_ref = registry.for_model("main", cfg.models)
-    ctx = RunContext(routine=cfg, server=server, registry=registry, run_ts=ts,
-                     run_dir=run_dir, transcript=transcript,
-                     budgets=Budgets.from_config(cfg.budgets))
-    if not resume_from:
-        _ensure_decomposed(routine_dir, cfg, server)   # workflow + instruction → main.md, if not yet
-    body, fragments_text, prov, allowed_tools = load_workflow(routine_dir, cfg)
-    instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8")
-    if not resume_from:            # a resumed run keeps the original header (transcript is append-only)
-        transcript.header(run_id=ctx.run_id, routine=cfg.slug, workflow=prov,
-                          orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model})
-    status = EngineLoop(ctx, body, instruction, fragments_text=fragments_text,
-                        allowed_tools=allowed_tools, resume=bool(resume_from)).run()
-    return status, run_dir

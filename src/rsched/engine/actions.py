@@ -80,6 +80,12 @@ ACTION_SCHEMA: dict = {
     },
 }
 
+# The one field that best identifies a turn of each kind — the one-line "briefs" used by
+# turn records, compaction digests, and transcript replay.
+BRIEF_FIELD = {"util": "name", "write_util": "name", "read_file": "path", "write_file": "path",
+               "llm": "prompt", "spawn": "label", "kill": "n", "wait": "n",
+               "ask_user": "question", "finish": "status"}
+
 # kind → (required fields, allowed extra fields beyond say/kind)
 _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s")),
@@ -133,13 +139,17 @@ def normalize_action(obj: dict) -> dict:
     return out
 
 
-def validate_action(obj: dict) -> list[str]:
+def validate_action(obj: dict, allowed_kinds: set[str] | None = None) -> list[str]:
     """Semantic per-kind checks on an object that already passed the JSON Schema.
-    Returns a list of problems (empty = valid)."""
+    `allowed_kinds` narrows the vocabulary to a workflow's `tools:` allowlist — `finish`
+    is always permitted so a run can end. Returns a list of problems (empty = valid)."""
     problems: list[str] = []
     kind = obj.get("kind")
     if kind not in _KIND_FIELDS:
         return [f"unknown kind {kind!r}"]
+    if allowed_kinds is not None and kind != "finish" and kind not in allowed_kinds:
+        return [f"kind={kind} is not available in this workflow — it permits only "
+                f"{sorted(allowed_kinds | {'finish'})}; use one of those"]
     required, optional = _KIND_FIELDS[kind]
     for field in required:
         val = obj.get(field)

@@ -43,11 +43,11 @@ class Subrun:
     n: int
     label: str
     workflow: str
-    thread: threading.Thread
     ctx: RunContext
     loop: object                       # the child EngineLoop
     abort_event: threading.Event
     started_mono: float
+    thread: threading.Thread | None = None   # attached by spawn() just before start
     status: str = "running"            # running | ok | partial | failed | aborted
     summary: str = ""
     announced: bool = False            # parent notified of exit?
@@ -97,12 +97,13 @@ class SubrunManager:
                           workflow={"slug": recipe_slug, "commit": "", "version": 0},
                           orchestrator={"endpoint": sub_ref.endpoint, "model": sub_ref.model},
                           depth=ctx.depth + 1, parent=ctx.run_id)
-        from .loop import EngineLoop, load_workflow  # local import: loop imports this module
+        from .loop import EngineLoop          # local import: loop imports this module
+        from .runtime import load_workflow
 
         body, _frag, _prov, _tools = load_workflow(sub_dir, child_ctx.routine)
         abort_event = threading.Event()
         child_loop = EngineLoop(child_ctx, body, action["prompt"], abort_event=abort_event)
-        sub = Subrun(n=n, label=label, workflow=recipe_slug, thread=None,  # type: ignore[arg-type]
+        sub = Subrun(n=n, label=label, workflow=recipe_slug,
                      ctx=child_ctx, loop=child_loop, abort_event=abort_event,
                      started_mono=time.monotonic())
 
@@ -117,12 +118,13 @@ class SubrunManager:
                 transcript.close()
                 sub.done.set()
 
-        sub.thread = threading.Thread(target=run_child, name=f"subrun-{n}", daemon=True)
+        thread = threading.Thread(target=run_child, name=f"subrun-{n}", daemon=True)
+        sub.thread = thread
         self.subruns[n] = sub
         ctx.transcript.event("subrun_start", {"n": n, "label": label, "workflow": recipe_slug,
                                               "depth": ctx.depth + 1,
                                               "transcript": f"sub/{n}/transcript.jsonl"})
-        sub.thread.start()
+        thread.start()
         return {"kind": "spawn", "n": n, "label": label, "workflow": recipe_slug,
                 "note": note, "running": running + 1}
 

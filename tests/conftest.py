@@ -113,15 +113,16 @@ def make_routine(tmp_path):
 @pytest.fixture
 def scripted(monkeypatch):
     """Returns a factory: scripted([replies]) → ScriptedEndpoint wired into run_routine
-    (loop.EndpointRegistry is monkeypatched) with fast polling."""
+    (runtime.EndpointRegistry is monkeypatched) with fast polling."""
     import rsched.engine.loop as loop_mod
+    import rsched.engine.runtime as runtime_mod
 
     monkeypatch.setattr(loop_mod, "POLL_S", 0.02)
     loop_mod._ABORT["flag"] = False
 
     def _factory(replies: list) -> ScriptedEndpoint:
         ep = ScriptedEndpoint(replies)
-        monkeypatch.setattr(loop_mod, "EndpointRegistry", lambda server: ScriptedRegistry(ep))
+        monkeypatch.setattr(runtime_mod, "EndpointRegistry", lambda server: ScriptedRegistry(ep))
         return ep
 
     yield _factory

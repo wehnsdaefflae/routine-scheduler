@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import gzip
 import json
+import logging
 from pathlib import Path
-from typing import IO
+from typing import IO, Callable
 
 from ..ids import now_iso
+
+log = logging.getLogger("rsched.transcript")
 
 EVENT_TYPES = (
     "header", "assistant_action", "observation", "question", "answer", "user_injection",
@@ -21,16 +24,22 @@ EVENT_TYPES = (
 
 
 class Transcript:
-    """Append-side handle. One instance per (sub)run; the engine is the only writer."""
+    """Append-side handle. One instance per (sub)run; the engine is the only writer.
 
-    def __init__(self, path: Path):
+    `on_event` is an optional observer called with every event object right after it hits
+    disk — the CLI's live stream. It can only watch; what lands in the file is fixed here."""
+
+    def __init__(self, path: Path, on_event: Callable[[dict], None] | None = None):
         self.path = path
+        self.on_event = on_event
         path.parent.mkdir(parents=True, exist_ok=True)
         self._fh: IO[str] = open(path, "a", encoding="utf-8", buffering=1)  # line-buffered
 
     def write(self, obj: dict) -> None:
         self._fh.write(json.dumps(obj, ensure_ascii=False) + "\n")
         self._fh.flush()
+        if self.on_event is not None:
+            self.on_event(obj)
 
     def header(self, *, run_id: str, routine: str, workflow: dict, orchestrator: dict,
                depth: int = 0, parent: str | None = None) -> None:
@@ -86,7 +95,8 @@ def read_events(path: Path, offset: int = 0) -> tuple[list[dict], int]:
                     try:
                         events.append(json.loads(line))
                     except json.JSONDecodeError:
-                        pass
+                        log.warning("transcript %s: skipping malformed line (%d chars)",
+                                    path, len(line))
             return events, total
         fh.seek(offset)
         pos = offset
@@ -101,5 +111,6 @@ def read_events(path: Path, offset: int = 0) -> tuple[list[dict], int]:
             try:
                 events.append(json.loads(line))
             except json.JSONDecodeError:
-                continue  # count the bytes, skip the noise
+                # the bytes are counted (the offset moves past it) so it is skipped exactly once
+                log.warning("transcript %s: skipping malformed line ending at byte %d", path, pos)
         return events, pos

@@ -225,6 +225,26 @@ def test_scaffold_writes_and_loads_tags(tmp_path):
     assert yaml.safe_load((d / "routine.yaml").read_text())["tags"] == ["meta", "custom"]
 
 
+def test_scaffold_stamps_tools_allowlist(tmp_path):
+    """A workflow META `tools:` allowlist lands in the routine's main.md frontmatter, where
+    the engine reads and enforces it at run time (clarify-instruction is the shipped case)."""
+    from rsched import frontmatter
+
+    server = ServerConfig()
+    server.routines_home = tmp_path / "routines"
+    server.routines_home.mkdir()
+    server.libraries_home = SEED
+    d = scaffold(server, slug="clarify-sess", name="Clarify", instruction="x",
+                 workflow_slug="clarify-instruction")
+    meta, _ = frontmatter.load(d / "main.md")
+    assert meta["tools"] == ["ask_user", "read_file", "write_file", "finish"]
+    # general-task has no tools META → no allowlist is stamped (unrestricted)
+    d2 = scaffold(server, slug="unrestricted", name="U", instruction="x",
+                  workflow_slug="general-task")
+    meta2, _ = frontmatter.load(d2 / "main.md")
+    assert "tools" not in meta2
+
+
 def test_materialize_unknown_workflow(tmp_path):
     (tmp_path / "workflows").mkdir()
     with pytest.raises(FileNotFoundError):

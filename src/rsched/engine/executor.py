@@ -1,9 +1,9 @@
 """Dispatch a validated action to its effect and return the observation dict.
 
-Handles shell / read_file / write_file / llm here. Control-flow kinds (ask_user, spawn,
-subruns, kill, wait, finish) live in loop.py — they change the run's state machine.
-Every observation dict feeds both the transcript event and (via composer.format_observation)
-the next user message.
+Handles util / read_file / write_file / llm here. Control-flow kinds (spawn, subruns,
+kill, wait, finish) live in loop.py — they change the run's state machine — and the
+user-facing kinds (ask_user, write_util) in interact.py. Every observation dict feeds
+both the transcript event and (via composer.format_observation) the next user message.
 """
 
 from __future__ import annotations

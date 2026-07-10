@@ -1,7 +1,9 @@
-"""Transcript JSONL: roundtrip, partial-line hold-back, gzip reads."""
+"""Transcript JSONL: roundtrip, partial-line hold-back, gzip reads, the on_event
+observer, and malformed-line skipping (logged, never silent)."""
 
 import gzip
 import json
+import logging
 
 from rsched.engine.transcript import Transcript, read_events
 
@@ -36,6 +38,32 @@ def test_partial_line_held_back(tmp_path):
         fh.write(json.dumps({"type": "error", "payload": {}})[-4:] + "\n")
     events2, offset2 = read_events(path, offset)
     assert len(events2) == 1 and events2[0]["type"] == "error" and offset2 > offset
+
+
+def test_on_event_observes_every_write(tmp_path):
+    """The optional on_event callback sees every event object after it hits disk —
+    the CLI's live stream rides on it (no write-path override needed)."""
+    seen = []
+    t = Transcript(tmp_path / "t.jsonl", on_event=seen.append)
+    t.header(run_id="r:1", routine="r", workflow={"slug": "w"},
+             orchestrator={"endpoint": "e", "model": "m"})
+    t.event("finish", {"status": "ok", "summary": "s"})
+    t.close()
+    assert [o["type"] for o in seen] == ["header", "finish"]
+    events, _ = read_events(tmp_path / "t.jsonl")
+    assert [e["type"] for e in events] == ["header", "finish"]   # disk saw the same events
+
+
+def test_malformed_line_skipped_with_log_trace(tmp_path, caplog):
+    path = tmp_path / "t.jsonl"
+    good = json.dumps({"type": "header"}) + "\n"
+    good2 = json.dumps({"type": "finish", "payload": {}}) + "\n"
+    path.write_text(good + "{this is not json}\n" + good2, encoding="utf-8")
+    with caplog.at_level(logging.WARNING, logger="rsched.transcript"):
+        events, offset = read_events(path)
+    assert [e["type"] for e in events] == ["header", "finish"]
+    assert offset == len((good + "{this is not json}\n" + good2).encode())  # bytes still counted
+    assert "skipping malformed line" in caplog.text
 
 
 def test_gzip_read(tmp_path):
