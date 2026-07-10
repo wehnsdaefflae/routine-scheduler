@@ -18,7 +18,6 @@ from ..daemon.runner import _pid_alive, abort_process
 from ..ids import now_iso, run_ts as make_run_ts
 from ..paths import atomic_write_json, read_json
 from ..schema_guard import loads_tolerant
-from ..workflows.adapt import materialize
 from ..workflows.generate import generate
 from ..workflows.scaffold import GITIGNORE, scaffold
 from ..workflows.suggest import normalize_tags, suggest_tags
@@ -162,15 +161,14 @@ async def start(request: Request, body: StartBody) -> dict:
     d = server.routines_home / wid
     (d / "state").mkdir(parents=True)
     (d / "inbox").mkdir()
-    # Clarify is a normal LIBRARY workflow (clarify-instruction). Materialize it — no decompose LLM,
-    # just the whole workflow as main.md — so the wizard runs the ordinary engine path. Its
-    # frontmatter `tools:` allowlist is what keeps the clarifier to ask/read/write/finish.
-    try:
-        main_content, prov = materialize(server.library_home, "clarify-instruction")
-        commit = prov.get("commit", "")
-    except (FileNotFoundError, KeyError) as exc:
-        raise HTTPException(503, f"clarify-instruction workflow not in the library: {exc}") from exc
-    (d / "main.md").write_text(main_content, encoding="utf-8")
+    # Clarify is a library workflow (clarify-instruction) APPLIED to the raw draft — the same
+    # operation as any (workflow + task → routine). We create the session as (workflow + instruction)
+    # with NO main.md; the engine decomposes it on run, so this throwaway clarification routine
+    # follows tailored markdown (reliable) instead of a raw pattern. Its `tools:` allowlist carries
+    # through the decompose.
+    from ..workflows import library
+
+    commit = library.head_commit(server.library_home)
     (d / "instruction.md").write_text(body.draft.rstrip() + "\n", encoding="utf-8")
     (d / "LEDGER.md").write_text("# LEDGER — wizard session\n", encoding="utf-8")
     (d / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
@@ -187,6 +185,12 @@ async def start(request: Request, body: StartBody) -> dict:
     atomic_write_json(d / "state" / "wizard_meta.json",
                       {"wid": wid, "run_ts": ts, "created": now_iso(), "fragments": body.fragments})
     _write_candidates(server, d)   # the workflow patterns the clarifier suggests + marries against
+    # An initial status so the client sees "starting" while the engine decomposes then runs — the
+    # engine takes over ownership of status.json once it boots.
+    (d / "runs" / ts).mkdir(parents=True, exist_ok=True)
+    atomic_write_json(d / "runs" / ts / "status.json",
+                      {"run_id": f"{wid}:{ts}", "state": "starting", "started": ts,
+                       "updated": now_iso(), "turn": 0, "question": None, "usage": {"in": 0, "out": 0}})
 
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "rsched.cli", "engine-run", str(d), "--run-ts", ts,

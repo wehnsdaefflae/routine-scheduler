@@ -481,6 +481,39 @@ class EngineLoop:
 # --- top-level entry ------------------------------------------------------------------
 
 
+def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
+    """A routine created as (workflow + instruction) but not yet turned into files — the wizard's
+    clarify session is exactly this — has no main.md. Decompose its workflow against its instruction
+    now (the SAME operation scaffold does at creation), so the run follows tailored MARKDOWN, never a
+    raw pattern. Degrades to the whole workflow rendered as main.md if no endpoint is available."""
+    if (routine_dir / "main.md").exists() or not cfg.workflow_slug:
+        return
+    from .. import frontmatter
+    from ..workflows import library
+    from ..workflows.adapt import decompose
+
+    instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8") \
+        if (routine_dir / "instruction.md").exists() else ""
+    result = decompose(server, cfg.workflow_slug, instruction)
+    try:
+        meta, _, _ = library.read_workflow(server.library_home, cfg.workflow_slug)
+    except FileNotFoundError:
+        meta = {}
+    main_meta = {"name": cfg.name, "slug": cfg.slug,
+                 "materialized_from": {"slug": cfg.workflow_slug,
+                                       "commit": library.head_commit(server.library_home),
+                                       "version": meta.get("version", 0)},
+                 "modules": sorted(result["modules"])}
+    if meta.get("tools") is not None:
+        main_meta["tools"] = meta["tools"]
+    if meta.get("includes"):
+        main_meta["includes"] = list(meta["includes"])
+    (routine_dir / "steps").mkdir(exist_ok=True)
+    for mod_name, mod_body in result["modules"].items():
+        (routine_dir / "steps" / f"{mod_name}.md").write_text(mod_body.rstrip() + "\n", encoding="utf-8")
+    (routine_dir / "main.md").write_text(frontmatter.dump(main_meta, result["main"]), encoding="utf-8")
+
+
 def load_workflow(routine_dir, cfg, server) -> tuple[str, str, dict, list[str] | None]:
     """Load the routine's OWN main.md body (the recipe was materialized into it at generation)
     plus its active FRAGMENTS. Returns (main_body, fragments_text, provenance, allowed_tools).
@@ -552,6 +585,8 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     ctx = RunContext(routine=cfg, server=server, registry=registry, run_ts=ts,
                      run_dir=run_dir, transcript=transcript,
                      budgets=Budgets.from_config(cfg.budgets))
+    if not resume_from:
+        _ensure_decomposed(routine_dir, cfg, server)   # workflow + instruction → main.md, if not yet
     body, fragments_text, prov, allowed_tools = load_workflow(routine_dir, cfg, server)
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8")
     if not resume_from:            # a resumed run keeps the original header (transcript is append-only)

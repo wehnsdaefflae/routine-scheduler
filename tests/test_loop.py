@@ -79,6 +79,32 @@ def test_apply_model_switch(make_routine):
     assert any(e["type"] == "user_injection" and "model switched" in e["payload"]["text"] for e in events)
 
 
+def test_ensure_decomposed_builds_main_on_run(make_routine, monkeypatch):
+    """A routine created as (workflow + instruction) with no main.md — the wizard's clarify session —
+    is decomposed on run: main.md + steps written, carrying the workflow's tools allowlist through."""
+    from rsched.config import load_routine
+    from rsched.engine import loop as loop_mod
+    from rsched.workflows import adapt as adapt_mod
+    from rsched.workflows import library as lib_mod
+
+    d = make_routine(slug="clarifyish")
+    (d / "main.md").unlink()                                   # make it un-decomposed
+    (d / "instruction.md").write_text("Refine this draft.\n")
+    monkeypatch.setattr(lib_mod, "read_workflow", lambda home, slug: (
+        {"tools": ["ask_user", "write_file", "finish"], "includes": ["ask-policy"], "version": 4}, "", ""))
+    monkeypatch.setattr(lib_mod, "head_commit", lambda home: "deadbee")
+    monkeypatch.setattr(adapt_mod, "decompose", lambda server, slug, instruction, **k: {
+        "main": "## Run flow\n1. ask\n## Completion criteria\ndone", "modules": {"ask-step": "ask the user"}})
+
+    cfg, _ = load_routine(d)
+    loop_mod._ensure_decomposed(d, cfg, _server(d))
+    assert (d / "main.md").exists() and (d / "steps" / "ask-step.md").read_text().startswith("ask the user")
+    from rsched import frontmatter
+    meta, _ = frontmatter.load(d / "main.md")
+    assert meta["tools"] == ["ask_user", "write_file", "finish"]              # allowlist carried through
+    assert meta["materialized_from"]["slug"] == cfg.workflow_slug
+
+
 def test_resume_rehydrates_and_continues(make_routine, scripted):
     """A resumed run reuses the same run dir, replays the prior transcript into its prompt, and
     continues (appending to the transcript) rather than restarting from step 1."""
