@@ -2,14 +2,15 @@
 
 Adapters return complete responses (no token streaming — the engine streams whole transcript
 events). Retryable transport errors are raised as EndpointError(retryable=True); the shared
-`with_retries` helper gives HTTP adapters a uniform 3-try exponential backoff.
+`with_retries` helper (tenacity) gives HTTP adapters a uniform 3-try exponential backoff.
 """
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from typing import Protocol
+
+from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
 
 Message = dict  # {"role": "system"|"user"|"assistant", "content": str}
 
@@ -34,7 +35,6 @@ class Completion:
 class ChatEndpoint(Protocol):
     name: str
     context_chars: int
-    supports_schema: bool
 
     def complete(
         self,
@@ -75,17 +75,25 @@ def split_system(messages: list[Message]) -> tuple[str, list[Message]]:
     return "\n\n".join(system_parts), rest
 
 
+def json_or_raise(resp, name: str) -> dict:
+    """Parse an HTTP body that should be JSON. A 2xx with a garbled body (truncated stream,
+    proxy interference) is a transport fault — raised retryable so `with_retries` catches it
+    instead of a JSONDecodeError blowing past the retry wrapper."""
+    try:
+        return resp.json()
+    except ValueError as exc:  # json.JSONDecodeError is a ValueError
+        raise EndpointError(
+            f"{name}: HTTP {resp.status_code} with unparseable JSON body: {resp.text[:300]}",
+            retryable=True,
+        ) from exc
+
+
 def with_retries(fn, *, tries: int = 3, base_delay: float = 1.0):
-    """Run fn(); on EndpointError(retryable=True) back off 1s/2s/4s and retry."""
-    last: EndpointError | None = None
-    for attempt in range(tries):
-        try:
-            return fn()
-        except EndpointError as exc:
-            if not exc.retryable:
-                raise
-            last = exc
-            if attempt < tries - 1:
-                time.sleep(base_delay * (2**attempt))
-    assert last is not None
-    raise last
+    """Run fn(); on EndpointError(retryable=True) back off 1s/2s and retry (3 tries total).
+    Non-retryable EndpointErrors propagate immediately; the last error is re-raised as-is."""
+    return Retrying(
+        retry=retry_if_exception(lambda e: isinstance(e, EndpointError) and e.retryable),
+        stop=stop_after_attempt(tries),
+        wait=wait_exponential(multiplier=base_delay),
+        reraise=True,
+    )(fn)

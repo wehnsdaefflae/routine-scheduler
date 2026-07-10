@@ -18,7 +18,7 @@ import httpx
 
 from ..config import EndpointConfig
 from .base import (DEFAULT_TIMEOUT, Completion, EndpointError, Message,
-                   key_from_env_file, with_retries)
+                   json_or_raise, key_from_env_file, with_retries)
 
 _RF_ERROR_HINTS = ("response_format", "json_schema", "structured", "structured_outputs")
 
@@ -37,7 +37,6 @@ class OpenAICompatEndpoint:
         # decoding to the schema (the OpenAI-compat response_format is not enforced by Ollama).
         self.native = cfg.schema_mode == "ollama_native"
         self.native_url = self.base_url.removesuffix("/v1") + "/api/chat"
-        self.supports_schema = cfg.schema_mode in ("json_schema", "ollama_native")
 
     def _resolve_key(self) -> str:
         if self.api_key:                                  # inline key (UI-set) wins over a file
@@ -123,7 +122,7 @@ class OpenAICompatEndpoint:
                 raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}", retryable=True)
             if resp.status_code != 200:
                 raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}")
-            data = resp.json()
+            data = json_or_raise(resp, self.name)
             text = (data.get("message") or {}).get("content", "") or ""
             return Completion(text=text,
                               usage={"in": int(data.get("prompt_eval_count") or 0),
@@ -145,7 +144,7 @@ class OpenAICompatEndpoint:
             raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}", retryable=True)
         if resp.status_code != 200:
             raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}")
-        data = resp.json()
+        data = json_or_raise(resp, self.name)
         try:
             message = data["choices"][0]["message"]
             text = message.get("content") or ""

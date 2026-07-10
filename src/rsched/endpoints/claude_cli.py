@@ -127,7 +127,6 @@ class ClaudeCliEndpoint:
         self.credentials_env = cfg.credentials_env
         self.oauth_token = cfg.api_key            # inline token pasted in Settings (optional)
         self.context_chars = cfg.context_chars
-        self.supports_schema = True
 
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,

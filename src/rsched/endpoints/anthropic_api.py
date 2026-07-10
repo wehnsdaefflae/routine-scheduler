@@ -11,9 +11,11 @@ import httpx
 
 from ..config import EndpointConfig
 from .base import (DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT, Completion, EndpointError,
-                   Message, key_from_env_file, split_system, with_retries)
+                   Message, json_or_raise, key_from_env_file, split_system, with_retries)
 
 API_VERSION = "2023-06-01"
+
+_EFFORT_ERROR_HINTS = ("effort", "output_config")
 
 
 def merge_consecutive(messages: list[Message]) -> list[Message]:
@@ -36,7 +38,6 @@ class AnthropicEndpoint:
         self.key_env_file = cfg.key_env_file
         self.key_var = cfg.key_var
         self.context_chars = cfg.context_chars
-        self.supports_schema = True
 
     def _api_key(self) -> str:
         if self.api_key:                                  # inline key (UI-set) wins over a file
@@ -63,6 +64,11 @@ class AnthropicEndpoint:
         }
         if system:
             body["system"] = system
+        if effort:
+            # The role's effort maps to the Messages API `output_config.effort` knob
+            # (low/medium/high/xhigh/max — controls thinking depth and token spend).
+            # A model that rejects it gets a degraded retry below.
+            body["output_config"] = {"effort": effort}
         if schema is not None:
             body["tools"] = [{
                 "name": "action",
@@ -73,30 +79,40 @@ class AnthropicEndpoint:
         headers = {"x-api-key": self._api_key(), "anthropic-version": API_VERSION}
 
         def call() -> Completion:
-            try:
-                resp = httpx.post(f"{self.base_url}/v1/messages", json=body,
-                                  headers=headers, timeout=timeout)
-            except httpx.HTTPError as exc:
-                raise EndpointError(f"{self.name}: {exc}", retryable=True) from exc
-            if resp.status_code in (401, 403):
-                raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}", auth=True)
-            if resp.status_code in (429, 529) or resp.status_code >= 500:
-                raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}", retryable=True)
-            if resp.status_code != 200:
-                raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}")
-            data = resp.json()
-            parsed, texts = None, []
-            for block in data.get("content") or []:
-                if block.get("type") == "tool_use" and block.get("name") == "action":
-                    parsed = block.get("input")
-                elif block.get("type") == "text":
-                    texts.append(block.get("text", ""))
-            usage = data.get("usage") or {}
-            return Completion(
-                text="\n".join(texts),
-                parsed=parsed if isinstance(parsed, dict) else None,
-                usage={"in": int(usage.get("input_tokens") or 0),
-                       "out": int(usage.get("output_tokens") or 0)},
-            )
+            resp = self._post(body, headers, timeout)
+            if (resp.status_code == 400 and "output_config" in body
+                    and any(h in resp.text.lower() for h in _EFFORT_ERROR_HINTS)):
+                degraded = {k: v for k, v in body.items() if k != "output_config"}
+                resp = self._post(degraded, headers, timeout)
+            return self._parse(resp)
 
         return with_retries(call)
+
+    def _post(self, body: dict, headers: dict, timeout: int) -> httpx.Response:
+        try:
+            return httpx.post(f"{self.base_url}/v1/messages", json=body,
+                              headers=headers, timeout=timeout)
+        except httpx.HTTPError as exc:
+            raise EndpointError(f"{self.name}: {exc}", retryable=True) from exc
+
+    def _parse(self, resp: httpx.Response) -> Completion:
+        if resp.status_code in (401, 403):
+            raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}", auth=True)
+        if resp.status_code in (429, 529) or resp.status_code >= 500:
+            raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}", retryable=True)
+        if resp.status_code != 200:
+            raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}")
+        data = json_or_raise(resp, self.name)
+        parsed, texts = None, []
+        for block in data.get("content") or []:
+            if block.get("type") == "tool_use" and block.get("name") == "action":
+                parsed = block.get("input")
+            elif block.get("type") == "text":
+                texts.append(block.get("text", ""))
+        usage = data.get("usage") or {}
+        return Completion(
+            text="\n".join(texts),
+            parsed=parsed if isinstance(parsed, dict) else None,
+            usage={"in": int(usage.get("input_tokens") or 0),
+                   "out": int(usage.get("output_tokens") or 0)},
+        )

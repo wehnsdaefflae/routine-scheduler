@@ -33,6 +33,13 @@ class FakeResponse:
         return self._payload
 
 
+class BrokenJSONResponse(FakeResponse):
+    """A 200 whose body is not JSON (truncated stream, proxy garbage)."""
+
+    def json(self):
+        raise json.JSONDecodeError("Expecting value", self.text, 0)
+
+
 def test_split_system():
     system, rest = split_system(MESSAGES)
     assert system == "be brief"
@@ -40,7 +47,8 @@ def test_split_system():
 
 
 def test_with_retries_backoff(monkeypatch):
-    monkeypatch.setattr("time.sleep", lambda s: None)
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
     calls = []
 
     def flaky():
@@ -50,8 +58,10 @@ def test_with_retries_backoff(monkeypatch):
         return "ok"
 
     assert with_retries(flaky) == "ok" and len(calls) == 3
+    assert sleeps == [1, 2]                               # exponential backoff preserved
     with pytest.raises(EndpointError):
         with_retries(lambda: (_ for _ in ()).throw(EndpointError("fatal")))
+    assert sleeps == [1, 2]                               # non-retryable: no extra attempts
 
 
 # --- openai-compat ---------------------------------------------------------------
@@ -181,6 +191,32 @@ def test_openai_error_mapping(monkeypatch):
     assert exc.value.auth
 
 
+def test_openai_malformed_json_on_200_is_retryable(monkeypatch):
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    calls = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls.append(1)
+        return BrokenJSONResponse(text="<html>502 from a proxy</html>")
+
+    monkeypatch.setattr(oai_mod.httpx, "post", fake_post)
+    with pytest.raises(EndpointError) as exc:
+        _oai().complete(MESSAGES, model="m")
+    assert exc.value.retryable and len(calls) == 3        # went through the retry wrapper
+    assert "unparseable JSON" in str(exc.value) and "502 from a proxy" in str(exc.value)
+
+
+def test_ollama_native_malformed_json_on_200_is_retryable(monkeypatch):
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    ep = OpenAICompatEndpoint(EndpointConfig(
+        name="ollama", kind="openai", base_url="http://x/v1", api_key="ollama",
+        schema_mode="ollama_native", context_chars=36000))
+    monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: BrokenJSONResponse(text="not json"))
+    with pytest.raises(EndpointError) as exc:
+        ep.complete(MESSAGES, model="m", schema={"type": "object"})
+    assert exc.value.retryable
+
+
 # --- anthropic -------------------------------------------------------------------
 
 def test_anthropic_forced_tool_and_parse(monkeypatch, tmp_path):
@@ -211,6 +247,88 @@ def test_anthropic_missing_key(tmp_path):
     with pytest.raises(EndpointError) as exc:
         ep.complete(MESSAGES, model="m")
     assert exc.value.auth
+
+
+def _anth():
+    return AnthropicEndpoint(EndpointConfig(
+        name="anthropic", kind="anthropic", api_key="sk-test", context_chars=800000))
+
+
+_ANTH_OK = {"content": [{"type": "tool_use", "name": "action", "input": {"say": "s", "kind": "finish"}}],
+            "usage": {"input_tokens": 1, "output_tokens": 1}}
+
+
+@pytest.mark.parametrize("status,attr,attempts", [
+    (401, "auth", 1),        # auth errors fail fast
+    (429, "retryable", 3),   # rate limit → retried
+    (529, "retryable", 3),   # overloaded → retried
+    (500, "retryable", 3),   # server error → retried
+])
+def test_anthropic_http_error_mapping(monkeypatch, status, attr, attempts):
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    calls = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls.append(1)
+        return FakeResponse(status_code=status, text="err body")
+
+    monkeypatch.setattr(anth_mod.httpx, "post", fake_post)
+    with pytest.raises(EndpointError) as exc:
+        _anth().complete(MESSAGES, model="m")
+    assert getattr(exc.value, attr) and len(calls) == attempts
+    assert f"HTTP {status}" in str(exc.value) and "err body" in str(exc.value)
+
+
+def test_anthropic_malformed_json_on_200_is_retryable(monkeypatch):
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    calls = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls.append(1)
+        return BrokenJSONResponse(text="upstream hiccup")
+
+    monkeypatch.setattr(anth_mod.httpx, "post", fake_post)
+    with pytest.raises(EndpointError) as exc:
+        _anth().complete(MESSAGES, model="m")
+    assert exc.value.retryable and len(calls) == 3        # went through the retry wrapper
+    assert "unparseable JSON" in str(exc.value) and "upstream hiccup" in str(exc.value)
+
+
+def test_anthropic_effort_wiring(monkeypatch):
+    seen = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        seen["body"] = json
+        return FakeResponse(payload=_ANTH_OK)
+
+    monkeypatch.setattr(anth_mod.httpx, "post", fake_post)
+    _anth().complete(MESSAGES, model="m", effort="xhigh")
+    assert seen["body"]["output_config"] == {"effort": "xhigh"}
+    _anth().complete(MESSAGES, model="m")                 # no effort → no output_config
+    assert "output_config" not in seen["body"]
+
+
+def test_anthropic_effort_degradation_on_400(monkeypatch):
+    bodies = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        bodies.append(json)
+        if "output_config" in json:
+            return FakeResponse(status_code=400,
+                                text='{"error": {"message": "output_config.effort: not supported"}}')
+        return FakeResponse(payload=_ANTH_OK)
+
+    monkeypatch.setattr(anth_mod.httpx, "post", fake_post)
+    c = _anth().complete(MESSAGES, model="m", effort="high")
+    assert len(bodies) == 2 and "output_config" not in bodies[1]
+    assert c.parsed == {"say": "s", "kind": "finish"}
+    # a 400 unrelated to effort is NOT degraded — it surfaces as-is
+    bodies.clear()
+    monkeypatch.setattr(anth_mod.httpx, "post",
+                        lambda *a, **k: FakeResponse(status_code=400, text="max_tokens too large"))
+    with pytest.raises(EndpointError) as exc:
+        _anth().complete(MESSAGES, model="m", effort="high")
+    assert not exc.value.retryable and "max_tokens too large" in str(exc.value)
 
 
 # --- claude-cli ------------------------------------------------------------------
@@ -261,6 +379,17 @@ def test_parse_result_envelopes():
     assert exc.value.auth
 
 
+def _cli_endpoint(monkeypatch, tmp_path):
+    """A ClaudeCliEndpoint wired to a token file, a fake CLI path, and no real secrets."""
+    credfile = tmp_path / "cred.env"
+    credfile.write_text(f"{TOKEN_VAR}=tok\n")
+    monkeypatch.delenv(TOKEN_VAR, raising=False)
+    monkeypatch.setattr("rsched.endpoints.claude_cli.find_cli", lambda: "/bin/claude")
+    monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {})
+    return ClaudeCliEndpoint(EndpointConfig(
+        name="claude-cli", kind="claude-cli", credentials_env=str(credfile), context_chars=400000))
+
+
 def test_claude_cli_complete(monkeypatch, tmp_path):
     credfile = tmp_path / "cred.env"
     credfile.write_text(f"{TOKEN_VAR}=tok\n")
@@ -281,6 +410,40 @@ def test_claude_cli_complete(monkeypatch, tmp_path):
     assert c.text == "ok" and c.usage == {"in": 3, "out": 4}
     assert seen["env"][TOKEN_VAR] == "tok" and "<<USER>>" in seen["input"]
     assert "--system-prompt" in seen["cmd"]
+
+
+def test_claude_cli_nonzero_exit_empty_stdout_is_retryable(monkeypatch, tmp_path):
+    ep = _cli_endpoint(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "rsched.endpoints.claude_cli.subprocess.run",
+        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="ECONNRESET talking home"))
+    with pytest.raises(EndpointError) as exc:
+        ep.complete(MESSAGES, model="opus")
+    assert exc.value.retryable
+    assert "exited 1" in str(exc.value) and "ECONNRESET" in str(exc.value)
+
+
+def test_claude_cli_unparseable_stdout_is_not_retryable(monkeypatch, tmp_path):
+    ep = _cli_endpoint(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "rsched.endpoints.claude_cli.subprocess.run",
+        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout="plain text, no envelope", stderr=""))
+    with pytest.raises(EndpointError) as exc:
+        ep.complete(MESSAGES, model="opus")
+    assert not exc.value.retryable
+    assert "unparseable CLI output" in str(exc.value) and "plain text" in str(exc.value)
+
+
+def test_claude_cli_timeout_is_retryable(monkeypatch, tmp_path):
+    ep = _cli_endpoint(monkeypatch, tmp_path)
+
+    def fake_run(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout", 0))
+
+    monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
+    with pytest.raises(EndpointError) as exc:
+        ep.complete(MESSAGES, model="opus", timeout=7)
+    assert exc.value.retryable and "timed out after 7s" in str(exc.value)
 
 
 # --- registry ----------------------------------------------------------------------
