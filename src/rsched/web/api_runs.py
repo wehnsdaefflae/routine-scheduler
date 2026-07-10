@@ -47,8 +47,10 @@ def run_detail(request: Request, run_id: str) -> dict:
     info = registry.read_run(run_dir, slug)
     subs = sorted(int(p.name) for p in (run_dir / "sub").iterdir()
                   if p.name.isdigit()) if (run_dir / "sub").is_dir() else []
+    st = read_json(run_dir / "status.json")
+    model = st.get("model") if isinstance(st, dict) else ""
     return {"run_id": info.run_id, "routine": slug, "ts": info.ts, "state": info.state,
-            "turn": info.turn, "usage": info.usage, "question": info.question,
+            "turn": info.turn, "usage": info.usage, "question": info.question, "model": model,
             "summary": info.summary, "updated": info.updated, "subruns": subs}
 
 
@@ -100,8 +102,39 @@ def _set_pause(request: Request, run_id: str, value: bool) -> dict:
     state = st.get("state") if isinstance(st, dict) else None
     if state in TERMINAL_STATES:
         raise HTTPException(409, f"run is already {state}")
-    atomic_write_json(run_dir / "control.json", {"pause": value, "ts": now_iso()})
+    ctrl = read_json(run_dir / "control.json")
+    ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}       # keep any pending switch_model
+    ctrl.update({"pause": value, "ts": now_iso()})
+    atomic_write_json(run_dir / "control.json", ctrl)
     return {"ok": True, "pause": value}
+
+
+class ModelSwitch(BaseModel):
+    endpoint: str
+    model: str
+    effort: str | None = None
+    kind: str = "main"   # main | subroutine | tool_call
+
+
+@router.post("/runs/{run_id}/model")
+def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
+    """Switch a live run's model mid-flight. Writes control.json (web-owned); the engine applies it
+    at the next turn boundary, where for_model already re-resolves the model every turn."""
+    _, run_dir = _run_dir(request, run_id)
+    server = request.app.state.server
+    if body.endpoint not in server.endpoints:
+        raise HTTPException(400, f"unknown endpoint {body.endpoint!r}")
+    if body.kind not in ("main", "subroutine", "tool_call"):
+        raise HTTPException(400, "kind must be main|subroutine|tool_call")
+    st = read_json(run_dir / "status.json")
+    if (st.get("state") if isinstance(st, dict) else None) in TERMINAL_STATES:
+        raise HTTPException(409, "run is not active; nothing to switch")
+    ctrl = read_json(run_dir / "control.json")
+    ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}       # keep pause
+    ctrl["switch_model"] = {body.kind: {"endpoint": body.endpoint, "model": body.model,
+                                        "effort": body.effort}, "ts": now_iso()}
+    atomic_write_json(run_dir / "control.json", ctrl)
+    return {"ok": True, "switch": f"{body.kind} → {body.endpoint}/{body.model}"}
 
 
 @router.post("/runs/{run_id}/abort")

@@ -43,6 +43,42 @@ def types(events):
     return [e["type"] for e in events]
 
 
+def test_apply_model_switch(make_routine):
+    """The engine applies a mid-run model switch from control.json, edge-triggered on its ts, and
+    ignores an unknown endpoint. for_model re-resolves every turn, so the next turn uses it."""
+    from rsched.config import ModelRef, load_routine
+    from rsched.engine.loop import EngineLoop
+    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.transcript import Transcript
+
+    d = make_routine(slug="sw")
+    server = _server(d)
+    server.endpoints = {"fast": None, "slow": None}          # only key membership is checked
+    run_dir = d / "runs" / TS
+    run_dir.mkdir(parents=True)
+    cfg, _ = load_routine(d)
+    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts=TS, run_dir=run_dir,
+                     transcript=Transcript(run_dir / "transcript.jsonl"),
+                     budgets=Budgets.from_config(cfg.budgets))
+    loop = EngineLoop(ctx, "## Run flow", "instr")
+
+    loop._apply_model_switch()                                # no signal → no-op
+    assert "main" not in ctx.routine.models
+    atomic_write_json(run_dir / "control.json", {"switch_model": {
+        "main": {"endpoint": "slow", "model": "big", "effort": "high"}, "ts": "t1"}})
+    loop._apply_model_switch()
+    assert ctx.routine.models["main"] == ModelRef("slow", "big", "high")
+    ctx.routine.models["main"] = ModelRef("x", "y")           # same ts → not re-applied
+    loop._apply_model_switch()
+    assert ctx.routine.models["main"] == ModelRef("x", "y")
+    atomic_write_json(run_dir / "control.json", {"switch_model": {
+        "main": {"endpoint": "ghost", "model": "z"}, "ts": "t2"}})   # unknown endpoint ignored
+    loop._apply_model_switch()
+    assert ctx.routine.models["main"] == ModelRef("x", "y")
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert any(e["type"] == "user_injection" and "model switched" in e["payload"]["text"] for e in events)
+
+
 def test_happy_path(make_routine, scripted):
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
         {"say": "Write the artifact.", "kind": "write_file", "path": "state/out.txt",

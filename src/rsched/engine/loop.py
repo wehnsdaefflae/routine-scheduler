@@ -90,6 +90,7 @@ class EngineLoop:
         self.final_summary = ""
         self.executed_actions = 0  # actions that produced an observation this run
         self.util_reminder = self._build_util_reminder()
+        self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
 
     def _build_util_reminder(self) -> str:
         # Per-turn nudge, only when the global-utils fragment is active for this routine (req 2).
@@ -117,6 +118,7 @@ class EngineLoop:
                     return self._finish_run("partial", f"Run stopped by the engine: {violation}. "
                                                        "Progress so far is in the transcript and LEDGER.")
                 self._pause_gate()
+                self._apply_model_switch()
                 self._drain_injections()
                 self._announce_finished_subruns()
                 action, usage = self._next_action()
@@ -243,6 +245,7 @@ class EngineLoop:
     def _next_action(self) -> tuple[dict | None, dict]:
         ctx = self.ctx
         endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
+        ctx.main_model = f"{ref.endpoint}/{ref.model}"     # surfaced in status.json; updates on a switch
         self.messages, cinfo = maybe_compact(self.messages, self.turn_records, endpoint.context_chars)
         if cinfo:
             ctx.transcript.event("compaction", cinfo)
@@ -301,6 +304,33 @@ class EngineLoop:
                 break
             streak += 1
         return streak
+
+    def _apply_model_switch(self) -> None:
+        """Turn-boundary: honour a mid-run model switch written to control.json by the web layer.
+        Edge-triggered on the signal's `ts` so the engine never has to write control.json (which
+        stays web-owned). The switch lands on the NEXT completion, since for_model re-resolves
+        ctx.routine.models every turn — the model, its context size, and effort all self-correct."""
+        from ..config import ModelRef
+
+        ctx = self.ctx
+        obj = read_json(ctx.root_run_dir / "control.json")
+        sw = obj.get("switch_model") if isinstance(obj, dict) else None
+        if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == self._last_switch_ts:
+            return
+        self._last_switch_ts = str(sw["ts"])
+        applied = []
+        for kind in ("main", "subroutine", "tool_call"):
+            spec = sw.get(kind)
+            if (isinstance(spec, dict) and spec.get("endpoint") in ctx.server.endpoints
+                    and spec.get("model")):
+                ctx.routine.models[kind] = ModelRef(endpoint=str(spec["endpoint"]),
+                                                    model=str(spec["model"]), effort=spec.get("effort"))
+                applied.append(f"{kind} → {spec['endpoint']}/{spec['model']}")
+        if applied:
+            note = "model switched mid-run: " + "; ".join(applied)
+            ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
+            self.messages.append({"role": "user", "content":
+                f"ENGINE NOTE: {note}. Continue the run on the new model."})
 
     def _pause_gate(self) -> None:
         ctx = self.ctx

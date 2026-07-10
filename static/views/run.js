@@ -44,6 +44,31 @@ export async function render(view, runId, query = {}) {
   const abortBtn = el("button", { class: "btn small danger" }, "✕ abort");
   controls.append(pauseBtn, abortBtn);
 
+  // Live model + mid-run switch (applies at the next turn; the engine re-resolves every turn).
+  const modelSpan = el("span", { class: "muted", style: "font-family:var(--mono);font-size:11.5px" });
+  const switchBox = el("details", { style: "font-size:11.5px" },
+    el("summary", { style: "cursor:pointer;color:var(--muted)" }, "⚙ switch model"));
+  const setModel = (m) => { modelSpan.textContent = m ? `model ${m}` : ""; };
+  api("/api/settings/endpoints").then((d) => {
+    const eps = d.endpoints || [];
+    if (!eps.length) return;
+    const epSel = el("select", { style: "width:auto;font-size:11.5px;padding:3px 6px" },
+      eps.map((e) => el("option", {}, e.name)));
+    const mIn = el("input", { type: "text", placeholder: "model id",
+      style: "width:150px;font-size:11.5px;padding:3px 6px" });
+    const go = el("button", { class: "btn small primary" }, "switch");
+    go.onclick = async () => {
+      if (!mIn.value.trim()) { toast("enter a model id"); return; }
+      try {
+        const r = await api(`/api/runs/${runId}/model`, { method: "POST",
+          body: { endpoint: epSel.value, model: mIn.value.trim() } });
+        toast(`${r.switch} — takes effect next turn`);
+      } catch (err) { toast(err.message); }
+    };
+    switchBox.append(el("div", { class: "row mt", style: "gap:5px" }, epSel, mIn, go));
+  }).catch(() => {});
+  head.lastChild.append(modelSpan, switchBox);
+
   // ---- transcript sources: main run = SSE; a sub-run = paged fetch + poll while active ---------
   let curState = "";
   const subs = new Map();          // n -> label
@@ -98,6 +123,7 @@ export async function render(view, runId, query = {}) {
       state: (s) => {
         setState(s.state);
         if (s.usage) usageSpan.textContent = fmtTokens(s.usage);
+        if (s.model) setModel(s.model);
         showQuestion(s.question);
       },
       end: () => closeSource(),
@@ -127,6 +153,7 @@ export async function render(view, runId, query = {}) {
     stateChip.className = `chip ${state}`;
     const terminal = TERMINAL.has(state);
     pauseBtn.disabled = abortBtn.disabled = terminal;
+    switchBox.hidden = terminal;                 // no mid-run switch once the run has ended
     injectBtn.textContent = terminal ? "queue for next run" : "send";
     if (state === "paused") { paused = true; pauseBtn.textContent = "▶ resume"; }
     else if (paused && state !== "paused") { paused = false; pauseBtn.textContent = "⏸ pause"; }
@@ -177,6 +204,7 @@ export async function render(view, runId, query = {}) {
   const detail = await api(`/api/runs/${runId}`);
   setState(detail.state);
   usageSpan.textContent = fmtTokens(detail.usage);
+  setModel(detail.model);
   showQuestion(detail.question);
   for (const n of detail.subruns || []) subs.set(n, `sub ${n}`);
   viewingSub = (initialSub != null && (detail.subruns || []).includes(initialSub)) ? initialSub : null;

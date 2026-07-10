@@ -45,7 +45,8 @@ async def run_stream(run_dir: Path, start_offset: int = 0):
         if state and state != last_state:
             last_state = state
             yield format_sse({"state": state, "question": st.get("question"),
-                              "turn": st.get("turn"), "usage": st.get("usage")}, "state")
+                              "turn": st.get("turn"), "usage": st.get("usage"),
+                              "model": st.get("model")}, "state")
         if state in TERMINAL_STATES:
             terminal_grace -= 1
             if terminal_grace <= 0:

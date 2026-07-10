@@ -144,6 +144,23 @@ def test_intervention_endpoints(client):
     assert c.post(f"/api/runs/{rid}/pause").status_code == 409
 
 
+def test_model_switch_endpoint(client):
+    """Switching a live run's model writes control.json.switch_model (keeping any pause); unknown
+    endpoints and terminal runs are refused."""
+    c, tmp = client
+    run_dir = _mk_run(tmp / "routines", "apir", "20260710-150000", "running")
+    rid = "apir:20260710-150000"
+    assert c.post(f"/api/runs/{rid}/model", json={"endpoint": "nope", "model": "m"}).status_code == 400
+    assert c.post(f"/api/runs/{rid}/pause").json()["pause"] is True
+    r = c.post(f"/api/runs/{rid}/model", json={"endpoint": "dummy", "model": "big", "effort": "high"})
+    assert r.status_code == 200
+    ctrl = read_json(run_dir / "control.json")
+    assert ctrl["pause"] is True                                   # pause preserved
+    assert ctrl["switch_model"]["main"]["model"] == "big" and ctrl["switch_model"]["ts"]
+    atomic_write_json(run_dir / "status.json", {"run_id": rid, "state": "finished"})
+    assert c.post(f"/api/runs/{rid}/model", json={"endpoint": "dummy", "model": "m"}).status_code == 409
+
+
 def test_questions_flow(client):
     c, tmp = client
     routines = tmp / "routines"

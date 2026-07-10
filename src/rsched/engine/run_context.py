@@ -49,6 +49,8 @@ class RunContext:
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
     state: str = "starting"
     question: dict | None = None
+    main_model: str = ""              # "<endpoint>/<model>" resolved each turn (surfaced in status.json)
+    budget_base_turn: int = 0         # turns before this count against a prior budget window (resume)
     _started_mono: float = field(default_factory=time.monotonic)
     _suspended_s: float = 0.0
 
@@ -76,7 +78,7 @@ class RunContext:
 
     def budget_violation(self) -> str | None:
         b = self.budgets
-        if self.turn >= b.max_turns:
+        if self.turn - self.budget_base_turn >= b.max_turns:
             return f"turn budget exhausted ({b.max_turns})"
         if self.elapsed_s() > b.max_wall_clock_min * 60:
             return f"wall-clock budget exhausted ({b.max_wall_clock_min} min)"
@@ -115,8 +117,9 @@ class RunContext:
             "phase": self.phase,
             "question": self.question,
             "usage": dict(self.usage),
+            "model": self.main_model,
             "budgets": {
-                "turns_left": max(0, b.max_turns - self.turn),
+                "turns_left": max(0, b.max_turns - (self.turn - self.budget_base_turn)),
                 "wall_clock_left_s": max(0, int(b.max_wall_clock_min * 60 - self.elapsed_s())),
             },
         })
