@@ -1,5 +1,5 @@
 """Create a routine directory: workflow REFERENCE (edited in the library), editable fragment
-copies, playbook step files, instruction; its own git repo with the auto-push hook."""
+copies, steps/ modules, instruction; its own git repo with the auto-push hook."""
 
 from __future__ import annotations
 
@@ -32,10 +32,10 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
              fragments: list[str] | None = None, shell_allowlist: list[str] | None = None,
              fs_read_roots: list[str] | None = None,
              fs_write_roots: list[str] | None = None,
-             playbook: dict[str, str] | None = None, enabled: bool = True,
+             steps: dict[str, str] | None = None, enabled: bool = True,
              tags: list[str] | None = None) -> Path:
     """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
-    the routine gets editable fragment copies + playbook step files + instruction."""
+    the routine gets editable fragment copies + steps/ modules + instruction."""
     from .. import fragments_lib
     from . import library
 
@@ -80,7 +80,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
         if content:
             (routine_dir / "fragments" / f"{slug_f}.md").write_text(content, encoding="utf-8")
     # extra purpose-specific step modules from the wizard also land in steps/
-    for fname, fcontent in (playbook or {}).items():
+    for fname, fcontent in (steps or {}).items():
         safe = fname if fname.endswith(".md") else f"{fname}.md"
         (routine_dir / "steps" / Path(safe).name).write_text(fcontent, encoding="utf-8")
     (routine_dir / "instruction.md").write_text(instruction.rstrip() + "\n", encoding="utf-8")

@@ -6,7 +6,7 @@ Decide what is a library defect versus a single routine's problem.
 Group `cursor.findings` by the **workflow slug** named in each run header.
 
 - A finding that shows up across **several routines materialized from the same workflow** → a **workflow defect**. It is fixable in the library.
-- A finding **unique to one routine** → belongs in that routine's own instruction/playbook. **Never edit a foreign routine.** Instead mark it to be filed as a **deferred question that names the routine**, handled in `record`.
+- A finding **unique to one routine** → belongs in that routine's own instruction/steps. **Never edit a foreign routine.** Instead mark it to be filed as a **deferred question that names the routine**, handled in `record`.
 
 For each workflow-defect cluster, judge the size:
 - **small/safe** (ambiguous or contradictory wording, a missing hint several runs stumbled over, a stale reference) → route to `apply-small-edits`.

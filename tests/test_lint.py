@@ -254,7 +254,7 @@ def test_scaffold_writes_step_modules(tmp_path):
     # modules would too, but there's no generator endpoint in this test)
     d = scaffold(server, slug="split-routine", name="Split",
                  instruction="# Entry\n\nSteps in steps/.", workflow_slug="general-task",
-                 playbook={"discover": "# Discover step\n\nHow to discover.",
-                           "compose.md": "# Compose step\n\nHow to compose."})
+                 steps={"discover": "# Discover step\n\nHow to discover.",
+                        "compose.md": "# Compose step\n\nHow to compose."})
     assert (d / "steps" / "discover.md").read_text().startswith("# Discover step")
     assert (d / "steps" / "compose.md").read_text().startswith("# Compose step")

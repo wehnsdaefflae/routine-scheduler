@@ -43,8 +43,8 @@ def test_self_toggles_line(make_routine, tmp_path):
 def test_state_digest_contents(make_routine, tmp_path):
     d = make_routine(slug="dig")
     (d / "state" / "phase.json").write_text('{"phase": "steady", "note": "n"}')
-    (d / "playbook").mkdir(exist_ok=True)
-    (d / "playbook" / "discover.md").write_text("# discover")   # on-demand step module
+    (d / "steps").mkdir(exist_ok=True)
+    (d / "steps" / "discover.md").write_text("# discover")   # on-demand step module
     prev = d / "runs" / "20260701-070000"
     prev.mkdir(parents=True)
     (prev / "result.md").write_text("Previous outcome text.")
@@ -52,7 +52,7 @@ def test_state_digest_contents(make_routine, tmp_path):
                           open_qs=[{"qid": "q2", "question": "Open?", "asked": "20260707"}])
     for needle in ("steady", "Previous outcome text.", "LEDGER tail", "seed — routine created",
                    "Q?", "A!", "Open?", "phase.json",
-                   "playbook/ step modules", "discover.md"):
+                   "steps/ step modules", "discover.md"):
         assert needle in digest, needle
 
 

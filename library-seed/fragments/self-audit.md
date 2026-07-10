@@ -11,8 +11,8 @@ Audit through six lenses:
 
 1. **Goal alignment** — for each phase of this routine's lifecycle: healthy, weak, or broken?
    Has anything drifted from what the instruction actually asks for? (the hero lens)
-2. **Broken instructions** — contradictions, stale guidance, or friction in workflow.md,
-   playbook/ files, or state conventions (self-healing candidates).
+2. **Broken instructions** — contradictions, stale guidance, or friction in main.md,
+   steps/ files, or state conventions (self-healing candidates).
 3. **Improvement opportunities** — R&D: new sources/tools (`gu list`), sharper configuration,
    yield: which effort produced results, which was waste?
 4. **Instruction → decisions → actions mirror** — trace what each in-play instruction led to

@@ -71,8 +71,8 @@ deferred questions reach the routine's next run automatically.
 - `static/` — no-build vanilla-JS frontend
 - `library-seed/` — seeded to `~/.local/share/workflow-library` (its own git repo with a
   best-effort auto-push hook; add an `origin` remote to enable backup)
-- Routine dirs: `routine.yaml`, `instruction.md`, `workflow.md` (materialized, with
-  provenance), `state/`, `playbook/`, `LEDGER.md`, `inbox/`, `questions/`, `runs/<ts>/`
-  (transcripts, gitignored, keep-last-N with gzip)
+- Routine dirs: `routine.yaml`, `instruction.md`, `main.md` (the workflow, materialized with
+  provenance) + `steps/` modules, `fragments/`, `state/`, `LEDGER.md`, `inbox/`, `questions/`,
+  `runs/<ts>/` (transcripts, gitignored, keep-last-N with gzip)
 
 See `CLAUDE.md` for working conventions and the transcript/action contracts.

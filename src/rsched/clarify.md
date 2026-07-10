@@ -32,13 +32,13 @@ irrelevant to writing its instruction, and there is no work to do beyond clarify
    stated assumptions. It must make sense to a fresh agent with no memory of this conversation. Keep
    this ENTRY instruction concise: it is the single entry point the routine always reads.
    **Split by function when the task has several substantial, separable steps:** keep the
-   multi-sentence detail for each step in its own `playbook/<step>.md` file, and in the entry
-   instruction just name the step and say "detailed instructions in playbook/<step>.md — read on
+   multi-sentence detail for each step in its own `steps/<step>.md` file, and in the entry
+   instruction just name the step and say "detailed instructions in steps/<step>.md — read on
    demand". Don't split a simple task.
 5. **Write the result** — `write_file` to `state/wizard_result.json`:
    `{"refined_instruction": "<the full ENTRY markdown>", "suggested_slug": "<kebab-case>",
      "suggested_name": "<short human name>",
-     "playbook": {"<step>.md": "<detailed step instructions>", ...},  // omit or {} if not split
+     "steps": {"<step>.md": "<detailed step instructions>", ...},  // omit or {} if not split
      "notes": "<anything the creator should know>"}`
 6. **Finish ok**, summarizing the refined instruction in 3-6 lines.
 

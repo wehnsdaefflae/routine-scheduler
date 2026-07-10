@@ -1,5 +1,5 @@
 // Routine detail: schedule, fragment standards (toggle + edit), workflow reference,
-// editable instruction / playbook / fragment files, state, runs.
+// editable instruction / steps / fragment files, state, runs.
 
 import { api } from "/static/api.js";
 import { chip, el, fmtTokens, fmtTs, scheduleEditor, tagChip, toast } from "/static/util.js";
@@ -127,7 +127,7 @@ export async function render(view, slug) {
         },
       }, "save standards"))));
 
-  // -- editable files: instruction + playbook -------------------------------------
+  // -- editable files: instruction + steps -------------------------------------
   view.append(el("h2", {}, "Instruction"));
   view.append(docEditor("Instruction (the task)", d.instruction, async (content) => {
     await api(`/api/routines/${slug}/instruction`, { method: "PUT", body: { content } });
