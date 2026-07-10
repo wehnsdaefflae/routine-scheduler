@@ -55,6 +55,45 @@ def lint_workflow_text(raw: str, *, filename: str, fragment_slugs: list[str]) ->
     return problems
 
 
+def lint_workflow_py(source: str, *, filename: str, fragment_slugs: list[str]) -> list[str]:
+    """Validate a Python-workflow file: parseable, META completeness, slug↔filename, resolvable
+    includes, a run() entry, and PHASES/COMPLETION (the Python equivalents of the required sections)."""
+    from .pyworkflow import REQUIRED_META, parse_py
+
+    try:
+        meta = parse_py(source)
+    except SyntaxError as exc:
+        return [f"{filename}: invalid Python ({exc.msg} at line {exc.lineno})"]
+    except ValueError as exc:
+        return [f"{filename}: {exc}"]
+    problems: list[str] = []
+    for key in REQUIRED_META:
+        if key not in meta or meta[key] in (None, ""):
+            problems.append(f"{filename}: META missing {key!r}")
+    slug = str(meta.get("slug", ""))
+    if slug and not is_slug(slug):
+        problems.append(f"{filename}: slug {slug!r} is not kebab-case")
+    if slug and filename != f"{slug}.py":
+        problems.append(f"{filename}: filename does not match slug {slug!r}")
+    if meta.get("status") not in ("stable", "draft"):
+        problems.append(f"{filename}: status must be stable|draft")
+    tags = meta.get("tags")
+    if tags is not None and not isinstance(tags, list):
+        problems.append(f"{filename}: tags must be a list")
+    elif len([t for t in (tags or []) if isinstance(t, str) and t.strip()]) < 3:
+        problems.append(f"{filename}: needs at least 3 tags")
+    for frag in meta.get("includes") or []:
+        if frag not in fragment_slugs:
+            problems.append(f"{filename}: include {frag!r} does not resolve to fragments/{frag}.md")
+    if not meta.get("has_run"):
+        problems.append(f"{filename}: no top-level run() function (the per-run control flow)")
+    if not meta.get("phases"):
+        problems.append(f"{filename}: missing PHASES (the cross-run progression)")
+    if not str(meta.get("completion") or "").strip():
+        problems.append(f"{filename}: missing COMPLETION (done-for-run / done-overall)")
+    return problems
+
+
 def lint_fragment_text(raw: str, *, filename: str) -> list[str]:
     problems = []
     meta, body = frontmatter.parse(raw)
@@ -100,9 +139,11 @@ def lint_all(home: Path, fragments_home: Path | None = None) -> dict[str, list[s
         frag_files = [(f"fragments/{p.name}", p) for p in sorted(fdir.glob("*.md"))] if fdir.is_dir() else []
     wdir = workflows_dir(home)
     if wdir.is_dir():
-        for path in sorted(wdir.glob("*.md")):
-            results[f"workflows/{path.name}"] = lint_workflow_text(
-                path.read_text(encoding="utf-8"), filename=path.name, fragment_slugs=frags)
+        for path in sorted(wdir.glob("*.py")) + sorted(wdir.glob("*.md")):
+            raw = path.read_text(encoding="utf-8")
+            results[f"workflows/{path.name}"] = (
+                lint_workflow_py(raw, filename=path.name, fragment_slugs=frags) if path.suffix == ".py"
+                else lint_workflow_text(raw, filename=path.name, fragment_slugs=frags))
     for name, path in frag_files:
         results[name] = lint_fragment_text(path.read_text(encoding="utf-8"), filename=path.name)
     return results

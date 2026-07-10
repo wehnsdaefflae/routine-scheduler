@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from ..ids import now_iso
 from ..paths import atomic_write_json
 from ..workflows import library
-from ..workflows.lint import lint_all, lint_fragment_text, lint_workflow_text
+from ..workflows.lint import lint_all, lint_fragment_text, lint_workflow_py, lint_workflow_text
 
 router = APIRouter(tags=["workflows"])
 
@@ -19,6 +19,15 @@ def _home(request: Request):
     if not home.is_dir():
         raise HTTPException(503, f"workflow library not found at {home} — run deploy/install.sh")
     return home
+
+
+def _workflow_file(home, slug: str):
+    """The workflow file for a slug — `.py` preferred over a legacy `.md`, or None."""
+    for suffix in (".py", ".md"):
+        path = library.workflows_dir(home) / f"{slug}{suffix}"
+        if path.exists():
+            return path
+    return None
 
 
 @router.get("/workflows")
@@ -114,12 +123,12 @@ def put_util(request: Request, name: str, body: UtilBody) -> dict:
 @router.get("/workflows/{slug}")
 def workflow_detail(request: Request, slug: str, fragment: bool = False) -> dict:
     home = _home(request)
-    rel = f"fragments/{slug}.md" if fragment else f"workflows/{slug}.md"
-    path = home / rel
-    if not path.exists():
+    path = (home / f"fragments/{slug}.md") if fragment else _workflow_file(home, slug)
+    if not path or not path.exists():
         raise HTTPException(404, f"no {'fragment' if fragment else 'workflow'} {slug!r}")
-    return {"slug": slug, "content": path.read_text(encoding="utf-8"),
-            "log": library.git_log(home, rel)}
+    rel = str(path.relative_to(home))
+    return {"slug": slug, "content": path.read_text(encoding="utf-8"), "log": library.git_log(home, rel),
+            "format": "py" if path.suffix == ".py" else "md"}
 
 
 class PutBody(BaseModel):
@@ -133,12 +142,22 @@ def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
 
     home = _home(request)
     server = request.app.state.server
-    problems = lint_workflow_text(body.content, filename=f"{slug}.md",
-                                  fragment_slugs=fragments_lib.slugs(server.fragments_home))
+    frags = fragments_lib.slugs(server.fragments_home)
+    # A markdown workflow starts with YAML frontmatter (`---`); anything else is a Python pattern.
+    is_md = body.content.lstrip().startswith("---")
+    if is_md:
+        problems = lint_workflow_text(body.content, filename=f"{slug}.md", fragment_slugs=frags)
+        rel = f"workflows/{slug}.md"
+    else:
+        problems = lint_workflow_py(body.content, filename=f"{slug}.py", fragment_slugs=frags)
+        rel = f"workflows/{slug}.py"
     if problems:
         raise HTTPException(422, "; ".join(problems))
-    (home / f"workflows/{slug}.md").write_text(body.content.rstrip() + "\n", encoding="utf-8")
-    library.git_commit(home, f"edit workflows/{slug}.md via web")
+    (home / rel).write_text(body.content.rstrip() + "\n", encoding="utf-8")
+    stale = home / (f"workflows/{slug}.md" if not is_md else f"workflows/{slug}.py")  # drop the other format
+    if stale.exists() and stale != home / rel:
+        stale.unlink()
+    library.git_commit(home, f"edit {rel} via web")
     return {"ok": True, "head": library.head_commit(home)}
 
 

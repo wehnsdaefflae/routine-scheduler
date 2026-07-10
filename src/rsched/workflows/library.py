@@ -20,13 +20,23 @@ def proposals_dir(home: Path) -> Path:
     return home / "proposals"
 
 
-def list_workflows(home: Path) -> list[dict]:
-    out = []
+def _workflow_paths(home: Path) -> list[Path]:
+    """Every workflow file, one per slug, preferring `.py` over a legacy `.md` of the same slug."""
     d = workflows_dir(home)
     if not d.is_dir():
-        return out
+        return []
+    by_slug: dict[str, Path] = {}
     for path in sorted(d.glob("*.md")):
-        meta, _ = frontmatter.load(path)
+        by_slug[path.stem] = path
+    for path in sorted(d.glob("*.py")):          # .py wins over a same-slug .md
+        by_slug[path.stem] = path
+    return [by_slug[s] for s in sorted(by_slug)]
+
+
+def list_workflows(home: Path) -> list[dict]:
+    out = []
+    for path in _workflow_paths(home):
+        meta = _read_meta(path)
         out.append({"slug": path.stem, "file": path.name,
                     "name": meta.get("name", path.stem),
                     "description": meta.get("description", ""),
@@ -38,16 +48,39 @@ def list_workflows(home: Path) -> list[dict]:
     return out
 
 
+def _read_meta(path: Path) -> dict:
+    """Parse a workflow file's metadata by extension (Python META vs markdown frontmatter)."""
+    if path.suffix == ".py":
+        from .pyworkflow import parse_py
+        try:
+            return parse_py(path.read_text(encoding="utf-8"))
+        except (SyntaxError, ValueError):
+            return {}
+    meta, _ = frontmatter.load(path)
+    meta = dict(meta)
+    meta["format"] = "md"
+    return meta
+
+
 def list_fragments(home: Path) -> list[str]:
     d = fragments_dir(home)
     return sorted(p.stem for p in d.glob("*.md")) if d.is_dir() else []
 
 
 def read_workflow(home: Path, slug: str) -> tuple[dict, str, str]:
-    """(meta, body, raw). Raises FileNotFoundError."""
+    """(meta, body, raw). For a Python workflow, meta['format']=='py' and body==raw==the source
+    (the whole file is the pattern); for a legacy markdown workflow, body is the post-frontmatter
+    markdown. Prefers `<slug>.py`, falls back to `<slug>.md`. Raises FileNotFoundError."""
+    py = workflows_dir(home) / f"{slug}.py"
+    if py.exists():
+        from .pyworkflow import parse_py
+        raw = py.read_text(encoding="utf-8")
+        return parse_py(raw), raw, raw
     path = workflows_dir(home) / f"{slug}.md"
     raw = path.read_text(encoding="utf-8")
     meta, body = frontmatter.parse(raw)
+    meta = dict(meta)
+    meta["format"] = "md"
     return meta, body, raw
 
 

@@ -46,14 +46,37 @@ params: []
 def test_materialize_carries_workflow_and_provenance():
     from rsched import frontmatter
 
-    # materialize = the un-decomposed baseline: the whole single-file workflow becomes main.md
+    # materialize = the un-decomposed baseline: the Python workflow rendered into main.md (the
+    # orchestrator acts the pattern out; the pattern is fenced in the body).
     content, prov = materialize(SEED, "general-task")
-    assert prov["slug"] == "general-task" and prov["version"] == 5
+    assert prov["slug"] == "general-task" and prov["version"] == 6
     meta, body = frontmatter.parse(content)
     assert meta["materialized_from"]["slug"] == "general-task" and meta["name"] == "General task"
     assert "## Run flow" in body and "## Completion criteria" in body
+    assert "```python" in body and "def run():" in body          # the pattern is carried verbatim
     assert "## Standard practices" not in content and "### fragment:" not in content
     assert lint_materialized_text(content) == []
+
+
+def test_python_workflow_parse_and_lint():
+    from rsched.workflows.lint import lint_workflow_py
+    from rsched.workflows.pyworkflow import parse_py, render_markdown
+
+    src = (SEED / "workflows" / "general-task.py").read_text()
+    meta = parse_py(src)                                  # parsed statically — never executed
+    assert meta["slug"] == "general-task" and meta["has_run"] and meta["format"] == "py"
+    assert meta["phases"] == ["bootstrap", "steady", "wrap-up"] and meta["completion"]
+    frags = ["ask-policy", "global-utils", "web-research", "ledger-discipline",
+             "improve-bugfix", "improve-research", "improve-features", "improve-ui", "improve-efficiency"]
+    assert lint_workflow_py(src, filename="general-task.py", fragment_slugs=frags) == []
+    # defects: no META / no run()
+    probs = lint_workflow_py("x = 1\n", filename="paperbot.py", fragment_slugs=[])
+    assert any("META" in p for p in probs)
+    # a syntax error is reported, not raised
+    assert any("invalid Python" in p for p in lint_workflow_py("def (:\n", filename="x.py", fragment_slugs=[]))
+    # rendering carries the required routine sections
+    md = render_markdown(src, meta)
+    assert all(s in md for s in ("## Run flow", "## Phases", "## Completion criteria", "```python"))
 
 
 def test_tags_on_library_elements():
@@ -200,17 +223,18 @@ def test_scaffold_writes_and_loads_tags(tmp_path):
 
 
 def test_materialize_missing_param(tmp_path):
-    import shutil
-
+    # The legacy markdown workflow path still supports {{params}} + a missing-param KeyError.
+    # (Python workflows have no {{placeholders}} — their parameters are the dummy imports.)
     home = tmp_path
-    shutil.copytree(SEED / "workflows", home / "workflows")
-    shutil.copytree(SEED / "fragments", home / "fragments")
-    wf = home / "workflows" / "general-task.md"                     # a workflow is a single file
-    text = wf.read_text().replace("params: []", "params: [deliverable]")
-    wf.write_text(text.replace("## Run flow", "## Run flow\nDeliver {{deliverable}}."))
+    (home / "workflows").mkdir(parents=True)
+    (home / "fragments").mkdir()
+    (home / "workflows" / "paramflow.md").write_text(
+        "---\nname: Param flow\nslug: paramflow\ndescription: d\nwhen_to_use: w\nversion: 1\n"
+        "status: draft\ntags: [a, b, c]\nparams: [deliverable]\n---\n"
+        "## Run flow\nDeliver {{deliverable}}.\n## Phases\n- steady\n## Completion criteria\ndone\n")
     with pytest.raises(KeyError):
-        materialize(home, "general-task")
-    content, _ = materialize(home, "general-task", params={"deliverable": "a weekly report"})
+        materialize(home, "paramflow")
+    content, _ = materialize(home, "paramflow", params={"deliverable": "a weekly report"})
     assert "a weekly report" in content and "{{deliverable}}" not in content
 
 
