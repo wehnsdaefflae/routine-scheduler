@@ -19,6 +19,9 @@ RestartSec=5
 # manual `systemctl restart` should never wait the 90s default on a lingering SSE stream.
 TimeoutStopSec=20
 Environment=PYTHONUNBUFFERED=1
+# Keep the daemon's venv OUTSIDE the source tree (not <repo>/.venv), so a shared/mounted checkout
+# or a developer's own `uv run` in the tree can't collide with the service's environment.
+Environment=UV_PROJECT_ENVIRONMENT=%h/.local/share/rsched-venv
 
 [Install]
 WantedBy=default.target

@@ -222,6 +222,10 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300
         return 2, "", "uv is required to run utils but is not on PATH"
     env = _child_env()
     env["PATH"] = f"{home}:{env.get('PATH', '')}"
+    # Point the `gu` dispatcher (on PATH, for sibling calls) at THIS library, so a util that
+    # shells out to `gu <sibling>` resolves siblings here — not at gu's default ~/.local/share
+    # location. Essential once the library lives in the merged repo rather than that default path.
+    env["GLOBAL_UTILS_HOME"] = str(home)
     try:
         r = subprocess.run(["uv", "run", "--script", str(util_dir(home, name) / "main.py"), *args],
                            capture_output=True, text=True, timeout=timeout, env=env, cwd=str(home))
