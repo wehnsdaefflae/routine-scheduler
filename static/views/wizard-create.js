@@ -1,0 +1,135 @@
+// New-routine wizard, part 2: the suggest → finalize → building stages (the clarify chat and
+// draft stage live in wizard.js). `ctx` carries the stage container plus the shared session
+// helpers (cancel, error, building-cleanup registration).
+
+import { api } from "/static/api.js";
+import { navigate } from "/static/router.js";
+import { scheduleEditor } from "/static/components/schedule.js";
+import { busy, el, toast } from "/static/util.js";
+
+// ---- stage: building (the routine is scaffolding in the background) -------------------------
+export function stageBuilding(ctx, wid, snap) {
+  ctx.closeTail();
+  ctx.clearBuilding();
+  ctx.stage.replaceChildren(el("h2", {}, "Building the routine"),
+    busy("Building the routine — the model is decomposing the workflow into steps tailored to your "
+      + "task. This usually takes a minute or two. You can leave this page; you'll be taken to the "
+      + "routine when it's ready, and the banner up top brings you back."));
+  let done = false;
+  const goTo = (runId, slug) => {
+    if (done) return; done = true; ctx.clearBuilding(); ctx.notifyChanged();
+    navigate(runId ? `#/run/${runId}` : `#/routine/${slug}`);
+  };
+  const failed = (msg) => {   // put the user back on the create form to retry
+    if (done) return; done = true; ctx.clearBuilding(); ctx.notifyChanged();
+    toast(msg, 7000, { error: true }); stageSuggest(ctx, wid);
+  };
+  const onBus = (e) => {
+    const ev = e.detail || {};
+    if (ev.wid !== wid) return;
+    if (ev.event === "routine_created") goTo(ev.run_id, ev.slug);
+    else if (ev.event === "routine_failed") failed(`couldn't build the routine: ${ev.error || "unknown error"}`);
+  };
+  window.addEventListener("rsched-bus", onBus);   // instant hand-off when the build finishes
+  const started = Date.now();
+  const poll = setInterval(async () => {          // robust fallback (survives a missed event / reload)
+    if (done) return;
+    let s;
+    try { s = await api(`/api/wizard/${encodeURIComponent(wid)}`); }
+    catch { goTo(null, snap?.slug || ""); return; }   // 404 → session archived → the routine exists
+    if (s.stage === "done") goTo(s.run_id, s.slug);
+    else if (s.stage === "error") failed(`couldn't build the routine: ${s.error || "unknown error"}`);
+    else if (Date.now() - started > 300000)
+      failed("the build is taking unusually long — it may be stuck. Try creating it again.");
+  }, 3000);
+  ctx.setBuildingCleanup(() => { clearInterval(poll); window.removeEventListener("rsched-bus", onBus); });
+}
+
+// ---- stage: suggest + finalize ----------------------------------------------------------------
+export async function stageSuggest(ctx, wid) {
+  ctx.closeTail();
+  ctx.stage.replaceChildren(busy(
+    "Waiting for the model — turning the conversation into a refined instruction and "
+    + "matching it to the workflow library…"));
+  let data;
+  try { data = await api(`/api/wizard/${encodeURIComponent(wid)}/suggest`, { method: "POST" }); }
+  catch (err) { ctx.stageError(wid, `clarify run ended without a result: ${err.message}`); return; }
+  const wr = data.wizard_result;
+  ctx.stage.replaceChildren(el("div", { class: "row spread" },
+    el("h2", {}, "Refined instruction"),
+    el("button", { class: "btn small danger", onclick: () => ctx.cancelSession(wid) }, "cancel setup")),
+    el("pre", { class: "doc" }, wr.refined_instruction));
+
+  const picked = { slug: data.suggestions[0]?.slug || "" };
+  const picksRow = el("div", { class: "pick-row" });
+  const renderPicks = () => {
+    picksRow.replaceChildren();
+    for (const s of data.suggestions) {
+      picksRow.append(el("button", {
+        class: `btn ${picked.slug === s.slug ? "primary" : ""}`,
+        title: s.reason,
+        onclick: () => { picked.slug = s.slug; renderPicks(); },
+      }, `${s.slug} (${Math.round(s.confidence * 100)}%)`));
+    }
+    picksRow.append(genBtn);
+  };
+  const genBtn = el("button", { class: "btn" }, "✨ generate a new workflow");
+  genBtn.onclick = async () => {
+    genBtn.disabled = true; genBtn.textContent = "generating…";
+    try {
+      const r = await api(`/api/wizard/${encodeURIComponent(wid)}/generate-workflow`, { method: "POST",
+        body: { hint: data.new_workflow_hint || "" } });
+      data.suggestions.unshift({ slug: r.workflow_slug, confidence: 1, reason: "generated draft" });
+      picked.slug = r.workflow_slug;
+      toast(`draft workflow '${r.workflow_slug}' created in the library`);
+    } catch (err) { toast(err.message, 6000, { error: true }); }
+    genBtn.disabled = false; genBtn.textContent = "✨ generate a new workflow";
+    renderPicks();
+  };
+  ctx.stage.append(el("h2", {}, "Workflow"));
+  if (data.none_fit)   // append conditionally — a bare `null` here renders as the text "null"
+    ctx.stage.append(el("div", { class: "muted" }, `suggester: ${data.new_workflow_hint || "nothing fits well"}`));
+  ctx.stage.append(picksRow);
+  renderPicks();
+
+  // Schedule is routine CONFIG, set here (or later on the routine page) — it is never
+  // part of the instruction and never suggested by the model.
+  const f = {
+    slug: el("input", { type: "text", value: wr.suggested_slug || "" }),
+    name: el("input", { type: "text", value: wr.suggested_name || "" }),
+    tags: el("input", { type: "text", value: (data.suggested_tags || []).join(", "),
+      placeholder: "three tags — reusing existing ones where they fit" }),
+  };
+  const status = await api("/api/status").catch(() => ({}));
+  const sched = scheduleEditor({ frequency: "manual" }, status.server_tz);
+  const runNow = el("input", { type: "checkbox", checked: true });
+  const create = el("button", { class: "btn primary" }, "create routine");
+  create.onclick = async () => {
+    if (!picked.slug) { toast("pick a workflow"); return; }
+    create.disabled = true;
+    try {
+      // The build runs in the BACKGROUND (decompose is a slow LLM step) — this returns at once.
+      const r = await api(`/api/wizard/${encodeURIComponent(wid)}/finalize`, { method: "POST", body: {
+        slug: f.slug.value.trim(), name: f.name.value.trim() || f.slug.value.trim(),
+        workflow_slug: picked.slug, friendly: sched.value(), run_now: runNow.checked,
+        tags: f.tags.value.split(",").map((t) => t.trim()).filter(Boolean),
+        // fragments are recovered from the session meta on the backend (chosen on the draft page)
+      }});
+      ctx.notifyChanged();                 // the top banner now shows the build in progress
+      stageBuilding(ctx, wid, { slug: r.slug });
+    } catch (err) { toast(err.message, 6000, { error: true }); create.disabled = false; }
+  };
+  ctx.stage.append(el("h2", {}, "Create"),
+    el("div", { class: "panel" },
+      el("div", { class: "field-row" },
+        el("label", { class: "field" }, el("span", {}, "slug"), f.slug),
+        el("label", { class: "field" }, el("span", {}, "name"), f.name)),
+      el("label", { class: "field" }, el("span", {}, "schedule"), sched.node),
+      el("label", { class: "field" }, el("span", {}, "tags"), f.tags),
+      el("div", { class: "muted small", style: "margin-top:-2px" },
+        "suggested from the existing vocabulary — reused where they fit, new ones only for a genuinely new facet"),
+      wr.notes ? el("div", { class: "muted mt prose" }, `wizard notes: ${wr.notes}`) : null,
+      el("div", { class: "row mt" },
+        el("label", { class: "row", style: "gap:4px" }, runNow, "first run immediately"),
+        create)));
+}

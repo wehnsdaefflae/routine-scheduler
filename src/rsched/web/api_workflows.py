@@ -42,6 +42,7 @@ def list_workflows(request: Request) -> dict:
 def library_overview(request: Request) -> dict:
     """Everything under the Library tab: workflows, fragments, and global utils."""
     from .. import fragments_lib, utils_lib
+    from ..config import DEFAULT_FRAGMENTS
 
     home = _home(request)
     server = request.app.state.server
@@ -52,6 +53,7 @@ def library_overview(request: Request) -> dict:
         "fragments": [{**f, "problems": lint.get(f"fragments/{f['slug']}.md", [])}
                       for f in fragments_lib.list_fragments(server.fragments_home)],
         "utils": utils_lib.list_utils(server.utils_home),
+        "default_fragments": list(DEFAULT_FRAGMENTS),
         "heads": {"workflows": library.head_commit(home)},
     }
 

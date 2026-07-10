@@ -120,6 +120,6 @@ export function createTranscript(container) {
       const renderer = SIMPLE[ev.type];
       if (renderer) root.append(renderer(ev));
     },
-    clear() { root.innerHTML = ""; openTurn = null; },
+    clear() { root.replaceChildren(); openTurn = null; },
   };
 }

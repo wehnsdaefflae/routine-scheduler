@@ -1,36 +1,29 @@
-// Log: a live, filterable activity feed across all routines. Each row is a run;
-// expand it to tail (or replay) that run's transcript inline. Reuses the shared
-// transcript renderer, the global bus, and /api/runs + /api/status + /api/questions.
+// Log: a live, filterable activity feed across all routines. Each row is a run; expand it to
+// tail (or replay) that run's transcript inline. Live rows tail through stream.js liveTail,
+// so a dropped stream reconnects with backoff instead of going quietly stale.
 
-import { api, sse } from "/static/api.js";
+import { api } from "/static/api.js";
 import { setQuery } from "/static/router.js";
+import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
-import { chip, el, fmtTs } from "/static/util.js";
+import { chip, el, emptyState, fmtDur, skeleton, toDate, when } from "/static/util.js";
 
 const WINDOWS = { "24h": 86400, "7d": 604800, "30d": 2592000, all: Infinity };
 const TERMINAL = new Set(["finished", "failed", "aborted"]);
 const isActive = (state) => !TERMINAL.has(state);
 
-// "20260708-220004" → epoch ms (parsed in local time; good enough for windowing/duration).
-function parseTs(ts) {
-  const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/.exec(ts || "");
-  return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime() : null;
-}
-const withinS = (ts, secs) => { const t = parseTs(ts); return t != null && (Date.now() - t) / 1000 <= secs; };
+const withinS = (ts, secs) => {
+  const t = toDate(ts);
+  return t != null && (Date.now() - t.getTime()) / 1000 <= secs;
+};
 
-function fmtDur(secs) {
-  if (secs == null || secs < 0) return "";
-  if (secs < 60) return `${Math.round(secs)}s`;
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s`;
-  return `${Math.floor(secs / 3600)}h ${Math.round((secs % 3600) / 60)}m`;
-}
 const kfmt = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n || 0));
 const compactTokens = (u) => (u && (u.in || u.out)) ? `${kfmt(u.in || 0)}/${kfmt(u.out || 0)} tok` : "";
 function runDuration(r) {
-  const start = parseTs(r.ts);
-  if (start == null) return "";
+  const start = toDate(r.ts);
+  if (!start) return "";
   const end = TERMINAL.has(r.state) ? (r.updated ? Date.parse(r.updated) : null) : Date.now();
-  return end && end >= start ? fmtDur((end - start) / 1000) : "";
+  return end && end >= start.getTime() ? fmtDur((end - start.getTime()) / 1000) : "";
 }
 
 export async function render(view, query = {}) {
@@ -46,19 +39,19 @@ export async function render(view, query = {}) {
     search: filters.search, expand: [...expandedIds].join(",") });
   const rows = new Map();          // run_id -> row controller (persists across refreshes)
   let allRuns = [], routineMeta = {}, statusData = { active_runs: {} }, questions = [];
-  let optionsBuilt = false;
+  let optionsBuilt = false, loaded = false;
 
   // ---- header --------------------------------------------------------------
-  const liveDot = el("span", { class: "dot", title: "daemon link" });
+  const liveDot = el("span", { class: "lamp", title: "daemon link" });
   const refreshBtn = el("button", { class: "btn small" }, "↻ refresh");
   view.append(el("div", { class: "page-head" },
     el("div", {},
-      el("h1", {}, "Activity log"),
-      el("div", { class: "muted", style: "font-size:13px" },
-        "every run across every routine — live")),
+      el("div", { class: "kicker" }, "console / activity"),
+      el("h1", {}, "Log"),
+      el("div", { class: "sub" }, "every run across every routine — live")),
     el("div", { class: "row" }, refreshBtn,
       el("span", { class: "row", style: "gap:6px" }, liveDot,
-        el("span", { class: "muted", style: "font-family:var(--mono);font-size:12px" }, "daemon")))));
+        el("span", { class: "faint small" }, "daemon")))));
 
   // ---- stats strip ---------------------------------------------------------
   const stats = el("div", { class: "stats" });
@@ -87,9 +80,10 @@ export async function render(view, query = {}) {
   view.append(el("div", { class: "logbar" },
     routineSel, statusSel, windowSel, searchInp,
     el("label", { class: "row", style: "gap:6px;margin:0" }, liveChk,
-      el("span", { class: "muted", style: "font-family:var(--mono);font-size:12px" }, "live-follow"))));
+      el("span", { class: "faint small" }, "live-follow"))));
 
   const feed = el("div", { class: "feed" });
+  feed.append(skeleton(), skeleton());
   view.append(feed);
 
   function setStatusFilter(v) { filters.status = v; statusSel.value = v; syncURL(); renderFeed(); }
@@ -108,11 +102,14 @@ export async function render(view, query = {}) {
       statusData = status || { active_runs: {} };
       questions = qs || [];
       liveDot.classList.add("on");
+      loaded = true;
       if (!optionsBuilt) buildRoutineOptions(routines);
       renderStats();
       renderFeed();
-    } catch (err) {
+    } catch {
       liveDot.classList.remove("on");                 // stay quiet on transient poll failures
+      if (!loaded) feed.replaceChildren(emptyState("✕", "Couldn't reach the daemon",
+        "The feed retries automatically while this page is open."));
     }
   }
 
@@ -136,7 +133,7 @@ export async function render(view, query = {}) {
     const failed = allRuns.filter((r) => r.state === "failed" && withinS(r.ts, 86400)).length;
     const inWindow = allRuns.filter((r) => win === Infinity || withinS(r.ts, win)).length;
     stats.replaceChildren(
-      statCard(runningNow, "running now", "phos", () => setStatusFilter("running")),
+      statCard(runningNow, "running now", "live", () => setStatusFilter("running")),
       statCard(waiting, "waiting on you", "warn", () => setStatusFilter("waiting_user")),
       statCard(failed, "failed · 24h", "err", () => setStatusFilter("failed")),
       statCard(inWindow, `runs · ${filters.window}`, "amber", () => setStatusFilter("")),
@@ -168,8 +165,10 @@ export async function render(view, query = {}) {
     });
     for (const [id, ctrl] of rows)
       if (!seen.has(id)) { ctrl.dispose(); rows.delete(id); }   // dropped by retention/filter
-    feed.replaceChildren(...(els.length ? els
-      : [el("div", { class: "empty" }, "No runs match these filters.")]));
+    if (els.length) feed.replaceChildren(...els);
+    else feed.replaceChildren(allRuns.length
+      ? emptyState("▢", "No runs match these filters", "Loosen the routine / status / window filters above.")
+      : emptyState("◌", "No runs yet", "Nothing has executed. Fire one from a routine's “run now”."));
   }
 
   function makeRow(r0) {
@@ -187,14 +186,15 @@ export async function render(view, query = {}) {
     const body = el("div", { class: "logbody", hidden: true });
     const rowEl = el("div", { class: "logrow" }, head, body);
 
-    let expanded = false, source = null, transcript = null, built = false, cur = r0;
+    let expanded = false, tail = null, transcript = null, cur = r0;
 
     function update(r) {
       cur = r;
       if (stateChip.textContent !== r.state) { stateChip.textContent = r.state; stateChip.className = `chip ${r.state}`; }
       nameEl.textContent = routineMeta[r.routine]?.name || r.routine;
-      const bits = [fmtTs(r.ts), `${r.turn || 0} turns`, compactTokens(r.usage), runDuration(r)];
-      metaEl.textContent = bits.filter(Boolean).join("  ·  ");
+      metaEl.replaceChildren(when(r.ts));
+      const bits = [`${r.turn || 0} turns`, compactTokens(r.usage), runDuration(r)].filter(Boolean);
+      if (bits.length) metaEl.append(`  ·  ${bits.join("  ·  ")}`);
       const oneLine = (r.summary || "").split("\n").find((l) => l.trim())
         || (isActive(r.state) ? "…in progress" : "(no summary)");
       sumEl.textContent = oneLine;
@@ -202,20 +202,19 @@ export async function render(view, query = {}) {
     }
 
     async function build() {
-      built = true;
       transcript = createTranscript(body);
       if (isActive(cur.state)) {
-        source = sse(`/api/runs/${r0.run_id}/events`, {
-          transcript: (ev) => transcript && transcript.add(ev),
-          state: () => {},                                   // header refreshes via load()
-          end: () => { if (source) { source.close(); source = null; } },
-          onerror: () => {},
+        tail = liveTail({
+          page: (o) => `/api/runs/${r0.run_id}/transcript?offset=${o}`,
+          events: (o) => `/api/runs/${r0.run_id}/events?offset=${o}`,
+          onEvent: (ev) => transcript && transcript.add(ev),
         });
       } else {
         try {
           const { events } = await api(`/api/runs/${r0.run_id}/transcript`);
           if (!transcript) return;                           // collapsed while fetching
-          if (!events.length) body.append(el("div", { class: "empty" }, "empty transcript"));
+          if (!events.length) body.append(el("div", { class: "empty" },
+            el("div", { class: "t" }, "empty transcript")));
           for (const ev of events) transcript.add(ev);
         } catch (err) {
           body.append(el("div", { class: "ev error" }, `couldn't load transcript: ${err.message}`));
@@ -223,16 +222,16 @@ export async function render(view, query = {}) {
       }
     }
 
-    function closeSource() { if (source) { source.close(); source = null; } }
+    function closeTail() { if (tail) { tail.stop(); tail = null; } }
     function doExpand() {
       if (expanded) return;
       expanded = true; rowEl.classList.add("open"); body.hidden = false;
       build();
     }
     function collapse() {
-      expanded = false; built = false; transcript = null;
-      rowEl.classList.remove("open"); body.hidden = true; body.innerHTML = "";
-      closeSource();
+      expanded = false; transcript = null;
+      rowEl.classList.remove("open"); body.hidden = true; body.replaceChildren();
+      closeTail();
     }
     head.onclick = () => {
       if (expanded) { collapse(); expandedIds.delete(r0.run_id); }
@@ -241,7 +240,7 @@ export async function render(view, query = {}) {
     };
 
     update(r0);
-    return { el: rowEl, update, dispose: closeSource, ensureOpen: doExpand };
+    return { el: rowEl, update, dispose: closeTail, ensureOpen: doExpand };
   }
 
   // ---- live wiring ---------------------------------------------------------

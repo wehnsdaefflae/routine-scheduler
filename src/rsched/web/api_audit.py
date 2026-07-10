@@ -51,6 +51,20 @@ def _read_changelog(path: Path, limit: int = 100) -> list[dict]:
     return out[:limit]
 
 
+def _pending_feedback(routine_dir: Path) -> list[dict]:
+    """Web-submitted feedback still sitting in the inbox (not yet consumed by a run) — the UI
+    shows these so a reviewer can see exactly what the next self-audit run will pick up."""
+    inbox = routine_dir / "inbox"
+    if not inbox.is_dir():
+        return []
+    out = []
+    for path in sorted(inbox.glob("msg-*.json")):
+        obj = read_json(path)
+        if isinstance(obj, dict) and obj.get("via") == "web-audit":
+            out.append({"text": str(obj.get("text") or ""), "ts": str(obj.get("ts") or "")})
+    return out
+
+
 @router.get("/audit")
 def audit(request: Request) -> dict:
     routine_dir = _routine_dir(request)
@@ -64,7 +78,8 @@ def audit(request: Request) -> dict:
     if runs:
         r = runs[0]
         last_run = {"run_id": r.run_id, "ts": r.ts, "state": r.state, "summary": r.summary[:400]}
-    return {"exists": exists, "report": report, "changelog": changelog, "last_run": last_run}
+    return {"exists": exists, "report": report, "changelog": changelog, "last_run": last_run,
+            "pending_feedback": _pending_feedback(routine_dir) if exists else []}
 
 
 class Feedback(BaseModel):

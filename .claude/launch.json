@@ -6,6 +6,15 @@
       "runtimeExecutable": "uv",
       "runtimeArgs": ["run", "rsched", "daemon"],
       "port": 8321
+    },
+    {
+      "name": "rsched-scratch",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "RSCHED_CONFIG=/tmp/claude-1000/-home-mark-server-home-mark-git-repos-routine-scheduler/02a74d92-3d5d-4455-823d-63581c2c7e34/scratchpad/rsched-home/cfg/config.yaml exec uv run rsched daemon"
+      ],
+      "port": 8322
     }
   ]
 }

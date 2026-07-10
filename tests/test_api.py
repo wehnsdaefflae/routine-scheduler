@@ -191,6 +191,8 @@ def test_questions_flow(client):
                        "asked": "20260707", "mode": "deferred"})
     qs = c.get("/api/questions").json()
     assert {q["qid"] for q in qs} == {"q-20260708-110000-3", "q-old-1"}
+    blocking = next(q for q in qs if q["mode"] == "blocking")
+    assert blocking["run_state"] == "waiting_user" and blocking["asked"] == "20260708-110000"
     r = c.post("/api/questions/q-old-1/answer", json={"text": "option a"})
     assert r.status_code == 200
     ans = read_json(routines / "apir" / "inbox" / "answer-q-old-1.json")
@@ -198,11 +200,30 @@ def test_questions_flow(client):
     assert c.post("/api/questions/q-unknown/answer", json={"text": "x"}).status_code == 404
 
 
+def test_deferred_question_links_back_to_its_run(client):
+    """A deferred question's `asked` run_ts resolves to run_id + live run state when that run
+    still exists — the Decisions view uses it to flag stale questions."""
+    c, tmp = client
+    routines = tmp / "routines"
+    _mk_run(routines, "apir", "20260706-080000", "finished")
+    atomic_write_json(routines / "apir" / "questions" / "pending" / "q-linked.json",
+                      {"qid": "q-linked", "question": "Deferred?", "options": [],
+                       "asked": "20260706-080000", "mode": "deferred"})
+    atomic_write_json(routines / "apir" / "questions" / "pending" / "q-orphan.json",
+                      {"qid": "q-orphan", "question": "Old?", "options": [],
+                       "asked": "20200101-000000", "mode": "deferred"})
+    by = {q["qid"]: q for q in c.get("/api/questions").json()}
+    assert by["q-linked"]["run_id"] == "apir:20260706-080000"
+    assert by["q-linked"]["run_state"] == "finished"
+    assert "run_id" not in by["q-orphan"]            # pruned run → no dangling link
+
+
 def test_audit_report_and_feedback(client):
     c, tmp = client
     routines = tmp / "routines"
     # no self-audit routine yet → friendly empty payload
-    assert c.get("/api/audit").json() == {"exists": False, "report": None, "changelog": [], "last_run": None}
+    assert c.get("/api/audit").json() == {"exists": False, "report": None, "changelog": [],
+                                          "last_run": None, "pending_feedback": []}
 
     adir = routines / "self-audit" / "audit"
     adir.mkdir(parents=True)
@@ -233,6 +254,10 @@ def test_audit_report_and_feedback(client):
     assert "[AUDIT feedback · finding F1] please fix" in texts
     assert "[AUDIT decision · D1] selected: a — do it" in texts
     assert "[AUDIT note] focus on speed" in texts
+
+    # unconsumed web feedback is surfaced back (the Audit tab's "waiting for the next run" list)
+    pend = c.get("/api/audit").json()["pending_feedback"]
+    assert {p["text"] for p in pend} == set(texts) and all(p["ts"] for p in pend)
 
     # validation + missing-routine guard
     assert c.post("/api/audit/feedback", json={"kind": "comment", "target": "F1"}).status_code == 400
@@ -515,6 +540,35 @@ def test_wizard_candidates_inline_pattern_source(tmp_path):
     text = (d / "state" / "candidates.md").read_text()
     assert "general-task" in text and "```python" in text and "def main():" in text
     assert "clarify-instruction" not in text          # meta patterns are excluded from candidates
+
+
+def test_library_reports_default_fragments(client):
+    """/api/library carries the server's DEFAULT_FRAGMENTS so the wizard's standards picker
+    pre-checks from config instead of a hard-coded frontend list."""
+    from rsched.config import DEFAULT_FRAGMENTS
+
+    c, tmp = client
+    (tmp / "library" / "workflows").mkdir(parents=True, exist_ok=True)
+    lib = c.get("/api/library").json()
+    assert lib["default_fragments"] == list(DEFAULT_FRAGMENTS)
+
+
+def test_wizard_transcript_paging_and_event_offset(client):
+    """The clarify chat is tailable like a run: a paged transcript endpoint returns a byte
+    offset, and /events accepts that offset — the UI's reconnect-with-resume path."""
+    c, tmp = client
+    wid, d = _mk_wizard(tmp / "routines", "20260710-180000")
+    run_dir = d / "runs" / "20260710-180000"
+    with open(run_dir / "transcript.jsonl", "w") as fh:
+        fh.write(json.dumps({"type": "header", "run_id": f"{wid}:20260710-180000"}) + "\n")
+        fh.write(json.dumps({"ts": "t", "type": "assistant_action", "turn": 1,
+                             "payload": {"say": "hi", "kind": "ask_user", "question": "?"}}) + "\n")
+    tr = c.get(f"/api/wizard/{wid}/transcript").json()
+    assert [e["type"] for e in tr["events"]] == ["header", "assistant_action"]
+    assert tr["offset"] > 0
+    tr2 = c.get(f"/api/wizard/{wid}/transcript", params={"offset": tr["offset"]}).json()
+    assert tr2["events"] == [] and tr2["offset"] == tr["offset"]
+    assert c.get("/api/wizard/.wizard-nope/transcript").status_code == 404
 
 
 def test_test_remote_endpoint(client):

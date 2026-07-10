@@ -1,20 +1,25 @@
 // Routine detail: schedule, fragment standards (toggle + edit), workflow reference,
-// editable instruction / steps / fragment files, state, runs.
+// editable instruction / steps / fragment files, models, state, runs.
 
 import { api } from "/static/api.js";
 import { setQuery } from "/static/router.js";
-import { chip, el, fmtTokens, fmtTs, scheduleEditor, tagChip, toast } from "/static/util.js";
+import { scheduleEditor } from "/static/components/schedule.js";
+import { chip, el, emptyState, fmtTokens, skeleton, tagChip, toast, when } from "/static/util.js";
 
 export async function render(view, slug, query = {}) {
+  view.append(skeleton(["35%", "100%", "70%"]));
   let d, st;
   try { [d, st] = await Promise.all([api(`/api/routines/${slug}`), api("/api/status").catch(() => ({}))]); }
-  catch (err) { view.append(el("div", { class: "empty" }, err.message)); return; }
+  catch (err) { view.replaceChildren(emptyState("✕", `Couldn't load ${slug}`, err.message)); return; }
+  view.replaceChildren();
   const llmReady = st.llm_ready !== false;
 
   const stateChip = d.active_state ? chip(d.active_state, d.active_state)
     : d.enabled ? chip("idle", "idle") : chip("disabled", "disabled");
   view.append(el("div", { class: "page-head" },
-    el("h1", {}, d.name || slug),
+    el("div", {},
+      el("div", { class: "kicker" }, "routine"),
+      el("h1", {}, d.name || slug)),
     el("div", { class: "row" }, stateChip,
       d.active_run
         ? el("a", { class: "btn primary", href: `#/run/${d.active_run}` }, "◉ watch live")
@@ -22,7 +27,7 @@ export async function render(view, slug, query = {}) {
             title: llmReady ? "" : "connect an LLM endpoint in Settings first", onclick: runNow }, "▶ run now"),
       el("button", { class: "btn danger", onclick: archive }, "archive"))));
   if (d.problems?.length) {
-    view.append(el("div", { class: "panel", style: "border-color:var(--err);margin-top:14px" },
+    view.append(el("div", { class: "panel err", style: "margin-top:14px" },
       d.problems.map((p) => el("div", { style: "color:var(--err)" }, `⚠ ${p}`))));
   }
 
@@ -30,12 +35,12 @@ export async function render(view, slug, query = {}) {
     e.target.disabled = true;
     try { const r = await api(`/api/routines/${slug}/run`, { method: "POST" });
       location.hash = `#/run/${r.run_id}`; }
-    catch (err) { toast(err.message); e.target.disabled = false; }
+    catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
   }
   async function archive() {
     if (!confirm(`Archive "${slug}"? It leaves the scheduler (dir moves to .archive).`)) return;
     try { await api(`/api/routines/${slug}/archive`, { method: "POST" }); location.hash = "#/"; }
-    catch (err) { toast(err.message); }
+    catch (err) { toast(err.message, 4000, { error: true }); }
   }
 
   // -- description (always present; shown here + on the dashboard) ----------------
@@ -43,7 +48,7 @@ export async function render(view, slug, query = {}) {
     style: "width:100%;max-width:640px" });
   view.append(el("h2", {}, "Description"),
     el("div", { class: "panel" },
-      el("div", { class: "muted", style: "font-size:12px;margin-bottom:8px" },
+      el("div", { class: "muted small", style: "margin-bottom:8px" },
         "a one-line summary of what this routine does — shown on the dashboard and here"),
       descInput,
       el("div", { class: "row mt" }, el("button", { class: "btn primary",
@@ -51,7 +56,7 @@ export async function render(view, slug, query = {}) {
           const v = descInput.value.trim();
           if (!v) { toast("description can't be empty"); return; }
           try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { description: v } }); toast("description saved"); }
-          catch (err) { toast(err.message); }
+          catch (err) { toast(err.message, 4000, { error: true }); }
         } }, "save description"))));
 
   // -- tags -----------------------------------------------------------------------
@@ -59,7 +64,7 @@ export async function render(view, slug, query = {}) {
   const tagsRow = el("div", { class: "tags" });
   const tagInput = el("input", { type: "text", placeholder: "add tag…", style: "width:130px" });
   function renderTags() {
-    tagsRow.innerHTML = "";
+    tagsRow.replaceChildren();
     tags.forEach((t) => tagsRow.append(tagChip(t,
       { onRemove: () => { tags = tags.filter((x) => x !== t); renderTags(); } })));
     tagsRow.append(tagInput);
@@ -73,8 +78,8 @@ export async function render(view, slug, query = {}) {
   renderTags();
   view.append(el("h2", {}, "Tags"),
     el("div", { class: "panel" },
-      el("div", { class: "muted", style: "font-family:var(--mono);font-size:12px;margin-bottom:8px" },
-        "freeform labels for filtering on the Dashboard (e.g. meta tucks a routine away by default)"),
+      el("div", { class: "muted small", style: "margin-bottom:8px" },
+        "freeform labels for filtering on the dashboard (e.g. meta tucks a routine away by default)"),
       tagsRow,
       el("div", { class: "row mt" },
         el("button", { class: "btn small", onclick: addTag }, "+ add"),
@@ -82,7 +87,7 @@ export async function render(view, slug, query = {}) {
           class: "btn primary",
           onclick: async () => {
             try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { tags } }); toast("tags saved"); }
-            catch (err) { toast(err.message); }
+            catch (err) { toast(err.message, 4000, { error: true }); }
           },
         }, "save tags"))));
 
@@ -99,18 +104,17 @@ export async function render(view, slug, query = {}) {
             await api(`/api/routines/${slug}`, { method: "PATCH",
               body: { enabled: enabledBox.checked, schedule: { friendly: sched.value() } } });
             toast("schedule saved"); setTimeout(() => location.reload(), 400);
-          } catch (err) { toast(err.message); }
+          } catch (err) { toast(err.message, 4000, { error: true }); }
         },
       }, "save schedule")),
-      d.next_fire ? el("div", { class: "muted mt", style: "font-family:var(--mono);font-size:12px" },
-        `next run · ${new Date(d.next_fire).toLocaleString()}`) : null));
+      d.next_fire ? el("div", { class: "muted mt small" }, "next run · ", when(d.next_fire)) : null));
 
   // -- workflow = the routine's OWN main.md (self-contained; generated from a recipe) ----------
   view.append(el("h2", {}, "Workflow (main.md)"),
     el("div", { class: "panel row spread" },
       el("div", {},
         el("span", { class: "ref-tag" }, d.workflow_ref?.slug || "—"),
-        el("span", { class: "muted", style: "margin-left:10px;font-size:12.5px" },
+        el("span", { class: "muted small", style: "margin-left:10px" },
           "the recipe this routine was born from — main.md is the routine's OWN now, editable below")),
       el("button", { class: "btn small",
         onclick: () => editFile("main.md", "main.md — the routine's workflow") }, "edit main.md")));
@@ -121,14 +125,14 @@ export async function render(view, slug, query = {}) {
     const box = el("input", { type: "checkbox", checked: f.active ? "" : null });
     boxes[f.slug] = box;
     const editLink = f.active
-      ? el("a", { href: "#", class: "muted", style: "font-size:11.5px;font-family:var(--mono)",
+      ? el("a", { href: "#", class: "muted small",
                   onclick: (e) => { e.preventDefault(); editFile(`fragments/${f.slug}.md`, `fragment: ${f.slug}`); } },
           "edit this routine's copy")
       : null;
     return el("label", { class: "toggle-row" }, box,
       el("div", {},
         el("div", { class: "t-title" }, f.slug),
-        el("div", { class: "muted", style: "font-size:12.5px" }, f.summary || ""),
+        el("div", { class: "muted prose small" }, f.summary || ""),
         editLink));
   });
   view.append(el("h2", {}, "Standards (fragments)"),
@@ -140,7 +144,7 @@ export async function render(view, slug, query = {}) {
           const active = Object.entries(boxes).filter(([, b]) => b.checked).map(([s]) => s);
           try { await api(`/api/routines/${slug}/fragments`, { method: "PUT", body: { active } });
             toast("standards saved"); setTimeout(() => location.reload(), 400); }
-          catch (err) { toast(err.message); }
+          catch (err) { toast(err.message, 4000, { error: true }); }
         },
       }, "save standards"))));
 
@@ -158,14 +162,14 @@ export async function render(view, slug, query = {}) {
     const modelIn = el("input", { type: "text", value: cur?.model || "",
       placeholder: sysM ? `${sysM.endpoint} / ${sysM.model}` : "model id", style: "width:200px" });
     modelInputs[kind] = { epSel, modelIn };
-    return el("div", { class: "row", style: "margin:5px 0;align-items:center" },
+    return el("div", { class: "row", style: "margin:5px 0" },
       el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, kind),
-      el("span", { class: "muted", style: "font-size:11.5px;min-width:150px" }, desc),
+      el("span", { class: "muted small", style: "min-width:150px" }, desc),
       epSel, modelIn);
   });
   view.append(el("h2", {}, "Models"),
     el("div", { class: "panel" },
-      el("div", { class: "muted", style: "font-size:12px;margin-bottom:8px" },
+      el("div", { class: "muted small", style: "margin-bottom:8px" },
         endpointNames.length
           ? "which endpoint + model this routine uses for each role — leave blank to fall back to the system model"
           : "add an endpoint in Settings first"),
@@ -180,7 +184,7 @@ export async function render(view, slug, query = {}) {
           }
           try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { models } });
             toast("models saved"); setTimeout(() => location.reload(), 400); }
-          catch (err) { toast(err.message); }
+          catch (err) { toast(err.message, 4000, { error: true }); }
         } }, "save models"))));
 
   // -- editable files: instruction + steps -------------------------------------
@@ -203,9 +207,10 @@ export async function render(view, slug, query = {}) {
   // The open file-editor is addressable as #/routine/<slug>?file=<path>, so a reload / shared link
   // reopens the exact file. `silent` skips the URL write + scroll when we're restoring from the URL.
   async function editFile(path, label, silent = false) {
-    let data; try { data = await api(`/api/routines/${slug}/file?path=${encodeURIComponent(path)}`); }
-    catch (err) { toast(err.message); return; }
-    fileEditor.innerHTML = "";
+    let data;
+    try { data = await api(`/api/routines/${slug}/file?path=${encodeURIComponent(path)}`); }
+    catch (err) { toast(err.message, 4000, { error: true }); return; }
+    fileEditor.replaceChildren();
     const node = docEditor(label || path, data.content, async (content) => {
       await api(`/api/routines/${slug}/file`, { method: "PUT", body: { path, content } });
     });
@@ -219,27 +224,28 @@ export async function render(view, slug, query = {}) {
     const ta = el("textarea", { class: "code" }, content || "");
     const btn = el("button", { class: "btn primary" }, "save");
     btn.onclick = async () => {
-      try { await save(ta.value); toast(`${label} saved`); } catch (err) { toast(err.message, 5000); }
+      try { await save(ta.value); toast(`${label} saved`); }
+      catch (err) { toast(err.message, 5000, { error: true }); }
     };
     return el("div", { class: "panel mt" },
-      el("div", { class: "muted", style: "font-family:var(--mono);font-size:12px;margin-bottom:8px" }, label),
+      el("div", { class: "muted small", style: "margin-bottom:8px" }, label),
       ta, el("div", { class: "row mt" }, btn));
   }
 
   // -- questions ------------------------------------------------------------------
   if (d.questions?.length) {
-    view.append(el("h2", {}, "Decisions"),
-      el("div", { class: "panel" }, d.questions.map((q) =>
+    view.append(el("h2", {}, `Decisions · ${d.questions.length}`),
+      el("div", { class: "panel warn" }, d.questions.map((q) =>
         el("div", { class: "row spread", style: "padding:5px 0" },
-          el("span", {}, `❓ ${q.question}`),
-          el("a", { class: "btn small", href: "#/questions" }, "answer")))));
+          el("span", { class: "prose" }, `❓ ${q.question}`),
+          el("a", { class: "btn small primary", href: "#/questions" }, "answer")))));
   }
 
   // -- state + ledger -------------------------------------------------------------
   const stateFiles = (d.files?.state) || [];
   view.append(el("h2", {}, "State & memory"),
     el("div", { class: "panel" },
-      el("div", { class: "muted", style: "font-family:var(--mono);font-size:12px" },
+      el("div", { class: "muted small" },
         stateFiles.length ? `state/ · ${stateFiles.join("  ·  ")}` : "no state files yet"),
       el("details", { class: "mt" }, el("summary", { style: "cursor:pointer" }, "LEDGER tail"),
         el("pre", { class: "doc mt" }, d.ledger_tail || "(empty)"))));
@@ -247,14 +253,16 @@ export async function render(view, slug, query = {}) {
   // -- runs -----------------------------------------------------------------------
   view.append(el("h2", {}, "Runs"));
   const rows = (d.runs || []).map((r) => el("tr", {},
-    el("td", {}, el("a", { href: `#/run/${r.run_id}` }, fmtTs(r.ts))),
+    el("td", {}, el("a", { href: `#/run/${r.run_id}` }, when(r.ts))),
     el("td", {}, chip(r.state, r.state)),
     el("td", {}, String(r.turn ?? "")),
     el("td", { class: "muted" }, fmtTokens(r.usage)),
-    el("td", { class: "muted", style: "max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" },
+    el("td", { class: "muted prose", style: "max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" },
       r.summary || "")));
   view.append(el("div", { class: "panel", style: "padding:0" },
-    el("table", { class: "list" },
-      el("thead", {}, el("tr", {}, ["when", "state", "turns", "tokens", "summary"].map((h) => el("th", {}, h)))),
-      el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", { class: "muted", colspan: 5 }, "no runs yet"))))));
+    el("div", { class: "tablewrap" },
+      el("table", { class: "list" },
+        el("thead", {}, el("tr", {}, ["when", "state", "turns", "tokens", "summary"].map((h) => el("th", {}, h)))),
+        el("tbody", {}, rows.length ? rows
+          : el("tr", {}, el("td", { class: "muted", colspan: 5 }, "no runs yet — fire one with ▶ run now")))))));
 }

@@ -85,14 +85,28 @@ async def start(request: Request, body: StartBody) -> dict:
     return {"wid": wid, "run_ts": ts}
 
 
-@router.get("/wizard/{wid}/events")
-async def events(request: Request, wid: str):
+def _clarify_run_dir(request: Request, wid: str) -> Path:
     d = _wizard_dir(request, wid)
     sess = wizard_store.sessions(request.app.state).get(wid) or {}
     ts = sess.get("run_ts") or wizard_store.latest_run_ts(d)
     if ts is None:
         raise HTTPException(404, "wizard session has no run")
-    return EventSourceResponse(run_stream(d / "runs" / ts))
+    return d / "runs" / ts
+
+
+@router.get("/wizard/{wid}/events")
+async def events(request: Request, wid: str, offset: int = 0):
+    return EventSourceResponse(run_stream(_clarify_run_dir(request, wid), offset))
+
+
+@router.get("/wizard/{wid}/transcript")
+def wizard_transcript(request: Request, wid: str, offset: int = 0) -> dict:
+    """Paged clarify-chat transcript (mirrors /runs/{id}/transcript) — the byte offset it
+    returns is what the UI resumes its SSE tail from after a dropped connection."""
+    from ..engine.transcript import read_events
+
+    events, new_offset = read_events(_clarify_run_dir(request, wid) / "transcript.jsonl", offset)
+    return {"events": events, "offset": new_offset}
 
 
 class AnswerBody(BaseModel):
