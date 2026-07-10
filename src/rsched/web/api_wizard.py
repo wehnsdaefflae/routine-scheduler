@@ -21,7 +21,7 @@ from ..schema_guard import loads_tolerant
 from ..workflows.adapt import materialize
 from ..workflows.generate import generate
 from ..workflows.scaffold import GITIGNORE, scaffold
-from ..workflows.suggest import normalize_tags, suggest, suggest_tags
+from ..workflows.suggest import normalize_tags, suggest_tags
 from .sse import run_stream, sse_response
 
 router = APIRouter(tags=["wizard"])
@@ -175,6 +175,7 @@ async def start(request: Request, body: StartBody) -> dict:
     # and finalize can recover the chosen standards without depending on the client or in-memory state.
     atomic_write_json(d / "state" / "wizard_meta.json",
                       {"wid": wid, "run_ts": ts, "created": now_iso(), "fragments": body.fragments})
+    _write_candidates(server, d)   # the workflow patterns the clarifier suggests + marries against
 
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "rsched.cli", "engine-run", str(d), "--run-ts", ts,
@@ -182,6 +183,32 @@ async def start(request: Request, body: StartBody) -> dict:
         start_new_session=True, cwd=str(d))
     _wizards(request)[wid] = {"proc": proc, "run_ts": ts, "dir": d}
     return {"wid": wid, "run_ts": ts}
+
+
+def _candidate_patterns(server) -> list[dict]:
+    from ..workflows import library
+    return [w for w in library.list_workflows(server.library_home)
+            if w.get("status") == "stable" and "meta" not in (w.get("tags") or [])]
+
+
+def _write_candidates(server, d: Path) -> None:
+    """Write the workflow patterns the clarifier chooses from into the session's state/, so it can
+    suggest one (and marry the task to it) by reading a single file — its `tools` allowlist permits
+    read_file but not library discovery. Each pattern is inlined with its full control flow."""
+    from ..workflows import library
+
+    parts = ["# Candidate workflow patterns", "",
+             "Pick the ONE whose control flow best fits this task (that is your suggestion), or choose",
+             "to generate a new one. A pattern's parameter contract is its dummy imports.", ""]
+    for w in _candidate_patterns(server):
+        try:
+            _, _, raw = library.read_workflow(server.library_home, w["slug"])
+        except FileNotFoundError:
+            continue
+        lang = "python" if w["file"].endswith(".py") else "markdown"
+        parts += [f"## {w['slug']} — {w['description']}", f"when_to_use: {w['when_to_use']}", "",
+                  f"```{lang}", raw.strip(), "```", ""]
+    (d / "state" / "candidates.md").write_text("\n".join(parts), encoding="utf-8")
 
 
 @router.get("/wizard/{wid}/events")
@@ -214,9 +241,19 @@ def wizard_suggest(request: Request, wid: str) -> dict:
     if not isinstance(result, dict) or not result.get("refined_instruction"):
         raise HTTPException(409, "the clarify run has not produced state/wizard_result.json yet")
     server = request.app.state.server
-    ranking = suggest(server, result["refined_instruction"])
     suggested_tags = suggest_tags(server, result["refined_instruction"])
-    return {"wizard_result": result, "suggested_tags": suggested_tags, **ranking}
+    # The clarifier already suggested a pattern (it read the candidates and married the task to one).
+    # Lead the pick list with its choice so the wizard pre-selects it; the rest are override options.
+    choice = result.get("workflow_choice") if isinstance(result.get("workflow_choice"), dict) else {}
+    chosen = str(choice.get("slug") or "")
+    suggestions = [{"slug": w["slug"],
+                    "confidence": 1.0 if w["slug"] == chosen else 0.5,
+                    "reason": "chosen by the clarifier" if w["slug"] == chosen else w.get("description", "")}
+                   for w in _candidate_patterns(server)]
+    suggestions.sort(key=lambda s: -s["confidence"])
+    none_fit = bool(choice.get("generate"))
+    return {"wizard_result": result, "suggested_tags": suggested_tags, "suggestions": suggestions,
+            "none_fit": none_fit, "new_workflow_hint": str(choice.get("hint") or "")}
 
 
 class GenerateBody(BaseModel):
@@ -267,13 +304,16 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
         # Standards: prefer what the client sent, else recover them from the session meta on disk
         # (so a resumed-after-restart finalize still applies the fragments chosen on the draft page).
         fragments = body.fragments if body.fragments is not None else (_wizard_meta(d).get("fragments") or None)
+        # Parameters the clarifier fixed with the user (the pattern's parameter contract) — pass them
+        # to decompose so it tailors the routine's steps to the resolved values.
+        params = body.params or (result.get("params") if isinstance(result.get("params"), dict) else {})
         # scaffold() calls decompose(), which makes a BLOCKING LLM call (up to 180s). Run it off
         # the event loop or it freezes the whole web server until the model responds.
         routine_dir = await asyncio.to_thread(
             scaffold, server, slug=body.slug, name=body.name,
             instruction=result["refined_instruction"],
             workflow_slug=body.workflow_slug, cron=cron,
-            tz=schedule.server_tz(), params=body.params, steps=steps,
+            tz=schedule.server_tz(), params=params, steps=steps,
             description=description, models=body.models,
             tags=normalize_tags(body.tags) or None, fragments=fragments)
     except (ValueError, KeyError, FileNotFoundError) as exc:

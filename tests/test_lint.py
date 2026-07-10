@@ -138,7 +138,7 @@ def test_bootstrap_seeds_libraries(tmp_path):
     from rsched.bootstrap import seed_library
     wf = tmp_path / "wf"
     seed_library("workflows", wf)
-    assert (wf / "workflows").is_dir() and list((wf / "workflows").glob("*.md"))
+    assert (wf / "workflows").is_dir() and list((wf / "workflows").glob("*.py"))  # Python patterns
     assert (wf / ".git").is_dir()
     # fragments live in their OWN repo — the workflow library must not carry a stray copy
     assert not (wf / "fragments").exists()

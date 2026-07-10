@@ -421,19 +421,21 @@ def test_wizard_cancel_archives_session(client):
     assert c.delete(f"/api/wizard/{wid}").status_code == 404
 
 
-def test_finalize_recovers_fragments_from_meta(client, monkeypatch):
-    """Finalize with no fragments in the body recovers the standards chosen on the draft page from
-    the session meta on disk — so a finalize after a restart still applies them."""
+def test_finalize_recovers_fragments_and_params(client, monkeypatch):
+    """Finalize with no fragments/params in the body recovers the standards from the session meta
+    and the clarifier's resolved parameters from wizard_result — so decompose tailors to them."""
     from rsched.web import api_wizard
 
     c, tmp = client
     wid, _ = _mk_wizard(tmp / "routines", "20260710-130000",
-                        result={"refined_instruction": "do the thing", "suggested_slug": "x"},
+                        result={"refined_instruction": "do the thing", "suggested_slug": "x",
+                                "params": {"DELIVERABLE": "a weekly report"}},
                         fragments=("global-utils", "ledger-discipline"))
     captured = {}
 
     def fake_scaffold(*a, **k):
         captured["fragments"] = k.get("fragments")
+        captured["params"] = k.get("params")
         raise ValueError("probe stop")
     monkeypatch.setattr(api_wizard, "scaffold", fake_scaffold)
 
@@ -442,6 +444,44 @@ def test_finalize_recovers_fragments_from_meta(client, monkeypatch):
         "friendly": {"frequency": "manual"}, "tags": ["a", "b", "c"], "run_now": False})
     assert r.status_code == 422
     assert captured["fragments"] == ["global-utils", "ledger-discipline"]
+    assert captured["params"] == {"DELIVERABLE": "a weekly report"}
+
+
+def test_wizard_suggest_leads_with_clarifier_choice(client, monkeypatch):
+    """The clarifier suggested a pattern; /suggest returns it at the head of the pick list (so the
+    wizard pre-selects it) and passes through the resolved params."""
+    from rsched.web import api_wizard
+
+    c, tmp = client
+    wid, _ = _mk_wizard(tmp / "routines", "20260710-140000",
+                        result={"refined_instruction": "do X", "suggested_slug": "x",
+                                "workflow_choice": {"slug": "general-task"},
+                                "params": {"DELIVERABLE": "a report"}})
+    monkeypatch.setattr(api_wizard, "suggest_tags", lambda *a, **k: ["a", "b", "c"])
+    monkeypatch.setattr(api_wizard, "_candidate_patterns", lambda server: [
+        {"slug": "other-flow", "description": "another"},
+        {"slug": "general-task", "description": "the default"}])
+    r = c.post(f"/api/wizard/{wid}/suggest").json()
+    assert r["suggestions"][0]["slug"] == "general-task" and r["suggestions"][0]["confidence"] == 1.0
+    assert r["none_fit"] is False and r["wizard_result"]["params"]["DELIVERABLE"] == "a report"
+
+
+def test_wizard_candidates_inline_pattern_source(tmp_path):
+    """start() writes the workflow patterns (with their full Python control flow) into the session's
+    state/, so the clarifier can suggest + marry by reading one file. Meta patterns are excluded."""
+    from pathlib import Path
+
+    from rsched.config import ServerConfig
+    from rsched.web import api_wizard
+
+    server = ServerConfig()
+    server.library_home = Path(__file__).resolve().parents[1] / "library-seed"
+    d = tmp_path / "wiz"
+    (d / "state").mkdir(parents=True)
+    api_wizard._write_candidates(server, d)
+    text = (d / "state" / "candidates.md").read_text()
+    assert "general-task" in text and "```python" in text and "def run():" in text
+    assert "clarify-instruction" not in text          # meta patterns are excluded from candidates
 
 
 def test_test_remote_endpoint(client):

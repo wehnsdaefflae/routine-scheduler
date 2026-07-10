@@ -115,7 +115,9 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
         endpoint, ref = EndpointRegistry(server).for_system()
         kind = ("a Python control-flow pattern (a precise depiction you do NOT execute)" if is_py
                 else "a markdown process pattern")
-        prompt = _DECOMPOSE_PROMPT.format(kind=kind, workflow=pattern, instruction=instruction)
+        param_note = ("\n\nPARAMETERS (the pattern's contract, resolved with the user):\n"
+                      + "\n".join(f"- {k}: {v}" for k, v in params.items())) if params else ""
+        prompt = _DECOMPOSE_PROMPT.format(kind=kind, workflow=pattern, instruction=instruction) + param_note
         comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
                                  schema=DECOMPOSE_SCHEMA, effort=ref.effort, timeout=180)
         data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
