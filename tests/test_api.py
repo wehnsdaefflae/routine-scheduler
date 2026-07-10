@@ -45,6 +45,26 @@ def _mk_run(routines, slug, ts, state, question=None):
     return run_dir
 
 
+def _mk_wizard(routines, ts, *, state="running", result=None, fragments=("global-utils",)):
+    """A hidden .wizard-<ts> session on disk (no engine process), mirroring api_wizard.start()'s
+    layout — enough for the list/detail/cancel/finalize endpoints to reconstruct it from disk."""
+    wid = f".wizard-{ts}"
+    d = routines / wid
+    (d / "state").mkdir(parents=True, exist_ok=True)
+    (d / "inbox").mkdir(exist_ok=True)
+    (d / "instruction.md").write_text("Collect new arxiv AI-agent papers and keep a reading list.\n")
+    atomic_write_json(d / "state" / "wizard_meta.json",
+                      {"wid": wid, "run_ts": ts, "created": "2026-07-10T09:00:00+02:00",
+                       "fragments": list(fragments)})
+    run_dir = d / "runs" / ts
+    run_dir.mkdir(parents=True)
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": f"{wid}:{ts}", "state": state, "pid": 4242, "turn": 1, "question": None})
+    if result is not None:
+        atomic_write_json(d / "state" / "wizard_result.json", result)
+    return wid, d
+
+
 def test_auth_required(client):
     c, _ = client
     bare = TestClient(c.app)
@@ -336,6 +356,68 @@ def test_finalize_offloads_blocking_scaffold(client, monkeypatch):
         "friendly": {"frequency": "manual"}, "tags": ["a", "b", "c"], "run_now": False})
     assert r.status_code == 422              # reached the (patched) scaffold
     assert probe.get("offloaded") is True    # ...and it ran off the event loop
+
+
+def test_wizard_list_detail_and_stage(client):
+    """In-flight sessions are discoverable + resumable from disk; the stage is derived from what
+    the clarify run has actually produced (chat → still clarifying, suggest → result ready)."""
+    c, tmp = client
+    routines = tmp / "routines"
+    wid_chat, _ = _mk_wizard(routines, "20260710-090000", state="running")
+    wid_ready, _ = _mk_wizard(routines, "20260710-100000",
+                              result={"refined_instruction": "do X", "suggested_slug": "x"})
+    lst = c.get("/api/wizard").json()
+    assert lst[0]["wid"] == wid_ready                      # newest first
+    by = {w["wid"]: w for w in lst}
+    assert by[wid_chat]["stage"] == "chat" and by[wid_chat]["has_result"] is False
+    assert by[wid_ready]["stage"] == "suggest" and by[wid_ready]["has_result"] is True
+    det = c.get(f"/api/wizard/{wid_chat}").json()
+    assert det["stage"] == "chat" and det["fragments"] == ["global-utils"]
+    assert "arxiv" in det["draft"]                         # preview recovered from instruction.md
+    assert c.get("/api/wizard/.wizard-nope").status_code == 404
+
+
+def test_wizard_stage_error_when_terminal_without_result(client):
+    """A clarify run that reached a terminal state without producing a result → 'error' stage."""
+    c, tmp = client
+    wid, _ = _mk_wizard(tmp / "routines", "20260710-110000", state="failed")
+    assert c.get(f"/api/wizard/{wid}").json()["stage"] == "error"
+
+
+def test_wizard_cancel_archives_session(client):
+    """Cancel stops tracking the session and moves it out of routines_home so it is no longer
+    in-flight (the setup banner clears). pid 4242 isn't alive → no real process is signaled."""
+    c, tmp = client
+    routines = tmp / "routines"
+    wid, d = _mk_wizard(routines, "20260710-120000")
+    assert c.delete(f"/api/wizard/{wid}").json()["ok"] is True
+    assert not d.exists()
+    assert (routines / ".archive" / f"{wid.lstrip('.')}-canceled").exists()
+    assert c.get("/api/wizard").json() == []
+    assert c.delete(f"/api/wizard/{wid}").status_code == 404
+
+
+def test_finalize_recovers_fragments_from_meta(client, monkeypatch):
+    """Finalize with no fragments in the body recovers the standards chosen on the draft page from
+    the session meta on disk — so a finalize after a restart still applies them."""
+    from rsched.web import api_wizard
+
+    c, tmp = client
+    wid, _ = _mk_wizard(tmp / "routines", "20260710-130000",
+                        result={"refined_instruction": "do the thing", "suggested_slug": "x"},
+                        fragments=("global-utils", "ledger-discipline"))
+    captured = {}
+
+    def fake_scaffold(*a, **k):
+        captured["fragments"] = k.get("fragments")
+        raise ValueError("probe stop")
+    monkeypatch.setattr(api_wizard, "scaffold", fake_scaffold)
+
+    r = c.post(f"/api/wizard/{wid}/finalize", json={
+        "slug": "newr", "name": "New R", "workflow_slug": "general-task",
+        "friendly": {"frequency": "manual"}, "tags": ["a", "b", "c"], "run_now": False})
+    assert r.status_code == 422
+    assert captured["fragments"] == ["global-utils", "ledger-discipline"]
 
 
 def test_test_remote_endpoint(client):

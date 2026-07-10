@@ -4,6 +4,8 @@ dir (identical engine path, invisible to the registry), then suggest → finaliz
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import shutil
 import sys
 from pathlib import Path
 
@@ -12,8 +14,10 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ..config import DEFAULT_SELF
+from ..daemon import registry
+from ..daemon.runner import _pid_alive, abort_process
 from ..ids import now_iso, run_ts as make_run_ts
-from ..paths import atomic_write_json
+from ..paths import atomic_write_json, read_json
 from ..schema_guard import loads_tolerant
 from ..workflows.adapt import materialize
 from ..workflows.generate import generate
@@ -25,6 +29,8 @@ router = APIRouter(tags=["wizard"])
 
 WIZARD_BUDGETS = {"max_turns": 25, "max_wall_clock_min": 30, "max_total_tokens": 200_000,
                   "max_subruns": 0, "max_subrun_depth": 0, "ask_timeout_h": 2}
+
+TERMINAL = ("finished", "failed", "aborted")
 
 
 def _read_wizard_result(d: Path) -> dict | None:
@@ -49,8 +55,90 @@ def _wizard_dir(request: Request, wid: str) -> Path:
     return d
 
 
+def _wizard_meta(d: Path) -> dict:
+    obj = read_json(d / "state" / "wizard_meta.json")
+    return obj if isinstance(obj, dict) else {}
+
+
+def _draft_preview(d: Path) -> str:
+    try:
+        text = (d / "instruction.md").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    return text[:140] + ("…" if len(text) > 140 else "")
+
+
+def _snapshot(request: Request, d: Path) -> dict:
+    """Reconstruct a wizard session's live state from disk — works in a fresh process that never
+    saw it (after a reload / daemon restart). The stage is derived, not stored, so it is always
+    consistent with what is actually on disk:
+      chat    → clarify run is live and has not produced a result yet
+      suggest → state/wizard_result.json holds a refined instruction (ready to pick + create)
+      error   → the clarify run reached a terminal state without ever producing a result
+    """
+    meta = _wizard_meta(d)
+    result = _read_wizard_result(d)
+    has_result = isinstance(result, dict) and bool(result.get("refined_instruction"))
+    ts = (_wizards(request).get(d.name) or {}).get("run_ts") or meta.get("run_ts") or _latest_run_ts(d)
+    run = registry.read_run(d / "runs" / ts, d.name.lstrip(".")) if ts and (d / "runs" / ts).is_dir() else None
+    state = run.state if run else "unknown"
+    stage = "suggest" if has_result else ("error" if state in TERMINAL else "chat")
+    # only meaningful while clarifying — a dead pid there means the session is stuck (needs cancel)
+    alive = None if (stage != "chat" or run is None) else _pid_alive(run.pid)
+    return {"wid": d.name, "run_ts": ts, "created": meta.get("created", ""),
+            "fragments": meta.get("fragments", []), "draft": _draft_preview(d),
+            "stage": stage, "state": state, "has_result": has_result,
+            "question": run.question if run else None, "alive": alive}
+
+
+@router.get("/wizard")
+def wizard_list(request: Request) -> list[dict]:
+    """Every in-flight new-routine session (the hidden .wizard-* dirs), newest first — so the UI
+    can surface + resume them instead of only tracking one in memory."""
+    home = request.app.state.server.routines_home
+    out: list[dict] = []
+    if home.is_dir():
+        for d in sorted(home.glob(".wizard-*"), key=lambda p: p.name, reverse=True):
+            if not d.is_dir():
+                continue
+            try:
+                out.append(_snapshot(request, d))
+            except Exception:  # a half-written dir must never break the list
+                continue
+    return out
+
+
+@router.get("/wizard/{wid}")
+def wizard_detail(request: Request, wid: str) -> dict:
+    return _snapshot(request, _wizard_dir(request, wid))
+
+
+@router.delete("/wizard/{wid}")
+async def wizard_cancel(request: Request, wid: str) -> dict:
+    """Cancel a session: stop the clarify engine process and move the dir out of the way so it
+    stops showing as in-flight (mirrors finalize's archive move — no dangling process or dir)."""
+    d = _wizard_dir(request, wid)
+    sess = _wizards(request).pop(wid, None)
+    proc = (sess or {}).get("proc")
+    if proc is not None and proc.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.terminate()
+    ts = (sess or {}).get("run_ts") or _latest_run_ts(d)
+    if ts and (d / "runs" / ts).is_dir():
+        st = read_json(d / "runs" / ts / "status.json")
+        await abort_process(st.get("pid") if isinstance(st, dict) else None, d / "runs" / ts, f"{wid}:{ts}")
+    archive = request.app.state.server.routines_home / ".archive"
+    archive.mkdir(exist_ok=True)
+    dest = archive / f"{wid.lstrip('.')}-canceled"
+    if dest.exists():
+        dest = archive / f"{wid.lstrip('.')}-canceled-{make_run_ts()}"
+    shutil.move(str(d), str(dest))
+    return {"ok": True}
+
+
 class StartBody(BaseModel):
     draft: str
+    fragments: list[str] = []   # standards chosen on the draft page; persisted for resume + finalize
 
 
 @router.post("/wizard/start")
@@ -84,6 +172,10 @@ async def start(request: Request, body: StartBody) -> dict:
         "budgets": WIZARD_BUDGETS,
         "self": {k: False for k in DEFAULT_SELF},
     }, sort_keys=False), encoding="utf-8")
+    # Persist the session's meta so it survives a daemon/container restart: /api/wizard can list it
+    # and finalize can recover the chosen standards without depending on the client or in-memory state.
+    atomic_write_json(d / "state" / "wizard_meta.json",
+                      {"wid": wid, "run_ts": ts, "created": now_iso(), "fragments": body.fragments})
 
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "rsched.cli", "engine-run", str(d), "--run-ts", ts,
@@ -173,6 +265,9 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
         # Always end up with a description: the wizard's chosen text, else the clarifier's
         # one-liner, else the name (scaffold's own final fallback).
         description = body.description.strip() or str(result.get("description") or "").strip()
+        # Standards: prefer what the client sent, else recover them from the session meta on disk
+        # (so a resumed-after-restart finalize still applies the fragments chosen on the draft page).
+        fragments = body.fragments if body.fragments is not None else (_wizard_meta(d).get("fragments") or None)
         # scaffold() calls decompose(), which makes a BLOCKING LLM call (up to 180s). Run it off
         # the event loop or it freezes the whole web server until the model responds.
         routine_dir = await asyncio.to_thread(
@@ -181,7 +276,7 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
             workflow_slug=body.workflow_slug, cron=cron,
             tz=schedule.server_tz(), params=body.params, steps=steps,
             description=description, models=body.models,
-            tags=normalize_tags(body.tags) or None, fragments=body.fragments)
+            tags=normalize_tags(body.tags) or None, fragments=fragments)
     except (ValueError, KeyError, FileNotFoundError) as exc:
         raise HTTPException(422, str(exc)) from exc
     # keep the wizard conversation as provenance inside the new routine
@@ -191,8 +286,6 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
     if ts and (d / "runs" / ts / "transcript.jsonl").exists():
         (provenance / "clarify-transcript.jsonl").write_bytes(
             (d / "runs" / ts / "transcript.jsonl").read_bytes())
-    import shutil
-
     archive = server.routines_home / ".archive"
     archive.mkdir(exist_ok=True)
     shutil.move(str(d), str(archive / wid.lstrip(".")))
