@@ -39,7 +39,7 @@ COMPLETION = (
 )
 
 
-def run():
+def main():
     analyze_draft()                 # what's ambiguous / contradictory / missing / outward / done-when
     pattern = choose_pattern()      # read state/candidates.md; pick the best fit, or ask to generate one
     marry(pattern)                  # ≤5 blocking questions overlaying the task on the pattern
@@ -97,3 +97,7 @@ def write_result():
     `status`/`summary`/`workflow` fields. The refined_instruction must make sense to a fresh agent
     with no memory of this conversation; split into steps/<step>.md files only for genuinely
     separable multi-step tasks."""
+
+
+if __name__ == "__main__":
+    main()

@@ -53,7 +53,7 @@ def test_materialize_carries_workflow_and_provenance():
     meta, body = frontmatter.parse(content)
     assert meta["materialized_from"]["slug"] == "general-task" and meta["name"] == "General task"
     assert "## Run flow" in body and "## Completion criteria" in body
-    assert "```python" in body and "def run():" in body          # the pattern is carried verbatim
+    assert "```python" in body and "def main():" in body          # the pattern is carried verbatim
     assert "## Standard practices" not in content and "### fragment:" not in content
     assert lint_materialized_text(content) == []
 
@@ -64,7 +64,7 @@ def test_python_workflow_parse_and_lint():
 
     src = (SEED / "workflows" / "general-task.py").read_text()
     meta = parse_py(src)                                  # parsed statically — never executed
-    assert meta["slug"] == "general-task" and meta["has_run"] and meta["format"] == "py"
+    assert meta["slug"] == "general-task" and meta["has_main"] and meta["format"] == "py"
     assert meta["phases"] == ["bootstrap", "steady", "wrap-up"] and meta["completion"]
     frags = ["ask-policy", "global-utils", "web-research", "ledger-discipline",
              "improve-bugfix", "improve-research", "improve-features", "improve-ui", "improve-efficiency"]

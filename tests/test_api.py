@@ -503,7 +503,7 @@ def test_wizard_candidates_inline_pattern_source(tmp_path):
     (d / "state").mkdir(parents=True)
     api_wizard._write_candidates(server, d)
     text = (d / "state" / "candidates.md").read_text()
-    assert "general-task" in text and "```python" in text and "def run():" in text
+    assert "general-task" in text and "```python" in text and "def main():" in text
     assert "clarify-instruction" not in text          # meta patterns are excluded from candidates
 
 

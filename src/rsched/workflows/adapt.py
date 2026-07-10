@@ -95,7 +95,7 @@ agent will follow one action per turn:
 - "modules": one entry per step/state of the workflow (kebab-case `name` + markdown `body`),
   concrete and specific to THIS task. main.md must reference every module you create by its name.
 
-If the workflow is a Python pattern, turn each of its steps (the `run()` control flow and the
+If the workflow is a Python pattern, turn each of its steps (the `main()` control flow and the
 functions it calls) into concrete prose for THIS task — never leave Python in the output.
 
 Return ONLY the JSON object {{main, modules}}."""

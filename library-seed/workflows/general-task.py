@@ -58,7 +58,7 @@ class ExternalBlocker(Exception):
     """This item can't proceed right now (a source is down, an answer is pending)."""
 
 
-def run():
+def main():
     """One run of the routine — the top-level control flow."""
     orient()                                    # consume the state digest + LEDGER before anything new
 
@@ -136,3 +136,7 @@ def improve():
     is broken (bugfix), sharpen inputs (research), grow the deliverable (features), tidy the
     user-facing output (ui), cut waste (efficiency) — doing the safe, reversible changes itself
     and filing a deferred `ask_user` (Decisions page) whenever it is unsure how to proceed."""
+
+
+if __name__ == "__main__":
+    main()

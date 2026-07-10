@@ -2,7 +2,7 @@
 
 A library workflow is a single self-contained `.py` file that DEPICTS a routine's control flow —
 it is never executed. It carries a `META = {...}` dict literal, `PHASES`/`COMPLETION` literals,
-a top-level `run()` entry function whose body is the per-run control flow, and dummy imports that
+a top-level `main()` entry function whose body is the per-run control flow, and dummy imports that
 name the routine's parameters. We read all of it statically with `ast` (`literal_eval` on the
 literals — no import, no code runs), and render the pattern into the markdown the routine's
 orchestrator actually reads (materialize / decompose fallback).
@@ -18,7 +18,7 @@ REQUIRED_META = ("name", "slug", "description", "when_to_use", "version", "statu
 def parse_py(source: str) -> dict:
     """Statically parse a Python-workflow file (no execution). Returns a meta dict: the META keys
     plus `phases` (from PHASES), `completion` (from COMPLETION), `funcs` (top-level def names) and
-    `has_run`. Raises SyntaxError on invalid Python, ValueError if META is missing / not a literal."""
+    `has_main`. Raises SyntaxError on invalid Python, ValueError if META is missing / not a literal."""
     tree = ast.parse(source)                      # SyntaxError on malformed Python
     meta: dict | None = None
     phases = None
@@ -42,7 +42,7 @@ def parse_py(source: str) -> dict:
     out["phases"] = phases
     out["completion"] = completion
     out["funcs"] = funcs
-    out["has_run"] = "run" in funcs
+    out["has_main"] = "main" in funcs
     out["format"] = "py"
     return out
 
@@ -61,13 +61,13 @@ def render_markdown(source: str, meta: dict) -> str:
     try:
         tree = ast.parse(source)
         for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name != "run":
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name != "main":
                 first = (ast.get_docstring(node) or "").strip().split("\n")[0].strip()
                 if first:
                     step_lines.append(f"- **{node.name}** — {first}")
     except SyntaxError:
         pass
-    steps_md = ("\nThe steps (act each out as engine actions, in the order + control flow of `run()`):\n"
+    steps_md = ("\nThe steps (act each out as engine actions, in the order + control flow of `main()`):\n"
                 + "\n".join(step_lines) + "\n") if step_lines else ""
     fence = "```"
     return (

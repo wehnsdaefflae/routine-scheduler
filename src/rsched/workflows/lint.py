@@ -57,7 +57,7 @@ def lint_workflow_text(raw: str, *, filename: str, fragment_slugs: list[str]) ->
 
 def lint_workflow_py(source: str, *, filename: str, fragment_slugs: list[str]) -> list[str]:
     """Validate a Python-workflow file: parseable, META completeness, slug↔filename, resolvable
-    includes, a run() entry, and PHASES/COMPLETION (the Python equivalents of the required sections)."""
+    includes, a main() entry, and PHASES/COMPLETION (the Python equivalents of the required sections)."""
     from .pyworkflow import REQUIRED_META, parse_py
 
     try:
@@ -85,8 +85,8 @@ def lint_workflow_py(source: str, *, filename: str, fragment_slugs: list[str]) -
     for frag in meta.get("includes") or []:
         if frag not in fragment_slugs:
             problems.append(f"{filename}: include {frag!r} does not resolve to fragments/{frag}.md")
-    if not meta.get("has_run"):
-        problems.append(f"{filename}: no top-level run() function (the per-run control flow)")
+    if not meta.get("has_main"):
+        problems.append(f"{filename}: no top-level main() function (the per-run control flow)")
     if not meta.get("phases"):
         problems.append(f"{filename}: missing PHASES (the cross-run progression)")
     if not str(meta.get("completion") or "").strip():

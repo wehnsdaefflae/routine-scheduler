@@ -37,13 +37,16 @@ META = {
 PHASES = [<cross-run phases>]       # or ["steady"] when there are no cross-run milestones
 COMPLETION = "<done-for-this-run; done-overall>"
 
-def run():
+def main():
     """The per-run control flow. Use real Python — if/elif/else, for/while, try/except, match — and
     call the engine actions. Keep it a PATTERN (generic to the shape of task), not one task's
     specifics."""
     ...
 
 # Define one function per step; each function's docstring is that step's detail.
+
+if __name__ == "__main__":
+    main()
 
 META / PHASES / COMPLETION must be plain literals (they are parsed statically with ast, never run).
 Use the full range of Python control flow wherever it makes the process clearer.'''
