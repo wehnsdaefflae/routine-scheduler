@@ -40,6 +40,10 @@ export function liveTail({ page, events, offset = 0, onEvent, onState, onStatus,
 
   function reconnect() {
     status("reconnecting");
+    if (retry === 0) {
+      // first drop only — backoff retries of the same outage aren't new friction evidence
+      import("/static/trace.js").then(({ trace }) => trace("reconnect", events)).catch(() => {});
+    }
     const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** retry);
     retry += 1;
     timer = setTimeout(async () => {

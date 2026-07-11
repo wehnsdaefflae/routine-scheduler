@@ -135,3 +135,20 @@ def test_write_util_content_must_be_string():
     assert any("one string" in p for p in validate_action(bad))
     ok = {"say": "s", "kind": "write_file", "path": "p.json", "content": {"fine": True}}
     assert validate_action(ok) == []
+
+
+def test_normalize_drops_nonempty_strays_when_complete():
+    """glm's second failure shape: a complete write_file plus a non-empty foreign field.
+    Strays are dropped when required fields are present — and kept when they're not, so
+    the retry error still names them."""
+    from rsched.engine.actions import normalize_action, validate_action
+    complete = {"say": "s", "kind": "write_file", "path": "state/phase.json",
+                "content": {"phase": "gather"}, "status": "ok", "workflow": "self-audit"}
+    out = normalize_action(dict(complete))
+    assert "status" not in out and "workflow" not in out
+    assert validate_action(out) == []
+    incomplete = {"say": "s", "kind": "write_file", "path": "p", "status": "ok"}
+    out2 = normalize_action(dict(incomplete))
+    assert "status" in out2                     # kept: the error must name it
+    problems = validate_action(out2)
+    assert any("content" in p for p in problems) and any("status" in p for p in problems)

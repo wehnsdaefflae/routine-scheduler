@@ -68,7 +68,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.state.runner = runner
     app.state.scheduler = scheduler
 
-    from . import (api_audit, api_questions, api_routines, api_runs, api_wizard,
+    from . import (api_audit, api_questions, api_routines, api_runs, api_traces, api_wizard,
                    api_workflows, settings)
 
     deps = [Depends(require_auth)]
@@ -76,6 +76,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.include_router(api_runs.router, prefix="/api", dependencies=deps)
     app.include_router(api_questions.router, prefix="/api", dependencies=deps)
     app.include_router(api_audit.router, prefix="/api", dependencies=deps)
+    app.include_router(api_traces.router, prefix="/api", dependencies=deps)
     app.include_router(settings.router, prefix="/api", dependencies=deps)
     app.include_router(api_workflows.router, prefix="/api", dependencies=deps)
     app.include_router(api_wizard.router, prefix="/api", dependencies=deps)

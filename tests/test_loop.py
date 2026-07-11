@@ -708,3 +708,28 @@ def test_schema_forcefail_telemetry(make_routine, scripted):
     st = read_json(run_dir / "status.json")
     assert st["schema_retries"] == 3
     assert st["schema_forcefails"] == 1
+
+
+def test_fragments_list_is_activation_authority(make_routine, scripted, caplog):
+    """Only routine.yaml's fragments: list loads — a file dropped into fragments/ without
+    activation stays inert, and an active slug with no copy logs a warning."""
+    import logging
+
+    import yaml as _yaml
+
+    from rsched.config import load_routine
+    from rsched.engine.runtime import load_workflow
+    d = make_routine("fragr")
+    frag = d / "fragments"
+    frag.mkdir()
+    (frag / "alpha.md").write_text("# fragment: alpha — a\n\nALPHA-BODY\n")
+    (frag / "beta.md").write_text("# fragment: beta — b\n\nBETA-BODY\n")
+    cfg_d = _yaml.safe_load((d / "routine.yaml").read_text())
+    cfg_d["fragments"] = ["alpha", "ghost"]
+    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg_d))
+    cfg, _ = load_routine(d)
+    with caplog.at_level(logging.WARNING, logger="rsched.runtime"):
+        _, fragments_text, _, _ = load_workflow(d, cfg)
+    assert "ALPHA-BODY" in fragments_text
+    assert "BETA-BODY" not in fragments_text        # present on disk, not activated
+    assert any("ghost" in r.message for r in caplog.records)

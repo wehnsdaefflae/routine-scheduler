@@ -651,3 +651,25 @@ def test_audit_reports_routine_slug(client):
     r = c.get("/api/audit")
     assert r.status_code == 200
     assert r.json()["routine"] == "self-audit"
+
+
+def test_ui_trace_ingest_and_retention(client):
+    c, tmp = client
+    r = c.post("/api/ui-trace", json={"events": [
+        {"kind": "nav", "view": "audit"},
+        {"kind": "click", "view": "audit", "target": "run self-audit now"},
+        {"kind": "bogus", "view": "x"},
+        {"kind": "error", "view": "run", "target": "toast", "detail": "X" * 500},
+    ]})
+    assert r.status_code == 200 and r.json()["recorded"] == 3
+    tdir = tmp / "routines" / ".ui-traces"
+    files = list(tdir.glob("*.jsonl"))
+    assert len(files) == 1
+    lines = [json.loads(x) for x in files[0].read_text().splitlines()]
+    assert [e["kind"] for e in lines] == ["nav", "click", "error"]
+    assert len(lines[2]["detail"]) == 200            # server-side truncation
+    stale = tdir / "20200101.jsonl"
+    stale.write_text("{}\n")
+    c.post("/api/ui-trace", json={"events": [{"kind": "nav", "view": "log"}]})
+    assert not stale.exists()                        # pruned on write
+    assert c.post("/api/ui-trace", json={"events": []}).json()["recorded"] == 0

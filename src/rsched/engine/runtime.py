@@ -9,6 +9,7 @@ for routines created as workflow + instruction only).
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import frontmatter
@@ -20,6 +21,8 @@ from ..ids import run_ts as make_run_ts
 from .loop import EngineLoop
 from .run_context import Budgets, RunContext
 from .transcript import Transcript
+
+log = logging.getLogger("rsched.runtime")
 
 
 def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
@@ -75,9 +78,18 @@ def load_workflow(routine_dir, cfg) -> tuple[str, str, dict, list[str] | None]:
     prov = {"slug": src.get("slug", cfg.workflow_slug),
             "commit": src.get("commit", cfg.workflow_commit), "version": src.get("version", 0)}
 
+    # The routine.yaml `fragments:` list is the activation authority; fragments/ holds the
+    # editable copies. Never glob the dir — the routine itself can write there, and a
+    # deactivated standard must actually deactivate.
     frag_dir = routine_dir / "fragments"
-    files = sorted(frag_dir.glob("*.md")) if frag_dir.is_dir() else []
-    parts = [fragments_lib.fragment_body(p.read_text(encoding="utf-8")).strip() for p in files]
+    parts = []
+    for slug in cfg.fragments:
+        p = frag_dir / f"{slug}.md"
+        if p.exists():
+            parts.append(fragments_lib.fragment_body(p.read_text(encoding="utf-8")).strip())
+        else:
+            log.warning("fragment %r is active for %s but has no local copy — skipped",
+                        slug, cfg.slug)
     tools = meta.get("tools") if isinstance(meta.get("tools"), list) else None
     return body, "\n\n".join(parts), prov, tools
 

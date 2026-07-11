@@ -4,7 +4,10 @@
 
 import { api, sse } from "/static/api.js";
 import { parseHash } from "/static/router.js";
+import { installTracing } from "/static/trace.js";
 import { el, fmtTs, skeleton, startTimeTicker, storage, toast } from "/static/util.js";
+
+installTracing();
 
 const routes = [
   [/^#?\/?$/, () => import("/static/views/dashboard.js")],

@@ -12,6 +12,11 @@ first-time reader, not as its author** — incremental eyes learn to ignore accr
 - **Health budgets** (a trip = a restructure finding): ~7 top-level sections per artifact; ~200-
   word summaries; no single artifact a wall. **~5 runs of additive-only growth with no
   simplification → force a simplify pass.** Monotonic growth is the smell.
+- **Read the interaction traces first, when they exist.** The web console records UI events to
+  `~/routines/.ui-traces/<YYYYMMDD>.jsonl` (newest file first; fields: ts/kind/view/target).
+  `error` events are broken flows, repeated `click` events on one target are friction,
+  `reconnect` events are instability — each is direct evidence of what a person actually
+  struggled with, stronger than any guess about what might confuse them.
 - **Borrow current conventions.** When restructuring, check online (the `websearch` util) how
   this artifact form is done well today — report structure, dashboard layout, digest format —
   rather than inventing a layout from scratch.

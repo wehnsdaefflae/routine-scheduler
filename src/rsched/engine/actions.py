@@ -161,6 +161,18 @@ def normalize_action(obj: dict) -> dict:
             continue
         else:
             out[key] = val
+    # Weak models also merge NON-empty foreign fields into an otherwise-complete action
+    # (e.g. a stray status:"ok" on a write_file). When every required field is present,
+    # unknown fields carry no per-kind meaning — drop them instead of failing the turn.
+    # When a required field is missing, keep the strays so the retry error names them.
+    if kind in _KIND_FIELDS:
+        req, opt = _KIND_FIELDS[kind]
+        complete = all(out.get(f) is not None
+                       and not (isinstance(out.get(f), str) and not out.get(f).strip())
+                       for f in req)
+        if complete:
+            allowed = {"say", "kind", *req, *opt}
+            out = {k: v for k, v in out.items() if k in allowed}
     return out
 
 

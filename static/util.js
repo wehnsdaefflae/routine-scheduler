@@ -153,4 +153,8 @@ export function toast(msg, ms = 2600, { error = false } = {}) {
   t.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (t.hidden = true), ms);
+  if (error) {
+    // error toasts are UI-friction evidence for the improve-ui audit lens
+    import("/static/trace.js").then(({ trace }) => trace("error", "toast", msg)).catch(() => {});
+  }
 }
