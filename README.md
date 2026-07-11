@@ -35,8 +35,10 @@ path: this scheduler is the only harness.
   deferred question to the **Decisions** page; answers are remembered in the routine's
   LEDGER, so user interaction shrinks over time.
 - **As a whole**: three bundled meta routines use the exact same building blocks —
-  `self-audit` (audits this codebase, logs, and outputs; applies test-gated fixes and files
-  bigger decisions to the **Audit** page), `meta-workflows` (fixes and drafts library
+  `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, but
+  *changing* anything is authorized only by the improve-* fragments you toggle on — none
+  active means report-only, with test-gated fixes and bigger decisions on the **Audit** page
+  once you enable the lenses), `meta-workflows` (fixes and drafts library
   workflows from all routines' transcripts; big changes become proposals you approve in the
   UI), and `library-sync` (exports the entire instance — routines, workflows, fragments,
   utils, sanitized config — into one GitHub repo and syncs it). They ship **disabled**; the

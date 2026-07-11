@@ -10,7 +10,8 @@ Turn evidence into concrete, evidence-backed findings.
 2. For every finding, note the **evidence**: run-id(s), file path(s), commit hash, or journal ref.
 3. **Unprovable suspicion rule**: if you suspect an issue but the data can't confirm it, do NOT
    drop it — make it a finding whose *fix is the specific logging/telemetry to add* so the next
-   audit can see it. That instrumentation is a real code change applied in `act-apply-fixes`.
+   audit can see it. That instrumentation is a real code change: it reaches `act-apply-fixes`
+   only under an active `improve-bugfix` lens; otherwise file it as a decision.
 4. Reconcile reviewer **finding** feedback here: tune the wording/severity, close a resolved
    finding, or fold the correction in — and note how you resolved it (for the report + LEDGER).
 5. Reuse stable ids from last run's report; assign new ids (F-next) only to genuinely new items.

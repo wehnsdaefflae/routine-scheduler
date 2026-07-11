@@ -12,12 +12,18 @@ healthy and improving, run over run.
 
 ## What to produce each run
 - Surface problems, improvement openings, redundancies, and systemic issues in the Audit tab's
-  report: findings with concrete evidence, and decisions where you need my call.
-- Apply the safe, self-evident fixes yourself — **test-gated** — to the repo, commit + push, log
-  them to the changelog, and request the restart so the daemon picks up the new code.
-- When evidence is too thin to judge a suspicion, add the logging/telemetry that would let the
-  next audit see it (that is itself a code change).
-- Act on my feedback from the Audit tab: comments on findings, decisions I settle, general notes.
+  report: findings with concrete evidence, and decisions where you need my call. This reporting
+  duty is unconditional — every run produces it.
+- **Changing anything is governed by my fragment toggles.** Your ACTIVE `improve-*` fragments
+  (listed in the state digest) are the only authorization to act on findings, each in its own
+  lens: `improve-bugfix` → defect fixes and the logging/telemetry a thin suspicion needs;
+  `improve-efficiency` → waste reduction; `improve-features` → small self-contained affordances;
+  `improve-ui` → interface/artifact quality; `improve-research` grounds the others in current
+  best practice. **With none of them active, this is a report-only audit: change nothing.**
+  All acting is **test-gated** — commit + push, log to the changelog, request the restart.
+- Act on my feedback from the Audit tab: comments on findings, decisions I settle, general
+  notes. A decision I settled is explicit authorization — apply it (test-gated) regardless of
+  which fragments are active.
 
 ## Paths & conventions
 - Scheduler repo (edit + test + commit here): `/home/mark/git-repos/routine-scheduler`
