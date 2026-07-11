@@ -66,6 +66,9 @@ class SubrunManager:
     def __init__(self, parent_loop):
         self.parent = parent_loop
         self.subruns: dict[int, Subrun] = {}
+        # Completion hook: every child exit sets this, so a parent blocked in `wait`
+        # wakes IMMEDIATELY instead of sleeping out a poll interval (or a whole timeout).
+        self.exit_event = threading.Event()
 
     # -- spawn ----------------------------------------------------------------------
 
@@ -124,6 +127,7 @@ class SubrunManager:
             finally:
                 transcript.close()
                 sub.done.set()
+                self.exit_event.set()
 
         thread = threading.Thread(target=run_child, name=f"subrun-{n}", daemon=True)
         sub.thread = thread
@@ -197,12 +201,14 @@ class SubrunManager:
                 "status": sub.status if sub.done.is_set() else "stopping"}
 
     def wait(self, action: dict, *, poll_s: float, aborted) -> dict:
-        """Block until a target child (n), all children, or any child finishes."""
+        """Block until a target child (n), all children, or any unreported exit. Wakes on the
+        child's completion event, not on a poll tick — and an exit the parent has not been
+        told about yet satisfies an any-wait immediately (a child that finished while the
+        parent was composing this very action must not cost a full timeout)."""
         n = action.get("n")
         want_all = bool(action.get("all"))
         timeout = float(action.get("timeout_s") or 600)
         deadline = time.monotonic() + timeout
-        already_done = {k for k, s in self.subruns.items() if s.done.is_set()}
         if not self.subruns or (n is not None and int(n) not in self.subruns):
             return {"kind": "wait", "error": "no such sub-routine to wait for"
                     if n is not None else "no sub-routines have been spawned"}
@@ -212,15 +218,21 @@ class SubrunManager:
                 return self.subruns[int(n)].done.is_set()
             if want_all:
                 return all(s.done.is_set() for s in self.subruns.values())
-            return any(k for k, s in self.subruns.items()
-                       if s.done.is_set() and k not in already_done)
+            # any-mode: an unreported exit satisfies at once; and once nothing is running
+            # any longer, no future exit can arrive — blocking would burn the whole timeout.
+            return (any(s.done.is_set() and not s.announced for s in self.subruns.values())
+                    or all(s.done.is_set() for s in self.subruns.values()))
 
-        while not satisfied() and time.monotonic() < deadline:
+        while time.monotonic() < deadline:
             if aborted():
                 break
-            time.sleep(poll_s)
+            self.exit_event.clear()
+            if satisfied():   # re-check after clear: an exit between check and wait must not be lost
+                break
+            self.exit_event.wait(timeout=min(poll_s, max(0.0, deadline - time.monotonic())))
+        sat = satisfied()   # before collection below flips `announced` on the exits we report
         finished = self.take_finished_unannounced()
-        return {"kind": "wait", "timed_out": not satisfied(),
+        return {"kind": "wait", "timed_out": not sat,
                 "finished": [{"n": s.n, "label": s.label, "status": s.status,
                               "turns": s.ctx.turn,
                               "summary": truncate(s.summary, cap=3000)[0]} for s in finished],

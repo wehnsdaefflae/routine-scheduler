@@ -91,10 +91,39 @@ def test_build_system_prompt_sections(make_routine, tmp_path):
     sp = build_system_prompt(ctx, "## Run flow\n1. step", "The instruction.",
                              "digest text", ["inbox msg one"])
     for needle in ("# ACTION SCHEMA", "# EXAMPLE", "# WORKFLOW", "## Run flow",
-                   "# INSTRUCTION", "The instruction.", "# STATE DIGEST",
+                   "# INSTRUCTION", "The instruction.", "# CAPABILITIES", "# STATE DIGEST",
                    "# MESSAGES FROM THE USER", "inbox msg one"):
         assert needle in sp, needle
-    assert "# GLOBAL UTILS" not in sp   # catalog is discovered via `util list`, never dumped
+    assert "(none in the library yet)" in sp   # empty test library → capabilities say so
+
+
+def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
+    """The CAPABILITIES section names every util (one line each), the action kinds this run
+    may use, and marks reserved-but-ungranted utils — so a run (or the clarify wizard,
+    which cannot even call `util name=list`) plans against reality."""
+    from rsched.engine.composer import capabilities_digest
+    from rsched.grants import GrantPolicy
+
+    ctx = _ctx(make_routine, tmp_path, slug="caps")
+    for name, summary in (("frob", "flips widgets"), ("discord", "phone channel")):
+        d = ctx.server.utils_home / "utils" / name
+        d.mkdir(parents=True)
+        (d / "main.py").write_text(f'"""{name} — {summary}.\n\nusage: gu {name} X\n"""\n',
+                                   encoding="utf-8")
+    ctx.grants = GrantPolicy(active=("global-utils",),
+                             gated_utils={"discord": ("communication",)})
+    text = capabilities_digest(ctx)
+    assert "frob — flips widgets." in text
+    assert "discord — phone channel.  [reserved — not granted to this routine]" in text
+    kinds_line = next(l for l in text.splitlines() if l.startswith("Action kinds"))
+    assert "util" in kinds_line and "write_util" not in kinds_line   # authoring not granted
+    assert "Active fragments: global-utils" in text
+    # a tools-restricted run (the wizard's clarify session) still SEES the catalog
+    text2 = capabilities_digest(ctx, allowed_kinds={"ask_user", "read_file",
+                                                    "write_file", "finish"})
+    assert "cannot CALL utils" in text2 and "frob" in text2
+    kinds2 = next(l for l in text2.splitlines() if l.startswith("Action kinds"))
+    assert "spawn" not in kinds2 and "ask_user" in kinds2
 
 
 def test_truncate_head_tail():

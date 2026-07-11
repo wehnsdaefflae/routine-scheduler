@@ -56,10 +56,18 @@ def run_detail(request: Request, run_id: str) -> dict:
 
 
 @router.get("/runs/{run_id}/transcript")
-def run_transcript(request: Request, run_id: str, offset: int = 0, sub: int | None = None) -> dict:
+def run_transcript(request: Request, run_id: str, offset: int = 0, sub: str | None = None) -> dict:
+    """Paged transcript events. `sub` selects a subrun's transcript; a nested child is a
+    slash path of subrun numbers ("2/1" = child 1 of child 2), matching sub/<n>/sub/<m>/
+    on disk — the UI unfolds subrun conversations recursively with this."""
+    import re
+
     _, run_dir = _run_dir(request, run_id)
-    path = run_dir / "transcript.jsonl" if sub is None else run_dir / "sub" / str(sub) / "transcript.jsonl"
-    events, new_offset = read_events(path, offset)
+    if sub is not None and not re.fullmatch(r"\d+(?:/\d+)*", sub):
+        raise HTTPException(400, "sub must be a subrun number or a nested n/m/... path")
+    for n in sub.split("/") if sub else []:
+        run_dir = run_dir / "sub" / n
+    events, new_offset = read_events(run_dir / "transcript.jsonl", offset)
     return {"events": events, "offset": new_offset}
 
 

@@ -10,8 +10,11 @@ import { chip, el, emptyState, skeleton, toast, when } from "/static/util.js";
 const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["deferred", "Deferred"], ["meta", "Meta"]];
 const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest", "oldest"], ["routine", "routine"]];
 
-const rank = (q) => (q.mode === "blocking" ? 0 : q.meta ? 1 : 2);
+const rank = (q) => (q.answered ? 3 : q.mode === "blocking" ? 0 : q.meta ? 1 : 2);
 const kindOf = (q) => (q.meta ? "meta" : q.mode);
+const sourceLink = (q) => (q.wizard
+  ? el("a", { href: `#/wizard/${q.routine}` }, "new-routine wizard")
+  : el("a", { href: `#/routine/${q.routine}` }, q.routine));
 
 export async function render(view) {
   view.append(el("div", { class: "page-head" },
@@ -104,6 +107,19 @@ export async function render(view) {
   }
 
   function item(q, index) {
+    // Already answered (the inbox file exists; the routine consumes it on its next turn/run):
+    // show the settled state instead of re-asking — reloads must not resurrect it as open.
+    if (q.answered) {
+      return el("div", { class: "panel question-item answered" },
+        el("div", { class: "q-meta" },
+          q.wizard ? chip("wizard", "meta") : q.meta ? chip("meta", "meta") : null,
+          chip("answered · queued", "ok"),
+          sourceLink(q),
+          q.asked ? el("span", {}, "asked ", when(q.asked)) : null),
+        el("div", { class: "q-text" }, q.question),
+        el("div", { class: "flow-note mt" },
+          el("span", {}, `“${q.answer}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run" : "next run"}`)));
+    }
     const input = el("input", { type: "text", placeholder: "your answer…  (↵ to send)", style: "flex:1" });
     inputs.push(input);
     const send = el("button", { class: "btn primary" }, "answer");
@@ -151,9 +167,9 @@ export async function render(view) {
       el("div", { class: "row mt" }, input, send));
     const panel = el("div", { class: `panel question-item${q.mode === "blocking" ? " warn" : ""}` },
       el("div", { class: "q-meta" },
-        q.meta ? chip("meta", "meta") : null,
+        q.wizard ? chip("wizard", "meta") : q.meta ? chip("meta", "meta") : null,
         chip(q.mode, q.mode),
-        el("a", { href: `#/routine/${q.routine}` }, q.routine),
+        sourceLink(q),
         q.asked ? el("span", {}, "asked ", when(q.asked)) : null,
         ...runBits),
       el("div", { class: "q-text" }, q.question),

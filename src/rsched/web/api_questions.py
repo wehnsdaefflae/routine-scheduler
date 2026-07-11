@@ -1,8 +1,14 @@
 """Open questions across routines (blocking from live status.json, deferred from
-questions/pending/) PLUS the self-audit report's open decisions (meta-badged) — the
-Decisions page is the ONE answering surface. Answers land as an atomic inbox file either
-way; an audit decision's answer takes the same [AUDIT decision · id] form the audit
-feedback channel uses, so the routine consumes both identically."""
+questions/pending/) PLUS wizard clarify sessions (dot-hidden, so the registry skips them)
+PLUS the self-audit report's open decisions (meta-badged) — the Decisions page is the ONE
+answering surface. Answers land as an atomic inbox file either way; an audit decision's
+answer takes the same [AUDIT decision · id] form the audit feedback channel uses, so the
+routine consumes both identically.
+
+Question STATE is derived, never stored twice: a question is `answered` the moment its
+inbox/answer-<qid>.json exists — even though the pending file lives on until the routine's
+next run consumes it. Every surface (Decisions page, run view, badges) reads that one
+derivation, and each answer POST publishes a bus event so open views resync at once."""
 
 from __future__ import annotations
 
@@ -50,15 +56,27 @@ def _audit_decisions(request: Request) -> list[dict]:
     return out
 
 
+def _mark_answered(routine_dir, item: dict) -> dict:
+    """The single answered-state derivation: an inbox answer file means the user has
+    spoken, even while the pending file waits for the next run to consume it. Without
+    this, an answered decision re-appears as open on every reload."""
+    ans = read_json(routine_dir / "inbox" / f"answer-{item.get('qid')}.json")
+    if isinstance(ans, dict) and "text" in ans:
+        item["answered"] = True
+        item["answer"] = ans["text"]
+    return item
+
+
 def _all_questions(request: Request) -> list[dict]:
     out: list[dict] = []
     for info in registry.scan(request.app.state.server).values():
         runs = {r.ts: r for r in info.runs}
         active = info.active_run
         if active and active.question:
-            out.append({**active.question, "routine": info.slug, "mode": "blocking",
+            out.append(_mark_answered(info.cfg.dir,
+                       {**active.question, "routine": info.slug, "mode": "blocking",
                         "run_id": active.run_id, "run_state": active.state,
-                        "asked": active.question.get("asked") or active.ts})
+                        "asked": active.question.get("asked") or active.ts}))
         for q in info.open_questions:
             item = {**q, "routine": info.slug, "mode": q.get("mode", "deferred")}
             # a deferred question's `asked` is the run_ts it was filed from — link back to
@@ -68,13 +86,40 @@ def _all_questions(request: Request) -> list[dict]:
             if run:
                 item.setdefault("run_id", run.run_id)
                 item["run_state"] = run.state
-            out.append(item)
+            out.append(_mark_answered(info.cfg.dir, item))
+    return out
+
+
+def _wizard_questions(request: Request) -> list[dict]:
+    """Clarify-session questions. Wizard sessions are dot-hidden pseudo-routines the
+    registry deliberately skips — but their questions belong in the same inbox as every
+    other decision, answerable from either surface."""
+    from . import wizard_store
+
+    home = request.app.state.server.routines_home
+    out: list[dict] = []
+    for d in sorted(home.glob(".wizard-*")) if home.is_dir() else []:
+        if not d.is_dir():
+            continue
+        ts = wizard_store.latest_run_ts(d)
+        run = (registry.read_run(d / "runs" / ts, d.name)
+               if ts and (d / "runs" / ts).is_dir() else None)
+        if run and run.question and run.state == "waiting_user":
+            out.append(_mark_answered(d, {**run.question, "routine": d.name, "wizard": True,
+                                          "mode": "blocking", "run_state": run.state,
+                                          "asked": run.question.get("asked") or run.ts}))
+        pending = d / "questions" / "pending"
+        for path in sorted(pending.glob("*.json")) if pending.is_dir() else []:
+            q = read_json(path)
+            if isinstance(q, dict) and q.get("question"):
+                out.append(_mark_answered(d, {**q, "routine": d.name, "wizard": True,
+                                              "mode": q.get("mode", "deferred")}))
     return out
 
 
 @router.get("/questions")
 def list_questions(request: Request) -> list[dict]:
-    return _all_questions(request) + _audit_decisions(request)
+    return _all_questions(request) + _wizard_questions(request) + _audit_decisions(request)
 
 
 class Answer(BaseModel):
@@ -97,8 +142,10 @@ def answer(request: Request, qid: str, body: Answer) -> dict:
         routine_dir = request.app.state.server.routines_home / match["routine"]
         write_feedback(routine_dir, Feedback(kind="decision", target=qid.removeprefix("audit:"),
                                              choice=choice, text="" if choice else text))
+        _announce_answer(request, qid, match["routine"])
         return {"ok": True, "routine": match["routine"], "mode": "deferred", "meta": True}
-    match = next((q for q in _all_questions(request) if q.get("qid") == qid), None)
+    match = next((q for q in _all_questions(request) + _wizard_questions(request)
+                  if q.get("qid") == qid), None)
     if match is None:
         raise HTTPException(404, f"no open question {qid!r}")
     routine_dir = request.app.state.server.routines_home / match["routine"]
@@ -106,4 +153,13 @@ def answer(request: Request, qid: str, body: Answer) -> dict:
                       {"qid": qid, "text": body.text, "source": "web",
                        "intermediate": body.intermediate and match["mode"] == "blocking",
                        "ts": now_iso()})
+    _announce_answer(request, qid, match["routine"])
     return {"ok": True, "routine": match["routine"], "mode": match["mode"]}
+
+
+def _announce_answer(request: Request, qid: str, routine: str) -> None:
+    """One bus event per answer: every open view (Decisions page, run views, badges)
+    resyncs its question state immediately instead of waiting for a reload."""
+    bus = getattr(request.app.state, "bus", None)
+    if bus is not None:
+        bus.publish({"event": "question_answered", "qid": qid, "routine": routine})

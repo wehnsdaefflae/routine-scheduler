@@ -101,6 +101,9 @@
 .ev.subrun { background: var(--raised); color: var(--violet); border: 1px solid var(--line-2); }
 .ev.subrun summary { cursor: pointer; }
 .ev.compaction, .ev.system { background: transparent; color: var(--faint); text-align: center; border: none; }
+/* a subrun's conversation, unfolded in place inside its parent's transcript */
+.subtranscript { margin: 10px 0 4px 12px; padding-left: 12px; border-left: 2px solid var(--line-2); }
+.subtranscript .transcript { gap: 8px; }
 .finish-banner { padding: 14px 16px; border-radius: 8px; white-space: pre-wrap; font-size: 13px; font-family: var(--sans); }
 .finish-banner strong { font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase; font-size: 12px; }
 .finish-banner.ok { background: rgba(95, 206, 143, 0.06); border: 1px solid rgba(95, 206, 143, 0.35); }
@@ -120,6 +123,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 /* ---------- decisions ---------- */
 .question-item { margin-top: 12px; }
 .question-item:focus-within { border-color: var(--amber-dim); }
+.question-item.answered { opacity: 0.68; }
 .question-item .q-text { font-family: var(--sans); font-size: 14px; margin: 10px 0 2px; }
 .question-item .q-meta { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
 .kbd-hint { color: var(--faint); font-size: 11px; }

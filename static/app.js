@@ -195,9 +195,10 @@ async function refreshStatus() {
 async function refreshBadges() {
   try {
     const qs = await api("/api/questions");
+    const open = qs.filter((q) => !q.answered);   // answered-but-unconsumed items are settled
     const badge = document.getElementById("q-badge");
-    badge.textContent = qs.length;
-    badge.hidden = qs.length === 0;
+    badge.textContent = open.length;
+    badge.hidden = open.length === 0;
   } catch { /* daemon lamp covers connectivity */ }
 }
 

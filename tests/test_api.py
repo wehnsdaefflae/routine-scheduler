@@ -218,6 +218,59 @@ def test_deferred_question_links_back_to_its_run(client):
     assert "run_id" not in by["q-orphan"]            # pruned run → no dangling link
 
 
+def test_answered_question_shows_settled_not_open(client):
+    """Answering flips a question to `answered` on every subsequent read — the pending
+    file lives on until the next run consumes it, but a reload of the Decisions page must
+    not resurrect it as open."""
+    c, tmp = client
+    routines = tmp / "routines"
+    pending = routines / "apir" / "questions" / "pending"
+    atomic_write_json(pending / "q-a1.json", {"qid": "q-a1", "question": "Pick?", "options": [],
+                                              "asked": "20260707", "mode": "deferred"})
+    assert c.post("/api/questions/q-a1/answer", json={"text": "blue"}).status_code == 200
+    q = next(x for x in c.get("/api/questions").json() if x["qid"] == "q-a1")
+    assert q["answered"] is True and q["answer"] == "blue"
+
+
+def test_wizard_questions_join_the_decisions_inbox(client):
+    """A clarify session's questions surface on /api/questions (wizard-badged) even though
+    the registry skips dot-hidden dirs, and are answerable through the same endpoint —
+    the answer lands in the wizard's own inbox."""
+    c, tmp = client
+    routines = tmp / "routines"
+    ts = "20260711-090000"
+    wid, d = _mk_wizard(routines, ts, state="waiting_user")
+    atomic_write_json(d / "runs" / ts / "status.json",
+                      {"run_id": f"{wid}:{ts}", "state": "waiting_user", "pid": 4242, "turn": 1,
+                       "question": {"qid": f"q-{ts}-1", "question": "Which arxiv areas?",
+                                    "options": ["cs.AI", "cs.CL"]}})
+    q = next(x for x in c.get("/api/questions").json() if x.get("wizard"))
+    assert q["qid"] == f"q-{ts}-1" and q["routine"] == wid and q["mode"] == "blocking"
+    assert not q.get("answered")
+    r = c.post(f"/api/questions/q-{ts}-1/answer", json={"text": "cs.AI"})
+    assert r.status_code == 200 and r.json()["routine"] == wid
+    assert read_json(d / "inbox" / f"answer-q-{ts}-1.json")["text"] == "cs.AI"
+    q2 = next(x for x in c.get("/api/questions").json() if x.get("wizard"))
+    assert q2["answered"] is True and q2["answer"] == "cs.AI"
+
+
+def test_subrun_transcript_nested_path(client):
+    """?sub= takes a slash path of subrun numbers so the UI can unfold grandchildren;
+    anything but digits/slashes is rejected."""
+    c, tmp = client
+    run_dir = _mk_run(tmp / "routines", "apir", "20260709-070000", "finished")
+    nested = run_dir / "sub" / "1" / "sub" / "2"
+    nested.mkdir(parents=True)
+    (run_dir / "sub" / "1" / "transcript.jsonl").write_text(
+        json.dumps({"type": "header", "run_id": "apir:x#sub1"}) + "\n")
+    (nested / "transcript.jsonl").write_text(
+        json.dumps({"type": "header", "run_id": "apir:x#sub1.2"}) + "\n")
+    base = "/api/runs/apir:20260709-070000/transcript"
+    assert c.get(f"{base}?sub=1").json()["events"][0]["run_id"] == "apir:x#sub1"
+    assert c.get(f"{base}?sub=1/2").json()["events"][0]["run_id"] == "apir:x#sub1.2"
+    assert c.get(f"{base}?sub=../evil").status_code == 400
+
+
 def test_audit_report_and_feedback(client):
     c, tmp = client
     routines = tmp / "routines"

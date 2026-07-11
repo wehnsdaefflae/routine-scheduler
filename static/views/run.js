@@ -158,7 +158,10 @@ export async function render(view, runId, query = {}) {
   function mountSubPolling(n, startOffset) {
     stopSubPoll();
     subBox.replaceChildren();
-    subTranscript = createTranscript(subBox);
+    subTranscript = createTranscript(subBox, {
+      loadSub: (m, o) => api(`/api/runs/${runId}/transcript?sub=${n}/${m}&offset=${o}`),
+      isLive: () => !TERMINAL.has(curState),
+    });
     subOffset = startOffset || 0;
     const pull = async () => {
       try {
@@ -264,7 +267,33 @@ export async function render(view, runId, query = {}) {
     return;
   }
   mainBox.replaceChildren();
-  const transcript = createTranscript(mainBox);
+  const transcript = createTranscript(mainBox, {
+    // deferred questions become answerable right in the conversation…
+    answer: async (qid, text) =>
+      api(`/api/questions/${qid}/answer`, { method: "POST", body: { text } }),
+    // …and subrun lines unfold into the child's own conversation, in place.
+    loadSub: (n, o) => api(`/api/runs/${runId}/transcript?sub=${n}&offset=${o}`),
+    isLive: () => !TERMINAL.has(curState),
+  });
+
+  // Question state stays in sync everywhere: an answer given on the Decisions page (or in
+  // another tab) closes the inline form here via the bus; at boot, questions this run
+  // asked that were settled later (or consumed by a later run) render as settled.
+  const onBus = (e) => {
+    const ev = e.detail || {};
+    if (ev.event === "question_answered") transcript.closeQuestion(ev.qid,
+      "✅ answered (queued for the next run)");
+  };
+  window.addEventListener("rsched-bus", onBus);
+  const syncQuestions = async () => {
+    try {
+      const t0 = Date.now();
+      const qs = await api("/api/questions");
+      transcript.reconcileQuestions(
+        new Set(qs.filter((q) => q.routine === slug && !q.answered).map((q) => q.qid)), t0);
+    } catch { /* cosmetic — forms just stay open */ }
+  };
+  setTimeout(syncQuestions, 1500);   // after the initial transcript page has rendered
 
   setState(detail.state);
   usageSpan.textContent = fmtTokens(detail.usage);
@@ -317,5 +346,6 @@ export async function render(view, runId, query = {}) {
   window.addEventListener("scroll", onScroll);
 
   return () => { if (tail) tail.stop(); stopSubPoll(); clearInterval(durTimer);
-                 window.removeEventListener("scroll", onScroll); };
+                 window.removeEventListener("scroll", onScroll);
+                 window.removeEventListener("rsched-bus", onBus); };
 }

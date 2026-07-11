@@ -549,6 +549,57 @@ def test_parallel_children_notify_at_boundary(make_routine, scripted):
     assert "alpha result ready" in joined and "beta result ready" in joined
 
 
+def test_wait_wakes_for_exit_during_completion(make_routine, scripted):
+    """A child that finishes while the parent is composing the wait action itself must
+    satisfy the wait immediately — not cost the full timeout (the old any-mode ignored
+    exits that predated the wait) and not cost a poll tick (wait now wakes on the exit
+    event)."""
+    def slow_child():
+        time.sleep(0.25)
+        return finish(summary="quick child result")
+
+    def compose_wait_slowly():      # the child exits during THIS completion call
+        time.sleep(0.6)
+        return wait_(timeout_s=30)
+
+    t0 = time.monotonic()
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        (PARENT, spawn("CHILD-Q: quick task.", label="q")),
+        ("CHILD-Q", slow_child),
+        (PARENT, compose_wait_slowly),
+        (PARENT, finish(summary="got it")),
+    ], slug="waker")
+    elapsed = time.monotonic() - t0
+    assert status == "ok"
+    assert elapsed < 10, f"wait blocked {elapsed:.1f}s despite a finished child"
+    joined = json.dumps(ep.calls[-1]["messages"])
+    assert "quick child result" in joined
+
+
+def test_wait_returns_at_once_when_nothing_left_to_wait_for(make_routine, scripted):
+    """An any-wait after every child has exited and been announced can never be satisfied
+    by a future exit — it must return immediately instead of sleeping out its timeout."""
+    def slow_probe():               # child exits + gets announced during this turn
+        time.sleep(0.3)
+        return probe()
+
+    t0 = time.monotonic()
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        (PARENT, spawn("CHILD-D: done fast.", label="d")),
+        ("CHILD-D", finish(summary="already reported")),
+        (PARENT, slow_probe),
+        (PARENT, wait_(timeout_s=30)),
+        (PARENT, finish(summary="moving on")),
+    ], slug="nowait")
+    elapsed = time.monotonic() - t0
+    assert status == "ok"
+    assert elapsed < 10, f"wait blocked {elapsed:.1f}s with no running children"
+    # the wait observation reported no new exits rather than a timeout
+    wait_obs = [e for e in events if e["type"] == "observation"
+                and e["payload"].get("kind") == "wait"]
+    assert wait_obs and wait_obs[-1]["payload"]["timed_out"] is False
+
+
 def test_kill_child(make_routine, scripted):
     def sleepy():
         time.sleep(0.5)

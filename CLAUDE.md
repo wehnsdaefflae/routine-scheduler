@@ -40,9 +40,11 @@ repeat until `finish`.
   ∩ (base ∪ active grants); a disallowed/ungranted call is corrected inside the schema-retry cycle
   with an error naming the granting fragment, and never becomes a turn.
 - **The system prompt is composed once at boot** (`engine/composer.py`): harness contract → action schema
-  + example → workflow body (the routine's own `main.md`) → instruction → active fragments → **state
-  digest** (phase, `state/`, step modules, last result, LEDGER tail, open/answered questions, inbox
-  messages). Effect actions (`util`/`read_file`/`write_file`/`llm`) run through `engine/executor.py`.
+  + example → workflow body (the routine's own `main.md`) → instruction → active fragments →
+  **capabilities** (model + context window, the action kinds usable this run, grants, the util catalog at
+  name+summary altitude — usage stays on-demand via `util name=list`) → **state digest** (phase, `state/`,
+  step modules, last result, LEDGER tail, open/answered questions, inbox messages). Effect actions
+  (`util`/`read_file`/`write_file`/`llm`) run through `engine/executor.py`.
 - **Compaction archives context to a navigable on-disk history** (`history.compact_to_history`): when
   the prompt exceeds ~60% of the endpoint's `context_chars`, the middle turns are reorganized by the model
   into a set of markdown files (~≤100 lines each) under `runs/<ts>/history/` + `INDEX.md`; the prompt keeps

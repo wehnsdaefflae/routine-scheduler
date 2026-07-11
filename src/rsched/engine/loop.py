@@ -231,7 +231,8 @@ class EngineLoop:
         if isinstance(phase, dict) and phase.get("phase"):
             ctx.phase = str(phase["phase"])
         system = build_system_prompt(ctx, self.workflow_body, self.instruction, digest, msgs,
-                                     fragments_text=self.fragments_text)
+                                     fragments_text=self.fragments_text,
+                                     allowed_kinds=self.allowed_tools)
         if self.resume and ctx.depth == 0:
             from .transcript import read_events
             events, _ = read_events(ctx.run_dir / "transcript.jsonl", 0)
