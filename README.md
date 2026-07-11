@@ -20,10 +20,11 @@ requiring your approval). Other actions: read/write a file, a scoped `llm` subca
 parallel sub-workflows from the library (monitor with `subruns`, `kill`, `wait`; exits are
 announced automatically and children never outlive the parent), ask the user (blocking or
 deferred), or finish. The engine commits each routine's working dir automatically. Endpoints
-are model **transports** only: OpenRouter, local Ollama, other OpenAI-compatible servers,
-the Anthropic Messages API — or the Claude Code CLI in fully stripped print mode
-(`--tools ""`, no settings/MCP/session, our system prompt replacing its own) as a
-subscription-billed completion function. What is banned is a second *agent loop* in the
+are model **transports** only: any OpenAI-compatible API (OpenRouter, Featherless, vLLM,
+local Ollama), the Anthropic Messages API — or the Claude Code CLI in fully stripped print
+mode (`--tools ""`, no settings/MCP/session, our system prompt replacing its own) as a
+subscription-billed completion function. Setup guide with per-provider recipes:
+[docs/endpoints.md](docs/endpoints.md). What is banned is a second *agent loop* in the
 path: this scheduler is the only harness.
 
 ## How the system improves itself
@@ -50,18 +51,35 @@ path: this scheduler is the only harness.
 ## Install
 
 ```bash
-./deploy/install.sh   # uv sync, config + token, library seed, systemd user service, linger
+./deploy/install.sh    # host install: uv sync, config + token, seeds, systemd user service
+docker compose up -d   # or containerized (deploy/DOCKER.md): engine-only image, everything
+                       # mutable bind-mounted — the instance migrates as a tarball
 ```
 
-Web UI: `http://127.0.0.1:8321` — token in `~/.config/routine-scheduler/config.yaml`
-(set `bind: 0.0.0.0` there for LAN access). Credentials are managed in **Settings**: model
-endpoints (with inline key or env var), the central secrets store every util can read, and
-the GitHub device flow for library sync. Ollama needs no key; the Claude Code CLI transport
-reads its subscription token from `~/.credentials/claude-code-oauth.env`. Endpoint setup is
-documented in [docs/endpoints.md](docs/endpoints.md) — with provider recipes for OpenRouter,
-Featherless (community/abliterated Hugging Face models), Ollama, self-hosted vLLM, and the
-two Claude transports. The console's **Help** tab serves the same guide plus an API
-reference generated from the source's docstrings (pdoc) at every boot.
+Web UI: `http://127.0.0.1:8321`. A bearer token is generated into
+`~/.config/routine-scheduler/config.yaml` on first boot, so a fresh deploy is never an
+open API (set `bind: 0.0.0.0` there for LAN access; `RSCHED_BIND` / `RSCHED_PORT` override
+in containers). First launch lands on **Settings** until setup is finished: model
+endpoints, the central Secrets store, GitHub, the library repo.
+
+## The console
+
+- **Decisions** — one inbox for everything the system is asking you: blocking questions
+  (a run is waiting), deferred ones, and open self-audit decisions. Keyboard-first;
+  answers flow back into the asking routine's next turn or next run.
+- **Routines** — the catalog: each routine's state, schedule, budgets, models, fragments,
+  and run history; drill into any run to watch its conversation live.
+- **Library** — browse and edit the shared workflows, fragments, and global utils; every
+  save is lint/selftest-gated.
+- **Settings** — LLM endpoints (with a live test call), the write-only Secrets store
+  every util reads, GitHub device flow, library/source remotes, graceful server restart.
+- **Log** — a live, filterable activity feed across all routines; expand a row to tail
+  that run's transcript inline.
+- **Audit** — the self-audit routine's report on the scheduler itself: changelog,
+  findings, and decisions, with a feedback loop into its next run.
+- **Help** — documentation generated from this very source at every boot: hand-written
+  guides (`docs/*.md`, e.g. endpoint setup) plus an API reference rendered from the
+  code's docstrings by pdoc.
 
 ## Creating a routine
 
@@ -88,9 +106,16 @@ stays the only channel otherwise.
 
 ## CLI
 
-`uv run rsched --help` — `daemon` (what systemd runs: scheduler + web in one process),
-`run-once` (`--model kind=endpoint:model` overrides a model role), `engine-run` (internal),
-`validate`, `lint`, `suggest`, `scaffold`, `abort`.
+`uv run rsched --help` — `daemon` (what the service/container runs: scheduler + web in one
+process), `run-once` (`--model kind=endpoint:model` overrides a model role), `engine-run`
+(internal), `validate`, `lint`, `suggest`, `scaffold`, `abort`.
+
+## Development
+
+`uv sync`, then `uv run pytest -q` — the suite is fast and offline (`RSCHED_LIVE_TESTS=1`
+adds live endpoint smoke tests). Working conventions, the action/transcript contracts, and
+the module standards live in `CLAUDE.md`; the Help tab's API reference regenerates from
+docstrings at every daemon boot, so docstrings are user-facing here.
 
 ## Layout
 
