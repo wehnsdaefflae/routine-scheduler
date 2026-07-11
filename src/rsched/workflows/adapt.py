@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 from pathlib import Path
 
@@ -17,6 +18,19 @@ import frontmatter
 
 from ..ids import is_slug
 from .library import head_commit, read_workflow
+
+# One `### improve-<lens>` section: its heading line plus everything up to the next heading.
+_IMPROVE_SECTION_RE = re.compile(r"(?m)^#{2,4}\s*`?improve-([a-z-]+)`?\b.*\n(?:(?!#{1,4}\s).*\n?)*")
+
+
+def strip_inactive_improve(text: str, active: list[str] | set[str]) -> str:
+    """Deterministic belt-and-braces after the generator LLM: drop `### improve-<lens>`
+    sections whose fragment is NOT active for this routine. The decompose prompt asks the
+    model to omit them, but LLM output isn't guaranteed — and a fragment toggled off later
+    must take its step prose with it (see api_routines.set_fragments)."""
+    active = set(active)
+    return _IMPROVE_SECTION_RE.sub(
+        lambda m: m.group(0) if f"improve-{m.group(1)}" in active else "", text)
 
 
 def dump_markdown(meta: dict, body: str) -> str:
@@ -91,11 +105,17 @@ concrete prose for THIS task — never leave Python in the output.
 Return ONLY the JSON object {{main, modules}}."""
 
 
-def decompose(server, slug: str, instruction: str, *, params: dict | None = None) -> dict:
+def decompose(server, slug: str, instruction: str, *, params: dict | None = None,
+              fragments: list[str] | None = None) -> dict:
     """Generator LLM: apply a single-file workflow to `instruction` and split it into the routine's
     main.md body + step/state modules. Returns {'main': <body>, 'modules': {name: body}}. Degrades
     to the whole workflow rendered as main.md (no modules) on any failure — so generation without a
-    usable endpoint still yields a valid, self-contained markdown routine."""
+    usable endpoint still yields a valid, self-contained markdown routine.
+
+    `fragments` is the routine's ACTIVE standards list: the pattern may enumerate optional
+    standards (the improve-* passes), and without knowing the active set the generator renders
+    them all — the improve-ui leak. The prompt states the set, and the output is deterministically
+    stripped of inactive improve sections afterwards."""
     meta, _, raw = read_workflow(server.library_home, slug)
     try:
         from ..endpoints import EndpointRegistry
@@ -103,7 +123,13 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
         endpoint, ref = EndpointRegistry(server).for_system()
         param_note = ("\n\nPARAMETERS (the pattern's contract, resolved with the user):\n"
                       + "\n".join(f"- {k}: {v}" for k, v in params.items())) if params else ""
-        prompt = _DECOMPOSE_PROMPT.format(workflow=raw, instruction=instruction) + param_note
+        frag_note = ("\n\nACTIVE FRAGMENTS (this routine's standards): "
+                     + (", ".join(fragments) or "(none)")
+                     + ". The pattern may name optional standards (e.g. the improve-* passes) — "
+                       "write steps/sections ONLY for the active ones; omit inactive passes "
+                       "entirely.") if fragments is not None else ""
+        prompt = _DECOMPOSE_PROMPT.format(workflow=raw, instruction=instruction) \
+            + param_note + frag_note
         comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
                                  schema=DECOMPOSE_SCHEMA, effort=ref.effort, timeout=180)
         data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
@@ -112,6 +138,9 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
         main = str(data.get("main") or "").strip()
         if not main:
             raise ValueError("empty main")
+        if fragments is not None:
+            main = strip_inactive_improve(main, fragments)
+            modules = {k: strip_inactive_improve(v, fragments) for k, v in modules.items()}
         return {"main": main, "modules": modules}
     except Exception:
         from .pyworkflow import render_markdown

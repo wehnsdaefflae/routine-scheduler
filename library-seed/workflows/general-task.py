@@ -32,7 +32,7 @@ META = {
                    "/ maintain something on a schedule, tend a long-running goal, run a periodic "
                    "check. Use it when the instruction says WHAT to deliver and the HOW is "
                    "ordinary tool work.",
-    "version": 6,
+    "version": 7,
     "status": "stable",
     "tags": ["general", "research", "tool-use"],
     "includes": ["ask-policy", "global-utils", "web-research", "ledger-discipline",
@@ -131,11 +131,11 @@ def record():
 
 
 def improve():
-    """After the main work, run each active improvement pass (the improve-* standards). Each
-    infers the routine's intention from what THIS run just did, then acts in its lens — fix what
-    is broken (bugfix), sharpen inputs (research), grow the deliverable (features), tidy the
-    user-facing output (ui), cut waste (efficiency) — doing the safe, reversible changes itself
-    and filing a deferred `ask_user` (Decisions page) whenever it is unsure how to proceed."""
+    """After the main work, run ONLY the improvement passes whose improve-* fragment is ACTIVE
+    for this routine (they are the fragments inlined in your prompt — skip any lens that is not
+    there). Each active pass infers the routine's intention from what THIS run just did, then
+    acts in its lens, doing the safe, reversible changes itself and filing a deferred `ask_user`
+    (Decisions page) whenever it is unsure how to proceed."""
 
 
 if __name__ == "__main__":

@@ -37,7 +37,7 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
 
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8") \
         if (routine_dir / "instruction.md").exists() else ""
-    result = decompose(server, cfg.workflow_slug, instruction)
+    result = decompose(server, cfg.workflow_slug, instruction, fragments=cfg.fragments)
     try:
         meta, _, _ = library.read_workflow(server.library_home, cfg.workflow_slug)
     except FileNotFoundError:
@@ -49,8 +49,9 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
                  "modules": sorted(result["modules"])}
     if meta.get("tools") is not None:
         main_meta["tools"] = meta["tools"]
-    if meta.get("includes"):
-        main_meta["includes"] = list(meta["includes"])
+    if cfg.fragments:
+        # the routine's OWN active set — the workflow META's `includes` is only a default
+        main_meta["includes"] = list(cfg.fragments)
     (routine_dir / "steps").mkdir(exist_ok=True)
     for mod_name, mod_body in result["modules"].items():
         (routine_dir / "steps" / f"{mod_name}.md").write_text(mod_body.rstrip() + "\n", encoding="utf-8")

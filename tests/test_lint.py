@@ -50,7 +50,7 @@ def test_materialize_carries_workflow_and_provenance():
     # materialize = the un-decomposed baseline: the Python workflow rendered into main.md (the
     # orchestrator acts the pattern out; the pattern is fenced in the body).
     content, prov = materialize(SEED, "general-task")
-    assert prov["slug"] == "general-task" and prov["version"] == 6
+    assert prov["slug"] == "general-task" and prov["version"] == 7
     meta, body = frontmatter.parse(content)
     assert meta["materialized_from"]["slug"] == "general-task" and meta["name"] == "General task"
     assert "## Run flow" in body and "## Completion criteria" in body

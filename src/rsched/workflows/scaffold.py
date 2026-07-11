@@ -65,7 +65,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     # DECOMPOSE the single-file workflow (applied to the instruction) into the routine's OWN main.md
     # (entry state machine) + one markdown module per step/state. Self-contained: the library is
     # never read at run time. Degrades to the whole workflow as main.md if no endpoint is available.
-    result = decompose(server, workflow_slug, instruction, params=params)
+    result = decompose(server, workflow_slug, instruction, params=params, fragments=active)
     main_meta = {
         "name": name, "slug": slug,
         "materialized_from": {"slug": workflow_slug, "commit": commit, "version": meta.get("version", 0)},

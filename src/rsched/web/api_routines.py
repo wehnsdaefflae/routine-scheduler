@@ -184,6 +184,16 @@ def set_fragments(request: Request, slug: str, body: FragmentsBody) -> dict:
     for existing in frag_dir.glob("*.md"):
         if existing.stem not in active:
             existing.unlink()
+    # A deactivated improve-* fragment takes its step prose with it — otherwise steps/*.md
+    # keeps telling the run to apply a lens the routine no longer carries.
+    from ..workflows.adapt import strip_inactive_improve
+
+    for doc in [info.cfg.dir / "main.md", *(info.cfg.dir / "steps").glob("*.md")]:
+        if doc.is_file():
+            text = doc.read_text(encoding="utf-8")
+            stripped = strip_inactive_improve(text, active)
+            if stripped != text:
+                doc.write_text(stripped, encoding="utf-8")
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     raw["fragments"] = active
