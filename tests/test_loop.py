@@ -664,7 +664,21 @@ def test_retry_shows_kind_example_and_repeat_notice(make_routine, scripted):
     assert status == "ok"
     first_retry = ep.calls[1]["messages"][-1]["content"]
     assert '"kind": "write_file"' in first_retry          # the concrete example
-    assert "ENTIRE file body" in first_retry
+    assert "plain JSON object" in first_retry
     assert "SAME invalid action" not in first_retry       # not yet a repeat
     second_retry = ep.calls[2]["messages"][-1]["content"]
     assert "SAME invalid action" in second_retry
+    assert ep.calls[2]["schema"] is None                  # final attempt: grammar dropped
+
+
+def test_write_file_accepts_structured_content(make_routine, scripted):
+    """A JSON object as `content` is serialized pretty-printed — no escaping gymnastics."""
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        {"say": "Recording the phase.", "kind": "write_file",
+         "path": "state/phase.json", "content": {"phase": "gather-evidence", "n": 2}},
+        finish(),
+    ])
+    assert status == "ok"
+    import json as _json
+    on_disk = _json.loads((d / "state" / "phase.json").read_text())
+    assert on_disk == {"phase": "gather-evidence", "n": 2}

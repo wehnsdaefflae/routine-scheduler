@@ -289,6 +289,11 @@ class EngineLoop:
                 self.messages.append({"role": "assistant", "content": raw[:4000]})
                 self.messages.append({"role": "user", "content": retry_message(
                     exc.problems, example=KIND_EXAMPLES.get(kind_hint), repeated=repeated)})
+                if attempt == MAX_SCHEMA_ATTEMPTS - 1:
+                    # Persistent violations under a provider-enforced grammar are often the
+                    # grammar's fault (empty-string debris fields are its signature) — give
+                    # the final attempt free-form JSON; the contract still demands one object.
+                    schema = None
         return None, usage_sum
 
     def _compact_if_needed(self, endpoint, ref) -> None:

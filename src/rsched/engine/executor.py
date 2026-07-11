@@ -8,6 +8,8 @@ both the transcript event and (via composer.format_observation) the next user me
 
 from __future__ import annotations
 
+import json
+
 from .. import utils_lib
 from ..endpoints.base import EndpointError
 from ..paths import resolve_rel
@@ -57,6 +59,10 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
         path = resolve_rel(ctx.routine.dir, action["path"], roots)
         path.parent.mkdir(parents=True, exist_ok=True)
         data = action["content"]
+        if not isinstance(data, str):
+            # Structured content arrives as a live JSON value — models need not escape
+            # file bodies into strings; we serialize.
+            data = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
         if action.get("append"):
             with open(path, "a", encoding="utf-8") as fh:
                 fh.write(data)

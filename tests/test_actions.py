@@ -127,3 +127,11 @@ def test_every_kind_has_a_valid_example():
         assert example["kind"] == kind
         problems = validate(example, ACTION_SCHEMA) or validate_action(example)
         assert not problems, f"{kind}: {problems}"
+
+
+def test_write_util_content_must_be_string():
+    from rsched.engine.actions import validate_action
+    bad = {"say": "s", "kind": "write_util", "name": "x", "content": {"not": "a script"}}
+    assert any("one string" in p for p in validate_action(bad))
+    ok = {"say": "s", "kind": "write_file", "path": "p.json", "content": {"fine": True}}
+    assert validate_action(ok) == []

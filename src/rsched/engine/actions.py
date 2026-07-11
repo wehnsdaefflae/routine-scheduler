@@ -47,8 +47,10 @@ ACTION_SCHEMA: dict = {
             "type": "integer", "minimum": 1, "maximum": 500,
             "description": "read_file: line cap (default 200)",
         },
-        "content": {"type": "string",
-                    "description": "write_file: full new content · write_util: the complete PEP 723 script (see contract)"},
+        "content": {"type": ["string", "object", "array"],
+                    "description": "write_file: the full new content — a string, or a JSON object/array "
+                                   "(written pretty-printed; no escaping needed) · "
+                                   "write_util: the complete PEP 723 script as a string"},
         "append": {"type": "boolean", "description": "write_file: append instead of overwrite (default false)"},
         # llm / spawn
         "prompt": {"type": "string",
@@ -95,7 +97,8 @@ KIND_EXAMPLES: dict[str, dict] = {
                    "content": "<the complete PEP 723 script as ONE string>"},
     "read_file": {"say": "<why this file>", "kind": "read_file", "path": "state/notes.md"},
     "write_file": {"say": "<why this write>", "kind": "write_file", "path": "state/phase.json",
-                   "content": "<the ENTIRE file body as ONE string — e.g. \"{\\\"phase\\\": \\\"orient\\\"}\">"},
+                   "content": {"phase": "<structured data may be a plain JSON object — "
+                                        "text files take one string instead>"}},
     "llm": {"say": "<why delegate>", "kind": "llm", "prompt": "<the subtask prompt>"},
     "spawn": {"say": "<why a child>", "kind": "spawn",
               "prompt": "<self-contained instruction>", "label": "child-1"},
@@ -177,6 +180,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None) -> list[st
         val = obj.get(field)
         if val is None or (isinstance(val, str) and not val.strip()):
             problems.append(f"kind={kind} requires a non-empty {field!r} field")
+    if kind == "write_util" and not isinstance(obj.get("content"), str | None):
+        problems.append("kind=write_util requires 'content' to be the script text (one string)")
     allowed = {"say", "kind", *required, *optional}
     stray = [k for k in obj if k not in allowed]
     if stray:
