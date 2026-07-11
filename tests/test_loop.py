@@ -783,3 +783,50 @@ def test_budget_warning_appended_near_exhaustion(make_routine, scripted):
     warned = [m for c in ep.calls for m in c["messages"]
               if m["role"] == "user" and "wind down DELIBERATELY" in m["content"]]
     assert warned                                    # nudge reached the model before the cap
+
+
+def test_health_event_on_budget_exhaustion(make_routine, scripted, tmp_path):
+    """A budget-forced partial finish writes a budget_exhausted event to health-events.jsonl."""
+    d = make_routine(slug="healthbud")
+    s = _server(d)
+    s.routines_home = tmp_path / "routines"
+    ep = scripted([
+        *[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(11)],
+    ])
+    status, run_dir = run_routine(d, s, run_ts=TS)
+    assert status == "partial"
+    health_path = tmp_path / "routines" / ".control" / "health-events.jsonl"
+    assert health_path.exists()
+    lines = health_path.read_text(encoding="utf-8").strip().split("\n")
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["event"] == "budget_exhausted"
+    assert entry["routine"] == "healthbud"
+    assert "budget" in entry["detail"].lower()
+
+
+def test_health_event_on_run_failure(make_routine, scripted, tmp_path):
+    """A failed run (schema force-fail) writes a run_failed event to health-events.jsonl."""
+    d = make_routine(slug="healthfail")
+    s = _server(d)
+    s.routines_home = tmp_path / "routines"
+    ep = scripted(["nope one", "nope two", "nope three"])
+    status, run_dir = run_routine(d, s, run_ts=TS)
+    assert status == "failed"
+    health_path = tmp_path / "routines" / ".control" / "health-events.jsonl"
+    assert health_path.exists()
+    entry = json.loads(health_path.read_text(encoding="utf-8").strip())
+    assert entry["event"] == "run_failed"
+    assert entry["routine"] == "healthfail"
+
+
+def test_no_health_event_on_ok_finish(make_routine, scripted, tmp_path):
+    """A successful run does not write a health event."""
+    d = make_routine(slug="healthok")
+    s = _server(d)
+    s.routines_home = tmp_path / "routines"
+    ep = scripted([probe(), finish()])
+    status, run_dir = run_routine(d, s, run_ts=TS)
+    assert status == "ok"
+    health_path = tmp_path / "routines" / ".control" / "health-events.jsonl"
+    assert not health_path.exists()

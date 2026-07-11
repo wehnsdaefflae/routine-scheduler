@@ -29,6 +29,7 @@ from .control import (_ABORT, RunAborted, announce_finished_subruns, apply_model
 from .history import (COMPACT_AT_FRACTION, KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history,
                       maybe_compact, messages_size, replay_messages)
 from .autocommit import autocommit as _autocommit
+from ..health_events import log_health_event
 from .run_context import RunContext
 from .subruns import SubrunManager
 
@@ -242,6 +243,11 @@ class EngineLoop:
             summary += f"\n[{killed} still-running sub-workflow(s) were terminated at run end.]"
         ctx.transcript.event("finish", {"status": status, "summary": summary, "authored": authored},
                              usage_total=dict(ctx.usage), turns=ctx.turn)
+        if status in ("partial", "failed", "aborted") and ctx.depth == 0:
+            event_type = "budget_exhausted" if status == "partial" else "run_failed"
+            log_health_event(ctx.server.routines_home, event_type,
+                             routine=ctx.routine.slug, run_id=ctx.run_id,
+                             detail=summary[:500])
         self.final_summary = self.final_summary or summary
         if ctx.depth == 0:
             (ctx.run_dir / "result.md").write_text(summary + "\n", encoding="utf-8")

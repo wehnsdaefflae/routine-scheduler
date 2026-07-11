@@ -19,6 +19,7 @@ from pathlib import Path
 from ..config import RoutineConfig, ServerConfig
 from ..ids import now_iso, run_ts as make_run_ts
 from ..paths import atomic_write_json, read_json
+from ..health_events import log_health_event
 from . import registry
 from .events import EventBus
 
@@ -182,6 +183,9 @@ class Runner:
         st.update(state="failed", updated=now_iso(), question=None)
         atomic_write_json(run_dir / "status.json", st)
         (run_dir / "result.md").write_text(message + "\n", encoding="utf-8")
+        log_health_event(self.server.routines_home, "orphaned_run",
+                         routine=run_id.split(":")[0] if ":" in run_id else run_id,
+                         run_id=run_id, detail=message[:500])
 
     async def abort(self, slug: str) -> bool:
         run = self.active.get(slug)
