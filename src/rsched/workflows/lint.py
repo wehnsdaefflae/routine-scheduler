@@ -2,7 +2,8 @@
 
 Library workflows (Python patterns): META completeness, slug↔filename, resolvable includes,
 a main() entry, PHASES/COMPLETION. Materialized copies: provenance + no unresolved
-placeholders. Fragments: titled and non-trivial.
+placeholders. Fragments: titled, non-trivial, and a well-formed `grants:` key (the
+machine-enforced capability side — see grants.py).
 """
 
 from __future__ import annotations
@@ -59,6 +60,8 @@ def lint_workflow_py(source: str, *, filename: str, fragment_slugs: list[str]) -
 
 
 def lint_fragment_text(raw: str, *, filename: str) -> list[str]:
+    from ..grants import normalize_grants
+
     problems = []
     try:
         meta, body = frontmatter.parse(raw)
@@ -66,6 +69,8 @@ def lint_fragment_text(raw: str, *, filename: str) -> list[str]:
         return [f"{filename}: invalid YAML frontmatter: {exc}"]
     if not body.strip().startswith("# fragment:"):
         problems.append(f"{filename}: body must start with '# fragment: <slug> — <summary>' (after any frontmatter)")
+    if "grants" in meta:
+        problems += [f"{filename}: {p}" for p in normalize_grants(meta["grants"])[1]]
     tags = meta.get("tags")
     if "tags" in meta and not isinstance(tags, list):
         problems.append(f"{filename}: tags must be a list")

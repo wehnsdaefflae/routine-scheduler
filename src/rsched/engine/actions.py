@@ -176,10 +176,15 @@ def normalize_action(obj: dict) -> dict:
     return out
 
 
-def validate_action(obj: dict, allowed_kinds: set[str] | None = None) -> list[str]:
+def validate_action(obj: dict, allowed_kinds: set[str] | None = None,
+                    grants=None) -> list[str]:
     """Semantic per-kind checks on an object that already passed the JSON Schema.
-    `allowed_kinds` narrows the vocabulary to a workflow's `tools:` allowlist — `finish`
-    is always permitted so a run can end. Returns a list of problems (empty = valid)."""
+    `allowed_kinds` narrows the vocabulary to a workflow's `tools:` allowlist; `grants`
+    (a grants.GrantPolicy) gates capabilities the routine's active fragments must unlock
+    (write_util, reserved utils) — so allowed kinds = workflow tools ∩ (base ∪ grants).
+    `finish` is always permitted so a run can end. Both rejections happen here, inside the
+    schema-retry cycle, so a denied call is corrected and never becomes a turn.
+    Returns a list of problems (empty = valid)."""
     problems: list[str] = []
     kind = obj.get("kind")
     if kind not in _KIND_FIELDS:
@@ -187,6 +192,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None) -> list[st
     if allowed_kinds is not None and kind != "finish" and kind not in allowed_kinds:
         return [f"kind={kind} is not available in this workflow — it permits only "
                 f"{sorted(allowed_kinds | {'finish'})}; use one of those"]
+    if grants is not None and kind != "finish" and (denial := grants.deny(obj)):
+        return [denial]
     required, optional = _KIND_FIELDS[kind]
     for field in required:
         val = obj.get(field)

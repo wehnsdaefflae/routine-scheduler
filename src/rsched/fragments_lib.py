@@ -42,6 +42,8 @@ def _git(home: Path, *args: str) -> subprocess.CompletedProcess:
 
 
 def list_fragments(home: Path) -> list[dict]:
+    from .grants import normalize_grants
+
     if not home.is_dir():
         return []
     out = []
@@ -52,7 +54,9 @@ def list_fragments(home: Path) -> list[dict]:
         out.append({"slug": path.stem,
                     "summary": (m.group("summary").strip() if m else ""),
                     "title": _title(path.stem, m),
-                    "tags": meta.get("tags") or []})
+                    "tags": meta.get("tags") or [],
+                    # machine-read capability side (authoritative only from the LIBRARY copy)
+                    "grants": normalize_grants(meta.get("grants"))[0]})
     return out
 
 
