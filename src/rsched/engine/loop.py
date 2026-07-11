@@ -81,6 +81,11 @@ class EngineLoop:
         self.executed_actions = 0  # actions that produced an observation this run
         self.util_reminder = self._build_util_reminder()
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
+        # Repeat-streak escape hatch: identical-but-valid actions in a row are the second
+        # signature of provider grammar distortion (a model narrating "I keep forgetting args"
+        # while the grammar suppresses the field). At REPEAT_WARN the next completions run
+        # schema-free; the contract in the system prompt still demands one JSON object.
+        self._shed_schema_turns = 0
         # Once the conversation has been archived to on-disk history, every turn reminds the model
         # to consult its index (compaction-proof — re-appended to the observation each turn).
         self._history_active = False
@@ -171,8 +176,11 @@ class EngineLoop:
                 self.executed_actions += 1
                 text = format_observation(obs)
                 if REPEAT_WARN <= repeat_streak < REPEAT_FAIL:
+                    self._shed_schema_turns = 1   # re-arms on every further repeat
                     text += (f"\n[ENGINE WARNING: this exact action has now run {repeat_streak} times "
-                             f"in a row — {REPEAT_FAIL} identical actions fail the run. Change course.]")
+                             f"in a row — {REPEAT_FAIL} identical actions fail the run. Change course. "
+                             "The structured-output constraint is lifted for your next reply: emit ONE "
+                             "JSON object and include every field the action needs (args, content, …).]")
                 text += self.util_reminder
                 if self._history_active:
                     text += self._history_note
@@ -249,6 +257,9 @@ class EngineLoop:
         self._compact_if_needed(endpoint, ref)
         usage_sum = {"in": 0, "out": 0}
         schema = ACTION_SCHEMA
+        if self._shed_schema_turns > 0:
+            self._shed_schema_turns -= 1
+            schema = None
         prev_raw: str | None = None
         for attempt in range(1, MAX_SCHEMA_ATTEMPTS + 1):
             # Generous output cap: reasoning models need room to think AND answer — a

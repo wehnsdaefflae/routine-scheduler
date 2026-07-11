@@ -733,3 +733,21 @@ def test_fragments_list_is_activation_authority(make_routine, scripted, caplog):
     assert "ALPHA-BODY" in fragments_text
     assert "BETA-BODY" not in fragments_text        # present on disk, not activated
     assert any("ghost" in r.message for r in caplog.records)
+
+
+def test_repeat_warn_sheds_provider_schema(make_routine, scripted):
+    """Three identical valid-but-ineffective actions lift the provider-side schema for the
+    next completions (grammar distortion can suppress optional fields like args while the
+    model narrates that it keeps forgetting them)."""
+    same = util("git-log", say="Trying git-log.")
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        dict(same), dict(same), dict(same),
+        util("git-log", args=["--stat"], say="Now with args."),
+        finish(),
+    ])
+    assert status == "ok"
+    warned = [m for c in ep.calls for m in c["messages"]
+              if m["role"] == "user" and "structured-output constraint is lifted" in m["content"]]
+    assert warned                                  # the WARN nudge announced the lift
+    assert ep.calls[3]["schema"] is None           # completion after WARN ran schema-free
+    assert ep.calls[4]["schema"] is not None       # ...and the constraint returns after the window
