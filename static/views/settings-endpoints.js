@@ -8,8 +8,8 @@ import { el, toast } from "/static/util.js";
 // Each kind needs a DIFFERENT credential — spelled out per endpoint so the subscription token
 // and metered API keys don't get confused (they land in different places).
 const KIND = {
-  openai: { title: "OpenAI-compatible API (OpenRouter, vLLM, together, …)", keyLabel: "API key",
-    subscription: false, hint: "Needs an API key — paste it below, or set its key_var in Secrets." },
+  openai: { title: "OpenAI-compatible API (OpenRouter, Featherless, vLLM, Ollama, …)", keyLabel: "API key",
+    subscription: false, hint: "Needs an API key — paste it below, or set its key_var in Secrets. Setup guide: Help → endpoints." },
   anthropic: { title: "Anthropic Messages API — ⚠ METERED, per-token billing", keyLabel: "Anthropic API key (sk-ant-…)",
     subscription: false, hint: "Needs an sk-ant-… API key. This is NOT your Claude subscription." },
   "claude-cli": { title: "Claude subscription — no per-token billing", keyLabel: "subscription token",

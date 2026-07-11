@@ -57,7 +57,11 @@ Web UI: `http://127.0.0.1:8321` — token in `~/.config/routine-scheduler/config
 (set `bind: 0.0.0.0` there for LAN access). Credentials are managed in **Settings**: model
 endpoints (with inline key or env var), the central secrets store every util can read, and
 the GitHub device flow for library sync. Ollama needs no key; the Claude Code CLI transport
-reads its subscription token from `~/.credentials/claude-code-oauth.env`.
+reads its subscription token from `~/.credentials/claude-code-oauth.env`. Endpoint setup is
+documented in [docs/endpoints.md](docs/endpoints.md) — with provider recipes for OpenRouter,
+Featherless (community/abliterated Hugging Face models), Ollama, self-hosted vLLM, and the
+two Claude transports. The console's **Help** tab serves the same guide plus an API
+reference generated from the source's docstrings (pdoc) at every boot.
 
 ## Creating a routine
 
@@ -93,7 +97,8 @@ stays the only channel otherwise.
 - `src/rsched/` — `engine/` (the run loop), `endpoints/` (direct API adapters),
   `daemon/` (cron scheduler + subprocess runner), `web/` (FastAPI + SSE),
   `workflows/` (library, lint, adapt, scaffold, suggest, generate)
-- `static/` — no-build vanilla-JS frontend
+- `static/` — no-build vanilla-JS frontend; `docs/` — hand-written guides, rendered into
+  the Help tab next to the pdoc-generated API reference (`docs_build.py`, at boot)
 - `library-seed/` + `util-seed/` — seeded to `~/.local/share/routine-scheduler-libraries`,
   ONE git repo holding `workflows/`, `fragments/` and `utils/` (with the `gu` dispatcher at
   the root); `routine-seed/` — the three meta routines, installed disabled

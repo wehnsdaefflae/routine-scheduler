@@ -1,0 +1,151 @@
+# LLM endpoint setup
+
+An **endpoint** is a model *transport*: one place the scheduler can send a chat completion
+and get an answer back. Endpoints never act on their own — the scheduler's engine is the
+only agent loop. You configure endpoints once (Settings → Endpoints, or
+`~/.config/routine-scheduler/config.yaml`), then every routine picks *models* served
+through them.
+
+## The three kinds
+
+| kind | what it talks to | credential | billing |
+|---|---|---|---|
+| `openai` | any OpenAI-compatible chat API: OpenRouter, Featherless, vLLM, Ollama, Together, … | API key (or none for local Ollama) | per provider (metered or subscription) |
+| `anthropic` | Anthropic's Messages API | `sk-ant-…` API key | **metered**, per token |
+| `claude-cli` | the Claude Code CLI in fully stripped print mode | `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` | your Claude **subscription** — no per-token billing |
+
+Nine times out of ten you want `openai`: one kind covers every provider that speaks the
+OpenAI chat-completions dialect, cloud or local.
+
+## Adding an endpoint (web UI)
+
+1. **Settings → Endpoints → + add endpoint.** Name it (the name is its identity — routines
+   reference it), pick the kind, set the base URL (e.g. `https://openrouter.ai/api/v1`).
+2. **Give it a credential.** Either paste an API key on the endpoint's card (stored inline
+   in the server config), or set `key_var` to a name like `OPENROUTER_API_KEY` and put the
+   value in **Settings → Secrets** — the central store. Secrets win for anything you might
+   rotate; inline wins for quick starts. `claude-cli` reads `CLAUDE_CODE_OAUTH_TOKEN` from
+   Secrets — paste the token the card asks for.
+3. **Test it.** Enter a model id on the card and hit *test* — you get latency, whether the
+   model respected a JSON schema, and the raw error (with an auth hint) if the call failed.
+   Fix problems here, not mid-run.
+4. **Point models at it.** Set the server-wide **system model** (used only for
+   setup-time work: the new-routine wizard and workflow generation), and per routine the
+   three roles — **main** (the orchestrator loop), **subroutine** (spawned children),
+   **tool_call** (the `llm` action) — on the routine's page. A role a routine leaves unset
+   falls back to the system model.
+
+## Adding an endpoint (config file)
+
+Same fields, YAML under `endpoints:` in `~/.config/routine-scheduler/config.yaml`:
+
+```yaml
+endpoints:
+  OpenRouter:
+    kind: openai
+    base_url: https://openrouter.ai/api/v1
+    key_var: OPENROUTER_API_KEY   # name in the Secrets store (or use api_key: inline)
+    schema_mode: json_schema
+    context_chars: 2000000
+
+system_model:
+  endpoint: OpenRouter
+  model: z-ai/glm-5.2
+```
+
+### Field reference
+
+- `base_url` — everything before `/chat/completions`. Local Ollama:
+  `http://127.0.0.1:11434/v1`. Self-hosted vLLM: `http://host:8000/v1`.
+- `api_key` / `key_var` / `key_env_file` — credential lookup order: inline `api_key`
+  first, then `key_var` in the Secrets store, then `key_var` inside `key_env_file`
+  (a `~/.credentials/*.env` style file).
+- `schema_mode` — how the endpoint enforces the one-JSON-action-per-turn contract:
+  - `json_schema` (default): strict `response_format` — OpenRouter, OpenAI, Ollama ≥ 0.5.
+    Providers that reject it get one degraded retry without it, so it is safe to leave on.
+  - `json_object`: weaker "any JSON" mode; the scheduler's validator does the rest.
+  - `ollama_native`: Ollama's own `format` field — REAL constrained decoding; best for
+    small local models that otherwise drift off-schema.
+  - `none`: nothing requested; the code-level validate-and-retry loop does all the work.
+- `context_chars` — the prompt size (in characters, ≈ 4 × tokens) at which the engine
+  compacts run history to disk. Set it to roughly 4 × the model's context window in
+  tokens, and lower it if a provider serves the model with a reduced window.
+- `temperature` — optional; forwarded verbatim when set.
+- `extra_body` — merged into every request body (`openai` kind only). This is where
+  aggregator routing lives, e.g. OpenRouter provider pinning:
+
+  ```yaml
+  extra_body:
+    provider:
+      order: [Fireworks, DeepInfra]
+      allow_fallbacks: true
+      ignore: [SomeProvider]   # e.g. providers whose constrained decoding corrupts output
+  ```
+
+## Provider recipes
+
+**OpenRouter** (one key, hundreds of models) — `kind: openai`,
+`base_url: https://openrouter.ai/api/v1`, key from [openrouter.ai/keys](https://openrouter.ai/keys).
+Model ids look like `z-ai/glm-5.2`, `qwen/qwen3.6-35b-a3b`.
+
+**Featherless** (serverless host for *any* public Hugging Face model — community
+fine-tunes and abliterated/uncensored variants included) — `kind: openai`,
+`base_url: https://api.featherless.ai/v1`, key from
+[featherless.ai](https://featherless.ai) (flat-rate subscription, not per token). Model id
+= the HF repo id, e.g. `huihui-ai/GLM-4-32B-0414-abliterated`. Any public safetensors
+model with 100+ downloads and a supported architecture is served automatically; larger
+models need the bigger plan (72B-class on the base tier, 700B-class like GLM 5.2 on the
+top tier).
+
+**Ollama** (local, free) — `kind: openai`, `base_url: http://127.0.0.1:11434/v1`, no key,
+`schema_mode: ollama_native`. Mind `context_chars`: small local models often run with
+small windows.
+
+**Self-hosted vLLM** (any HF model on your own GPUs, incl. rented ones — Runpod
+serverless exposes `https://api.runpod.ai/v2/<endpoint-id>/openai/v1`) — `kind: openai`,
+base URL of the server, whatever key you configured it with. This is the guaranteed path
+for a model no provider lists.
+
+**Anthropic API** — `kind: anthropic`, no base_url needed, `sk-ant-…` key. Metered: know
+your budget caps.
+
+**Claude subscription** — `kind: claude-cli`, no base_url or api key. Run
+`claude setup-token` on any machine, paste the resulting token on the endpoint's card
+(it lands in Secrets as `CLAUDE_CODE_OAUTH_TOKEN`). Metered-auth environment variables
+are scrubbed from the CLI's environment, so it can never silently fall back to API billing.
+
+## Abliterated GLM 5.2 (uncensored community variants)
+
+Status as of 2026-07: the abliterations of `zai-org/GLM-5.2` exist as Hugging Face
+weights — `huihui-ai/Huihui-GLM-5.2-abliterated-GGUF` (GGUF/llama.cpp quants, the
+"IQ2-class" files people quote), `zandenAI/GLM-5.2-FP8-Uncensored` and
+`Bahushruth/GLM-5.2-FP8-abliterated` (safetensors, gated) — but **no inference provider
+serves any of them turnkey yet** (GGUF isn't servable by safetensors providers; the
+safetensors variants are gated, which blocks auto-onboarding).
+
+The configured **Featherless** endpoint is the closest cloud path:
+
+- Works **today**: `huihui-ai/GLM-4-32B-0414-abliterated` — a genuine abliteration of the
+  previous GLM generation, confirmed live on Featherless, fits the base plan.
+- GLM **5.2** abliterated: needs the top Featherless tier (750B-class) *and* the variant
+  onboarded — request it via their Discord `#model-suggestions`, or connect an HF account
+  that has accepted the repo's gate. Once listed, just use its repo id as the model id —
+  the endpoint config doesn't change.
+- Guaranteed alternative: rent GPUs and self-host `zandenAI/GLM-5.2-FP8-Uncensored` on
+  vLLM (~4 large GPUs for the FP8), then add it as a vLLM recipe above.
+
+Set the finished endpoint + model as a routine's `main` model (or the system model) like
+any other — abliterated models are ordinary models to the scheduler.
+
+## Troubleshooting
+
+- **✗ auth problem** on test → wrong/missing key. Check the endpoint's card: inline key
+  set? `key_var` present in Secrets (Settings → Secrets)?
+- **schema VIOLATED** on test → the model can't hold the JSON contract in that mode. Try
+  `ollama_native` (Ollama), `json_object`, or a stronger model. Weak models + `none`
+  still work — the engine repairs and retries — but burn turns.
+- **Truncated / empty answers from reasoning models** → the model spent its output budget
+  thinking. The engine already maps effort to the provider's reasoning knob; pick a lower
+  effort for that model role, or a non-reasoning model.
+- **A provider mangles structured output** (dropped fields, foreign keys) → exclude it via
+  `extra_body.provider.ignore` (OpenRouter) and keep `allow_fallbacks: true`.
