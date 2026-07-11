@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timezone
 
 from ..config import ServerConfig
+from ..ids import now_iso
 from . import registry, restart
 from .events import EventBus
 from .runner import Runner
@@ -36,6 +37,7 @@ class Scheduler:
         self._last_scan = 0.0
         self._shutting_down = False
         self._deferred_logged = False
+        self.started = now_iso()   # process birth — a restart is visible as a changed value
 
     def rescan(self) -> None:
         self.catalog = registry.scan(self.server)
@@ -122,4 +124,6 @@ class Scheduler:
             "active_runs": {slug: run.run_id for slug, run in self.runner.active.items()},
             "next_fires": {s: t.isoformat() for s, t in sorted(self.next_fires.items())},
             "draining": self.runner.draining,
+            "started": self.started,
+            "restart_requested": restart.restart_requested(self.server),
         }

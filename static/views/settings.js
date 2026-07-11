@@ -1,9 +1,9 @@
-// Settings: GitHub device flow, secrets store, library repos, source repo. The LLM endpoints
-// section (CRUD + system model + live test) lives in settings-endpoints.js.
+// Settings: GitHub device flow, secrets store, library repos, source repo, server restart.
+// The LLM endpoints section (CRUD + system model + live test) lives in settings-endpoints.js.
 
 import { api } from "/static/api.js";
 import { setQuery } from "/static/router.js";
-import { el, skeleton, toast } from "/static/util.js";
+import { el, skeleton, toast, when } from "/static/util.js";
 import { renderEndpoints } from "/static/views/settings-endpoints.js";
 
 export async function render(view, query = {}) {
@@ -15,7 +15,7 @@ export async function render(view, query = {}) {
   // Section nav — a visible location indicator within Settings; the active sub-section is in the
   // URL (#/settings?section=endpoints), so a deep link / reload lands on the same section.
   const SECTIONS = [["github", "GitHub"], ["secrets", "Secrets"], ["libraries", "Library"],
-                    ["source", "Source"], ["endpoints", "Endpoints"]];
+                    ["source", "Source"], ["server", "Server"], ["endpoints", "Endpoints"]];
   const secNav = el("div", { class: "filterbar" });
   view.append(secNav);
   const sectionHead = (id, title) => el("h2", { id: `sec-${id}` }, title);
@@ -280,6 +280,106 @@ export async function render(view, query = {}) {
     srcBox.append(el("div", { class: "faint small" },
       src.home + (src.exists ? "" : "  ⚠ not a git repo")));
   } catch (err) { srcBox.replaceChildren(el("div", { class: "muted" }, err.message)); }
+
+  // -- server process (graceful restart onto committed code) -----------------------
+  view.append(sectionHead("server", "Server"));
+  const srvBox = el("div", { class: "panel" });
+  srvBox.append(skeleton(["50%", "80%"]));
+  view.append(srvBox);
+  async function renderServer() {
+    let s;
+    try { s = await api("/api/status"); }
+    catch (err) { srvBox.replaceChildren(el("div", { class: "muted" }, err.message)); return; }
+    srvBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
+      "Restart the daemon to load committed code — the same graceful path the self-audit ",
+      "routine uses: nothing new fires, active runs finish (a run parked on a question defers ",
+      "the drain), then the process exits and its supervisor relaunches it. The console drops ",
+      "out for a few seconds."));
+    const statusLine = el("div", { class: "test-result" });
+    const btn = el("button", { class: "btn small" }, "↻ restart server");
+    const cancel = el("button", { class: "btn small ghost", hidden: true }, "cancel");
+    const withdraw = el("button", { class: "btn small ghost", hidden: true }, "withdraw request");
+
+    // After a request: poll until the process comes back with a different `started`.
+    // Phases: pending (sentinel visible) → draining → down (fetch fails) → back up.
+    async function watch(initialStarted) {
+      btn.disabled = true;
+      withdraw.hidden = false;
+      const t0 = Date.now();
+      while (Date.now() - t0 < 180000) {
+        await new Promise((r) => setTimeout(r, 2000));
+        let st;
+        try { st = await api("/api/status"); }
+        catch {
+          withdraw.hidden = true;   // too late to withdraw — the process is already down
+          statusLine.style.color = "";
+          statusLine.textContent = "⟳ server is down — waiting for the supervisor to relaunch it…";
+          continue;
+        }
+        if (st.started && st.started !== initialStarted) {
+          toast("server restarted — running the committed code");
+          renderServer();
+          return;
+        }
+        if (!st.restart_requested) {  // withdrawn (here or elsewhere) and same process → resume
+          statusLine.style.color = "";
+          statusLine.textContent = "request withdrawn — no restart";
+          btn.disabled = false; withdraw.hidden = true;
+          return;
+        }
+        const n = Object.keys(st.active_runs || {}).length;
+        statusLine.style.color = "";
+        statusLine.textContent = st.draining
+          ? `⟳ draining — ${n} active run${n === 1 ? "" : "s"} still finishing…`
+          : n ? `⟳ requested — ${n} run${n === 1 ? "" : "s"} active (a parked run defers the drain)…`
+              : "⟳ requested — restarting momentarily…";
+      }
+      statusLine.style.color = "var(--err)";
+      statusLine.textContent = "✗ not back after 3 minutes — check the supervisor (docker logs / systemctl status)";
+      btn.disabled = false; withdraw.hidden = true;
+    }
+
+    let armed = false;
+    const disarm = () => {
+      armed = false; cancel.hidden = true;
+      btn.textContent = "↻ restart server"; btn.classList.remove("danger");
+      statusLine.textContent = "";
+    };
+    cancel.onclick = disarm;
+    btn.onclick = async () => {
+      if (!armed) {   // two-step confirm, in place
+        armed = true; cancel.hidden = false;
+        btn.textContent = "confirm restart"; btn.classList.add("danger");
+        statusLine.style.color = "";
+        statusLine.textContent = "drains active runs, then the console goes down for a few seconds";
+        return;
+      }
+      disarm();
+      try {
+        const r = await api("/api/settings/restart", { method: "POST" });
+        statusLine.textContent = r.parked
+          ? "⟳ requested — a run is parked waiting on you (see Decisions); the drain starts once nothing is parked"
+          : "⟳ requested…";
+        watch(s.started);
+      } catch (err) { toast(err.message, 5000, { error: true }); }
+    };
+    withdraw.onclick = async () => {
+      try { await api("/api/settings/restart", { method: "DELETE" }); toast("restart request withdrawn"); }
+      catch (err) { toast(err.message, 4000, { error: true }); }
+    };
+
+    srvBox.append(
+      el("div", { class: "row", style: "margin:6px 0" },
+        el("span", { class: "small mono muted" }, `v${s.version} · process up since `),
+        s.started ? when(s.started) : el("span", { class: "muted small" }, "(unknown)"),
+        btn, cancel, withdraw),
+      statusLine);
+    if (s.restart_requested) {   // a pending request survives a page reload — resume watching
+      statusLine.textContent = "⟳ a restart is already requested…";
+      watch(s.started);
+    }
+  }
+  await renderServer();
 
   // -- LLM endpoints (settings-endpoints.js) ---------------------------------------
   view.append(sectionHead("endpoints", "LLM endpoints"));

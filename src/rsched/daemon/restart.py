@@ -1,6 +1,7 @@
 """Graceful self-restart for the self-updating scheduler.
 
-The self-audit routine, after committing new scheduler code, drops a restart sentinel file.
+The self-audit routine (after committing new scheduler code) or the Settings page (its
+restart button) drops a restart sentinel file.
 The daemon notices it, DRAINS (stops firing new runs, waits for the active ones to finish),
 then asks uvicorn to shut down — and the supervisor (systemd `Restart=always`) relaunches the
 process on the freshly-committed code. Two invariants make this safe:

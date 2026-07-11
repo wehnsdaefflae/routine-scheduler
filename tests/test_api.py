@@ -312,6 +312,30 @@ def test_audit_feedback_editable_until_consumed(client):
     assert c.delete("/api/audit/feedback/msg-..%2Fescape").status_code == 404  # malformed id
 
 
+def test_settings_restart_sentinel(client):
+    """The Settings restart button drops/withdraws the SAME sentinel the self-audit routine
+    uses; /api/status carries the pending flag + process start so the UI can watch the cycle.
+    (The drain→exit state machine itself is covered in test_restart.py — here we only assert
+    the web layer's writes.)"""
+    c, tmp = client
+    st = c.get("/api/status").json()
+    assert st["restart_requested"] is False and st["started"]
+
+    r = c.post("/api/settings/restart")
+    assert r.status_code == 200 and r.json() == {"ok": True, "active_runs": 0, "parked": 0}
+    sentinel = tmp / "routines" / ".control" / "restart.request"
+    assert sentinel.exists()
+    st2 = c.get("/api/status").json()
+    assert st2["restart_requested"] is True
+    assert st2["started"] == st["started"]          # same process until the scheduler acts
+
+    assert c.post("/api/settings/restart").status_code == 200   # idempotent re-request
+    assert c.delete("/api/settings/restart").status_code == 200
+    assert not sentinel.exists()
+    assert c.get("/api/status").json()["restart_requested"] is False
+    assert c.delete("/api/settings/restart").status_code == 200  # idempotent withdraw
+
+
 def test_routine_tags(client):
     c, tmp = client
     apir = next(r for r in c.get("/api/routines").json() if r["slug"] == "apir")
