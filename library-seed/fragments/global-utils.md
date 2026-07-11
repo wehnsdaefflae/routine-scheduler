@@ -16,6 +16,14 @@ building one.
 out to `gu <other-util> --json` internally. Don't reimplement a capability another util
 already provides.
 
+**Repair before workaround.** A util that errors mid-run is a repair opportunity, not a
+detour: read its source (`util` with name `show`, args `["<name>"]`), fix it, and `write_util`
+the corrected script — selftest-gated and committed, so the fix benefits every routine from
+now on. Never silently work around a broken util; the next routine hits the same wall. If the
+failure is environmental — a missing system package, no browser libraries, hardware — no
+script can fix it: file a deferred `ask_user` naming exactly what is missing, so the operator
+(or the self-audit routine) can fix the image/host.
+
 **Creating or revising a util** (the `write_util` action) — when nothing fits, write one.
 The `content` must be a complete, self-contained script that conforms to the util standard,
 or the engine's selftest gate rejects it:

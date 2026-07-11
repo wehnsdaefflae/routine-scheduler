@@ -12,6 +12,7 @@ import json
 
 from .. import utils_lib
 from ..endpoints.base import EndpointError
+from ..ids import is_slug
 from ..paths import resolve_rel
 from .composer import truncate
 from .run_context import RunContext
@@ -26,24 +27,41 @@ def do_util(action: dict, ctx: RunContext) -> dict:
     home = ctx.server.utils_home
     if name == "list":  # discovery: `gu list` — the catalog is derived live, never in-prompt
         return {"kind": "util", "name": "list", "listing": utils_lib.catalog_text(home)}
+    if name == "show":  # read a util's SOURCE — write_util's counterpart (repair needs read)
+        target = str(args[0]) if args else ""
+        source = utils_lib.read_util(home, target) if target and is_slug(target) else None
+        if source is None:
+            return {"kind": "util", "name": "show", "target": target, "missing": True,
+                    "available": [u["name"] for u in utils_lib.list_utils(home)]}
+        content, truncated = truncate(source, cap=24_000)
+        return {"kind": "util", "name": "show", "target": target, "source": content,
+                "truncated": truncated}
     if not utils_lib.exists(home, name):
         return {"kind": "util", "name": name, "missing": True,
                 "available": [u["name"] for u in utils_lib.list_utils(home)]}
     code, out, err = utils_lib.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S))
     stdout, trunc_out = truncate(out)
-    stderr, trunc_err = truncate(err, cap=2000)
+    # On failure, stderr is the repair material — keep the whole trace where possible
+    # (truncate preserves head+tail, so the exception at the traceback's end survives).
+    stderr, trunc_err = truncate(err, cap=8000 if code != 0 else 2000)
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
            "stdout": stdout, "stderr": stderr, "truncated": trunc_out or trunc_err}
     if code != 0:
-        # A failed call teaches the correct one: the util's own usage line plus the exact
-        # action shape (weak models often omit `args` or pass it as one string).
+        # A failed call teaches the correct one — and the repair path. Without this nudge
+        # the model's rational move is a silent workaround, and the next routine hits the
+        # same wall (seen live: page-fetch broken, run fell back to websearch, nobody told).
         entry = next((u for u in utils_lib.list_utils(home) if u["name"] == name), None)
         if entry and entry.get("usage"):
             obs["usage"] = entry["usage"]
-        obs["hint"] = (f'pass every argument in `args` as a JSON array of strings, e.g. '
-                       f'{{"say": "…", "kind": "util", "name": "{name}", '
-                       f'"args": ["<argument>", "--json"]}}')
+        obs["hint"] = (
+            f'call shape: every argument goes in `args` as a JSON array of strings, e.g. '
+            f'{{"say": "…", "kind": "util", "name": "{name}", "args": ["<argument>", "--json"]}}. '
+            f'If the inputs were right, the util itself may be broken — read it with '
+            f'{{"kind": "util", "name": "show", "args": ["{name}"]}}, fix it, and write_util the '
+            f'corrected script (selftest-gated; the fix benefits every routine). If the '
+            f'environment lacks something no script can install (system packages, hardware), '
+            f'file a deferred ask_user so the operator sees it.')
     return obs
 
 

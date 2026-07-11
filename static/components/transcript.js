@@ -51,8 +51,9 @@ export function createTranscript(container) {
     const o = ev.payload;
     let text;
     if (o.kind === "util") {
-      text = o.missing ? `util "${o.name}" does not exist (available: ${(o.available || []).join(", ")})`
+      text = o.missing ? `util "${o.target || o.name}" does not exist (available: ${(o.available || []).join(", ")})`
         : o.listing != null ? `util catalog\n${o.listing}`
+        : o.source != null ? `source of "${o.target}"\n${o.source}`
         : `${o.name} → exit ${o.exit}\n${o.stdout || ""}${o.stderr ? `\n[stderr] ${o.stderr}` : ""}`
           + (o.usage ? `\n[usage] ${o.usage}` : "") + (o.hint ? `\n[hint] ${o.hint}` : "");
     } else if (o.kind === "write_util") {

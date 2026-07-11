@@ -188,6 +188,8 @@ def catalog_text(home: Path) -> str:
             lines.append(f"    {u['usage']}")
     lines.append('\nCall shape: {"say": "…", "kind": "util", "name": "<name>", '
                  '"args": ["<arg>", "--flag"]} — args is a JSON array of strings.')
+    lines.append('Read a util\'s source with {"kind": "util", "name": "show", '
+                 '"args": ["<name>"]} — do this before revising one with write_util.')
     return "\n".join(lines)
 
 

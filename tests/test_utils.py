@@ -131,3 +131,53 @@ def test_failed_util_observation_teaches_usage(tmp_path):
            "hint": 'pass every argument in `args` as a JSON array of strings'}
     text = format_observation(obs)
     assert "[usage] usage: gu demo TARGET" in text and "[hint]" in text
+
+
+def _ctx(home):
+    from types import SimpleNamespace
+    return SimpleNamespace(server=SimpleNamespace(utils_home=home))
+
+
+def test_util_show_returns_source(tmp_path):
+    """`util show <name>` is write_util's read counterpart — repair needs the source."""
+    from rsched.engine.composer import format_observation
+    from rsched.engine.executor import do_util
+
+    utils_lib.ensure_library(tmp_path)
+    utils_lib.write_util_file(tmp_path, "demo", '"""demo — demo.\n\nusage: gu demo\n"""\nX = 1\n')
+    obs = do_util({"kind": "util", "name": "show", "args": ["demo"]}, _ctx(tmp_path))
+    assert obs["target"] == "demo" and "X = 1" in obs["source"]
+    text = format_observation(obs)
+    assert "write_util the COMPLETE corrected script" in text and "X = 1" in text
+    # unknown / traversal-shaped targets → a missing observation, never a file read
+    for bad in ("ghost", "../secrets", ""):
+        obs = do_util({"kind": "util", "name": "show", "args": [bad]}, _ctx(tmp_path))
+        assert obs.get("missing") is True, bad
+        assert "demo" in obs["available"]
+
+
+FAILING_UTIL = '''# /// script
+# dependencies = []
+# ///
+"""boomer — always fails (test fixture).
+
+usage: gu boomer
+"""
+import sys
+print("start-of-trace " + "x" * 12000 + " end-of-trace", file=sys.stderr)
+sys.exit(3)
+'''
+
+
+def test_failed_util_teaches_repair_and_keeps_trace_tail(tmp_path):
+    """A nonzero exit carries the repair path (show → fix → write_util, or a deferred
+    ask_user for environmental walls) and preserves the traceback's END through truncation."""
+    from rsched.engine.executor import do_util
+
+    utils_lib.ensure_library(tmp_path)
+    utils_lib.write_util_file(tmp_path, "boomer", FAILING_UTIL)
+    obs = do_util({"kind": "util", "name": "boomer", "args": []}, _ctx(tmp_path))
+    assert obs["exit"] == 3
+    assert '"show"' in obs["hint"] and "write_util" in obs["hint"] and "ask_user" in obs["hint"]
+    assert "end-of-trace" in obs["stderr"]        # the tail survives truncation
+    assert len(obs["stderr"]) < 12000             # …but the whole flood does not
