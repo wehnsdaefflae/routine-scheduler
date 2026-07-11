@@ -91,7 +91,9 @@ export function fmtDur(secs) {
 export function fmtTokens(usage) {
   if (!usage) return "";
   const f = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n ?? 0));
-  return `${f(usage.in || 0)} in / ${f(usage.out || 0)} out`;
+  const cost = usage.cost > 0
+    ? ` · $${usage.cost >= 0.1 ? usage.cost.toFixed(2) : usage.cost.toFixed(4)}` : "";
+  return `${f(usage.in || 0)} in / ${f(usage.out || 0)} out${cost}`;
 }
 
 // ---- chips / tags ----------------------------------------------------------------------------

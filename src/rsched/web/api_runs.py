@@ -87,6 +87,34 @@ def inject(request: Request, run_id: str, body: Inject) -> dict:
             "delivery": "mid-run" if state not in TERMINAL_STATES else "next-run"}
 
 
+@router.post("/runs/{run_id}/converse")
+async def converse(request: Request, run_id: str, body: Inject) -> dict:
+    """Append a message to THIS run's conversation. Active run: an ordinary injection, picked
+    up at the next turn boundary. Terminal run: the message lands in the inbox and the run is
+    resumed in place (rehydrated transcript, fresh budget window) — so any run, live or
+    finished, is an open-ended conversation."""
+    slug, run_dir = _run_dir(request, run_id)
+    if not body.text.strip():
+        raise HTTPException(400, "empty message")
+    routine_dir = request.app.state.server.routines_home / slug
+    atomic_write_json(routine_dir / "inbox" / f"msg-{now_iso().replace(':', '')}.json",
+                      {"text": body.text, "ts": now_iso(), "via": "web-converse"})
+    st = read_json(run_dir / "status.json")
+    state = st.get("state") if isinstance(st, dict) else None
+    if state not in TERMINAL_STATES:
+        return {"ok": True, "delivery": "mid-run"}
+    from ..config import load_routine
+
+    cfg, _ = load_routine(routine_dir)
+    if cfg is None:
+        raise HTTPException(404, f"routine {slug!r} not found")
+    rid = await request.app.state.runner.resume(cfg, run_dir.name, reason="converse")
+    if not rid:
+        raise HTTPException(409, "could not resume — another run of this routine is active, "
+                                 "or the daemon is draining")
+    return {"ok": True, "delivery": "resumed", "run_id": rid}
+
+
 @router.post("/runs/{run_id}/pause")
 def pause(request: Request, run_id: str) -> dict:
     return _set_pause(request, run_id, True)

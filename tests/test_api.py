@@ -777,3 +777,27 @@ def test_audit_decisions_merge_into_questions(client):
     assert not [q for q in c.get("/api/questions").json() if q.get("meta")]
     # unknown decision → 404
     assert c.post("/api/questions/audit:D9/answer", json={"text": "x"}).status_code == 404
+
+
+def test_converse_endpoint(client, monkeypatch):
+    """Live run: converse = an ordinary mid-run injection. Terminal run: the message lands in
+    the inbox AND the run is resumed in place (runner.resume) — the open-ended conversation."""
+    c, tmp = client
+    run_dir = _mk_run(tmp / "routines", "apir", "20260708-110000", "running")
+    rid = "apir:20260708-110000"
+    assert c.post(f"/api/runs/{rid}/converse", json={"text": "and the stars?"}).json()["delivery"] == "mid-run"
+    msgs = [read_json(p)["text"] for p in (tmp / "routines" / "apir" / "inbox").glob("msg-*.json")]
+    assert "and the stars?" in msgs
+
+    atomic_write_json(run_dir / "status.json", {"run_id": rid, "state": "finished"})
+    resumed = {}
+
+    async def fake_resume(cfg, ts, *, reason=""):
+        resumed.update(slug=cfg.slug, ts=ts, reason=reason)
+        return f"{cfg.slug}:{ts}"
+
+    monkeypatch.setattr(c.app.state.runner, "resume", fake_resume)
+    r = c.post(f"/api/runs/{rid}/converse", json={"text": "one more thing"})
+    assert r.json()["delivery"] == "resumed"
+    assert resumed == {"slug": "apir", "ts": "20260708-110000", "reason": "converse"}
+    assert c.post(f"/api/runs/{rid}/converse", json={"text": "  "}).status_code == 400

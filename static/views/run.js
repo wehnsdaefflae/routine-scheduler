@@ -6,7 +6,8 @@ import { api } from "/static/api.js";
 import { setQuery } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
-import { busy, chip, el, emptyState, fmtTokens, fmtTs, skeleton, streamStatus, toast } from "/static/util.js";
+import { busy, chip, el, emptyState, fmtDur, fmtTokens, fmtTs, skeleton, streamStatus,
+         toDate, toast } from "/static/util.js";
 
 const TERMINAL = new Set(["finished", "failed", "aborted"]);
 const WORKING = new Set(["running", "starting", "queued"]);
@@ -18,6 +19,7 @@ export async function render(view, runId, query = {}) {
 
   const stateChip = chip("connecting", "loading");
   const usageSpan = el("span", { class: "muted small" });
+  const durSpan = el("span", { class: "muted small" });
   const modelSpan = el("span", { class: "muted small" });
   const stream = streamStatus();
   const controls = el("div", { class: "row" });
@@ -26,7 +28,18 @@ export async function render(view, runId, query = {}) {
       el("div", { class: "kicker" }, `routine / ${slug}`),
       el("h1", {}, el("a", { href: `#/routine/${slug}` }, slug), ` · run ${fmtTs(ts)}`)),
     controls));
-  view.append(el("div", { class: "runbar" }, stateChip, stream.node, usageSpan, modelSpan));
+  view.append(el("div", { class: "runbar" }, stateChip, stream.node, usageSpan, durSpan, modelSpan));
+
+  // Elapsed wall clock: start ts → last status update while live (ticking), frozen at the
+  // final update once terminal.
+  let lastUpdated = "";
+  const tickDur = () => {
+    const start = toDate(ts);
+    if (!start) return;
+    const end = TERMINAL.has(curState) ? toDate(lastUpdated) : new Date();
+    if (end) durSpan.textContent = `⏱ ${fmtDur((end - start) / 1000)}`;
+  };
+  const durTimer = setInterval(tickDur, 5000);
 
   const questionBox = el("div", {});
   view.append(questionBox);
@@ -47,7 +60,10 @@ export async function render(view, runId, query = {}) {
 
   const injectInput = el("input", { type: "text", placeholder: "inject a message into the run…", style: "flex:1" });
   const injectBtn = el("button", { class: "btn" }, "send");
-  view.append(el("div", { class: "row mt" }, injectInput, injectBtn));
+  // Terminal runs only: wake THIS run back up with the message — the transcript is rehydrated
+  // and the conversation continues in place, as often as you like.
+  const converseBtn = el("button", { class: "btn primary", hidden: true }, "continue conversation");
+  view.append(el("div", { class: "row mt" }, injectInput, converseBtn, injectBtn));
 
   // Auto-scroll ("follow"): on by default; the user can toggle it, and scrolling up pauses it.
   let autoscroll = true;
@@ -167,6 +183,11 @@ export async function render(view, runId, query = {}) {
     resumeBtn.hidden = !terminal;                   // resume only a terminal run
     switchBox.hidden = terminal;                    // no mid-run switch once the run has ended
     injectBtn.textContent = terminal ? "queue for next run" : "send";
+    converseBtn.hidden = !terminal;
+    injectInput.placeholder = terminal
+      ? "continue this conversation — or queue the message for the next run…"
+      : "inject a message into the run…";
+    tickDur();
     if (state === "paused") { paused = true; pauseBtn.textContent = "▶ resume"; }
     else if (paused && state !== "paused") { paused = false; pauseBtn.textContent = "⏸ pause"; }
     setWaiting(WORKING.has(state));                 // the model is working
@@ -178,21 +199,26 @@ export async function render(view, runId, query = {}) {
     if (!q) return;
     const input = el("input", { type: "text", placeholder: "your answer…", style: "flex:1" });
     const send = el("button", { class: "btn primary" }, "answer");
+    const discuss = el("button", { class: "btn",
+      title: "send as a follow-up question / thought — the model replies and the question stays open" },
+      "ask back");
     const box = el("div", { class: "panel warn mt" },
       el("div", { class: "prose" }, `❓ ${q.question}`),
       q.options?.length ? el("div", { class: "row mt" },
         q.options.map((o) => el("button", { class: "btn small", onclick: () => { input.value = o; } }, o))) : null,
-      el("div", { class: "row mt" }, input, send));
-    const submit = async () => {
+      el("div", { class: "row mt" }, input, send, discuss));
+    const submit = async (intermediate) => {
       if (!input.value.trim()) return;
       try {
-        await api(`/api/questions/${q.qid}/answer`, { method: "POST", body: { text: input.value } });
-        toast("answer sent");
+        await api(`/api/questions/${q.qid}/answer`, { method: "POST",
+          body: { text: input.value, intermediate } });
+        toast(intermediate ? "sent — the model will reply and re-ask" : "answer sent");
         questionBox.replaceChildren();
       } catch (err) { toast(err.message, 4000, { error: true }); }
     };
-    send.onclick = submit;
-    input.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+    send.onclick = () => submit(false);
+    discuss.onclick = () => submit(true);
+    input.onkeydown = (e) => { if (e.key === "Enter") submit(false); };
     questionBox.append(box);
   }
 
@@ -214,7 +240,20 @@ export async function render(view, runId, query = {}) {
     } catch (err) { toast(err.message, 4000, { error: true }); }
   };
   injectBtn.onclick = doInject;
-  injectInput.onkeydown = (e) => { if (e.key === "Enter") doInject(); };
+  const doConverse = async () => {
+    if (!injectInput.value.trim()) return;
+    converseBtn.disabled = true;
+    try {
+      await api(`/api/runs/${runId}/converse`, { method: "POST", body: { text: injectInput.value } });
+      toast("message delivered — waking the run to continue the conversation…");
+      setTimeout(() => location.reload(), 800);   // reattach the tail to the now-live run
+    } catch (err) { toast(err.message, 5000, { error: true }); converseBtn.disabled = false; }
+  };
+  converseBtn.onclick = doConverse;
+  // Enter = the primary action for the run's state: converse when terminal, inject when live.
+  injectInput.onkeydown = (e) => {
+    if (e.key === "Enter") (converseBtn.hidden ? doInject : doConverse)();
+  };
 
   // ---- boot -----------------------------------------------------------------------------------
   let detail;
@@ -229,6 +268,8 @@ export async function render(view, runId, query = {}) {
 
   setState(detail.state);
   usageSpan.textContent = fmtTokens(detail.usage);
+  lastUpdated = detail.updated || "";
+  tickDur();
   setModel(detail.model);
   showQuestion(detail.question);
   for (const n of detail.subruns || []) subs.set(n, `sub ${n}`);
@@ -249,6 +290,7 @@ export async function render(view, runId, query = {}) {
       if (viewingSub == null) scrollDown();
     },
     onState: (s) => {
+      if (s.updated) lastUpdated = s.updated;
       setState(s.state);
       if (s.usage) usageSpan.textContent = fmtTokens(s.usage);
       if (s.model) setModel(s.model);
@@ -259,12 +301,21 @@ export async function render(view, runId, query = {}) {
   });
   if (viewingSub != null) mountSubPolling(viewingSub, initialOffset);
 
-  // Manual scroll pauses following; scrolling back to the bottom resumes it (the checkbox mirrors it).
+  // Manual scroll pauses following; scrolling back to the bottom resumes it. Only an UPWARD
+  // move pauses: content growth pushes the bottom away without any scroll of ours, and the old
+  // symmetric check read that as "user left the bottom" — silently unchecking follow on every
+  // busy run.
+  let lastY = window.scrollY;
   const onScroll = () => {
-    const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 60;
-    if (atBottom !== followChk.checked) { followChk.checked = atBottom; autoscroll = atBottom; }
+    const y = window.scrollY;
+    const up = y < lastY - 1;
+    lastY = y;
+    const atBottom = window.innerHeight + y >= document.body.scrollHeight - 60;
+    if (up && !atBottom && followChk.checked) { followChk.checked = false; autoscroll = false; }
+    else if (atBottom && !followChk.checked) { followChk.checked = true; autoscroll = true; }
   };
   window.addEventListener("scroll", onScroll);
 
-  return () => { if (tail) tail.stop(); stopSubPoll(); window.removeEventListener("scroll", onScroll); };
+  return () => { if (tail) tail.stop(); stopSubPoll(); clearInterval(durTimer);
+                 window.removeEventListener("scroll", onScroll); };
 }
