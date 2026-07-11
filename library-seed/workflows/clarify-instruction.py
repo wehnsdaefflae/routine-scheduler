@@ -96,7 +96,16 @@ def write_result():
     string — NEVER as top-level fields of the action. This is not a `finish`; the action has no
     `status`/`summary`/`workflow` fields. The refined_instruction must make sense to a fresh agent
     with no memory of this conversation; split into steps/<step>.md files only for genuinely
-    separable multi-step tasks."""
+    separable multi-step tasks.
+
+    OWNERSHIP RULE — the instruction is the TASK, nothing else. Cross-cutting conduct is owned
+    by fragments the user toggles per routine (asking policy, communication channels, after-run
+    improvement passes, util and web-research discipline): the refined_instruction must contain
+    NONE of it, and must not assume any fragment is on or off. If the user's draft mixes conduct
+    into the task ("message me on discord when...", "improve your own prompt after each run"),
+    do not copy it into the instruction — flag it in `notes` as a fragment choice for the wizard.
+    Conduct text baked into the instruction would keep acting after its fragment is toggled off,
+    which breaks the user's control surface."""
 
 
 if __name__ == "__main__":

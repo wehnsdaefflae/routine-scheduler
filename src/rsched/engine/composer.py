@@ -56,6 +56,14 @@ does what you need, WRITE one (the `write_util` action) and then call it — uti
 selftested, and shared across all routines. You never run git yourself: the engine commits your
 working directory automatically at run end.
 
+Ownership of prose: instruction.md holds ONLY the task — goal, deliverable, constraints, \
+completion criteria. Cross-cutting conduct (when to ask the user, communication channels, \
+after-run improvement passes, util and research discipline) is owned by FRAGMENTS, toggled \
+per routine by the user; the active ones appear under STANDARD PRACTICES below. When you edit \
+instruction.md — this routine's or a child's — NEVER write fragment-owned guidance into it, \
+whether that fragment is currently active or not: duplicated conduct text would keep acting \
+after the user toggles its fragment off, silently breaking their control surface.
+
 Budgets for this run: {b.max_turns} turns, {b.max_wall_clock_min} minutes, {b.max_total_tokens} \
 total tokens, at most {b.max_subruns} subruns (depth ≤ {b.max_subrun_depth}). Spend them on the \
 workflow's priorities and `finish` DELIBERATELY before they expire — a finish you wrote beats a \
