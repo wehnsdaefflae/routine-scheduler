@@ -32,9 +32,27 @@ def harness_contract(ctx: RunContext) -> str:
     if r.fs_read_roots or r.fs_write_roots:
         extra = (f"\nAdditional readable roots: {[str(p) for p in r.fs_read_roots]}; "
                  f"writable roots: {[str(p) for p in r.fs_write_roots]}.")
-    util_confirm = (" Creating/revising a util needs the user's approval (a blocking "
-                    "question is filed automatically) before it takes effect."
-                    if r.confirm_utils(ctx.server) else "")
+    # write_util is a fragment-granted capability (util-authoring / -autonomous); the
+    # confirm level rides the same grant. ctx.grants None (direct construction) = ungated.
+    g = ctx.grants
+    if g is None or g.allows_kind("write_util"):
+        authoring = ("If no util does what you need, WRITE one (the `write_util` action) "
+                     "and then call it — utils are reusable, selftested, and shared across "
+                     "all routines.")
+        util_confirm = {
+            "always": " Creating/revising a util needs the user's approval (a blocking "
+                      "question is filed automatically) before it takes effect.",
+            "creations": " Creating a NEW util needs the user's approval (a blocking "
+                         "question is filed automatically); revising an existing one is "
+                         "auto-approved once its selftest passes.",
+        }.get(g.confirm if g else "never", "")
+    else:
+        authoring = ("Creating or revising utils is NOT granted to this routine (no active "
+                     "fragment carries a util-authoring grant) — the engine rejects "
+                     "write_util. Work with the existing utils; if a needed one is missing "
+                     "or broken, file a deferred ask_user naming it.")
+        util_confirm = (" NOT granted to this routine — the engine rejects it; file a "
+                        "deferred ask_user instead.")
     return f"""You are the orchestrator of the routine "{r.name}" ({r.slug}), run {ctx.run_id}\
 {f" (schedule: {r.cron})" if r.cron else ""}. This conversation IS the run: every turn you reply with \
 EXACTLY one JSON object matching the action schema below — no prose outside the JSON. Narrate what \
@@ -51,10 +69,8 @@ are on with read_file, ON DEMAND, instead of loading them all up front. Keep you
 
 Working directory: {r.dir}. All relative paths resolve there.{extra}
 
-You have NO shell. The ONLY way to run code is a global util (the `util` action). If no util
-does what you need, WRITE one (the `write_util` action) and then call it — utils are reusable,
-selftested, and shared across all routines. You never run git yourself: the engine commits your
-working directory automatically at run end.
+You have NO shell. The ONLY way to run code is a global util (the `util` action). {authoring} \
+You never run git yourself: the engine commits your working directory automatically at run end.
 
 Ownership of prose: instruction.md holds ONLY the task — goal, deliverable, constraints, \
 completion criteria. Cross-cutting conduct (when to ask the user, communication channels, \

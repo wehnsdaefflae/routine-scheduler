@@ -19,6 +19,7 @@ from collections import deque
 from pathlib import Path
 
 from ..endpoints.base import EndpointError
+from ..grants import load_policy
 from ..paths import read_json
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
 from . import executor, inbox, interact
@@ -71,6 +72,10 @@ class EngineLoop:
         self.consumed_dir = ctx.root_run_dir / "consumed"
         self.final_summary = ""
         self.executed_actions = 0  # actions that produced an observation this run
+        # Gated capabilities (write_util, reserved utils) come from the ACTIVE fragments'
+        # grants, read from the LIBRARY copies only — a routine cannot self-grant by editing
+        # its local fragment prose. Enforced per turn by validate_action.
+        self.grants = ctx.grants = load_policy(ctx.server.fragments_home, ctx.routine.fragments)
         self.util_reminder = self._build_util_reminder()
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
         # Repeat-streak escape hatch: identical-but-valid actions in a row are the second
@@ -99,9 +104,13 @@ class EngineLoop:
         # Per-turn nudge, only when the global-utils fragment is active for this routine (req 2).
         if "global-utils" not in (self.ctx.routine.fragments or []):
             return ""
-        create = ("write_util to create/revise one"
-                  + (" (needs your approval first)"
-                     if self.ctx.routine.confirm_utils(self.ctx.server) else ""))
+        if self.grants.allows_kind("write_util"):
+            create = ("write_util to create/revise one"
+                      + (" (needs the user's approval first)"
+                         if self.grants.needs_confirm(creating=True) else ""))
+        else:
+            create = ("note the gap with a deferred ask_user — creating/revising utils "
+                      "needs a util-authoring grant this routine does not carry")
         return ("\n[tools: run `util name=list` to see the available global utils and their "
                 f"usage; if none fits, {create}.]")
 
@@ -309,7 +318,8 @@ class EngineLoop:
                 if isinstance(candidate, dict) and candidate.get("kind") in KIND_EXAMPLES:
                     kind_hint = candidate["kind"]
                 problems = (validate(candidate, ACTION_SCHEMA)
-                            or validate_action(candidate, allowed_kinds=self.allowed_tools))
+                            or validate_action(candidate, allowed_kinds=self.allowed_tools,
+                                               grants=self.grants))
                 if problems:
                     raise SchemaViolation(problems)
                 return candidate, usage_sum

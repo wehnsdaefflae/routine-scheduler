@@ -133,9 +133,9 @@ def test_failed_util_observation_teaches_usage(tmp_path):
     assert "[usage] usage: gu demo TARGET" in text and "[hint]" in text
 
 
-def _ctx(home):
+def _ctx(home, grants=None):
     from types import SimpleNamespace
-    return SimpleNamespace(server=SimpleNamespace(utils_home=home))
+    return SimpleNamespace(server=SimpleNamespace(utils_home=home), grants=grants)
 
 
 def test_util_show_returns_source(tmp_path):
@@ -181,3 +181,8 @@ def test_failed_util_teaches_repair_and_keeps_trace_tail(tmp_path):
     assert '"show"' in obs["hint"] and "write_util" in obs["hint"] and "ask_user" in obs["hint"]
     assert "end-of-trace" in obs["stderr"]        # the tail survives truncation
     assert len(obs["stderr"]) < 12000             # …but the whole flood does not
+    # without a write_util grant the hint routes to escalation, not self-repair
+    from rsched.grants import GrantPolicy
+
+    obs2 = do_util({"kind": "util", "name": "boomer", "args": []}, _ctx(tmp_path, GrantPolicy()))
+    assert "cannot revise utils" in obs2["hint"] and "corrected script" not in obs2["hint"]

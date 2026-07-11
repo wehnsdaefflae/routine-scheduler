@@ -30,9 +30,11 @@ DEFAULT_BUDGETS = {
 }
 # The standards a new routine gets when its routine.yaml names no explicit `fragments:` list:
 # the always-useful base (ask policy, tool use, memory, fact-checking) plus the five after-run
-# improvement passes. `communication` is available but opt-in (it needs a Discord util).
-DEFAULT_FRAGMENTS = ["ask-policy", "global-utils", "ledger-discipline", "web-research",
-                     "improve-bugfix", "improve-research", "improve-features",
+# improvement passes. Fragments also carry the routine's GRANTS (see grants.py):
+# `util-authoring` is in the default so a new routine can write utils with user approval —
+# the behavior routines always had. `communication` (grants the discord util) stays opt-in.
+DEFAULT_FRAGMENTS = ["ask-policy", "global-utils", "util-authoring", "ledger-discipline",
+                     "web-research", "improve-bugfix", "improve-research", "improve-features",
                      "improve-ui", "improve-efficiency"]
 # Each routine picks its own three models: the MAIN orchestrator loop, the model spawned
 # SUBROUTINEs run their main loop on, and the model TOOL_CALLs (the `llm` action) use.
@@ -102,7 +104,6 @@ class ServerConfig(_Config):
     source_repo: HomePath = Field(default_factory=lambda: Path(__file__).resolve().parents[2])
     source_remote: BlankableStr = ""     # optional: push target for self-audit's autonomous code commits
     github_client_id: BlankableStr = ""  # OAuth app client_id for the in-UI device flow (default: gh CLI's)
-    confirm_util_changes: bool = True    # ask the user before a util is created/revised (req 7)
     max_concurrent_runs: int = 2
     registry_rescan_s: int = 30
     endpoints: dict[str, EndpointConfig] = Field(default_factory=dict)
@@ -196,17 +197,13 @@ class RoutineConfig(_Config):
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
     models: dict[str, ModelRef] = Field(default_factory=dict)  # main/subroutine/tool_call
     budgets: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_BUDGETS))
-    # Fragments are the source of truth for a routine's standards. An explicit list wins;
-    # otherwise a new routine gets the default set.
+    # Fragments are the source of truth for a routine's standards AND its granted
+    # capabilities (the grants are machine-read from the LIBRARY copies — see grants.py).
+    # An explicit list wins; otherwise a new routine gets the default set.
     fragments: list[str] = Field(default_factory=lambda: list(DEFAULT_FRAGMENTS))
     fs_read_roots: list[HomePath] = Field(default_factory=list)
     fs_write_roots: list[HomePath] = Field(default_factory=list)
-    confirm_util_changes: bool | None = None  # None = inherit the server default
     keep_runs: int = Field(30, validation_alias=AliasPath("retention", "keep_runs"))
-
-    def confirm_utils(self, server: ServerConfig) -> bool:
-        return server.confirm_util_changes if self.confirm_util_changes is None \
-            else self.confirm_util_changes
 
     @field_validator("cron")
     @classmethod

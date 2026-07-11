@@ -34,6 +34,22 @@ def test_harness_contract_mentions_the_load_bearing_facts(make_routine, tmp_path
         assert needle in text, needle
 
 
+def test_harness_contract_reflects_grants(make_routine, tmp_path):
+    """The contract tells the model what its grants allow: authoring denied without the
+    grant, and the confirm level (always / creations-only) spelled out with it."""
+    from rsched.grants import GrantPolicy
+
+    ctx = _ctx(make_routine, tmp_path, slug="granted")
+    ctx.grants = GrantPolicy()                       # nothing granted
+    text = harness_contract(ctx)
+    assert "NOT granted" in text and "util-authoring" in text
+    ctx.grants = GrantPolicy(actions=frozenset(["write_util"]), confirm="creations")
+    text2 = harness_contract(ctx)
+    assert "auto-approved once its selftest passes" in text2
+    ctx.grants = GrantPolicy(actions=frozenset(["write_util"]), confirm="always")
+    assert "needs the user's approval" in harness_contract(ctx)
+
+
 def test_state_digest_contents(make_routine, tmp_path):
     d = make_routine(slug="dig")
     (d / "state" / "phase.json").write_text('{"phase": "steady", "note": "n"}')

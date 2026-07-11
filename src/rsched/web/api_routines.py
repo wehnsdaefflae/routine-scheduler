@@ -106,7 +106,6 @@ def routine_detail(request: Request, slug: str) -> dict:
         **_card(request, info),
         "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
         "server_tz": schedule.server_tz(),
-        "confirm_util_changes": info.cfg.confirm_utils(server),
         "workflow_ref": {"slug": info.cfg.workflow_slug, "commit": info.cfg.workflow_commit},
         # Per-routine models (main/subroutine/tool_call). A kind left null falls back to the
         # server system_model, shown so the UI can label the effective model.
@@ -206,7 +205,6 @@ class RoutinePatch(BaseModel):
     enabled: bool | None = None
     schedule: dict | None = None            # {"friendly": {...}} — converted to cron server-side
     budgets: dict | None = None
-    confirm_util_changes: bool | None = None
     models: dict | None = None              # {main|subroutine|tool_call: {endpoint, model, effort?}}
     name: str | None = None
     description: str | None = None

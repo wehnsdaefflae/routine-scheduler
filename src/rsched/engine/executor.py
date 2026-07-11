@@ -54,14 +54,25 @@ def do_util(action: dict, ctx: RunContext) -> dict:
         entry = next((u for u in utils_lib.list_utils(home) if u["name"] == name), None)
         if entry and entry.get("usage"):
             obs["usage"] = entry["usage"]
+        # The repair route depends on the routine's grants: with util authoring, fix it in
+        # place; without, escalate — never let it silently work around a broken util.
+        if ctx.grants is None or ctx.grants.allows_kind("write_util"):
+            repair = (f'If the inputs were right, the util itself may be broken — read it with '
+                      f'{{"kind": "util", "name": "show", "args": ["{name}"]}}, fix it, and '
+                      f'write_util the corrected script (selftest-gated; the fix benefits every '
+                      f'routine). If the environment lacks something no script can install '
+                      f'(system packages, hardware), file a deferred ask_user so the operator '
+                      f'sees it.')
+        else:
+            repair = (f'If the inputs were right, the util itself may be broken — read it with '
+                      f'{{"kind": "util", "name": "show", "args": ["{name}"]}} to confirm, then '
+                      f'file a deferred ask_user naming the util, the failing call, and the '
+                      f'error (this routine has no util-authoring grant, so it cannot revise '
+                      f'utils itself). Never silently work around a broken util.')
         obs["hint"] = (
             f'call shape: every argument goes in `args` as a JSON array of strings, e.g. '
             f'{{"say": "…", "kind": "util", "name": "{name}", "args": ["<argument>", "--json"]}}. '
-            f'If the inputs were right, the util itself may be broken — read it with '
-            f'{{"kind": "util", "name": "show", "args": ["{name}"]}}, fix it, and write_util the '
-            f'corrected script (selftest-gated; the fix benefits every routine). If the '
-            f'environment lacks something no script can install (system packages, hardware), '
-            f'file a deferred ask_user so the operator sees it.')
+            + repair)
     return obs
 
 

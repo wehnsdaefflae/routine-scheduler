@@ -28,7 +28,6 @@ def test_deployed_config_keys_load_exactly(tmp_path):
         "routines_home": str(tmp_path / "routines"),
         "libraries_home": str(tmp_path / "libs"),
         "libraries_remote": "git@github.com:me/libs.git",
-        "confirm_util_changes": False,
         "max_concurrent_runs": 3,
         "registry_rescan_s": 15,
         "endpoints": {
@@ -44,7 +43,6 @@ def test_deployed_config_keys_load_exactly(tmp_path):
     assert server.routines_home == tmp_path / "routines"
     assert server.libraries_home == tmp_path / "libs"
     assert server.libraries_remote == "git@github.com:me/libs.git"
-    assert server.confirm_util_changes is False
     assert (server.max_concurrent_runs, server.registry_rescan_s) == (3, 15)
     ep = server.endpoints["openrouter"]
     assert ep.name == "openrouter" and ep.kind == "openai"
@@ -137,9 +135,8 @@ def test_routine_minimal_gets_defaults(tmp_path):
     assert problems == []
     assert cfg.slug == "testr" and cfg.name == "testr" and cfg.enabled is True
     assert cfg.budgets == DEFAULT_BUDGETS and cfg.fragments == DEFAULT_FRAGMENTS
+    assert "util-authoring" in cfg.fragments          # write_util grant is in the default set
     assert cfg.catchup == "skip" and cfg.keep_runs == 30
-    assert cfg.confirm_util_changes is None
-    assert cfg.confirm_utils(ServerConfig()) is True  # inherits the server default
 
 
 def test_routine_bad_values_reported_and_defaulted(tmp_path):

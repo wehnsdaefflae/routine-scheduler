@@ -14,13 +14,25 @@ from rsched.paths import atomic_write_json, read_json
 TS = "20260708-070000"
 
 
-def _server(routine_dir) -> ServerConfig:
+def _grant_fragment(server: ServerConfig, slug: str, grants_yaml: str) -> None:
+    """Drop a LIBRARY fragment carrying a grants: block — the only place grants are read."""
+    server.fragments_home.mkdir(parents=True, exist_ok=True)
+    (server.fragments_home / f"{slug}.md").write_text(
+        f"---\ntags: [a, b, c]\n{grants_yaml}\n---\n# fragment: {slug} — test grant\nbody\n",
+        encoding="utf-8")
+
+
+def _server(routine_dir, *, util_authoring: str | None = "false") -> ServerConfig:
     s = ServerConfig()
-    # hermetic: no library on disk → sub-workflows use the builtin fallback body;
-    # util actions on a missing name return a "missing" observation. confirm off so
-    # write_util tests don't block on approval.
-    s.libraries_home = routine_dir.parent.parent / "no-library"
-    s.confirm_util_changes = False
+    # hermetic: the library holds only what a test grants (no utils) → sub-workflows use the
+    # builtin fallback body; util actions on a missing name return a "missing" observation.
+    # write_util rides the util-authoring grant (active by default via DEFAULT_FRAGMENTS):
+    # confirm defaults to false here so write_util tests don't block on approval; pass
+    # util_authoring=None to leave write_util ungranted entirely.
+    s.libraries_home = routine_dir.parent.parent / "test-library"
+    if util_authoring is not None:
+        _grant_fragment(s, "util-authoring",
+                        f"grants:\n  actions: [util, write_util]\n  confirm: {util_authoring}")
     return s
 
 
@@ -270,8 +282,7 @@ def test_write_util_confirmation_declined(make_routine, scripted, monkeypatch):
     d = make_routine(slug="wuconfirm")
     qid = f"q-{TS}-1"
     atomic_write_json(d / "inbox" / f"answer-{qid}.json", {"qid": qid, "text": "decline"})
-    server = _server(d)
-    server.confirm_util_changes = True   # gate ON
+    server = _server(d, util_authoring="true")   # grant with approval gate ON
     ep = scripted([
         {"say": "Propose a util.", "kind": "write_util", "name": "risky", "content": "# x"},
         finish(status="partial", summary="util declined"),
@@ -282,6 +293,85 @@ def test_write_util_confirmation_declined(make_routine, scripted, monkeypatch):
     assert any(e["type"] == "question" for e in events)  # approval was requested (blocking)
     wu = next(e for e in events if e["type"] == "observation" and e["payload"]["kind"] == "write_util")
     assert wu["payload"]["declined"]
+
+
+def test_write_util_denied_without_grant(make_routine, scripted):
+    """No active fragment grants write_util → the call is rejected inside the schema-retry
+    cycle (naming the granting fragment), never becomes a turn, and the run continues."""
+    d = make_routine(slug="ungranted")
+    ep = scripted([
+        {"say": "Try to write a util.", "kind": "write_util", "name": "sneaky", "content": "# x"},
+        probe(),
+        finish(summary="worked within grants"),
+    ])
+    status, run_dir = run_routine(d, _server(d, util_authoring=None), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    errs = [e for e in events if e["type"] == "error"]
+    assert len(errs) == 1 and errs[0]["payload"]["where"] == "schema"
+    assert "util-authoring" in errs[0]["payload"]["message"]
+    obs_kinds = [e["payload"]["kind"] for e in events if e["type"] == "observation"]
+    assert "write_util" not in obs_kinds
+    assert "not granted" in ep.calls[1]["messages"][-1]["content"]   # the model was told why
+
+
+def test_write_util_autonomous_revisions(make_routine, scripted, monkeypatch):
+    """confirm: revisions-only — revising an existing util skips the approval round
+    (the selftest still gates the commit); the grants unit tests cover create-still-asks."""
+    import rsched.utils_lib as ul
+
+    monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
+    monkeypatch.setattr(ul, "exists", lambda home, name: True)          # a revision
+    monkeypatch.setattr(ul, "write_util_file", lambda home, name, content: None)
+    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (True, "selftest: ok"))
+    monkeypatch.setattr(ul, "git_commit", lambda home, msg: True)
+    d = make_routine(slug="wuauto")
+    ep = scripted([
+        {"say": "Fix it.", "kind": "write_util", "name": "adder", "content": "# fixed"},
+        finish(summary="revised without a question"),
+    ])
+    status, run_dir = run_routine(d, _server(d, util_authoring="revisions-only"), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    assert not any(e["type"] == "question" for e in events)             # no approval round
+    wu = next(e for e in events if e["type"] == "observation" and e["payload"]["kind"] == "write_util")
+    assert wu["payload"]["selftest_ok"] and wu["payload"]["created"] is False
+
+
+def test_gated_util_requires_its_fragment(make_routine, scripted):
+    """A util named in a library fragment's utils: grant is reserved — rejected while the
+    fragment is inactive, dispatched normally once the routine activates it."""
+    import yaml as _yaml
+
+    d = make_routine(slug="gated")
+    server = _server(d)
+    _grant_fragment(server, "communication", "grants:\n  utils: [discord]")
+    ep = scripted([
+        util("discord", ["send", "hi"]),          # communication not active → denied
+        probe(),
+        finish(),
+    ])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    errs = [e for e in events if e["type"] == "error"]
+    assert len(errs) == 1 and "communication" in errs[0]["payload"]["message"]
+    assert not any(e["type"] == "observation" and e["payload"].get("name") == "discord"
+                   for e in events)
+
+    # with the fragment ACTIVE the same call passes the gate and reaches the executor
+    d2 = make_routine(slug="gated2")
+    cfg = _yaml.safe_load((d2 / "routine.yaml").read_text())
+    cfg["fragments"] = ["communication"]
+    (d2 / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+    server2 = _server(d2)
+    _grant_fragment(server2, "communication", "grants:\n  utils: [discord]")
+    scripted([util("discord", ["send", "hi"]), finish()])
+    status2, run_dir2 = run_routine(d2, server2, run_ts=TS)
+    events2, _ = read_events(run_dir2 / "transcript.jsonl")
+    assert status2 == "ok"
+    obs = next(e for e in events2 if e["type"] == "observation")
+    assert obs["payload"]["kind"] == "util" and obs["payload"].get("missing") is True
 
 
 def test_invalid_json_retry_then_ok(make_routine, scripted):

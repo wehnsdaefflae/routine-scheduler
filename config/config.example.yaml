@@ -12,7 +12,9 @@ routines_home: ~/routines
 # shell). Set libraries_remote to clone-from / sync-to a repo.
 libraries_home: ~/.local/share/routine-scheduler-libraries
 libraries_remote: ""   # e.g. https://github.com/<you>/routine-scheduler-libraries.git
-confirm_util_changes: true   # ask the user to approve before a util is created/revised (req 7)
+# Whether a routine may create/revise utils — and whether that asks for approval — is NOT a
+# server switch: it comes from the routine's active fragments (util-authoring / -autonomous;
+# see docs/fragments.md).
 
 max_concurrent_runs: 2
 registry_rescan_s: 30
