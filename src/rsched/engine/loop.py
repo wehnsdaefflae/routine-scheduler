@@ -83,9 +83,14 @@ class EngineLoop:
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
         # Repeat-streak escape hatch: identical-but-valid actions in a row are the second
         # signature of provider grammar distortion (a model narrating "I keep forgetting args"
-        # while the grammar suppresses the field). At REPEAT_WARN the next completions run
+        # while the grammar suppresses the field). At REPEAT_WARN the next completion runs
         # schema-free; the contract in the system prompt still demands one JSON object.
+        # Once shedding has rescued the run twice, the diagnosis is settled for this model —
+        # the provider schema stays OFF for the rest of the run instead of re-triggering the
+        # suppression cycle on every fresh util call (~3 wasted turns each).
         self._shed_schema_turns = 0
+        self._sheds = 0
+        self._schema_off = False
         # Once the conversation has been archived to on-disk history, every turn reminds the model
         # to consult its index (compaction-proof — re-appended to the observation each turn).
         self._history_active = False
@@ -177,6 +182,14 @@ class EngineLoop:
                 text = format_observation(obs)
                 if REPEAT_WARN <= repeat_streak < REPEAT_FAIL:
                     self._shed_schema_turns = 1   # re-arms on every further repeat
+                    self._sheds += 1
+                    if self._sheds >= 2 and not self._schema_off:
+                        self._schema_off = True
+                        ctx.transcript.event("error", {
+                            "where": "schema", "attempt": 0,
+                            "message": "provider response-format disabled for the rest of the "
+                                       "run: repeat-streak shedding rescued it twice — the "
+                                       "grammar is suppressing fields for this model"})
                     text += (f"\n[ENGINE WARNING: this exact action has now run {repeat_streak} times "
                              f"in a row — {REPEAT_FAIL} identical actions fail the run. Change course. "
                              "The structured-output constraint is lifted for your next reply: emit ONE "
@@ -256,7 +269,7 @@ class EngineLoop:
         ctx.main_model = f"{ref.endpoint}/{ref.model}"     # surfaced in status.json; updates on a switch
         self._compact_if_needed(endpoint, ref)
         usage_sum = {"in": 0, "out": 0}
-        schema = ACTION_SCHEMA
+        schema = None if self._schema_off else ACTION_SCHEMA
         if self._shed_schema_turns > 0:
             self._shed_schema_turns -= 1
             schema = None

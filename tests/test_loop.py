@@ -751,3 +751,23 @@ def test_repeat_warn_sheds_provider_schema(make_routine, scripted):
     assert warned                                  # the WARN nudge announced the lift
     assert ep.calls[3]["schema"] is None           # completion after WARN ran schema-free
     assert ep.calls[4]["schema"] is not None       # ...and the constraint returns after the window
+
+
+def test_second_shed_disables_provider_schema_for_the_run(make_routine, scripted):
+    """Two repeat-streak rescues settle the diagnosis: the provider grammar stays off for
+    the rest of the run instead of re-triggering the suppression cycle per util call."""
+    a = util("git-log", say="A.")
+    b = util("dir-tree", say="B.")
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        dict(a), dict(a), dict(a),                       # streak 1 → shed #1
+        util("git-log", args=["--stat"], say="A ok."),
+        dict(b), dict(b), dict(b),                       # streak 2 → shed #2 → sticky off
+        util("dir-tree", args=["/tmp"], say="B ok."),
+        util("pytest-run", args=["/x"], say="C."),
+        finish(),
+    ])
+    assert status == "ok"
+    assert ep.calls[-1]["schema"] is None                # still off at the final completion
+    note = [e for e in events if e["type"] == "error"
+            and "disabled for the rest of the run" in e["payload"].get("message", "")]
+    assert len(note) == 1
