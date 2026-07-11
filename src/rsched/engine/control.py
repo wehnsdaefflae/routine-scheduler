@@ -23,7 +23,8 @@ def request_abort() -> None:
 
 
 class RunAborted(Exception):
-    pass
+    """Raised at a turn boundary when an abort was requested (signal or control.json);
+    the loop catches it to finish the run as `aborted`."""
 
 
 def pause_gate(loop, poll_s: float) -> None:

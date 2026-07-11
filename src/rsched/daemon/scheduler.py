@@ -28,6 +28,10 @@ def _now() -> datetime:
 
 
 class Scheduler:
+    """The cron heart: rescans the catalog, computes next fires (croniter, per-routine
+    tz + catchup policy), hands due routines to the Runner, and snapshots its state for
+    the UI."""
+
     def __init__(self, server: ServerConfig, runner: Runner, bus: EventBus):
         self.server = server
         self.runner = runner

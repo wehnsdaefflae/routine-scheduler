@@ -24,6 +24,10 @@ _RF_ERROR_HINTS = ("response_format", "json_schema", "structured", "structured_o
 
 
 class OpenAICompatEndpoint:
+    """Adapter for every OpenAI-compatible chat API — OpenRouter, Featherless, vLLM,
+    Ollama, OpenAI itself. `extra_body` merges into each request (aggregator routing);
+    rejected `response_format`/`reasoning` fields get one degraded retry."""
+
     def __init__(self, cfg: EndpointConfig):
         self.name = cfg.name
         self.base_url = cfg.base_url.rstrip("/")

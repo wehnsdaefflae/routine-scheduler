@@ -25,6 +25,9 @@ GZIP_AFTER_RUNS = 5  # transcripts older than the N most recent runs get gzipped
 
 @dataclass
 class RunInfo:
+    """One run as read off disk (`runs/<ts>/status.json`) — the registry never asks the
+    engine process; the filesystem is the interface."""
+
     run_id: str
     ts: str
     dir: Path
@@ -40,6 +43,9 @@ class RunInfo:
 
 @dataclass
 class RoutineInfo:
+    """A routine plus its recent runs and open questions — one catalog entry, rebuilt
+    from the filesystem on every rescan (no cache, no database)."""
+
     cfg: RoutineConfig
     problems: list[str]
     runs: list[RunInfo]                  # newest first

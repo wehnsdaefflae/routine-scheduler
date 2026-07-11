@@ -38,6 +38,9 @@ def engine_cmd(slug: str, run_ts: str, *, resume: bool = False) -> list[str]:
 
 @dataclass
 class ActiveRun:
+    """A run the daemon tracks: queued for a slot, running as a subprocess, or parked on
+    a user question (a parked run releases its slot — `holds_slot`)."""
+
     slug: str
     run_id: str
     run_ts: str
@@ -47,6 +50,10 @@ class ActiveRun:
 
 
 class Runner:
+    """Spawns and supervises one `engine-run` subprocess per firing routine — never two
+    of the same routine at once, `max_concurrent_runs` slots overall, plus the drain mode
+    a self-update restart uses to quiesce without killing active runs."""
+
     def __init__(self, server: ServerConfig, bus: EventBus):
         self.server = server
         self.bus = bus

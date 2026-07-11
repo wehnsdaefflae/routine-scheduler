@@ -40,6 +40,9 @@ FALLBACK_SUB_BODY = """## Run flow
 
 @dataclass
 class Subrun:
+    """One spawned child: its own RunContext + EngineLoop running in a thread, tracked
+    until its exit is announced to the parent and its usage folded in."""
+
     n: int
     label: str
     workflow: str
@@ -56,6 +59,10 @@ class Subrun:
 
 
 class SubrunManager:
+    """The parent loop's window onto its children: spawn (materialize a child routine on
+    disk, budget-halved, ≤4 parallel), monitor (`subruns`/`wait`), `kill`, auto-announce
+    exits at turn boundaries — children never outlive the parent."""
+
     def __init__(self, parent_loop):
         self.parent = parent_loop
         self.subruns: dict[int, Subrun] = {}

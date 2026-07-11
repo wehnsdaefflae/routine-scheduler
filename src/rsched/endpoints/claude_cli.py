@@ -122,6 +122,10 @@ def parse_result(stdout_text: str, want_json: bool) -> tuple[str, dict | None, d
 
 
 class ClaudeCliEndpoint:
+    """`claude -p` fully stripped (tools off, no MCP/settings/session, our system prompt
+    replacing its own) — a SUBSCRIPTION-billed completion function. Metered-auth env vars
+    are scrubbed so it can never silently fall back to API billing."""
+
     def __init__(self, cfg: EndpointConfig):
         self.name = cfg.name
         self.credentials_env = cfg.credentials_env

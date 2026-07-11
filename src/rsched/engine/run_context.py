@@ -19,6 +19,9 @@ from .transcript import Transcript
 
 @dataclass
 class Budgets:
+    """A run's hard ceilings (turns, wall clock, tokens, subruns, ask timeout) — checked
+    at every turn boundary; children get half the parent's remainder."""
+
     max_turns: int
     max_wall_clock_min: int
     max_total_tokens: int
@@ -33,6 +36,10 @@ class Budgets:
 
 @dataclass
 class RunContext:
+    """Everything one run carries: identity (routine, ts, dir), collaborators (registry,
+    transcript), budgets, and live state mirrored to `status.json` (single writer: the
+    engine process)."""
+
     routine: RoutineConfig
     server: ServerConfig
     registry: EndpointRegistry

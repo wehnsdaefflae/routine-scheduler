@@ -31,6 +31,10 @@ def make_endpoint(cfg: EndpointConfig) -> ChatEndpoint:
 
 
 class EndpointRegistry:
+    """Lazily instantiates and caches adapters by config name, and resolves which
+    (endpoint, model) serves a given role — a routine's main/subroutine/tool_call or the
+    server's system model."""
+
     def __init__(self, server: ServerConfig):
         self.server = server
         self._cache: dict[str, ChatEndpoint] = {}

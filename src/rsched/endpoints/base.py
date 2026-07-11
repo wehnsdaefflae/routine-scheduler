@@ -19,6 +19,9 @@ DEFAULT_MAX_TOKENS = 8192
 
 
 class EndpointError(Exception):
+    """A transport failure. `retryable` feeds the with_retries backoff; `auth` lets the
+    UI say "check the key" instead of a bare error."""
+
     def __init__(self, message: str, *, retryable: bool = False, auth: bool = False):
         super().__init__(message)
         self.retryable = retryable
@@ -27,6 +30,9 @@ class EndpointError(Exception):
 
 @dataclass
 class Completion:
+    """One whole model reply: raw text, the natively schema-parsed object when the
+    endpoint produced one, token usage, and the serving provider when reported."""
+
     text: str                     # raw reply text ("" when only parsed content came back)
     parsed: dict | None = None    # object from the endpoint's native schema mode, if any
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
@@ -34,6 +40,9 @@ class Completion:
 
 
 class ChatEndpoint(Protocol):
+    """What every adapter implements: one stateless completion in, a Completion out.
+    No streaming, no state, no tools — endpoints are transports, never a second harness."""
+
     name: str
     context_chars: int
 

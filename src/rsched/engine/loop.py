@@ -46,6 +46,11 @@ __all__ = ["EngineLoop", "RunAborted", "request_abort", "POLL_S",
 
 
 class EngineLoop:
+    """The turn loop — the heart of a run. Each turn: budgets → pause gate → drain
+    injected messages → announce finished subruns → ONE valid JSON action from the model
+    (up to 3 schema retries) → dispatch → append the observation; repeat until `finish`.
+    Construct with `resume=True` to rehydrate a prior transcript and continue it."""
+
     def __init__(self, ctx: RunContext, workflow_body: str, instruction: str,
                  abort_event: threading.Event | None = None, fragments_text: str = "",
                  allowed_tools: list[str] | None = None, resume: bool = False):

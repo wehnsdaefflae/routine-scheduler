@@ -14,6 +14,9 @@ QUEUE_SIZE = 200
 
 
 class EventBus:
+    """Fire-and-forget pub/sub: bounded per-subscriber queues, oldest event dropped on
+    overflow — a slow browser never backs up the daemon."""
+
     def __init__(self) -> None:
         self._subscribers: set[asyncio.Queue] = set()
 

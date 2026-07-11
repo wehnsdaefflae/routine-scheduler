@@ -31,6 +31,9 @@ def merge_consecutive(messages: list[Message]) -> list[Message]:
 
 
 class AnthropicEndpoint:
+    """Anthropic Messages API adapter — METERED per-token billing. Schema enforcement via
+    a single forced tool-use; effort via `output_config`, degraded on a 400 naming it."""
+
     def __init__(self, cfg: EndpointConfig):
         self.name = cfg.name
         self.base_url = (cfg.base_url or "https://api.anthropic.com").rstrip("/")

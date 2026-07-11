@@ -57,6 +57,8 @@ class _Config(BaseModel):
 
 
 class EndpointConfig(_Config):
+    """One configured model transport (see docs/endpoints.md for the setup guide)."""
+
     name: str = ""  # filled from the `endpoints:` mapping key
     kind: EndpointKind
     base_url: BlankableStr = ""
@@ -76,12 +78,19 @@ class EndpointConfig(_Config):
 
 @dataclass
 class ModelRef:
+    """A model assignment: which endpoint serves it, the provider's model id, and an
+    optional reasoning-effort hint the adapters map to their provider's knob."""
+
     endpoint: str
     model: str
     effort: str | None = None
 
 
 class ServerConfig(_Config):
+    """The instance config (`~/.config/routine-scheduler/config.yaml`): bind/auth, the
+    homes (routines, the one library repo, this source repo), endpoints, and the single
+    system model for pre-routine machine work."""
+
     bind: str = "127.0.0.1"
     port: int = 8321
     token: BlankableStr = ""
@@ -168,6 +177,10 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
 
 
 class RoutineConfig(_Config):
+    """One routine's `routine.yaml`: schedule, models (main/subroutine/tool_call),
+    budgets, active fragments, filesystem roots, and retention. The instruction and
+    workflow live next to it as `instruction.md` / `main.md`."""
+
     slug: str
     dir: Path
     name: BlankableStr = ""
