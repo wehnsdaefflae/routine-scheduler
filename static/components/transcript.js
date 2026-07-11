@@ -46,6 +46,7 @@ export function createTranscript(container) {
     let text;
     if (o.kind === "util") {
       text = o.missing ? `util "${o.name}" does not exist (available: ${(o.available || []).join(", ")})`
+        : o.listing != null ? `util catalog\n${o.listing}`
         : `${o.name} → exit ${o.exit}\n${o.stdout || ""}${o.stderr ? `\n[stderr] ${o.stderr}` : ""}`;
     } else if (o.kind === "write_util") {
       text = o.pending_approval ? `write_util "${o.name}": awaiting user approval`
