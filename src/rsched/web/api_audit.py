@@ -110,16 +110,22 @@ def _format_feedback(fb: Feedback) -> str:
     raise HTTPException(400, f"unknown feedback kind {fb.kind!r}")
 
 
+def write_feedback(routine_dir, body: Feedback) -> None:
+    """Format + drop one feedback message into the self-audit inbox (shared with the
+    Decisions page, which answers audit decisions through the same channel).
+    Unique suffix: now_iso() is only second-resolution, so several submissions in the
+    same second would otherwise share a filename and clobber each other."""
+    text = _format_feedback(body)
+    fname = f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json"
+    atomic_write_json(routine_dir / "inbox" / fname,
+                      {"text": text, "ts": now_iso(), "via": "web-audit"})
+
+
 @router.post("/audit/feedback")
 def audit_feedback(request: Request, body: Feedback) -> dict:
     routine_dir = _routine_dir(request)
     if not routine_dir.is_dir():
         raise HTTPException(404, "the self-audit routine is not set up yet")
-    text = _format_feedback(body)
-    # unique suffix: now_iso() is only second-resolution, so several submissions in the same
-    # second would otherwise share a filename and clobber each other (lost feedback).
-    fname = f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json"
-    atomic_write_json(routine_dir / "inbox" / fname,
-                      {"text": text, "ts": now_iso(), "via": "web-audit"})
+    write_feedback(routine_dir, body)
     active = request.app.state.runner.is_active(SELF_AUDIT_SLUG)
     return {"ok": True, "delivery": "mid-run" if active else "next-run"}

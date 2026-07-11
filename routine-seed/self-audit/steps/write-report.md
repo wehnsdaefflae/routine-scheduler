@@ -10,7 +10,8 @@ Rewrite the report the Audit tab reads: `audit/report.json`. Exactly this shape:
                "title": "<short>", "detail": "<what & why; note if fixed this run>",
                "evidence": ["<run-id / path / log ref>", "..."]}],
  "decisions": [{"id": "D1", "title": "<short>", "detail": "<context>",
-                "options": ["<A>", "<B>", "leave as-is"]}]}
+                "options": ["<A>", "<B>", "leave as-is"],
+                "status": "open"}]}   # "open" | "settled" — settled stays for the record
 ```
 
 ## Do
@@ -19,9 +20,12 @@ Rewrite the report the Audit tab reads: `audit/report.json`. Exactly this shape:
 2. `since.commit` = the anchor's short hash (`''` on first run); `since.window` = the runs /
    routines / days you swept.
 3. `summary` = headline health + what you changed this run (commits) + decisions awaiting the user.
-4. Reflect reconciled reviewer feedback (tuned/closed findings; executed decisions).
-5. For each **pivotal** decision, also file a deferred `ask_user` so it hits the Questions inbox —
-   **respect the ask cap** (only the most consequential; don't spam).
+4. Reflect reconciled reviewer feedback (tuned/closed findings; executed decisions — set a
+   decision's `status` to `"settled"` once acted on; keep it in the report for the record).
+5. Decisions live in the report ONLY — the Decisions page surfaces every `"status": "open"`
+   decision automatically (meta badge). NEVER also file them as deferred `ask_user`: that
+   would double-surface them. `ask_user` remains for questions that are not report
+   decisions (mid-run clarifications).
 
 ## Next
 Write `state/phase.json` = `{"state": "request-restart"}` and read `steps/request-restart.md`.

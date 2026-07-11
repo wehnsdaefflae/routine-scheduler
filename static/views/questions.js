@@ -1,21 +1,45 @@
-// Decisions inbox: everything open across routines, blocking first. Keyboard-first —
-// the first pending question autofocuses, Enter submits, ↑/↓ (or Tab) move between
-// questions, and 1–9 pick a suggested option. Each question shows its routine, age,
-// blocking/deferred badge, and (when run-bound) the run with its LIVE state, so a stale
-// question left by a long-finished run is recognizable.
+// Decisions inbox: everything open across routines — blocking questions, deferred ones,
+// and the self-audit report's open decisions (meta badge) — in ONE answering surface.
+// Keyboard-first: the first pending item autofocuses, Enter submits, ↑/↓ move, 1–9 pick
+// an option. Toolbar: filter by kind or routine, sort by priority/age/routine.
+// Priority rank: blocking (a run is waiting) > meta (system-level) > deferred.
 
 import { api } from "/static/api.js";
 import { chip, el, emptyState, skeleton, toast, when } from "/static/util.js";
+
+const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["deferred", "Deferred"], ["meta", "Meta"]];
+const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest", "oldest"], ["routine", "routine"]];
+
+const rank = (q) => (q.mode === "blocking" ? 0 : q.meta ? 1 : 2);
+const kindOf = (q) => (q.meta ? "meta" : q.mode);
 
 export async function render(view) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
       el("div", { class: "kicker" }, "console / decisions"),
       el("h1", {}, "Decisions"),
-      el("div", { class: "sub" }, "answers the routines need from you — blocking ones first")),
+      el("div", { class: "sub" }, "answers the routines need from you — one inbox, blocking first")),
     el("div", { class: "kbd-hint" },
       el("kbd", {}, "↵"), " answer · ", el("kbd", {}, "↑"), el("kbd", {}, "↓"), " move · ",
       el("kbd", {}, "1"), "–", el("kbd", {}, "9"), " pick option")));
+
+  const state = { filter: "all", routine: "", sort: "priority", items: [] };
+
+  const filterChips = new Map();
+  const chipRow = el("div", { class: "row", style: "gap:6px" });
+  for (const [key, label] of FILTERS) {
+    const b = el("button", { class: "btn small" }, label);
+    b.onclick = () => { state.filter = key; renderList(); };
+    filterChips.set(key, b);
+    chipRow.append(b);
+  }
+  const routineSel = el("select", { class: "small" });
+  routineSel.onchange = () => { state.routine = routineSel.value; renderList(); };
+  const sortSel = el("select", { class: "small" });
+  for (const [key, label] of SORTS) sortSel.append(el("option", { value: key }, `sort: ${label}`));
+  sortSel.onchange = () => { state.sort = sortSel.value; renderList(); };
+  view.append(el("div", { class: "row mt toolbar", style: "gap:10px" }, chipRow, routineSel, sortSel));
+
   const list = el("div", { class: "mt" });
   list.append(skeleton(), skeleton());
   view.append(list);
@@ -27,20 +51,56 @@ export async function render(view) {
     if (input) { input.focus(); input.scrollIntoView({ block: "center", behavior: "smooth" }); }
   }
 
-  async function load({ focus = true } = {}) {
-    let qs;
-    try { qs = await api("/api/questions"); }
-    catch (err) { list.replaceChildren(emptyState("✕", "Couldn't load decisions", err.message)); return; }
-    qs.sort((a, b) => (a.mode === "blocking" ? -1 : 1) - (b.mode === "blocking" ? -1 : 1));
+  function visible() {
+    let qs = state.items;
+    if (state.filter !== "all") qs = qs.filter((q) => kindOf(q) === state.filter);
+    if (state.routine) qs = qs.filter((q) => q.routine === state.routine);
+    const byAsked = (a, b) => String(a.asked || "").localeCompare(String(b.asked || ""));
+    if (state.sort === "priority") qs = [...qs].sort((a, b) => rank(a) - rank(b) || byAsked(a, b));
+    else if (state.sort === "oldest") qs = [...qs].sort(byAsked);
+    else if (state.sort === "newest") qs = [...qs].sort((a, b) => byAsked(b, a));
+    else if (state.sort === "routine") {
+      qs = [...qs].sort((a, b) =>
+        a.routine.localeCompare(b.routine) || rank(a) - rank(b) || byAsked(a, b));
+    }
+    return qs;
+  }
+
+  function syncToolbar() {
+    const counts = { all: state.items.length };
+    for (const q of state.items) counts[kindOf(q)] = (counts[kindOf(q)] || 0) + 1;
+    for (const [key, b] of filterChips) {
+      const n = counts[key] || 0;
+      b.textContent = `${FILTERS.find(([k]) => k === key)[1]} · ${n}`;
+      b.classList.toggle("primary", state.filter === key);
+      b.disabled = key !== "all" && n === 0;
+    }
+    const routines = [...new Set(state.items.map((q) => q.routine))].sort();
+    routineSel.replaceChildren(el("option", { value: "" }, "all routines"),
+      ...routines.map((r) => el("option", { value: r }, r)));
+    routineSel.value = routines.includes(state.routine) ? state.routine : "";
+  }
+
+  function renderList({ focus = false } = {}) {
+    syncToolbar();
     inputs.length = 0;
     list.replaceChildren();
+    const qs = visible();
     if (!qs.length) {
-      list.append(emptyState("✓", "No decisions to make right now",
-        "The routines are self-sufficient. Blocking questions pause their run here; deferred ones wait for the next run."));
+      list.append(state.items.length
+        ? emptyState("◌", "Nothing matches this filter", "Widen the filter above — there are open items elsewhere.")
+        : emptyState("✓", "No decisions to make right now",
+            "The routines are self-sufficient. Blocking questions pause their run here; deferred and meta ones wait for the next run."));
       return;
     }
     qs.forEach((q, i) => list.append(item(q, i)));
     if (focus) focusAt(0);
+  }
+
+  async function load({ focus = true } = {}) {
+    try { state.items = await api("/api/questions"); }
+    catch (err) { list.replaceChildren(emptyState("✕", "Couldn't load decisions", err.message)); return; }
+    renderList({ focus });
   }
 
   function item(q, index) {
@@ -53,13 +113,17 @@ export async function render(view) {
       send.disabled = true;
       try {
         await api(`/api/questions/${q.qid}/answer`, { method: "POST", body: { text: input.value } });
-        toast(q.mode === "blocking" ? "answered — the run resumes" : "answered — the next run picks it up");
+        toast(q.mode === "blocking" ? "answered — the run resumes"
+          : q.meta ? "recorded — the next self-audit run acts on it"
+          : "answered — the next run picks it up");
         // Mark answered in place: a deferred question's pending file is only consumed when its
         // routine next runs, so a reload would still list it — that would read as "didn't work".
         panel.classList.remove("warn");
         controls.replaceChildren(el("div", { class: "flow-note" },
           chip("answered · queued", "ok"),
           el("span", {}, `“${input.value.trim()}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run" : "next run"}`)));
+        state.items = state.items.filter((x) => x.qid !== q.qid);
+        syncToolbar();
         inputs.splice(inputs.indexOf(input), 1);
         focusAt(index);          // move on to the next open question
       } catch (err) { toast(err.message, 4000, { error: true }); send.disabled = false; }
@@ -87,6 +151,7 @@ export async function render(view) {
       el("div", { class: "row mt" }, input, send));
     const panel = el("div", { class: `panel question-item${q.mode === "blocking" ? " warn" : ""}` },
       el("div", { class: "q-meta" },
+        q.meta ? chip("meta", "meta") : null,
         chip(q.mode, q.mode),
         el("a", { href: `#/routine/${q.routine}` }, q.routine),
         q.asked ? el("span", {}, "asked ", when(q.asked)) : null,

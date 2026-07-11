@@ -174,6 +174,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 18px 22px 110px; }
 .chip.failed, .chip.error { color: var(--err); border-color: rgba(242, 105, 92, 0.4); background: rgba(242, 105, 92, 0.07); }
 .chip.aborted, .chip.partial { color: var(--warn); border-color: rgba(242, 193, 78, 0.28); background: rgba(242, 193, 78, 0.04); }
 .chip.idle, .chip.deferred { color: var(--muted); }
+.chip.meta { color: var(--amber); border-color: rgba(255, 176, 76, 0.45); background: rgba(255, 176, 76, 0.08); }
 .chip.disabled { color: var(--faint); border-color: var(--line); }
 .chip.loading { color: var(--faint); }
 .chip.loading::before { animation: pulse 1s infinite; }

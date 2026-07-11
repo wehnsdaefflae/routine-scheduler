@@ -673,3 +673,36 @@ def test_ui_trace_ingest_and_retention(client):
     c.post("/api/ui-trace", json={"events": [{"kind": "nav", "view": "log"}]})
     assert not stale.exists()                        # pruned on write
     assert c.post("/api/ui-trace", json={"events": []}).json()["recorded"] == 0
+
+
+def test_audit_decisions_merge_into_questions(client):
+    c, tmp = client
+    adir = tmp / "routines" / "self-audit" / "audit"
+    adir.mkdir(parents=True)
+    (tmp / "routines" / "self-audit" / "inbox").mkdir(exist_ok=True)
+    atomic_write_json(adir / "report.json", {
+        "generated": "2026-07-11T09:00:00+00:00",
+        "findings": [],
+        "decisions": [
+            {"id": "D1", "title": "Old one", "detail": "SETTLED by user: done.", "options": []},
+            {"id": "D2", "title": "Pick a path", "detail": "context", "status": "open",
+             "options": ["A", "B", "leave as-is"]},
+            {"id": "D3", "title": "Closed", "detail": "x", "status": "settled", "options": []},
+        ]})
+    qs = c.get("/api/questions").json()
+    metas = [q for q in qs if q.get("meta")]
+    assert [q["qid"] for q in metas] == ["audit:D2"]      # settled ones stay out of the inbox
+    q = metas[0]
+    assert q["routine"] == "self-audit" and q["options"] == ["A", "B", "leave as-is"]
+    assert "Pick a path" in q["question"]
+
+    # answering with an exact option → decision feedback with that choice in the inbox
+    r = c.post("/api/questions/audit:D2/answer", json={"text": "A"})
+    assert r.status_code == 200 and r.json()["meta"] is True
+    msgs = list((tmp / "routines" / "self-audit" / "inbox").glob("msg-*.json"))
+    assert len(msgs) == 1
+    assert read_json(msgs[0])["text"] == "[AUDIT decision · D2] selected: A"
+    # queued now → gone from the open list
+    assert not [q for q in c.get("/api/questions").json() if q.get("meta")]
+    # unknown decision → 404
+    assert c.post("/api/questions/audit:D9/answer", json={"text": "x"}).status_code == 404

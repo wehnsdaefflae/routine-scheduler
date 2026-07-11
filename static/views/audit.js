@@ -83,37 +83,21 @@ export async function render(view) {
         el("div", { style: "flex:1" }, note), saveBtn));
   }
 
-  function decisionPanel(d, queuedText) {
-    let selected = null;
-    const buttons = (d.options || []).map((o) => {
-      const b = el("button", { class: "btn small" }, o);
-      b.onclick = () => {
-        selected = selected === o ? null : o;
-        buttons.forEach((x) => x.classList.toggle("primary", x === b && selected === o));
-      };
-      return b;
-    });
-    const free = el("input", { type: "text", placeholder: "…or type your own answer", style: "flex:1" });
-    const sendBtn = el("button", { class: "btn small primary" }, queuedText ? "replace answer" : "submit");
-    sendBtn.onclick = async () => {
-      if (!selected && !free.value.trim()) { toast("pick an option or type an answer"); return; }
-      sendBtn.disabled = true;
-      try { await submit({ kind: "decision", target: d.id, choice: selected, text: free.value }, "decision recorded"); }
-      catch (err) { toast(err.message, 4000, { error: true }); }
-      finally { sendBtn.disabled = false; }
-    };
-    return el("div", { class: `panel mt${queuedText ? "" : " warn"}` },
-      el("div", { class: "row spread" },
-        el("div", { class: "row", style: "gap:9px" },
-          queuedText ? chip("answered · queued", "ok") : chip("open", "blocking"),
-          el("strong", { class: "prose" }, d.title || d.id)),
-        el("span", { class: "faint small" }, d.id)),
-      d.detail ? el("div", { class: "mt prose", style: "white-space:pre-wrap" }, d.detail) : null,
-      queuedText ? el("div", { class: "flow-note" },
-        el("span", { class: "arrow" }, "→"),
-        el("span", {}, `your answer is queued: ${queuedText}`)) : null,
-      el("div", { class: "row mt", style: "gap:8px" }, ...buttons),
-      el("div", { class: "row mt", style: "gap:8px" }, free, sendBtn));
+  // Decisions are ANSWERED on the Decisions page (one inbox, meta-badged) — here they
+  // only get a status line, since this page is the report, not the inbox.
+  function decisionsSummary(decisions, queuedDecisions) {
+    const isSettled = (d) => String(d.status || "").toLowerCase() === "settled"
+      || String(d.detail || "").trimStart().toUpperCase().startsWith("SETTLED");
+    const open = decisions.filter((d) => !queuedDecisions.has(d.id) && !isSettled(d)).length;
+    const queued = decisions.filter((d) => queuedDecisions.has(d.id)).length;
+    return el("div", {},
+      el("h2", {}, `Decisions · ${open} open / ${queued} queued / ${decisions.length} total`),
+      el("div", { class: "panel" }, el("div", { class: "flow-note" },
+        open
+          ? el("span", {}, `${open} decision${open === 1 ? "" : "s"} await${open === 1 ? "s" : ""} you — `)
+          : el("span", {}, "nothing awaits you — settled and queued decisions are recorded in the report. "),
+        open ? el("a", { class: "btn small", href: "#/questions" }, "answer on the Decisions page") : null,
+        el("span", {}, " Answers flow back to the next run as settled work orders."))));
   }
 
   function generalSection(routineSlug) {
@@ -195,11 +179,7 @@ export async function render(view) {
       body.append(findings.length ? el("div", {}, ...findings.map(findingPanel))
         : el("div", { class: "muted small", style: "padding:6px 0" }, "No findings this run — all clear."));
       const decisions = r.decisions || [];
-      if (decisions.length) {
-        const open = decisions.filter((d) => !queuedDecisions.has(d.id)).length;
-        body.append(el("h2", {}, `Decisions for you · ${open} open / ${decisions.length - open} answered`));
-        body.append(el("div", {}, ...decisions.map((d) => decisionPanel(d, queuedDecisions.get(d.id)))));
-      }
+      if (decisions.length) body.append(decisionsSummary(decisions, queuedDecisions));
     } else {
       body.append(data.last_run
         ? emptyState("▢", "No report from the last run",
