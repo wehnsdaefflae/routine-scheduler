@@ -11,4 +11,9 @@ for d in \
   mkdir -p "$d"
   chown mark:mark "$d" 2>/dev/null || true
 done
+# The gh device-flow token (mounted ~/.config/gh) is useless to git without the credential
+# helper glue — without it, every in-container push fails "could not read Username" while
+# host pushes work, and self-audit's commits strand locally.
+gosu mark sh -c 'command -v gh >/dev/null && gh auth status >/dev/null 2>&1 && gh auth setup-git 2>/dev/null' || true
+
 exec gosu mark "$@"
