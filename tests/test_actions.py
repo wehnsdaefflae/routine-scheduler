@@ -117,3 +117,13 @@ def test_normalize_action_strips_grammar_padding():
     # tool-call envelope unwraps to a flat action
     wrapped = normalize_action({"tool_name": "util", "parameters": {"say": "s", "name": "list"}})
     assert wrapped["kind"] == "util" and wrapped["name"] == "list"
+
+
+def test_every_kind_has_a_valid_example():
+    from rsched.engine.actions import ACTION_SCHEMA, KIND_EXAMPLES, KINDS, validate_action
+    from rsched.schema_guard import validate
+    assert set(KIND_EXAMPLES) == set(KINDS)
+    for kind, example in KIND_EXAMPLES.items():
+        assert example["kind"] == kind
+        problems = validate(example, ACTION_SCHEMA) or validate_action(example)
+        assert not problems, f"{kind}: {problems}"

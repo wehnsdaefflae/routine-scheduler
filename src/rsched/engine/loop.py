@@ -22,7 +22,7 @@ from ..endpoints.base import EndpointError
 from ..paths import read_json
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
 from . import executor, inbox, interact
-from .actions import ACTION_SCHEMA, BRIEF_FIELD, normalize_action, validate_action
+from .actions import ACTION_SCHEMA, BRIEF_FIELD, KIND_EXAMPLES, normalize_action, validate_action
 from .composer import build_system_prompt, format_observation, kickoff_message, state_digest
 from .control import (_ABORT, RunAborted, announce_finished_subruns, apply_model_switch,
                       drain_injections, pause_gate, request_abort)
@@ -249,6 +249,7 @@ class EngineLoop:
         self._compact_if_needed(endpoint, ref)
         usage_sum = {"in": 0, "out": 0}
         schema = ACTION_SCHEMA
+        prev_raw: str | None = None
         for attempt in range(1, MAX_SCHEMA_ATTEMPTS + 1):
             # Generous output cap: reasoning models need room to think AND answer — a
             # provider's small default can swallow the content entirely.
@@ -267,10 +268,13 @@ class EngineLoop:
                     schema = None
                 time.sleep(1.5 * attempt)
                 continue
+            kind_hint = None
             try:
                 candidate = (completion.parsed if completion.parsed is not None
                              else extract_json(completion.text))
                 candidate = normalize_action(candidate)
+                if isinstance(candidate, dict) and candidate.get("kind") in KIND_EXAMPLES:
+                    kind_hint = candidate["kind"]
                 problems = (validate(candidate, ACTION_SCHEMA)
                             or validate_action(candidate, allowed_kinds=self.allowed_tools))
                 if problems:
@@ -278,10 +282,13 @@ class EngineLoop:
                 return candidate, usage_sum
             except SchemaViolation as exc:
                 raw = completion.text or json.dumps(completion.parsed or {})
+                repeated = prev_raw is not None and raw.strip() == prev_raw.strip()
+                prev_raw = raw
                 ctx.transcript.event("error", {"where": "schema", "attempt": attempt,
                                                "message": str(exc)[:500], "raw": raw[:1500]})
                 self.messages.append({"role": "assistant", "content": raw[:4000]})
-                self.messages.append({"role": "user", "content": retry_message(exc.problems)})
+                self.messages.append({"role": "user", "content": retry_message(
+                    exc.problems, example=KIND_EXAMPLES.get(kind_hint), repeated=repeated)})
         return None, usage_sum
 
     def _compact_if_needed(self, endpoint, ref) -> None:

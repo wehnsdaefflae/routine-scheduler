@@ -78,7 +78,8 @@ def audit(request: Request) -> dict:
     if runs:
         r = runs[0]
         last_run = {"run_id": r.run_id, "ts": r.ts, "state": r.state, "summary": r.summary[:400]}
-    return {"exists": exists, "report": report, "changelog": changelog, "last_run": last_run,
+    return {"exists": exists, "routine": SELF_AUDIT_SLUG, "report": report,
+            "changelog": changelog, "last_run": last_run,
             "pending_feedback": _pending_feedback(routine_dir) if exists else []}
 
 

@@ -79,11 +79,17 @@ def parse_reply(text: str, schema: dict, semantic=None) -> dict:
     return obj
 
 
-def retry_message(problems: list[str]) -> str:
+def retry_message(problems: list[str], *, example: dict | None = None,
+                  repeated: bool = False) -> str:
     lines = "\n".join(f"- {p}" for p in problems)
-    return (
-        "Your previous reply was not a valid action:\n"
-        f"{lines}\n"
-        "Reply again with ONLY one JSON object matching the action schema — "
-        "no prose outside the JSON."
-    )
+    parts = ["Your previous reply was not a valid action:", lines]
+    if repeated:
+        parts.append("You returned the SAME invalid action again — do not repeat it; "
+                     "fix the problems listed above.")
+    if example:
+        parts.append(f"A valid kind={example.get('kind')} action has exactly this shape "
+                     "(no other top-level fields):\n"
+                     + json.dumps(example, ensure_ascii=False))
+    parts.append("Reply again with ONLY one JSON object matching the action schema — "
+                 "no prose outside the JSON.")
+    return "\n".join(parts)

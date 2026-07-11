@@ -86,6 +86,28 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "read_file": "path", "write
                "llm": "prompt", "spawn": "label", "kill": "n", "wait": "n",
                "ask_user": "question", "finish": "status"}
 
+# kind → a minimal VALID action, shown to the model when a reply fails validation. Weak
+# models merge payload keys into the action object (file bodies, finish fields at top
+# level); an abstract error alone often doesn't correct them — a concrete shape does.
+KIND_EXAMPLES: dict[str, dict] = {
+    "util": {"say": "<why this util now>", "kind": "util", "name": "list"},
+    "write_util": {"say": "<why a new util>", "kind": "write_util", "name": "my-util",
+                   "content": "<the complete PEP 723 script as ONE string>"},
+    "read_file": {"say": "<why this file>", "kind": "read_file", "path": "state/notes.md"},
+    "write_file": {"say": "<why this write>", "kind": "write_file", "path": "state/phase.json",
+                   "content": "<the ENTIRE file body as ONE string — e.g. \"{\\\"phase\\\": \\\"orient\\\"}\">"},
+    "llm": {"say": "<why delegate>", "kind": "llm", "prompt": "<the subtask prompt>"},
+    "spawn": {"say": "<why a child>", "kind": "spawn",
+              "prompt": "<self-contained instruction>", "label": "child-1"},
+    "subruns": {"say": "<why check children>", "kind": "subruns"},
+    "kill": {"say": "<why stop it>", "kind": "kill", "n": 1},
+    "wait": {"say": "<why block>", "kind": "wait"},
+    "ask_user": {"say": "<why ask>", "kind": "ask_user",
+                 "question": "<one self-contained question>", "mode": "deferred"},
+    "finish": {"say": "<what was achieved>", "kind": "finish", "status": "ok",
+               "summary": "<3-10 line result summary>"},
+}
+
 # kind → (required fields, allowed extra fields beyond say/kind)
 _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s")),

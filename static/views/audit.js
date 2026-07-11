@@ -116,26 +116,42 @@ export async function render(view) {
       el("div", { class: "row mt", style: "gap:8px" }, free, sendBtn));
   }
 
-  function generalSection() {
+  function generalSection(routineSlug) {
     const box = el("textarea", { class: "code",
       placeholder: "e.g. “add structured logging to the daemon runner”, or a priority/direction — a free-text prompt for the next self-audit run to act on" });
     const send = el("button", { class: "btn primary mt" }, "send to the next run");
     send.onclick = async () => {
       if (!box.value.trim()) return;
       send.disabled = true;
-      try { await submit({ kind: "general", text: box.value }, "prompt sent"); }
+      try { await submit({ kind: "general", text: box.value }, "prompt sent"); box.value = ""; }
       catch (err) { toast(err.message, 4000, { error: true }); }
       finally { send.disabled = false; }
+    };
+    // Fires self-audit immediately; an unsent note is delivered first so it isn't lost —
+    // the fresh run drains the inbox at boot and reads it.
+    const runNow = el("button", { class: "btn mt" }, "▶ run self-audit now");
+    runNow.onclick = async () => {
+      runNow.disabled = send.disabled = true;
+      try {
+        if (box.value.trim()) {
+          await submit({ kind: "general", text: box.value }, "prompt sent");
+          box.value = "";
+        }
+        const r = await api(`/api/routines/${routineSlug}/run`, { method: "POST" });
+        toast("self-audit started");
+        location.hash = `#/run/${r.run_id}`;
+      } catch (err) { toast(err.message, 5000, { error: true }); }
+      finally { runNow.disabled = send.disabled = false; }
     };
     return el("div", {}, el("h2", {}, "Note for the next run"),
       el("div", { class: "panel" },
         el("div", { class: "muted small", style: "margin-bottom:8px" },
           "a prompt the self-audit routine reads on its next run — code changes to make, priorities, or anything not tied to a finding/decision above"),
-        box, el("div", { class: "row" }, send),
+        box, el("div", { class: "row", style: "gap:8px" }, send, runNow),
         el("div", { class: "flow-note" },
           el("span", {}, "submit"), el("span", { class: "arrow" }, "→"),
           el("span", {}, "routine inbox"), el("span", { class: "arrow" }, "→"),
-          el("span", {}, "consumed at the start of the next self-audit run"))));
+          el("span", {}, "consumed at the start of the next self-audit run — or immediately via ▶"))));
   }
 
   // ---- load ----------------------------------------------------------------
@@ -193,7 +209,7 @@ export async function render(view) {
     }
 
     // The note field is always available while the routine exists — leave a prompt any time.
-    body.append(generalSection());
+    body.append(generalSection(data.routine));
   }
 
   await load();

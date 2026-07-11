@@ -649,3 +649,22 @@ def test_pause_gate(make_routine, scripted):
     assert status == "ok"
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert types(events)[-1] == "finish"
+
+
+def test_retry_shows_kind_example_and_repeat_notice(make_routine, scripted):
+    """A payload-merged write_file (the glm-5.2 failure shape: file keys at top level,
+    no content) gets a retry message carrying a concrete kind example; returning the
+    identical action again adds the do-not-repeat escalation."""
+    bad = {"say": "writing phase", "kind": "write_file", "path": "state/phase.json",
+           "status": "ok", "summary": "phase = orient", "workflow": "self-audit"}
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        dict(bad), dict(bad), write_file("state/phase.json", '{"phase": "orient"}'),
+        finish(),
+    ])
+    assert status == "ok"
+    first_retry = ep.calls[1]["messages"][-1]["content"]
+    assert '"kind": "write_file"' in first_retry          # the concrete example
+    assert "ENTIRE file body" in first_retry
+    assert "SAME invalid action" not in first_retry       # not yet a repeat
+    second_retry = ep.calls[2]["messages"][-1]["content"]
+    assert "SAME invalid action" in second_retry

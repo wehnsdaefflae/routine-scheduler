@@ -222,7 +222,8 @@ def test_audit_report_and_feedback(client):
     c, tmp = client
     routines = tmp / "routines"
     # no self-audit routine yet → friendly empty payload
-    assert c.get("/api/audit").json() == {"exists": False, "report": None, "changelog": [],
+    assert c.get("/api/audit").json() == {"exists": False, "routine": "self-audit",
+                                          "report": None, "changelog": [],
                                           "last_run": None, "pending_feedback": []}
 
     adir = routines / "self-audit" / "audit"
@@ -643,3 +644,10 @@ def test_static_and_index_are_no_cache(client):
         r = c.get(path)
         assert r.status_code == 200
         assert r.headers.get("cache-control") == "no-cache"
+
+
+def test_audit_reports_routine_slug(client):
+    c, _ = client
+    r = c.get("/api/audit")
+    assert r.status_code == 200
+    assert r.json()["routine"] == "self-audit"
