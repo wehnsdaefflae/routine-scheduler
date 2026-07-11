@@ -84,6 +84,8 @@ class RunContext:
     def add_usage(self, usage: dict) -> None:
         self.usage["in"] += int(usage.get("in") or 0)
         self.usage["out"] += int(usage.get("out") or 0)
+        if usage.get("cost"):   # real $ cost, when the provider reports it (OpenRouter)
+            self.usage["cost"] = round(self.usage.get("cost", 0.0) + float(usage["cost"]), 6)
 
     def note_schema_retry(self) -> None:
         """Telemetry: one schema-violation retry occurred this turn."""

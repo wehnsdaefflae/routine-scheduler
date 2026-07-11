@@ -830,3 +830,46 @@ def test_no_health_event_on_ok_finish(make_routine, scripted, tmp_path):
     assert status == "ok"
     health_path = tmp_path / "routines" / ".control" / "health-events.jsonl"
     assert not health_path.exists()
+
+
+def test_compaction_antithrash(make_routine, monkeypatch):
+    """Head + tail are an incompressible floor: once the middle is a handful of messages, or
+    the prompt hasn't grown since the last archive, _compact_if_needed must SKIP — each attempt
+    costs a full-prompt LLM call (seen live: 4 compactions/run, the last saving 5k chars)."""
+    from rsched.config import load_routine
+    from rsched.engine.loop import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, EngineLoop
+    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.transcript import Transcript
+    import rsched.engine.loop as loop_mod
+
+    d = make_routine(slug="cmp")
+    run_dir = d / "runs" / TS
+    run_dir.mkdir(parents=True)
+    cfg, _ = load_routine(d)
+    ctx = RunContext(routine=cfg, server=_server(d), registry=None, run_ts=TS, run_dir=run_dir,
+                     transcript=Transcript(run_dir / "transcript.jsonl"),
+                     budgets=Budgets.from_config(cfg.budgets))
+    loop = EngineLoop(ctx, "## Run flow", "instr")
+    attempts = []
+    monkeypatch.setattr(loop_mod, "compact_to_history",
+                        lambda *a, **k: attempts.append(1) or None)   # None → digest fallback
+
+    class _Tiny:
+        context_chars = 1000   # so the 60% size trigger always fires for our messages
+
+    msg = {"role": "user", "content": "x" * 500}
+    loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]
+    loop._compact_if_needed(_Tiny(), None)
+    assert attempts, "a large middle over the cap must compact"
+    assert len(loop.messages) == KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 1   # head + digest + tail
+    assert loop._last_compact_after > 0
+
+    attempts.clear()
+    loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 3)]  # middle = 3
+    loop._compact_if_needed(_Tiny(), None)
+    assert not attempts, "a tiny middle must not re-trigger compaction"
+
+    loop._last_compact_after = 10**9   # as if the last archive already left us this size
+    loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]
+    loop._compact_if_needed(_Tiny(), None)
+    assert not attempts, "no meaningful growth since the last archive → skip"

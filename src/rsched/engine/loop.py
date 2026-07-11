@@ -86,6 +86,7 @@ class EngineLoop:
         # Once the conversation has been archived to on-disk history, every turn reminds the model
         # to consult its index (compaction-proof — re-appended to the observation each turn).
         self._history_active = False
+        self._last_compact_after = 0   # post-compaction size; gates re-compaction (anti-thrash)
         try:
             hist_rel = str((ctx.run_dir / "history").relative_to(ctx.routine.dir))
         except ValueError:
@@ -283,6 +284,9 @@ class EngineLoop:
                                            max_tokens=16_384)
             usage_sum["in"] += completion.usage["in"]
             usage_sum["out"] += completion.usage["out"]
+            if completion.usage.get("cost"):
+                usage_sum["cost"] = round(usage_sum.get("cost", 0.0)
+                                          + float(completion.usage["cost"]), 6)
             if completion.provider:
                 # Aggregators route per request; attribution is what lets an audit correlate
                 # malformed actions with the serving provider, not the model.
@@ -345,6 +349,15 @@ class EngineLoop:
         if (size <= min(context_cap, budget_cap)
                 or len(self.messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS):
             return
+        # Anti-thrash: head + tail are an incompressible floor (large observations in the last
+        # 24 messages stay verbatim), so once the middle is a handful of messages — or the size
+        # hasn't grown meaningfully since the last archive — another pass can't win. Each
+        # attempt costs a full-prompt LLM call; wait until there is enough new middle to pay
+        # for one. (Seen live: 4 compactions in one run, the last archiving 3 messages for a
+        # 5k-char gain.)
+        middle_n = len(self.messages) - KEEP_HEAD_MSGS - KEEP_TAIL_MSGS
+        if middle_n < 8 or size < self._last_compact_after + 20_000:
+            return
         cinfo = None
         try:
             result = compact_to_history(self.messages, self.turn_records, endpoint, ref,
@@ -358,6 +371,7 @@ class EngineLoop:
         else:
             self.messages, cinfo = maybe_compact(self.messages, self.turn_records, endpoint.context_chars)
         if cinfo:
+            self._last_compact_after = messages_size(self.messages)
             ctx.transcript.event("compaction", cinfo)
 
     def _record_turn(self, action: dict) -> None:

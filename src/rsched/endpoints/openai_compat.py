@@ -76,6 +76,9 @@ class OpenAICompatEndpoint:
         if self.native and schema is not None:
             return self._complete_native(messages, model, schema, max_tokens, timeout)
         body: dict = {"model": model, "messages": messages, **self.extra_body}
+        if "openrouter" in self.base_url:
+            # usage accounting: the response's usage block then carries the real $ cost
+            body.setdefault("usage", {"include": True})
         if self.temperature is not None:
             body["temperature"] = self.temperature
         if max_tokens:
@@ -160,9 +163,8 @@ class OpenAICompatEndpoint:
             # content empty; the answer (or at least the JSON) often sits in `reasoning`.
             text = message.get("reasoning") or ""
         usage = data.get("usage") or {}
-        return Completion(
-            text=text,
-            usage={"in": int(usage.get("prompt_tokens") or 0),
-                   "out": int(usage.get("completion_tokens") or 0)},
-            provider=str(data.get("provider") or ""),
-        )
+        out = {"in": int(usage.get("prompt_tokens") or 0),
+               "out": int(usage.get("completion_tokens") or 0)}
+        if usage.get("cost") is not None:   # OpenRouter usage accounting → $ (credits)
+            out["cost"] = float(usage.get("cost") or 0)
+        return Completion(text=text, usage=out, provider=str(data.get("provider") or ""))
