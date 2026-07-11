@@ -115,6 +115,44 @@ def set_system_model(request: Request, body: SystemModelBody) -> dict:
     return {"ok": True, "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None}
 
 
+@router.get("/settings/endpoints/{name}/credits")
+async def endpoint_credits(request: Request, name: str) -> dict:
+    """Provider account balance, where the provider exposes one (OpenRouter today):
+    credits purchased minus usage → remaining. Never raises on provider trouble — the card
+    shows the error text instead."""
+    server = server_of(request)
+    ep = server.endpoints.get(name)
+    if ep is None:
+        raise HTTPException(404, f"no endpoint {name!r}")
+    if ep.kind != "openai" or "openrouter" not in ep.base_url:
+        return {"supported": False}
+
+    def call() -> dict:
+        import httpx
+
+        from ...endpoints.openai_compat import OpenAICompatEndpoint
+
+        key = OpenAICompatEndpoint(ep)._resolve_key()
+        try:
+            resp = httpx.get(f"{ep.base_url.rstrip('/')}/credits",
+                             headers={"Authorization": f"Bearer {key}"}, timeout=15)
+        except httpx.HTTPError as exc:
+            return {"supported": True, "ok": False, "error": str(exc)}
+        if resp.status_code != 200:
+            return {"supported": True, "ok": False,
+                    "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+        data = resp.json().get("data") or {}
+        total = float(data.get("total_credits") or 0)
+        used = float(data.get("total_usage") or 0)
+        return {"supported": True, "ok": True, "total": round(total, 4),
+                "used": round(used, 4), "remaining": round(total - used, 4)}
+
+    try:
+        return await asyncio.to_thread(call)
+    except EndpointError as exc:   # no key configured yet
+        return {"supported": True, "ok": False, "error": str(exc)}
+
+
 class TestBody(BaseModel):
     model: str
 

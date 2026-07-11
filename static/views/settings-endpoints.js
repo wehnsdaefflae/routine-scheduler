@@ -171,6 +171,23 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "context_chars"), ctxIn)),
       el("div", { class: "row" }, saveEdit));
 
+    // Account balance, for providers that expose one (OpenRouter) — loaded lazily per card.
+    const creditsRow = el("div", { class: "small muted", style: "margin-top:4px" });
+    if ((ep.base_url || "").includes("openrouter")) {
+      creditsRow.textContent = "credits: checking…";
+      api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}/credits`).then((c) => {
+        if (!c.supported) { creditsRow.replaceChildren(); return; }
+        creditsRow.replaceChildren(
+          c.ok
+            ? el("span", { style: "color:var(--ok)" },
+                `$${c.remaining.toFixed(2)} remaining (used $${c.used.toFixed(2)} of $${c.total.toFixed(2)})`)
+            : el("span", {}, `credits unavailable — ${c.error}`),
+          " · ",
+          el("a", { href: "https://openrouter.ai/settings/credits", target: "_blank",
+                    rel: "noopener" }, "manage credits ↗"));
+      }).catch(() => creditsRow.replaceChildren());
+    }
+
     return el("div", { class: "panel mt" },
       el("div", { class: "row spread" },
         el("div", {}, el("strong", {}, ep.name), " ", el("span", { class: "chip bare" }, ep.kind), " ",
@@ -178,6 +195,7 @@ export async function renderEndpoints(view) {
         delBtn),
       el("div", { class: "small" }, info.title),
       el("div", { class: "muted small", style: "margin-bottom:2px" }, info.hint),
+      creditsRow,
       keyRow,
       el("div", { class: "row mt" }, modelInput, testBtn),
       resultBox,
