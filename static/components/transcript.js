@@ -80,7 +80,9 @@ export function createTranscript(container) {
         `#${f.n} "${f.label}" finished (${f.status}, ${f.turns} turns):\n${f.summary}`)
         .join("\n\n") || (o.timed_out ? "wait timed out" : "nothing new finished"));
     } else if (o.kind === "ask_user") {
-      text = o.answered ? `answered: ${o.answer}` : o.timed_out ? "timed out → deferred" : "filed as deferred";
+      text = o.dialog ? `dialog reply (question stays open): ${o.user_message}`
+        : o.answered ? `answered: ${o.answer}`
+        : o.timed_out ? "timed out → deferred" : "filed as deferred";
     } else if (o.kind === "finish" && o.rejected) {
       text = "finish REJECTED — no action had been executed yet (fabrication guard)";
     } else {
@@ -96,7 +98,9 @@ export function createTranscript(container) {
     question: (ev) => el("div", { class: "ev question" },
       `❓ [${ev.payload.mode}] ${ev.payload.question}` +
       (ev.payload.options?.length ? ` — options: ${ev.payload.options.join(" | ")}` : "")),
-    answer: (ev) => el("div", { class: "ev answer" }, `✅ answer (${ev.payload.source}): ${ev.payload.text}`),
+    answer: (ev) => el("div", { class: "ev answer" }, ev.payload.intermediate
+      ? `💬 reply (${ev.payload.source}, dialog): ${ev.payload.text}`
+      : `✅ answer (${ev.payload.source}): ${ev.payload.text}`),
     error: (ev) => el("div", { class: "ev error" },
       `error (${ev.payload.where}${ev.payload.attempt ? `, attempt ${ev.payload.attempt}` : ""}): ${ev.payload.message}`),
     compaction: (ev) => el("div", { class: "ev compaction" },

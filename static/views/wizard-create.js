@@ -55,10 +55,15 @@ export async function stageSuggest(ctx, wid) {
   try { data = await api(`/api/wizard/${encodeURIComponent(wid)}/suggest`, { method: "POST" }); }
   catch (err) { ctx.stageError(wid, `clarify run ended without a result: ${err.message}`); return; }
   const wr = data.wizard_result;
+  // Editable: what stands in this box at "create routine" is what becomes instruction.md.
+  const instrTa = el("textarea", { class: "code", style: "min-height:220px" },
+    wr.refined_instruction);
   ctx.stage.replaceChildren(el("div", { class: "row spread" },
     el("h2", {}, "Refined instruction"),
     el("button", { class: "btn small danger", onclick: () => ctx.cancelSession(wid) }, "cancel setup")),
-    el("pre", { class: "doc" }, wr.refined_instruction));
+    el("div", { class: "muted small", style: "margin-bottom:4px" },
+      "editable — tweak anything before creating; this exact text becomes the routine's instruction"),
+    instrTa);
 
   const picked = { slug: data.suggestions[0]?.slug || "" };
   const picksRow = el("div", { class: "pick-row" });
@@ -112,6 +117,7 @@ export async function stageSuggest(ctx, wid) {
       const r = await api(`/api/wizard/${encodeURIComponent(wid)}/finalize`, { method: "POST", body: {
         slug: f.slug.value.trim(), name: f.name.value.trim() || f.slug.value.trim(),
         workflow_slug: picked.slug, friendly: sched.value(), run_now: runNow.checked,
+        instruction: instrTa.value,       // the (possibly edited) refined instruction
         tags: f.tags.value.split(",").map((t) => t.trim()).filter(Boolean),
         // fragments are recovered from the session meta on the backend (chosen on the draft page)
       }});

@@ -112,13 +112,15 @@ def wizard_transcript(request: Request, wid: str, offset: int = 0) -> dict:
 class AnswerBody(BaseModel):
     qid: str
     text: str
+    intermediate: bool = False   # dialog reply — the question stays open (see interact.handle_ask)
 
 
 @router.post("/wizard/{wid}/answer")
 def answer(request: Request, wid: str, body: AnswerBody) -> dict:
     d = _wizard_dir(request, wid)
     atomic_write_json(d / "inbox" / f"answer-{body.qid}.json",
-                      {"qid": body.qid, "text": body.text, "source": "wizard", "ts": now_iso()})
+                      {"qid": body.qid, "text": body.text, "source": "wizard",
+                       "intermediate": body.intermediate, "ts": now_iso()})
     return {"ok": True}
 
 
@@ -165,6 +167,7 @@ class FinalizeBody(BaseModel):
     slug: str
     name: str
     workflow_slug: str
+    instruction: str = ""         # user-edited refined instruction; empty = the clarifier's verbatim
     description: str = ""         # one-line UI summary; defaults to the clarifier's, then the name
     models: dict | None = None    # {main|subroutine|tool_call: {endpoint, model}} picked in the wizard
     friendly: dict = {}          # friendly schedule spec → cron + server tz
@@ -217,7 +220,8 @@ async def _build_routine(app_state, wid: str, d: Path, body: "FinalizeBody", res
         params = body.params or (result.get("params") if isinstance(result.get("params"), dict) else {})
         routine_dir = await asyncio.to_thread(
             scaffold, server, slug=body.slug, name=body.name,
-            instruction=result["refined_instruction"], workflow_slug=body.workflow_slug, cron=cron,
+            instruction=body.instruction.strip() or result["refined_instruction"],
+            workflow_slug=body.workflow_slug, cron=cron,
             tz=schedule.server_tz(), params=params, steps=steps, description=description,
             models=body.models, tags=normalize_tags(body.tags) or None, fragments=fragments)
     except Exception as exc:   # scaffold/decompose failure — the session stays so the user can retry

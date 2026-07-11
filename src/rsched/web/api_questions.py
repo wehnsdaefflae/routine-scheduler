@@ -79,6 +79,7 @@ def list_questions(request: Request) -> list[dict]:
 
 class Answer(BaseModel):
     text: str
+    intermediate: bool = False   # dialog reply to a BLOCKING question — it stays open
 
 
 @router.post("/questions/{qid}/answer")
@@ -102,5 +103,7 @@ def answer(request: Request, qid: str, body: Answer) -> dict:
         raise HTTPException(404, f"no open question {qid!r}")
     routine_dir = request.app.state.server.routines_home / match["routine"]
     atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json",
-                      {"qid": qid, "text": body.text, "source": "web", "ts": now_iso()})
+                      {"qid": qid, "text": body.text, "source": "web",
+                       "intermediate": body.intermediate and match["mode"] == "blocking",
+                       "ts": now_iso()})
     return {"ok": True, "routine": match["routine"], "mode": match["mode"]}

@@ -81,8 +81,11 @@ def snapshot(app_state, d: Path) -> dict:
     run = registry.read_run(d / "runs" / ts, d.name.lstrip(".")) if ts and (d / "runs" / ts).is_dir() else None
     state = run.state if run else "unknown"
     stage = "suggest" if has_result else ("error" if state in TERMINAL else "chat")
-    # only meaningful while clarifying — a dead pid there means the session is stuck (needs cancel)
-    alive = None if (stage != "chat" or run is None) else _pid_alive(run.pid)
+    # Only meaningful while clarifying — a DEAD pid there means the session is stuck (needs
+    # cancel). A missing pid is NOT death: the boot status (create_session) carries no pid
+    # until the engine takes over, and the pre-run decompose can hold that phase for a
+    # while — report unknown (None), never dead, or the UI shows a false "no longer running".
+    alive = _pid_alive(run.pid) if (stage == "chat" and run is not None and run.pid) else None
     return {"wid": d.name, "run_ts": ts, "created": meta.get("created", ""),
             "fragments": meta.get("fragments", []), "draft": draft_preview(d),
             "stage": stage, "state": state, "has_result": has_result,

@@ -52,7 +52,17 @@ def handle_ask(loop, action: dict, poll_s: float) -> dict:
     ctx.write_status("running", question=None)
     if answer:
         ctx.transcript.event("answer", {"qid": qid, "text": answer["text"],
-                                        "source": answer.get("source", "web")})
+                                        "source": answer.get("source", "web"),
+                                        "intermediate": bool(answer.get("intermediate"))})
+        if answer.get("intermediate"):
+            # A dialog reply, not the answer: the user needs some back-and-forth before they
+            # can decide. The observation tells the model to respond and re-ask — each round
+            # is one ordinary turn, so the dialog can go on until a real answer arrives.
+            return {"kind": "ask_user", "qid": qid, "mode": mode, "dialog": True,
+                    "user_message": answer["text"],
+                    "note": "This is a dialog reply, NOT the final answer — the user needs "
+                            "more back-and-forth first. Address their message, then ask again "
+                            "with ask_user (the original question, or a sharper version)."}
         return {"kind": "ask_user", "qid": qid, "mode": mode, "answered": True,
                 "answer": answer["text"]}
     inbox.file_deferred_question(ctx.routine.dir, qid, question, options, ctx.run_ts)

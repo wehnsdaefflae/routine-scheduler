@@ -162,22 +162,29 @@ export async function render(view, resumeWid) {
       qBox.replaceChildren();
       const input = el("input", { type: "text", placeholder: "your answer…", style: "flex:1" });
       const send = el("button", { class: "btn primary" }, "answer");
-      const submit = async () => {
+      // A dialog reply: the model responds and re-asks — for when you need to ask back
+      // (or think out loud) before you can actually answer.
+      const discuss = el("button", { class: "btn",
+        title: "send as a follow-up question / thought — the model replies and the question stays open" },
+        "ask back");
+      const submit = async (intermediate) => {
         if (!input.value.trim()) return;
         try {
           await api(`/api/wizard/${encodeURIComponent(wid)}/answer`, { method: "POST",
-            body: { qid: q.qid, text: input.value } });
+            body: { qid: q.qid, text: input.value, intermediate } });
           qBox.replaceChildren();
-          setThinking("Waiting for the model — considering your answer…");
+          setThinking(intermediate ? "Waiting for the model — replying in the dialog…"
+                                   : "Waiting for the model — considering your answer…");
         } catch (err) { toast(err.message, 4000, { error: true }); }
       };
-      send.onclick = submit;
-      input.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+      send.onclick = () => submit(false);
+      discuss.onclick = () => submit(true);
+      input.onkeydown = (e) => { if (e.key === "Enter") submit(false); };
       qBox.append(el("div", { class: "panel warn mt" },
         el("div", { class: "prose" }, `❓ ${q.question}`),
         q.options?.length ? el("div", { class: "row mt" },
           q.options.map((o) => el("button", { class: "btn small", onclick: () => { input.value = o; } }, o))) : null,
-        el("div", { class: "row mt" }, input, send)));
+        el("div", { class: "row mt" }, input, send, discuss)));
       input.focus();
       scrollDown();
     }
