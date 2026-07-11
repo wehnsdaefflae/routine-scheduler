@@ -139,6 +139,27 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .pending-item .p-text { flex: 1; font-family: var(--sans); color: var(--text); min-width: 0; overflow-wrap: anywhere; }
 
 /* ---------- library / editors ---------- */
+/* code editor: a highlighted <pre> under a transparent-text <textarea> (components/code.js).
+   The two layers MUST share font metrics, padding, and border box — any drift misaligns the
+   caret from the paint. Both never wrap; JS mirrors the textarea's scroll onto the pre. */
+.code-editor { position: relative; }
+.code-editor pre.hl {
+  position: absolute; inset: 0; margin: 0; padding: 8px 11px; overflow: hidden;
+  border: 1px solid transparent; border-radius: 5px; background: var(--ink-2);
+  font-size: 12px; line-height: 1.55; white-space: pre;
+}
+.code-editor textarea.code {
+  position: relative; z-index: 1; display: block; background: transparent;
+  color: transparent; caret-color: var(--text); white-space: pre; resize: vertical;
+}
+.code-editor textarea.code::selection { background: rgba(255, 180, 84, 0.22); color: transparent; }
+.tok-kw { color: var(--amber); }
+.tok-str { color: var(--ok); }
+.tok-com { color: var(--faint); }
+.tok-num, .tok-const { color: var(--violet); }
+.tok-dec { color: var(--warn); }
+.tok-def { color: var(--live); }
+
 .save-errors {
   margin-top: 10px; padding: 10px 13px; border-radius: 7px; font-size: 11.5px;
   background: rgba(242, 105, 92, 0.06); border: 1px solid rgba(242, 105, 92, 0.4);

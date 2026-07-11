@@ -9,12 +9,13 @@
     },
     {
       "name": "rsched-scratch",
-      "runtimeExecutable": "bash",
+      "runtimeExecutable": "uv",
       "runtimeArgs": [
-        "-c",
-        "RSCHED_CONFIG=/tmp/claude-1000/-home-mark-server-home-mark-git-repos-routine-scheduler/02a74d92-3d5d-4455-823d-63581c2c7e34/scratchpad/rsched-home/cfg/config.yaml exec uv run rsched daemon"
+        "run",
+        "python",
+        "/tmp/claude-1000/-home-mark-server-home-mark-git-repos-routine-scheduler/4e9bb625-87de-4a9f-a461-0cc0d84575a6/scratchpad/preview_server.py"
       ],
-      "port": 8322
+      "port": 8377
     }
   ]
 }

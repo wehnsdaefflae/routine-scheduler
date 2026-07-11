@@ -4,6 +4,7 @@
 // decisions update in place — no page reloads.
 
 import { api } from "/static/api.js";
+import { codeEditor } from "/static/components/code.js";
 import { replaceHash } from "/static/router.js";
 import { chip, el, emptyState, skeleton, tagChip, toast, when } from "/static/util.js";
 
@@ -84,7 +85,7 @@ export async function render(view, sub, query = {}) {
     openSub = `workflow/${slug}`; updateURL();
     const d = await api(`/api/workflows/${slug}`);
     showEditor(`workflow: ${slug}`, d.content, d.log, async (content) =>
-      api(`/api/workflows/${slug}`, { method: "PUT", body: { content } }));
+      api(`/api/workflows/${slug}`, { method: "PUT", body: { content } }), "python");
   }
   async function openFragment(slug) {
     openSub = `fragment/${slug}`; updateURL();
@@ -96,18 +97,19 @@ export async function render(view, sub, query = {}) {
     openSub = `util/${name}`; updateURL();
     const d = await api(`/api/library/utils/${name}`);
     showEditor(`util: ${name} (selftest-gated)`, d.content, null, async (content) =>
-      api(`/api/library/utils/${name}`, { method: "PUT", body: { content } }));
+      api(`/api/library/utils/${name}`, { method: "PUT", body: { content } }), "python");
   }
 
-  function showEditor(label, content, log, save) {
+  // workflows + utils are Python → highlighted editor; fragments are markdown → plain
+  function showEditor(label, content, log, save, lang) {
     editor.replaceChildren();
-    const ta = el("textarea", { class: "code", style: "min-height:360px" }, content);
+    const ed = codeEditor(content, { lang, minHeight: 360 });
     const errBox = el("div", {});
     const btn = el("button", { class: "btn primary" }, "save + commit");
     btn.onclick = async () => {
       btn.disabled = true;
       errBox.replaceChildren();
-      try { await save(ta.value); toast("saved + committed — reload to see tag changes"); }
+      try { await save(ed.value); toast("saved + committed — reload to see tag changes"); }
       catch (err) {
         // lint / selftest output arrives as the error detail — show it AT the editor, in full
         errBox.append(el("div", { class: "save-errors" },
@@ -117,7 +119,7 @@ export async function render(view, sub, query = {}) {
       finally { btn.disabled = false; }
     };
     editor.append(el("h2", {}, label),
-      el("div", { class: "panel" }, ta,
+      el("div", { class: "panel" }, ed.node,
         el("div", { class: "row mt" }, btn),
         errBox,
         el("div", { class: "muted mt small" },
