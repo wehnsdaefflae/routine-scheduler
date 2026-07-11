@@ -485,3 +485,30 @@ def test_make_endpoint_kinds():
     assert isinstance(make_endpoint(EndpointConfig(name="b", kind="anthropic")), AnthropicEndpoint)
     assert isinstance(make_endpoint(EndpointConfig(name="c", kind="claude-cli")),
                       ClaudeCliEndpoint)
+
+
+def test_extra_body_merged_and_provider_captured(monkeypatch):
+    """extra_body (aggregator routing) lands in every request body; the serving provider
+    reported by the aggregator is captured on the Completion."""
+    from rsched.config import EndpointConfig
+    from rsched.endpoints.openai_compat import OpenAICompatEndpoint
+    cfg = EndpointConfig(name="orx", kind="openai", base_url="http://x/v1", api_key="k",
+                         extra_body={"provider": {"ignore": ["StreamLake"]}})
+    ep = OpenAICompatEndpoint(cfg)
+    seen = {}
+
+    class R:
+        status_code = 200
+        text = "{}"
+        def json(self):
+            return {"choices": [{"message": {"content": '{"ok": true}'}}],
+                    "usage": {"prompt_tokens": 5, "completion_tokens": 2},
+                    "provider": "Fireworks"}
+
+    def fake_post(body, headers, timeout):
+        seen.update(body)
+        return R()
+    monkeypatch.setattr(ep, "_post", fake_post)
+    c = ep.complete([{"role": "user", "content": "hi"}], model="m")
+    assert seen["provider"] == {"ignore": ["StreamLake"]}
+    assert c.provider == "Fireworks"

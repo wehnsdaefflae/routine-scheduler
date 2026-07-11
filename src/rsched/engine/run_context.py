@@ -96,6 +96,22 @@ class RunContext:
             return f"token budget exhausted ({b.max_total_tokens})"
         return None
 
+    def budget_warning(self) -> str | None:
+        """The 85% line on any budget — the run's cue to wind down DELIBERATELY (record, then
+        an authored finish) instead of being cut off mid-work by budget_violation."""
+        b = self.budgets
+        if self.turn - self.budget_base_turn >= 0.85 * b.max_turns:
+            return f"~{b.max_turns - (self.turn - self.budget_base_turn)} turns left"
+        if self.elapsed_s() > 0.85 * b.max_wall_clock_min * 60:
+            return f"~{max(0, int(b.max_wall_clock_min - self.elapsed_s() / 60))} minutes left"
+        spent = self.usage["in"] + self.usage["out"]
+        if spent >= 0.85 * b.max_total_tokens:
+            return f"~{b.max_total_tokens - spent} tokens left"
+        return None
+
+    def tokens_remaining(self) -> int:
+        return max(0, self.budgets.max_total_tokens - self.usage["in"] - self.usage["out"])
+
     def child_budgets(self) -> Budgets:
         """Remaining budgets ÷ 2 for a subrun."""
         b = self.budgets

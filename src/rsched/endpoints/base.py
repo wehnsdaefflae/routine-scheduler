@@ -30,6 +30,7 @@ class Completion:
     text: str                     # raw reply text ("" when only parsed content came back)
     parsed: dict | None = None    # object from the endpoint's native schema mode, if any
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
+    provider: str = ""            # serving provider behind an aggregator (OpenRouter), if reported
 
 
 class ChatEndpoint(Protocol):

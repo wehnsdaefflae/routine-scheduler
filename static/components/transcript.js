@@ -14,7 +14,11 @@ export function createTranscript(container) {
 
   function addTurn(ev) {
     const a = ev.payload;
-    const brief = String(a[BRIEF_FIELD[a.kind]] ?? "").slice(0, 200);
+    // For utils, show the whole call inline (name + args) — a missing args array must be
+    // visible at a glance, not one click deep in the action json.
+    const brief = a.kind === "util"
+      ? `${a.name ?? ""}${Array.isArray(a.args) && a.args.length ? " " + a.args.join(" ") : "  (no args)"}`.slice(0, 200)
+      : String(a[BRIEF_FIELD[a.kind]] ?? "").slice(0, 200);
     const turn = el("div", { class: "turn" },
       el("div", { class: "say" },
         el("span", { class: "n" }, `turn ${ev.turn ?? "?"}`),
@@ -23,7 +27,9 @@ export function createTranscript(container) {
       el("div", { class: "act" },
         el("span", {}, a.kind),
         el("span", { class: "muted" }, brief),
-        ev.usage ? el("span", { class: "muted", style: "margin-left:auto" }, fmtTokens(ev.usage)) : null),
+        ev.usage ? el("span", { class: "muted", style: "margin-left:auto",
+                              title: ev.usage.provider ? `served by ${ev.usage.provider}` : "" },
+                    fmtTokens(ev.usage)) : null),
       el("details", { class: "raw" }, el("summary", {}, "action json"),
         el("pre", {}, JSON.stringify(a, null, 1))));
     root.append(turn);
@@ -47,7 +53,8 @@ export function createTranscript(container) {
     if (o.kind === "util") {
       text = o.missing ? `util "${o.name}" does not exist (available: ${(o.available || []).join(", ")})`
         : o.listing != null ? `util catalog\n${o.listing}`
-        : `${o.name} → exit ${o.exit}\n${o.stdout || ""}${o.stderr ? `\n[stderr] ${o.stderr}` : ""}`;
+        : `${o.name} → exit ${o.exit}\n${o.stdout || ""}${o.stderr ? `\n[stderr] ${o.stderr}` : ""}`
+          + (o.usage ? `\n[usage] ${o.usage}` : "") + (o.hint ? `\n[hint] ${o.hint}` : "");
     } else if (o.kind === "write_util") {
       text = o.pending_approval ? `write_util "${o.name}": awaiting user approval`
         : o.declined ? `write_util "${o.name}": declined`

@@ -771,3 +771,15 @@ def test_second_shed_disables_provider_schema_for_the_run(make_routine, scripted
     note = [e for e in events if e["type"] == "error"
             and "disabled for the rest of the run" in e["payload"].get("message", "")]
     assert len(note) == 1
+
+
+def test_budget_warning_appended_near_exhaustion(make_routine, scripted):
+    """Past 85% of the turn budget, observations carry the wind-down nudge."""
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        *[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(9)],
+        finish(),                                    # turn 9 crosses 85% of 10
+    ], budgets={"max_turns": 10})
+    assert status == "ok"
+    warned = [m for c in ep.calls for m in c["messages"]
+              if m["role"] == "user" and "wind down DELIBERATELY" in m["content"]]
+    assert warned                                    # nudge reached the model before the cap

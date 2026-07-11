@@ -181,6 +181,10 @@ class EngineLoop:
                              "The structured-output constraint is lifted for your next reply: emit ONE "
                              "JSON object and include every field the action needs (args, content, …).]")
                 text += self.util_reminder
+                if warning := ctx.budget_warning():
+                    text += (f"\n[BUDGET: {warning} — wind down DELIBERATELY now: record what "
+                             "matters (LEDGER, state files), then finish with an authored "
+                             "summary. An engine-forced stop loses your conclusions.]")
                 if self._history_active:
                     text += self._history_note
                 self.messages.append({"role": "user", "content": text})
@@ -268,6 +272,10 @@ class EngineLoop:
                                            max_tokens=16_384)
             usage_sum["in"] += completion.usage["in"]
             usage_sum["out"] += completion.usage["out"]
+            if completion.provider:
+                # Aggregators route per request; attribution is what lets an audit correlate
+                # malformed actions with the serving provider, not the model.
+                usage_sum["provider"] = completion.provider
             if completion.parsed is None and not completion.text.strip():
                 # Empty reply = provider hiccup, not a model mistake: retry cleanly (no
                 # poisoned context); the last attempt drops the provider-side format
@@ -295,7 +303,9 @@ class EngineLoop:
                 repeated = prev_raw is not None and raw.strip() == prev_raw.strip()
                 prev_raw = raw
                 ctx.transcript.event("error", {"where": "schema", "attempt": attempt,
-                                               "message": str(exc)[:500], "raw": raw[:1500]})
+                                               "message": str(exc)[:500], "raw": raw[:1500],
+                                               **({"provider": completion.provider}
+                                                  if completion.provider else {})})
                 ctx.note_schema_retry()
                 self.messages.append({"role": "assistant", "content": raw[:4000]})
                 self.messages.append({"role": "user", "content": retry_message(
@@ -313,7 +323,15 @@ class EngineLoop:
         history via the LLM (compact_to_history); fall back to the deterministic one-line digest if
         that fails, so a run never stalls on compaction."""
         ctx = self.ctx
-        if (messages_size(self.messages) <= COMPACT_AT_FRACTION * endpoint.context_chars
+        size = messages_size(self.messages)
+        context_cap = COMPACT_AT_FRACTION * endpoint.context_chars
+        # Long prompts also burn the token BUDGET — every turn re-sends everything, so a
+        # bloated prompt taxes each remaining turn. Once the prompt would eat >10% of the
+        # remaining token budget per turn, archive it: the one compaction call costs what
+        # the bloat would keep costing every single turn. Floored so a small prompt near
+        # budget exhaustion doesn't thrash (compaction itself spends tokens).
+        budget_cap = max(40_000.0, 0.10 * 4 * ctx.tokens_remaining())
+        if (size <= min(context_cap, budget_cap)
                 or len(self.messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS):
             return
         cinfo = None

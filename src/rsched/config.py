@@ -67,6 +67,11 @@ class EndpointConfig(_Config):
     schema_mode: SchemaMode = "json_schema"  # openai kind only
     context_chars: int = 100_000
     temperature: float | None = None
+    # openai kind only: merged verbatim into every request body. This is where aggregator
+    # routing lives — e.g. OpenRouter {"provider": {"ignore": [...]}} to exclude serving
+    # providers whose constrained decoding measurably corrupts output (drops declared
+    # fields, leaks foreign keys through "strict" mode).
+    extra_body: dict = Field(default_factory=dict)
 
 
 @dataclass

@@ -33,6 +33,7 @@ class OpenAICompatEndpoint:
         self.schema_mode = cfg.schema_mode
         self.context_chars = cfg.context_chars
         self.temperature = cfg.temperature
+        self.extra_body = dict(cfg.extra_body)
         # ollama_native: use Ollama's native /api/chat `format` field for REAL constrained
         # decoding to the schema (the OpenAI-compat response_format is not enforced by Ollama).
         self.native = cfg.schema_mode == "ollama_native"
@@ -70,7 +71,7 @@ class OpenAICompatEndpoint:
                  timeout: int = DEFAULT_TIMEOUT) -> Completion:
         if self.native and schema is not None:
             return self._complete_native(messages, model, schema, max_tokens, timeout)
-        body: dict = {"model": model, "messages": messages}
+        body: dict = {"model": model, "messages": messages, **self.extra_body}
         if self.temperature is not None:
             body["temperature"] = self.temperature
         if max_tokens:
@@ -159,4 +160,5 @@ class OpenAICompatEndpoint:
             text=text,
             usage={"in": int(usage.get("prompt_tokens") or 0),
                    "out": int(usage.get("completion_tokens") or 0)},
+            provider=str(data.get("provider") or ""),
         )
