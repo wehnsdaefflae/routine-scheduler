@@ -175,14 +175,19 @@ def catalog_text(home: Path) -> str:
     if not utils:
         return ("(no global utils yet — create one with the write_util action when you need "
                 "to run code; there is NO shell action)")
-    # Names + one-line summaries only (no usage lines): keeps the prompt lean and avoids
-    # priming weak models toward a tool-call format. Full usage is one `util name=list` away.
+    # This IS the discovery surface (the util action's `name=list`) — each entry teaches the
+    # parameters too, or the model's first call is a guess. Pass usage flags via `args` as a
+    # JSON array of strings.
     lines = []
     for u in utils:
         head = u["summary"] or u["name"]
         if not head.startswith(u["name"]):
             head = f"{u['name']} — {head}"
         lines.append(f"- {head}")
+        if u.get("usage"):
+            lines.append(f"    {u['usage']}")
+    lines.append('\nCall shape: {"say": "…", "kind": "util", "name": "<name>", '
+                 '"args": ["<arg>", "--flag"]} — args is a JSON array of strings.')
     return "\n".join(lines)
 
 

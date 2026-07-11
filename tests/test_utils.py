@@ -108,3 +108,26 @@ def test_run_missing_and_invalid(tmp_path):
     assert code == 2 and "no util named" in err
     code, _, err = utils_lib.run_util(home, "Bad Name", [])
     assert code == 2 and "invalid util name" in err
+
+
+def test_catalog_text_includes_usage_and_call_shape(tmp_path):
+    from rsched.utils_lib import catalog_text
+    d = tmp_path / "utils" / "demo"
+    d.mkdir(parents=True)
+    (d / "main.py").write_text('"""demo — does a demo thing.\n\n'
+                               'usage: gu demo TARGET [--json]\n\nsecrets: (none)\n"""\n')
+    text = catalog_text(tmp_path)
+    assert "demo — does a demo thing." in text
+    assert "usage: gu demo TARGET [--json]" in text
+    assert '"args": ["<arg>", "--flag"]' in text          # the call shape
+
+def test_failed_util_observation_teaches_usage(tmp_path):
+    import json as _json
+
+    from rsched.engine.composer import format_observation
+    obs = {"kind": "util", "name": "demo", "args": [], "exit": 2,
+           "stdout": "", "stderr": "usage error",
+           "usage": "usage: gu demo TARGET [--json]",
+           "hint": 'pass every argument in `args` as a JSON array of strings'}
+    text = format_observation(obs)
+    assert "[usage] usage: gu demo TARGET" in text and "[hint]" in text

@@ -173,6 +173,10 @@ def format_observation(obs: dict) -> str:
         body = obs.get("stdout") or "(no stdout)"
         if obs.get("stderr"):
             body += f"\n[stderr]\n{obs['stderr']}"
+        if obs.get("usage"):
+            body += f"\n[usage] {obs['usage']}"
+        if obs.get("hint"):
+            body += f"\n[hint] {obs['hint']}"
         return f"{head}:\n{body}"
     if kind == "write_util":
         if obs.get("pending_approval"):

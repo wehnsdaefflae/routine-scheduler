@@ -33,8 +33,18 @@ def do_util(action: dict, ctx: RunContext) -> dict:
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S))
     stdout, trunc_out = truncate(out)
     stderr, trunc_err = truncate(err, cap=2000)
-    return {"kind": "util", "name": name, "args": args, "exit": code,
-            "stdout": stdout, "stderr": stderr, "truncated": trunc_out or trunc_err}
+    obs = {"kind": "util", "name": name, "args": args, "exit": code,
+           "stdout": stdout, "stderr": stderr, "truncated": trunc_out or trunc_err}
+    if code != 0:
+        # A failed call teaches the correct one: the util's own usage line plus the exact
+        # action shape (weak models often omit `args` or pass it as one string).
+        entry = next((u for u in utils_lib.list_utils(home) if u["name"] == name), None)
+        if entry and entry.get("usage"):
+            obs["usage"] = entry["usage"]
+        obs["hint"] = (f'pass every argument in `args` as a JSON array of strings, e.g. '
+                       f'{{"say": "…", "kind": "util", "name": "{name}", '
+                       f'"args": ["<argument>", "--json"]}}')
+    return obs
 
 
 def do_read_file(action: dict, ctx: RunContext) -> dict:
