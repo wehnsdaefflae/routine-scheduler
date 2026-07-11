@@ -247,6 +247,7 @@ def test_audit_report_and_feedback(client):
 
     r = c.post("/api/audit/feedback", json={"kind": "comment", "target": "F1", "text": "please fix"})
     assert r.status_code == 200 and r.json()["delivery"] == "next-run"
+    assert r.json()["id"].startswith("msg-")   # the handle for editing/withdrawing while queued
     assert c.post("/api/audit/feedback",
                   json={"kind": "decision", "target": "D1", "choice": "a", "text": "do it"}).status_code == 200
     assert c.post("/api/audit/feedback", json={"kind": "general", "text": "focus on speed"}).status_code == 200
@@ -263,6 +264,52 @@ def test_audit_report_and_feedback(client):
     # validation + missing-routine guard
     assert c.post("/api/audit/feedback", json={"kind": "comment", "target": "F1"}).status_code == 400
     assert c.post("/api/audit/feedback", json={"kind": "bogus", "text": "x"}).status_code == 400
+
+
+def test_audit_feedback_editable_until_consumed(client):
+    """Queued feedback is live: pending items carry their structured fields + id, edits
+    rewrite the same inbox file in place, withdraw removes it — and once the file is gone
+    (= a run consumed it) both mutations answer 404."""
+    c, tmp = client
+    inbox = tmp / "routines" / "self-audit" / "inbox"
+    inbox.mkdir(parents=True)
+
+    mid = c.post("/api/audit/feedback",
+                 json={"kind": "comment", "target": "F1", "text": "first take"}).json()["id"]
+    p = c.get("/api/audit").json()["pending_feedback"][0]
+    assert (p["id"], p["kind"], p["target"], p["raw"]) == (mid, "comment", "F1", "first take")
+
+    # edit in place: same file (same id), re-formatted text, original ts kept + edited stamped
+    ts0 = p["ts"]
+    r = c.put(f"/api/audit/feedback/{mid}",
+              json={"kind": "comment", "target": "F1", "text": "second take"})
+    assert r.status_code == 200 and r.json()["id"] == mid
+    pend = c.get("/api/audit").json()["pending_feedback"]
+    assert len(pend) == 1 and pend[0]["raw"] == "second take" and pend[0]["ts"] == ts0
+    assert pend[0]["text"] == "[AUDIT feedback · finding F1] second take"
+    assert read_json(inbox / f"{mid}.json")["edited"]
+    # an edit is re-validated like a fresh submission
+    assert c.put(f"/api/audit/feedback/{mid}",
+                 json={"kind": "comment", "target": "F1", "text": ""}).status_code == 400
+
+    # a pre-editability message (formatted text only) still surfaces its fields for editing
+    (inbox / "msg-legacy.json").write_text(json.dumps(
+        {"text": "[AUDIT note] old style", "ts": "2026-07-01T09:00:00+02:00", "via": "web-audit"}))
+    legacy = next(p for p in c.get("/api/audit").json()["pending_feedback"] if p["id"] == "msg-legacy")
+    assert legacy["kind"] == "general" and legacy["raw"] == "old style"
+
+    # non-web-audit inbox files are invisible to this channel — never editable or removable
+    (inbox / "msg-injected.json").write_text(json.dumps({"text": "hi", "ts": "t"}))
+    assert c.delete("/api/audit/feedback/msg-injected").status_code == 404
+    assert (inbox / "msg-injected.json").exists()
+
+    # withdraw; afterwards the id behaves exactly like a consumed message
+    assert c.delete(f"/api/audit/feedback/{mid}").status_code == 200
+    assert not (inbox / f"{mid}.json").exists()
+    assert c.put(f"/api/audit/feedback/{mid}",
+                 json={"kind": "comment", "target": "F1", "text": "x"}).status_code == 404
+    assert c.delete(f"/api/audit/feedback/{mid}").status_code == 404
+    assert c.delete("/api/audit/feedback/msg-..%2Fescape").status_code == 404  # malformed id
 
 
 def test_routine_tags(client):
