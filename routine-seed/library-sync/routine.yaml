@@ -15,6 +15,7 @@ workflow:
   library_commit: 2ef9bfb
 fragments:
 - global-utils
+- util-authoring
 - ledger-discipline
 budgets:
   max_turns: 60

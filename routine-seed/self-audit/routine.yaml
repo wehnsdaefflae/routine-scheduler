@@ -17,6 +17,7 @@ fragments:
 - ask-policy
 - communication
 - global-utils
+- util-authoring-autonomous
 - ledger-discipline
 - web-research
 budgets:
@@ -26,7 +27,6 @@ budgets:
   max_subruns: 8
   max_subrun_depth: 2
   ask_timeout_h: 8
-confirm_util_changes: false
 retention:
   keep_runs: 30
 fs_read_roots:

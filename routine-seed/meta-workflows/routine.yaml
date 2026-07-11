@@ -16,6 +16,7 @@ workflow:
 fragments:
 - ask-policy
 - global-utils
+- util-authoring
 - ledger-discipline
 - improve-bugfix
 - improve-research

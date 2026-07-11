@@ -1,7 +1,13 @@
+---
+tags: [communication, policy, notification]
+grants:
+  utils: [discord]
+---
 # fragment: communication — Discord for blocking questions only
 
-This fragment authorizes ONE channel beside the web UI: **Discord** (the `discord` util), and
-only for **blocking questions** — a decision without which this run cannot sensibly continue.
+This fragment authorizes ONE channel beside the web UI: **Discord** (the `discord` util —
+GRANTED by this fragment; the engine rejects it for routines without it), and only for
+**blocking questions** — a decision without which this run cannot sensibly continue.
 Everything else — progress, status, FYI, results, non-blocking decisions — stays in the UI
 (deferred `ask_user`, the LEDGER, the finish summary). Never send noise to Discord.
 
