@@ -19,31 +19,44 @@ const routes = [
   [/^#\/library(?:\/(.*))?$/, () => import("/static/views/library.js")],
   [/^#\/wizard(?:\/(.+))?$/, () => import("/static/views/wizard.js")],
   [/^#\/settings$/, () => import("/static/views/settings.js")],
+  [/^#\/help(?:\/(.*))?$/, () => import("/static/views/help.js")],
 ];
 
 let teardown = null;
+let navToken = 0;   // bumped per navigation; lets a superseded route() detect it lost the race
 
 async function route() {
   const { path, query } = parseHash();
   for (const [pattern, load] of routes) {
     const m = pattern.exec(path);
     if (!m) continue;
+    const token = ++navToken;
     const view = document.getElementById("view");
     if (teardown) { try { teardown(); } catch { /* view already gone */ } teardown = null; }
+    // Each navigation renders into its OWN container. A view keeps appending to the element it
+    // was handed across its awaits — quick tab switches used to leave a stale render writing
+    // into the live tab. Detached container = stale writes land nowhere visible.
+    const box = el("div", {});
     // Instant skeleton while the module loads; each view then swaps in its own skeleton
     // synchronously before fetching data — no view ever paints blank.
-    view.replaceChildren(skeleton(["30%", "100%", "100%", "70%", "45%"]));
+    box.append(skeleton(["30%", "100%", "100%", "70%", "45%"]));
+    view.replaceChildren(box);
+    updateLocation(path);
     try {
       const mod = await load();
-      view.replaceChildren();
+      if (token !== navToken) return;   // superseded while the module loaded
+      box.replaceChildren();
       // Views receive their path params spread, then the parsed query object last.
-      teardown = (await mod.render(view, ...m.slice(1), query)) || null;
+      const td = (await mod.render(box, ...m.slice(1), query)) || null;
+      // Superseded mid-render: the container is detached — release the view's listeners now.
+      if (token !== navToken) { try { td?.(); } catch { /* already gone */ } return; }
+      teardown = td;
     } catch (err) {
-      view.replaceChildren(el("div", { class: "empty" },
+      if (token !== navToken) return;
+      box.replaceChildren(el("div", { class: "empty" },
         el("div", { class: "t" }, "view failed to load"),
         el("div", { class: "d" }, err.message)));
     }
-    updateLocation(path);
     return;
   }
   location.hash = "#/";
@@ -56,6 +69,7 @@ function updateLocation(path) {
     : path.startsWith("#/audit") ? "audit"
     : path.startsWith("#/library") ? "library"
     : path.startsWith("#/settings") ? "settings"
+    : path.startsWith("#/help") ? "help"
     : path.startsWith("#/wizard") ? "wizard"
     : "dashboard";
   document.querySelectorAll("[data-nav]").forEach((a) =>
@@ -73,6 +87,11 @@ function crumbsFor(path) {
     case "questions": return [{ label: "Decisions" }];
     case "audit": return [{ label: "Audit" }];
     case "settings": return [{ label: "Settings" }];
+    case "help": {
+      const c = [{ label: "Help", href: parts.length > 1 ? "#/help" : null }];
+      if (parts[1]) c.push({ label: parts[1] });
+      return c;
+    }
     case "library": {
       const c = [{ label: "Library", href: parts.length > 1 ? "#/library" : null }];
       if (parts[1]) c.push({ label: parts[1] });

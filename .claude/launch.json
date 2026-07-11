@@ -6,16 +6,6 @@
       "runtimeExecutable": "uv",
       "runtimeArgs": ["run", "rsched", "daemon"],
       "port": 8321
-    },
-    {
-      "name": "rsched-scratch",
-      "runtimeExecutable": "uv",
-      "runtimeArgs": [
-        "run",
-        "python",
-        "/tmp/claude-1000/-home-mark-server-home-mark-git-repos-routine-scheduler/4e9bb625-87de-4a9f-a461-0cc0d84575a6/scratchpad/preview_server.py"
-      ],
-      "port": 8377
     }
   ]
 }
