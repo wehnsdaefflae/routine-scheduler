@@ -4,7 +4,7 @@
 import { api } from "/static/api.js";
 import { setQuery } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
-import { chip, el, emptyState, fmtTokens, skeleton, tagChip, toast, when } from "/static/util.js";
+import { chip, el, emptyState, fmtTokens, grantsSummary, skeleton, tagChip, toast, when } from "/static/util.js";
 
 export async function render(view, slug, query = {}) {
   view.append(skeleton(["35%", "100%", "70%"]));
@@ -129,14 +129,20 @@ export async function render(view, slug, query = {}) {
                   onclick: (e) => { e.preventDefault(); editFile(`fragments/${f.slug}.md`, `fragment: ${f.slug}`); } },
           "edit this routine's copy")
       : null;
+    const grants = grantsSummary(f.grants);
     return el("label", { class: "toggle-row" }, box,
       el("div", {},
         el("div", { class: "t-title" }, f.slug),
         el("div", { class: "muted prose small" }, f.summary || ""),
+        grants ? el("div", { class: "small", style: "color:var(--warn)" }, `▸ ${grants}`) : null,
         editLink));
   });
   view.append(el("h2", {}, "Standards (fragments)"),
     el("div", { class: "panel" },
+      el("div", { class: "muted small", style: "margin-bottom:8px" },
+        "behaviours the routine applies every run — and its capability panel: a ▸ grant unlocks a gated ",
+        "capability. Grants are enforced from the LIBRARY copy, so editing the routine's local prose never ",
+        "changes permissions."),
       fragRows.length ? fragRows : el("div", { class: "muted" }, "no fragments in the library"),
       el("div", { class: "row mt" }, el("button", {
         class: "btn primary",

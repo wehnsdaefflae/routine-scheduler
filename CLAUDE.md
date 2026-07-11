@@ -28,15 +28,17 @@ fragments (standards), workdir, budgets, and model roles are routine config (`ro
 The turn loop (`engine/loop.py`) is the heart; `engine/runtime.py` is the entry above it
 (`run_routine`, workflow loading/decomposition), `engine/control.py` the between-turns control plane
 (abort, pause gate, `control.json` model switch, injection drain, subrun announcements), and
-`engine/interact.py` the user-conversing handlers (`ask_user`, approval-gated `write_util`). Each turn:
+`engine/interact.py` the user-conversing handlers (`ask_user`, grant-gated `write_util`). Each turn:
 check budgets → pause gate → drain injected user messages (`inbox.py`) → announce finished subruns →
 get ONE valid action from the model (up to 3 schema-retries) → dispatch → append the observation →
 repeat until `finish`.
 - **One action per turn** is enforced: the model returns a single JSON object matching `ACTION_SCHEMA`;
   `normalize_action` + `validate_action` (`engine/actions.py`) repair grammar debris from weak/constrained
   models and return precise per-kind errors. `actions.py` is the single source of truth for what a turn
-  may do — adapters, UI, and the CLI event renderer all key off it. A workflow's `tools:` allowlist is
-  enforced there too: a disallowed kind is corrected inside the schema-retry cycle, never becomes a turn.
+  may do — adapters, UI, and the CLI event renderer all key off it. A workflow's `tools:` allowlist AND
+  the routine's fragment **grants** (`grants.py`) are enforced there too: allowed kinds = workflow tools
+  ∩ (base ∪ active grants); a disallowed/ungranted call is corrected inside the schema-retry cycle
+  with an error naming the granting fragment, and never becomes a turn.
 - **The system prompt is composed once at boot** (`engine/composer.py`): harness contract → action schema
   + example → workflow body (the routine's own `main.md`) → instruction → active fragments → **state
   digest** (phase, `state/`, step modules, last result, LEDGER tail, open/answered questions, inbox
@@ -85,8 +87,9 @@ concept. `EndpointRegistry.for_model(kind, routine.models)` / `.for_system()` re
 A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is NEVER read at run time:
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (main / subroutine / tool_call),
-  `fragments:` (active standards), `budgets:` (max_turns / wall_clock_min / total_tokens / subruns /
-  subrun_depth / ask_timeout_h), `fs_read_roots` / `fs_write_roots`, retention.
+  `fragments:` (active standards + capability grants), `budgets:` (max_turns / wall_clock_min /
+  total_tokens / subruns / subrun_depth / ask_timeout_h), `fs_read_roots` / `fs_write_roots`, retention —
+  budgets/fs-roots/schedules are resources, never grants.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
   routes to `steps/<name>.md` modules, read on demand). `instruction.md` — the task. `fragments/*.md` —
   editable routine-local copies of the active fragments.
@@ -129,15 +132,23 @@ first boot; `deploy/install.sh` for host installs.
   `system_model`. The **new-routine wizard** runs `clarify-instruction`, which now SUGGESTS a pattern (or
   asks to generate one) and MARRIES the task to it — asking questions that overlay the task on the pattern's
   control flow + parameters (candidates written to the session's `state/candidates.md`).
-- **Fragments**: reusable standards inlined per routine. The improvement standards are
-  five **after-run passes** — `improve-bugfix / -research / -features / -ui / -efficiency` — each infers the
-  routine's intention from the run just completed and acts in its lens (fresh-eyes throughout), asking a
-  deferred question (→ Decisions page) when unsure. `ledger-discipline` (cross-run memory) + `ask-policy` /
-  `global-utils` / `web-research` / `communication` are the standing standards. `DEFAULT_FRAGMENTS` (config)
-  is the source of truth.
+- **Fragments**: reusable standards inlined per routine — AND the routine's **permission surface**: a
+  library fragment's frontmatter `grants:` ({actions, utils, confirm}) unlocks gated capabilities
+  (`write_util`; reserved utils like `discord`) for routines that activate it. Grants are machine-read
+  from the LIBRARY copy ONLY (`grants.py` — never the editable routine-local copy, so routines can't
+  self-grant); activation authority stays `routine.yaml` `fragments:`. `util-authoring` (confirm: true,
+  in the default set) and `util-authoring-autonomous` (confirm: revisions-only) carry util authoring;
+  `communication` grants `discord`. Any future permission-ish lever becomes a fragment grant, not a new
+  yaml key (the old `confirm_util_changes` is retired into `confirm:`). See docs/fragments.md. The
+  improvement standards are five **after-run passes** — `improve-bugfix / -research / -features / -ui /
+  -efficiency` — each infers the routine's intention from the run just completed and acts in its lens
+  (fresh-eyes throughout), asking a deferred question (→ Decisions page) when unsure. `ledger-discipline`
+  (cross-run memory) + `ask-policy` / `global-utils` / `web-research` are the standing standards.
+  `DEFAULT_FRAGMENTS` (config) is the source of truth.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`, `calls:`),
   a `secrets: NAME,…` declaration line, and a `--selftest` the engine runs before saving (`write_util` is
-  selftest-gated, and approval-gated when `confirm_util_changes`). Discover with the `util` action `name: list`.
+  selftest-gated; whether it needs user approval rides the active util-authoring fragment's `confirm:`
+  grant). Discover with the `util` action `name: list`.
 - **Secrets** are one central, write-only KEY→VALUE store injected into every util, endpoint, and the
   subscription at run time; utils declare which vars they need and the UI flags unset ones.
 

@@ -12,7 +12,7 @@ import { api } from "/static/api.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
-import { busy, el, skeleton, streamStatus, toast } from "/static/util.js";
+import { busy, el, grantsSummary, skeleton, streamStatus, toast } from "/static/util.js";
 import { stageSuggest, stageBuilding } from "/static/views/wizard-create.js";
 
 // Tell app.js a session started / was canceled / finalized so the setup banner updates at once.
@@ -97,8 +97,9 @@ export async function render(view, resumeWid) {
     stage.append(resumeBox, el("div", { class: "panel" },
       el("div", { class: "muted prose", style: "margin-bottom:8px" },
         "Describe the task in your own words. The wizard asks a few clarifying questions, then builds the ",
-        "routine. Below, choose its standards — reusable habits it follows every run (keeping a LEDGER, ",
-        "self-auditing, safe tool use). You can change these, its schedule and its models afterwards."),
+        "routine. Below, choose its standards — reusable habits it follows every run, and the ONLY way it ",
+        "gains permissions: a fragment's grants unlock gated capabilities like writing utils or messaging ",
+        "you on Discord. You can change these, its schedule and its models afterwards."),
       ta, fragBox, el("div", { class: "row mt" }, go)));
 
     // Surface any in-flight sessions so the user resumes instead of starting a second one.
@@ -118,15 +119,18 @@ export async function render(view, resumeWid) {
     // via /api/library) so the UI never drifts from what a scaffold would actually apply.
     api("/api/library").then((lib) => {
       fragBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:3px" },
-        "Standards — reusable behaviours the routine applies every run (self-management, tool safety, research). Toggle the ones that fit:"));
+        "Standards & capabilities — each fragment is a behaviour the routine applies every run; ",
+        "ones marked ▸ also GRANT it a gated capability (util authoring, a reserved util). Toggle the ones that fit:"));
       const defaults = new Set(lib.default_fragments || []);
       for (const f of (lib.fragments || [])) {
         const cb = el("input", { type: "checkbox" });
         cb.checked = defaults.has(f.slug);
         cb.dataset.slug = f.slug;
+        const grants = grantsSummary(f.grants);
         fragBox.append(el("label", { class: "row", style: "gap:6px;font-size:12px;margin:2px 0" },
           cb, el("strong", { style: "min-width:130px" }, f.slug),
-          el("span", { class: "muted prose" }, f.summary || "")));
+          el("span", { class: "muted prose" }, f.summary || "",
+            grants ? el("span", { style: "color:var(--warn)" }, ` ▸ ${grants}`) : "")));
       }
     }).catch(() => {
       fragBox.replaceChildren(el("div", { class: "muted" }, "(couldn't load fragments)"));

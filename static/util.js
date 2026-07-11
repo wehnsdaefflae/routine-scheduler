@@ -101,6 +101,20 @@ export function chip(text, cls = "") {
   return el("span", { class: `chip ${cls}` }, text);
 }
 
+// A fragment's machine-enforced grants (from the LIBRARY copy) as one human line, e.g.
+// "grants write_util (every change needs your approval) · util: discord". Empty when the
+// fragment is norms-only.
+export function grantsSummary(g) {
+  const caps = [...(g?.actions || []), ...(g?.utils || []).map((u) => `util: ${u}`)];
+  if (!caps.length) return "";
+  const confirm = (g.actions || []).includes("write_util")
+    ? { always: " (every util change needs your approval)",
+        creations: " (new utils need your approval; revisions are auto-approved)",
+        never: " (no approval needed)" }[g.confirm] || ""
+    : "";
+  return `grants ${caps.join(" · ")}${confirm}`;
+}
+
 export function tagChip(text, { onClick, onRemove, active } = {}) {
   const cls = ["tag", text === "meta" ? "meta" : "", onClick ? "click" : "", active ? "on" : ""]
     .filter(Boolean).join(" ");
