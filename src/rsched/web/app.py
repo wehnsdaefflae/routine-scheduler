@@ -42,6 +42,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         from .. import fragments_lib, utils_lib
+        from ..docs_build import ensure_docs
 
         # bootstrap the library repo (clone from remote if configured + absent, else init/leave),
         # then make sure its fragments/ subdir exists.
@@ -50,10 +51,16 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
             fragments_lib.ensure_library(server.fragments_home)
         except Exception as exc:  # never block startup on a library hiccup
             log.warning("library bootstrap %s: %s", server.libraries_home, exc)
+        # regenerate the Help tab's content (pdoc + guides) when the source changed — in a
+        # thread, and ensure_docs never raises, so startup is never blocked on it
+        docs_task = asyncio.create_task(asyncio.to_thread(ensure_docs, server.source_repo))
         task = None
         if with_scheduler and not os.environ.get("RSCHED_NO_SCHEDULER"):
             task = asyncio.create_task(app.state.scheduler.run_forever())
         yield
+        docs_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await docs_task
         if task:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -131,9 +138,16 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         # The daemon self-updates and restarts; without this, browsers heuristically cache the
         # ES modules and keep rendering the pre-update console. no-cache = revalidate (cheap 304s).
         response = await call_next(request)
-        if request.url.path == "/" or request.url.path.startswith("/static"):
+        if request.url.path == "/" or request.url.path.startswith(("/static", "/docs")):
             response.headers["Cache-Control"] = "no-cache"
         return response
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    # Generated Help content (see docs_build.py) — static like /static and served with the
+    # same posture (only /api/* is token-gated). The dir may not exist before the first
+    # build finishes; check_dir=False lets the mount come up regardless.
+    from ..docs_build import docs_out_dir
+
+    app.mount("/docs", StaticFiles(directory=docs_out_dir(), check_dir=False, html=True),
+              name="docs")
     return app

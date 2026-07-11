@@ -175,3 +175,9 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 /* ---------- wizard ---------- */
 .chatwrap { margin-top: 14px; }
 .pick-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+/* ---------- help (generated docs) ---------- */
+.help-frame {
+  width: 100%; height: calc(100vh - 235px); min-height: 420px; margin-top: 12px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
+}
