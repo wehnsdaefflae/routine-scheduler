@@ -14,7 +14,7 @@ export async function render(view, query = {}) {
 
   // Section nav — a visible location indicator within Settings; the active sub-section is in the
   // URL (#/settings?section=endpoints), so a deep link / reload lands on the same section.
-  const SECTIONS = [["github", "GitHub"], ["secrets", "Secrets"], ["libraries", "Libraries"],
+  const SECTIONS = [["github", "GitHub"], ["secrets", "Secrets"], ["libraries", "Library"],
                     ["source", "Source"], ["endpoints", "Endpoints"]];
   const secNav = el("div", { class: "filterbar" });
   view.append(secNav);
@@ -201,15 +201,16 @@ export async function render(view, query = {}) {
   }
   await renderSecrets();
 
-  // -- library repositories -------------------------------------------------------
-  view.append(sectionHead("libraries", "Library repositories"));
+  // -- the library repository ------------------------------------------------------
+  view.append(sectionHead("libraries", "Library repository"));
   const libBox = el("div", { class: "panel" });
   libBox.append(skeleton(["60%", "90%"]));
   view.append(libBox);
   try {
     const { libraries } = await api("/api/settings/libraries");
     libBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
-      "Workflows, fragments, and utils each live in a git repo on your account. Not set up yet? ",
+      "One git repo holds everything the instance acquires: workflows/, fragments/, utils/ ",
+      "(with the gu dispatcher) — plus routines/ and sanitized config, exported by library-sync. ",
       "Clone your existing repo, or create a new private one seeded with the built-in defaults. ",
       "(Connect GitHub above first.)"));
     for (const lib of libraries) {

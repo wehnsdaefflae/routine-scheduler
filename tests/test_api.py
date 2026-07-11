@@ -635,3 +635,11 @@ def test_source_repo_settings(tmp_path):
         assert r["ok"] and r["pushed"] is True, r
         assert yaml.safe_load(cfg_path.read_text())["source_remote"] == str(bare)
         assert c.get("/api/settings/source").json()["remote"] == str(bare)   # now visible as origin
+
+
+def test_static_and_index_are_no_cache(client):
+    c, _ = client
+    for path in ("/", "/static/app.js"):
+        r = c.get(path)
+        assert r.status_code == 200
+        assert r.headers.get("cache-control") == "no-cache"

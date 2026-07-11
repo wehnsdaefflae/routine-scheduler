@@ -125,5 +125,14 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     def index():
         return FileResponse(STATIC_DIR / "index.html")
 
+    @app.middleware("http")
+    async def fresh_ui(request, call_next):
+        # The daemon self-updates and restarts; without this, browsers heuristically cache the
+        # ES modules and keep rendering the pre-update console. no-cache = revalidate (cheap 304s).
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
