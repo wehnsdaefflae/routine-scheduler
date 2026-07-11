@@ -682,3 +682,29 @@ def test_write_file_accepts_structured_content(make_routine, scripted):
     import json as _json
     on_disk = _json.loads((d / "state" / "phase.json").read_text())
     assert on_disk == {"phase": "gather-evidence", "n": 2}
+
+
+def test_schema_retry_telemetry(make_routine, scripted):
+    """A schema violation recovered within the same turn increments schema_retries, and the
+    counter is surfaced in status.json (telemetry so audits can spot retry storms at a glance)."""
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        "this is not a valid action object",       # invalid reply → one schema retry
+        probe("recovered after the retry"),         # attempt 2 of the same turn succeeds
+        finish(summary="done after a single retry"),
+    ])
+    assert status == "ok"
+    st = read_json(run_dir / "status.json")
+    assert st["schema_retries"] == 1
+    assert st["schema_forcefails"] == 0
+
+
+def test_schema_forcefail_telemetry(make_routine, scripted):
+    """When every schema attempt fails, the run force-fails and both counters are recorded in
+    status.json (schema_retries once per attempt, schema_forcefails once for the turn)."""
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        "nope one", "nope two", "nope three",       # all three attempts invalid
+    ])
+    assert status == "failed"
+    st = read_json(run_dir / "status.json")
+    assert st["schema_retries"] == 3
+    assert st["schema_forcefails"] == 1

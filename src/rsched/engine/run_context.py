@@ -51,6 +51,8 @@ class RunContext:
     question: dict | None = None
     main_model: str = ""              # "<endpoint>/<model>" resolved each turn (surfaced in status.json)
     budget_base_turn: int = 0         # turns before this count against a prior budget window (resume)
+    schema_retries: int = 0           # cumulative schema-violation retries this run (telemetry)
+    schema_forcefails: int = 0        # turns that exhausted every schema attempt (telemetry)
     _started_mono: float = field(default_factory=time.monotonic)
     _suspended_s: float = 0.0
 
@@ -75,6 +77,14 @@ class RunContext:
     def add_usage(self, usage: dict) -> None:
         self.usage["in"] += int(usage.get("in") or 0)
         self.usage["out"] += int(usage.get("out") or 0)
+
+    def note_schema_retry(self) -> None:
+        """Telemetry: one schema-violation retry occurred this turn."""
+        self.schema_retries += 1
+
+    def note_schema_forcefail(self) -> None:
+        """Telemetry: a turn exhausted every schema attempt and force-failed."""
+        self.schema_forcefails += 1
 
     def budget_violation(self) -> str | None:
         b = self.budgets
@@ -118,6 +128,8 @@ class RunContext:
             "question": self.question,
             "usage": dict(self.usage),
             "model": self.main_model,
+            "schema_retries": self.schema_retries,
+            "schema_forcefails": self.schema_forcefails,
             "budgets": {
                 "turns_left": max(0, b.max_turns - (self.turn - self.budget_base_turn)),
                 "wall_clock_left_s": max(0, int(b.max_wall_clock_min * 60 - self.elapsed_s())),

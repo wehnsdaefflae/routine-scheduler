@@ -286,6 +286,7 @@ class EngineLoop:
                 prev_raw = raw
                 ctx.transcript.event("error", {"where": "schema", "attempt": attempt,
                                                "message": str(exc)[:500], "raw": raw[:1500]})
+                ctx.note_schema_retry()
                 self.messages.append({"role": "assistant", "content": raw[:4000]})
                 self.messages.append({"role": "user", "content": retry_message(
                     exc.problems, example=KIND_EXAMPLES.get(kind_hint), repeated=repeated)})
@@ -294,6 +295,7 @@ class EngineLoop:
                     # grammar's fault (empty-string debris fields are its signature) — give
                     # the final attempt free-form JSON; the contract still demands one object.
                     schema = None
+        ctx.note_schema_forcefail()
         return None, usage_sum
 
     def _compact_if_needed(self, endpoint, ref) -> None:
