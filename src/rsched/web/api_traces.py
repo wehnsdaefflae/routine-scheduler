@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+log = logging.getLogger("rsched.traces")
 router = APIRouter(tags=["traces"])
 
 KINDS = ("nav", "click", "submit", "error", "reconnect")
@@ -66,7 +68,13 @@ def ingest(request: Request, body: TraceBatch) -> dict:
     d = traces_dir(server)
     d.mkdir(parents=True, exist_ok=True)
     day_file = d / f"{now.strftime('%Y%m%d')}.jsonl"
-    with open(day_file, "a", encoding="utf-8") as fh:
-        fh.write("\n".join(lines) + "\n")
-    _prune(d)
+    try:
+        with open(day_file, "a", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+        _prune(d)
+    except OSError as exc:
+        # Tracing must never 500 the console, but a dead trace store shouldn't be silent
+        # either — and the count must be honest.
+        log.warning("ui-trace write failed: %s", exc)
+        return {"recorded": 0}
     return {"recorded": len(lines)}

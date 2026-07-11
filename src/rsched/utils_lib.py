@@ -243,5 +243,5 @@ def git_commit(home: Path, message: str) -> bool:
         _git(home, "add", "-A")
         r = _git(home, "commit", "-qm", message)
         return r.returncode == 0
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return False

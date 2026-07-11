@@ -51,7 +51,7 @@ def do_read_file(action: dict, ctx: RunContext) -> dict:
     try:
         path = resolve_rel(ctx.routine.dir, action["path"], ctx.routine.fs_read_roots)
         text = path.read_text(encoding="utf-8", errors="replace")
-    except (OSError, PermissionError, UnicodeDecodeError) as exc:
+    except (OSError, PermissionError) as exc:
         return {"kind": "read_file", "path": action["path"], "error": str(exc)}
     lines = text.splitlines()
     start = max(1, int(action.get("start_line") or 1))
@@ -100,8 +100,6 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
     ctx.add_usage(completion.usage)
     reply = completion.text
     if completion.parsed is not None:
-        import json
-
         reply = json.dumps(completion.parsed, ensure_ascii=False, indent=1)
     reply, truncated = truncate(reply)
     return {"kind": "llm", "endpoint": ref.endpoint, "model": ref.model,

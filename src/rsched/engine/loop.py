@@ -28,6 +28,7 @@ from .control import (_ABORT, RunAborted, announce_finished_subruns, apply_model
                       drain_injections, pause_gate, request_abort)
 from .history import (COMPACT_AT_FRACTION, KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history,
                       maybe_compact, messages_size, replay_messages)
+from .autocommit import autocommit as _autocommit
 from .run_context import RunContext
 from .subruns import SubrunManager
 
@@ -40,22 +41,7 @@ __all__ = ["EngineLoop", "RunAborted", "request_abort", "POLL_S",
            "MAX_SCHEMA_ATTEMPTS", "REPEAT_WARN", "REPEAT_FAIL"]
 
 
-def _autocommit(routine_dir: Path, message: str) -> None:
-    """Commit the routine's working dir at run end with the neutral identity (best-effort).
-    Routines have no shell, so the engine owns version control of their state/outputs."""
-    import subprocess
-
-    if not (routine_dir / ".git").is_dir():
-        return
-    try:
-        subprocess.run(["git", "-C", str(routine_dir), "add", "-A"],
-                       capture_output=True, timeout=30)
-        subprocess.run(["git", "-C", str(routine_dir),
-                        "-c", "user.name=routine-scheduler",
-                        "-c", "user.email=noreply@routine-scheduler.local",
-                        "commit", "-qm", message], capture_output=True, timeout=30)
-    except OSError:
-        pass
+# _autocommit extracted to .autocommit (single-responsibility module)
 
 
 class EngineLoop:
