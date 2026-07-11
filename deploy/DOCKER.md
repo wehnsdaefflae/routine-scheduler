@@ -82,8 +82,9 @@ systemctl --user disable --now routine-scheduler.service
   in. It's long-lived — when it expires, re-run `claude setup-token` and update the Secrets value
   (no restart). Only `self-audit` (orchestrator) and `meta-workflows` (subcall) use `claude-cli` by
   default; most setups can use API keys instead.
-- **No browser in the image.** None of the routines drive one. The personal CDP utils
-  (freelance/gulp/xing/…) won't work until you add a Chromium/Playwright layer to the `Dockerfile`
-  and provide a logged-in profile — out of scope here.
+- **Headless browsing works out of the box.** The image carries Chromium's system libraries;
+  the `page-fetch` util downloads Playwright's Chromium itself on first use (once — the
+  browser cache `~/.cache/ms-playwright` is bind-mounted). The personal CDP utils
+  (freelance/gulp/xing/…) additionally need a logged-in profile — out of scope here.
 - **Dependency changes** committed by self-audit are picked up on the next restart (`uv run`
   re-syncs from the mounted `pyproject.toml`), exactly like the systemd unit.

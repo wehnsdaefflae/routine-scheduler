@@ -9,8 +9,9 @@ FROM python:3.12-slim-bookworm
 #   gh        — GitHub CLI: users run `gh auth login` at setup to clone/pull/push their (private) repos
 #   node + @anthropic-ai/claude-code — the `claude-cli` transport (self-audit) and the `gu claude` util
 #   curl/ca-certificates/gnupg — uv download, apt keys, HTTPS to OpenRouter/Anthropic
-# (No browser: none of the routines drive one. To enable the personal CDP utils later, add a
-#  Chromium/Playwright layer here — see deploy/DOCKER.md.)
+#   lib*/fonts-* — Chromium's system libraries, so the page-fetch util's Playwright browser RUNS
+#     here (the ~170 MB browser itself is user-level: downloaded once by the util into the
+#     bind-mounted ~/.cache/ms-playwright — image carries the stable root-owned libs only)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git curl ca-certificates gnupg \
     # GitHub CLI apt repo
@@ -23,6 +24,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Node 20 (for the claude CLI)
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs gh gosu \
+        libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcairo2 libcups2 \
+        libdbus-1-3 libdrm2 libgbm1 libglib2.0-0 libnspr4 libnss3 libpango-1.0-0 \
+        libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 \
+        libxkbcommon0 libxrandr2 libfontconfig1 libfreetype6 \
+        fonts-liberation fonts-noto-color-emoji fonts-unifont \
     && npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
