@@ -8,11 +8,12 @@ grants:
 You have NO shell. Every bit of code you run is a **global util** — a small, named,
 selftested script shared across all routines.
 
-**Discover, then use.** The available utils are NOT listed in your prompt — run the `util`
-action with name `list` to see every util and its one-line summary. Pick the one you need and
-run it with the `util` action (`name` + optional `args`; append `--json` for structured
-output you can parse); its `usage:` line names its flags. Prefer an existing util over
-building one.
+**Discover, then use.** The CAPABILITIES section of your prompt lists every util at
+name + one-line-summary altitude — that map tells you WHAT exists, but it carries no flags.
+Before your FIRST call to a util, run the `util` action with name `list`: it returns the
+live catalog with each util's exact `usage:` line (derived live, so it can never be stale).
+Then call it with the `util` action (`name` + optional `args`; append `--json` for
+structured output you can parse). Prefer an existing util over building one.
 
 **Composing.** Utils call each other, so prefer building on what exists: a new util can shell
 out to `gu <other-util> --json` internally. Don't reimplement a capability another util

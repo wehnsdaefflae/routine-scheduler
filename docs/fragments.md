@@ -56,11 +56,13 @@ malformed `grants:` block), and `rsched lint` covers the whole library.
 A run's allowed action kinds are **workflow `tools:` ∩ (base ∪ union of active grants)**.
 Base is everything except the gated kinds, so existing routines keep working: `read_file`,
 `write_file`, `llm`, `spawn`, and plain `util` calls are never gated by fragments. Gated
-are exactly the capabilities that were already gated or reach outside the system:
+are the capabilities that were already gated, reach outside the system, or own an
+engine-maintained surface:
 
 | capability | granted by | notes |
 |---|---|---|
 | `write_util` (create/revise global utils) | `util-authoring` (confirm: true), `util-authoring-autonomous` (confirm: revisions-only), `util-authoring-full-auto` (confirm: false) | in `DEFAULT_FRAGMENTS` via `util-authoring`, so new routines behave as before |
+| `memory_read` / `memory_write` (the `.memory/` notebook) | `memory` | in `DEFAULT_FRAGMENTS`; the engine owns `.memory/INDEX.md` and enforces the 100-line note cap — `read_file`/`write_file` are rejected on `.memory/` paths for everyone |
 | `discord` util | `communication` | the pilot for util-level grants |
 
 A rejected gated call never becomes a turn: `validate_action` refuses it inside the
