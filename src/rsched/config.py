@@ -26,7 +26,7 @@ DEFAULT_BUDGETS = {
     "max_total_tokens": 1_500_000,
     "max_subruns": 8,
     "max_subrun_depth": 2,
-    "ask_timeout_h": 8,
+    "ask_timeout_min": 5,
 }
 # PERMISSIONS a new routine holds when its routine.yaml names no explicit `permissions:`
 # list. Permissions are engine-enforced capabilities (see grants.py), user-changeable only:
@@ -251,7 +251,15 @@ class RoutineConfig(_Config):
     @field_validator("budgets", mode="before")
     @classmethod
     def _merged_over_defaults(cls, v: object) -> object:
-        return {**DEFAULT_BUDGETS, **v} if isinstance(v, dict) else v
+        if not isinstance(v, dict):
+            return v
+        # legacy key: routine.yaml written before the timeout moved to minutes — convert,
+        # never drop (an existing 8h stays 8h, just expressed as 480m)
+        if "ask_timeout_h" in v:
+            v = dict(v)
+            legacy = v.pop("ask_timeout_h")
+            v.setdefault("ask_timeout_min", int(legacy) * 60)
+        return {**DEFAULT_BUDGETS, **v}
 
     @field_validator("permissions", mode="before")
     @classmethod

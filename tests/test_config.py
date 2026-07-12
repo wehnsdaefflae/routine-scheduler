@@ -181,3 +181,34 @@ def test_routine_explicit_empty_permissions_wins(tmp_path):
     d = _mk_routine(tmp_path, {"description": "x", "permissions": []})
     cfg, problems = load_routine(d)
     assert cfg.permissions == [] and problems == []
+
+
+def test_routine_legacy_ask_timeout_h_converts_to_minutes(tmp_path):
+    """routine.yaml written before the timeout moved to minutes keeps its meaning:
+    ask_timeout_h is converted (x60), never dropped as an unknown budget."""
+    d = _mk_routine(tmp_path, {"description": "Legacy timeout.",
+                               "budgets": {"ask_timeout_h": 2}})
+    cfg, problems = load_routine(d)
+    assert problems == []
+    assert cfg.budgets["ask_timeout_min"] == 120
+    assert "ask_timeout_h" not in cfg.budgets
+
+
+def test_routine_explicit_ask_timeout_min_beats_legacy(tmp_path):
+    """When both keys appear, the new one wins; the legacy key is discarded silently."""
+    d = _mk_routine(tmp_path, {"description": "Both timeouts.",
+                               "budgets": {"ask_timeout_h": 2, "ask_timeout_min": 7}})
+    cfg, problems = load_routine(d)
+    assert problems == []
+    assert cfg.budgets["ask_timeout_min"] == 7
+
+
+def test_bare_serverconfig_is_hermetic_under_pytest(tmp_path):
+    """Regression (health-event leak): a bare ServerConfig() built inside a test must not
+    point at the REAL ~/routines — otherwise fixture runs append run_failed noise into the
+    live health-events.jsonl on every pytest invocation (the _hermetic_home autouse
+    fixture redirects ~ into tmp)."""
+    from pathlib import Path
+    s = ServerConfig()
+    assert str(Path.home()) not in str(s.routines_home)
+    assert str(Path.home()) not in str(s.libraries_home)

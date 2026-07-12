@@ -156,9 +156,9 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   padding: 8px 11px; border: 1px dashed var(--line-2); border-radius: 7px; margin-top: 10px;
 }
 .flow-note .arrow { color: var(--amber); }
-.pending-item { display: flex; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.pending-item { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
 .pending-item:last-child { border-bottom: none; }
-.pending-item .p-text { flex: 1; font-family: var(--sans); color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+.pending-item .p-text { flex: 1 1 240px; font-family: var(--sans); color: var(--text); min-width: 0; overflow-wrap: break-word; }
 
 /* ---------- library / editors ---------- */
 /* code editor: a highlighted <pre> under a transparent-text <textarea> (components/code.js).

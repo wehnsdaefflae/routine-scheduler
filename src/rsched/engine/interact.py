@@ -3,7 +3,7 @@ and write_util, whose approval gate derives from the routine's permission grants
 
 EVERY kind of required user feedback funnels into the same decision record
 (inbox.file_question): plain asks and util approvals, deferred and blocking. A blocking
-decision waits up to the routine's ask_timeout_h (configurable on the routine page),
+decision waits up to the routine's ask_timeout_min (configurable on the routine page),
 mirrors to Discord when the routine holds the communication permission, and — whichever
 surface answers first — the other one is told. On timeout the run CONTINUES on the
 model's stated `default`; the question stays open as deferred so a late answer still
@@ -44,18 +44,18 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                             qtype=qtype, default=default)
         return {"kind": "ask_user", "qid": qid, "mode": mode}
 
-    timeout_h = ctx.budgets.ask_timeout_h
-    expires = (datetime.now().astimezone() + timedelta(hours=timeout_h)).isoformat(timespec="seconds")
+    timeout_min = ctx.budgets.ask_timeout_min
+    expires = (datetime.now().astimezone() + timedelta(minutes=timeout_min)).isoformat(timespec="seconds")
     # blocking decisions are durable records too — the Decisions page never depends on a
     # live status.json to show one, and an aborted run leaves it behind as deferred
     inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                         mode="blocking", qtype=qtype, default=default, expires=expires)
-    mirror = decisions.mirror_blocking(ctx, qid, question, options, default, timeout_h)
+    mirror = decisions.mirror_blocking(ctx, qid, question, options, default, timeout_min)
     ctx.write_status("waiting_user",
                      question={"qid": qid, "question": question, "options": options,
                                "asked": ctx.run_ts, "expires": expires,
                                "mirrored": mirror is not None, **extra})
-    deadline = time.monotonic() + timeout_h * 3600
+    deadline = time.monotonic() + timeout_min * 60
     started = time.monotonic()
     answer = None
     try:
@@ -102,7 +102,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     if mirror:
         mirror.notify_timeout(default)
     return {"kind": "ask_user", "qid": qid, "mode": mode, "timed_out": True,
-            "timeout_h": timeout_h, **({"default": default} if default else {})}
+            "timeout_min": timeout_min, **({"default": default} if default else {})}
 
 
 def handle_write_util(loop, action: dict, poll_s: float) -> dict:

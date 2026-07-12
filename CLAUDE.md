@@ -103,7 +103,7 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (main / subroutine / tool_call),
   `permissions:` (held capability grants — user-changeable only, all surfaced on the routine page),
-  `budgets:` (max_turns / wall_clock_min / total_tokens / subruns / subrun_depth / ask_timeout_h — all
+  `budgets:` (max_turns / wall_clock_min / total_tokens / subruns / subrun_depth / ask_timeout_min — all
   editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
   budgets/fs-roots/schedules are resources, never grants.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
@@ -122,7 +122,7 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   subprocess); children get half the parent's remaining budget, a cap of 4 parallel, and are killed at
   parent finish (they never outlive the parent). Monitor via `subruns` / `wait` / `kill`; exits
   auto-announce at the next turn boundary and fold usage into the parent.
-- **ask_user** is `blocking` (poll `inbox/answer-<qid>.json` up to `ask_timeout_h`, then the run
+- **ask_user** is `blocking` (poll `inbox/answer-<qid>.json` up to `ask_timeout_min`, then the run
   CONTINUES on the action's stated `default` and the record stays open as deferred) or `deferred`
   (filed to `questions/pending/`, surfaced in a later run's state digest). Blocking asks are durable
   records too, and — when the routine holds the `communication` permission — are mirrored to Discord by

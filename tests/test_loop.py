@@ -529,7 +529,7 @@ def test_ask_user_blocking_timeout_defers(make_routine, scripted):
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
         {"say": "q", "kind": "ask_user", "question": "Anyone?", "mode": "blocking"},
         finish(),
-    ], slug="timeouter", budgets={"ask_timeout_h": 0})
+    ], slug="timeouter", budgets={"ask_timeout_min": 0})
     assert status == "ok"
     assert list((d / "questions" / "pending").glob("*.json"))
     assert "stays open as deferred" in ep.calls[1]["messages"][-1]["content"]

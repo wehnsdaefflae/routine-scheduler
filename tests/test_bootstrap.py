@@ -160,3 +160,32 @@ def test_migrate_maps_implicit_default_to_default_permissions(make_routine, tmp_
     assert migrate_fragments_split(tmp_path / "routines", lib) == 1
     raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
     assert raw["permissions"] == list(DEFAULT_PERMISSIONS)
+
+
+def test_sync_seed_utils_installs_missing_never_overwrites(tmp_path, monkeypatch):
+    """A util added to util-seed after bootstrap reaches the live catalog at daemon boot;
+    an existing (possibly locally-modified) util is never touched."""
+    from rsched import bootstrap
+    fake_repo = tmp_path / "repo"
+    for name in ("newutil", "oldutil"):
+        (fake_repo / "util-seed" / "utils" / name).mkdir(parents=True)
+        (fake_repo / "util-seed" / "utils" / name / "main.py").write_text(
+            f"# seed {name}\n", encoding="utf-8")
+    lib = tmp_path / "lib"
+    (lib / "utils" / "oldutil").mkdir(parents=True)
+    (lib / "utils" / "oldutil" / "main.py").write_text("# locally modified\n", encoding="utf-8")
+    monkeypatch.setattr(bootstrap, "repo_root", lambda: fake_repo)
+    assert bootstrap.sync_seed_utils(lib) == 1
+    assert (lib / "utils" / "newutil" / "main.py").read_text(encoding="utf-8") == "# seed newutil\n"
+    assert (lib / "utils" / "oldutil" / "main.py").read_text(encoding="utf-8") == "# locally modified\n"
+    # second boot: nothing new, nothing touched
+    assert bootstrap.sync_seed_utils(lib) == 0
+
+
+def test_sync_seed_utils_no_library_yet(tmp_path, monkeypatch):
+    """Before seed_libraries has created utils/, the sync is a silent no-op."""
+    from rsched import bootstrap
+    fake_repo = tmp_path / "repo"
+    (fake_repo / "util-seed" / "utils" / "x").mkdir(parents=True)
+    monkeypatch.setattr(bootstrap, "repo_root", lambda: fake_repo)
+    assert bootstrap.sync_seed_utils(tmp_path / "nolib") == 0

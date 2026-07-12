@@ -17,7 +17,7 @@ from ..schema_guard import loads_tolerant
 from ..workflows.scaffold import GITIGNORE
 
 WIZARD_BUDGETS = {"max_turns": 25, "max_wall_clock_min": 30, "max_total_tokens": 200_000,
-                  "max_subruns": 0, "max_subrun_depth": 0, "ask_timeout_h": 2}
+                  "max_subruns": 0, "max_subrun_depth": 0, "ask_timeout_min": 120}
 
 TERMINAL = ("finished", "failed", "aborted")
 

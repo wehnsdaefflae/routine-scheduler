@@ -27,7 +27,7 @@ class Budgets:
     max_total_tokens: int
     max_subruns: int
     max_subrun_depth: int
-    ask_timeout_h: int
+    ask_timeout_min: int
 
     @classmethod
     def from_config(cls, budgets: dict) -> "Budgets":
@@ -133,7 +133,7 @@ class RunContext:
             max_total_tokens=max(1000, (b.max_total_tokens - self.usage["in"] - self.usage["out"]) // 2),
             max_subruns=b.max_subruns,
             max_subrun_depth=b.max_subrun_depth,
-            ask_timeout_h=b.ask_timeout_h,
+            ask_timeout_min=b.ask_timeout_min,
         )
 
     def write_status(self, state: str | None = None, question: dict | None = "\0") -> None:

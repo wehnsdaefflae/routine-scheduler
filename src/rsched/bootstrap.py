@@ -278,3 +278,29 @@ def seed_libraries(home: Path) -> None:
     _git(home, "add", "-A")
     _git(home, "commit", "-qm", "seed library repo")
     install_push_hook(home)
+
+
+def sync_seed_utils(libraries_home: Path) -> int:
+    """Install seed utils MISSING from the live util library (runs at every daemon boot).
+    Bootstrap seeds utils only once, so a util added to util-seed/ after an instance was
+    created never reached it — a permission could point at a util that doesn't exist
+    (the reserved 'shell' util did exactly that). Copies each absent
+    util-seed/utils/<name> verbatim; NEVER touches an existing util dir (local
+    modifications stay untouched). Returns how many were installed."""
+    src = repo_root() / "util-seed" / "utils"
+    dest = libraries_home / "utils"
+    if not src.is_dir() or not dest.is_dir():
+        return 0   # fresh deploys get everything via seed_libraries instead
+    installed = []
+    for d in sorted(p for p in src.iterdir() if p.is_dir()):
+        target = dest / d.name
+        if target.exists():
+            continue
+        shutil.copytree(d, target)
+        installed.append(d.name)
+    if installed:
+        log.warning("seed-sync: installed new seed util(s): %s", ", ".join(installed))
+        _git(libraries_home, "add", "-A")
+        _git(libraries_home, "commit", "-qm",
+             f"seed-sync: install new seed util(s): {', '.join(installed)}")
+    return len(installed)

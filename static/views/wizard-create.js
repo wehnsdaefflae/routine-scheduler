@@ -131,7 +131,7 @@ export async function stageSuggest(ctx, wid) {
     ["max_total_tokens", "tokens per run"],
     ["max_subruns", "sub-workflows per run"],
     ["max_subrun_depth", "sub-workflow depth"],
-    ["ask_timeout_h", "blocking-question timeout (h)"],
+    ["ask_timeout_min", "blocking-question timeout (min)"],
   ];
   const budgetInputs = {};
   ctx.stage.append(el("h2", {}, "Budgets"),

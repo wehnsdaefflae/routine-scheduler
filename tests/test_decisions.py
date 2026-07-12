@@ -34,7 +34,7 @@ def _events(run_dir):
 
 
 def test_blocking_ask_files_a_durable_record_with_default_and_expiry(make_routine, scripted):
-    d = make_routine(slug="blocker", budgets={"ask_timeout_h": 0})
+    d = make_routine(slug="blocker", budgets={"ask_timeout_min": 0})
     scripted([
         {"say": "q", "kind": "ask_user", "question": "Ship it?", "mode": "blocking",
          "options": ["yes", "no"], "default": "hold the release"},
@@ -57,7 +57,7 @@ def test_blocking_ask_files_a_durable_record_with_default_and_expiry(make_routin
 
 
 def test_blocking_answer_resolves_the_record(make_routine, scripted):
-    d = make_routine(slug="resolved", budgets={"ask_timeout_h": 1})
+    d = make_routine(slug="resolved", budgets={"ask_timeout_min": 1})
 
     def answer_soon():
         deadline = time.time() + 5
@@ -90,7 +90,7 @@ def test_util_approval_is_the_same_record_with_its_own_type(make_routine, script
     (perms / "util-authoring.md").write_text(
         "---\ntags: [a, b, c]\ngrants:\n  actions: [write_util]\n  confirm: true\n---\n"
         "# permission: util-authoring — user-approved\nbody\n", encoding="utf-8")
-    d = make_routine(slug="approval", budgets={"ask_timeout_h": 0})
+    d = make_routine(slug="approval", budgets={"ask_timeout_min": 0})
     scripted([
         {"say": "new util", "kind": "write_util", "name": "frob", "content": "# x"},
         finish(),
@@ -182,7 +182,7 @@ def test_mirror_reply_resolves_the_blocking_ask(make_routine, scripted, monkeypa
     monkeypatch.setattr(decisions.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
     # the routine holds communication (grants live in the test library)
-    d = make_routine(slug="viaphone", budgets={"ask_timeout_h": 1})
+    d = make_routine(slug="viaphone", budgets={"ask_timeout_min": 1})
     server = _server(d)
     server.permissions_home.mkdir(parents=True, exist_ok=True)
     (server.permissions_home / "communication.md").write_text(

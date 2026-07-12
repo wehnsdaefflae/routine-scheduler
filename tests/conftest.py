@@ -18,6 +18,26 @@ from rsched.config import ModelRef, ServerConfig
 from rsched.endpoints import EndpointRegistry
 from rsched.endpoints.base import Completion
 
+
+@pytest.fixture(autouse=True)
+def _hermetic_home(tmp_path, monkeypatch):
+    """Tests must NEVER touch the real ~/routines: a bare ServerConfig() defaults its
+    routines_home to expand("~/routines"), and engine/daemon code logs health events under
+    routines_home/.control — so every pytest run used to append fixture noise (run_failed
+    for 'aborted', 'testr', 'wubad', ...) into the LIVE health-events.jsonl. Redirect all
+    "~" expansion in rsched.config (field defaults + HomePath validation, both of which
+    resolve `expand` at call time) into this test's tmp dir."""
+    from rsched import paths as _paths
+    fake_home = tmp_path / "hermetic-home"
+    real = _paths.expand
+    def expand(v):
+        s = str(v)
+        if s == "~" or s.startswith("~/"):
+            return fake_home / s[2:] if len(s) > 1 else fake_home
+        return real(v)
+    monkeypatch.setattr("rsched.config.expand", expand)
+
+
 WORKFLOW_MD = """---
 materialized_from: {slug: test-flow, commit: abc123, version: 1}
 adapted: 2026-07-08
@@ -97,7 +117,7 @@ def make_routine(tmp_path):
             "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin", "catchup": "skip"},
             "workflow": {"library_slug": "test-flow", "library_commit": "abc123"},
             "budgets": {"max_turns": 10, "max_wall_clock_min": 5, "max_total_tokens": 100_000,
-                        "max_subruns": 2, "max_subrun_depth": 1, "ask_timeout_h": 1,
+                        "max_subruns": 2, "max_subrun_depth": 1, "ask_timeout_min": 1,
                         **(budgets or {})},
         }
         (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")

@@ -51,7 +51,7 @@ out only after your explicit go.
 | workflow | `general-task` | scan → score → draft → gate is ordinary tool work |
 | traits | ask-policy, global-utils, web-research, ledger-discipline, improve-bugfix, improve-efficiency | scrapers rot — the bugfix pass earns its keep; efficiency keeps the shortlist format lean |
 | permissions | **util-authoring-autonomous**, memory, self-modification, **communication** | scrapers break at 6 a.m. — autonomous *revisions* fix them without waking you (new utils still ask); communication mirrors the send-gate to Discord |
-| budgets | 60 turns · 45 min · defaults; **ask_timeout_h 4** | a send-gate that waits longer than half a day is stale anyway |
+| budgets | 60 turns · 45 min · defaults; **ask_timeout_min 240** | a send-gate that waits longer than half a day is stale anyway |
 | schedule | weekdays 06:30 | the shortlist is ready with your coffee |
 
 ### A typical run
@@ -104,7 +104,7 @@ submitted only after your sign-off.
 | workflow | `general-task` (or generate a pipeline pattern once the library has traffic) | |
 | traits | ask-policy, global-utils, web-research, ledger-discipline, improve-research, improve-features | improve-research tunes sources by yield; improve-features grows the pipeline (e.g. deadline reminders) |
 | permissions | util-authoring, memory, self-modification, **run-history-full**, communication | **full run history** is the point: "did we already see this program in March?", "what did the run that submitted X actually do?" — longitudinal questions the LEDGER alone can't answer |
-| budgets | **80 turns · 60 min** · ask_timeout_h 8 | a weekly run may verify dozens of pages; give it room |
+| budgets | **80 turns · 60 min** · ask_timeout_min 480 | a weekly run may verify dozens of pages; give it room |
 | schedule | Mondays 07:00 | deadlines are usually weekday-anchored |
 
 ### A typical run
@@ -156,7 +156,7 @@ grant-funded open-source project: deliverables register, worklog, public repo hy
 | traits | ask-policy, global-utils, ledger-discipline, web-research, improve-bugfix, improve-features, improve-efficiency | the full engineering improvement set |
 | permissions | **shell**, util-authoring, memory, self-modification, run-history | **this is the routine the shell permission exists for**: `gu shell "cd ~/projects/llmsectest && uv run pytest -q"` — builds, test suites, linters. Repeatable operations still get promoted to utils (`pytest-run`, `git-sync` already exist) |
 | fs roots | read+write: `~/projects/llmsectest` | the project lives outside the routine dir |
-| budgets | 80 turns · **90 min** · ask_timeout_h 8 | test suites take wall-clock time |
+| budgets | 80 turns · **90 min** · ask_timeout_min 480 | test suites take wall-clock time |
 | schedule | weekdays 07:00 | |
 
 ### A typical run
@@ -204,7 +204,7 @@ learning your taste run over run.
 | workflow | `general-task` | propose → feedback → learn → propose is steady-state work |
 | traits | ask-policy, web-research, ledger-discipline, improve-research, improve-ui | improve-ui keeps `proposals.md` readable as it grows; improve-research tunes what gets cached |
 | permissions | memory, self-modification, **communication**, **run-history** | taste questions belong on your phone (Discord), not buried in a console; run-history lets it diff proposals against exactly what you saw last time |
-| budgets | 40 turns · 30 min · **ask_timeout_h 24** | taste questions can wait a day; the run continues on its stated default and folds your late answer into the next one |
+| budgets | 40 turns · 30 min · **ask_timeout_min 1440** | taste questions can wait a day; the run continues on its stated default and folds your late answer into the next one |
 | schedule | Tuesdays + Fridays 18:00 | often enough to converge, rare enough to have news |
 
 ### A typical run

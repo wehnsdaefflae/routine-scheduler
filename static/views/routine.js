@@ -155,7 +155,7 @@ export async function render(view, slug, query = {}) {
     ["max_total_tokens", "tokens per run", "cumulative input+output tokens; the prompt is re-sent every turn"],
     ["max_subruns", "sub-workflows per run", "how many parallel children a run may spawn in total"],
     ["max_subrun_depth", "sub-workflow depth", "how deep children may nest (children get half the parent's remainder)"],
-    ["ask_timeout_h", "blocking-question timeout (h)", "hours a blocking decision waits for you before the run continues without it (the question stays open on the Decisions page)"],
+    ["ask_timeout_min", "blocking-question timeout (min)", "minutes a blocking decision waits for you before the run continues without it (the question stays open on the Decisions page)"],
   ];
   const budgetInputs = {};
   const budgetRows = BUDGET_FIELDS.map(([key, label, help]) => {

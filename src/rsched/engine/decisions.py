@@ -45,7 +45,7 @@ class DiscordMirror:
         return code, out
 
     def send_question(self, question: str, options: list[str], default: str,
-                      timeout_h: int) -> bool:
+                      timeout_min: int) -> bool:
         """Post the question; advance the reply cursor first so stale channel chatter is
         never mistaken for the answer. Returns False when the channel is unusable."""
         self._run(["read", "--cursor", self.cursor, "--json"])   # prime: skip old messages
@@ -53,7 +53,7 @@ class DiscordMirror:
         if options:
             lines.append("Options: " + " · ".join(options))
         if default:
-            lines.append(f"Without an answer in ~{timeout_h}h I continue with: {default}")
+            lines.append(f"Without an answer in ~{timeout_min}m I continue with: {default}")
         lines.append("Reply here, or answer on the Decisions page — whichever comes first counts.")
         code, _ = self._run(["send", "\n".join(lines),
                              "--title", f"{self.ctx.routine.slug}: decision {self.qid}"])
@@ -108,7 +108,7 @@ def _reply_texts(raw: str) -> list[str]:
 
 
 def mirror_blocking(ctx, qid: str, question: str, options: list[str], default: str,
-                    timeout_h: int):
+                    timeout_min: int):
     """A live DiscordMirror for this question, or None when the routine is not set up
     for it (no communication permission / no discord util) or the channel is down."""
     g = ctx.grants
@@ -117,4 +117,4 @@ def mirror_blocking(ctx, qid: str, question: str, options: list[str], default: s
     if not utils_lib.exists(ctx.server.utils_home, "discord"):
         return None
     mirror = DiscordMirror(ctx, qid)
-    return mirror if mirror.send_question(question, options, default, timeout_h) else None
+    return mirror if mirror.send_question(question, options, default, timeout_min) else None

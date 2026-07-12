@@ -129,7 +129,7 @@ unreported exit (timeout_s, default 600) — it returns AT ONCE when a finished 
 been reported to you yet, or when nothing is running. Children never outlive you — your \
 finish kills them.
 - ask_user: mode "deferred" (default) files the question and CONTINUES — plan around the missing \
-answer. Mode "blocking" pauses the run until answered; after {b.ask_timeout_h}h without an answer \
+answer. Mode "blocking" pauses the run until answered; after {b.ask_timeout_min} minutes without an answer \
 the run CONTINUES on your stated `default` (set it on every blocking ask) and the question stays \
 open for a future run. Ask sparingly; batch what can wait until run end.
 - finish: end the run with status ok|partial|failed and a DETAILED 8-20 line summary: concrete \
@@ -439,7 +439,7 @@ def format_observation(obs: dict) -> str:
         if obs.get("timed_out"):
             tail = (f"Proceed on your stated default: {obs['default']}"
                     if obs.get("default") else "Continue and plan around it")
-            return (f"OBSERVATION (ask_user): no answer within {obs['timeout_h']}h — question "
+            return (f"OBSERVATION (ask_user): no answer within {obs.get('timeout_min') or int(obs.get('timeout_h', 0)) * 60}m — question "
                     f"stays open as deferred ({obs['qid']}). {tail}; a late answer reaches a "
                     "future run.")
         return (f"OBSERVATION (ask_user): question filed as deferred ({obs['qid']}). The user will "
