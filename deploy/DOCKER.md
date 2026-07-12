@@ -88,3 +88,24 @@ systemctl --user disable --now routine-scheduler.service
   (freelance/gulp/xing/…) additionally need a logged-in profile — out of scope here.
 - **Dependency changes** committed by self-audit are picked up on the next restart (`uv run`
   re-syncs from the mounted `pyproject.toml`), exactly like the systemd unit.
+
+## HTTPS via Tailscale (Web Push needs a secure context)
+
+The console serves plain HTTP on the LAN. For HTTPS — required for Web Push notifications
+and generally nicer — front it with the `tailscale/tailscale` container that already runs
+on the server with `network_mode: host` (so `127.0.0.1:8321` inside it IS the published
+rsched port):
+
+```
+# one-time, per tailnet: enable the Serve feature (and HTTPS certificates when prompted)
+# in the admin console — `tailscale serve` prints the exact approval URL if it's off.
+docker exec tailscale tailscale serve --bg 8321
+docker exec tailscale tailscale serve status      # shows the https URL it now fronts
+```
+
+The console then lives at `https://<node>.<tailnet>.ts.net` (here:
+`https://ubuntuserver.taild5768c.ts.net`) with a Let's Encrypt certificate Tailscale
+provisions and renews itself — reachable from every tailnet device (phone included),
+invisible to everyone else. SSE and Web Push work through it unchanged; subscribe each
+device under **Settings → Notifications**. Undo with
+`docker exec tailscale tailscale serve reset`.
