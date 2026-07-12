@@ -9,8 +9,10 @@ git repo under `~/routines/<slug>`. Runs execute on a provider-agnostic engine w
 is the harness* — the orchestrator LLM follows the workflow document and acts only through one JSON
 action per turn. **A second AGENT LOOP in the path is banned**: it fights this harness and hides the
 conversation. Endpoints are model TRANSPORTS only (see Endpoints). Routines have **no shell** — the
-only way to run code is a global util. The instruction contains only the task; schedule, active
-fragments (standards), workdir, budgets, and model roles are routine config (`routine.yaml` / UI).
+only way to run code is a global util (a reserved `shell` util exists behind the `shell`
+permission). The instruction contains only the task; conduct prose lives in the routine's own
+`traits/` (adapted in at creation); schedule, PERMISSIONS, workdir, budgets, and model roles are
+routine config (`routine.yaml` / UI).
 
 ## Commands
 
@@ -36,15 +38,20 @@ repeat until `finish`.
   `normalize_action` + `validate_action` (`engine/actions.py`) repair grammar debris from weak/constrained
   models and return precise per-kind errors. `actions.py` is the single source of truth for what a turn
   may do — adapters, UI, and the CLI event renderer all key off it. A workflow's `tools:` allowlist AND
-  the routine's fragment **grants** (`grants.py`) are enforced there too: allowed kinds = workflow tools
-  ∩ (base ∪ active grants); a disallowed/ungranted call is corrected inside the schema-retry cycle
-  with an error naming the granting fragment, and never becomes a turn.
+  the routine's permission **grants** (`grants.py`) are enforced there too: allowed kinds = workflow tools
+  ∩ (base ∪ held grants), plus path gates (runs/ needs run-history; writes to main.md / steps/ / traits/ /
+  instruction.md need self-modification; executor.py backstops absolute paths and scopes `runs: last`).
+  A disallowed/ungranted call is corrected inside the schema-retry cycle with an error naming the
+  granting permission, and never becomes a turn.
 - **The system prompt is composed once at boot** (`engine/composer.py`): harness contract → action schema
-  + example → workflow body (the routine's own `main.md`) → instruction → active fragments →
-  **capabilities** (model + context window, the action kinds usable this run, grants, the util catalog at
-  name+summary altitude — usage stays on-demand via `util name=list`) → **state digest** (phase, `state/`,
-  step modules, last result, LEDGER tail, open/answered questions, inbox messages). Effect actions
-  (`util`/`read_file`/`write_file`/`llm`) run through `engine/executor.py`.
+  + example → workflow body (the routine's own `main.md`, ending in a `## Standing practices` tail that
+  references `traits/*.md` — practice prose is NEVER inlined) → instruction → **capabilities** (model +
+  context window, the action kinds usable this run, held permissions + their short capability notes,
+  spawnable workflow patterns, the util catalog at name+summary altitude — usage stays on-demand via
+  `util name=list`) → **state digest** (phase, `state/`, step + trait modules, last result, LEDGER tail,
+  open/answered questions, inbox messages). Effect actions (`util`/`read_file`/`write_file`/`llm`) run
+  through `engine/executor.py`. A default routine's composed prompt is ~25k chars; everything else is
+  reachable on demand (read_file steps/traits/history, util name=list, memory_read).
 - **Compaction archives context to a navigable on-disk history** (`history.compact_to_history`): when
   the prompt exceeds ~60% of the endpoint's `context_chars`, the middle turns are reorganized by the model
   into a set of markdown files (~≤100 lines each) under `runs/<ts>/history/` + `INDEX.md`; the prompt keeps
@@ -61,6 +68,7 @@ repeat until `finish`.
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
   far better than `oneOf`): `util, write_util, read_file, write_file, memory_read, memory_write, llm,
   spawn, subruns, kill, wait, ask_user, finish`. Every action carries `say` (narration) + `kind`.
+  `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out.
   `memory_*` are the ONLY way into `.memory/` (generic file actions are rejected there); the engine
   owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line note cap.
 - **The prompt surface is documented** in `docs/prompt-anatomy.md` (rendered on the Help tab). Revise
@@ -94,14 +102,18 @@ concept. `EndpointRegistry.for_model(kind, routine.models)` / `.for_system()` re
 A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is NEVER read at run time:
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (main / subroutine / tool_call),
-  `fragments:` (active standards + capability grants), `budgets:` (max_turns / wall_clock_min /
-  total_tokens / subruns / subrun_depth / ask_timeout_h), `fs_read_roots` / `fs_write_roots`, retention —
+  `permissions:` (held capability grants — user-changeable only, all surfaced on the routine page),
+  `budgets:` (max_turns / wall_clock_min / total_tokens / subruns / subrun_depth / ask_timeout_h — all
+  editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
   budgets/fs-roots/schedules are resources, never grants.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
-  routes to `steps/<name>.md` modules, read on demand). `instruction.md` — the task. `fragments/*.md` —
-  editable routine-local copies of the active fragments.
-- `state/`, `LEDGER.md`, `inbox/` (daemon/web drop messages + answers here), `questions/pending/`,
-  `runs/<ts>/` (transcripts, gitignored, keep-last-N with gzip). The engine commits the working dir
+  routes to `steps/<name>.md` modules, read on demand, and ends with a Standing practices tail
+  referencing `traits/`). `instruction.md` — the task. `traits/*.md` — the routine's OWN practice
+  modules, ADAPTED from library traits at creation (self-refined afterwards; no post-creation toggle).
+- `state/`, `LEDGER.md`, `inbox/` (daemon/web drop messages + answers here), `questions/pending/`
+  (the ONE decision-record shape: {mode, type, default, expires} — asks and util approvals alike),
+  `runs/<ts>/` (transcripts + status.json incl. usage/turns/elapsed_s — the dashboard's sortable
+  per-routine stats; gitignored, keep-last-N with gzip). The engine commits the working dir
   automatically — routines never run git themselves.
 
 ## Subruns, questions, injection
@@ -110,16 +122,22 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   subprocess); children get half the parent's remaining budget, a cap of 4 parallel, and are killed at
   parent finish (they never outlive the parent). Monitor via `subruns` / `wait` / `kill`; exits
   auto-announce at the next turn boundary and fold usage into the parent.
-- **ask_user** is `blocking` (poll `inbox/answer-<qid>.json` up to `ask_timeout_h`, then degrade to
-  deferred) or `deferred` (filed to `questions/pending/`, surfaced in a later run's state digest). The web
-  layer posts answers into `inbox/`.
+- **ask_user** is `blocking` (poll `inbox/answer-<qid>.json` up to `ask_timeout_h`, then the run
+  CONTINUES on the action's stated `default` and the record stays open as deferred) or `deferred`
+  (filed to `questions/pending/`, surfaced in a later run's state digest). Blocking asks are durable
+  records too, and — when the routine holds the `communication` permission — are mirrored to Discord by
+  the ENGINE (`engine/decisions.py`): a reply on either surface resolves everywhere and the other side
+  is notified. The web layer posts answers into `inbox/`. Every finished (sub)run appends to
+  `~/routines/.control/workflow-usage.jsonl` — the meta-workflows routine's evidence stream.
 
 ## Libraries & seeds
 
 ONE git-backed library repo (`libraries_home`, default `~/.local/share/routine-scheduler-libraries`),
 seedable from the repo and syncable to a remote, holding **workflows/** (control-flow patterns),
-**fragments/** (reusable standards inlined per routine), and **utils/** (the ONLY way routines run
-code, with the `gu` dispatcher at the root). Repo seeds: `library-seed/` (workflows + fragments),
+**traits/** (reusable practice prose, adapted per routine at creation), **permissions/** (capability
+docs whose `grants:` frontmatter the engine enforces), and **utils/** (the ONLY way routines run
+code, with the `gu` dispatcher at the root). Repo seeds: `library-seed/` (workflows + traits +
+permissions),
 `util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `library-sync`,
 `meta-workflows` — installed **disabled**; the dashboard shows a notice until enabled). `library-sync`
 syncs the WHOLE instance into that one repo: `instance-export` copies each routine's working tree
@@ -139,26 +157,33 @@ first boot; `deploy/install.sh` for host installs.
   `system_model`. The **new-routine wizard** runs `clarify-instruction`, which now SUGGESTS a pattern (or
   asks to generate one) and MARRIES the task to it — asking questions that overlay the task on the pattern's
   control flow + parameters (candidates written to the session's `state/candidates.md`).
-- **Fragments**: reusable standards inlined per routine — AND the routine's **permission surface**: a
-  library fragment's frontmatter `grants:` ({actions, utils, confirm}) unlocks gated capabilities
-  (`write_util`; reserved utils like `discord`) for routines that activate it. Grants are machine-read
-  from the LIBRARY copy ONLY (`grants.py` — never the editable routine-local copy, so routines can't
-  self-grant); activation authority stays `routine.yaml` `fragments:`. `util-authoring` (confirm: true,
-  in the default set), `util-authoring-autonomous` (confirm: revisions-only) and
-  `util-authoring-full-auto` (confirm: false) carry util authoring;
-  `communication` grants `discord`. Any future permission-ish lever becomes a fragment grant, not a new
-  yaml key (the old `confirm_util_changes` is retired into `confirm:`). See docs/fragments.md. The
-  improvement standards are five **after-run passes** — `improve-bugfix / -research / -features / -ui /
-  -efficiency` — each infers the routine's intention from the run just completed and acts in its lens
-  (fresh-eyes throughout), asking a deferred question (→ Decisions page) when unsure. `ledger-discipline`
-  (cross-run change journal), `memory` (grants `memory_read`/`memory_write` — indexed ≤100-line notes of
-  surprises in `.memory/`; INDEX.md is engine-maintained and surfaced in the state digest) +
-  `ask-policy` / `global-utils` / `web-research` are the standing standards. `DEFAULT_FRAGMENTS`
+- **Traits** (`library-seed/traits/`, `# trait:` heading, NO grants — lint-enforced): reusable practice
+  prose. Selected at creation (the wizard preselects via `suggest_traits_permissions` from the refined
+  instruction + chosen pattern), ADAPTED to the task by `adapt.decompose` (schema carries a `traits`
+  array), written to `<routine>/traits/`, referenced from main.md's Standing practices tail
+  (`scaffold._with_practices_tail` guarantees it) — the routine's own files from then on, never toggled.
+  The set: `ask-policy / global-utils / web-research / ledger-discipline` + the five **after-run
+  improvement passes** `improve-bugfix / -research / -features / -ui / -efficiency` (each infers the
+  routine's intention from the run just completed and acts in its lens, asking a deferred question when
+  unsure). `DEFAULT_TRAITS` (config) is the no-LLM fallback selection.
+- **Permissions** (`library-seed/permissions/`, `# permission:` heading + machine-read `grants:` —
+  {actions, utils, confirm, runs, self_modify}): the routine's engine-enforced capability surface,
+  held via `routine.yaml` `permissions:`, user-changeable ONLY (`grants.py` reads the LIBRARY copy;
+  nothing under a routine dir is consulted, so routines can't self-grant). The set: `util-authoring`
+  (confirm: true, default), `util-authoring-autonomous` (revisions-only), `util-authoring-full-auto`
+  (false), `memory` (memory_read/memory_write — indexed ≤100-line notes in `.memory/`; INDEX.md
+  engine-maintained, surfaced in the state digest; default), `self-modification` (recipe writes;
+  default), `communication` (reserves `discord`; also turns on engine-side Discord mirroring of
+  blocking decisions), `run-history` / `run-history-full` (read the last / all previous runs under
+  runs/), `shell` (reserves the `shell` util — the escape hatch). Permission bodies are SHORT (≤14
+  lines reach the prompt's CAPABILITIES section when held). Any future permission-ish lever becomes a
+  `grants:` key here, not a new yaml key. See docs/traits-permissions.md. `DEFAULT_PERMISSIONS`
   (config) is the source of truth; defaults added after routines exist reach them once via
-  `bootstrap.adopt_fragments` at daemon boot.
+  `bootstrap.adopt_permissions` at daemon boot; `bootstrap.migrate_fragments_split` converts pre-split
+  instances (fragments/ dirs + `fragments:` keys) at boot.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`, `calls:`),
   a `secrets: NAME,…` declaration line, and a `--selftest` the engine runs before saving (`write_util` is
-  selftest-gated; whether it needs user approval rides the active util-authoring fragment's `confirm:`
+  selftest-gated; whether it needs user approval rides the held util-authoring permission's `confirm:`
   grant). Discover with the `util` action `name: list`.
 - **Secrets** are one central, write-only KEY→VALUE store injected into every util, endpoint, and the
   subscription at run time; utils declare which vars they need and the UI flags unset ones.
