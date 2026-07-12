@@ -52,6 +52,40 @@ hr { border: none; border-top: 1px solid #1e2a37; }
 """
 
 
+# Dark pdoc theme in the console's palette — pdoc's own variables, our colors. Without
+# this the API reference renders in pdoc's white default and looks like a foreign site
+# inside the Help tab's iframe.
+PDOC_THEME_CSS = """
+/* signal-deck dark theme for pdoc (overrides templates/theme.css) */
+:root { --pdoc-background: #0a0e13; color-scheme: dark; }
+.pdoc {
+    --text: #d5dee6;
+    --muted: #8598a9;
+    --link: #45e0b0;
+    --link-hover: #7deec9;
+    --code: #141d28;
+    --active: #2a2416;
+
+    --accent: #141d28;
+    --accent2: #1e2a37;
+
+    --nav-hover: rgba(255, 180, 84, 0.08);
+    --name: #ffb454;
+    --def: #45e0b0;
+    --annotation: #8598a9;
+}
+.pdoc h1, .pdoc h2, .pdoc h3, .pdoc h4 { color: #ffc87d; }
+.pdoc pre { border: 1px solid #1e2a37; border-radius: 8px; }
+.pdoc .docstring code, .pdoc summary code { border: 1px solid #1e2a37; border-radius: 4px; }
+input[type="search"] { background: #141d28; color: #d5dee6; border: 1px solid #1e2a37; }
+"""
+
+# The Help tab's reading order: orientation first, worked examples second, then the
+# deeper contract docs. Guides not named here sort alphabetically after them.
+GUIDE_ORDER = ["getting-started", "examples", "traits-permissions", "prompt-anatomy",
+               "endpoints"]
+
+
 def docs_out_dir() -> Path:
     """Where generated docs live — outside the repo, so builds never dirty the source tree."""
     import os
@@ -101,7 +135,10 @@ def build_docs(source_repo: Path, out: Path, *, modules: tuple[str, ...] = ("rsc
     out.mkdir(parents=True, exist_ok=True)
 
     guides = []
-    for md in sorted((source_repo / "docs").glob("*.md")):
+    order = {slug: n for n, slug in enumerate(GUIDE_ORDER)}
+    docs_md = sorted((source_repo / "docs").glob("*.md"),
+                     key=lambda p: (order.get(p.stem, len(order)), p.stem))
+    for md in docs_md:
         text = md.read_text(encoding="utf-8")
         title = guide_title(text, md.stem)
         atomic_write(out / "guides" / f"{md.stem}.html", render_guide(text, title))
@@ -110,7 +147,10 @@ def build_docs(source_repo: Path, out: Path, *, modules: tuple[str, ...] = ("rsc
     import pdoc
     import pdoc.render
 
-    pdoc.render.configure(favicon=FAVICON, footer_text="rsched — generated from source by pdoc")
+    template_dir = out / "_pdoc-template"
+    atomic_write(template_dir / "theme.css", PDOC_THEME_CSS)
+    pdoc.render.configure(favicon=FAVICON, template_directory=template_dir,
+                          footer_text="rsched — generated from source by pdoc")
     pdoc.pdoc(*modules, output_directory=out / "api")
 
     from . import __version__
