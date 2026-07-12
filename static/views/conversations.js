@@ -98,7 +98,8 @@ export async function render(view, slug, _query = {}) {
       for (const e of d.endpoints || []) epSel.append(el("option", {}, e.name));
     }).catch(() => {});
     epSel.onchange = () => { modelIn.hidden = !epSel.value; };
-    const { picker, files, clearFiles } = filePicker();
+    const { picker, files, clearFiles, wirePaste } = filePicker();
+    wirePaste(text);
     const send = el("button", { class: "btn primary" }, "start conversation");
     send.onclick = async () => {
       if (!text.value.trim()) { toast("write the first message"); return; }
@@ -211,7 +212,8 @@ export async function render(view, slug, _query = {}) {
 
     function buildComposer() {
       const input = el("textarea", { rows: 2, placeholder: "message…" });
-      const { picker, files, clearFiles } = filePicker();
+      const { picker, files, clearFiles, wirePaste } = filePicker();
+      wirePaste(input);
       const send = el("button", { class: "btn primary" }, "send");
       const node = el("div", { class: "conv-composer" }, input,
         el("div", { class: "row", style: "gap:8px" }, picker, send));
@@ -327,14 +329,35 @@ export async function render(view, slug, _query = {}) {
     const input = el("input", { type: "file", multiple: true, hidden: true });
     const chips = el("span", { class: "attach-chips" });
     const btn = el("button", { class: "btn small", onclick: () => input.click() }, "📎 attach");
-    input.onchange = () => {
-      chips.replaceChildren(...[...input.files].map((f) =>
-        el("span", { class: "attach-chip" }, f.name)));
+    let pending = [];
+    const renderChips = () => {
+      chips.replaceChildren(...pending.map((f, i) =>
+        el("span", { class: "attach-chip removable", title: "click to remove",
+          onclick: () => { pending.splice(i, 1); renderChips(); } }, f.name, " ×")));
     };
+    const addFiles = (list) => {
+      for (const f of list) {
+        // a pasted screenshot arrives as a nameless/generic blob — give it a real name
+        const name = f.name && f.name !== "image.png" ? f.name
+          : `pasted-${Date.now()}.${(f.type.split("/")[1] || "png").replace("+xml", "")}`;
+        pending.push(new File([f], name, { type: f.type }));
+      }
+      renderChips();
+    };
+    input.onchange = () => { addFiles([...input.files]); input.value = ""; };
+    // Ctrl/Cmd-V straight into the message box: clipboard files (screenshots, copied
+    // images/documents) become attachments; plain text pastes stay untouched.
+    const wirePaste = (target) => target.addEventListener("paste", (e) => {
+      const files = [...(e.clipboardData?.files || [])];
+      if (!files.length) return;
+      e.preventDefault();
+      addFiles(files);
+    });
     return {
       picker: el("span", { class: "row", style: "gap:6px" }, btn, input, chips),
-      files: () => [...input.files],
-      clearFiles: () => { input.value = ""; chips.replaceChildren(); },
+      files: () => [...pending],
+      clearFiles: () => { pending = []; input.value = ""; renderChips(); },
+      wirePaste,
     };
   }
 }

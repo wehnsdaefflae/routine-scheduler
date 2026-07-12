@@ -307,3 +307,5 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   .conv-layout { grid-template-columns: minmax(0, 1fr); }
   .conv-side { position: static; max-height: 300px; }
 }
+.attach-chip.removable { cursor: pointer; }
+.attach-chip.removable:hover { border-color: var(--err); color: var(--err); }
