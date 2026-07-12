@@ -10,8 +10,12 @@ def workflows_dir(home: Path) -> Path:
     return home / "workflows"
 
 
-def fragments_dir(home: Path) -> Path:
-    return home / "fragments"
+def traits_dir(home: Path) -> Path:
+    return home / "traits"
+
+
+def permissions_dir(home: Path) -> Path:
+    return home / "permissions"
 
 
 def proposals_dir(home: Path) -> Path:
@@ -48,8 +52,8 @@ def _read_meta(path: Path) -> dict:
         return {}
 
 
-def list_fragments(home: Path) -> list[str]:
-    d = fragments_dir(home)
+def list_traits(home: Path) -> list[str]:
+    d = traits_dir(home)
     return sorted(p.stem for p in d.glob("*.md")) if d.is_dir() else []
 
 
@@ -61,8 +65,8 @@ def read_workflow(home: Path, slug: str) -> tuple[dict, str, str]:
     return parse_py(raw), raw, raw
 
 
-def read_fragment(home: Path, slug: str) -> str:
-    return (fragments_dir(home) / f"{slug}.md").read_text(encoding="utf-8")
+def read_trait(home: Path, slug: str) -> str:
+    return (traits_dir(home) / f"{slug}.md").read_text(encoding="utf-8")
 
 
 def head_commit(home: Path) -> str:

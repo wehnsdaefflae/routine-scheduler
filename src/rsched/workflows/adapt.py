@@ -25,9 +25,8 @@ _IMPROVE_SECTION_RE = re.compile(r"(?m)^#{2,4}\s*`?improve-([a-z-]+)`?\b.*\n(?:(
 
 def strip_inactive_improve(text: str, active: list[str] | set[str]) -> str:
     """Deterministic belt-and-braces after the generator LLM: drop `### improve-<lens>`
-    sections whose fragment is NOT active for this routine. The decompose prompt asks the
-    model to omit them, but LLM output isn't guaranteed — and a fragment toggled off later
-    must take its step prose with it (see api_routines.set_fragments)."""
+    sections whose trait was NOT selected for this routine. The decompose prompt asks the
+    model to omit them, but LLM output isn't guaranteed."""
     active = set(active)
     return _IMPROVE_SECTION_RE.sub(
         lambda m: m.group(0) if f"improve-{m.group(1)}" in active else "", text)
@@ -76,6 +75,12 @@ DECOMPOSE_SCHEMA = {
             "type": "object", "additionalProperties": False, "required": ["name", "body"],
             "properties": {"name": {"type": "string", "description": "kebab-case module/state name"},
                            "body": {"type": "string", "description": "the module's markdown body"}}}},
+        "traits": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["slug", "body"],
+            "properties": {"slug": {"type": "string",
+                                    "description": "the trait's slug, unchanged"},
+                           "body": {"type": "string",
+                                    "description": "the trait ADAPTED to this routine"}}}},
     },
 }
 
@@ -104,32 +109,51 @@ concrete prose for THIS task — never leave Python in the output.
 
 Return ONLY the JSON object {{main, modules}}."""
 
+_TRAITS_NOTE = """
+
+TRAITS (reusable practice modules this routine adopts; each will live as the routine's own file
+`traits/<slug>.md`, read on demand):
+{trait_docs}
+
+Also return "traits": one entry per trait above, same slug, with the SAME practice ADAPTED to this
+routine — keep its rules, structure and heading line (`# trait: <name> — <summary>`), but make
+wording and examples concrete to THIS task, and cut anything that cannot apply to it. Keep each
+about as long as the original or shorter.
+
+End "main" with a `## Standing practices` section: one line per trait —
+`- traits/<slug>.md — <when to read it during a run>`. Any `improve-*` traits are after-run
+passes: the run flow must route to them after the main work, before finish. Do NOT copy trait
+text into main or the modules — reference the files."""
+
 
 def decompose(server, slug: str, instruction: str, *, params: dict | None = None,
-              fragments: list[str] | None = None) -> dict:
+              traits: list[str] | None = None) -> dict:
     """Generator LLM: apply a single-file workflow to `instruction` and split it into the routine's
-    main.md body + step/state modules. Returns {'main': <body>, 'modules': {name: body}}. Degrades
-    to the whole workflow rendered as main.md (no modules) on any failure — so generation without a
-    usable endpoint still yields a valid, self-contained markdown routine.
+    main.md body + step/state modules, ADAPTING the selected traits to the task along the way.
+    Returns {'main': <body>, 'modules': {name: body}, 'traits': {slug: adapted body}}. Degrades to
+    the whole workflow rendered as main.md (no modules, no adapted traits — the caller copies
+    library traits verbatim) on any failure, so generation without a usable endpoint still yields
+    a valid, self-contained markdown routine."""
+    from .. import library_docs
 
-    `fragments` is the routine's ACTIVE standards list: the pattern may enumerate optional
-    standards (the improve-* passes), and without knowing the active set the generator renders
-    them all — the improve-ui leak. The prompt states the set, and the output is deterministically
-    stripped of inactive improve sections afterwards."""
     meta, _, raw = read_workflow(server.library_home, slug)
+    trait_bodies = {}
+    for t in traits or []:
+        raw_doc = library_docs.read_doc(server.traits_home, t)
+        if raw_doc:
+            trait_bodies[t] = library_docs.doc_body(raw_doc).strip()
     try:
         from ..endpoints import EndpointRegistry
 
         endpoint, ref = EndpointRegistry(server).for_system()
         param_note = ("\n\nPARAMETERS (the pattern's contract, resolved with the user):\n"
                       + "\n".join(f"- {k}: {v}" for k, v in params.items())) if params else ""
-        frag_note = ("\n\nACTIVE FRAGMENTS (this routine's standards): "
-                     + (", ".join(fragments) or "(none)")
-                     + ". The pattern may name optional standards (e.g. the improve-* passes) — "
-                       "write steps/sections ONLY for the active ones; omit inactive passes "
-                       "entirely.") if fragments is not None else ""
+        trait_note = ""
+        if trait_bodies:
+            docs = "\n\n".join(f"--- trait: {t} ---\n{body}" for t, body in trait_bodies.items())
+            trait_note = _TRAITS_NOTE.format(trait_docs=docs)
         prompt = _DECOMPOSE_PROMPT.format(workflow=raw, instruction=instruction) \
-            + param_note + frag_note
+            + param_note + trait_note
         comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
                                  schema=DECOMPOSE_SCHEMA, effort=ref.effort, timeout=180)
         data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
@@ -138,10 +162,12 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
         main = str(data.get("main") or "").strip()
         if not main:
             raise ValueError("empty main")
-        if fragments is not None:
-            main = strip_inactive_improve(main, fragments)
-            modules = {k: strip_inactive_improve(v, fragments) for k, v in modules.items()}
-        return {"main": main, "modules": modules}
+        adapted = {t["slug"]: str(t["body"]).strip() for t in (data.get("traits") or [])
+                   if t.get("slug") in trait_bodies and str(t.get("body", "")).strip()}
+        if traits is not None:
+            main = strip_inactive_improve(main, traits)
+            modules = {k: strip_inactive_improve(v, traits) for k, v in modules.items()}
+        return {"main": main, "modules": modules, "traits": adapted}
     except Exception:
         from .pyworkflow import render_markdown
-        return {"main": render_markdown(raw, meta), "modules": {}}
+        return {"main": render_markdown(raw, meta), "modules": {}, "traits": {}}

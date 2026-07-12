@@ -1,4 +1,4 @@
-"""The library repository (ONE git repo: workflows/ + fragments/ + utils/): status,
+"""The library repository (ONE git repo: workflows/ + traits/ + permissions/ + utils/): status,
 remote wiring, and first-run provisioning (clone existing, or seed + create)."""
 
 from __future__ import annotations
@@ -19,10 +19,11 @@ LIBRARY_NAME = "library"
 def _has_content(home) -> bool:
     """True once the library actually holds items — the daemon auto-git-inits an empty
     scaffold, so a bare .git is NOT 'set up'. This drives the provision-vs-remote UI."""
-    from ... import fragments_lib, utils_lib
+    from ... import library_docs, utils_lib
     from ...workflows.library import list_workflows
     try:
-        return bool(list_workflows(home) or fragments_lib.list_fragments(home / "fragments")
+        return bool(list_workflows(home) or library_docs.list_docs(home / "traits")
+                    or library_docs.list_docs(home / "permissions")
                     or utils_lib.list_utils(home))
     except Exception:
         return False

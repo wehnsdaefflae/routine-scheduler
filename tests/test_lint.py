@@ -15,12 +15,13 @@ UTIL_SEED = Path(__file__).resolve().parents[1] / "util-seed"
 
 
 def merged_library(tmp_path) -> Path:
-    """A library-repo layout (workflows/ + fragments/ + utils/) built from the repo seeds."""
+    """A library-repo layout (workflows/ + traits/ + permissions/ + utils/) built from the repo seeds."""
     import shutil
 
     home = tmp_path / "libraries"
     shutil.copytree(SEED / "workflows", home / "workflows")
-    shutil.copytree(SEED / "fragments", home / "fragments")
+    shutil.copytree(SEED / "traits", home / "traits")
+    shutil.copytree(SEED / "permissions", home / "permissions")
     shutil.copytree(UTIL_SEED / "utils", home / "utils")
     return home
 
@@ -33,11 +34,11 @@ def test_seed_library_is_clean():
 
 
 def test_lint_catches_defects():
-    frags = ["ask-policy"]
+    traits = ["ask-policy"]
     bad = ('"""bad pattern"""\n'
            'META = {"name": "X", "slug": "mismatch", "description": "d", "when_to_use": "w",\n'
            '        "version": 1, "status": "wild", "includes": ["nope"], "tags": ["a", "b", "c"]}\n')
-    problems = lint_workflow_py(bad, filename="bad.py", fragment_slugs=frags)
+    problems = lint_workflow_py(bad, filename="bad.py", trait_slugs=traits)
     text = " | ".join(problems)
     for needle in ("filename does not match", "status must be", "does not resolve",
                    "no top-level main()", "PHASES", "COMPLETION"):
@@ -55,7 +56,7 @@ def test_materialize_carries_workflow_and_provenance():
     assert meta["materialized_from"]["slug"] == "general-task" and meta["name"] == "General task"
     assert "## Run flow" in body and "## Completion criteria" in body
     assert "```python" in body and "def main():" in body          # the pattern is carried verbatim
-    assert "## Standard practices" not in content and "### fragment:" not in content
+    assert "## Standing practices" not in content and "# trait:" not in content
     assert lint_materialized_text(content) == []
 
 
@@ -67,21 +68,21 @@ def test_python_workflow_parse_and_lint():
     meta = parse_py(src)                                  # parsed statically — never executed
     assert meta["slug"] == "general-task" and meta["has_main"] and meta["format"] == "py"
     assert meta["phases"] == ["bootstrap", "steady", "wrap-up"] and meta["completion"]
-    frags = ["ask-policy", "global-utils", "web-research", "ledger-discipline",
-             "improve-bugfix", "improve-research", "improve-features", "improve-ui", "improve-efficiency"]
-    assert lint_workflow_py(src, filename="general-task.py", fragment_slugs=frags) == []
+    traits = ["ask-policy", "global-utils", "web-research", "ledger-discipline",
+              "improve-bugfix", "improve-research", "improve-features", "improve-ui", "improve-efficiency"]
+    assert lint_workflow_py(src, filename="general-task.py", trait_slugs=traits) == []
     # defects: no META / no run()
-    probs = lint_workflow_py("x = 1\n", filename="paperbot.py", fragment_slugs=[])
+    probs = lint_workflow_py("x = 1\n", filename="paperbot.py", trait_slugs=[])
     assert any("META" in p for p in probs)
     # a syntax error is reported, not raised
-    assert any("invalid Python" in p for p in lint_workflow_py("def (:\n", filename="x.py", fragment_slugs=[]))
+    assert any("invalid Python" in p for p in lint_workflow_py("def (:\n", filename="x.py", trait_slugs=[]))
     # rendering carries the required routine sections
     md = render_markdown(src, meta)
     assert all(s in md for s in ("## Run flow", "## Phases", "## Completion criteria", "```python"))
 
 
 def test_tags_on_library_elements():
-    from rsched import fragments_lib, utils_lib
+    from rsched import library_docs, utils_lib
     from rsched.workflows.library import list_workflows
 
     wfs = {w["slug"]: w for w in list_workflows(SEED)}
@@ -93,13 +94,16 @@ def test_tags_on_library_elements():
     for w in wfs.values():
         assert len(w["tags"]) >= 3, (w["slug"], w["tags"])
 
-    frags = {f["slug"]: f for f in fragments_lib.list_fragments(SEED / "fragments")}
-    for f in frags.values():
-        assert len(f["tags"]) >= 3, (f["slug"], f["tags"])
-    assert set(frags["web-research"]["tags"]) >= {"web", "research"}
-    # a fragment's frontmatter is stripped before its body is inlined into a prompt
-    raw = (SEED / "fragments" / "web-research.md").read_text()
-    assert raw.startswith("---") and fragments_lib.fragment_body(raw).lstrip().startswith("# fragment:")
+    traits = {d["slug"]: d for d in library_docs.list_docs(SEED / "traits")}
+    for d in traits.values():
+        assert len(d["tags"]) >= 3, (d["slug"], d["tags"])
+    assert set(traits["web-research"]["tags"]) >= {"web", "research"}
+    perms = {d["slug"]: d for d in library_docs.list_docs(SEED / "permissions")}
+    assert {"util-authoring", "memory", "communication", "self-modification",
+            "run-history", "run-history-full", "shell"} <= set(perms)
+    # a doc's frontmatter is stripped before its body is shown/inlined
+    raw = (SEED / "traits" / "web-research.md").read_text()
+    assert raw.startswith("---") and library_docs.doc_body(raw).lstrip().startswith("# trait:")
 
     utils = {u["name"]: u for u in utils_lib.list_utils(SEED.parent / "util-seed")}
     for u in utils.values():
@@ -135,13 +139,14 @@ def test_bootstrap_seeds_meta_routines(tmp_path):
 
 
 def test_bootstrap_seeds_libraries(tmp_path):
-    """seed_libraries populates an empty library repo (workflows/ + fragments/ + utils/) from the
-    built-in defaults + git-inits it."""
+    """seed_libraries populates an empty library repo (workflows/ + traits/ + permissions/ +
+    utils/) from the built-in defaults + git-inits it."""
     from rsched.bootstrap import seed_libraries
     home = tmp_path / "libraries"
     seed_libraries(home)
     assert (home / "workflows").is_dir() and list((home / "workflows").glob("*.py"))  # Python patterns
-    assert (home / "fragments").is_dir() and list((home / "fragments").glob("*.md"))
+    assert (home / "traits").is_dir() and list((home / "traits").glob("*.md"))
+    assert (home / "permissions").is_dir() and list((home / "permissions").glob("*.md"))
     assert (home / "utils").is_dir() and any((home / "utils").iterdir())
     assert (home / ".git").is_dir()
 
@@ -170,13 +175,13 @@ def _py_workflow(tags: str) -> str:
 
 
 def test_lint_requires_three_tags():
-    from rsched.workflows.lint import lint_fragment_text
+    from rsched.workflows.lint import lint_trait_text
     assert any("at least 3 tags" in p
-               for p in lint_workflow_py(_py_workflow('["a", "b"]'), filename="x.py", fragment_slugs=[]))
+               for p in lint_workflow_py(_py_workflow('["a", "b"]'), filename="x.py", trait_slugs=[]))
     assert not any("tags" in p
-                   for p in lint_workflow_py(_py_workflow('["a", "b", "c"]'), filename="x.py", fragment_slugs=[]))
-    two_tag_frag = "---\ntags: [a, b]\n---\n# fragment: x — y\n\nbody line one\nbody line two\n"
-    assert any("at least 3 tags" in p for p in lint_fragment_text(two_tag_frag, filename="x.md"))
+                   for p in lint_workflow_py(_py_workflow('["a", "b", "c"]'), filename="x.py", trait_slugs=[]))
+    two_tag_trait = "---\ntags: [a, b]\n---\n# trait: x — y\n\nbody line one\nbody line two\n"
+    assert any("at least 3 tags" in p for p in lint_trait_text(two_tag_trait, filename="x.md"))
 
 
 def test_tag_suggestion_helpers(tmp_path):
@@ -191,7 +196,7 @@ def test_tag_suggestion_helpers(tmp_path):
     server.routines_home = tmp_path / "routines"         # no routines → vocab from library only
     vocab = existing_tags(server)
     assert vocab == sorted(set(vocab))                   # deduped + sorted
-    for t in ("research", "web", "dev", "git"):          # spans workflows, fragments, utils
+    for t in ("research", "web", "dev", "git"):          # spans workflows, traits, utils
         assert t in vocab, t
 
 
@@ -205,12 +210,12 @@ def test_suggest_candidate_filter_uses_meta_tag():
 
 
 def test_lint_rejects_non_list_tags():
-    from rsched.workflows.lint import lint_fragment_text
+    from rsched.workflows.lint import lint_trait_text
 
     assert any("tags must be a list" in p
-               for p in lint_workflow_py(_py_workflow('"not-a-list"'), filename="x.py", fragment_slugs=[]))
-    bad_frag = "---\ntags: nope\n---\n# fragment: x — y\n\nbody line one\nbody line two\n"
-    assert any("tags must be a list" in p for p in lint_fragment_text(bad_frag, filename="x.md"))
+               for p in lint_workflow_py(_py_workflow('"not-a-list"'), filename="x.py", trait_slugs=[]))
+    bad_trait = "---\ntags: nope\n---\n# trait: x — y\n\nbody line one\nbody line two\n"
+    assert any("tags must be a list" in p for p in lint_trait_text(bad_trait, filename="x.md"))
 
 
 def test_scaffold_writes_and_loads_tags(tmp_path):
@@ -269,10 +274,15 @@ def test_scaffold_creates_valid_routine(tmp_path):
     assert (d / "main.md").exists()
     raw = yaml.safe_load((d / "routine.yaml").read_text())
     assert raw["budgets"]["max_turns"] == 60
-    # active fragments = the workflow's includes, materialized as editable routine files
-    assert set(cfg.fragments) == set(raw["fragments"])
-    assert "improve-bugfix" in cfg.fragments and "global-utils" in cfg.fragments
-    assert (d / "fragments" / "improve-bugfix.md").exists()
+    # traits = the workflow's includes, adapted (here: copied — no generator endpoint) into
+    # the routine's OWN traits/ and referenced from main.md's Standing practices tail
+    assert (d / "traits" / "improve-bugfix.md").exists()
+    assert (d / "traits" / "global-utils.md").exists()
+    main_text = (d / "main.md").read_text()
+    assert "## Standing practices" in main_text and "traits/improve-bugfix.md" in main_text
+    # permissions default in and are pure config (no local copies)
+    assert set(cfg.permissions) == set(raw["permissions"])
+    assert "util-authoring" in cfg.permissions and "self-modification" in cfg.permissions
     assert (d / ".gitignore").read_text().startswith("runs/")
     with pytest.raises(ValueError):
         scaffold(server, slug="papers-radar", name="dup", instruction="x",

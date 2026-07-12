@@ -1,4 +1,4 @@
-"""Fragment grants: schema normalization, library-only authority, policy derivation,
+"""Permission grants: schema normalization, library-only authority, policy derivation,
 and the per-kind denial messages validate_action surfaces."""
 
 from __future__ import annotations
@@ -9,10 +9,10 @@ from rsched.grants import (CONFIRM_LEVELS, GrantPolicy, load_policy, normalize_g
                            read_library_grants)
 
 
-def _lib(tmp_path: Path, fragments: dict[str, str]) -> Path:
-    home = tmp_path / "library" / "fragments"
+def _lib(tmp_path: Path, permissions: dict[str, str]) -> Path:
+    home = tmp_path / "library" / "permissions"
     home.mkdir(parents=True, exist_ok=True)
-    for slug, text in fragments.items():
+    for slug, text in permissions.items():
         (home / f"{slug}.md").write_text(text, encoding="utf-8")
     return home
 
@@ -20,20 +20,20 @@ def _lib(tmp_path: Path, fragments: dict[str, str]) -> Path:
 AUTHORING = """---
 tags: [tool-use, utils, authoring]
 grants:
-  actions: [util, write_util]
+  actions: [write_util]
   confirm: true
 ---
-# fragment: util authoring — create and revise utils
+# permission: util authoring — create and revise utils
 body
 """
 
 AUTONOMOUS = """---
 tags: [tool-use, utils, authoring]
 grants:
-  actions: [util, write_util]
+  actions: [write_util]
   confirm: revisions-only
 ---
-# fragment: util authoring autonomous — revisions without approval
+# permission: util authoring autonomous — revisions without approval
 body
 """
 
@@ -42,7 +42,34 @@ tags: [communication, policy, notification]
 grants:
   utils: [discord]
 ---
-# fragment: communication — Discord for blocking questions
+# permission: communication — Discord as a second decision surface
+body
+"""
+
+RUN_HISTORY = """---
+tags: [history, record-keeping, self-management]
+grants:
+  runs: last
+---
+# permission: run history — read the previous run
+body
+"""
+
+RUN_HISTORY_FULL = """---
+tags: [history, record-keeping, self-management]
+grants:
+  runs: all
+---
+# permission: run history full — read all previous runs
+body
+"""
+
+SELF_MOD = """---
+tags: [self-management, improvement, recipe]
+grants:
+  self_modify: true
+---
+# permission: self-modification — refine own recipe
 body
 """
 
@@ -57,17 +84,23 @@ def test_normalize_grants_accepts_the_schema():
     assert g == {"actions": ["util", "write_util"], "utils": ["discord"], "confirm": "always"}
     assert normalize_grants({"confirm": "revisions-only"})[0] == {"confirm": "creations"}
     assert normalize_grants({"confirm": False})[0] == {"confirm": "never"}
+    assert normalize_grants({"runs": "last"})[0] == {"runs": "last"}
+    assert normalize_grants({"runs": "all"})[0] == {"runs": "all"}
+    assert normalize_grants({"self_modify": True})[0] == {"self_modify": True}
     assert normalize_grants(None) == ({}, [])
 
 
 def test_normalize_grants_reports_and_drops_invalid_parts():
     g, problems = normalize_grants({"actions": ["util", "dance"], "utils": ["Not A Slug"],
-                                    "confirm": "sometimes", "shell": True})
+                                    "confirm": "sometimes", "shell": True,
+                                    "runs": "some", "self_modify": "yes"})
     text = " | ".join(problems)
     assert "'dance' is not an action kind" in text
     assert "'Not A Slug' is not a kebab-case util name" in text
     assert "confirm must be true, false or revisions-only" in text
     assert "grants.shell: unknown key" in text
+    assert "runs must be last or all" in text
+    assert "self_modify must be true" in text
     assert g == {"actions": ["util"], "utils": []}      # invalid entries dropped, valid kept
     assert normalize_grants("write_util")[1]            # non-mapping → problem
     bad_list, problems2 = normalize_grants({"actions": "util"})
@@ -79,19 +112,20 @@ def test_normalize_grants_reports_and_drops_invalid_parts():
 
 def test_grants_read_from_library_only(tmp_path):
     home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION,
-                           "plain": "# fragment: plain — no grants\nbody\n"})
+                           "plain": "# permission: plain — no grants\nbody\n"})
     lib = read_library_grants(home)
-    assert set(lib) == {"util-authoring", "communication"}   # grant-less fragments omitted
+    assert set(lib) == {"util-authoring", "communication"}   # grant-less docs omitted
     assert lib["util-authoring"]["confirm"] == "always"
 
-    # the routine-local copy is NEVER consulted: a self-granted local edit changes nothing
+    # nothing under a routine dir is ever consulted: holding an unrelated permission
+    # changes nothing about write_util
     policy = load_policy(home, ["communication"])
     assert not policy.allows_kind("write_util")
     assert read_library_grants(tmp_path / "nowhere") == {}   # missing library → no grants
 
 
 def test_broken_frontmatter_degrades_to_no_grants(tmp_path):
-    home = _lib(tmp_path, {"broken": "---\ngrants: [not: closed\n---\n# fragment: broken — x\n"})
+    home = _lib(tmp_path, {"broken": "---\ngrants: [not: closed\n---\n# permission: broken — x\n"})
     assert read_library_grants(home) == {}
 
 
@@ -106,7 +140,7 @@ def test_policy_unions_active_grants_and_indexes_the_library(tmp_path):
     assert policy.deny({"kind": "util", "name": "discord"}) is None
     assert policy.confirm == "always"
 
-    inactive = load_policy(home, ["ledger-discipline"])
+    inactive = load_policy(home, ["run-history"])
     assert not inactive.allows_kind("write_util")
     assert inactive.gated_utils == {"discord": ("communication",)}   # library-wide index survives
     assert inactive.kind_sources == {"write_util": ("util-authoring",)}
@@ -131,12 +165,22 @@ def test_needs_confirm_semantics():
     assert not never.needs_confirm(creating=True) and not never.needs_confirm(creating=False)
 
 
+def test_run_history_most_permissive_wins(tmp_path):
+    home = _lib(tmp_path, {"run-history": RUN_HISTORY, "run-history-full": RUN_HISTORY_FULL,
+                           "self-modification": SELF_MOD})
+    assert load_policy(home, []).run_history == "none"
+    assert load_policy(home, ["run-history"]).run_history == "last"
+    assert load_policy(home, ["run-history", "run-history-full"]).run_history == "all"
+    assert load_policy(home, ["self-modification"]).self_modify is True
+    assert load_policy(home, ["run-history"]).self_modify is False
+
+
 # ------------------------------------------------------------------ denial messages
 
 
-def test_deny_names_the_granting_fragment(tmp_path):
+def test_deny_names_the_granting_permission(tmp_path):
     home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION})
-    policy = load_policy(home, ["ledger-discipline"])
+    policy = load_policy(home, ["run-history"])
     denial = policy.deny({"kind": "write_util", "name": "x", "content": "y"})
     assert denial and "util-authoring" in denial and "ask_user" in denial
     denial_util = policy.deny({"kind": "util", "name": "discord", "args": ["send", "hi"]})
@@ -146,12 +190,40 @@ def test_deny_names_the_granting_fragment(tmp_path):
     assert policy.deny({"kind": "read_file", "path": "LEDGER.md"}) is None
 
 
+def test_deny_gates_previous_runs_but_not_the_live_run():
+    none = GrantPolicy(current_run_ts="20260712-090000")
+    denial = none.deny({"kind": "read_file", "path": "runs/20260101-000000/result.md"})
+    assert denial and "run-history" in denial
+    # the live run's own tree (archived history) stays readable — the engine points there
+    assert none.deny({"kind": "read_file",
+                      "path": "runs/20260712-090000/history/INDEX.md"}) is None
+    # runs/ is never writable, not even with full history access
+    full = GrantPolicy(run_history="all")
+    assert full.deny({"kind": "read_file", "path": "runs/20260101-000000/result.md"}) is None
+    w = full.deny({"kind": "write_file", "path": "runs/20260101-000000/x.md", "content": "x"})
+    assert w and "read-only" in w
+
+
+def test_deny_gates_recipe_writes_without_self_modification():
+    none = GrantPolicy()
+    for path in ("main.md", "steps/collect.md", "traits/ask-policy.md", "instruction.md",
+                 "./main.md"):
+        denial = none.deny({"kind": "write_file", "path": path, "content": "x"})
+        assert denial and "self-modification" in denial, path
+        assert none.deny({"kind": "read_file", "path": path}) is None, path
+    # non-recipe writes stay open
+    assert none.deny({"kind": "write_file", "path": "state/notes.md", "content": "x"}) is None
+    assert none.deny({"kind": "write_file", "path": "LEDGER.md", "content": "x"}) is None
+    granted = GrantPolicy(self_modify=True)
+    assert granted.deny({"kind": "write_file", "path": "main.md", "content": "x"}) is None
+
+
 def test_validate_action_carries_grant_denials():
     """The grants check rides the same retry cycle as the workflow allowlist; finish is
     always permitted and grants=None means unrestricted."""
     from rsched.engine.actions import validate_action
 
-    policy = GrantPolicy(active=("ledger-discipline",),
+    policy = GrantPolicy(active=("run-history",),
                          gated_utils={"discord": ("communication",)},
                          kind_sources={"write_util": ("util-authoring",)})
     wu = {"say": "s", "kind": "write_util", "name": "x", "content": "# script"}
@@ -168,24 +240,29 @@ def test_validate_action_carries_grant_denials():
 
 
 def test_lint_flags_bad_grants():
-    from rsched.workflows.lint import lint_fragment_text
+    from rsched.workflows.lint import lint_permission_text, lint_trait_text
 
     bad = ("---\ntags: [a, b, c]\ngrants:\n  actions: [dance]\n  confirm: maybe\n---\n"
-           "# fragment: x — y\n\nlong enough body\nmore\n")
-    problems = lint_fragment_text(bad, filename="x.md")
+           "# permission: x — y\n\nlong enough body\nmore\n")
+    problems = lint_permission_text(bad, filename="x.md")
     text = " | ".join(problems)
     assert "not an action kind" in text and "confirm must be" in text
-    good = ("---\ntags: [a, b, c]\ngrants:\n  actions: [util, write_util]\n  confirm: true\n---\n"
-            "# fragment: x — y\n\nlong enough body\nmore\n")
-    assert lint_fragment_text(good, filename="x.md") == []
+    good = ("---\ntags: [a, b, c]\ngrants:\n  actions: [write_util]\n  confirm: true\n---\n"
+            "# permission: x — y\n\nlong enough body\nmore\n")
+    assert lint_permission_text(good, filename="x.md") == []
+    # a permission without grants is an error; a trait WITH grants is an error
+    no_grants = "---\ntags: [a, b, c]\n---\n# permission: x — y\n\nbody\nmore\nlines\n"
+    assert any("grants" in p for p in lint_permission_text(no_grants, filename="x.md"))
+    trait_with_grants = ("---\ntags: [a, b, c]\ngrants:\n  utils: [discord]\n---\n"
+                         "# trait: x — y\n\nbody\nmore\nlines\n")
+    assert any("must not carry grants" in p
+               for p in lint_trait_text(trait_with_grants, filename="x.md"))
 
 
-def test_memory_kinds_are_gated_and_denials_name_the_fragment():
-    from rsched.grants import GrantPolicy
-
+def test_memory_kinds_are_gated_and_denials_name_the_permission():
     none = GrantPolicy()
     denial = none.deny({"kind": "memory_write", "name": "x"})
-    assert denial and "memory" in denial            # names the canonical granting fragment
+    assert denial and "memory" in denial            # names the canonical granting permission
     assert none.deny({"kind": "memory_read", "name": "x"})
     granted = GrantPolicy(actions=frozenset({"memory_read", "memory_write"}))
     assert granted.deny({"kind": "memory_write", "name": "x"}) is None

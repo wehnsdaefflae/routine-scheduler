@@ -81,34 +81,33 @@ def seed_routines(routines_home: Path) -> int:
     return n
 
 
-# DEFAULT_FRAGMENTS entries introduced AFTER routines already existed never reach them via
+# DEFAULT_PERMISSIONS entries introduced AFTER routines already existed never reach them via
 # scaffold. Slugs listed here are added ONCE to every existing routine at daemon boot —
-# tracked in a marker file, so a user who later deactivates one is never overridden.
-ADOPT_FRAGMENTS = ["memory"]
-_ADOPTED_MARKER = ".fragments-adopted.json"
+# tracked in a marker file, so a user who later revokes one is never overridden.
+ADOPT_PERMISSIONS: list[str] = []
+_ADOPTED_MARKER = ".permissions-adopted.json"
 
 
-def _ensure_library_fragment(fragments_home: Path, slug: str) -> str | None:
-    """An existing library repo predates a new seed fragment (seed_libraries only runs at
-    repo creation): copy the repo seed in — never overwriting — and commit, so the fragment
-    exists as the grants/copy authority. Returns the library copy's content, or None."""
-    dst = fragments_home / f"{slug}.md"
+def _ensure_library_permission(permissions_home: Path, slug: str) -> str | None:
+    """An existing library repo predates a new seed permission (seed_libraries only runs at
+    repo creation): copy the repo seed in — never overwriting — and commit, so the permission
+    exists as the grants authority. Returns the library copy's content, or None."""
+    dst = permissions_home / f"{slug}.md"
     if dst.exists():
         return dst.read_text(encoding="utf-8")
-    src = repo_root() / "library-seed" / "fragments" / f"{slug}.md"
-    if not fragments_home.is_dir() or not src.exists():
+    src = repo_root() / "library-seed" / "permissions" / f"{slug}.md"
+    if not permissions_home.is_dir() or not src.exists():
         return None
     shutil.copy(src, dst)
-    _git(fragments_home.parent, "add", "-A")        # the library repo root (best-effort)
-    _git(fragments_home.parent, "commit", "-qm", f"seed new default fragment: {slug}")
+    _git(permissions_home.parent, "add", "-A")        # the library repo root (best-effort)
+    _git(permissions_home.parent, "commit", "-qm", f"seed new default permission: {slug}")
     return dst.read_text(encoding="utf-8")
 
 
-def adopt_fragments(routines_home: Path, fragments_home: Path) -> int:
-    """One-time propagation of new default fragments into EXISTING routines: append the slug
-    to routine.yaml `fragments:` and drop the editable local copy. A slug is marked adopted
-    only once the library copy exists (an unseeded library retries next boot). Returns the
-    number of routine × fragment additions."""
+def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
+    """One-time propagation of new default permissions into EXISTING routines: append the
+    slug to routine.yaml `permissions:`. A slug is marked adopted only once the library copy
+    exists (an unseeded library retries next boot). Returns routine × permission additions."""
     if not routines_home.is_dir():
         return 0
     marker = routines_home / _ADOPTED_MARKER
@@ -117,11 +116,10 @@ def adopt_fragments(routines_home: Path, fragments_home: Path) -> int:
     except (OSError, ValueError):
         done = set()
     touched, newly_done = 0, set()
-    for slug in ADOPT_FRAGMENTS:
+    for slug in ADOPT_PERMISSIONS:
         if slug in done:
             continue
-        content = _ensure_library_fragment(fragments_home, slug)
-        if content is None:
+        if _ensure_library_permission(permissions_home, slug) is None:
             continue
         for rdir in sorted(routines_home.iterdir()):
             if rdir.name.startswith(".") or not (rdir / "routine.yaml").is_file():
@@ -130,43 +128,146 @@ def adopt_fragments(routines_home: Path, fragments_home: Path) -> int:
                 raw = yaml.safe_load((rdir / "routine.yaml").read_text(encoding="utf-8")) or {}
             except yaml.YAMLError:
                 continue
-            frags = raw.get("fragments")
-            local = rdir / "fragments" / f"{slug}.md"
-            if frags is None:
-                # No explicit list = the routine follows DEFAULT_FRAGMENTS (slug included);
-                # only the editable local copy is missing.
-                if local.exists():
-                    continue
-            elif slug in frags:
+            perms = raw.get("permissions")
+            if perms is None or slug in perms:
+                # no explicit list = the routine follows DEFAULT_PERMISSIONS (slug included)
                 continue
-            else:
-                raw["fragments"] = [*frags, slug]
-                (rdir / "routine.yaml").write_text(
-                    yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
-            local.parent.mkdir(exist_ok=True)
-            local.write_text(content, encoding="utf-8")
+            raw["permissions"] = [*perms, slug]
+            (rdir / "routine.yaml").write_text(
+                yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
             _git(rdir, "add", "-A")
-            _git(rdir, "commit", "-qm", f"adopt default fragment: {slug}")
+            _git(rdir, "commit", "-qm", f"adopt default permission: {slug}")
             touched += 1
         newly_done.add(slug)
     if newly_done:
         marker.write_text(json.dumps(sorted(done | newly_done)) + "\n", encoding="utf-8")
     if touched:
-        log.warning("adopted new default fragment(s) into %d routine(s)", touched)
+        log.warning("adopted new default permission(s) into %d routine(s)", touched)
+    return touched
+
+
+# The 2026-07 split: fragments became traits/ (practice prose, each routine's own copy) +
+# permissions/ (engine-enforced grants in routine.yaml `permissions:`). These are the
+# pre-split slugs that became permissions; everything else was prose and became a trait.
+_LEGACY_PERMISSION_SLUGS = {"util-authoring", "util-authoring-autonomous",
+                            "util-authoring-full-auto", "memory", "communication"}
+
+
+def _detach_grants(raw: str, heading: str) -> str:
+    """Rewrite a legacy fragment into a trait/permission doc: fix the heading keyword and
+    (for traits) drop a grants: key that would now lint as an error."""
+    import frontmatter as fm
+
+    try:
+        post = fm.loads(raw)
+    except Exception:
+        return raw.replace("# fragment:", f"# {heading}:", 1)
+    if heading == "trait":
+        post.metadata.pop("grants", None)
+    post.content = post.content.replace("# fragment:", f"# {heading}:", 1)
+    return fm.dumps(post, sort_keys=False) + "\n"
+
+
+def migrate_fragments_split(routines_home: Path, library_home: Path) -> int:
+    """One-time migration of a pre-split instance. Library: fragments/ is divided into
+    traits/ + permissions/ — known seed slugs are replaced by the current repo seeds (the
+    split rewrote them), unknown user fragments move mechanically by grants-presence.
+    Routines: routine.yaml `fragments:` becomes `permissions:` (permission slugs kept,
+    self-modification added — the behavior routines always had), local prose copies move to
+    traits/, and main.md gains the Standing practices tail referencing them. Naturally
+    idempotent: it triggers on the presence of the old layout. Returns touched routines."""
+    root = repo_root()
+    old = library_home / "fragments"
+    if old.is_dir():
+        for kind in ("traits", "permissions"):
+            (library_home / kind).mkdir(exist_ok=True)
+            seed_dir = root / "library-seed" / kind
+            if seed_dir.is_dir():
+                for f in sorted(seed_dir.glob("*.md")):
+                    if not (library_home / kind / f.name).exists():
+                        shutil.copy(f, library_home / kind / f.name)
+        for f in sorted(old.glob("*.md")):
+            if ((library_home / "traits" / f.name).exists()
+                    or (library_home / "permissions" / f.name).exists()):
+                continue                             # replaced by a current seed
+            raw = f.read_text(encoding="utf-8")
+            try:
+                import frontmatter as fm
+                has_grants = bool((fm.loads(raw).metadata or {}).get("grants"))
+            except Exception:
+                has_grants = False
+            kind = ("permissions" if f.stem in _LEGACY_PERMISSION_SLUGS or has_grants
+                    else "traits")
+            (library_home / kind / f.name).write_text(
+                _detach_grants(raw, kind[:-1]), encoding="utf-8")
+        shutil.rmtree(old)
+        _git(library_home, "add", "-A")
+        _git(library_home, "commit", "-qm", "migrate: fragments split into traits + permissions")
+        log.warning("library migrated: fragments/ split into traits/ + permissions/")
+
+    if not routines_home.is_dir():
+        return 0
+    from .config import DEFAULT_PERMISSIONS
+    from .library_docs import DOC_RE
+    from .workflows.scaffold import _with_practices_tail
+
+    touched = 0
+    for rdir in sorted(routines_home.iterdir()):
+        if rdir.name.startswith(".") or not (rdir / "routine.yaml").is_file():
+            continue
+        try:
+            raw = yaml.safe_load((rdir / "routine.yaml").read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        frag_dir = rdir / "fragments"
+        if "fragments" not in raw and not frag_dir.is_dir():
+            continue
+        fragments = raw.pop("fragments", None)
+        if fragments is None:
+            perms = list(DEFAULT_PERMISSIONS)
+        else:
+            perms = [f for f in fragments if f in _LEGACY_PERMISSION_SLUGS]
+            perms.append("self-modification")
+        raw["permissions"] = list(dict.fromkeys(perms))
+        (rdir / "routine.yaml").write_text(
+            yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        trait_summaries: dict[str, str] = {}
+        if frag_dir.is_dir():
+            (rdir / "traits").mkdir(exist_ok=True)
+            for f in sorted(frag_dir.glob("*.md")):
+                if f.stem not in _LEGACY_PERMISSION_SLUGS:
+                    body = _detach_grants(f.read_text(encoding="utf-8"), "trait")
+                    (rdir / "traits" / f.name).write_text(body, encoding="utf-8")
+                    m = DOC_RE.search(body)
+                    trait_summaries[f.stem] = m.group("summary").strip() if m else ""
+            shutil.rmtree(frag_dir)
+        main = rdir / "main.md"
+        if main.is_file() and trait_summaries:
+            text = main.read_text(encoding="utf-8")
+            new_text = _with_practices_tail(text.rstrip() + "\n", trait_summaries)
+            if new_text != text:
+                main.write_text(new_text, encoding="utf-8")
+        _git(rdir, "add", "-A")
+        _git(rdir, "commit", "-qm", "migrate: fragments split into traits + permissions")
+        touched += 1
+    if touched:
+        log.warning("migrated %d routine(s) to the traits + permissions split", touched)
     return touched
 
 
 def seed_libraries(home: Path) -> None:
-    """Populate an empty library repo (workflows/ + fragments/ + utils/) from the built-in seeds
-    + git-init it (matches deploy/install.sh). The `gu` dispatcher is installed by
-    utils_lib.ensure_library on first use."""
+    """Populate an empty library repo (workflows/ + traits/ + permissions/ + utils/) from the
+    built-in seeds + git-init it (matches deploy/install.sh). The `gu` dispatcher is installed
+    by utils_lib.ensure_library on first use."""
     root = repo_root()
     home.mkdir(parents=True, exist_ok=True)
     if (root / "library-seed" / "workflows").is_dir():
         shutil.copytree(root / "library-seed" / "workflows", home / "workflows", dirs_exist_ok=True)
-    (home / "fragments").mkdir(exist_ok=True)
-    for f in sorted((root / "library-seed" / "fragments").glob("*.md")):
-        shutil.copy(f, home / "fragments" / f.name)
+    for kind in ("traits", "permissions"):
+        (home / kind).mkdir(exist_ok=True)
+        if (root / "library-seed" / kind).is_dir():
+            for f in sorted((root / "library-seed" / kind).glob("*.md")):
+                shutil.copy(f, home / kind / f.name)
     (home / "utils").mkdir(exist_ok=True)
     if (root / "util-seed" / "utils").is_dir():
         shutil.copytree(root / "util-seed" / "utils", home / "utils", dirs_exist_ok=True)

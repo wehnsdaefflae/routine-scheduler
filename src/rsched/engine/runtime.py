@@ -37,7 +37,9 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
 
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8") \
         if (routine_dir / "instruction.md").exists() else ""
-    result = decompose(server, cfg.workflow_slug, instruction, fragments=cfg.fragments)
+    traits_dir = routine_dir / "traits"
+    traits = sorted(p.stem for p in traits_dir.glob("*.md")) if traits_dir.is_dir() else []
+    result = decompose(server, cfg.workflow_slug, instruction, traits=traits)
     try:
         meta, _, _ = library.read_workflow(server.library_home, cfg.workflow_slug)
     except FileNotFoundError:
@@ -49,24 +51,19 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
                  "modules": sorted(result["modules"])}
     if meta.get("tools") is not None:
         main_meta["tools"] = meta["tools"]
-    if cfg.fragments:
-        # the routine's OWN active set — the workflow META's `includes` is only a default
-        main_meta["includes"] = list(cfg.fragments)
     (routine_dir / "steps").mkdir(exist_ok=True)
     for mod_name, mod_body in result["modules"].items():
         (routine_dir / "steps" / f"{mod_name}.md").write_text(mod_body.rstrip() + "\n", encoding="utf-8")
     (routine_dir / "main.md").write_text(dump_markdown(main_meta, result["main"]), encoding="utf-8")
 
 
-def load_workflow(routine_dir, cfg) -> tuple[str, str, dict, list[str] | None]:
-    """Load the routine's OWN main.md body (the recipe was materialized into it at generation)
-    plus its active FRAGMENTS. Returns (main_body, fragments_text, provenance, allowed_tools).
+def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:
+    """Load the routine's OWN main.md body (the recipe was materialized into it at generation).
+    Returns (main_body, provenance, allowed_tools).
 
     A routine is self-contained: nothing is read from the workflow library at run time. The model
-    reads the step modules under steps/ on demand via read_file (main.md routes to them); fragments
-    are the routine's editable copies under fragments/."""
-    from .. import fragments_lib
-
+    reads the step modules under steps/ and the practice modules under traits/ on demand via
+    read_file (main.md routes to them)."""
     main = routine_dir / "main.md"
     if not main.exists():
         raise RuntimeError(f"routine {cfg.slug!r} has no main.md — cannot run")
@@ -78,21 +75,8 @@ def load_workflow(routine_dir, cfg) -> tuple[str, str, dict, list[str] | None]:
     src = meta.get("materialized_from") if isinstance(meta.get("materialized_from"), dict) else {}
     prov = {"slug": src.get("slug", cfg.workflow_slug),
             "commit": src.get("commit", cfg.workflow_commit), "version": src.get("version", 0)}
-
-    # The routine.yaml `fragments:` list is the activation authority; fragments/ holds the
-    # editable copies. Never glob the dir — the routine itself can write there, and a
-    # deactivated standard must actually deactivate.
-    frag_dir = routine_dir / "fragments"
-    parts = []
-    for slug in cfg.fragments:
-        p = frag_dir / f"{slug}.md"
-        if p.exists():
-            parts.append(fragments_lib.fragment_body(p.read_text(encoding="utf-8")).strip())
-        else:
-            log.warning("fragment %r is active for %s but has no local copy — skipped",
-                        slug, cfg.slug)
     tools = meta.get("tools") if isinstance(meta.get("tools"), list) else None
-    return body, "\n\n".join(parts), prov, tools
+    return body, prov, tools
 
 
 def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None = None,
@@ -124,11 +108,11 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                      budgets=Budgets.from_config(cfg.budgets))
     if not resume_from:
         _ensure_decomposed(routine_dir, cfg, server)   # workflow + instruction → main.md, if not yet
-    body, fragments_text, prov, allowed_tools = load_workflow(routine_dir, cfg)
+    body, prov, allowed_tools = load_workflow(routine_dir, cfg)
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8")
     if not resume_from:            # a resumed run keeps the original header (transcript is append-only)
         transcript.header(run_id=ctx.run_id, routine=cfg.slug, workflow=prov,
                           orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model})
-    status = EngineLoop(ctx, body, instruction, fragments_text=fragments_text,
+    status = EngineLoop(ctx, body, instruction,
                         allowed_tools=allowed_tools, resume=bool(resume_from)).run()
     return status, run_dir

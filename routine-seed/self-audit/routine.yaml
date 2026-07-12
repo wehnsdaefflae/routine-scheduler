@@ -1,5 +1,6 @@
 name: Self audit
-description: Weekly review of the routine-scheduler code and routines — files fixes directly and larger changes as proposals.
+description: Weekly review of the routine-scheduler code and routines — files fixes
+  directly and larger changes as proposals.
 tags:
 - meta
 - maintenance
@@ -13,13 +14,10 @@ schedule:
 workflow:
   library_slug: self-audit-code
   library_commit: d18b822
-fragments:
-- ask-policy
+permissions:
 - communication
-- global-utils
 - util-authoring-autonomous
-- ledger-discipline
-- web-research
+- self-modification
 budgets:
   max_turns: 60
   max_wall_clock_min: 45

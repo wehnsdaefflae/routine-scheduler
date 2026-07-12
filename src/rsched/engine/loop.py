@@ -53,12 +53,11 @@ class EngineLoop:
     Construct with `resume=True` to rehydrate a prior transcript and continue it."""
 
     def __init__(self, ctx: RunContext, workflow_body: str, instruction: str,
-                 abort_event: threading.Event | None = None, fragments_text: str = "",
+                 abort_event: threading.Event | None = None,
                  allowed_tools: list[str] | None = None, resume: bool = False):
         self.ctx = ctx
         self.workflow_body = workflow_body
         self.instruction = instruction
-        self.fragments_text = fragments_text
         self.resume = resume     # rehydrate the prior transcript into the prompt instead of a clean start
         # A workflow may restrict which action kinds it may use (frontmatter `tools:`); `finish`
         # is always permitted so a run can end. None = every tool allowed. Enforced per turn by
@@ -72,10 +71,13 @@ class EngineLoop:
         self.consumed_dir = ctx.root_run_dir / "consumed"
         self.final_summary = ""
         self.executed_actions = 0  # actions that produced an observation this run
-        # Gated capabilities (write_util, reserved utils) come from the ACTIVE fragments'
-        # grants, read from the LIBRARY copies only — a routine cannot self-grant by editing
-        # its local fragment prose. Enforced per turn by validate_action.
-        self.grants = ctx.grants = load_policy(ctx.server.fragments_home, ctx.routine.fragments)
+        # Gated capabilities (write_util, reserved utils, runs/ access, self-modification)
+        # come from the routine's PERMISSIONS, whose grants are read from the LIBRARY copies
+        # only — a routine cannot self-grant by editing anything it owns. Enforced per turn
+        # by validate_action.
+        self.grants = ctx.grants = load_policy(ctx.server.permissions_home,
+                                               ctx.routine.permissions,
+                                               current_run_ts=ctx.run_ts)
         self.util_reminder = self._build_util_reminder()
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
         # Repeat-streak escape hatch: identical-but-valid actions in a row are the second
@@ -101,8 +103,9 @@ class EngineLoop:
                               "read_file the index and the relevant files before relying on memory.]")
 
     def _build_util_reminder(self) -> str:
-        # Per-turn nudge, only when the global-utils fragment is active for this routine (req 2).
-        if "global-utils" not in (self.ctx.routine.fragments or []):
+        # Per-turn nudge — utils are every routine's only way to run code, so the reminder
+        # rides along whenever the workflow permits the util kind at all.
+        if self.allowed_tools is not None and "util" not in self.allowed_tools:
             return ""
         if self.grants.allows_kind("write_util"):
             create = ("write_util to create/revise one"
@@ -110,7 +113,7 @@ class EngineLoop:
                          if self.grants.needs_confirm(creating=True) else ""))
         else:
             create = ("note the gap with a deferred ask_user — creating/revising utils "
-                      "needs a util-authoring grant this routine does not carry")
+                      "needs a util-authoring permission this routine does not hold")
         return ("\n[tools: run `util name=list` to see the available global utils and their "
                 f"usage; if none fits, {create}.]")
 
@@ -231,7 +234,6 @@ class EngineLoop:
         if isinstance(phase, dict) and phase.get("phase"):
             ctx.phase = str(phase["phase"])
         system = build_system_prompt(ctx, self.workflow_body, self.instruction, digest, msgs,
-                                     fragments_text=self.fragments_text,
                                      allowed_kinds=self.allowed_tools)
         if self.resume and ctx.depth == 0:
             from .transcript import read_events

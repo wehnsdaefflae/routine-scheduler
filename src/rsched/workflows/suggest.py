@@ -87,12 +87,13 @@ def existing_tags(server: ServerConfig) -> list[str]:
     """Union of tags already in use across every element — the vocabulary a new routine reuses."""
     import yaml
 
-    from .. import fragments_lib, utils_lib
+    from .. import library_docs, utils_lib
     tags: set[str] = set()
     for w in list_workflows(server.library_home):
         tags.update(w.get("tags") or [])
-    for f in fragments_lib.list_fragments(server.fragments_home):
-        tags.update(f.get("tags") or [])
+    for home in (server.traits_home, server.permissions_home):
+        for d in library_docs.list_docs(home):
+            tags.update(d.get("tags") or [])
     for u in utils_lib.list_utils(server.utils_home):
         tags.update(u.get("tags") or [])
     for y in sorted(server.routines_home.glob("*/routine.yaml")):
@@ -114,6 +115,77 @@ def normalize_tags(raw: list) -> list[str]:
             seen.add(t)
             out.append(t)
     return out[:3]
+
+
+TRAITS_PERMS_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["traits", "permissions"],
+    "properties": {"traits": {"type": "array", "items": {"type": "string"}},
+                   "permissions": {"type": "array", "items": {"type": "string"}}},
+}
+
+
+def suggest_traits_permissions(server: ServerConfig, instruction: str,
+                               workflow_slug: str = "") -> dict:
+    """Preselect the traits (practice modules, adapted in at creation) and permissions
+    (engine-enforced capabilities) for a new routine, from its instruction + chosen
+    workflow. Returns {'traits': [...], 'permissions': [...]}, validated against the
+    library; falls back to the defaults when no endpoint answers. The wizard shows the
+    result as an editable preselection — this is a first pass, not a decision."""
+    from .. import library_docs
+    from ..config import DEFAULT_PERMISSIONS, DEFAULT_TRAITS
+
+    traits = library_docs.list_docs(server.traits_home)
+    perms = library_docs.list_docs(server.permissions_home)
+    fallback = {"traits": [t for t in DEFAULT_TRAITS if t in {d["slug"] for d in traits}],
+                "permissions": [p for p in DEFAULT_PERMISSIONS if p in {d["slug"] for d in perms}]}
+    if not traits and not perms:
+        return fallback
+    workflow_note = ""
+    if workflow_slug:
+        wf = next((w for w in list_workflows(server.library_home) if w["slug"] == workflow_slug), None)
+        if wf:
+            workflow_note = (f"\nCHOSEN WORKFLOW: {wf['slug']} — {wf['description']}\n"
+                             f"Its suggested traits: {wf.get('includes') or '(none)'}")
+    t_list = "\n".join(f"- {d['slug']}: {d['summary']}" for d in traits)
+    p_list = "\n".join(f"- {d['slug']}: {d['summary']}"
+                       + (f" [grants: {d['grants']}]" if d.get("grants") else "")
+                       for d in perms)
+    prompt = (
+        "A new recurring LLM-agent routine is being created. Pick its TRAITS (reusable practice "
+        "modules, adapted into the routine's own instructions at creation) and PERMISSIONS "
+        "(engine-enforced capabilities the user grants it) from the catalogs below.\n\n"
+        f"INSTRUCTION:\n{instruction}\n{workflow_note}\n\n"
+        f"TRAITS:\n{t_list}\n\nPERMISSIONS:\n{p_list}\n\n"
+        "Guidance: the improve-* traits are after-run passes — include the ones whose lens fits "
+        "the task's deliverable. Include ask-policy and ledger-discipline for almost everything. "
+        "Grant permissions conservatively: only what the task clearly needs (e.g. communication "
+        "only if it must reach the user outside the web UI; run-history only if runs build on "
+        "each other's details beyond the last summary; shell almost never). At most ONE "
+        "util-authoring variant. Include self-modification if the routine should refine its own "
+        "process over time.\n\n"
+        "Reply with ONLY one JSON object matching this schema (no prose):\n"
+        + json.dumps(TRAITS_PERMS_SCHEMA)
+    )
+    endpoint, ref = EndpointRegistry(server).for_system()
+    messages = [{"role": "user", "content": prompt}]
+    for _attempt in range(2):
+        try:
+            completion = endpoint.complete(messages, model=ref.model,
+                                           schema=TRAITS_PERMS_SCHEMA, timeout=120)
+        except Exception:
+            return fallback
+        try:
+            obj = completion.parsed if completion.parsed is not None else parse_reply(
+                completion.text, TRAITS_PERMS_SCHEMA)
+            known_t = {d["slug"] for d in traits}
+            known_p = {d["slug"] for d in perms}
+            return {"traits": [t for t in obj.get("traits", []) if t in known_t],
+                    "permissions": [p for p in obj.get("permissions", []) if p in known_p]}
+        except SchemaViolation as exc:
+            messages.append({"role": "assistant", "content": completion.text[:2000]})
+            messages.append({"role": "user", "content":
+                             f"Invalid: {exc}. Reply again with ONLY the JSON object."})
+    return fallback
 
 
 def suggest_tags(server: ServerConfig, instruction: str) -> list[str]:

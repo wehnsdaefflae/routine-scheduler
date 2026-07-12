@@ -99,13 +99,15 @@ def write_result():
     separable multi-step tasks.
 
     OWNERSHIP RULE — the instruction is the TASK, nothing else. Cross-cutting conduct is owned
-    by fragments the user toggles per routine (asking policy, communication channels, after-run
-    improvement passes, util and web-research discipline): the refined_instruction must contain
-    NONE of it, and must not assume any fragment is on or off. If the user's draft mixes conduct
-    into the task ("message me on discord when...", "improve your own prompt after each run"),
-    do not copy it into the instruction — flag it in `notes` as a fragment choice for the wizard.
-    Conduct text baked into the instruction would keep acting after its fragment is toggled off,
-    which breaks the user's control surface."""
+    by TRAITS (practice modules adapted into the routine at creation: asking policy, after-run
+    improvement passes, util and web-research discipline) and capabilities by PERMISSIONS the
+    user grants (communication channels, util authoring, previous-run access): the
+    refined_instruction must contain NONE of it, and must not assume any trait or permission is
+    present. If the user's draft mixes conduct into the task ("message me on discord when...",
+    "improve your own prompt after each run"), do not copy it into the instruction — flag it in
+    `notes` as a trait/permission choice for the wizard. Conduct text baked into the instruction
+    would keep acting after the user changes the routine's setup, which breaks their control
+    surface."""
 
 
 if __name__ == "__main__":

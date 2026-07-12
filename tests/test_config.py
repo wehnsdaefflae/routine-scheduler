@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import yaml
 
-from rsched.config import (DEFAULT_BUDGETS, DEFAULT_FRAGMENTS, EndpointConfig, ModelRef,
+from rsched.config import (DEFAULT_BUDGETS, DEFAULT_PERMISSIONS, EndpointConfig, ModelRef,
                            RoutineConfig, ServerConfig, load_routine, load_server_config)
 
 # ---------------------------------------------------------------- server config
@@ -53,7 +53,8 @@ def test_deployed_config_keys_load_exactly(tmp_path):
     assert server.system_model == ModelRef("openrouter", "deepseek/deepseek-chat")
     # derived properties hang off libraries_home
     assert server.library_home == server.libraries_home == server.utils_home
-    assert server.fragments_home == server.libraries_home / "fragments"
+    assert server.traits_home == server.libraries_home / "traits"
+    assert server.permissions_home == server.libraries_home / "permissions"
 
 
 def test_server_defaults_and_missing_file(tmp_path):
@@ -114,7 +115,7 @@ def test_routine_full_shape_loads(tmp_path):
         "workflow": {"library_slug": "test-flow", "library_commit": "abc123"},
         "models": {"main": {"endpoint": "e", "model": "m", "effort": "high"}},
         "budgets": {"max_turns": 10},
-        "fragments": ["ask-policy"],
+        "permissions": ["util-authoring"],
         "fs_read_roots": ["~/data"],
         "retention": {"keep_runs": 5},
     })
@@ -125,7 +126,7 @@ def test_routine_full_shape_loads(tmp_path):
     assert (cfg.workflow_slug, cfg.workflow_commit) == ("test-flow", "abc123")
     assert cfg.models["main"] == ModelRef("e", "m", "high")
     assert cfg.budgets == {**DEFAULT_BUDGETS, "max_turns": 10}  # merged over defaults
-    assert cfg.fragments == ["ask-policy"] and cfg.keep_runs == 5
+    assert cfg.permissions == ["util-authoring"] and cfg.keep_runs == 5
     assert cfg.fs_read_roots[0].name == "data" and cfg.fs_read_roots[0].is_absolute()
 
 
@@ -134,8 +135,8 @@ def test_routine_minimal_gets_defaults(tmp_path):
     cfg, problems = load_routine(d)
     assert problems == []
     assert cfg.slug == "testr" and cfg.name == "testr" and cfg.enabled is True
-    assert cfg.budgets == DEFAULT_BUDGETS and cfg.fragments == DEFAULT_FRAGMENTS
-    assert "util-authoring" in cfg.fragments          # write_util grant is in the default set
+    assert cfg.budgets == DEFAULT_BUDGETS and cfg.permissions == DEFAULT_PERMISSIONS
+    assert "util-authoring" in cfg.permissions        # write_util grant is in the default set
     assert cfg.catchup == "skip" and cfg.keep_runs == 30
 
 
@@ -176,7 +177,7 @@ def test_routine_empty_description_flagged(tmp_path):
     assert cfg.cron == "0 7 * * 1"
 
 
-def test_routine_explicit_empty_fragments_wins(tmp_path):
-    d = _mk_routine(tmp_path, {"description": "x", "fragments": []})
+def test_routine_explicit_empty_permissions_wins(tmp_path):
+    d = _mk_routine(tmp_path, {"description": "x", "permissions": []})
     cfg, problems = load_routine(d)
-    assert cfg.fragments == [] and problems == []
+    assert cfg.permissions == [] and problems == []

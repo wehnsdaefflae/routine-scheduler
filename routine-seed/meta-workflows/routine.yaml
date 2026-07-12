@@ -1,5 +1,6 @@
 name: 'Meta: workflow library'
-description: Reviews all routines' transcripts and ledgers, then fixes and improves the shared workflow library.
+description: Reviews all routines' transcripts and ledgers, then fixes and improves
+  the shared workflow library.
 tags:
 - meta
 - maintenance
@@ -13,16 +14,9 @@ schedule:
 workflow:
   library_slug: meta-workflows
   library_commit: eab87b5
-fragments:
-- ask-policy
-- global-utils
+permissions:
 - util-authoring
-- ledger-discipline
-- improve-bugfix
-- improve-research
-- improve-features
-- improve-ui
-- improve-efficiency
+- self-modification
 budgets:
   max_turns: 60
   max_wall_clock_min: 45

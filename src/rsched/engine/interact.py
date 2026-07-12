@@ -1,5 +1,5 @@
 """Action handlers that converse with the user: ask_user (blocking/deferred questions)
-and write_util, whose approval gate derives from the active fragments' grants.
+and write_util, whose approval gate derives from the routine's permission grants.
 
 Blocking flows poll the routine inbox for the answer and credit the waiting time back to
 the wall-clock budget; unanswered blocking questions degrade to deferred so a run never
@@ -79,7 +79,7 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:
     home = ctx.server.utils_home
     utils_lib.ensure_library(home, remote=ctx.server.libraries_remote)
     creating = not utils_lib.exists(home, name)
-    # Approval policy comes from the active fragments' grants (util-authoring: every change;
+    # Approval policy comes from the permission grants (util-authoring: every change;
     # util-authoring-autonomous: creations only). No grants on the ctx = confirm everything.
     if ctx.grants is None or ctx.grants.needs_confirm(creating):
         verb = "create" if creating else "revise"

@@ -110,7 +110,7 @@ class SubrunManager:
         from .loop import EngineLoop          # local import: loop imports this module
         from .runtime import load_workflow
 
-        body, _frag, _prov, _tools = load_workflow(sub_dir, child_ctx.routine)
+        body, _prov, _tools = load_workflow(sub_dir, child_ctx.routine)
         abort_event = threading.Event()
         child_loop = EngineLoop(child_ctx, body, action["prompt"], abort_event=abort_event)
         sub = Subrun(n=n, label=label, workflow=recipe_slug,
@@ -141,7 +141,7 @@ class SubrunManager:
 
     def _materialize_to_disk(self, slug: str, sub_dir, prompt: str) -> tuple[str, str]:
         """Write the sub-routine's files into sub_dir (main.md + steps/ + instruction.md) so it is
-        a real on-disk routine while it runs. Returns (effective slug, note). Fragments stay OFF —
+        a real on-disk routine while it runs. Returns (effective slug, note). Permissions stay OFF —
         a sub-routine reports through its finish summary; it keeps no LEDGER/audit of its own."""
         try:
             from ..workflows.adapt import materialize
@@ -259,13 +259,14 @@ class SubrunManager:
 def _sub_routine(routine, sub_dir, ref):
     """A child sub-routine config: its OWN dir (so main.md + read_file/write_file resolve under
     sub_dir), the parent's fs roots inherited, the parent's SUBROUTINE model as the child's MAIN
-    model (subroutine/tool_call inherited so the child can spawn/llm too), fragments off (a
-    sub-routine reports through its finish summary and keeps no LEDGER/audit)."""
+    model (subroutine/tool_call inherited so the child can spawn/llm too), permissions off
+    (a sub-routine holds no grants: it reports through its finish summary and keeps no
+    LEDGER/audit)."""
     import copy
 
     r = copy.copy(routine)
     r.dir = sub_dir
     r.models = dict(routine.models)
     r.models["main"] = ref
-    r.fragments = []
+    r.permissions = []
     return r

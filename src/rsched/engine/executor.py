@@ -68,8 +68,8 @@ def do_util(action: dict, ctx: RunContext) -> dict:
             repair = (f'If the inputs were right, the util itself may be broken — read it with '
                       f'{{"kind": "util", "name": "show", "args": ["{name}"]}} to confirm, then '
                       f'file a deferred ask_user naming the util, the failing call, and the '
-                      f'error (this routine has no util-authoring grant, so it cannot revise '
-                      f'utils itself). Never silently work around a broken util.')
+                      f'error (this routine holds no util-authoring permission, so it cannot '
+                      f'revise utils itself). Never silently work around a broken util.')
         obs["hint"] = (
             f'call shape: every argument goes in `args` as a JSON array of strings, e.g. '
             f'{{"say": "…", "kind": "util", "name": "{name}", "args": ["<argument>", "--json"]}}. '
@@ -77,9 +77,39 @@ def do_util(action: dict, ctx: RunContext) -> dict:
     return obs
 
 
+def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
+    """Backstop for previous-run access (grants.deny handles the relative-path form inside
+    the schema-retry cycle; this catches absolute paths and scopes `runs: last`). The
+    current run's own tree — status, archived history — is always readable."""
+    g = ctx.grants
+    if g is None:
+        return None
+    runs_dir = ctx.routine.dir / "runs"
+    try:
+        rel = resolved.relative_to(runs_dir)
+    except ValueError:
+        return None
+    if resolved.is_relative_to(ctx.root_run_dir):
+        return None
+    if g.run_history == "none":
+        return ("reading previous runs is not among this routine's permissions "
+                "(run-history / run-history-full unlock it)")
+    if g.run_history == "last":
+        prior = sorted(d.name for d in runs_dir.iterdir()
+                       if d.is_dir() and d.name != ctx.root_run_dir.name)
+        last = prior[-1] if prior else None
+        if not rel.parts or rel.parts[0] != last:
+            return (f"this routine's run-history permission covers only the LAST previous "
+                    f"run ({'runs/' + last if last else 'none exists yet'}); "
+                    f"run-history-full would cover all of them")
+    return None
+
+
 def do_read_file(action: dict, ctx: RunContext) -> dict:
     try:
         path = resolve_rel(ctx.routine.dir, action["path"], ctx.routine.fs_read_roots)
+        if err := _runs_read_gate(ctx, path):
+            return {"kind": "read_file", "path": action["path"], "error": err}
         text = path.read_text(encoding="utf-8", errors="replace")
     except (OSError, PermissionError) as exc:
         return {"kind": "read_file", "path": action["path"], "error": str(exc)}
@@ -93,10 +123,34 @@ def do_read_file(action: dict, ctx: RunContext) -> dict:
             "content": content, "truncated": truncated}
 
 
+def _write_gate(ctx: RunContext, resolved) -> str | None:
+    """Backstop for engine-owned and permission-gated writes (grants.deny handles the
+    relative-path form; this catches absolute paths into the routine's own dir)."""
+    g = ctx.grants
+    if g is None:
+        return None
+    if resolved.is_relative_to(ctx.routine.dir / "runs"):
+        return "runs/ is engine-owned and read-only for the run"
+    if not g.self_modify:
+        from ..grants import RECIPE_PREFIXES
+
+        try:
+            rel = resolved.relative_to(ctx.routine.dir)
+        except ValueError:
+            return None
+        rel_s = str(rel)
+        if any(rel_s == p.rstrip("/") or rel_s.startswith(p) for p in RECIPE_PREFIXES):
+            return ("modifying the routine's own recipe files needs the self-modification "
+                    "permission this routine does not hold")
+    return None
+
+
 def do_write_file(action: dict, ctx: RunContext) -> dict:
     try:
         roots = ctx.routine.fs_write_roots
         path = resolve_rel(ctx.routine.dir, action["path"], roots)
+        if err := _write_gate(ctx, path):
+            return {"kind": "write_file", "path": action["path"], "error": err}
         path.parent.mkdir(parents=True, exist_ok=True)
         data = action["content"]
         if not isinstance(data, str):

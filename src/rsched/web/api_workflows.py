@@ -9,7 +9,8 @@ from pydantic import BaseModel
 from ..ids import now_iso
 from ..paths import atomic_write_json
 from ..workflows import library
-from ..workflows.lint import lint_all, lint_fragment_text, lint_workflow_py
+from ..workflows.lint import (lint_all, lint_permission_text, lint_trait_text,
+                              lint_workflow_py)
 
 router = APIRouter(tags=["workflows"])
 
@@ -40,9 +41,9 @@ def list_workflows(request: Request) -> dict:
 
 @router.get("/library")
 def library_overview(request: Request) -> dict:
-    """Everything under the Library tab: workflows, fragments, and global utils."""
-    from .. import fragments_lib, utils_lib
-    from ..config import DEFAULT_FRAGMENTS
+    """Everything under the Library tab: workflows, traits, permissions, and global utils."""
+    from .. import library_docs, utils_lib
+    from ..config import DEFAULT_PERMISSIONS, DEFAULT_TRAITS
 
     home = _home(request)
     server = request.app.state.server
@@ -50,40 +51,57 @@ def library_overview(request: Request) -> dict:
     return {
         "workflows": [{**w, "problems": lint.get(f"workflows/{w['file']}", [])}
                       for w in library.list_workflows(home)],
-        "fragments": [{**f, "problems": lint.get(f"fragments/{f['slug']}.md", [])}
-                      for f in fragments_lib.list_fragments(server.fragments_home)],
+        "traits": [{**t, "problems": lint.get(f"traits/{t['slug']}.md", [])}
+                   for t in library_docs.list_docs(server.traits_home)],
+        "permissions": [{**p, "problems": lint.get(f"permissions/{p['slug']}.md", [])}
+                        for p in library_docs.list_docs(server.permissions_home)],
         "utils": utils_lib.list_utils(server.utils_home),
-        "default_fragments": list(DEFAULT_FRAGMENTS),
+        "default_traits": list(DEFAULT_TRAITS),
+        "default_permissions": list(DEFAULT_PERMISSIONS),
         "heads": {"workflows": library.head_commit(home)},
     }
 
 
-@router.get("/library/fragments/{slug}")
-def fragment_detail(request: Request, slug: str) -> dict:
-    from .. import fragments_lib
-
+def _docs_home(request: Request, kind: str):
     server = request.app.state.server
-    content = fragments_lib.read_fragment(server.fragments_home, slug)
+    if kind == "traits":
+        return server.traits_home
+    if kind == "permissions":
+        return server.permissions_home
+    raise HTTPException(404, f"unknown library doc kind {kind!r}")
+
+
+@router.get("/library/{kind}/{slug}")
+def library_doc_detail(request: Request, kind: str, slug: str) -> dict:
+    from .. import library_docs
+
+    if kind == "utils":
+        return util_detail(request, slug)
+    home = _docs_home(request, kind)
+    content = library_docs.read_doc(home, slug)
     if content is None:
-        raise HTTPException(404, f"no fragment {slug!r}")
+        raise HTTPException(404, f"no {kind[:-1]} {slug!r}")
     return {"slug": slug, "content": content,
-            "log": fragments_lib.git_log(server.fragments_home, f"{slug}.md")}
+            "log": library_docs.git_log(home, f"{slug}.md")}
 
 
-class FragmentBody(BaseModel):
+class DocBody(BaseModel):
     content: str
 
 
-@router.put("/library/fragments/{slug}")
-def put_fragment(request: Request, slug: str, body: FragmentBody) -> dict:
-    from .. import fragments_lib
+@router.put("/library/{kind}/{slug}")
+def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> dict:
+    from .. import library_docs
 
-    server = request.app.state.server
-    problems = lint_fragment_text(body.content, filename=f"{slug}.md")
+    if kind == "utils":
+        return put_util(request, slug, UtilBody(content=body.content))
+    home = _docs_home(request, kind)
+    linter = lint_trait_text if kind == "traits" else lint_permission_text
+    problems = linter(body.content, filename=f"{slug}.md")
     if problems:
         raise HTTPException(422, "; ".join(problems))
-    fragments_lib.write_fragment(server.fragments_home, slug, body.content.rstrip() + "\n")
-    fragments_lib.git_commit(server.fragments_home, f"edit fragment {slug} via web")
+    library_docs.write_doc(home, slug, body.content.rstrip() + "\n")
+    library_docs.git_commit(home, f"edit {kind[:-1]} {slug} via web")
     return {"ok": True}
 
 
@@ -118,11 +136,11 @@ def put_util(request: Request, name: str, body: UtilBody) -> dict:
 
 
 @router.get("/workflows/{slug}")
-def workflow_detail(request: Request, slug: str, fragment: bool = False) -> dict:
+def workflow_detail(request: Request, slug: str) -> dict:
     home = _home(request)
-    path = (home / f"fragments/{slug}.md") if fragment else _workflow_file(home, slug)
+    path = _workflow_file(home, slug)
     if not path or not path.exists():
-        raise HTTPException(404, f"no {'fragment' if fragment else 'workflow'} {slug!r}")
+        raise HTTPException(404, f"no workflow {slug!r}")
     rel = str(path.relative_to(home))
     return {"slug": slug, "content": path.read_text(encoding="utf-8"), "log": library.git_log(home, rel),
             "format": "py" if path.suffix == ".py" else "md"}
@@ -130,17 +148,16 @@ def workflow_detail(request: Request, slug: str, fragment: bool = False) -> dict
 
 class PutBody(BaseModel):
     content: str
-    fragment: bool = False
 
 
 @router.put("/workflows/{slug}")
 def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
-    from .. import fragments_lib
+    from .. import library_docs
 
     home = _home(request)
     server = request.app.state.server
-    frags = fragments_lib.slugs(server.fragments_home)
-    problems = lint_workflow_py(body.content, filename=f"{slug}.py", fragment_slugs=frags)
+    traits = library_docs.slugs(server.traits_home)
+    problems = lint_workflow_py(body.content, filename=f"{slug}.py", trait_slugs=traits)
     if problems:
         raise HTTPException(422, "; ".join(problems))
     rel = f"workflows/{slug}.py"

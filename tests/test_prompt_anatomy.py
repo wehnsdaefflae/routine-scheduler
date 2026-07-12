@@ -26,10 +26,10 @@ def _system_prompt(make_routine, tmp_path) -> str:
     ctx = RunContext(routine=cfg, server=server, registry=None, run_ts="20260712-070000",
                      run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
                      budgets=Budgets.from_config(cfg.budgets))
-    ctx.grants = GrantPolicy(active=("global-utils",),
+    ctx.grants = GrantPolicy(active=("util-authoring", "memory"),
                              actions=frozenset({"write_util", "memory_read", "memory_write"}))
     return build_system_prompt(ctx, "## Run flow", "task", state_digest(d, [], []),
-                               ["hello"], fragments_text="standards body")
+                               ["hello"])
 
 
 def test_doc_carries_every_system_prompt_section_header(make_routine, tmp_path):

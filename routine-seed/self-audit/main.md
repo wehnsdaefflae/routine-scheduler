@@ -76,3 +76,11 @@ States, in order:
 - A restart is requested **iff** code was committed this run.
 - Every unprovable suspicion is backed by evidence or turned into an instrumentation fix.
 - A run that finds nothing worth changing — and says so clearly — is a good run. No churn.
+
+## Standing practices
+
+These practice modules are this routine's own adapted standards — read each with read_file before the situation it governs, and refine them as you learn:
+- `traits/ask-policy.md` — when and how to involve the user
+- `traits/global-utils.md` — your tools, and how to use them
+- `traits/ledger-discipline.md` — the routine's memory of its own changes
+- `traits/web-research.md` — verify external facts by searching, don't guess from memory

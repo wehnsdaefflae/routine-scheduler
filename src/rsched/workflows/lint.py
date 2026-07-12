@@ -1,9 +1,9 @@
-"""Workflow/fragment conformance — the gu-lint equivalent for the library.
+"""Workflow/trait/permission conformance — the gu-lint equivalent for the library.
 
 Library workflows (Python patterns): META completeness, slug↔filename, resolvable includes,
 a main() entry, PHASES/COMPLETION. Materialized copies: provenance + no unresolved
-placeholders. Fragments: titled, non-trivial, and a well-formed `grants:` key (the
-machine-enforced capability side — see grants.py).
+placeholders. Traits: titled practice prose, no grants. Permissions: titled, with a
+well-formed `grants:` key (the machine-enforced capability side — see grants.py).
 """
 
 from __future__ import annotations
@@ -15,12 +15,12 @@ import frontmatter
 import yaml
 
 from ..ids import is_slug
-from .library import fragments_dir, workflows_dir
+from .library import permissions_dir, traits_dir, workflows_dir
 
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-z0-9_]+)\s*\}\}")
 
 
-def lint_workflow_py(source: str, *, filename: str, fragment_slugs: list[str]) -> list[str]:
+def lint_workflow_py(source: str, *, filename: str, trait_slugs: list[str]) -> list[str]:
     """Validate a Python-workflow file: parseable, META completeness, slug↔filename, resolvable
     includes, a main() entry, and PHASES/COMPLETION (the Python equivalents of the required sections)."""
     from .pyworkflow import REQUIRED_META, parse_py
@@ -47,9 +47,9 @@ def lint_workflow_py(source: str, *, filename: str, fragment_slugs: list[str]) -
         problems.append(f"{filename}: tags must be a list")
     elif len([t for t in (tags or []) if isinstance(t, str) and t.strip()]) < 3:
         problems.append(f"{filename}: needs at least 3 tags")
-    for frag in meta.get("includes") or []:
-        if frag not in fragment_slugs:
-            problems.append(f"{filename}: include {frag!r} does not resolve to fragments/{frag}.md")
+    for trait in meta.get("includes") or []:
+        if trait not in trait_slugs:
+            problems.append(f"{filename}: include {trait!r} does not resolve to traits/{trait}.md")
     if not meta.get("has_main"):
         problems.append(f"{filename}: no top-level main() function (the per-run control flow)")
     if not meta.get("phases"):
@@ -59,7 +59,33 @@ def lint_workflow_py(source: str, *, filename: str, fragment_slugs: list[str]) -
     return problems
 
 
-def lint_fragment_text(raw: str, *, filename: str) -> list[str]:
+def lint_trait_text(raw: str, *, filename: str) -> list[str]:
+    """A trait is pure practice prose: titled, tagged, non-trivial — and NEVER grants
+    anything (grants belong to permissions; a trait carrying one would silently do nothing,
+    which is worse than an error)."""
+    problems = []
+    try:
+        meta, body = frontmatter.parse(raw)
+    except yaml.YAMLError as exc:
+        return [f"{filename}: invalid YAML frontmatter: {exc}"]
+    if not body.strip().startswith("# trait:"):
+        problems.append(f"{filename}: body must start with '# trait: <name> — <summary>' (after any frontmatter)")
+    if "grants" in meta:
+        problems.append(f"{filename}: traits must not carry grants — move the capability to a "
+                        "permission doc under permissions/")
+    tags = meta.get("tags")
+    if "tags" in meta and not isinstance(tags, list):
+        problems.append(f"{filename}: tags must be a list")
+    elif len([t for t in (tags or []) if isinstance(t, str) and t.strip()]) < 3:
+        problems.append(f"{filename}: needs at least 3 tags")
+    if len(raw.strip().splitlines()) < 4:
+        problems.append(f"{filename}: suspiciously short for a practice module")
+    return problems
+
+
+def lint_permission_text(raw: str, *, filename: str) -> list[str]:
+    """A permission is a capability doc: titled, with a well-formed `grants:` key and a
+    SHORT body (it doubles as the prompt's capability note when held)."""
     from ..grants import normalize_grants
 
     problems = []
@@ -67,17 +93,15 @@ def lint_fragment_text(raw: str, *, filename: str) -> list[str]:
         meta, body = frontmatter.parse(raw)
     except yaml.YAMLError as exc:
         return [f"{filename}: invalid YAML frontmatter: {exc}"]
-    if not body.strip().startswith("# fragment:"):
-        problems.append(f"{filename}: body must start with '# fragment: <slug> — <summary>' (after any frontmatter)")
-    if "grants" in meta:
-        problems += [f"{filename}: {p}" for p in normalize_grants(meta["grants"])[1]]
-    tags = meta.get("tags")
-    if "tags" in meta and not isinstance(tags, list):
-        problems.append(f"{filename}: tags must be a list")
-    elif len([t for t in (tags or []) if isinstance(t, str) and t.strip()]) < 3:
-        problems.append(f"{filename}: needs at least 3 tags")
-    if len(raw.strip().splitlines()) < 4:
-        problems.append(f"{filename}: suspiciously short for a standard practice")
+    if not body.strip().startswith("# permission:"):
+        problems.append(f"{filename}: body must start with '# permission: <name> — <summary>' (after any frontmatter)")
+    if "grants" not in meta:
+        problems.append(f"{filename}: a permission must carry a grants: key (else it grants nothing)")
+    else:
+        grants, grant_problems = normalize_grants(meta["grants"])
+        problems += [f"{filename}: {p}" for p in grant_problems]
+        if "grants" in meta and not grants and not grant_problems:
+            problems.append(f"{filename}: grants: is empty")
     return problems
 
 
@@ -101,19 +125,23 @@ def lint_materialized_text(raw: str, *, filename: str = "main.md") -> list[str]:
 
 def lint_all(home: Path) -> dict[str, list[str]]:
     """path-relative-name → problems. Empty lists mean clean. `home` is the library repo root
-    (workflows/ and fragments/ subdirs)."""
-    from .. import fragments_lib
+    (workflows/, traits/ and permissions/ subdirs)."""
+    from .. import library_docs
 
     results: dict[str, list[str]] = {}
-    fdir = fragments_dir(home)
-    frags = fragments_lib.slugs(fdir)
+    tdir, pdir = traits_dir(home), permissions_dir(home)
+    traits = library_docs.slugs(tdir)
     wdir = workflows_dir(home)
     if wdir.is_dir():
         for path in sorted(wdir.glob("*.py")):
             results[f"workflows/{path.name}"] = lint_workflow_py(
-                path.read_text(encoding="utf-8"), filename=path.name, fragment_slugs=frags)
-    if fdir.is_dir():
-        for path in sorted(fdir.glob("*.md")):
-            results[f"fragments/{path.name}"] = lint_fragment_text(
+                path.read_text(encoding="utf-8"), filename=path.name, trait_slugs=traits)
+    if tdir.is_dir():
+        for path in sorted(tdir.glob("*.md")):
+            results[f"traits/{path.name}"] = lint_trait_text(
+                path.read_text(encoding="utf-8"), filename=path.name)
+    if pdir.is_dir():
+        for path in sorted(pdir.glob("*.md")):
+            results[f"permissions/{path.name}"] = lint_permission_text(
                 path.read_text(encoding="utf-8"), filename=path.name)
     return results

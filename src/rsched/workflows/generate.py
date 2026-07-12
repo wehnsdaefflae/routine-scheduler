@@ -7,7 +7,7 @@ from __future__ import annotations
 from ..config import ServerConfig
 from ..endpoints import EndpointRegistry
 from ..ids import slugify
-from .library import git_commit, list_fragments, read_workflow, workflows_dir
+from .library import git_commit, list_traits, read_workflow, workflows_dir
 from .lint import lint_workflow_py
 
 FORMAT_SPEC = '''A library workflow is a single self-contained Python file (.py) that DEPICTS a
@@ -30,7 +30,7 @@ META = {
     "when_to_use": "<2-4 sentences a matcher uses to pair instructions with this workflow>",
     "version": 1, "status": "draft",
     "tags": [<at least 3 tags>],
-    "includes": [<fragment slugs from the available list>],
+    "includes": [<trait slugs from the available list — the practice modules this pattern suggests>],
     "tools": None,      # or a list of allowed action kinds, e.g. ["read_file", "write_file", "finish"]
 }
 PHASES = [<cross-run phases>]       # or ["steady"] when there are no cross-run milestones
@@ -55,13 +55,13 @@ def generate(server: ServerConfig, instruction: str, hint: str = "") -> tuple[st
     """Draft a new Python workflow for the instruction. Returns (slug, problems_note); the file is
     written + committed on success. Raises RuntimeError when the draft can't be made valid."""
     home = server.library_home
-    frags = list_fragments(home)
+    traits = list_traits(home)
     _, _, example_raw = read_workflow(home, "general-task")   # a good Python workflow to imitate
     prompt = (
         "Draft ONE new workflow file for the workflow library, for recurring instructions "
         f"shaped like this one:\n\nINSTRUCTION:\n{instruction}\n\n"
         + (f"SHAPE HINT: {hint}\n\n" if hint else "")
-        + f"{FORMAT_SPEC}\n\nAvailable fragments for `includes`: {frags}\n\n"
+        + f"{FORMAT_SPEC}\n\nAvailable traits for `includes`: {traits}\n\n"
         f"A good existing workflow for reference:\n\n{example_raw}\n\n"
         "Requirements: generalize (the workflow is a PATTERN — the instruction stays separate), "
         "depict the control flow with real Python, status: draft, version: 1. "
@@ -74,7 +74,7 @@ def generate(server: ServerConfig, instruction: str, hint: str = "") -> tuple[st
     problems: list[str] = []
     for attempt in range(2):
         slug = _slug_of(draft) or slugify(instruction[:40])
-        problems = lint_workflow_py(draft, filename=f"{slug}.py", fragment_slugs=frags)
+        problems = lint_workflow_py(draft, filename=f"{slug}.py", trait_slugs=traits)
         if not problems:
             path = workflows_dir(home) / f"{slug}.py"
             if path.exists():

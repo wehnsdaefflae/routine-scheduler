@@ -71,7 +71,7 @@ def snapshot(app_state, d: Path) -> dict:
     fin = read_json(d / "state" / "finalize.json")
     if isinstance(fin, dict) and fin.get("state"):        # finalize started → its state wins
         return {"wid": d.name, "run_ts": meta.get("run_ts", ""), "created": meta.get("created", ""),
-                "fragments": meta.get("fragments", []), "draft": draft_preview(d),
+                "draft": draft_preview(d),
                 "stage": fin["state"], "state": fin["state"], "has_result": True,
                 "slug": fin.get("slug"), "run_id": fin.get("run_id"), "error": fin.get("error"),
                 "question": None, "alive": None}
@@ -87,7 +87,7 @@ def snapshot(app_state, d: Path) -> dict:
     # while — report unknown (None), never dead, or the UI shows a false "no longer running".
     alive = _pid_alive(run.pid) if (stage == "chat" and run is not None and run.pid) else None
     return {"wid": d.name, "run_ts": ts, "created": meta.get("created", ""),
-            "fragments": meta.get("fragments", []), "draft": draft_preview(d),
+            "draft": draft_preview(d),
             "stage": stage, "state": state, "has_result": has_result,
             "question": run.question if run else None, "alive": alive}
 
@@ -109,7 +109,7 @@ def list_sessions(app_state) -> list[dict]:
     return out
 
 
-def create_session(server, draft: str, fragments: list[str]) -> tuple[str, str, Path]:
+def create_session(server, draft: str) -> tuple[str, str, Path]:
     """Materialize a session dir on disk (blocking I/O — call via to_thread) and return
     (wid, run_ts, dir), ready for the engine subprocess to take over.
 
@@ -135,12 +135,12 @@ def create_session(server, draft: str, fragments: list[str]) -> tuple[str, str, 
         "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
         "workflow": {"library_slug": "clarify-instruction", "library_commit": commit},
         "budgets": WIZARD_BUDGETS,
-        "fragments": ["ask-policy"],
+        "permissions": [],   # the clarify session holds no grants; its tools allowlist narrows further
     }, sort_keys=False), encoding="utf-8")
-    # Persist the session's meta so it survives a daemon/container restart: /api/wizard can list it
-    # and finalize can recover the chosen standards without depending on the client or in-memory state.
+    # Persist the session's meta so it survives a daemon/container restart: /api/wizard can
+    # list it without depending on the client or in-memory state.
     atomic_write_json(d / "state" / "wizard_meta.json",
-                      {"wid": wid, "run_ts": ts, "created": now_iso(), "fragments": fragments})
+                      {"wid": wid, "run_ts": ts, "created": now_iso()})
     write_candidates(server, d)   # the workflow patterns the clarifier suggests + marries against
     # An initial status so the client sees "starting" while the engine decomposes then runs — the
     # engine takes over ownership of status.json once it boots.

@@ -80,7 +80,7 @@ def list_routines(request: Request) -> list[dict]:
 
 @router.get("/routines/{slug}")
 def routine_detail(request: Request, slug: str) -> dict:
-    from .. import fragments_lib
+    from .. import library_docs
 
     info = _info(request, slug)
     server = _state(request).server
@@ -90,17 +90,17 @@ def routine_detail(request: Request, slug: str) -> dict:
     if ledger.exists():
         lines = ledger.read_text(encoding="utf-8").splitlines()
         ledger_tail = "\n".join(lines[-100:])
-    # editable routine files by directory (step modules + fragment copies + state)
+    # editable routine files by directory (step modules + the routine's own trait copies + state)
     files = {}
-    for sub in ("steps", "fragments", "state"):
+    for sub in ("steps", "traits", "state"):
         subdir = d / sub
         files[sub] = ([p.name for p in sorted(subdir.iterdir()) if p.is_file() and p.suffix == ".md"]
                       if subdir.is_dir() else [])
-    # all library fragments → toggle list; active ones are this routine's
-    all_frags = fragments_lib.list_fragments(server.fragments_home)
-    active = set(info.cfg.fragments)
-    fragments = [{"slug": f["slug"], "summary": f["summary"], "title": f["title"],
-                  "active": f["slug"] in active} for f in all_frags]
+    # all library permissions → toggle list; held ones are this routine's
+    all_perms = library_docs.list_docs(server.permissions_home)
+    held = set(info.cfg.permissions)
+    permissions = [{"slug": p["slug"], "summary": p["summary"], "title": p["title"],
+                    "grants": p["grants"], "active": p["slug"] in held} for p in all_perms]
     sm = server.system_model
     return {
         **_card(request, info),
@@ -113,7 +113,7 @@ def routine_detail(request: Request, slug: str) -> dict:
                        if (r := info.cfg.models.get(k)) else None) for k in MODEL_KINDS},
         "endpoints": list(server.endpoints.keys()),
         "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None,
-        "fragments": fragments,
+        "permissions": permissions,
         "instruction": (d / "instruction.md").read_text(encoding="utf-8")
         if (d / "instruction.md").exists() else "",
         "ledger_tail": ledger_tail,
@@ -143,8 +143,8 @@ class RoutineFileBody(BaseModel):
 
 @router.put("/routines/{slug}/file")
 def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict:
-    """Edit any of the routine's own files — main.md, step modules, fragments, instruction, state.
-    A routine owns its recipe (materialized in), so main.md and steps/ ARE editable here."""
+    """Edit any of the routine's own files — main.md, step modules, traits, instruction, state.
+    A routine owns its recipe (materialized in), so main.md, steps/ and traits/ ARE editable here."""
     info = _info(request, slug)
     _guard_not_active(request, info)
     try:
@@ -157,47 +157,29 @@ def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict
     return {"ok": True}
 
 
-class FragmentsBody(BaseModel):
+class PermissionsBody(BaseModel):
     active: list[str]
 
 
-@router.put("/routines/{slug}/fragments")
-def set_fragments(request: Request, slug: str, body: FragmentsBody) -> dict:
-    """Set the routine's active fragments: copy newly-active ones from the library into
-    fragments/, remove deactivated ones, and record the list in routine.yaml."""
-    from .. import fragments_lib
+@router.put("/routines/{slug}/permissions")
+def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
+    """Set the routine's held permissions (user-only; a routine can never change its own).
+    Pure routine.yaml config — grants are machine-read from the LIBRARY permission docs at
+    run start, so activation takes effect at the next run. Traits are NOT toggleable here:
+    they became the routine's own files at creation."""
+    from .. import library_docs
 
     info = _info(request, slug)
     _guard_not_active(request, info)
     server = _state(request).server
-    available = set(fragments_lib.slugs(server.fragments_home))
-    active = [f for f in body.active if f in available]
-    frag_dir = info.cfg.dir / "fragments"
-    frag_dir.mkdir(exist_ok=True)
-    for slug_f in active:
-        target = frag_dir / f"{slug_f}.md"
-        if not target.exists():
-            content = fragments_lib.read_fragment(server.fragments_home, slug_f)
-            if content:
-                target.write_text(content, encoding="utf-8")
-    for existing in frag_dir.glob("*.md"):
-        if existing.stem not in active:
-            existing.unlink()
-    # A deactivated improve-* fragment takes its step prose with it — otherwise steps/*.md
-    # keeps telling the run to apply a lens the routine no longer carries.
-    from ..workflows.adapt import strip_inactive_improve
-
-    for doc in [info.cfg.dir / "main.md", *(info.cfg.dir / "steps").glob("*.md")]:
-        if doc.is_file():
-            text = doc.read_text(encoding="utf-8")
-            stripped = strip_inactive_improve(text, active)
-            if stripped != text:
-                doc.write_text(stripped, encoding="utf-8")
+    available = set(library_docs.slugs(server.permissions_home))
+    active = [p for p in body.active if p in available]
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    raw["fragments"] = active
+    raw["permissions"] = active
+    raw.pop("fragments", None)   # pre-split key, retired
     path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    _git_commit(info.cfg.dir, f"fragments: {', '.join(active)}")
+    _git_commit(info.cfg.dir, f"permissions: {', '.join(active)}")
     return {"ok": True, "active": active}
 
 

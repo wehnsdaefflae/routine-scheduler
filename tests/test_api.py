@@ -45,7 +45,7 @@ def _mk_run(routines, slug, ts, state, question=None):
     return run_dir
 
 
-def _mk_wizard(routines, ts, *, state="running", result=None, fragments=("global-utils",)):
+def _mk_wizard(routines, ts, *, state="running", result=None):
     """A hidden .wizard-<ts> session on disk (no engine process), mirroring api_wizard.start()'s
     layout — enough for the list/detail/cancel/finalize endpoints to reconstruct it from disk."""
     wid = f".wizard-{ts}"
@@ -54,8 +54,7 @@ def _mk_wizard(routines, ts, *, state="running", result=None, fragments=("global
     (d / "inbox").mkdir(exist_ok=True)
     (d / "instruction.md").write_text("Collect new arxiv AI-agent papers and keep a reading list.\n")
     atomic_write_json(d / "state" / "wizard_meta.json",
-                      {"wid": wid, "run_ts": ts, "created": "2026-07-10T09:00:00+02:00",
-                       "fragments": list(fragments)})
+                      {"wid": wid, "run_ts": ts, "created": "2026-07-10T09:00:00+02:00"})
     run_dir = d / "runs" / ts
     run_dir.mkdir(parents=True)
     atomic_write_json(run_dir / "status.json",
@@ -81,7 +80,8 @@ def test_routine_cards_and_detail(client):
     detail = c.get("/api/routines/apir").json()
     assert "Test instruction" in detail["instruction"]
     assert detail["workflow_ref"]["slug"] == "test-flow"   # workflow is REFERENCED, not a routine file
-    assert isinstance(detail["fragments"], list)
+    assert isinstance(detail["permissions"], list)   # hermetic test library → may be empty
+    assert all("grants" in p and "active" in p for p in detail["permissions"])
     assert detail["runs"][0]["state"] == "finished"
     assert c.get("/api/routines/nope").status_code == 404
 
@@ -577,7 +577,7 @@ def test_wizard_list_detail_and_stage(client):
     assert by[wid_chat]["stage"] == "chat" and by[wid_chat]["has_result"] is False
     assert by[wid_ready]["stage"] == "suggest" and by[wid_ready]["has_result"] is True
     det = c.get(f"/api/wizard/{wid_chat}").json()
-    assert det["stage"] == "chat" and det["fragments"] == ["global-utils"]
+    assert det["stage"] == "chat"
     assert "arxiv" in det["draft"]                         # preview recovered from instruction.md
     assert c.get("/api/wizard/.wizard-nope").status_code == 404
 
@@ -602,9 +602,9 @@ def test_wizard_cancel_archives_session(client):
     assert c.delete(f"/api/wizard/{wid}").status_code == 404
 
 
-def test_build_routine_threads_params_and_fragments(client, monkeypatch):
-    """The background build recovers the session's fragments + the clarifier's resolved params and
-    threads them into scaffold; on failure it records the error and stays retryable."""
+def test_build_routine_threads_params_traits_permissions(client, monkeypatch):
+    """The background build threads the picked traits/permissions + the clarifier's resolved
+    params into scaffold; on failure it records the error and stays retryable."""
     import asyncio
 
     from rsched.web import api_wizard, wizard_store
@@ -612,8 +612,7 @@ def test_build_routine_threads_params_and_fragments(client, monkeypatch):
     c, tmp = client
     wid, d = _mk_wizard(tmp / "routines", "20260710-130000",
                         result={"refined_instruction": "do the thing", "suggested_slug": "x",
-                                "params": {"DELIVERABLE": "a weekly report"}},
-                        fragments=("global-utils", "ledger-discipline"))
+                                "params": {"DELIVERABLE": "a weekly report"}})
     captured = {}
 
     def fake_scaffold(*a, **k):
@@ -622,9 +621,12 @@ def test_build_routine_threads_params_and_fragments(client, monkeypatch):
     monkeypatch.setattr(api_wizard, "scaffold", fake_scaffold)
 
     body = api_wizard.FinalizeBody(slug="newr", name="New R", workflow_slug="general-task",
-                                   friendly={"frequency": "manual"}, tags=["a", "b", "c"], run_now=False)
+                                   friendly={"frequency": "manual"}, tags=["a", "b", "c"],
+                                   traits=["ask-policy", "ledger-discipline"],
+                                   permissions=["util-authoring", "memory"], run_now=False)
     asyncio.run(api_wizard._build_routine(c.app.state, wid, d, body, wizard_store.read_result(d)))
-    assert captured["fragments"] == ["global-utils", "ledger-discipline"]
+    assert captured["traits"] == ["ask-policy", "ledger-discipline"]
+    assert captured["permissions"] == ["util-authoring", "memory"]
     assert captured["params"] == {"DELIVERABLE": "a weekly report"}
     fin = read_json(d / "state" / "finalize.json")           # failure recorded, session retryable
     assert fin["state"] == "error" and "probe stop" in fin["error"]
@@ -667,15 +669,17 @@ def test_wizard_candidates_inline_pattern_source(tmp_path):
     assert "clarify-instruction" not in text          # meta patterns are excluded from candidates
 
 
-def test_library_reports_default_fragments(client):
-    """/api/library carries the server's DEFAULT_FRAGMENTS so the wizard's standards picker
-    pre-checks from config instead of a hard-coded frontend list."""
-    from rsched.config import DEFAULT_FRAGMENTS
+def test_library_reports_defaults_and_both_doc_sets(client):
+    """/api/library carries DEFAULT_TRAITS + DEFAULT_PERMISSIONS so pickers pre-check from
+    config instead of a hard-coded frontend list — and lists traits and permissions apart."""
+    from rsched.config import DEFAULT_PERMISSIONS, DEFAULT_TRAITS
 
     c, tmp = client
     (tmp / "library" / "workflows").mkdir(parents=True, exist_ok=True)
     lib = c.get("/api/library").json()
-    assert lib["default_fragments"] == list(DEFAULT_FRAGMENTS)
+    assert lib["default_traits"] == list(DEFAULT_TRAITS)
+    assert lib["default_permissions"] == list(DEFAULT_PERMISSIONS)
+    assert isinstance(lib["traits"], list) and isinstance(lib["permissions"], list)
 
 
 def test_wizard_transcript_paging_and_event_offset(client):

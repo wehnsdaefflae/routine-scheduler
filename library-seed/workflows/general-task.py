@@ -131,11 +131,11 @@ def record():
 
 
 def improve():
-    """After the main work, run ONLY the improvement passes whose improve-* fragment is ACTIVE
-    for this routine (they are the fragments inlined in your prompt — skip any lens that is not
-    there). Each active pass infers the routine's intention from what THIS run just did, then
-    acts in its lens, doing the safe, reversible changes itself and filing a deferred `ask_user`
-    (Decisions page) whenever it is unsure how to proceed."""
+    """After the main work, run ONLY the improvement passes this routine adopted as traits —
+    the traits/improve-*.md modules listed in the state digest; read each with read_file and
+    skip any lens the routine does not carry. Each pass infers the routine's intention from
+    what THIS run just did, then acts in its lens, doing the safe, reversible changes itself
+    and filing a deferred `ask_user` (Decisions page) whenever it is unsure how to proceed."""
 
 
 if __name__ == "__main__":

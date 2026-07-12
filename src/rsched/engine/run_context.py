@@ -51,7 +51,7 @@ class RunContext:
     parent_run_id: str | None = None
     sub_counter: list[int] = field(default_factory=lambda: [0])  # shared across the whole tree
     # The run's grant policy (grants.GrantPolicy), set by EngineLoop from the LIBRARY
-    # fragments + the routine's active set. None (direct construction) = unrestricted.
+    # permissions + the routine's held set. None (direct construction) = unrestricted.
     grants: object | None = None
 
     turn: int = 0

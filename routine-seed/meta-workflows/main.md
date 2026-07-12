@@ -61,3 +61,17 @@ resumed run continues where it stopped.
   plus a deferred `ask_user` question), or explicitly dropped with a reason in the LEDGER.
 - The `record` module has appended this run's LEDGER entry and produced a
   findings → actions summary.
+
+## Standing practices
+
+These practice modules are this routine's own adapted standards — read each with read_file before the situation it governs, and refine them as you learn:
+- `traits/ask-policy.md` — when and how to involve the user
+- `traits/global-utils.md` — your tools, and how to use them
+- `traits/improve-bugfix.md` — find and fix what's broken or wrong
+- `traits/improve-efficiency.md` — a leaner process and tidier files
+- `traits/improve-features.md` — grow what the routine delivers
+- `traits/improve-research.md` — sharpen the routine's inputs and knowledge
+- `traits/improve-ui.md` — the artifacts the user actually reads
+- `traits/ledger-discipline.md` — the routine's memory of its own changes
+
+After the main work, before finish, run each improve pass in its own module: `traits/improve-bugfix.md`, `traits/improve-efficiency.md`, `traits/improve-features.md`, `traits/improve-research.md`, `traits/improve-ui.md`.

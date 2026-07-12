@@ -14,11 +14,11 @@ from rsched.paths import atomic_write_json, read_json
 TS = "20260708-070000"
 
 
-def _grant_fragment(server: ServerConfig, slug: str, grants_yaml: str) -> None:
-    """Drop a LIBRARY fragment carrying a grants: block — the only place grants are read."""
-    server.fragments_home.mkdir(parents=True, exist_ok=True)
-    (server.fragments_home / f"{slug}.md").write_text(
-        f"---\ntags: [a, b, c]\n{grants_yaml}\n---\n# fragment: {slug} — test grant\nbody\n",
+def _grant_permission(server: ServerConfig, slug: str, grants_yaml: str) -> None:
+    """Drop a LIBRARY permission carrying a grants: block — the only place grants are read."""
+    server.permissions_home.mkdir(parents=True, exist_ok=True)
+    (server.permissions_home / f"{slug}.md").write_text(
+        f"---\ntags: [a, b, c]\n{grants_yaml}\n---\n# permission: {slug} — test grant\nbody\n",
         encoding="utf-8")
 
 
@@ -26,13 +26,13 @@ def _server(routine_dir, *, util_authoring: str | None = "false") -> ServerConfi
     s = ServerConfig()
     # hermetic: the library holds only what a test grants (no utils) → sub-workflows use the
     # builtin fallback body; util actions on a missing name return a "missing" observation.
-    # write_util rides the util-authoring grant (active by default via DEFAULT_FRAGMENTS):
+    # write_util rides the util-authoring grant (held by default via DEFAULT_PERMISSIONS):
     # confirm defaults to false here so write_util tests don't block on approval; pass
     # util_authoring=None to leave write_util ungranted entirely.
     s.libraries_home = routine_dir.parent.parent / "test-library"
     if util_authoring is not None:
-        _grant_fragment(s, "util-authoring",
-                        f"grants:\n  actions: [util, write_util]\n  confirm: {util_authoring}")
+        _grant_permission(s, "util-authoring",
+                          f"grants:\n  actions: [write_util]\n  confirm: {util_authoring}")
     return s
 
 
@@ -296,8 +296,8 @@ def test_write_util_confirmation_declined(make_routine, scripted, monkeypatch):
 
 
 def test_write_util_denied_without_grant(make_routine, scripted):
-    """No active fragment grants write_util → the call is rejected inside the schema-retry
-    cycle (naming the granting fragment), never becomes a turn, and the run continues."""
+    """No held permission grants write_util → the call is rejected inside the schema-retry
+    cycle (naming the granting permission), never becomes a turn, and the run continues."""
     d = make_routine(slug="ungranted")
     ep = scripted([
         {"say": "Try to write a util.", "kind": "write_util", "name": "sneaky", "content": "# x"},
@@ -338,14 +338,14 @@ def test_write_util_autonomous_revisions(make_routine, scripted, monkeypatch):
     assert wu["payload"]["selftest_ok"] and wu["payload"]["created"] is False
 
 
-def test_gated_util_requires_its_fragment(make_routine, scripted):
-    """A util named in a library fragment's utils: grant is reserved — rejected while the
-    fragment is inactive, dispatched normally once the routine activates it."""
+def test_gated_util_requires_its_permission(make_routine, scripted):
+    """A util named in a library permission's utils: grant is reserved — rejected while the
+    permission is not held, dispatched normally once the routine holds it."""
     import yaml as _yaml
 
     d = make_routine(slug="gated")
     server = _server(d)
-    _grant_fragment(server, "communication", "grants:\n  utils: [discord]")
+    _grant_permission(server, "communication", "grants:\n  utils: [discord]")
     ep = scripted([
         util("discord", ["send", "hi"]),          # communication not active → denied
         probe(),
@@ -359,13 +359,13 @@ def test_gated_util_requires_its_fragment(make_routine, scripted):
     assert not any(e["type"] == "observation" and e["payload"].get("name") == "discord"
                    for e in events)
 
-    # with the fragment ACTIVE the same call passes the gate and reaches the executor
+    # with the permission HELD the same call passes the gate and reaches the executor
     d2 = make_routine(slug="gated2")
     cfg = _yaml.safe_load((d2 / "routine.yaml").read_text())
-    cfg["fragments"] = ["communication"]
+    cfg["permissions"] = ["communication"]
     (d2 / "routine.yaml").write_text(_yaml.safe_dump(cfg))
     server2 = _server(d2)
-    _grant_fragment(server2, "communication", "grants:\n  utils: [discord]")
+    _grant_permission(server2, "communication", "grants:\n  utils: [discord]")
     scripted([util("discord", ["send", "hi"]), finish()])
     status2, run_dir2 = run_routine(d2, server2, run_ts=TS)
     events2, _ = read_events(run_dir2 / "transcript.jsonl")
@@ -851,29 +851,85 @@ def test_schema_forcefail_telemetry(make_routine, scripted):
     assert st["schema_forcefails"] == 1
 
 
-def test_fragments_list_is_activation_authority(make_routine, scripted, caplog):
-    """Only routine.yaml's fragments: list loads — a file dropped into fragments/ without
-    activation stays inert, and an active slug with no copy logs a warning."""
-    import logging
-
+def test_recipe_writes_ride_the_self_modification_permission(make_routine, scripted):
+    """write_file into main.md/steps/traits is rejected without the self-modification
+    permission (inside the schema-retry cycle), and passes once the routine holds it."""
     import yaml as _yaml
 
-    from rsched.config import load_routine
-    from rsched.engine.runtime import load_workflow
-    d = make_routine("fragr")
-    frag = d / "fragments"
-    frag.mkdir()
-    (frag / "alpha.md").write_text("# fragment: alpha — a\n\nALPHA-BODY\n")
-    (frag / "beta.md").write_text("# fragment: beta — b\n\nBETA-BODY\n")
-    cfg_d = _yaml.safe_load((d / "routine.yaml").read_text())
-    cfg_d["fragments"] = ["alpha", "ghost"]
-    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg_d))
-    cfg, _ = load_routine(d)
-    with caplog.at_level(logging.WARNING, logger="rsched.runtime"):
-        _, fragments_text, _, _ = load_workflow(d, cfg)
-    assert "ALPHA-BODY" in fragments_text
-    assert "BETA-BODY" not in fragments_text        # present on disk, not activated
-    assert any("ghost" in r.message for r in caplog.records)
+    from rsched.engine.transcript import read_events as _read
+
+    d = make_routine(slug="frozen")
+    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
+    cfg["permissions"] = []                         # nothing granted
+    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+    scripted([
+        write_file("steps/collect.md", content="rewritten"),   # denied
+        probe(),
+        finish(),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = _read(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    errs = [e for e in events if e["type"] == "error"]
+    assert len(errs) == 1 and "self-modification" in errs[0]["payload"]["message"]
+    assert not (d / "steps" / "collect.md").exists()
+
+    d2 = make_routine(slug="unfrozen")
+    cfg2 = _yaml.safe_load((d2 / "routine.yaml").read_text())
+    cfg2["permissions"] = ["self-modification"]
+    (d2 / "routine.yaml").write_text(_yaml.safe_dump(cfg2))
+    server2 = _server(d2)
+    server2.permissions_home.mkdir(parents=True, exist_ok=True)
+    (server2.permissions_home / "self-modification.md").write_text(
+        "---\ntags: [a, b, c]\ngrants:\n  self_modify: true\n---\n"
+        "# permission: self-modification — refine own recipe\nbody\n")
+    scripted([write_file("steps/collect.md", content="rewritten"), finish()])
+    status2, _ = run_routine(d2, server2, run_ts=TS)
+    assert status2 == "ok"
+    assert (d2 / "steps" / "collect.md").read_text() == "rewritten"
+
+
+def test_previous_runs_ride_the_run_history_permission(make_routine, scripted):
+    """read_file into an earlier run needs run-history; the live run's own tree stays
+    readable (the engine points there after compaction)."""
+    import yaml as _yaml
+
+    from rsched.engine.transcript import read_events as _read
+
+    d = make_routine(slug="historian")
+    old_run = d / "runs" / "20260101-000000"
+    old_run.mkdir(parents=True)
+    (old_run / "result.md").write_text("ANCIENT RESULT\n")
+    scripted([
+        {"say": "Peek at the previous run.", "kind": "read_file",
+         "path": "runs/20260101-000000/result.md"},              # denied
+        probe(),
+        finish(),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = _read(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    errs = [e for e in events if e["type"] == "error"]
+    assert len(errs) == 1 and "run-history" in errs[0]["payload"]["message"]
+
+    d2 = make_routine(slug="historian2")
+    old2 = d2 / "runs" / "20260101-000000"
+    old2.mkdir(parents=True)
+    (old2 / "result.md").write_text("ANCIENT RESULT\n")
+    cfg2 = _yaml.safe_load((d2 / "routine.yaml").read_text())
+    cfg2["permissions"] = ["run-history"]
+    (d2 / "routine.yaml").write_text(_yaml.safe_dump(cfg2))
+    server2 = _server(d2)
+    (server2.permissions_home / "run-history.md").write_text(
+        "---\ntags: [a, b, c]\ngrants:\n  runs: last\n---\n"
+        "# permission: run-history — read the previous run\nbody\n")
+    scripted([{"say": "Peek.", "kind": "read_file", "path": "runs/20260101-000000/result.md"},
+              finish()])
+    status2, run_dir2 = run_routine(d2, server2, run_ts=TS)
+    events2, _ = _read(run_dir2 / "transcript.jsonl")
+    assert status2 == "ok"
+    obs = next(e for e in events2 if e["type"] == "observation")
+    assert "ANCIENT RESULT" in obs["payload"]["content"]
 
 
 def test_repeat_warn_sheds_provider_schema(make_routine, scripted):

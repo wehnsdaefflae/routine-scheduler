@@ -62,3 +62,9 @@ Start at `export-instance` if `state/phase.json` has no current state.
 - The run finished with a one-line summary: what was exported, and one repo status of
   pulled / pushed / up-to-date / conflict. `ok` when both calls succeeded; `partial` when
   either reported an error or a conflict.
+
+## Standing practices
+
+These practice modules are this routine's own adapted standards — read each with read_file before the situation it governs, and refine them as you learn:
+- `traits/global-utils.md` — your tools, and how to use them
+- `traits/ledger-discipline.md` — the routine's memory of its own changes

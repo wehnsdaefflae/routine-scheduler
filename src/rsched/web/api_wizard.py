@@ -66,7 +66,6 @@ async def wizard_cancel(request: Request, wid: str) -> dict:
 
 class StartBody(BaseModel):
     draft: str
-    fragments: list[str] = []   # standards chosen on the draft page; persisted for resume + finalize
 
 
 @router.post("/wizard/start")
@@ -75,8 +74,7 @@ async def start(request: Request, body: StartBody) -> dict:
         raise HTTPException(400, "empty draft instruction")
     server = request.app.state.server
     # session creation is all disk writes plus a full library read (candidates) — off the loop
-    wid, ts, d = await asyncio.to_thread(wizard_store.create_session, server,
-                                         body.draft, body.fragments)
+    wid, ts, d = await asyncio.to_thread(wizard_store.create_session, server, body.draft)
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "rsched.cli", "engine-run", str(d), "--run-ts", ts,
         stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
@@ -126,6 +124,8 @@ def answer(request: Request, wid: str, body: AnswerBody) -> dict:
 
 @router.post("/wizard/{wid}/suggest")
 def wizard_suggest(request: Request, wid: str) -> dict:
+    from ..workflows.suggest import suggest_traits_permissions
+
     d = _wizard_dir(request, wid)
     result = wizard_store.read_result(d)
     if not isinstance(result, dict) or not result.get("refined_instruction"):
@@ -142,7 +142,12 @@ def wizard_suggest(request: Request, wid: str) -> dict:
                    for w in wizard_store.candidate_patterns(server)]
     suggestions.sort(key=lambda s: -s["confidence"])
     none_fit = bool(choice.get("generate"))
+    # Preselect the routine's traits (practice modules, adapted in at creation) and
+    # permissions (engine-enforced) from the refined task + the chosen pattern — shown on
+    # the create page as an editable preselection.
+    tp = suggest_traits_permissions(server, result["refined_instruction"], chosen)
     return {"wizard_result": result, "suggested_tags": suggested_tags, "suggestions": suggestions,
+            "suggested_traits": tp["traits"], "suggested_permissions": tp["permissions"],
             "none_fit": none_fit, "new_workflow_hint": str(choice.get("hint") or "")}
 
 
@@ -173,7 +178,8 @@ class FinalizeBody(BaseModel):
     friendly: dict = {}          # friendly schedule spec → cron + server tz
     params: dict = {}
     tags: list[str] = []         # >=3 tags, suggested (reuse-first) then user-editable
-    fragments: list[str] | None = None   # standards picked on the draft page (None → workflow defaults)
+    traits: list[str] | None = None       # practice modules to adapt in (None → workflow defaults)
+    permissions: list[str] | None = None  # engine-enforced capabilities (None → defaults)
     run_now: bool = False
 
 
@@ -215,15 +221,14 @@ async def _build_routine(app_state, wid: str, d: Path, body: "FinalizeBody", res
         cron = schedule.friendly_to_cron(body.friendly or {"frequency": "manual"})
         steps = result.get("steps") if isinstance(result.get("steps"), dict) else None
         description = body.description.strip() or str(result.get("description") or "").strip()
-        fragments = (body.fragments if body.fragments is not None
-                     else (wizard_store.read_meta(d).get("fragments") or None))
         params = body.params or (result.get("params") if isinstance(result.get("params"), dict) else {})
         routine_dir = await asyncio.to_thread(
             scaffold, server, slug=body.slug, name=body.name,
             instruction=body.instruction.strip() or result["refined_instruction"],
             workflow_slug=body.workflow_slug, cron=cron,
             tz=schedule.server_tz(), params=params, steps=steps, description=description,
-            models=body.models, tags=normalize_tags(body.tags) or None, fragments=fragments)
+            models=body.models, tags=normalize_tags(body.tags) or None,
+            traits=body.traits, permissions=body.permissions)
     except Exception as exc:   # scaffold/decompose failure — the session stays so the user can retry
         partial = server.routines_home / body.slug   # clean up a half-built dir so the retry isn't blocked
         if partial.is_dir() and not (partial / "routine.yaml").exists():

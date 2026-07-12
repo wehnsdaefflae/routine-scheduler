@@ -28,16 +28,21 @@ DEFAULT_BUDGETS = {
     "max_subrun_depth": 2,
     "ask_timeout_h": 8,
 }
-# The standards a new routine gets when its routine.yaml names no explicit `fragments:` list:
-# the always-useful base (ask policy, tool use, ledger + .memory/ record-keeping,
-# fact-checking) plus the five after-run improvement passes. Fragments also carry the
-# routine's GRANTS (see grants.py): `util-authoring` is in the default so a new routine can
-# write utils with user approval — the behavior routines always had. `communication`
-# (grants the discord util) stays opt-in. Defaults added here AFTER routines exist reach
-# them via bootstrap.ADOPT_FRAGMENTS (one-time, at daemon boot).
-DEFAULT_FRAGMENTS = ["ask-policy", "global-utils", "util-authoring", "ledger-discipline",
-                     "memory", "web-research", "improve-bugfix", "improve-research",
-                     "improve-features", "improve-ui", "improve-efficiency"]
+# PERMISSIONS a new routine holds when its routine.yaml names no explicit `permissions:`
+# list. Permissions are engine-enforced capabilities (see grants.py), user-changeable only:
+# `util-authoring` lets a routine write utils with user approval, `memory` unlocks the
+# .memory/ notebook, `self-modification` lets it refine its own recipe (main.md / steps/ /
+# traits/) — the behavior routines always had. `communication` (discord), `run-history`
+# (previous runs) and `shell` stay opt-in. Defaults added here AFTER routines exist reach
+# them via bootstrap.ADOPT_PERMISSIONS (one-time, at daemon boot).
+DEFAULT_PERMISSIONS = ["util-authoring", "memory", "self-modification"]
+# TRAITS a new routine gets when creation picks none explicitly (the wizard normally
+# preselects per task): reusable practice prose, adapted into the routine's own traits/
+# at creation and referenced from the end of its main.md. Not toggleable afterwards —
+# they are the routine's files from then on.
+DEFAULT_TRAITS = ["ask-policy", "global-utils", "ledger-discipline", "web-research",
+                  "improve-bugfix", "improve-research", "improve-features", "improve-ui",
+                  "improve-efficiency"]
 # Each routine picks its own three models: the MAIN orchestrator loop, the model spawned
 # SUBROUTINEs run their main loop on, and the model TOOL_CALLs (the `llm` action) use.
 MODEL_KINDS = ("main", "subroutine", "tool_call")
@@ -120,9 +125,14 @@ class ServerConfig(_Config):
         return self.libraries_home
 
     @property
-    def fragments_home(self) -> Path:
-        """The library repo's fragments/ subdir."""
-        return self.libraries_home / "fragments"
+    def traits_home(self) -> Path:
+        """The library repo's traits/ subdir (reusable practice prose)."""
+        return self.libraries_home / "traits"
+
+    @property
+    def permissions_home(self) -> Path:
+        """The library repo's permissions/ subdir (engine-enforced capabilities)."""
+        return self.libraries_home / "permissions"
 
     @property
     def utils_home(self) -> Path:
@@ -181,8 +191,9 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
 
 class RoutineConfig(_Config):
     """One routine's `routine.yaml`: schedule, models (main/subroutine/tool_call),
-    budgets, active fragments, filesystem roots, and retention. The instruction and
-    workflow live next to it as `instruction.md` / `main.md`."""
+    budgets, held permissions, filesystem roots, and retention. The instruction and
+    workflow live next to it as `instruction.md` / `main.md`; its adapted practice
+    prose under `traits/`."""
 
     slug: str
     dir: Path
@@ -199,10 +210,11 @@ class RoutineConfig(_Config):
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
     models: dict[str, ModelRef] = Field(default_factory=dict)  # main/subroutine/tool_call
     budgets: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_BUDGETS))
-    # Fragments are the source of truth for a routine's standards AND its granted
-    # capabilities (the grants are machine-read from the LIBRARY copies — see grants.py).
-    # An explicit list wins; otherwise a new routine gets the default set.
-    fragments: list[str] = Field(default_factory=lambda: list(DEFAULT_FRAGMENTS))
+    # Permissions are the routine's engine-enforced capabilities (grants machine-read from
+    # the LIBRARY copies — see grants.py). User-changeable only; an explicit list wins,
+    # otherwise a new routine holds the default set. Traits (practice prose) leave no yaml
+    # trace — they live as the routine's own files under traits/.
+    permissions: list[str] = Field(default_factory=lambda: list(DEFAULT_PERMISSIONS))
     fs_read_roots: list[HomePath] = Field(default_factory=list)
     fs_write_roots: list[HomePath] = Field(default_factory=list)
     keep_runs: int = Field(30, validation_alias=AliasPath("retention", "keep_runs"))
@@ -241,10 +253,10 @@ class RoutineConfig(_Config):
     def _merged_over_defaults(cls, v: object) -> object:
         return {**DEFAULT_BUDGETS, **v} if isinstance(v, dict) else v
 
-    @field_validator("fragments", mode="before")
+    @field_validator("permissions", mode="before")
     @classmethod
     def _default_unless_list(cls, v: object) -> object:
-        return [str(f) for f in v] if isinstance(v, list) else list(DEFAULT_FRAGMENTS)
+        return [str(f) for f in v] if isinstance(v, list) else list(DEFAULT_PERMISSIONS)
 
 
 def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:

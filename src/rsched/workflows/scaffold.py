@@ -1,4 +1,4 @@
-"""Create a routine directory: workflow REFERENCE (edited in the library), editable fragment
+"""Create a routine directory: workflow REFERENCE (edited in the library), adapted trait
 copies, steps/ modules, instruction; its own git repo with the auto-push hook."""
 
 from __future__ import annotations
@@ -9,10 +9,32 @@ from pathlib import Path
 
 import yaml
 
-from ..config import DEFAULT_BUDGETS, ServerConfig
+from ..config import DEFAULT_BUDGETS, DEFAULT_PERMISSIONS, ServerConfig
 from ..ids import is_slug
 
 GITIGNORE = "runs/\ninbox/\nquestions/\n"
+
+PRACTICES_HEADING = "## Standing practices"
+
+
+def _with_practices_tail(main_body: str, trait_summaries: dict[str, str]) -> str:
+    """Guarantee main.md ends with a Standing practices section referencing every trait file —
+    the generator is asked to write one, but the reference must survive a forgetful LLM (and
+    the no-LLM fallback). One line per trait: file + when to read it."""
+    if not trait_summaries:
+        return main_body
+    if PRACTICES_HEADING.lower() in main_body.lower():
+        return main_body
+    lines = [f"- `traits/{slug}.md` — {summary or slug.replace('-', ' ')}"
+             for slug, summary in trait_summaries.items()]
+    improve = [s for s in trait_summaries if s.startswith("improve-")]
+    tail = [PRACTICES_HEADING, "",
+            "These practice modules are this routine's own adapted standards — read each with "
+            "read_file before the situation it governs, and refine them as you learn:", *lines]
+    if improve:
+        tail += ["", "After the main work, before finish, run each improve pass in its own "
+                     "module: " + ", ".join(f"`traits/{s}.md`" for s in improve) + "."]
+    return main_body.rstrip() + "\n\n" + "\n".join(tail) + "\n"
 
 POST_COMMIT_HOOK = """#!/usr/bin/env bash
 # rsched auto-backup — push every commit to origin (best-effort, never blocks the commit).
@@ -30,16 +52,20 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
              workflow_slug: str, cron: str = "", tz: str = "Europe/Berlin",
              description: str = "", models: dict[str, dict] | None = None,
              params: dict | None = None, budgets: dict | None = None,
-             fragments: list[str] | None = None,
+             traits: list[str] | None = None,
+             permissions: list[str] | None = None,
              fs_read_roots: list[str] | None = None,
              fs_write_roots: list[str] | None = None,
              steps: dict[str, str] | None = None, enabled: bool = True,
              tags: list[str] | None = None) -> Path:
     """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
-    the routine gets editable fragment copies + steps/ modules + instruction. A one-line
+    the routine gets ADAPTED trait copies under traits/ (referenced from main.md's Standing
+    practices tail — the routine's own files from then on) + steps/ modules + instruction.
+    `permissions` (engine-enforced, user-changeable) go into routine.yaml. A one-line
     `description` (for the UI) is always written, falling back to the name; `models` sets the
     routine's own main/subroutine/tool_call models (else they fall back to the server system_model)."""
-    from .. import fragments_lib
+    from .. import library_docs
+    from ..config import DEFAULT_TRAITS
     from . import library
 
     if not is_slug(slug):
@@ -48,41 +74,54 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     if routine_dir.exists():
         raise ValueError(f"routine dir {routine_dir} already exists")
 
-    # active fragments default to the workflow's `includes`; validate against the fragment library
+    # traits default to the workflow's `includes` (its suggested practice set), else the
+    # standard set; validate against the library. Permissions validate against theirs.
     try:
         meta, _, _ = library.read_workflow(server.library_home, workflow_slug)
     except FileNotFoundError as exc:
         raise ValueError(f"workflow {workflow_slug!r} not found in the library") from exc
-    available = set(fragments_lib.slugs(server.fragments_home))
-    active = fragments if fragments is not None else (meta.get("includes") or [])
-    active = [f for f in active if f in available]
+    available_traits = set(library_docs.slugs(server.traits_home))
+    active_traits = traits if traits is not None else (meta.get("includes") or DEFAULT_TRAITS)
+    active_traits = [t for t in active_traits if t in available_traits]
+    available_perms = set(library_docs.slugs(server.permissions_home))
+    active_perms = permissions if permissions is not None else list(DEFAULT_PERMISSIONS)
+    active_perms = [p for p in active_perms if p in available_perms]
     commit = library.head_commit(server.library_home)
 
     from .adapt import decompose, dump_markdown
 
-    for sub in ("state", "steps", "inbox", "fragments"):
+    for sub in ("state", "steps", "inbox", "traits"):
         (routine_dir / sub).mkdir(parents=True)
     # DECOMPOSE the single-file workflow (applied to the instruction) into the routine's OWN main.md
-    # (entry state machine) + one markdown module per step/state. Self-contained: the library is
-    # never read at run time. Degrades to the whole workflow as main.md if no endpoint is available.
-    result = decompose(server, workflow_slug, instruction, params=params, fragments=active)
+    # (entry state machine) + one markdown module per step/state, adapting the selected traits along
+    # the way. Self-contained: the library is never read at run time. Degrades to the whole workflow
+    # as main.md + verbatim trait copies if no endpoint is available.
+    result = decompose(server, workflow_slug, instruction, params=params, traits=active_traits)
     main_meta = {
         "name": name, "slug": slug,
         "materialized_from": {"slug": workflow_slug, "commit": commit, "version": meta.get("version", 0)},
         "modules": sorted(result["modules"]),
-        "includes": active,
         # the workflow's `tools:` allowlist rides along — the engine enforces it per turn
         **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {}),
         **({"tags": list(tags)} if tags else {}),
     }
-    (routine_dir / "main.md").write_text(dump_markdown(main_meta, result["main"]), encoding="utf-8")
+    # trait copies: the generator's adapted version, else the library text verbatim — either
+    # way the routine's OWN files from here on (self-refined, never toggled).
+    trait_summaries: dict[str, str] = {}
+    for slug_t in active_traits:
+        body = (result.get("traits") or {}).get(slug_t)
+        if not body:
+            raw = library_docs.read_doc(server.traits_home, slug_t)
+            body = library_docs.doc_body(raw).strip() if raw else ""
+        if not body:
+            continue
+        (routine_dir / "traits" / f"{slug_t}.md").write_text(body.rstrip() + "\n", encoding="utf-8")
+        m = library_docs.DOC_RE.search(body)
+        trait_summaries[slug_t] = m.group("summary").strip() if m else ""
+    main_body = _with_practices_tail(result["main"], trait_summaries)
+    (routine_dir / "main.md").write_text(dump_markdown(main_meta, main_body), encoding="utf-8")
     for mod_name, mod_body in result["modules"].items():
         (routine_dir / "steps" / f"{mod_name}.md").write_text(mod_body.rstrip() + "\n", encoding="utf-8")
-    # active fragments → editable routine copies
-    for slug_f in active:
-        content = fragments_lib.read_fragment(server.fragments_home, slug_f)
-        if content:
-            (routine_dir / "fragments" / f"{slug_f}.md").write_text(content, encoding="utf-8")
     # extra purpose-specific step modules from the wizard also land in steps/
     for fname, fcontent in (steps or {}).items():
         safe = fname if fname.endswith(".md") else f"{fname}.md"
@@ -102,7 +141,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
         "schedule": {"cron": cron, "tz": tz, "catchup": "skip"},
         "workflow": {"library_slug": workflow_slug, "library_commit": commit},
         **({"models": models} if models else {}),
-        "fragments": active,
+        "permissions": active_perms,
         "budgets": {**DEFAULT_BUDGETS, **(budgets or {})},
         "retention": {"keep_runs": 30},
     }

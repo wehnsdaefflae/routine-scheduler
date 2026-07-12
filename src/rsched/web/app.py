@@ -41,14 +41,15 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
-        from .. import fragments_lib, utils_lib
+        from .. import library_docs, utils_lib
         from ..docs_build import ensure_docs
 
         # bootstrap the library repo (clone from remote if configured + absent, else init/leave),
-        # then make sure its fragments/ subdir exists.
+        # then make sure its traits/ + permissions/ subdirs exist.
         try:
             utils_lib.ensure_library(server.libraries_home, remote=server.libraries_remote)
-            fragments_lib.ensure_library(server.fragments_home)
+            library_docs.ensure_dir(server.traits_home)
+            library_docs.ensure_dir(server.permissions_home)
         except Exception as exc:  # never block startup on a library hiccup
             log.warning("library bootstrap %s: %s", server.libraries_home, exc)
         # regenerate the Help tab's content (pdoc + guides) when the source changed — in a
