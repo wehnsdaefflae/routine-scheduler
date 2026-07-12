@@ -29,13 +29,15 @@ DEFAULT_BUDGETS = {
     "ask_timeout_h": 8,
 }
 # The standards a new routine gets when its routine.yaml names no explicit `fragments:` list:
-# the always-useful base (ask policy, tool use, memory, fact-checking) plus the five after-run
-# improvement passes. Fragments also carry the routine's GRANTS (see grants.py):
-# `util-authoring` is in the default so a new routine can write utils with user approval —
-# the behavior routines always had. `communication` (grants the discord util) stays opt-in.
+# the always-useful base (ask policy, tool use, ledger + .memory/ record-keeping,
+# fact-checking) plus the five after-run improvement passes. Fragments also carry the
+# routine's GRANTS (see grants.py): `util-authoring` is in the default so a new routine can
+# write utils with user approval — the behavior routines always had. `communication`
+# (grants the discord util) stays opt-in. Defaults added here AFTER routines exist reach
+# them via bootstrap.ADOPT_FRAGMENTS (one-time, at daemon boot).
 DEFAULT_FRAGMENTS = ["ask-policy", "global-utils", "util-authoring", "ledger-discipline",
-                     "web-research", "improve-bugfix", "improve-research", "improve-features",
-                     "improve-ui", "improve-efficiency"]
+                     "memory", "web-research", "improve-bugfix", "improve-research",
+                     "improve-features", "improve-ui", "improve-efficiency"]
 # Each routine picks its own three models: the MAIN orchestrator loop, the model spawned
 # SUBROUTINEs run their main loop on, and the model TOOL_CALLs (the `llm` action) use.
 MODEL_KINDS = ("main", "subroutine", "tool_call")

@@ -66,6 +66,23 @@ def test_state_digest_contents(make_routine, tmp_path):
         assert needle in digest, needle
 
 
+def test_state_digest_surfaces_memory_index(make_routine):
+    d = make_routine(slug="mem")
+    assert ".memory" not in state_digest(d, [], [])            # no dir → no section
+    mem = d / ".memory"
+    mem.mkdir()
+    (mem / "quirks.md").write_text("# quirks\n", encoding="utf-8")
+    digest = state_digest(d, [], [])
+    assert "INDEX.md is MISSING" in digest and "quirks.md" in digest
+    (mem / "INDEX.md").write_text("- quirks.md: env surprises, check before setup\n",
+                                  encoding="utf-8")
+    digest = state_digest(d, [], [])
+    assert "- quirks.md: env surprises, check before setup" in digest
+    assert "read_file the relevant .memory/<file>" in digest
+    (mem / "INDEX.md").write_text("\n".join(f"- f{i}.md: x" for i in range(70)), encoding="utf-8")
+    assert "full 70 lines" in state_digest(d, [], [])          # long index → head + pointer
+
+
 def test_replay_messages_rebuilds_conversation():
     from rsched.engine.history import replay_messages
 

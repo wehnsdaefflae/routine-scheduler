@@ -5,12 +5,15 @@ the built-in defaults when the user chooses to create a new repo.
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 import secrets
 import shutil
 import subprocess
 from pathlib import Path
+
+import yaml
 
 from .paths import config_file
 
@@ -76,6 +79,81 @@ def seed_routines(routines_home: Path) -> int:
     if n:
         log.warning("first boot: installed %d bundled meta routines (disabled)", n)
     return n
+
+
+# DEFAULT_FRAGMENTS entries introduced AFTER routines already existed never reach them via
+# scaffold. Slugs listed here are added ONCE to every existing routine at daemon boot —
+# tracked in a marker file, so a user who later deactivates one is never overridden.
+ADOPT_FRAGMENTS = ["memory"]
+_ADOPTED_MARKER = ".fragments-adopted.json"
+
+
+def _ensure_library_fragment(fragments_home: Path, slug: str) -> str | None:
+    """An existing library repo predates a new seed fragment (seed_libraries only runs at
+    repo creation): copy the repo seed in — never overwriting — and commit, so the fragment
+    exists as the grants/copy authority. Returns the library copy's content, or None."""
+    dst = fragments_home / f"{slug}.md"
+    if dst.exists():
+        return dst.read_text(encoding="utf-8")
+    src = repo_root() / "library-seed" / "fragments" / f"{slug}.md"
+    if not fragments_home.is_dir() or not src.exists():
+        return None
+    shutil.copy(src, dst)
+    _git(fragments_home.parent, "add", "-A")        # the library repo root (best-effort)
+    _git(fragments_home.parent, "commit", "-qm", f"seed new default fragment: {slug}")
+    return dst.read_text(encoding="utf-8")
+
+
+def adopt_fragments(routines_home: Path, fragments_home: Path) -> int:
+    """One-time propagation of new default fragments into EXISTING routines: append the slug
+    to routine.yaml `fragments:` and drop the editable local copy. A slug is marked adopted
+    only once the library copy exists (an unseeded library retries next boot). Returns the
+    number of routine × fragment additions."""
+    if not routines_home.is_dir():
+        return 0
+    marker = routines_home / _ADOPTED_MARKER
+    try:
+        done = set(json.loads(marker.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        done = set()
+    touched, newly_done = 0, set()
+    for slug in ADOPT_FRAGMENTS:
+        if slug in done:
+            continue
+        content = _ensure_library_fragment(fragments_home, slug)
+        if content is None:
+            continue
+        for rdir in sorted(routines_home.iterdir()):
+            if rdir.name.startswith(".") or not (rdir / "routine.yaml").is_file():
+                continue                            # wizard sessions and strays stay untouched
+            try:
+                raw = yaml.safe_load((rdir / "routine.yaml").read_text(encoding="utf-8")) or {}
+            except yaml.YAMLError:
+                continue
+            frags = raw.get("fragments")
+            local = rdir / "fragments" / f"{slug}.md"
+            if frags is None:
+                # No explicit list = the routine follows DEFAULT_FRAGMENTS (slug included);
+                # only the editable local copy is missing.
+                if local.exists():
+                    continue
+            elif slug in frags:
+                continue
+            else:
+                raw["fragments"] = [*frags, slug]
+                (rdir / "routine.yaml").write_text(
+                    yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+            local.parent.mkdir(exist_ok=True)
+            local.write_text(content, encoding="utf-8")
+            _git(rdir, "add", "-A")
+            _git(rdir, "commit", "-qm", f"adopt default fragment: {slug}")
+            touched += 1
+        newly_done.add(slug)
+    if newly_done:
+        marker.write_text(json.dumps(sorted(done | newly_done)) + "\n", encoding="utf-8")
+    if touched:
+        log.warning("adopted new default fragment(s) into %d routine(s)", touched)
+    return touched
 
 
 def seed_libraries(home: Path) -> None:

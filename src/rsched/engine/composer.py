@@ -211,6 +211,18 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         tail = "\n".join(lines[-30:])
         more = f" (read LEDGER.md for the full {len(lines)} lines)" if len(lines) > 30 else ""
         parts.append(f"LEDGER tail{more}:\n{tail}")
+    mem_index = routine_dir / ".memory" / "INDEX.md"
+    if mem_index.exists():
+        lines = mem_index.read_text(encoding="utf-8").strip().splitlines()
+        shown = "\n".join(lines[:60])
+        more = (f"\n[... read .memory/INDEX.md for the full {len(lines)} lines]"
+                if len(lines) > 60 else "")
+        parts.append(".memory/ index (notes from earlier work — read_file the relevant "
+                     ".memory/<file> before re-discovering anything):\n" + shown + more)
+    elif (mem_dir := routine_dir / ".memory").is_dir():
+        names = [p.name for p in sorted(mem_dir.glob("*.md"))]
+        if names:
+            parts.append(".memory/ notes (INDEX.md is MISSING — rebuild it): " + ", ".join(names))
     if open_qs:
         qlines = "\n".join(f"- [{q['qid']}] {q['question']} (asked {q.get('asked', '?')})" for q in open_qs)
         parts.append(f"Open deferred questions (still unanswered):\n{qlines}")

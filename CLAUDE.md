@@ -146,8 +146,10 @@ first boot; `deploy/install.sh` for host installs.
   improvement standards are five **after-run passes** — `improve-bugfix / -research / -features / -ui /
   -efficiency` — each infers the routine's intention from the run just completed and acts in its lens
   (fresh-eyes throughout), asking a deferred question (→ Decisions page) when unsure. `ledger-discipline`
-  (cross-run memory) + `ask-policy` / `global-utils` / `web-research` are the standing standards.
-  `DEFAULT_FRAGMENTS` (config) is the source of truth.
+  (cross-run change journal), `memory` (`.memory/` — indexed ≤100-line notes of surprises; INDEX.md is
+  surfaced in the state digest) + `ask-policy` / `global-utils` / `web-research` are the standing
+  standards. `DEFAULT_FRAGMENTS` (config) is the source of truth; defaults added after routines exist
+  reach them once via `bootstrap.adopt_fragments` at daemon boot.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`, `calls:`),
   a `secrets: NAME,…` declaration line, and a `--selftest` the engine runs before saving (`write_util` is
   selftest-gated; whether it needs user approval rides the active util-authoring fragment's `confirm:`
