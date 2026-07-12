@@ -141,6 +141,22 @@ def _message_payload(body: Feedback, ts: str, edited: str | None = None) -> dict
     return payload
 
 
+def _record_decision_answer(routine_dir, decision_id: str) -> None:
+    """Durable marker that the user answered this decision. The inbox message alone is
+    not enough: a mid-run delivery consumes it instantly, and with the report still
+    listing the decision open it re-enters the Decisions inbox — the user answers again,
+    the routine gets the same injection again, forever. The marker outlives consumption;
+    _audit_decisions hides a decision answered at-or-after the report's `generated`
+    until a NEWER report explicitly lists it open again."""
+    path = routine_dir / "audit" / "decisions-answered.json"
+    data = read_json(path)
+    if not isinstance(data, dict):
+        data = {}
+    data[decision_id] = now_iso()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(path, data)
+
+
 def write_feedback(routine_dir, body: Feedback) -> str:
     """Format + drop one feedback message into the self-audit inbox (shared with the
     Decisions page, which answers audit decisions through the same channel). Returns the
@@ -149,6 +165,8 @@ def write_feedback(routine_dir, body: Feedback) -> str:
     same second would otherwise share a filename and clobber each other."""
     fname = f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json"
     atomic_write_json(routine_dir / "inbox" / fname, _message_payload(body, now_iso()))
+    if body.kind == "decision" and (body.target or "").strip():
+        _record_decision_answer(routine_dir, (body.target or "").strip())
     return Path(fname).stem
 
 

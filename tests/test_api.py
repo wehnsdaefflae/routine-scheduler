@@ -863,3 +863,41 @@ def test_converse_endpoint(client, monkeypatch):
     assert r.json()["delivery"] == "resumed"
     assert resumed == {"slug": "apir", "ts": "20260708-110000", "reason": "converse"}
     assert c.post(f"/api/runs/{rid}/converse", json={"text": "  "}).status_code == 400
+
+
+def test_audit_decision_answer_survives_inbox_consumption(client):
+    """The D2 re-surfacing loop: a mid-run delivery consumes the feedback message
+    instantly, and with the report still listing the decision open it re-entered the
+    Decisions inbox — the user answered the same decision again and again. The durable
+    answered-marker (audit/decisions-answered.json) keeps it hidden until a NEWER
+    report explicitly lists it open again."""
+    c, tmp = client
+    rdir = tmp / "routines" / "self-audit"
+    adir = rdir / "audit"
+    adir.mkdir(parents=True)
+    (rdir / "inbox").mkdir(exist_ok=True)
+    atomic_write_json(adir / "report.json", {
+        "generated": "2026-07-11T09:00:00+00:00",
+        "findings": [],
+        "decisions": [{"id": "D2", "title": "Pick a path", "detail": "context",
+                       "status": "open", "options": ["A", "B"]}]})
+    assert [q["qid"] for q in c.get("/api/questions").json() if q.get("meta")] == ["audit:D2"]
+
+    # answer it → marker persisted alongside the queued message
+    assert c.post("/api/questions/audit:D2/answer", json={"text": "A"}).status_code == 200
+    marker = read_json(adir / "decisions-answered.json")
+    assert isinstance(marker, dict) and marker.get("D2")
+    assert not [q for q in c.get("/api/questions").json() if q.get("meta")]
+
+    # a run consumes the inbox message (mid-run delivery) — the decision must STAY hidden
+    for p in (rdir / "inbox").glob("msg-*.json"):
+        p.unlink()
+    assert not [q for q in c.get("/api/questions").json() if q.get("meta")]
+
+    # a NEWER report listing it open again re-opens it (the routine deliberately re-asks)
+    atomic_write_json(adir / "report.json", {
+        "generated": "2026-07-13T09:00:00+00:00",
+        "findings": [],
+        "decisions": [{"id": "D2", "title": "Pick a path (round 2)", "detail": "new context",
+                       "status": "open", "options": ["A", "B"]}]})
+    assert [q["qid"] for q in c.get("/api/questions").json() if q.get("meta")] == ["audit:D2"]

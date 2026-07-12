@@ -39,6 +39,14 @@ def _audit_decisions(server) -> list[dict]:
         return []
     queued = {m.group(1).strip() for p in _pending_feedback(rdir)
               if (m := _DECISION_RE.match(p.get("text") or ""))}
+    # Durable answered markers: a mid-run delivery consumes the inbox message instantly,
+    # so `queued` alone cannot keep an answered decision out of the inbox while the report
+    # still lists it open — the user would be asked the same decision again and again.
+    # A decision answered at-or-after this report's `generated` stays hidden until a NEWER
+    # report explicitly lists it open again.
+    answered = read_json(rdir / "audit" / "decisions-answered.json")
+    if not isinstance(answered, dict):
+        answered = {}
     out = []
     for d in report.get("decisions") or []:
         did = str(d.get("id") or "").strip()
@@ -46,6 +54,9 @@ def _audit_decisions(server) -> list[dict]:
                    or str(d.get("detail") or "").lstrip().upper().startswith("SETTLED"))
         if not did or did in queued or settled:
             continue
+        marker = str(answered.get(did) or "")
+        if marker and marker >= str(report.get("generated") or ""):
+            continue   # answered since this report was written — not open again until a newer report says so
         text = str(d.get("title") or did)
         if d.get("detail"):
             text += "\n\n" + str(d["detail"])
