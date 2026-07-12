@@ -10,16 +10,6 @@
         "daemon"
       ],
       "port": 8321
-    },
-    {
-      "name": "preview",
-      "runtimeExecutable": "uv",
-      "runtimeArgs": [
-        "run",
-        "python",
-        "/tmp/claude-1000/-home-mark-server-home-mark-git-repos-routine-scheduler/edae998f-756e-4f8e-919a-a6d6847b0e54/scratchpad/dev_server.py"
-      ],
-      "port": 8399
     }
   ]
 }
