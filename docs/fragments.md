@@ -60,7 +60,7 @@ are exactly the capabilities that were already gated or reach outside the system
 
 | capability | granted by | notes |
 |---|---|---|
-| `write_util` (create/revise global utils) | `util-authoring` (confirm: true), `util-authoring-autonomous` (confirm: revisions-only) | in `DEFAULT_FRAGMENTS` via `util-authoring`, so new routines behave as before |
+| `write_util` (create/revise global utils) | `util-authoring` (confirm: true), `util-authoring-autonomous` (confirm: revisions-only), `util-authoring-full-auto` (confirm: false) | in `DEFAULT_FRAGMENTS` via `util-authoring`, so new routines behave as before |
 | `discord` util | `communication` | the pilot for util-level grants |
 
 A rejected gated call never becomes a turn: `validate_action` refuses it inside the

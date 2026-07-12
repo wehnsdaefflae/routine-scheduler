@@ -139,7 +139,8 @@ first boot; `deploy/install.sh` for host installs.
   (`write_util`; reserved utils like `discord`) for routines that activate it. Grants are machine-read
   from the LIBRARY copy ONLY (`grants.py` — never the editable routine-local copy, so routines can't
   self-grant); activation authority stays `routine.yaml` `fragments:`. `util-authoring` (confirm: true,
-  in the default set) and `util-authoring-autonomous` (confirm: revisions-only) carry util authoring;
+  in the default set), `util-authoring-autonomous` (confirm: revisions-only) and
+  `util-authoring-full-auto` (confirm: false) carry util authoring;
   `communication` grants `discord`. Any future permission-ish lever becomes a fragment grant, not a new
   yaml key (the old `confirm_util_changes` is retired into `confirm:`). See docs/fragments.md. The
   improvement standards are five **after-run passes** — `improve-bugfix / -research / -features / -ui /
