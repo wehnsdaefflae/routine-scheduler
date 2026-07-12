@@ -194,7 +194,9 @@ export function createTranscript(container, opts = {}) {
   }
 
   const SIMPLE = {
-    user_injection: (ev) => el("div", { class: "ev injection" }, `\u{1F4E8} injected: ${ev.payload.text}`),
+    user_injection: (ev) => ev.payload.source === "engine"
+      ? el("div", { class: "ev system" }, `— ${ev.payload.text} —`)
+      : el("div", { class: "ev injection" }, `\u{1F4E8} user: ${ev.payload.text}`),
     question: questionNode,
     answer: (ev) => {
       if (!ev.payload.intermediate) closeQuestion(ev.payload.qid);   // dialog replies keep it open

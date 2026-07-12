@@ -58,8 +58,9 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "CONTEXT COMPACTED",
         "ENGINE WARNING: this exact action has now run",
         "OBSERVATION (",
-        # resume + fabrication guard
+        # resume (both flavors) + fabrication guard
         "do NOT restart from step 1",
+        "NOT a new run: do not restart the workflow",
         "OBSERVATION (finish REJECTED)",
     ]
     for needle in needles:

@@ -182,7 +182,8 @@ def test_inbox_unreadable_message_logged_and_left(tmp_path, caplog):
 
 def test_resume_rehydrates_and_continues(make_routine, scripted):
     """A resumed run reuses the same run dir, replays the prior transcript into its prompt, and
-    continues (appending to the transcript) rather than restarting from step 1."""
+    continues (appending to the transcript) rather than restarting from step 1. The prior run
+    ended with a model-authored finish, so the note frames a continued conversation."""
     d = make_routine(slug="res")
     scripted([probe("first work"), finish(summary="first pass done")])
     status1, run_dir = run_routine(d, _server(d), run_ts=TS)
@@ -196,12 +197,66 @@ def test_resume_rehydrates_and_continues(make_routine, scripted):
     assert (d / "state" / "more.txt").read_text() == "more"
     events2, _ = read_events(run_dir / "transcript.jsonl")
     assert len(events2) > n1                                    # appended, not restarted
-    assert any(e["type"] == "user_injection" and "resumed" in e["payload"]["text"] for e in events2)
+    assert any(e["type"] == "user_injection" and "continued the conversation" in e["payload"]["text"]
+               for e in events2)
     # the resumed run's FIRST prompt carried the prior conversation + the resume note
     joined = " ".join(m["content"] for m in ep2.calls[0]["messages"])
     assert "state/probe.txt" in joined and "ENGINE NOTE" in joined
     st = read_json(run_dir / "status.json")
     assert st["state"] == "finished" and st["turn"] == 4      # continued past the first run's 2 turns
+
+
+def test_converse_resume_delivers_message_and_allows_immediate_refinish(make_routine, scripted):
+    """Continuing a FINISHED run (web converse): the waiting inbox message arrives as a visible
+    user_injection AFTER the continued-conversation note — not as a system-prompt section — and
+    the replayed observations seed the fabrication guard, so an immediate answer-and-refinish
+    is accepted instead of pushing the model back to workflow step 1."""
+    d = make_routine(slug="conv")
+    scripted([probe("first work"), finish(summary="first pass done")])
+    status1, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status1 == "ok"
+
+    atomic_write_json(d / "inbox" / "msg-1.json",
+                      {"text": "did you send the ping?", "via": "web-converse"})
+    ep2 = scripted([finish(summary="first pass done — and yes, the ping went out")])
+    status2, _ = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    assert status2 == "ok"
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    inj = [e["payload"] for e in events if e["type"] == "user_injection"]
+    assert any("continued the conversation" in p["text"] for p in inj)   # follow-up flavor…
+    assert not any("interruption" in p["text"] for p in inj)             # …not crash recovery
+    assert any(p["text"] == "did you send the ping?" for p in inj)       # the message is on record
+    prompt = ep2.calls[0]["messages"]
+    assert "did you send the ping?" in prompt[-1]["content"]      # …and the LAST user message
+    assert "already ENDED (status ok)" in prompt[-2]["content"]   # preceded by the follow-up note
+    assert "did you send the ping?" not in prompt[0]["content"]   # NOT a system-prompt section
+    # the immediate re-finish was accepted: no fabrication-guard rejection
+    assert not any(e["type"] == "observation" and e["payload"].get("rejected") for e in events)
+    st = read_json(run_dir / "status.json")
+    assert st["state"] == "finished" and st["turn"] == 3
+
+
+def test_resume_after_engine_forced_end_keeps_interruption_framing(make_routine, scripted):
+    """A run that ended WITHOUT a model-authored finish (crash close-out, budget stop) resumes
+    with the interruption note — not the continued-conversation one."""
+    d = make_routine(slug="intr")
+    scripted([probe("first work"), finish(summary="first pass done")])
+    _, run_dir = run_routine(d, _server(d), run_ts=TS)
+    # rewrite history as if the engine died and the daemon closed the run out (authored: False)
+    lines = [ln for ln in (run_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
+             if '"type": "finish"' not in ln]
+    lines.append(json.dumps({"ts": "2026-07-08T07:01:00+00:00", "type": "finish",
+                             "payload": {"status": "failed", "summary": "engine exited rc=-9",
+                                         "authored": False}}))
+    (run_dir / "transcript.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    scripted([finish(summary="recovered and finished")])
+    status, _ = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    assert status == "ok"
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    inj = [e["payload"]["text"] for e in events if e["type"] == "user_injection"]
+    assert any("interruption" in t for t in inj)
+    assert not any("continued the conversation" in t for t in inj)
 
 
 def test_happy_path(make_routine, scripted):
