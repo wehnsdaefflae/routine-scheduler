@@ -3,6 +3,7 @@
 // live in the URL (#/run/{id}?sub=N&offset=M), so a deep link reopens the exact view.
 
 import { api } from "/static/api.js";
+import { mdInline } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
@@ -206,7 +207,7 @@ export async function render(view, runId, query = {}) {
       title: "send as a follow-up question / thought — the model replies and the question stays open" },
       "ask back");
     const box = el("div", { class: "panel warn mt" },
-      el("div", { class: "prose" }, `❓ ${q.question}`),
+      el("div", { class: "prose" }, "❓ ", mdInline(q.question)),
       q.options?.length ? el("div", { class: "row mt" },
         q.options.map((o) => el("button", { class: "btn small", onclick: () => { input.value = o; } }, o))) : null,
       el("div", { class: "row mt" }, input, send, discuss));

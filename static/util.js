@@ -1,5 +1,6 @@
-// Small DOM + formatting helpers (no framework, no build). Rendering is textContent-only —
-// el() has no HTML pathway, so user-supplied strings can never become markup.
+// Small DOM + formatting helpers (no framework, no build). el() is textContent-only — it has
+// no HTML pathway, so strings passed to it can never become markup. The ONE sanctioned
+// innerHTML pathway is md.js (simple markdown for model-authored prose), which escapes first.
 
 // localStorage can throw (private mode / embedded contexts) — degrade to in-memory.
 const mem = new Map();

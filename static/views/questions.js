@@ -5,6 +5,7 @@
 // Priority rank: blocking (a run is waiting) > meta (system-level) > deferred.
 
 import { api } from "/static/api.js";
+import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, skeleton, toast, when } from "/static/util.js";
 
 const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["deferred", "Deferred"], ["meta", "Meta"]];
@@ -116,7 +117,7 @@ export async function render(view) {
           chip("answered · queued", "ok"),
           sourceLink(q),
           q.asked ? el("span", {}, "asked ", when(q.asked)) : null),
-        el("div", { class: "q-text" }, q.question),
+        el("div", { class: "q-text" }, mdInline(q.question)),
         el("div", { class: "flow-note mt" },
           el("span", {}, `“${q.answer}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run" : "next run"}`)));
     }

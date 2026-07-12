@@ -9,6 +9,7 @@
 // wizard-create.js.
 
 import { api } from "/static/api.js";
+import { mdInline } from "/static/md.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
@@ -185,7 +186,7 @@ export async function render(view, resumeWid) {
       discuss.onclick = () => submit(true);
       input.onkeydown = (e) => { if (e.key === "Enter") submit(false); };
       qBox.append(el("div", { class: "panel warn mt" },
-        el("div", { class: "prose" }, `❓ ${q.question}`),
+        el("div", { class: "prose" }, "❓ ", mdInline(q.question)),
         q.options?.length ? el("div", { class: "row mt" },
           q.options.map((o) => el("button", { class: "btn small", onclick: () => { input.value = o; } }, o))) : null,
         el("div", { class: "row mt" }, input, send, discuss)));

@@ -10,6 +10,7 @@
 //                        {events, offset}.
 //   isLive()           — true while the run is live; expanded subruns keep polling.
 
+import { md, mdInline } from "/static/md.js";
 import { el, fmtTime, fmtTokens, toast } from "/static/util.js";
 
 const BRIEF_FIELD = { util: "name", write_util: "name", read_file: "path", write_file: "path",
@@ -32,8 +33,8 @@ export function createTranscript(container, opts = {}) {
 
   function questionNode(ev) {
     const p = ev.payload;
-    const head = `❓ [${p.mode}] ${p.question}` +
-      (p.options?.length ? ` — options: ${p.options.join(" | ")}` : "");
+    const head = el("span", {}, `❓ [${p.mode}] `, mdInline(p.question),
+      p.options?.length ? ` — options: ${p.options.join(" | ")}` : null);
     // Inline answering: deferred questions used to be dead text here, answerable only on
     // the Decisions page. Blocking ones stay with the run view's panel (it handles dialog).
     if (!opts.answer || !p.qid || p.mode !== "deferred") return el("div", { class: "ev question" }, head);
@@ -110,7 +111,7 @@ export function createTranscript(container, opts = {}) {
       el("div", { class: "say" },
         el("span", { class: "n" }, `turn ${ev.turn ?? "?"}`),
         ev.ts ? el("span", { class: "ts", title: ev.ts }, fmtTime(ev.ts)) : null,
-        el("span", { class: "saytext" }, a.say || "")),
+        el("span", { class: "saytext" }, mdInline(a.say || ""))),
       el("div", { class: "act" },
         el("span", {}, a.kind),
         el("span", { class: "muted" }, brief),
@@ -125,13 +126,14 @@ export function createTranscript(container, opts = {}) {
   }
 
   // Tool/observation return values are collapsed by default (expandable). The summary carries the
-  // first line, so short one-line results stay fully readable without expanding.
-  function obsBody(kind, text) {
+  // first line, so short one-line results stay fully readable without expanding. `rich` renders
+  // the body as simple markdown (model-authored prose — llm replies); program output stays literal.
+  function obsBody(kind, text, rich = false) {
     const firstLine = (text.split("\n")[0] || "").slice(0, 120);
     const more = text.length > firstLine.length;
     return el("details", { class: "obs-collapse" },
       el("summary", {}, `result — ${firstLine}${more ? " …" : ""}`),
-      el("div", { class: "obs" }, text));
+      rich ? md(text, "obs md") : el("div", { class: "obs" }, text));
   }
 
   function addObservation(ev) {
@@ -176,7 +178,7 @@ export function createTranscript(container, opts = {}) {
     } else {
       text = JSON.stringify(o, null, 1);
     }
-    const obs = obsBody(o.kind, text);
+    const obs = obsBody(o.kind, text, o.kind === "llm" && !o.error);
     if (openTurn) { openTurn.append(obs); openTurn = null; }
     else root.append(el("div", { class: "turn" }, obs));
   }
@@ -198,7 +200,7 @@ export function createTranscript(container, opts = {}) {
       `↳ subrun ${ev.payload.n} "${ev.payload.label}" started (${ev.payload.workflow}, depth ${ev.payload.depth})`)),
     subrun_end: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,
       `↰ subrun ${ev.payload.n} "${ev.payload.label}" ${ev.payload.status} — ${ev.payload.turns} turns, ${fmtTokens(ev.payload.usage)}`,
-      el("div", { class: "obs" }, ev.payload.summary || "(no summary)"))),
+      md(ev.payload.summary || "(no summary)", "obs md"))),
     header: (ev) => el("div", { class: "ev system" },
       `run ${ev.run_id} · ${ev.orchestrator?.endpoint}:${ev.orchestrator?.model} · workflow ${ev.workflow?.slug || "?"}`),
   };
@@ -220,7 +222,7 @@ export function createTranscript(container, opts = {}) {
         const p = ev.payload;
         root.append(el("div", { class: `finish-banner ${p.status}` },
           el("strong", {}, `finish: ${p.status}`),
-          el("div", { class: "mt", style: "margin-top:6px" }, p.summary || ""),
+          el("div", { class: "mt", style: "margin-top:6px" }, md(p.summary || "")),
           el("div", { class: "muted", style: "margin-top:6px" },
             `${ev.turns ?? "?"} turns · ${fmtTokens(ev.usage_total)}`)));
         return;

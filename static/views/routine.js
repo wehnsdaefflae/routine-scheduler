@@ -2,6 +2,7 @@
 // editable instruction / steps / fragment files, models, state, runs.
 
 import { api } from "/static/api.js";
+import { mdInline } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { chip, el, emptyState, fmtTokens, grantsSummary, skeleton, tagChip, toast, when } from "/static/util.js";
@@ -243,7 +244,7 @@ export async function render(view, slug, query = {}) {
     view.append(el("h2", {}, `Decisions · ${d.questions.length}`),
       el("div", { class: "panel warn" }, d.questions.map((q) =>
         el("div", { class: "row spread", style: "padding:5px 0" },
-          el("span", { class: "prose" }, `❓ ${q.question}`),
+          el("span", { class: "prose" }, "❓ ", mdInline(q.question)),
           el("a", { class: "btn small primary", href: "#/questions" }, "answer")))));
   }
 

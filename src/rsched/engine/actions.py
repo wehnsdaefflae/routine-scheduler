@@ -77,7 +77,8 @@ ACTION_SCHEMA: dict = {
         "status": {"type": "string", "enum": ["ok", "partial", "failed"], "description": "finish: run outcome"},
         "summary": {
             "type": "string",
-            "description": "finish: 3-10 line result summary (becomes result.md and the dashboard's last-outcome)",
+            "description": "finish: 3-10 line result summary (becomes result.md and the dashboard's "
+                           "last-outcome; simple Markdown — bold, lists, `code`, links — renders in the UI)",
         },
     },
 }

@@ -3,6 +3,7 @@
 // tucked away by default; click tags to filter.
 
 import { api } from "/static/api.js";
+import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, skeleton, storage, tagChip, toast, when } from "/static/util.js";
 
 const FILTER_KEY = "rsched_dash_tags";
@@ -117,7 +118,7 @@ export async function render(view) {
       last ? el("div", { class: "lastrun" },
           el("div", { class: "lr-line" }, when(last.ts), chip(last.state, last.state)),
           el("div", { class: "lr-sum", title: last.summary || "" },
-            (last.summary || "").split("\n").find((l) => l.trim()) || "(no summary)"))
+            mdInline((last.summary || "").split("\n").find((l) => l.trim()) || "(no summary)")))
         : el("div", { class: "lastrun" }, el("div", { class: "lr-sum faint" }, "never ran")),
       c.problems?.length ? el("div", { class: "problem" }, `⚠ ${c.problems[0]}`) : null,
       el("div", { class: "actions" },
