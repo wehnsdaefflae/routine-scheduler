@@ -21,6 +21,7 @@ TS = "20260708-070000"
 
 def _server(routine_dir) -> ServerConfig:
     s = ServerConfig()
+    s.routines_home = routine_dir.parent          # hermetic: .control logs land in tmp
     s.libraries_home = routine_dir.parent.parent / "test-library"
     return s
 

@@ -117,11 +117,12 @@ user what to set (they set it once in the Secrets store; the engine injects it).
 {memory_line}
 - llm: one scoped, stateless LLM subcall (runs on this routine's tool-call model). It sees ONLY \
 your prompt/system — include everything it needs; set response_schema for structured replies.
-- spawn: start a SUB-WORKFLOW that runs IN PARALLEL with you — pick its "workflow" from the \
-library (default general-task) and give it a fully self-contained "prompt" as its instruction; \
-it sees nothing else and returns only its finish summary. You keep working while it runs; you \
-are notified automatically when it exits. Give parallel children disjoint outputs (they share \
-your working directory); they must not write LEDGER.md or state/phase.json.
+- spawn: start a SUB-WORKFLOW that runs IN PARALLEL with you — pick its "workflow" for the \
+child's PURPOSE from the patterns listed under CAPABILITIES (default general-task) and give it \
+a fully self-contained "prompt" as its instruction; it sees nothing else and returns only its \
+finish summary. You keep working while it runs; you are notified automatically when it exits. \
+Give parallel children disjoint outputs (they share your working directory); they must not \
+write LEDGER.md or state/phase.json.
 - subruns: a status table of your sub-workflows (state, turns, elapsed).
 - kill: terminate sub-workflow "n". wait: block until sub-workflow "n" / "all": true / any \
 unreported exit (timeout_s, default 600) — it returns AT ONCE when a finished child hasn't \
@@ -217,6 +218,18 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         notes = _permission_notes(ctx, g)
         if notes:
             parts.append(notes)
+    if "spawn" in kinds:
+        try:
+            from ..workflows.library import list_workflows
+
+            patterns = [w for w in list_workflows(ctx.server.library_home)
+                        if w.get("status") == "stable" and "meta" not in (w.get("tags") or [])]
+        except Exception:  # noqa: BLE001 — bare test contexts have no library
+            patterns = []
+        if patterns:
+            parts.append("Sub-workflow patterns for spawn — pick the one matching the CHILD's "
+                         "purpose, never reflexively the default:\n"
+                         + "\n".join(f"- {w['slug']} — {w['description']}" for w in patterns))
     utils = utils_lib.list_utils(ctx.server.utils_home)
     if utils:
         lines = []

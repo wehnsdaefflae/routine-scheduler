@@ -178,6 +178,16 @@ class SubrunManager:
                 "n": sub.n, "label": sub.label, "workflow": sub.workflow,
                 "status": sub.status, "summary": sub.summary,
                 "turns": sub.ctx.turn, "usage": dict(sub.ctx.usage)})
+            # subruns feed workflow-library optimization like any other run
+            from ..health_events import log_workflow_usage
+
+            pctx = self.parent.ctx
+            log_workflow_usage(pctx.server.routines_home, routine=pctx.routine.slug,
+                               run_id=f"{pctx.run_id}#sub{sub.n}", workflow=sub.workflow,
+                               depth=sub.ctx.depth, status=sub.status or "unknown",
+                               turns=sub.ctx.turn,
+                               tokens=int(sub.ctx.usage.get("in", 0))
+                                      + int(sub.ctx.usage.get("out", 0)))
 
     def status_table(self) -> dict:
         rows = []

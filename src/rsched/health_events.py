@@ -15,6 +15,7 @@ from pathlib import Path
 from .ids import now_iso
 
 HEALTH_EVENTS_FILE = "health-events.jsonl"
+WORKFLOW_USAGE_FILE = "workflow-usage.jsonl"
 
 
 def log_health_event(routines_home: Path, event: str, *, routine: str,
@@ -33,6 +34,30 @@ def log_health_event(routines_home: Path, event: str, *, routine: str,
                 "routine": routine,
                 "run_id": run_id,
                 "detail": detail[:500],
+            }) + "\n")
+    except OSError:
+        pass
+
+
+def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str, workflow: str,
+                       depth: int, status: str, turns: int, tokens: int) -> None:
+    """Append one line per finished (sub)run to <routines_home>/.control/workflow-usage.jsonl —
+    the feedback stream the meta-workflows routine mines to optimize the library. Subruns
+    report like any other run (depth > 0), so per-purpose child workflows inform pattern
+    evolution too. Best-effort, like the health log."""
+    path = Path(routines_home) / ".control" / WORKFLOW_USAGE_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "ts": now_iso(),
+                "routine": routine,
+                "run_id": run_id,
+                "workflow": workflow or "(unknown)",
+                "depth": depth,
+                "status": status,
+                "turns": turns,
+                "tokens": tokens,
             }) + "\n")
     except OSError:
         pass

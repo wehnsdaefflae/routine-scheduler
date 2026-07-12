@@ -29,6 +29,7 @@ def _server(routine_dir, *, util_authoring: str | None = "false") -> ServerConfi
     # write_util rides the util-authoring grant (held by default via DEFAULT_PERMISSIONS):
     # confirm defaults to false here so write_util tests don't block on approval; pass
     # util_authoring=None to leave write_util ungranted entirely.
+    s.routines_home = routine_dir.parent          # hermetic: .control logs land in tmp
     s.libraries_home = routine_dir.parent.parent / "test-library"
     if util_authoring is not None:
         _grant_permission(s, "util-authoring",
@@ -887,6 +888,26 @@ def test_recipe_writes_ride_the_self_modification_permission(make_routine, scrip
     status2, _ = run_routine(d2, server2, run_ts=TS)
     assert status2 == "ok"
     assert (d2 / "steps" / "collect.md").read_text() == "rewritten"
+
+
+def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):
+    """Every finished run — and every finished sub-workflow — appends one line to
+    .control/workflow-usage.jsonl, the meta-workflows routine's evidence stream."""
+    from rsched.paths import read_json as _rj  # noqa: F401 — parity import
+
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        (PARENT, spawn("CHILD-B: do the small thing.", label="c1")),
+        ("CHILD-B", finish(summary="child done")),
+        (PARENT, wait_(all_=True, timeout_s=10)),
+        (PARENT, finish()),
+    ], slug="usagelog")
+    assert status == "ok"
+    log = d.parent / ".control" / "workflow-usage.jsonl"
+    lines = [json.loads(ln) for ln in log.read_text().splitlines()]
+    subs = [ln for ln in lines if ln["depth"] > 0]
+    tops = [ln for ln in lines if ln["depth"] == 0 and ln["routine"] == "usagelog"]
+    assert subs and subs[0]["run_id"].endswith("#sub1") and subs[0]["status"] == "ok"
+    assert tops and tops[0]["workflow"] == "test-flow" and tops[0]["turns"] >= 3
 
 
 def test_previous_runs_ride_the_run_history_permission(make_routine, scripted):
