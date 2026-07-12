@@ -37,7 +37,8 @@ def _mk_run(routines, slug, ts, state, question=None):
     run_dir.mkdir(parents=True, exist_ok=True)
     atomic_write_json(run_dir / "status.json",
                       {"run_id": f"{slug}:{ts}", "state": state, "pid": 4242, "turn": 2,
-                       "usage": {"in": 10, "out": 4}, "question": question})
+                       "usage": {"in": 10, "out": 4, "cost": 0.0123}, "elapsed_s": 95,
+                       "question": question})
     with open(run_dir / "transcript.jsonl", "w") as fh:
         fh.write(json.dumps({"type": "header", "run_id": f"{slug}:{ts}"}) + "\n")
         fh.write(json.dumps({"ts": "t", "type": "assistant_action", "turn": 1,
@@ -77,6 +78,10 @@ def test_routine_cards_and_detail(client):
     _mk_run(tmp / "routines", "apir", "20260707-070000", "finished")
     cards = c.get("/api/routines").json()
     assert len(cards) == 1 and cards[0]["slug"] == "apir" and cards[0]["cron"] == "0 7 * * 1"
+    # the card carries the last run's stats — the dashboard sorts/filters on these
+    lr = cards[0]["last_run"]
+    assert lr["turns"] == 2 and lr["elapsed_s"] == 95
+    assert lr["usage"] == {"in": 10, "out": 4, "cost": 0.0123}
     detail = c.get("/api/routines/apir").json()
     assert "Test instruction" in detail["instruction"]
     assert detail["workflow_ref"]["slug"] == "test-flow"   # workflow is REFERENCED, not a routine file

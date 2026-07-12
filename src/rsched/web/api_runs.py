@@ -39,7 +39,7 @@ def run_index(request: Request, routine: str | None = None, limit: int = 30) -> 
     runs.sort(key=lambda r: r.ts, reverse=True)
     return [{"run_id": r.run_id, "routine": r.run_id.split(":", 1)[0], "ts": r.ts,
              "state": r.state, "turn": r.turn, "summary": r.summary[:200],
-             "usage": r.usage, "updated": r.updated} for r in runs[:limit]]
+             "usage": r.usage, "elapsed_s": r.elapsed_s, "updated": r.updated} for r in runs[:limit]]
 
 
 @router.get("/runs/{run_id}")
@@ -51,7 +51,8 @@ def run_detail(request: Request, run_id: str) -> dict:
     st = read_json(run_dir / "status.json")
     model = st.get("model") if isinstance(st, dict) else ""
     return {"run_id": info.run_id, "routine": slug, "ts": info.ts, "state": info.state,
-            "turn": info.turn, "usage": info.usage, "question": info.question, "model": model,
+            "turn": info.turn, "usage": info.usage, "elapsed_s": info.elapsed_s,
+            "question": info.question, "model": model,
             "summary": info.summary, "updated": info.updated, "subruns": subs}
 
 

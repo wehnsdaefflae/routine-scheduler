@@ -152,6 +152,9 @@ class RunContext:
             "started": self.run_ts,
             "updated": now_iso(),
             "turn": self.turn,
+            # active wall-clock so far (paused/waiting time credited back) — the final
+            # write at run end freezes it as the run's duration
+            "elapsed_s": int(self.elapsed_s()),
             "phase": self.phase,
             "question": self.question,
             "usage": dict(self.usage),

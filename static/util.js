@@ -97,6 +97,11 @@ export function fmtTokens(usage) {
   return `${f(usage.in || 0)} in / ${f(usage.out || 0)} out${cost}`;
 }
 
+export function fmtCost(usage) {
+  if (!usage || !(usage.cost > 0)) return "";
+  return `$${usage.cost >= 0.1 ? usage.cost.toFixed(2) : usage.cost.toFixed(4)}`;
+}
+
 // ---- chips / tags ----------------------------------------------------------------------------
 export function chip(text, cls = "") {
   return el("span", { class: `chip ${cls}` }, text);

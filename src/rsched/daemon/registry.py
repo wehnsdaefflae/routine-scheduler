@@ -39,6 +39,7 @@ class RunInfo:
     usage: dict = field(default_factory=dict)
     question: dict | None = None
     updated: str = ""
+    elapsed_s: int | None = None   # active wall-clock (final write = the run's duration)
 
 
 @dataclass
@@ -75,6 +76,16 @@ def read_run(run_dir: Path, slug: str) -> RunInfo:
         info.usage = st.get("usage") or {}
         info.question = st.get("question")
         info.updated = st.get("updated", "")
+        if st.get("elapsed_s") is not None:
+            info.elapsed_s = int(st["elapsed_s"])
+        elif st.get("updated") and st.get("started"):
+            # runs from before elapsed_s existed: best-effort from the two stamps
+            try:
+                started = datetime.strptime(str(st["started"]), "%Y%m%d-%H%M%S")
+                updated = datetime.fromisoformat(str(st["updated"])).replace(tzinfo=None)
+                info.elapsed_s = max(0, int((updated - started).total_seconds()))
+            except ValueError:
+                pass
     result = run_dir / "result.md"
     if result.exists():
         try:

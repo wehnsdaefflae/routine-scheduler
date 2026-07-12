@@ -67,7 +67,8 @@ def _card(request: Request, info: registry.RoutineInfo) -> dict:
         "active_run": info.active_run.run_id if info.active_run else None,
         "active_state": info.active_run.state if info.active_run else None,
         "last_run": ({"run_id": last.run_id, "ts": last.ts, "state": last.state,
-                      "summary": last.summary[:280]} if last else None),
+                      "summary": last.summary[:280], "turns": last.turn,
+                      "usage": last.usage, "elapsed_s": last.elapsed_s} if last else None),
         "open_questions": len(info.open_questions),
         "problems": info.problems,
     }
@@ -120,7 +121,8 @@ def routine_detail(request: Request, slug: str) -> dict:
         "files": files,
         "questions": info.open_questions,
         "runs": [{"run_id": r.run_id, "ts": r.ts, "state": r.state,
-                  "summary": r.summary[:200], "turn": r.turn, "usage": r.usage}
+                  "summary": r.summary[:200], "turn": r.turn, "usage": r.usage,
+                  "elapsed_s": r.elapsed_s}
                  for r in info.runs[:50]],
         "budgets": info.cfg.budgets,
     }

@@ -1,13 +1,50 @@
-// Dashboard: routine bays with status lamp, next fire, last outcome, open questions, run-now.
-// A running routine pulses; one blocked on a question is visually loud. Meta routines are
-// tucked away by default; click tags to filter.
+// Dashboard: routine bays with status lamp, next fire, last outcome + its cost/turns/
+// tokens/duration, open questions, run-now. A running routine pulses; one blocked on a
+// question is visually loud. Meta routines are tucked away by default; tags, states and
+// free text filter; every stat sorts; a table view sits one toggle away.
 
 import { api } from "/static/api.js";
 import { mdInline } from "/static/md.js";
-import { chip, el, emptyState, skeleton, storage, tagChip, toast, when } from "/static/util.js";
+import { chip, el, emptyState, fmtCost, fmtDur, skeleton, storage, tagChip, toast, when } from "/static/util.js";
 
 const FILTER_KEY = "rsched_dash_tags";
+const VIEW_KEY = "rsched_dash_view";
+const SORT_KEY = "rsched_dash_sort";
 const RUNNING = new Set(["running", "starting", "queued"]);
+
+// ---- sort keys: [label, value-fn, descending?] -------------------------------------------------
+const tokensOf = (c) => (c.last_run?.usage?.in || 0) + (c.last_run?.usage?.out || 0);
+const SORTS = {
+  activity: ["recent activity", (c) => c.last_run?.ts || "", true],
+  name: ["name", (c) => (c.name || c.slug).toLowerCase(), false],
+  next: ["next run", (c) => c.next_fire || "9999", false],
+  state: ["state", (c) => c.active_state || (c.last_run?.state ?? "zz"), false],
+  cost: ["last cost", (c) => c.last_run?.usage?.cost || 0, true],
+  tokens: ["last tokens", tokensOf, true],
+  turns: ["last turns", (c) => c.last_run?.turns || 0, true],
+  duration: ["last duration", (c) => c.last_run?.elapsed_s || 0, true],
+  questions: ["open questions", (c) => c.open_questions || 0, true],
+};
+// coarse run-state buckets for the state filter chips
+const STATE_BUCKETS = {
+  active: (c) => RUNNING.has(c.active_state),
+  waiting: (c) => c.active_state === "waiting_user" || (c.open_questions || 0) > 0,
+  ok: (c) => !c.active_state && c.last_run?.state === "finished",
+  failed: (c) => !c.active_state && ["failed", "aborted"].includes(c.last_run?.state),
+  disabled: (c) => !c.enabled,
+};
+
+export function statsLine(run) {
+  if (!run) return "";
+  const parts = [];
+  if (run.turns) parts.push(`${run.turns} turns`);
+  if (run.elapsed_s != null) parts.push(fmtDur(run.elapsed_s));
+  const tok = (run.usage?.in || 0) + (run.usage?.out || 0);
+  if (tok) parts.push(`${tok >= 1000 ? `${(tok / 1000).toFixed(tok >= 100_000 ? 0 : 1)}k` : tok} tok`);
+  const cost = fmtCost(run.usage);
+  if (cost) parts.push(cost);
+  return parts.join(" · ");
+}
 
 export async function render(view) {
   view.append(
@@ -17,24 +54,42 @@ export async function render(view) {
         el("h1", {}, "Routines"))));
   const banner = el("div", {});
   const filterBar = el("div", { class: "filterbar" });
-  const grid = el("div", { class: "grid mt" });
-  view.append(banner, filterBar, grid);
-  grid.append(skeleton(), skeleton(), skeleton());
+  const body = el("div", { class: "mt" });
+  view.append(banner, filterBar, body);
+  body.append(skeleton(), skeleton(), skeleton());
 
   let cards = [], llmReady = true;
   const active = new Set(JSON.parse(storage.get(FILTER_KEY) || "[]"));
+  const states = new Set();
+  let viewMode = storage.get(VIEW_KEY) || "cards";
+  let sortKey = storage.get(SORT_KEY) || "activity";
+  let search = "";
 
   function visible(c) {
     const tags = c.tags || [];
-    if (!active.size) return !tags.includes("meta");   // default view tucks meta away
-    return tags.some((t) => active.has(t));
+    if (active.size ? !tags.some((t) => active.has(t)) : tags.includes("meta")) return false;
+    if (states.size && ![...states].some((s) => STATE_BUCKETS[s]?.(c))) return false;
+    if (search) {
+      const hay = `${c.name} ${c.slug} ${c.description} ${(c.tags || []).join(" ")}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  }
+
+  function ordered(list) {
+    const [, valueOf, desc] = SORTS[sortKey] || SORTS.activity;
+    return [...list].sort((a, b) => {
+      const va = valueOf(a), vb = valueOf(b);
+      const cmp = typeof va === "string" ? va.localeCompare(vb) : va - vb;
+      return desc ? -cmp : cmp;
+    });
   }
 
   function renderFilterBar() {
     const all = [...new Set(cards.flatMap((c) => c.tags || []))]
       .sort((a, b) => (a === "meta" ? -1 : b === "meta" ? 1 : a.localeCompare(b)));
     filterBar.replaceChildren();
-    if (!all.length) return;
+    if (!cards.length) return;
     filterBar.append(el("span", { class: "lbl" }, "filter"));
     for (const t of all) {
       filterBar.append(tagChip(t, {
@@ -42,34 +97,56 @@ export async function render(view) {
         onClick: () => {
           active.has(t) ? active.delete(t) : active.add(t);
           storage.set(FILTER_KEY, JSON.stringify([...active]));
-          renderFilterBar(); renderGrid();
+          renderFilterBar(); renderBody();
         },
       }));
     }
-    if (active.size) filterBar.append(el("button", { class: "btn ghost small",
-      onclick: () => { active.clear(); storage.set(FILTER_KEY, "[]"); renderFilterBar(); renderGrid(); },
+    filterBar.append(el("span", { class: "lbl", style: "margin-left:10px" }, "state"));
+    for (const s of Object.keys(STATE_BUCKETS)) {
+      filterBar.append(tagChip(s, {
+        active: states.has(s),
+        onClick: () => { states.has(s) ? states.delete(s) : states.add(s); renderFilterBar(); renderBody(); },
+      }));
+    }
+    const sortSel = el("select", { style: "margin-left:10px" },
+      Object.entries(SORTS).map(([k, [label]]) => el("option", { value: k }, `sort: ${label}`)));
+    sortSel.value = sortKey;
+    sortSel.onchange = () => { sortKey = sortSel.value; storage.set(SORT_KEY, sortKey); renderBody(); };
+    const searchIn = el("input", { type: "search", placeholder: "search…", value: search,
+      style: "width:130px;margin-left:6px" });
+    searchIn.oninput = () => { search = searchIn.value.trim().toLowerCase(); renderBody(); };
+    const toggle = el("button", { class: "btn ghost small", style: "margin-left:6px",
+      title: "switch between the card grid and a sortable detail table",
+      onclick: () => { viewMode = viewMode === "cards" ? "list" : "cards"; storage.set(VIEW_KEY, viewMode); renderBody(); } },
+      viewMode === "cards" ? "☰ list view" : "▦ card view");
+    filterBar.append(sortSel, searchIn, toggle);
+    if (active.size || states.size) filterBar.append(el("button", { class: "btn ghost small",
+      onclick: () => { active.clear(); states.clear(); storage.set(FILTER_KEY, "[]"); renderFilterBar(); renderBody(); },
     }, "clear"));
     else if (cards.some((c) => (c.tags || []).includes("meta")))
       filterBar.append(el("span", { class: "faint small" }, "· meta hidden"));
   }
 
-  function renderGrid() {
-    const shown = cards.filter(visible);
-    grid.replaceChildren();
+  function renderBody() {
+    const shown = ordered(cards.filter(visible));
+    body.replaceChildren();
     if (!cards.length) {
-      grid.append(emptyState("◌", "No routines yet",
+      body.append(emptyState("◌", "No routines yet",
         "Create the first one with “+ new routine” — describe the task, answer a few questions, and it schedules itself."));
       return;
     }
     if (!shown.length) {
-      grid.append(active.size
-        ? emptyState("▢", "Nothing matches this tag filter",
-            "Clear the filter above to see all routines (meta routines are hidden by default).")
+      body.append(active.size || states.size || search
+        ? emptyState("▢", "Nothing matches this filter",
+            "Clear the filters above to see all routines (meta routines are hidden by default).")
         : emptyState("▢", "Only meta routines here so far",
             "Meta routines (the system's self-maintenance) are tucked away by default — click the meta tag above to show them, or create your own routine."));
       return;
     }
+    if (viewMode === "list") { body.append(table(shown)); return; }
+    const grid = el("div", { class: "grid" });
     for (const c of shown) grid.append(card(c));
+    body.append(grid);
   }
 
   async function load() {
@@ -79,7 +156,7 @@ export async function render(view) {
         api("/api/routines"), api("/api/status").catch(() => ({})),
       ]);
     } catch (err) {
-      grid.replaceChildren(emptyState("✕", "Couldn't reach the daemon", err.message));
+      body.replaceChildren(emptyState("✕", "Couldn't reach the daemon", err.message));
       return;
     }
     cards = routines;
@@ -91,7 +168,22 @@ export async function render(view) {
       el("a", { href: "#/settings" }, "Settings"),
       el("span", { class: "muted" }, " to create or run routines.")));
     renderFilterBar();
-    renderGrid();
+    renderBody();
+  }
+
+  function runNowBtn(c, cls = "btn small primary") {
+    return el("button", {
+      class: cls,
+      disabled: !llmReady,
+      title: llmReady ? "" : "connect an LLM endpoint in Settings first",
+      onclick: async (e) => {
+        e.target.disabled = true;
+        try {
+          const r = await api(`/api/routines/${c.slug}/run`, { method: "POST" });
+          location.hash = `#/run/${r.run_id}`;
+        } catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
+      },
+    }, "▶ run now");
   }
 
   function card(c) {
@@ -101,6 +193,7 @@ export async function render(view) {
     const blocked = c.active_state === "waiting_user";
     const cls = ["card", RUNNING.has(c.active_state) ? "live" : "", blocked ? "attention" : ""]
       .filter(Boolean).join(" ");
+    const stats = statsLine(last);
     return el("div", { class: cls },
       el("div", { class: "title" },
         el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
@@ -116,7 +209,9 @@ export async function render(view) {
         c.open_questions ? el("a", { href: "#/questions", class: "chip blocking",
           title: "open questions waiting for you" }, `${c.open_questions} open question${c.open_questions > 1 ? "s" : ""}`) : null),
       last ? el("div", { class: "lastrun" },
-          el("div", { class: "lr-line" }, when(last.ts), chip(last.state, last.state)),
+          el("div", { class: "lr-line" }, when(last.ts), chip(last.state, last.state),
+            stats ? el("span", { class: "muted small", title: "last run: turns · duration · tokens · cost" },
+              stats) : null),
           el("div", { class: "lr-sum", title: last.summary || "" },
             mdInline((last.summary || "").split("\n").find((l) => l.trim()) || "(no summary)")))
         : el("div", { class: "lastrun" }, el("div", { class: "lr-sum faint" }, "never ran")),
@@ -124,19 +219,46 @@ export async function render(view) {
       el("div", { class: "actions" },
         c.active_run
           ? el("a", { class: "btn small", href: `#/run/${c.active_run}` }, "◉ watch live")
-          : el("button", {
-              class: "btn small primary",
-              disabled: !llmReady,
-              title: llmReady ? "" : "connect an LLM endpoint in Settings first",
-              onclick: async (e) => {
-                e.target.disabled = true;
-                try {
-                  const r = await api(`/api/routines/${c.slug}/run`, { method: "POST" });
-                  location.hash = `#/run/${r.run_id}`;
-                } catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
-              },
-            }, "▶ run now"),
+          : runNowBtn(c),
         last ? el("a", { class: "btn small", href: `#/run/${last.run_id}` }, "last run") : null));
+  }
+
+  // ---- the detail table: same data, one row per routine, headers sort ------------------------
+  const COLS = [
+    ["routine", "name"], ["state", "state"], ["schedule", null], ["next", "next"],
+    ["last run", "activity"], ["turns", "turns"], ["tokens", "tokens"],
+    ["cost", "cost"], ["duration", "duration"], ["open ?", "questions"], ["", null],
+  ];
+  function table(shown) {
+    const head = el("tr", {}, COLS.map(([label, key]) => el("th",
+      key ? { style: "cursor:pointer", title: "sort by this column",
+              onclick: () => { sortKey = key; storage.set(SORT_KEY, key); renderFilterBar(); renderBody(); } }
+          : {},
+      label + (key === sortKey ? " ▾" : ""))));
+    const rows = shown.map((c) => {
+      const last = c.last_run;
+      const tok = tokensOf(c);
+      return el("tr", { class: c.active_state === "waiting_user" ? "attention" : "" },
+        el("td", {}, el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
+          c.description ? el("div", { class: "faint small", style: "max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, c.description) : null),
+        el("td", {}, c.active_state ? chip(c.active_state, c.active_state)
+          : c.enabled ? (last ? chip(last.state, last.state) : chip("idle", "idle")) : chip("disabled", "disabled")),
+        el("td", { class: "muted small" }, c.schedule_desc || "manual"),
+        el("td", { class: "muted small" }, c.next_fire ? when(c.next_fire, { mode: "rel" }) : "—"),
+        el("td", {}, last ? el("a", { href: `#/run/${last.run_id}` }, when(last.ts)) : el("span", { class: "faint" }, "never")),
+        el("td", { class: "num" }, last?.turns ? String(last.turns) : "—"),
+        el("td", { class: "num" }, tok ? (tok >= 1000 ? `${(tok / 1000).toFixed(1)}k` : String(tok)) : "—"),
+        el("td", { class: "num" }, fmtCost(last?.usage) || "—"),
+        el("td", { class: "num" }, last?.elapsed_s != null ? fmtDur(last.elapsed_s) : "—"),
+        el("td", { class: "num" }, c.open_questions
+          ? el("a", { href: "#/questions", class: "chip blocking" }, String(c.open_questions)) : "—"),
+        el("td", {}, c.active_run
+          ? el("a", { class: "btn small", href: `#/run/${c.active_run}` }, "◉ live")
+          : runNowBtn(c, "btn small")));
+    });
+    return el("div", { class: "panel", style: "padding:0" },
+      el("div", { class: "tablewrap" },
+        el("table", { class: "list" }, el("thead", {}, head), el("tbody", {}, rows))));
   }
 
   await load();

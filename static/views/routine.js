@@ -5,7 +5,7 @@ import { api } from "/static/api.js";
 import { mdInline } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
-import { chip, el, emptyState, fmtTokens, grantsSummary, skeleton, tagChip, toast, when } from "/static/util.js";
+import { chip, el, emptyState, fmtDur, fmtTokens, grantsSummary, skeleton, tagChip, toast, when } from "/static/util.js";
 
 export async function render(view, slug, query = {}) {
   view.append(skeleton(["35%", "100%", "70%"]));
@@ -306,14 +306,15 @@ export async function render(view, slug, query = {}) {
   const rows = (d.runs || []).map((r) => el("tr", {},
     el("td", {}, el("a", { href: `#/run/${r.run_id}` }, when(r.ts))),
     el("td", {}, chip(r.state, r.state)),
-    el("td", {}, String(r.turn ?? "")),
+    el("td", { class: "num" }, String(r.turn ?? "")),
+    el("td", { class: "num muted" }, r.elapsed_s != null ? fmtDur(r.elapsed_s) : "—"),
     el("td", { class: "muted" }, fmtTokens(r.usage)),
     el("td", { class: "muted prose", style: "max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" },
       r.summary || "")));
   view.append(el("div", { class: "panel", style: "padding:0" },
     el("div", { class: "tablewrap" },
       el("table", { class: "list" },
-        el("thead", {}, el("tr", {}, ["when", "state", "turns", "tokens", "summary"].map((h) => el("th", {}, h)))),
+        el("thead", {}, el("tr", {}, ["when", "state", "turns", "duration", "tokens", "summary"].map((h) => el("th", {}, h)))),
         el("tbody", {}, rows.length ? rows
-          : el("tr", {}, el("td", { class: "muted", colspan: 5 }, "no runs yet — fire one with ▶ run now")))))));
+          : el("tr", {}, el("td", { class: "muted", colspan: 6 }, "no runs yet — fire one with ▶ run now")))))));
 }
