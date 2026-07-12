@@ -49,7 +49,9 @@ Two design rules explain most of the system's shape:
   configured timeout, then the run **continues on the default the model stated** — the
   question stays open for a future run. Routines with the *communication* permission
   mirror blocking questions to Discord; answer on whichever surface is closer, and the
-  other one is told.
+  other one is told. **Browser notifications** are opt-in under Settings → Notifications:
+  OS notifications while a console tab is open, and — per browser — Web Push that reaches
+  you with the console closed (needs HTTPS or a localhost tunnel).
 
 ## Step by step: from zero to a running routine
 

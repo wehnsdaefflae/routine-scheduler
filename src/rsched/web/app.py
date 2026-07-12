@@ -58,10 +58,17 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         task = None
         if with_scheduler and not os.environ.get("RSCHED_NO_SCHEDULER"):
             task = asyncio.create_task(app.state.scheduler.run_forever())
+        # Web Push sender: idles until a browser subscribes, then pushes new decisions
+        from . import push as push_mod
+
+        push_task = asyncio.create_task(push_mod.bus_listener(server, bus))
         yield
         docs_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await docs_task
+        push_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await push_task
         if task:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -76,10 +83,11 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.state.runner = runner
     app.state.scheduler = scheduler
 
-    from . import (api_audit, api_questions, api_routines, api_runs, api_traces, api_wizard,
-                   api_workflows, settings)
+    from . import (api_audit, api_push, api_questions, api_routines, api_runs, api_traces,
+                   api_wizard, api_workflows, settings)
 
     deps = [Depends(require_auth)]
+    app.include_router(api_push.router, prefix="/api", dependencies=deps)
     app.include_router(api_routines.router, prefix="/api", dependencies=deps)
     app.include_router(api_runs.router, prefix="/api", dependencies=deps)
     app.include_router(api_questions.router, prefix="/api", dependencies=deps)
@@ -133,6 +141,11 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     @app.get("/", include_in_schema=False)
     def index():
         return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/sw.js", include_in_schema=False)
+    def service_worker():
+        # served from the root (not /static/) so the worker's scope covers the whole console
+        return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript")
 
     @app.middleware("http")
     async def fresh_ui(request, call_next):

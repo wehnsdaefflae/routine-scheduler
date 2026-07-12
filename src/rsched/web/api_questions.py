@@ -26,14 +26,14 @@ router = APIRouter(tags=["questions"])
 _DECISION_RE = re.compile(r"\[AUDIT decision · ([^\]]+)\]")
 
 
-def _audit_decisions(request: Request) -> list[dict]:
+def _audit_decisions(server) -> list[dict]:
     """The self-audit report's OPEN decisions as meta-badged question items. A decision
     leaves the inbox when an answer is queued for it, or when the report marks it
     settled (`status: settled` — or the routine's prose convention, a detail starting
     with SETTLED)."""
     from .api_audit import SELF_AUDIT_SLUG, _pending_feedback
 
-    rdir = request.app.state.server.routines_home / SELF_AUDIT_SLUG
+    rdir = server.routines_home / SELF_AUDIT_SLUG
     report = read_json(rdir / "audit" / "report.json")
     if not isinstance(report, dict):
         return []
@@ -69,9 +69,9 @@ def _mark_answered(routine_dir, item: dict) -> dict:
     return item
 
 
-def _all_questions(request: Request) -> list[dict]:
+def _all_questions(server) -> list[dict]:
     out: list[dict] = []
-    for info in registry.scan(request.app.state.server).values():
+    for info in registry.scan(server).values():
         runs = {r.ts: r for r in info.runs}
         seen: set[str] = set()
         active = info.active_run
@@ -98,13 +98,13 @@ def _all_questions(request: Request) -> list[dict]:
     return out
 
 
-def _wizard_questions(request: Request) -> list[dict]:
+def _wizard_questions(server) -> list[dict]:
     """Clarify-session questions. Wizard sessions are dot-hidden pseudo-routines the
     registry deliberately skips — but their questions belong in the same inbox as every
     other decision, answerable from either surface."""
     from . import wizard_store
 
-    home = request.app.state.server.routines_home
+    home = server.routines_home
     out: list[dict] = []
     for d in sorted(home.glob(".wizard-*")) if home.is_dir() else []:
         if not d.is_dir():
@@ -125,9 +125,15 @@ def _wizard_questions(request: Request) -> list[dict]:
     return out
 
 
+def open_decisions(server) -> list[dict]:
+    """Every decision across the instance, one shape — the Decisions page, the badge, the
+    tab-open notifier, and the Web Push sender all read this."""
+    return _all_questions(server) + _wizard_questions(server) + _audit_decisions(server)
+
+
 @router.get("/questions")
 def list_questions(request: Request) -> list[dict]:
-    return _all_questions(request) + _wizard_questions(request) + _audit_decisions(request)
+    return open_decisions(request.app.state.server)
 
 
 class Answer(BaseModel):
@@ -142,7 +148,7 @@ def answer(request: Request, qid: str, body: Answer) -> dict:
     if qid.startswith("audit:"):
         from .api_audit import Feedback, write_feedback
 
-        match = next((q for q in _audit_decisions(request) if q["qid"] == qid), None)
+        match = next((q for q in _audit_decisions(request.app.state.server) if q["qid"] == qid), None)
         if match is None:
             raise HTTPException(404, f"no open audit decision {qid!r}")
         text = body.text.strip()
@@ -152,7 +158,8 @@ def answer(request: Request, qid: str, body: Answer) -> dict:
                                              choice=choice, text="" if choice else text))
         _announce_answer(request, qid, match["routine"])
         return {"ok": True, "routine": match["routine"], "mode": "deferred", "meta": True}
-    match = next((q for q in _all_questions(request) + _wizard_questions(request)
+    match = next((q for q in _all_questions(request.app.state.server)
+                  + _wizard_questions(request.app.state.server)
                   if q.get("qid") == qid), None)
     if match is None:
         raise HTTPException(404, f"no open question {qid!r}")

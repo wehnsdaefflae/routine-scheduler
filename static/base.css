@@ -337,11 +337,36 @@ input[type=time], input[type=number] { width: auto; }
 /* ---------- mobile ---------- */
 @media (max-width: 860px) {
   .topbar { flex-wrap: wrap; height: auto; padding: 8px 14px; gap: 8px 14px; }
-  .topbar nav { order: 3; flex-basis: 100%; }
+  /* all seven links stay visible — wrap into rows instead of an invisible sideways scroll */
+  .topbar nav { order: 3; flex-basis: 100%; flex-wrap: wrap; overflow-x: visible; row-gap: 2px; }
   .clock { display: none; }
   main { padding: 16px 14px 90px; }
   .crumbs { padding: 10px 14px 0; }
   .notice-banner, .setup-banner { padding: 9px 14px; }
   .kv { grid-template-columns: 1fr; }
   .grid { grid-template-columns: 1fr; }
+  .page-head { flex-wrap: wrap; gap: 10px; }
+  .kbd-hint { display: none; }                      /* keyboard hints mean nothing on touch */
+  /* touch targets: comfortable minimums without changing the desktop density */
+  .btn { min-height: 38px; padding: 7px 14px; }
+  .btn.small { min-height: 34px; padding: 5px 11px; font-size: 11.5px; }
+  .topbar nav a { padding: 9px 11px; }
+  input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
+  /* 16px stops iOS Safari from zooming into focused fields */
+  input, select, textarea { font-size: 16px; }
+  input[type="text"], input[type="search"], input[type="number"], input[type="password"] {
+    min-height: 38px; max-width: 100%;
+  }
+  select { min-height: 38px; }
+  textarea.code { min-height: 140px; }
+  /* control rows that pair an input with buttons stack cleanly */
+  .row > input[type="text"], .row > input[type="search"] { flex: 1 1 180px; }
+}
+
+@media (max-width: 480px) {
+  .brand-sub { display: none; }                     /* brand shrinks before the nav does */
+  .topbar { gap: 6px 10px; }
+  .topbar nav a { padding: 9px 8px; letter-spacing: 0.09em; }
+  h1 { font-size: 18px; }
+  .filterbar select, .filterbar input[type="search"] { flex: 1 1 140px; }
 }
