@@ -86,8 +86,9 @@ def test_tags_on_library_elements():
     from rsched.workflows.library import list_workflows
 
     wfs = {w["slug"]: w for w in list_workflows(SEED)}
-    # General Task (user-facing) + the wizard's own clarify-instruction (meta) ship by default
-    assert set(wfs) == {"general-task", "clarify-instruction"}
+    # General Task (user-facing) + the wizard's clarify-instruction (meta) + the
+    # Conversations tab's converse pattern ship by default
+    assert set(wfs) == {"general-task", "clarify-instruction", "converse"}
     assert "meta" not in wfs["general-task"]["tags"]      # not meta → stays user-facing
     assert "meta" in wfs["clarify-instruction"]["tags"]   # meta → filtered out of user suggestions
     # every library element carries at least three tags (the universal requirement)

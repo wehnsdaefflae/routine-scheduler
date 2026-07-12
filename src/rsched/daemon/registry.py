@@ -107,8 +107,10 @@ def run_index(routine_dir: Path, slug: str) -> list[RunInfo]:
     return [read_run(d, slug) for d in dirs]
 
 
-def scan(server: ServerConfig) -> dict[str, RoutineInfo]:
-    home = server.routines_home
+def scan(server: ServerConfig, home: Path | None = None) -> dict[str, RoutineInfo]:
+    """Catalog one home. Default: routines_home; pass server.conversations_home to catalog
+    conversations — same dir shape, same RoutineInfo, different world (no schedule)."""
+    home = home or server.routines_home
     catalog: dict[str, RoutineInfo] = {}
     if not home.is_dir():
         return catalog

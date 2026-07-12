@@ -93,6 +93,38 @@ export async function api(path, { method = "GET", body } = {}) {
   }
 }
 
+// Multipart upload (message attachments): same token/gate handling as api(), but the body
+// is a FormData — the browser sets the multipart boundary, so no Content-Type of ours.
+export async function apiUpload(path, formData) {
+  for (let attempt = 0; ; attempt++) {
+    let token = getToken();
+    if (!token) token = await requestToken("This console is token-protected. Sign in to continue.");
+    const resp = await fetch(path, { method: "POST",
+      headers: { Authorization: `Bearer ${token}` }, body: formData });
+    if (resp.status === 401 && attempt === 0) {
+      clearToken();
+      await requestToken("Token rejected — enter the current one.");
+      continue;
+    }
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const err = new Error(data.detail || `${resp.status} ${resp.statusText}`);
+      err.status = resp.status;
+      throw err;
+    }
+    return data;
+  }
+}
+
+// Authenticated binary fetch → object URL, for content that renders via src attributes
+// (iframes, images, PDFs) where no Authorization header can ride along. The caller owns
+// the URL's lifetime (URL.revokeObjectURL when done).
+export async function apiBlobUrl(path) {
+  const resp = await fetch(path, { headers: { Authorization: `Bearer ${getToken()}` } });
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+  return { url: URL.createObjectURL(await resp.blob()), type: resp.headers.get("content-type") || "" };
+}
+
 // Raw EventSource wrapper. Handlers are keyed by SSE event name; "onerror"/"onopen" are the
 // EventSource callbacks. Prefer stream.js liveTail for transcript tails — it reconnects.
 export function sse(path, handlers) {

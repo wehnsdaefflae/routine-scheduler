@@ -27,10 +27,15 @@ log = logging.getLogger("rsched.runner")
 
 KILL_GRACE_S = 10
 STATUS_POLL_S = 2.0
+# Conversations (interactive replies) get their own slot pool: cron load can never queue a
+# chat reply, and a long agentic reply never starves the schedule.
+INTERACTIVE_SLOTS = 3
 
 
-def engine_cmd(slug: str, run_ts: str, *, resume: bool = False) -> list[str]:
-    cmd = [sys.executable, "-m", "rsched.cli", "engine-run", slug, "--run-ts", run_ts]
+def engine_cmd(target: str, run_ts: str, *, resume: bool = False) -> list[str]:
+    """`target` is a routine slug (resolved under routines_home) or a directory path —
+    conversations live under their own home, so the runner always passes cfg.dir."""
+    cmd = [sys.executable, "-m", "rsched.cli", "engine-run", target, "--run-ts", run_ts]
     if resume:
         cmd.append("--resume")
     return cmd
@@ -47,19 +52,32 @@ class ActiveRun:
     run_dir: Path
     proc: asyncio.subprocess.Process | None = None  # None while queued for a slot
     holds_slot: bool = False
+    sem: asyncio.Semaphore | None = None  # the pool this run draws from (cron vs interactive)
 
 
 class Runner:
     """Spawns and supervises one `engine-run` subprocess per firing routine — never two
-    of the same routine at once, `max_concurrent_runs` slots overall, plus the drain mode
-    a self-update restart uses to quiesce without killing active runs."""
+    of the same routine at once, `max_concurrent_runs` slots overall (conversations draw
+    from their own INTERACTIVE_SLOTS pool instead), plus the drain mode a self-update
+    restart uses to quiesce without killing active runs."""
 
     def __init__(self, server: ServerConfig, bus: EventBus):
         self.server = server
         self.bus = bus
         self.semaphore = asyncio.Semaphore(server.max_concurrent_runs)
+        self.interactive_semaphore = asyncio.Semaphore(INTERACTIVE_SLOTS)
         self.active: dict[str, ActiveRun] = {}  # slug → run
         self.draining = False  # set while quiescing for a self-update restart: no new runs fire
+
+    def _sem_for(self, cfg: RoutineConfig) -> asyncio.Semaphore:
+        """Conversations (dirs under conversations_home) use the reserved interactive pool."""
+        home = getattr(self.server, "conversations_home", None)
+        try:
+            if home is not None and cfg.dir.resolve().parent == Path(home).resolve():
+                return self.interactive_semaphore
+        except OSError:
+            pass
+        return self.semaphore
 
     def is_active(self, slug: str) -> bool:
         return slug in self.active
@@ -84,7 +102,8 @@ class Runner:
         ts = make_run_ts()
         run_dir = cfg.dir / "runs" / ts
         run_dir.mkdir(parents=True, exist_ok=True)
-        run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir)
+        run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir,
+                        sem=self._sem_for(cfg))
         atomic_write_json(run_dir / "status.json",
                           {"run_id": run.run_id, "state": "queued", "started": ts,
                            "updated": now_iso(), "turn": 0, "question": None,
@@ -102,7 +121,8 @@ class Runner:
         run_dir = cfg.dir / "runs" / ts
         if not run_dir.is_dir():
             return None
-        run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir)
+        run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir,
+                        sem=self._sem_for(cfg))
         atomic_write_json(run_dir / "status.json",
                           {"run_id": run.run_id, "state": "queued", "started": ts,
                            "updated": now_iso(), "turn": 0, "question": None, "usage": {"in": 0, "out": 0}})
@@ -112,12 +132,13 @@ class Runner:
 
     async def _supervise(self, run: ActiveRun, cfg: RoutineConfig, reason: str,
                          resume: bool = False) -> None:
-        await self.semaphore.acquire()
+        sem = run.sem or self.semaphore
+        await sem.acquire()
         run.holds_slot = True
         stderr = b""
         try:
             run.proc = await asyncio.create_subprocess_exec(
-                *engine_cmd(cfg.slug, run.run_ts, resume=resume),
+                *engine_cmd(str(cfg.dir), run.run_ts, resume=resume),
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
@@ -135,7 +156,7 @@ class Runner:
                 waiter.cancel()
         finally:
             if run.holds_slot:
-                self.semaphore.release()
+                sem.release()
                 run.holds_slot = False
         self._reap(run, cfg, stderr)
 
@@ -143,17 +164,18 @@ class Runner:
         """A run parked on a blocking question releases its concurrency slot (an idle
         2s-polling process is free); it re-acquires lazily on resume — brief
         oversubscription is accepted, the engine never blocks on it."""
+        sem = run.sem or self.semaphore
         while True:
             await asyncio.sleep(STATUS_POLL_S)
             st = read_json(run.run_dir / "status.json")
             state = st.get("state") if isinstance(st, dict) else None
             if state == "waiting_user" and run.holds_slot:
                 run.holds_slot = False
-                self.semaphore.release()
+                sem.release()
                 self.bus.publish({"event": "run_state", "routine": run.slug,
                                   "run_id": run.run_id, "state": state})
             elif state not in ("waiting_user", None) and not run.holds_slot:
-                await self.semaphore.acquire()  # cancellation-safe: waiter is discarded
+                await sem.acquire()  # cancellation-safe: waiter is discarded
                 run.holds_slot = True
                 self.bus.publish({"event": "run_state", "routine": run.slug,
                                   "run_id": run.run_id, "state": state})

@@ -167,13 +167,14 @@ def cmd_daemon(_args) -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     from .bootstrap import (adopt_permissions, ensure_config, migrate_fragments_split,
-                            seed_routines, sync_seed_utils)
+                            seed_routines, sync_seed_library_docs, sync_seed_utils)
     ensure_config()                       # fresh deploy: generate config+token so the API isn't open
     server, problems = load_server_config()
     seed_routines(server.routines_home)   # fresh deploy: install the (disabled) bundled meta routines
     migrate_fragments_split(server.routines_home, server.libraries_home)  # pre-split instances
     adopt_permissions(server.routines_home, server.permissions_home)  # new defaults → existing routines
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since this instance bootstrapped
+    sync_seed_library_docs(server.libraries_home)  # workflows/traits/permissions added since, too
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

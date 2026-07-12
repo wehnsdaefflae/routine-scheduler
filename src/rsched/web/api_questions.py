@@ -80,9 +80,12 @@ def _mark_answered(routine_dir, item: dict) -> dict:
     return item
 
 
-def _all_questions(server) -> list[dict]:
+def _all_questions(server, *, conversations: bool = False) -> list[dict]:
+    """Open questions of one home's catalog. Conversation questions carry
+    `conversation: True` so the answer endpoint (and the UI) can tell the homes apart."""
+    home = server.conversations_home if conversations else None
     out: list[dict] = []
-    for info in registry.scan(server).values():
+    for info in registry.scan(server, home).values():
         runs = {r.ts: r for r in info.runs}
         seen: set[str] = set()
         active = info.active_run
@@ -91,13 +94,15 @@ def _all_questions(server) -> list[dict]:
             out.append(_mark_answered(info.cfg.dir,
                        {**active.question, "routine": info.slug, "mode": "blocking",
                         "run_id": active.run_id, "run_state": active.state,
-                        "asked": active.question.get("asked") or active.ts}))
+                        "asked": active.question.get("asked") or active.ts,
+                        **({"conversation": True} if conversations else {})}))
         for q in info.open_questions:
             if str(q.get("qid")) in seen:
                 continue   # a live blocking question also has a durable pending record
             # a blocking record with no live run behind it (crash/kill) is just deferred now
             mode = "deferred" if q.get("mode") == "blocking" else q.get("mode", "deferred")
-            item = {**q, "routine": info.slug, "mode": mode}
+            item = {**q, "routine": info.slug, "mode": mode,
+                    **({"conversation": True} if conversations else {})}
             # a deferred question's `asked` is the run_ts it was filed from — link back to
             # that run (with its live state) when the run dir still exists, so a stale
             # question is recognizable against what its run actually did.
@@ -139,7 +144,8 @@ def _wizard_questions(server) -> list[dict]:
 def open_decisions(server) -> list[dict]:
     """Every decision across the instance, one shape — the Decisions page, the badge, the
     tab-open notifier, and the Web Push sender all read this."""
-    return _all_questions(server) + _wizard_questions(server) + _audit_decisions(server)
+    return (_all_questions(server) + _all_questions(server, conversations=True)
+            + _wizard_questions(server) + _audit_decisions(server))
 
 
 @router.get("/questions")
@@ -169,12 +175,15 @@ def answer(request: Request, qid: str, body: Answer) -> dict:
                                              choice=choice, text="" if choice else text))
         _announce_answer(request, qid, match["routine"])
         return {"ok": True, "routine": match["routine"], "mode": "deferred", "meta": True}
-    match = next((q for q in _all_questions(request.app.state.server)
-                  + _wizard_questions(request.app.state.server)
+    server = request.app.state.server
+    match = next((q for q in _all_questions(server)
+                  + _all_questions(server, conversations=True)
+                  + _wizard_questions(server)
                   if q.get("qid") == qid), None)
     if match is None:
         raise HTTPException(404, f"no open question {qid!r}")
-    routine_dir = request.app.state.server.routines_home / match["routine"]
+    home = server.conversations_home if match.get("conversation") else server.routines_home
+    routine_dir = home / match["routine"]
     atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json",
                       {"qid": qid, "text": body.text, "source": "web",
                        "intermediate": body.intermediate and match["mode"] == "blocking",

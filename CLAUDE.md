@@ -130,6 +130,32 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   is notified. The web layer posts answers into `inbox/`. Every finished (sub)run appends to
   `~/routines/.control/workflow-usage.jsonl` — the meta-workflows routine's evidence stream.
 
+## Conversations (interactive sessions)
+
+A **conversation** is a routine-shaped dir under its OWN home (`conversations_home`, default
+`~/conversations`): schedule-less, `kind: conversation`, and — unlike routines — **never
+git-versioned** (no `.git`, so the engine autocommit no-ops; delete means gone). The user's first
+message IS `instruction.md`; the `converse` library workflow is materialized in verbatim at
+creation (no LLM in the path — `conversations.py`; title + editable tags arrive off-path via the
+system model). **Finish-per-reply**: every reply ends in an authored finish whose summary IS the
+chat message; the next user message resumes the SAME run in place (fresh budget window —
+`max_turns: 10` per reply; the engine's 85% warning cues a wrap-up-and-offer-continue).
+- Runner: conversation replies draw from a **reserved interactive slot pool** (`INTERACTIVE_SLOTS`,
+  3) — cron can't queue a chat reply and vice versa; `engine_cmd` targets `cfg.dir` (a path),
+  which `_routine_dir` accepts. Run resolution in `api_runs`/`api_questions` is home-aware.
+- Web: `web/api_conversations.py` (create/message are multipart — **attachments** land in
+  `<conv>/attachments/` and ride the message text as an `[attached files]` block; vision util for
+  images). **Artifacts**: deliverables the model `write_file`s into `<conv>/artifacts/` are
+  listed/served here and rendered in the chat's side panel (html sandboxed, md/img/pdf/csv/json
+  inline). UI: `static/views/conversations.js` + `components/chat.js` (work folded per reply,
+  `[new-topic]` first-line marker → warn + one-click fork) + `components/artifacts.js`.
+- Defaults: routine default permissions, shell OFF (one-click grant; `run-history*` greyed —
+  routine-only); traits = ask-policy/global-utils/web-research/ledger-discipline/**git-checkpoint**
+  (checkpoint commits in external project repos — the conversation dir itself is unversioned).
+  Conversations feed workflow-usage + health events; they are EXCLUDED from the dashboard,
+  scheduler, and instance-export. `bootstrap.sync_seed_library_docs` (every boot) lands new seed
+  workflows/traits/permissions — how `converse`/`git-checkpoint` reach existing instances.
+
 ## Libraries & seeds
 
 ONE git-backed library repo (`libraries_home`, default `~/.local/share/routine-scheduler-libraries`),

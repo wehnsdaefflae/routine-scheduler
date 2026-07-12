@@ -20,14 +20,19 @@ router = APIRouter(tags=["runs"])
 
 
 def _run_dir(request: Request, run_id: str) -> tuple[str, Path]:
+    """Resolve a run id in routines_home OR conversations_home — a conversation's run is a
+    run like any other (transcript, SSE, inject, converse, abort all apply). The owning
+    routine/conversation dir is always run_dir.parent.parent."""
     try:
         slug, ts = parse_run_id(run_id)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    run_dir = request.app.state.server.routines_home / slug / "runs" / ts
-    if not run_dir.is_dir():
-        raise HTTPException(404, f"no run {run_id!r}")
-    return slug, run_dir
+    server = request.app.state.server
+    for home in (server.routines_home, server.conversations_home):
+        run_dir = home / slug / "runs" / ts
+        if run_dir.is_dir():
+            return slug, run_dir
+    raise HTTPException(404, f"no run {run_id!r}")
 
 
 @router.get("/runs")
@@ -87,7 +92,7 @@ def inject(request: Request, run_id: str, body: Inject) -> dict:
     slug, run_dir = _run_dir(request, run_id)
     if not body.text.strip():
         raise HTTPException(400, "empty message")
-    routine_dir = request.app.state.server.routines_home / slug
+    routine_dir = run_dir.parent.parent
     st = read_json(run_dir / "status.json")
     state = st.get("state") if isinstance(st, dict) else None
     atomic_write_json(routine_dir / "inbox" / f"msg-{now_iso().replace(':', '')}.json",
@@ -105,7 +110,7 @@ async def converse(request: Request, run_id: str, body: Inject) -> dict:
     slug, run_dir = _run_dir(request, run_id)
     if not body.text.strip():
         raise HTTPException(400, "empty message")
-    routine_dir = request.app.state.server.routines_home / slug
+    routine_dir = run_dir.parent.parent
     atomic_write_json(routine_dir / "inbox" / f"msg-{now_iso().replace(':', '')}.json",
                       {"text": body.text, "ts": now_iso(), "via": "web-converse"})
     st = read_json(run_dir / "status.json")
@@ -185,7 +190,7 @@ async def resume_run(request: Request, run_id: str) -> dict:
         raise HTTPException(409, "run is still active — only a finished / failed / aborted run resumes")
     from ..config import load_routine
 
-    cfg, _ = load_routine(request.app.state.server.routines_home / slug)
+    cfg, _ = load_routine(run_dir.parent.parent)
     if cfg is None:
         raise HTTPException(404, f"routine {slug!r} not found")
     rid = await request.app.state.runner.resume(cfg, run_dir.name, reason="user")

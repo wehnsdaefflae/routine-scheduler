@@ -1,0 +1,305 @@
+"""Conversations API: list/create/detail/message/delete, config edits, artifact +
+attachment serving.
+
+A conversation is a routine-shaped dir under conversations_home (see conversations.py);
+its ONE run is continued in place — a message to a live run is an ordinary injection, a
+message to a finished run resumes it (converse semantics). Transcript/SSE/abort ride the
+existing /api/runs endpoints (run resolution is home-aware). Attachments upload as
+multipart files into <conv>/attachments/ and travel as an `[attached files]` block in the
+message text; deliverables the model writes into <conv>/artifacts/ are listed and served
+here for the chat's artifact panel."""
+
+from __future__ import annotations
+
+import asyncio
+import mimetypes
+import re
+import shutil
+from pathlib import Path
+
+import yaml
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+from .. import conversations as conv_mod
+from ..config import MODEL_KINDS, load_routine
+from ..daemon import registry
+from ..ids import now_iso, run_ts
+from ..paths import atomic_write_json, resolve_rel
+from .sse import TERMINAL_STATES
+
+router = APIRouter(tags=["conversations"])
+
+MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+_SERVABLE = ("artifacts/", "attachments/")
+
+
+def _home(request: Request) -> Path:
+    return request.app.state.server.conversations_home
+
+
+def _info(request: Request, slug: str) -> registry.RoutineInfo:
+    d = _home(request) / slug
+    if not (d / "routine.yaml").exists():
+        raise HTTPException(404, f"no conversation {slug!r}")
+    cfg, problems = load_routine(d)
+    if cfg is None:
+        raise HTTPException(500, "; ".join(problems))
+    return registry.RoutineInfo(cfg=cfg, problems=problems,
+                                runs=registry.run_index(d, cfg.slug),
+                                open_questions=[])
+
+
+def _guard_not_active(request: Request, info: registry.RoutineInfo) -> None:
+    if info.active_run or request.app.state.runner.is_active(info.slug):
+        raise HTTPException(409, f"conversation {info.slug!r} has an active reply — try again after it")
+
+
+async def _save_attachments(conv_dir: Path, files: list[UploadFile]) -> list[str]:
+    """Store uploads under attachments/ (timestamped, safe basenames); returns the
+    conversation-relative paths for the message's attachment block."""
+    rels: list[str] = []
+    stamp = run_ts()
+    for i, f in enumerate(files or []):
+        base = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(f.filename or f"file-{i}").name).strip("-.") \
+            or f"file-{i}"
+        rel = f"attachments/{stamp}-{base}"
+        data = await f.read()
+        if len(data) > MAX_ATTACHMENT_BYTES:
+            raise HTTPException(413, f"attachment {base!r} exceeds {MAX_ATTACHMENT_BYTES // (1024 * 1024)}MB")
+        (conv_dir / "attachments").mkdir(exist_ok=True)
+        (conv_dir / rel).write_bytes(data)
+        rels.append(rel)
+    return rels
+
+
+def _snippet(info: registry.RoutineInfo) -> str:
+    last = info.last_run
+    return (last.summary if last else "").strip().splitlines()[0][:160] if last and last.summary else ""
+
+
+def _item(info: registry.RoutineInfo) -> dict:
+    last = info.last_run
+    return {
+        "slug": info.slug,
+        "title": info.cfg.name,
+        "tags": info.cfg.tags,
+        "state": last.state if last else "new",
+        "updated": (last.updated or last.ts) if last else "",
+        "snippet": _snippet(info),
+        "run_id": last.run_id if last else None,
+        "turns": last.turn if last else 0,
+        "usage": last.usage if last else {},
+        "question": bool(last and last.question),
+    }
+
+
+@router.get("/conversations")
+def list_conversations(request: Request) -> list[dict]:
+    catalog = registry.scan(request.app.state.server, _home(request))
+    items = [_item(info) for info in catalog.values()]
+    items.sort(key=lambda x: x["updated"], reverse=True)
+    return items
+
+
+@router.post("/conversations")
+async def create_conversation(request: Request, text: str = Form(...),
+                              workdir: str = Form(""), endpoint: str = Form(""),
+                              model: str = Form(""), effort: str = Form(""),
+                              shell: str = Form(""),
+                              files: list[UploadFile] = File(default=[])) -> dict:
+    server = request.app.state.server
+    if not text.strip():
+        raise HTTPException(400, "empty message")
+    permissions = (conv_mod.CONVERSATION_PERMISSIONS + ["shell"]) if shell.strip() else None
+    models = None
+    if endpoint or model:
+        if endpoint not in server.endpoints or not model.strip():
+            raise HTTPException(400, "model override needs a configured endpoint and a model id")
+        ref = {"endpoint": endpoint, "model": model.strip()}
+        if effort.strip():
+            ref["effort"] = effort.strip()
+        models = {"main": ref, "subroutine": dict(ref), "tool_call": dict(ref)}
+    server.conversations_home.mkdir(parents=True, exist_ok=True)
+    slug = conv_mod.new_slug(server.conversations_home)
+    try:
+        conv_dir = conv_mod.create_conversation(server, slug=slug, first_message=text,
+                                                workdir=workdir, models=models,
+                                                permissions=permissions)
+    except FileNotFoundError as exc:
+        raise HTTPException(500, f"the library has no '{conv_mod.CONVERSE_WORKFLOW}' workflow "
+                                 f"— restart the daemon to seed it ({exc})") from exc
+    rels = await _save_attachments(conv_dir, files)
+    if rels:
+        instruction = (conv_dir / "instruction.md").read_text(encoding="utf-8")
+        (conv_dir / "instruction.md").write_text(
+            instruction.rstrip() + conv_mod.attachment_note(rels) + "\n", encoding="utf-8")
+    cfg, _ = load_routine(conv_dir)
+    rid = await request.app.state.runner.fire(cfg, reason="conversation")
+    if rid is None:
+        raise HTTPException(409, "could not start the conversation (daemon draining?)")
+    # title + tags off the reply path — best-effort, never blocks the response
+    asyncio.create_task(asyncio.to_thread(conv_mod.autolabel, server, conv_dir, text))
+    return {"slug": slug, "run_id": rid}
+
+
+@router.post("/conversations/{slug}/message")
+async def message(request: Request, slug: str, text: str = Form(...),
+                  files: list[UploadFile] = File(default=[])) -> dict:
+    """Append a user message (with optional attachments): a live reply picks it up at the
+    next turn boundary; a finished conversation is resumed in place."""
+    info = _info(request, slug)
+    if not text.strip():
+        raise HTTPException(400, "empty message")
+    conv_dir = info.cfg.dir
+    rels = await _save_attachments(conv_dir, files)
+    full = text.rstrip() + conv_mod.attachment_note(rels)
+    atomic_write_json(conv_dir / "inbox" / f"msg-{now_iso().replace(':', '')}.json",
+                      {"text": full, "ts": now_iso(), "via": "conversation",
+                       **({"attachments": rels} if rels else {})})
+    last = info.last_run
+    if last and last.state not in TERMINAL_STATES:
+        return {"ok": True, "delivery": "mid-run", "run_id": last.run_id}
+    runner = request.app.state.runner
+    rid = (await runner.resume(info.cfg, last.ts, reason="converse") if last
+           else await runner.fire(info.cfg, reason="conversation"))
+    if not rid:
+        raise HTTPException(409, "could not wake the conversation (draining, or a reply just started)")
+    return {"ok": True, "delivery": "resumed", "run_id": rid}
+
+
+@router.get("/conversations/{slug}")
+def detail(request: Request, slug: str) -> dict:
+    from .. import library_docs
+
+    info = _info(request, slug)
+    server = request.app.state.server
+    all_perms = library_docs.list_docs(server.permissions_home)
+    held = set(info.cfg.permissions)
+    permissions = [{"slug": p["slug"], "summary": p["summary"], "title": p["title"],
+                    "grants": p["grants"], "active": p["slug"] in held,
+                    "routine_only": p["slug"] in conv_mod.ROUTINE_ONLY_PERMISSIONS}
+                   for p in all_perms]
+    traits_dir = info.cfg.dir / "traits"
+    traits = sorted(p.stem for p in traits_dir.glob("*.md")) if traits_dir.is_dir() else []
+    sm = server.system_model
+    return {
+        **_item(info),
+        "description": info.cfg.description,
+        "instruction": (info.cfg.dir / "instruction.md").read_text(encoding="utf-8")
+        if (info.cfg.dir / "instruction.md").exists() else "",
+        "workdir": str(info.cfg.fs_write_roots[0]) if info.cfg.fs_write_roots else "",
+        "models": {k: ({"endpoint": r.endpoint, "model": r.model, "effort": r.effort}
+                       if (r := info.cfg.models.get(k)) else None) for k in MODEL_KINDS},
+        "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None,
+        "endpoints": list(server.endpoints.keys()),
+        "permissions": permissions,
+        "traits": traits,
+        "budgets": info.cfg.budgets,
+        "runs": [{"run_id": r.run_id, "ts": r.ts, "state": r.state} for r in info.runs],
+        "problems": info.problems,
+    }
+
+
+class ConversationPatch(BaseModel):
+    title: str | None = None
+    tags: list[str] | None = None
+    workdir: str | None = None
+    budgets: dict | None = None
+    models: dict | None = None
+
+
+@router.patch("/conversations/{slug}")
+def patch_conversation(request: Request, slug: str, patch: ConversationPatch) -> dict:
+    info = _info(request, slug)
+    updates = patch.model_dump(exclude_none=True)
+    # title/tags are cosmetic (the autolabel path writes them mid-run too); everything
+    # else waits for the reply to finish, like routine config edits do.
+    if set(updates) - {"title", "tags"}:
+        _guard_not_active(request, info)
+    path = info.cfg.dir / "routine.yaml"
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if "title" in updates:
+        raw["name"] = raw["description"] = updates["title"].strip() or info.cfg.name
+    if "tags" in updates:
+        raw["tags"] = [t.strip() for t in updates["tags"] if t.strip()]
+    if "workdir" in updates:
+        wd = updates["workdir"].strip()
+        raw["fs_read_roots"] = raw["fs_write_roots"] = [wd] if wd else []
+    if "budgets" in updates:
+        raw.setdefault("budgets", {}).update({k: int(v) for k, v in updates["budgets"].items()})
+    if "models" in updates:
+        server = request.app.state.server
+        for kind, spec in (updates["models"] or {}).items():
+            if kind not in MODEL_KINDS:
+                raise HTTPException(400, f"unknown model kind {kind!r}")
+            if not isinstance(spec, dict) or spec.get("endpoint") not in server.endpoints:
+                raise HTTPException(400, f"models.{kind}: 'endpoint' must be a configured endpoint")
+        raw["models"] = updates["models"]
+    path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return {"ok": True, "updated": list(updates)}
+
+
+class PermissionsBody(BaseModel):
+    active: list[str]
+
+
+@router.put("/conversations/{slug}/permissions")
+def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
+    from .. import library_docs
+
+    info = _info(request, slug)
+    _guard_not_active(request, info)
+    available = set(library_docs.slugs(request.app.state.server.permissions_home))
+    active = [p for p in body.active if p in available]
+    path = info.cfg.dir / "routine.yaml"
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw["permissions"] = active
+    path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return {"ok": True, "active": active}
+
+
+@router.delete("/conversations/{slug}")
+def delete_conversation(request: Request, slug: str) -> dict:
+    """A conversation is unversioned by design — delete means gone."""
+    info = _info(request, slug)
+    _guard_not_active(request, info)
+    shutil.rmtree(info.cfg.dir)
+    return {"ok": True}
+
+
+@router.get("/conversations/{slug}/artifacts")
+def list_artifacts(request: Request, slug: str) -> list[dict]:
+    info = _info(request, slug)
+    art = info.cfg.dir / "artifacts"
+    out = []
+    if art.is_dir():
+        for p in art.rglob("*"):
+            if p.is_file():
+                st = p.stat()
+                out.append({"path": str(p.relative_to(info.cfg.dir)), "name": p.name,
+                            "size": st.st_size, "mtime": int(st.st_mtime)})
+    out.sort(key=lambda x: x["mtime"], reverse=True)
+    return out
+
+
+@router.get("/conversations/{slug}/file")
+def get_file(request: Request, slug: str, path: str):
+    """Serve one artifact or attachment (the chat panel fetches these with the auth header
+    and renders from blob URLs). Only artifacts/ and attachments/ are servable."""
+    from ..paths import within
+
+    info = _info(request, slug)
+    rel = path.lstrip("/")
+    try:
+        p = resolve_rel(info.cfg.dir, rel)
+    except PermissionError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    # the check runs on the RESOLVED path — 'artifacts/../routine.yaml' must not pass
+    if not any(within(info.cfg.dir / sub.rstrip("/"), p) for sub in _SERVABLE):
+        raise HTTPException(400, "only artifacts/ and attachments/ files are served")
+    if not p.is_file():
+        raise HTTPException(404, f"no file {path!r}")
+    media = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+    return FileResponse(p, media_type=media, filename=p.name)

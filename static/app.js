@@ -12,6 +12,7 @@ installTracing();
 
 const routes = [
   [/^#?\/?$/, () => import("/static/views/dashboard.js")],
+  [/^#\/conversations(?:\/([a-z0-9-]+))?$/, () => import("/static/views/conversations.js")],
   [/^#\/log$/, () => import("/static/views/log.js")],
   [/^#\/audit$/, () => import("/static/views/audit.js")],
   [/^#\/routine\/([a-z0-9-]+)$/, () => import("/static/views/routine.js")],
@@ -66,6 +67,7 @@ async function route() {
 // ---- location indicators: active nav + breadcrumb -------------------------------------------
 function updateLocation(path) {
   const key = path.startsWith("#/log") ? "log"
+    : path.startsWith("#/conversations") ? "conversations"
     : path.startsWith("#/questions") ? "questions"
     : path.startsWith("#/audit") ? "audit"
     : path.startsWith("#/library") ? "library"
@@ -97,6 +99,11 @@ function crumbsFor(path) {
       const c = [{ label: "Library", href: parts.length > 1 ? "#/library" : null }];
       if (parts[1]) c.push({ label: parts[1] });
       if (parts[2]) c.push({ label: parts[2] });
+      return c;
+    }
+    case "conversations": {
+      const c = [{ label: "Conversations", href: parts.length > 1 ? "#/conversations" : null }];
+      if (parts[1]) c.push({ label: parts[1] });
       return c;
     }
     case "routine": return [{ label: "Routines", href: "#/" }, { label: parts[1] || "" }];

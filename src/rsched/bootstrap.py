@@ -280,6 +280,32 @@ def seed_libraries(home: Path) -> None:
     install_push_hook(home)
 
 
+def sync_seed_library_docs(libraries_home: Path) -> int:
+    """Install seed workflows/traits/permissions MISSING from the live library (runs at
+    every daemon boot, like sync_seed_utils). seed_libraries only runs at repo creation,
+    so a pattern or trait added to library-seed/ later — e.g. the `converse` workflow the
+    Conversations tab materializes — would never reach an existing instance. Copies each
+    absent file verbatim; NEVER overwrites (local edits win). Returns how many landed."""
+    root = repo_root() / "library-seed"
+    installed: list[str] = []
+    for kind, pattern in (("workflows", "*.py"), ("traits", "*.md"), ("permissions", "*.md")):
+        src = root / kind
+        dest = libraries_home / kind
+        if not src.is_dir() or not libraries_home.is_dir():
+            continue
+        dest.mkdir(exist_ok=True)
+        for f in sorted(src.glob(pattern)):
+            if not (dest / f.name).exists():
+                shutil.copy(f, dest / f.name)
+                installed.append(f"{kind}/{f.name}")
+    if installed:
+        log.warning("seed-sync: installed new library doc(s): %s", ", ".join(installed))
+        _git(libraries_home, "add", "-A")
+        _git(libraries_home, "commit", "-qm",
+             f"seed-sync: install new library doc(s): {', '.join(installed)}")
+    return len(installed)
+
+
 def sync_seed_utils(libraries_home: Path) -> int:
     """Install seed utils MISSING from the live util library (runs at every daemon boot).
     Bootstrap seeds utils only once, so a util added to util-seed/ after an instance was

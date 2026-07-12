@@ -66,6 +66,8 @@ class Scheduler:
     async def run_forever(self) -> None:
         self.rescan()
         fixed = self.runner.recover_orphans(self.catalog)
+        # conversations live outside the schedule but their runs can be orphaned all the same
+        self.runner.recover_orphans(registry.scan(self.server, self.server.conversations_home))
         if fixed:
             self.rescan()
         await self.boot_catchup()
