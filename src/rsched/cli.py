@@ -23,7 +23,10 @@ def _render_event(obj: dict) -> str | None:
         say = p.get("say", "")
         brief = {"util": f"{p.get('name')} {' '.join(p.get('args') or [])}".strip(),
                  "write_util": p.get("name"), "read_file": p.get("path"),
-                 "write_file": p.get("path"), "llm": (p.get("prompt") or "")[:60],
+                 "write_file": p.get("path"),
+                 "memory_read": p.get("name"),
+                 "memory_write": f"{p.get('name')}{' (delete)' if p.get('delete') else ''}",
+                 "llm": (p.get("prompt") or "")[:60],
                  "spawn": f"{p.get('label') or ''} [{p.get('workflow') or 'general-task'}]",
                  "kill": f"#{p.get('n')}", "wait": "all" if p.get("all") else
                  (f"#{p.get('n')}" if p.get("n") else "any"),

@@ -14,6 +14,7 @@ import { md, mdInline } from "/static/md.js";
 import { el, fmtTime, fmtTokens, toast } from "/static/util.js";
 
 const BRIEF_FIELD = { util: "name", write_util: "name", read_file: "path", write_file: "path",
+                      memory_read: "name", memory_write: "name",
                       llm: "prompt", spawn: "label", kill: "n", wait: "n",
                       ask_user: "question", finish: "status" };
 
@@ -156,6 +157,12 @@ export function createTranscript(container, opts = {}) {
       text = o.error || o.reply || "";
     } else if (o.kind === "write_file") {
       text = o.error || `wrote ${o.bytes} bytes → ${o.path}`;
+    } else if (o.kind === "memory_read") {
+      text = o.missing ? `no note "${o.name}" (topics: ${(o.topics || []).join(", ") || "none yet"})`
+        : o.content || "";
+    } else if (o.kind === "memory_write") {
+      text = o.deleted ? `note "${o.name}.md" ${o.existed ? "deleted, INDEX updated" : "did not exist"}`
+        : `note "${o.name}.md" ${o.created ? "created" : "revised"} (${o.lines} lines), INDEX updated`;
     } else if (o.kind === "spawn") {
       text = o.rejected ? `spawn REJECTED: ${o.reason}` :
         `sub-workflow #${o.n} "${o.label}" started (${o.workflow}) — running in parallel`;
@@ -178,7 +185,8 @@ export function createTranscript(container, opts = {}) {
     } else {
       text = JSON.stringify(o, null, 1);
     }
-    const obs = obsBody(o.kind, text, o.kind === "llm" && !o.error);
+    const obs = obsBody(o.kind, text, (o.kind === "llm" && !o.error)
+      || (o.kind === "memory_read" && !o.missing));
     if (openTurn) { openTurn.append(obs); openTurn = null; }
     else root.append(el("div", { class: "turn" }, obs));
   }

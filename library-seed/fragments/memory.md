@@ -1,5 +1,7 @@
 ---
 tags: [self-management, record-keeping, memory]
+grants:
+  actions: [memory_read, memory_write]
 ---
 # fragment: memory — the routine's notebook of surprises
 
@@ -10,16 +12,21 @@ proved good or bad. It complements LEDGER.md (what happened, when) with topical,
 always-current notes that serve later steps of THIS run, the after-run improvement passes,
 and future runs.
 
-- One markdown file per topic under `.memory/`, **at most 100 lines each** — split a
-  growing file rather than let it sprawl. Notes stay present-tense and current: revise or
-  delete what turned out wrong instead of appending contradictions.
-- `.memory/INDEX.md` is the catalog: one line per file — `- <file>: what it holds, when to
-  consult it`. Update it in the same turn as every note you add, split, or delete. The
-  engine shows the index in the state digest at run start; bodies you read_file on demand.
-- **Write when surprised**: the moment reality contradicts an assumption, capture what you
-  expected, what is actually true, and what to do about it next time. Don't store what the
-  instruction, workflow, LEDGER, or a plain look at the data would tell anyone — memory is
-  for what was EXPENSIVE to find out.
+This standard GRANTS the `memory_read` and `memory_write` actions — the ONLY way into
+`.memory/` (`read_file`/`write_file` are rejected there). One kebab-named note per topic;
+the engine enforces the **100-line cap** per note and maintains `.memory/INDEX.md` from
+each write's one-line `about`. The state digest shows the INDEX at run start; note bodies
+you `memory_read` on demand.
+
+- **Write when surprised**: the moment reality contradicts an assumption,
+  `memory_write` what you expected, what is actually true, and what to do about it next
+  time. Don't store what the instruction, workflow, LEDGER, or a plain look at the data
+  would tell anyone — memory is for what was EXPENSIVE to find out.
+- Notes stay present-tense and current: revise a note that turned out wrong (or
+  `memory_write` with `delete: true`) instead of appending contradictions. Split a
+  growing topic into more notes rather than fighting the cap.
+- Make each `about` earn its INDEX line: *what the note holds* + *when to consult it* —
+  the index is read every run start, the notes only when an `about` says they matter.
 - Before deep-diving into anything unfamiliar, check the index — a note may already cover
   it. A note is as old as its last edit: if one is load-bearing for a decision, spot-check
   that it still holds before acting on it.

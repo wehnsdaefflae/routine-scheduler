@@ -50,6 +50,17 @@ def test_harness_contract_reflects_grants(make_routine, tmp_path):
     assert "needs the user's approval" in harness_contract(ctx)
 
 
+def test_harness_contract_memory_line_follows_grant(make_routine, tmp_path):
+    from rsched.grants import GrantPolicy
+
+    ctx = _ctx(make_routine, tmp_path, slug="memg")
+    ctx.grants = GrantPolicy()                       # memory not granted → no gloss
+    assert "memory_read / memory_write:" not in harness_contract(ctx)
+    ctx.grants = GrantPolicy(actions=frozenset({"memory_read", "memory_write"}))
+    text = harness_contract(ctx)
+    assert "memory_read / memory_write:" in text and "INDEX.md" in text
+
+
 def test_state_digest_contents(make_routine, tmp_path):
     d = make_routine(slug="dig")
     (d / "state" / "phase.json").write_text('{"phase": "steady", "note": "n"}')
@@ -78,7 +89,7 @@ def test_state_digest_surfaces_memory_index(make_routine):
                                   encoding="utf-8")
     digest = state_digest(d, [], [])
     assert "- quirks.md: env surprises, check before setup" in digest
-    assert "read_file the relevant .memory/<file>" in digest
+    assert "memory_read the relevant topic" in digest
     (mem / "INDEX.md").write_text("\n".join(f"- f{i}.md: x" for i in range(70)), encoding="utf-8")
     assert "full 70 lines" in state_digest(d, [], [])          # long index → head + pointer
 

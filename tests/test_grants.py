@@ -178,3 +178,15 @@ def test_lint_flags_bad_grants():
     good = ("---\ntags: [a, b, c]\ngrants:\n  actions: [util, write_util]\n  confirm: true\n---\n"
             "# fragment: x — y\n\nlong enough body\nmore\n")
     assert lint_fragment_text(good, filename="x.md") == []
+
+
+def test_memory_kinds_are_gated_and_denials_name_the_fragment():
+    from rsched.grants import GrantPolicy
+
+    none = GrantPolicy()
+    denial = none.deny({"kind": "memory_write", "name": "x"})
+    assert denial and "memory" in denial            # names the canonical granting fragment
+    assert none.deny({"kind": "memory_read", "name": "x"})
+    granted = GrantPolicy(actions=frozenset({"memory_read", "memory_write"}))
+    assert granted.deny({"kind": "memory_write", "name": "x"}) is None
+    assert granted.deny({"kind": "memory_read", "name": "x"}) is None

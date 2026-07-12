@@ -59,8 +59,13 @@ repeat until `finish`.
 ## Core contracts — extend, never repurpose
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
-  far better than `oneOf`): `util, write_util, read_file, write_file, llm, spawn, subruns, kill, wait,
-  ask_user, finish`. Every action carries `say` (narration) + `kind`.
+  far better than `oneOf`): `util, write_util, read_file, write_file, memory_read, memory_write, llm,
+  spawn, subruns, kill, wait, ask_user, finish`. Every action carries `say` (narration) + `kind`.
+  `memory_*` are the ONLY way into `.memory/` (generic file actions are rejected there); the engine
+  owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line note cap.
+- **The prompt surface is documented** in `docs/prompt-anatomy.md` (rendered on the Help tab). Revise
+  it with ANY change to composer/loop/actions/schema_guard wording — `tests/test_prompt_anatomy.py`
+  pins the load-bearing strings and fails on drift.
 - **Transcript events** (`engine/transcript.py` — append-only JSONL, the engine is the only writer):
   `header, assistant_action, observation, question, answer, user_injection, subrun_start, subrun_end,
   compaction, error, finish`. This vocabulary is consumed by the web renderer AND the meta routine.
@@ -146,10 +151,11 @@ first boot; `deploy/install.sh` for host installs.
   improvement standards are five **after-run passes** — `improve-bugfix / -research / -features / -ui /
   -efficiency` — each infers the routine's intention from the run just completed and acts in its lens
   (fresh-eyes throughout), asking a deferred question (→ Decisions page) when unsure. `ledger-discipline`
-  (cross-run change journal), `memory` (`.memory/` — indexed ≤100-line notes of surprises; INDEX.md is
-  surfaced in the state digest) + `ask-policy` / `global-utils` / `web-research` are the standing
-  standards. `DEFAULT_FRAGMENTS` (config) is the source of truth; defaults added after routines exist
-  reach them once via `bootstrap.adopt_fragments` at daemon boot.
+  (cross-run change journal), `memory` (grants `memory_read`/`memory_write` — indexed ≤100-line notes of
+  surprises in `.memory/`; INDEX.md is engine-maintained and surfaced in the state digest) +
+  `ask-policy` / `global-utils` / `web-research` are the standing standards. `DEFAULT_FRAGMENTS`
+  (config) is the source of truth; defaults added after routines exist reach them once via
+  `bootstrap.adopt_fragments` at daemon boot.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`, `calls:`),
   a `secrets: NAME,…` declaration line, and a `--selftest` the engine runs before saving (`write_util` is
   selftest-gated; whether it needs user approval rides the active util-authoring fragment's `confirm:`

@@ -23,6 +23,9 @@ def test_schema_compiles_and_example_passes():
         {"say": "s", "kind": "write_util", "name": "my-util", "content": "# script"},
         {"say": "s", "kind": "read_file", "path": "LEDGER.md", "max_lines": 40},
         {"say": "s", "kind": "write_file", "path": "state/x.json", "content": "{}", "append": False},
+        {"say": "s", "kind": "memory_read", "name": "portal-quirks"},
+        {"say": "s", "kind": "memory_write", "name": "portal-quirks", "content": "# note",
+         "about": "per-portal gotchas — read before scanning"},
         {"say": "s", "kind": "llm", "prompt": "p", "system": "sys", "response_schema": {"type": "object"}},
         {"say": "s", "kind": "spawn", "prompt": "do x", "label": "research", "workflow": "general-task"},
         {"say": "s", "kind": "subruns"},
@@ -47,11 +50,27 @@ def test_valid_actions_pass_both_layers(action):
         ({"say": "s", "kind": "finish", "status": "ok"}, "summary"),
         ({"say": "s", "kind": "ask_user", "question": "q?", "args": ["ls"]}, "do not belong"),
         ({"say": "s", "kind": "llm", "prompt": "p", "path": "x"}, "do not belong"),
+        # .memory/ is fenced off from the generic file actions …
+        ({"say": "s", "kind": "read_file", "path": ".memory/INDEX.md"}, "memory_read"),
+        ({"say": "s", "kind": "write_file", "path": "./.memory/x.md", "content": "y"}, "memory_write"),
+        # … and the memory actions enforce topic slugs, the reserved index, and the cap
+        ({"say": "s", "kind": "memory_read", "name": "Not A Slug"}, "kebab-case"),
+        ({"say": "s", "kind": "memory_write", "name": "index", "content": "x", "about": "a"}, "reserved"),
+        ({"say": "s", "kind": "memory_write", "name": "t", "content": "x"}, "about"),
+        ({"say": "s", "kind": "memory_write", "name": "t", "about": "a"}, "content"),
+        ({"say": "s", "kind": "memory_write", "name": "t", "about": "a",
+          "content": "\n".join(f"l{i}" for i in range(101))}, "capped at 100"),
     ],
 )
 def test_semantic_violations(action, fragment):
     problems = validate_action(action)
     assert problems and any(fragment in p for p in problems)
+
+
+def test_memory_write_delete_needs_no_content():
+    assert validate_action({"say": "s", "kind": "memory_write", "name": "t", "delete": True}) == []
+    # state/ paths stay open to the generic file actions
+    assert validate_action({"say": "s", "kind": "read_file", "path": "state/memory-notes.md"}) == []
 
 
 def test_schema_layer_rejects_unknown_kind_and_extra_props():

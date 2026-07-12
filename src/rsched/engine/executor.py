@@ -1,9 +1,10 @@
 """Dispatch a validated action to its effect and return the observation dict.
 
-Handles util / read_file / write_file / llm here. Control-flow kinds (spawn, subruns,
-kill, wait, finish) live in loop.py — they change the run's state machine — and the
-user-facing kinds (ask_user, write_util) in interact.py. Every observation dict feeds
-both the transcript event and (via composer.format_observation) the next user message.
+Handles util / read_file / write_file / memory_read / memory_write / llm here.
+Control-flow kinds (spawn, subruns, kill, wait, finish) live in loop.py — they change the
+run's state machine — and the user-facing kinds (ask_user, write_util) in interact.py.
+Every observation dict feeds both the transcript event and (via
+composer.format_observation) the next user message.
 """
 
 from __future__ import annotations
@@ -113,6 +114,55 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
             "append": bool(action.get("append"))}
 
 
+def _memory_topics(mem_dir) -> list[str]:
+    if not mem_dir.is_dir():
+        return []
+    return sorted(p.stem for p in mem_dir.glob("*.md") if p.name != "INDEX.md")
+
+
+def _memory_index_upsert(mem_dir, name: str, about: str | None) -> None:
+    """INDEX.md is engine-owned: one `- <name>.md: <about>` line per note, updated in the
+    same operation as the note itself so the catalog can never drift. about=None removes."""
+    index = mem_dir / "INDEX.md"
+    lines = index.read_text(encoding="utf-8").splitlines() if index.exists() else []
+    prefix = f"- {name}.md:"
+    lines = [ln for ln in lines if not ln.startswith(prefix)]
+    if about is not None:
+        lines.append(f"{prefix} {about.strip()}")
+    index.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+
+def do_memory_read(action: dict, ctx: RunContext) -> dict:
+    name = action["name"]
+    mem_dir = ctx.routine.dir / ".memory"
+    path = mem_dir / f"{name}.md"
+    if not path.is_file():
+        return {"kind": "memory_read", "name": name, "missing": True,
+                "topics": _memory_topics(mem_dir)}
+    content, truncated = truncate(path.read_text(encoding="utf-8", errors="replace"))
+    return {"kind": "memory_read", "name": name, "content": content,
+            "lines": len(content.splitlines()), "truncated": truncated}
+
+
+def do_memory_write(action: dict, ctx: RunContext) -> dict:
+    name = action["name"]
+    mem_dir = ctx.routine.dir / ".memory"
+    path = mem_dir / f"{name}.md"
+    if action.get("delete"):
+        existed = path.is_file()
+        if existed:
+            path.unlink()
+            _memory_index_upsert(mem_dir, name, None)
+        return {"kind": "memory_write", "name": name, "deleted": True, "existed": existed}
+    mem_dir.mkdir(exist_ok=True)
+    created = not path.exists()
+    data = str(action["content"]).rstrip() + "\n"
+    path.write_text(data, encoding="utf-8")
+    _memory_index_upsert(mem_dir, name, str(action["about"]))
+    return {"kind": "memory_write", "name": name, "created": created,
+            "lines": len(data.splitlines())}
+
+
 def do_llm(action: dict, ctx: RunContext) -> dict:
     try:
         endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models)
@@ -139,6 +189,8 @@ DISPATCH = {
     "util": do_util,
     "read_file": do_read_file,
     "write_file": do_write_file,
+    "memory_read": do_memory_read,
+    "memory_write": do_memory_write,
     "llm": do_llm,
 }
 

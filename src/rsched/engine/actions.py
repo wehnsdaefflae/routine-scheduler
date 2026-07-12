@@ -11,8 +11,12 @@ prose-outside-JSON failures.
 
 from __future__ import annotations
 
-KINDS = ("util", "write_util", "read_file", "write_file", "llm", "spawn", "subruns",
-         "kill", "wait", "ask_user", "finish")
+from ..ids import is_slug
+
+KINDS = ("util", "write_util", "read_file", "write_file", "memory_read", "memory_write",
+         "llm", "spawn", "subruns", "kill", "wait", "ask_user", "finish")
+
+MEMORY_NOTE_MAX_LINES = 100
 
 ACTION_SCHEMA: dict = {
     "type": "object",
@@ -21,13 +25,15 @@ ACTION_SCHEMA: dict = {
     "properties": {
         "say": {
             "type": "string",
-            "description": "1-3 sentences: what you observed, what you decided, why this action now.",
+            "description": "1-3 sentences: what you observed, what you decided, why this action now. "
+                           "Simple Markdown (bold, `code`, links) renders in the UI.",
         },
         "kind": {"type": "string", "enum": list(KINDS)},
         # util / write_util (the ONLY way to run code — there is no shell)
         "name": {
             "type": "string",
-            "description": "util/write_util: the global util's name (kebab-case) · also kill/wait target uses 'n'",
+            "description": "util/write_util: the global util's name (kebab-case) · "
+                           "memory_read/memory_write: the note's topic (kebab-case)",
         },
         "args": {
             "type": "array", "items": {"type": "string"},
@@ -50,8 +56,15 @@ ACTION_SCHEMA: dict = {
         "content": {"type": ["string", "object", "array"],
                     "description": "write_file: the full new content — a string, or a JSON object/array "
                                    "(written pretty-printed; no escaping needed) · "
-                                   "write_util: the complete PEP 723 script as a string"},
+                                   "write_util: the complete PEP 723 script as a string · "
+                                   "memory_write: the note's full markdown (one string, ≤100 lines)"},
         "append": {"type": "boolean", "description": "write_file: append instead of overwrite (default false)"},
+        # memory_write (memory_read needs only `name`)
+        "about": {"type": "string",
+                  "description": "memory_write: one-line INDEX entry — what this note holds + when to "
+                                 "consult it (the engine maintains .memory/INDEX.md from it)"},
+        "delete": {"type": "boolean",
+                   "description": "memory_write: remove the note and its INDEX line (content/about not needed)"},
         # llm / spawn
         "prompt": {"type": "string",
                    "description": "llm: the prompt · spawn: the sub-workflow's full self-contained instruction"},
@@ -64,7 +77,8 @@ ACTION_SCHEMA: dict = {
         "n": {"type": "integer", "minimum": 1, "description": "kill/wait: the sub-workflow number"},
         "all": {"type": "boolean", "description": "wait: wait for ALL running sub-workflows (default: any next)"},
         # ask_user
-        "question": {"type": "string", "description": "ask_user: the question, self-contained"},
+        "question": {"type": "string",
+                     "description": "ask_user: the question, self-contained (simple Markdown renders in the UI)"},
         "mode": {
             "type": "string", "enum": ["blocking", "deferred"],
             "description": "ask_user: wait for the answer vs file it and continue (default deferred)",
@@ -77,8 +91,11 @@ ACTION_SCHEMA: dict = {
         "status": {"type": "string", "enum": ["ok", "partial", "failed"], "description": "finish: run outcome"},
         "summary": {
             "type": "string",
-            "description": "finish: 3-10 line result summary (becomes result.md and the dashboard's "
-                           "last-outcome; simple Markdown — bold, lists, `code`, links — renders in the UI)",
+            "description": "finish: a DETAILED 8-20 line result summary — concrete outcomes (numbers, "
+                           "names, links), decisions taken + why, files changed, open ends and what the "
+                           "next run should pick up (becomes result.md, the dashboard's last-outcome, and "
+                           "the next run's context; simple Markdown — bold, lists, `code`, links — renders "
+                           "in the UI)",
         },
     },
 }
@@ -86,6 +103,7 @@ ACTION_SCHEMA: dict = {
 # The one field that best identifies a turn of each kind — the one-line "briefs" used by
 # turn records, compaction digests, and transcript replay.
 BRIEF_FIELD = {"util": "name", "write_util": "name", "read_file": "path", "write_file": "path",
+               "memory_read": "name", "memory_write": "name",
                "llm": "prompt", "spawn": "label", "kill": "n", "wait": "n",
                "ask_user": "question", "finish": "status"}
 
@@ -100,6 +118,10 @@ KIND_EXAMPLES: dict[str, dict] = {
     "write_file": {"say": "<why this write>", "kind": "write_file", "path": "state/phase.json",
                    "content": {"phase": "<structured data may be a plain JSON object — "
                                         "text files take one string instead>"}},
+    "memory_read": {"say": "<why this note now>", "kind": "memory_read", "name": "topic-slug"},
+    "memory_write": {"say": "<what surprised you>", "kind": "memory_write", "name": "topic-slug",
+                     "content": "<the note's full markdown, at most 100 lines>",
+                     "about": "<one line: what this note holds + when to consult it>"},
     "llm": {"say": "<why delegate>", "kind": "llm", "prompt": "<the subtask prompt>"},
     "spawn": {"say": "<why a child>", "kind": "spawn",
               "prompt": "<self-contained instruction>", "label": "child-1"},
@@ -109,7 +131,7 @@ KIND_EXAMPLES: dict[str, dict] = {
     "ask_user": {"say": "<why ask>", "kind": "ask_user",
                  "question": "<one self-contained question>", "mode": "deferred"},
     "finish": {"say": "<what was achieved>", "kind": "finish", "status": "ok",
-               "summary": "<3-10 line result summary>"},
+               "summary": "<detailed 8-20 line result summary>"},
 }
 
 # kind → (required fields, allowed extra fields beyond say/kind)
@@ -118,6 +140,8 @@ _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "write_util": (("name", "content"), ()),
     "read_file": (("path",), ("start_line", "max_lines")),
     "write_file": (("path", "content"), ("append",)),
+    "memory_read": (("name",), ()),
+    "memory_write": (("name",), ("content", "about", "delete")),
     "llm": (("prompt",), ("system", "response_schema")),
     "spawn": (("prompt",), ("workflow", "label")),
     "subruns": ((), ()),
@@ -202,6 +226,34 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,
             problems.append(f"kind={kind} requires a non-empty {field!r} field")
     if kind == "write_util" and not isinstance(obj.get("content"), str | None):
         problems.append("kind=write_util requires 'content' to be the script text (one string)")
+    # .memory/ is reachable ONLY through the memory actions — the engine owns INDEX.md and
+    # enforces the note cap there; generic file access would silently bypass both.
+    if kind in ("read_file", "write_file"):
+        rel = str(obj.get("path") or "")
+        while rel.startswith("./"):
+            rel = rel[2:]
+        if rel == ".memory" or rel.startswith(".memory/"):
+            problems.append(f"kind={kind} may not touch .memory/ — use memory_read / "
+                            "memory_write (the engine maintains .memory/INDEX.md for you)")
+    if kind in ("memory_read", "memory_write"):
+        name = str(obj.get("name") or "")
+        if name and not is_slug(name):
+            problems.append(f"kind={kind}: 'name' must be a kebab-case topic slug, got {name!r}")
+        if kind == "memory_write" and name.lower() == "index":
+            problems.append("memory_write: 'index' is reserved — the engine maintains "
+                            ".memory/INDEX.md from each note's 'about' line")
+        if kind == "memory_write" and not obj.get("delete"):
+            content = obj.get("content")
+            if not isinstance(content, str) or not content.strip():
+                problems.append("memory_write requires 'content' (the note's full markdown, "
+                                "one string) unless delete: true")
+            elif len(content.splitlines()) > MEMORY_NOTE_MAX_LINES:
+                problems.append(f"memory_write: content is {len(content.splitlines())} lines — "
+                                f"notes are capped at {MEMORY_NOTE_MAX_LINES}; split the topic "
+                                "into more notes")
+            if not str(obj.get("about") or "").strip():
+                problems.append("memory_write requires 'about' (the note's one-line INDEX "
+                                "entry) unless delete: true")
     allowed = {"say", "kind", *required, *optional}
     stray = [k for k in obj if k not in allowed]
     if stray:

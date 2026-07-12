@@ -34,7 +34,11 @@ import yaml
 from .engine.actions import KINDS
 from .ids import is_slug
 
-GATED_KINDS = ("write_util",)
+GATED_KINDS = ("write_util", "memory_read", "memory_write")
+# When no library fragment grants a gated kind (e.g. the library predates it), denials
+# still name the fragment that canonically carries it.
+_DEFAULT_KIND_SOURCE = {"write_util": "util-authoring",
+                        "memory_read": "memory", "memory_write": "memory"}
 # write_util approval policy, least → most permissive. The raw `confirm:` vocabulary maps
 # to it: true → "always" (user approves create AND revise), "revisions-only" → "creations"
 # (revisions are autonomous once the selftest passes; NEW utils still ask), false → "never".
@@ -127,7 +131,8 @@ class GrantPolicy:
         ask_user, since only the user can activate fragments."""
         kind = action.get("kind")
         if kind in GATED_KINDS and kind not in self.actions:
-            srcs = ", ".join(self.kind_sources.get(kind) or ["util-authoring"])
+            srcs = ", ".join(self.kind_sources.get(kind)
+                             or [_DEFAULT_KIND_SOURCE.get(kind, "util-authoring")])
             return (f"kind={kind} is not granted to this routine: none of its active fragments "
                     f"carries a {kind} grant (the library fragment(s) {srcs} do, but only the "
                     f"user can activate one). Work with existing utils; if this capability is "
