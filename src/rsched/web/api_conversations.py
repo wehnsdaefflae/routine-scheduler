@@ -212,12 +212,12 @@ class ConversationPatch(BaseModel):
 
 @router.patch("/conversations/{slug}")
 def patch_conversation(request: Request, slug: str, patch: ConversationPatch) -> dict:
+    """Unlike routine config edits (409 while a run is active), conversation edits apply
+    at the NEXT reply: the engine reads routine.yaml only at run boot, each reply is its
+    own boot, and a conversation dir has no git commit to race — so blocking on a live
+    reply would only add friction."""
     info = _info(request, slug)
     updates = patch.model_dump(exclude_none=True)
-    # title/tags are cosmetic (the autolabel path writes them mid-run too); everything
-    # else waits for the reply to finish, like routine config edits do.
-    if set(updates) - {"title", "tags"}:
-        _guard_not_active(request, info)
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if "title" in updates:

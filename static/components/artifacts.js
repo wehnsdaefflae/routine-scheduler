@@ -69,9 +69,11 @@ export function createArtifacts(container, { slug }) {
           : el("div", { class: "faint" }, "no inline view for this type — download below");
       }
       const dl = el("a", { class: "btn small", href: blobUrl, download: item.name }, "⭳ download");
+      const pop = el("a", { class: "btn small", href: blobUrl, target: "_blank",
+                            title: "open full-size in a new tab" }, "⧉ open");
       viewer.replaceChildren(
         el("div", { class: "art-viewer-head" },
-          el("span", { class: "art-name", title: item.path }, item.name), dl,
+          el("span", { class: "art-name", title: item.path }, item.name), pop, dl,
           el("button", { class: "btn small", onclick: () => { viewer.hidden = true; openPath = null; renderList(); } }, "×")),
         body);
     } catch (err) {

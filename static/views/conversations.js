@@ -9,7 +9,7 @@ import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createChat } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
-import { busy, chip, el, emptyState, relTime, tagChip, toast } from "/static/util.js";
+import { busy, chip, el, emptyState, relTime, storage, tagChip, toast } from "/static/util.js";
 
 const TERMINAL = new Set(["finished", "failed", "aborted"]);
 const WORKING = new Set(["running", "starting", "queued"]);
@@ -25,7 +25,46 @@ export async function render(view, slug, _query = {}) {
     el("div", { class: "row", style: "gap:6px" }, search, newBtn), sideTags, sideList);
   const main = el("section", { class: "conv-main" });
   const art = el("aside", { class: "conv-art", hidden: !slug });
-  view.append(el("div", { class: "conv-layout" }, side, main, art));
+
+  // Resizable panes: two drag handles; widths persist in localStorage and apply as an
+  // inline grid template (only when the layout is wide enough for three panes — the
+  // responsive collapse below 1100px keeps winning because the inline style is cleared).
+  const widths = { side: 250, art: 320, ...JSON.parse(storage.get("conv-pane-widths") || "{}") };
+  const layout = el("div", { class: "conv-layout" });
+  const applyWidths = () => {
+    if (window.innerWidth <= 1100) { layout.style.gridTemplateColumns = ""; return; }
+    layout.style.gridTemplateColumns = slug
+      ? `${widths.side}px 5px minmax(0,1fr) 5px ${widths.art}px`
+      : `${widths.side}px 5px minmax(0,1fr) 0 0`;
+  };
+  const makeHandle = (which, grow) => {
+    const h = el("div", { class: "pane-handle", title: "drag to resize" });
+    h.onpointerdown = (e) => {
+      e.preventDefault();
+      h.setPointerCapture(e.pointerId);
+      const startX = e.clientX, start = widths[which];
+      h.classList.add("dragging");
+      h.onpointermove = (ev) => {
+        const d = (ev.clientX - startX) * grow;
+        widths[which] = Math.max(which === "side" ? 170 : 220,
+                                 Math.min(which === "side" ? 520 : 900, start + d));
+        applyWidths();
+      };
+      h.onpointerup = () => {
+        h.onpointermove = h.onpointerup = null;
+        h.classList.remove("dragging");
+        storage.set("conv-pane-widths", JSON.stringify(widths));
+      };
+    };
+    return h;
+  };
+  const handleL = makeHandle("side", 1);
+  const handleR = makeHandle("art", -1);
+  handleR.hidden = !slug;
+  layout.append(side, handleL, main, handleR, art);
+  applyWidths();
+  window.addEventListener("resize", applyWidths);
+  view.append(layout);
 
   let items = [], activeTag = "";
   let cleanup = [];   // per-mount teardowns (tail, timers, artifact blobs)
@@ -60,6 +99,8 @@ export async function render(view, slug, _query = {}) {
           el("span", { class: "conv-title" }, it.title || it.slug),
           el("span", { class: "faint small", style: "margin-left:auto" }, relTime(it.updated))),
         it.snippet ? el("div", { class: "conv-snippet" }, it.snippet) : null,
+        it.tags?.length ? el("div", { class: "conv-item-tags" },
+          it.tags.map((t) => el("span", { class: "tag" }, t))) : null,
         it.question ? el("div", { class: "small", style: "color:var(--warn)" }, "❓ waiting for you") : null));
     }
   }
@@ -82,7 +123,8 @@ export async function render(view, slug, _query = {}) {
     }
   };
   window.addEventListener("rsched-bus", onBus);
-  return () => { unmount(); clearInterval(listTimer); window.removeEventListener("rsched-bus", onBus); };
+  return () => { unmount(); clearInterval(listTimer); window.removeEventListener("rsched-bus", onBus);
+                 window.removeEventListener("resize", applyWidths); };
 
   // ---- new-conversation composer ---------------------------------------------------------------
   function mountComposerOnly() {
@@ -92,25 +134,17 @@ export async function render(view, slug, _query = {}) {
     if (prefill) { text.value = prefill; sessionStorage.removeItem(PREFILL_KEY); }
     const workdir = el("input", { type: "text", placeholder: "~/path/to/project (optional)" });
     const shellChk = el("input", { type: "checkbox" });
-    const epSel = el("select", {}, el("option", { value: "" }, "system model (default)"));
-    const modelIn = el("input", { type: "text", placeholder: "model id", hidden: true });
-    api("/api/settings/endpoints").then((d) => {
-      for (const e of d.endpoints || []) epSel.append(el("option", {}, e.name));
-    }).catch(() => {});
-    epSel.onchange = () => { modelIn.hidden = !epSel.value; };
     const { picker, files, clearFiles, wirePaste } = filePicker();
     wirePaste(text);
     const send = el("button", { class: "btn primary" }, "start conversation");
     send.onclick = async () => {
       if (!text.value.trim()) { toast("write the first message"); return; }
-      if (epSel.value && !modelIn.value.trim()) { toast("enter a model id (or pick the system model)"); return; }
       send.disabled = true;
       try {
         const fd = new FormData();
         fd.append("text", text.value);
         if (workdir.value.trim()) fd.append("workdir", workdir.value.trim());
         if (shellChk.checked) fd.append("shell", "1");
-        if (epSel.value) { fd.append("endpoint", epSel.value); fd.append("model", modelIn.value.trim()); }
         for (const f of files()) fd.append("files", f);
         const r = await apiUpload("/api/conversations", fd);
         clearFiles();
@@ -125,12 +159,13 @@ export async function render(view, slug, _query = {}) {
         text,
         el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, send),
         el("details", { class: "mt small" },
-          el("summary", { style: "cursor:pointer;color:var(--muted)" }, "⚙ options: project dir, model, shell"),
+          el("summary", { style: "cursor:pointer;color:var(--muted)" }, "⚙ options: project dir, shell"),
           el("div", { class: "conv-opts" },
             el("label", {}, "project directory — the agent may read & edit it", workdir),
-            el("label", {}, "model", el("div", { class: "row", style: "gap:6px" }, epSel, modelIn)),
             el("label", { class: "row", style: "gap:8px" }, shellChk,
-              el("span", {}, "allow shell commands (the escape hatch — off by default)"))))));
+              el("span", {}, "allow shell commands (the escape hatch — off by default)")))),
+        el("div", { class: "faint small mt" },
+          "starts on the system default model — switch it any time at the top of the conversation")));
     text.focus();
   }
 
@@ -145,7 +180,7 @@ export async function render(view, slug, _query = {}) {
     }
     const stateChip = chip(detail.state, detail.state);
     const head = el("div", { class: "conv-head" });
-    renderHead(head, detail, stateChip);
+    renderHead(head, detail, stateChip, () => !TERMINAL.has(curState));
     const chatBox = el("div", { class: "conv-chat" });
     const waiting = el("div", {});
     const questionBox = el("div", {});
@@ -263,7 +298,43 @@ export async function render(view, slug, _query = {}) {
       el("div", { class: "row mt" }, input, send)));
   }
 
-  function renderHead(head, detail, stateChip) {
+  // The model line at the top of a conversation: shows the EFFECTIVE model (override or
+  // system default) and switches it at any point — routine.yaml is patched (each reply
+  // boots on it), and a live reply additionally gets the mid-run control.json switch.
+  function modelControl(detail, isLive) {
+    const cur = detail.models?.main;
+    const sysLabel = detail.system_model
+      ? `${detail.system_model.endpoint}/${detail.system_model.model}` : "system model";
+    const sel = el("select", { style: "width:auto;font-size:11.5px;padding:3px 6px" },
+      el("option", { value: "" }, `default · ${sysLabel}`),
+      (detail.endpoints || []).map((e) =>
+        el("option", { value: e, selected: cur?.endpoint === e || null }, e)));
+    const modelIn = el("input", { type: "text", placeholder: "model id", value: cur?.model || "",
+      hidden: !cur, style: "width:170px;font-size:11.5px;padding:3px 6px" });
+    const apply = el("button", { class: "btn small primary", hidden: true }, "apply");
+    sel.onchange = () => { modelIn.hidden = !sel.value; apply.hidden = false; if (sel.value) modelIn.focus(); };
+    modelIn.oninput = () => { apply.hidden = false; };
+    apply.onclick = async () => {
+      if (sel.value && !modelIn.value.trim()) { toast("enter a model id"); return; }
+      const ref = { endpoint: sel.value, model: modelIn.value.trim() };
+      const models = sel.value
+        ? { main: ref, subroutine: { ...ref }, tool_call: { ...ref } } : {};
+      try {
+        await api(`/api/conversations/${slug}`, { method: "PATCH", body: { models } });
+        if (sel.value && isLive() && detail.run_id) {
+          // the current reply switches too, at its next turn boundary
+          await api(`/api/runs/${detail.run_id}/model`,
+            { method: "POST", body: ref }).catch(() => {});
+        }
+        toast(sel.value ? `model → ${ref.endpoint}/${ref.model}` : `model → ${sysLabel}`);
+        apply.hidden = true;
+      } catch (err) { toast(err.message, 4000, { error: true }); }
+    };
+    return el("span", { class: "conv-model" },
+      el("span", { class: "faint small" }, "model"), sel, modelIn, apply);
+  }
+
+  function renderHead(head, detail, stateChip, isLive) {
     const title = el("h1", { class: "conv-h1", contenteditable: "plaintext-only",
       spellcheck: "false" }, detail.title || slug);
     title.onblur = async () => {
@@ -295,11 +366,32 @@ export async function render(view, slug, _query = {}) {
       try { await api(`/api/conversations/${slug}`, { method: "DELETE" }); navigate("#/conversations"); }
       catch (err) { toast(err.message, 4000, { error: true }); }
     };
-    // capabilities: permission toggles (routine-only ones greyed), traits read-only
+    // capabilities: budgets (per-reply ceilings) + permission toggles (routine-only ones
+    // greyed) + traits read-only
     const caps = el("details", { class: "small conv-caps" },
       el("summary", { style: "cursor:pointer;color:var(--muted)" },
-        `⚙ capabilities · ${detail.workdir ? `project: ${detail.workdir} · ` : ""}≈${detail.budgets?.max_turns ?? 10} turns/reply`));
+        `⚙ capabilities & budgets${detail.workdir ? ` · project: ${detail.workdir}` : ""}`));
     const capBody = el("div", { class: "conv-opts" });
+    const b = detail.budgets || {};
+    const numIn = (v) => el("input", { type: "number", min: "1", value: v,
+      style: "width:90px;font-size:11.5px;padding:3px 6px" });
+    const turnsIn = numIn(b.max_turns ?? 10);
+    const minsIn = numIn(b.max_wall_clock_min ?? 30);
+    const tokIn = numIn(b.max_total_tokens ?? 400000);
+    const saveBudgets = el("button", { class: "btn small" }, "save budgets");
+    saveBudgets.onclick = async () => {
+      try {
+        await api(`/api/conversations/${slug}`, { method: "PATCH", body: { budgets: {
+          max_turns: +turnsIn.value || 10, max_wall_clock_min: +minsIn.value || 30,
+          max_total_tokens: +tokIn.value || 400000 } } });
+        toast("budgets saved — they cap EACH reply, from the next one");
+      } catch (err) { toast(err.message, 4000, { error: true }); }
+    };
+    const budgetField = (label, input) => el("label", { style: "flex-direction:column" },
+      el("span", { class: "faint" }, label), input);
+    capBody.append(el("div", { class: "row", style: "gap:12px;flex-wrap:wrap;align-items:flex-end" },
+      budgetField("turns / reply", turnsIn), budgetField("minutes / reply", minsIn),
+      budgetField("tokens / reply", tokIn), saveBudgets));
     const held = new Set((detail.permissions || []).filter((p) => p.active).map((p) => p.slug));
     for (const p of detail.permissions || []) {
       const cb = el("input", { type: "checkbox", checked: p.active || null,
@@ -320,8 +412,10 @@ export async function render(view, slug, _query = {}) {
     }
     caps.append(capBody);
     head.replaceChildren(
-      el("div", { class: "conv-head-row" }, stateChip, title, tagsRow,
+      el("div", { class: "conv-head-row" }, stateChip, title,
         el("span", { style: "margin-left:auto" }), del),
+      el("div", { class: "conv-head-row sub" }, modelControl(detail, isLive),
+        el("span", { class: "conv-tagwrap" }, el("span", { class: "faint small" }, "tags"), tagsRow)),
       caps);
   }
 
