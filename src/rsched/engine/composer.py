@@ -128,8 +128,9 @@ unreported exit (timeout_s, default 600) — it returns AT ONCE when a finished 
 been reported to you yet, or when nothing is running. Children never outlive you — your \
 finish kills them.
 - ask_user: mode "deferred" (default) files the question and CONTINUES — plan around the missing \
-answer. Mode "blocking" pauses the run until answered (after {b.ask_timeout_h}h it converts to \
-deferred). Ask sparingly; batch what can wait until run end.
+answer. Mode "blocking" pauses the run until answered; after {b.ask_timeout_h}h without an answer \
+the run CONTINUES on your stated `default` (set it on every blocking ask) and the question stays \
+open for a future run. Ask sparingly; batch what can wait until run end.
 - finish: end the run with status ok|partial|failed and a DETAILED 8-20 line summary: concrete \
 outcomes (numbers, names, links), decisions taken and why, what changed on disk, open ends and \
 what the next run should pick up. That summary is what the user and the next run see — it is \
@@ -420,10 +421,14 @@ def format_observation(obs: dict) -> str:
         return "OBSERVATION (wait):\n" + "\n\n".join(parts)
     if kind == "ask_user":
         if obs.get("answered"):
-            return f"OBSERVATION (ask_user): the user answered:\n{obs['answer']}"
+            via = f" (via {obs['source']})" if obs.get("source", "web") != "web" else ""
+            return f"OBSERVATION (ask_user): the user answered{via}:\n{obs['answer']}"
         if obs.get("timed_out"):
+            tail = (f"Proceed on your stated default: {obs['default']}"
+                    if obs.get("default") else "Continue and plan around it")
             return (f"OBSERVATION (ask_user): no answer within {obs['timeout_h']}h — question "
-                    f"filed as deferred ({obs['qid']}). Continue and plan around it.")
+                    f"stays open as deferred ({obs['qid']}). {tail}; a late answer reaches a "
+                    "future run.")
         return (f"OBSERVATION (ask_user): question filed as deferred ({obs['qid']}). The user will "
                 "see it in the UI; the answer, if any, reaches a future run. Continue.")
     return f"OBSERVATION ({kind}): {json.dumps(obs, ensure_ascii=False)[:500]}"

@@ -92,14 +92,33 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path) -> list[dict
     return pairs
 
 
-def file_deferred_question(routine_dir: Path, qid: str, question: str, options: list[str],
-                           asked_ts: str) -> Path:
+def file_question(routine_dir: Path, qid: str, question: str, options: list[str],
+                  asked_ts: str, *, mode: str = "deferred", qtype: str = "question",
+                  default: str = "", expires: str = "") -> Path:
+    """The ONE decision record every kind of required user feedback funnels into —
+    plain asks and util approvals, deferred and blocking alike. Blocking records carry
+    `expires` (when the run continues without an answer) and are rewritten as deferred
+    on timeout/abort; every surface (Decisions page, run view, Discord mirror) renders
+    from this shape."""
     from ..paths import atomic_write_json
 
     path = routine_dir / "questions" / "pending" / f"{qid}.json"
-    atomic_write_json(path, {"qid": qid, "question": question, "options": options,
-                             "asked": asked_ts, "mode": "deferred"})
+    record = {"qid": qid, "question": question, "options": options,
+              "asked": asked_ts, "mode": mode, "type": qtype}
+    if default:
+        record["default"] = default
+    if expires:
+        record["expires"] = expires
+    atomic_write_json(path, record)
     return path
+
+
+def resolve_question(routine_dir: Path, qid: str) -> None:
+    """Drop the pending record — the decision was made (or superseded by a re-ask)."""
+    try:
+        (routine_dir / "questions" / "pending" / f"{qid}.json").unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def open_questions(routine_dir: Path) -> list[dict]:

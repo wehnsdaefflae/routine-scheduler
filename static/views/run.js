@@ -8,7 +8,7 @@ import { setQuery } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtDur, fmtTokens, fmtTs, skeleton, streamStatus,
-         toDate, toast } from "/static/util.js";
+         toDate, toast, when } from "/static/util.js";
 
 const TERMINAL = new Set(["finished", "failed", "aborted"]);
 const WORKING = new Set(["running", "starting", "queued"]);
@@ -207,7 +207,14 @@ export async function render(view, runId, query = {}) {
       title: "send as a follow-up question / thought — the model replies and the question stays open" },
       "ask back");
     const box = el("div", { class: "panel warn mt" },
-      el("div", { class: "prose" }, "❓ ", mdInline(q.question)),
+      el("div", { class: "prose" },
+        "❓ ", q.type === "util-approval" ? el("strong", {}, "[util approval] ") : null,
+        mdInline(q.question)),
+      q.default ? el("div", { class: "faint small mt" }, `↪ without an answer: ${q.default}`) : null,
+      q.expires ? el("div", { class: "faint small" },
+        "the run continues without you ", when(q.expires, { mode: "rel" }),
+        " — also answerable on the Decisions page",
+        q.mirrored ? " and on Discord" : "") : null,
       q.options?.length ? el("div", { class: "row mt" },
         q.options.map((o) => el("button", { class: "btn small", onclick: () => { input.value = o; } }, o))) : null,
       el("div", { class: "row mt" }, input, send, discuss));

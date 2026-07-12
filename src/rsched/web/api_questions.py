@@ -59,11 +59,13 @@ def _audit_decisions(request: Request) -> list[dict]:
 def _mark_answered(routine_dir, item: dict) -> dict:
     """The single answered-state derivation: an inbox answer file means the user has
     spoken, even while the pending file waits for the next run to consume it. Without
-    this, an answered decision re-appears as open on every reload."""
+    this, an answered decision re-appears as open on every reload. The answer's source
+    rides along so every surface can say WHERE the decision was made (web / discord)."""
     ans = read_json(routine_dir / "inbox" / f"answer-{item.get('qid')}.json")
     if isinstance(ans, dict) and "text" in ans:
         item["answered"] = True
         item["answer"] = ans["text"]
+        item["answer_source"] = ans.get("source", "web")
     return item
 
 
@@ -71,14 +73,20 @@ def _all_questions(request: Request) -> list[dict]:
     out: list[dict] = []
     for info in registry.scan(request.app.state.server).values():
         runs = {r.ts: r for r in info.runs}
+        seen: set[str] = set()
         active = info.active_run
         if active and active.question:
+            seen.add(str(active.question.get("qid")))
             out.append(_mark_answered(info.cfg.dir,
                        {**active.question, "routine": info.slug, "mode": "blocking",
                         "run_id": active.run_id, "run_state": active.state,
                         "asked": active.question.get("asked") or active.ts}))
         for q in info.open_questions:
-            item = {**q, "routine": info.slug, "mode": q.get("mode", "deferred")}
+            if str(q.get("qid")) in seen:
+                continue   # a live blocking question also has a durable pending record
+            # a blocking record with no live run behind it (crash/kill) is just deferred now
+            mode = "deferred" if q.get("mode") == "blocking" else q.get("mode", "deferred")
+            item = {**q, "routine": info.slug, "mode": mode}
             # a deferred question's `asked` is the run_ts it was filed from — link back to
             # that run (with its live state) when the run dir still exists, so a stale
             # question is recognizable against what its run actually did.

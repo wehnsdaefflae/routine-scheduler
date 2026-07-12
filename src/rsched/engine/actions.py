@@ -87,6 +87,12 @@ ACTION_SCHEMA: dict = {
             "type": "array", "items": {"type": "string"}, "maxItems": 5,
             "description": "ask_user: optional pick-one choices",
         },
+        "default": {
+            "type": "string",
+            "description": "ask_user: what you will DO without an answer — a blocking question "
+                           "that times out continues on this stated default; shown to the user "
+                           "with the question",
+        },
         # finish
         "status": {"type": "string", "enum": ["ok", "partial", "failed"], "description": "finish: run outcome"},
         "summary": {
@@ -147,7 +153,7 @@ _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "subruns": ((), ()),
     "kill": (("n",), ()),
     "wait": ((), ("n", "all", "timeout_s")),
-    "ask_user": (("question",), ("mode", "options")),
+    "ask_user": (("question",), ("mode", "options", "default")),
     "finish": (("status", "summary"), ()),
 }
 

@@ -34,8 +34,10 @@ export function createTranscript(container, opts = {}) {
 
   function questionNode(ev) {
     const p = ev.payload;
-    const head = el("span", {}, `❓ [${p.mode}] `, mdInline(p.question),
-      p.options?.length ? ` — options: ${p.options.join(" | ")}` : null);
+    const label = p.type === "util-approval" ? `${p.mode} · util approval` : p.mode;
+    const head = el("span", {}, `❓ [${label}] `, mdInline(p.question),
+      p.options?.length ? ` — options: ${p.options.join(" | ")}` : null,
+      p.default ? el("span", { class: "faint" }, ` · without an answer: ${p.default}`) : null);
     // Inline answering: deferred questions used to be dead text here, answerable only on
     // the Decisions page. Blocking ones stay with the run view's panel (it handles dialog).
     if (!opts.answer || !p.qid || p.mode !== "deferred") return el("div", { class: "ev question" }, head);

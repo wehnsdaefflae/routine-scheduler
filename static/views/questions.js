@@ -114,7 +114,8 @@ export async function render(view) {
       return el("div", { class: "panel question-item answered" },
         el("div", { class: "q-meta" },
           q.wizard ? chip("wizard", "meta") : q.meta ? chip("meta", "meta") : null,
-          chip("answered · queued", "ok"),
+          q.type === "util-approval" ? chip("util approval", "partial") : null,
+          chip(`answered${q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : ""} · queued`, "ok"),
           sourceLink(q),
           q.asked ? el("span", {}, "asked ", when(q.asked)) : null),
         el("div", { class: "q-text" }, mdInline(q.question)),
@@ -169,11 +170,18 @@ export async function render(view) {
     const panel = el("div", { class: `panel question-item${q.mode === "blocking" ? " warn" : ""}` },
       el("div", { class: "q-meta" },
         q.wizard ? chip("wizard", "meta") : q.meta ? chip("meta", "meta") : null,
+        q.type === "util-approval" ? chip("util approval", "partial") : null,
         chip(q.mode, q.mode),
         sourceLink(q),
         q.asked ? el("span", {}, "asked ", when(q.asked)) : null,
+        q.mode === "blocking" && q.expires
+          ? el("span", { class: "faint small", title: "when the run continues without an answer" },
+              "continues without you ", when(q.expires, { mode: "rel" })) : null,
         ...runBits),
       el("div", { class: "q-text" }, q.question),
+      q.default ? el("div", { class: "faint small mt",
+        title: "what the routine does if this stays unanswered" },
+        `↪ without an answer: ${q.default}`) : null,
       controls);
     return panel;
   }
