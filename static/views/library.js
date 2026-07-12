@@ -1,4 +1,4 @@
-// Library: workflows (control-flow patterns), fragments (standards), global utils.
+// Library: workflows (control-flow patterns), traits (practice prose), permissions (grants), global utils.
 // A tag filter narrows all three sections; deep-link #/library/workflow/<slug> opens an
 // editor directly. Save failures (lint / selftest) render inline under the editor; proposal
 // decisions update in place — no page reloads.
@@ -25,7 +25,7 @@ export async function render(view, sub, query = {}) {
   try { data = await api("/api/library"); }
   catch (err) { sections.replaceChildren(emptyState("✕", "Couldn't load the library", err.message)); return; }
   countLine.textContent =
-    `workflows ${data.workflows.length} · fragments ${data.fragments.length} · utils ${data.utils.length}`;
+    `workflows ${data.workflows.length} · traits ${data.traits.length} · permissions ${data.permissions.length} · utils ${data.utils.length}`;
 
   // Both the tag filter and the open editor are kept in the URL (#/library/<kind>/<slug>?tags=…)
   // so the view is shareable and restores on reload — without tearing itself down on each change.
@@ -36,7 +36,7 @@ export async function render(view, sub, query = {}) {
   const matches = (tags) => !active.size || (tags || []).some((t) => active.has(t));
 
   function renderFilterBar() {
-    const all = [...new Set([...data.workflows, ...data.fragments, ...data.utils]
+    const all = [...new Set([...data.workflows, ...data.traits, ...data.permissions, ...data.utils]
       .flatMap((x) => x.tags || []))].sort((a, b) => (a === "meta" ? -1 : b === "meta" ? 1 : a.localeCompare(b)));
     filterBar.replaceChildren();
     if (!all.length) return;
@@ -54,9 +54,12 @@ export async function render(view, sub, query = {}) {
     section("Workflows", "the control-flow patterns routines follow",
       data.workflows.filter((w) => matches(w.tags)).map((w) =>
         item(w.name || w.slug, w.status, w.problems, w.tags, () => openWorkflow(w.slug))));
-    section("Fragments", "reusable standards routines toggle on (self-management, tool use)",
-      data.fragments.filter((f) => matches(f.tags)).map((f) =>
-        item(f.slug, "", f.problems, f.tags, () => openFragment(f.slug), f.summary)));
+    section("Traits", "reusable practices — adapted into each new routine at creation, then owned by the routine (this is only the template)",
+      data.traits.filter((f) => matches(f.tags)).map((f) =>
+        item(f.slug, "", f.problems, f.tags, () => openDoc("traits", f.slug), f.summary)));
+    section("Permissions", "engine-enforced capabilities — held per routine via its Permissions panel; the grants: frontmatter here is the machine-read authority",
+      data.permissions.filter((f) => matches(f.tags)).map((f) =>
+        item(f.slug, "", f.problems, f.tags, () => openDoc("permissions", f.slug), f.summary)));
     section("Global utils", "the tools routines run (created + revised on demand, selftest-gated)",
       data.utils.filter((u) => matches(u.tags)).map((u) =>
         item(u.name, "", [], u.tags, () => openUtil(u.name), u.summary)));
@@ -87,11 +90,11 @@ export async function render(view, sub, query = {}) {
     showEditor(`workflow: ${slug}`, d.content, d.log, async (content) =>
       api(`/api/workflows/${slug}`, { method: "PUT", body: { content } }), "python");
   }
-  async function openFragment(slug) {
-    openSub = `fragment/${slug}`; updateURL();
-    const d = await api(`/api/library/fragments/${slug}`);
-    showEditor(`fragment: ${slug}`, d.content, d.log, async (content) =>
-      api(`/api/library/fragments/${slug}`, { method: "PUT", body: { content } }));
+  async function openDoc(kind, slug) {
+    openSub = `${kind.slice(0, -1)}/${slug}`; updateURL();
+    const d = await api(`/api/library/${kind}/${slug}`);
+    showEditor(`${kind.slice(0, -1)}: ${slug}`, d.content, d.log, async (content) =>
+      api(`/api/library/${kind}/${slug}`, { method: "PUT", body: { content } }));
   }
   async function openUtil(name) {
     openSub = `util/${name}`; updateURL();
@@ -100,7 +103,7 @@ export async function render(view, sub, query = {}) {
       api(`/api/library/utils/${name}`, { method: "PUT", body: { content } }), "python");
   }
 
-  // workflows + utils are Python → highlighted editor; fragments are markdown → plain
+  // workflows + utils are Python → highlighted editor; traits/permissions are markdown → plain
   function showEditor(label, content, log, save, lang) {
     editor.replaceChildren();
     const ed = codeEditor(content, { lang, minHeight: 360 });
@@ -138,7 +141,10 @@ export async function render(view, sub, query = {}) {
   // deep-link: #/library/workflow/<slug>
   if (sub) {
     const [kind, id] = sub.split("/");
-    const opener = { workflow: openWorkflow, fragment: openFragment, util: openUtil }[kind];
+    const opener = { workflow: openWorkflow,
+                     trait: (id) => openDoc("traits", id),
+                     permission: (id) => openDoc("permissions", id),
+                     util: openUtil }[kind];
     if (opener && id) opener(id).catch((e) => toast(e.message, 4000, { error: true }));
   }
 

@@ -102,11 +102,13 @@ export function chip(text, cls = "") {
   return el("span", { class: `chip ${cls}` }, text);
 }
 
-// A fragment's machine-enforced grants (from the LIBRARY copy) as one human line, e.g.
+// A permission's machine-enforced grants (from the LIBRARY copy) as one human line, e.g.
 // "grants write_util (every change needs your approval) · util: discord". Empty when the
-// fragment is norms-only.
+// doc grants nothing.
 export function grantsSummary(g) {
   const caps = [...(g?.actions || []), ...(g?.utils || []).map((u) => `util: ${u}`)];
+  if (g?.runs) caps.push(g.runs === "last" ? "read the previous run" : "read all previous runs");
+  if (g?.self_modify) caps.push("rewrite own recipe (main.md / steps/ / traits/)");
   if (!caps.length) return "";
   const confirm = (g.actions || []).includes("write_util")
     ? { always: " (every util change needs your approval)",

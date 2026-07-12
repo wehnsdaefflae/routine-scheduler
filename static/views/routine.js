@@ -1,5 +1,5 @@
-// Routine detail: schedule, fragment standards (toggle + edit), workflow reference,
-// editable instruction / steps / fragment files, models, state, runs.
+// Routine detail: schedule, permissions (user-only toggles), budgets, workflow reference,
+// editable instruction / steps / trait files, models, state, runs.
 
 import { api } from "/static/api.js";
 import { mdInline } from "/static/md.js";
@@ -120,40 +120,71 @@ export async function render(view, slug, query = {}) {
       el("button", { class: "btn small",
         onclick: () => editFile("main.md", "main.md — the routine's workflow") }, "edit main.md")));
 
-  // -- standards = fragments (toggle + edit) --------------------------------------
+  // -- permissions (user-only toggles; enforced by the engine per action) ----------
   const boxes = {};
-  const fragRows = (d.fragments || []).map((f) => {
-    const box = el("input", { type: "checkbox", checked: f.active ? "" : null });
-    boxes[f.slug] = box;
-    const editLink = f.active
-      ? el("a", { href: "#", class: "muted small",
-                  onclick: (e) => { e.preventDefault(); editFile(`fragments/${f.slug}.md`, `fragment: ${f.slug}`); } },
-          "edit this routine's copy")
-      : null;
-    const grants = grantsSummary(f.grants);
+  const permRows = (d.permissions || []).map((p) => {
+    const box = el("input", { type: "checkbox", checked: p.active ? "" : null });
+    boxes[p.slug] = box;
+    const grants = grantsSummary(p.grants);
     return el("label", { class: "toggle-row" }, box,
       el("div", {},
-        el("div", { class: "t-title" }, f.slug),
-        el("div", { class: "muted prose small" }, f.summary || ""),
-        grants ? el("div", { class: "small", style: "color:var(--warn)" }, `▸ ${grants}`) : null,
-        editLink));
+        el("div", { class: "t-title" }, p.slug),
+        el("div", { class: "muted prose small" }, p.summary || ""),
+        grants ? el("div", { class: "small", style: "color:var(--warn)" }, `▸ ${grants}`) : null));
   });
-  view.append(el("h2", {}, "Standards (fragments)"),
+  view.append(el("h2", {}, "Permissions"),
     el("div", { class: "panel" },
       el("div", { class: "muted small", style: "margin-bottom:8px" },
-        "behaviours the routine applies every run — and its capability panel: a ▸ grant unlocks a gated ",
-        "capability. Grants are enforced from the LIBRARY copy, so editing the routine's local prose never ",
-        "changes permissions."),
-      fragRows.length ? fragRows : el("div", { class: "muted" }, "no fragments in the library"),
+        "what this routine is ALLOWED to do — enforced by the engine on every action. Only you can ",
+        "change these; the routine can never grant itself anything. Takes effect at the next run."),
+      permRows.length ? permRows : el("div", { class: "muted" }, "no permissions in the library"),
       el("div", { class: "row mt" }, el("button", {
         class: "btn primary",
         onclick: async () => {
           const active = Object.entries(boxes).filter(([, b]) => b.checked).map(([s]) => s);
-          try { await api(`/api/routines/${slug}/fragments`, { method: "PUT", body: { active } });
-            toast("standards saved"); setTimeout(() => location.reload(), 400); }
+          try { await api(`/api/routines/${slug}/permissions`, { method: "PUT", body: { active } });
+            toast("permissions saved"); setTimeout(() => location.reload(), 400); }
           catch (err) { toast(err.message, 4000, { error: true }); }
         },
-      }, "save standards"))));
+      }, "save permissions"))));
+
+  // -- budgets (per-run ceilings — every invisible limit, surfaced) -----------------
+  const BUDGET_FIELDS = [
+    ["max_turns", "turns per run", "each model action is one turn; the run is stopped at the cap"],
+    ["max_wall_clock_min", "minutes per run", "wall-clock ceiling (time waiting on you is credited back)"],
+    ["max_total_tokens", "tokens per run", "cumulative input+output tokens; the prompt is re-sent every turn"],
+    ["max_subruns", "sub-workflows per run", "how many parallel children a run may spawn in total"],
+    ["max_subrun_depth", "sub-workflow depth", "how deep children may nest (children get half the parent's remainder)"],
+    ["ask_timeout_h", "blocking-question timeout (h)", "hours a blocking decision waits for you before the run continues without it (the question stays open on the Decisions page)"],
+  ];
+  const budgetInputs = {};
+  const budgetRows = BUDGET_FIELDS.map(([key, label, help]) => {
+    const input = el("input", { type: "number", min: "0", value: String(d.budgets?.[key] ?? ""),
+      style: "width:110px" });
+    budgetInputs[key] = input;
+    return el("div", { class: "row", style: "margin:5px 0" },
+      input,
+      el("span", { style: "min-width:220px" }, label),
+      el("span", { class: "muted small" }, help));
+  });
+  view.append(el("h2", {}, "Budgets"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted small", style: "margin-bottom:8px" },
+        "hard per-run ceilings, checked at every turn — the run is told at 85% so it can wind down ",
+        "deliberately. Resources, not permissions."),
+      ...budgetRows,
+      el("div", { class: "row mt" }, el("button", { class: "btn primary",
+        onclick: async () => {
+          const budgets = {};
+          for (const [key, input] of Object.entries(budgetInputs)) {
+            const v = parseInt(input.value, 10);
+            if (!Number.isFinite(v) || v < 1) { toast(`${key}: needs a positive number`); return; }
+            budgets[key] = v;
+          }
+          try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { budgets } });
+            toast("budgets saved"); }
+          catch (err) { toast(err.message, 4000, { error: true }); }
+        } }, "save budgets"))));
 
   // -- models (per routine: main / subroutine / tool_call) -----------------------
   const MODEL_KINDS = [["main", "the orchestrator loop"], ["subroutine", "spawned sub-workflows"],
@@ -207,6 +238,19 @@ export async function render(view, slug, query = {}) {
         ? el("div", { class: "row" }, stepFiles.map((n) =>
             el("button", { class: "btn small", onclick: () => editFile(`steps/${n}`, n) }, n)))
         : el("div", { class: "muted" }, "none — this recipe keeps its whole flow in main.md")));
+
+  // -- traits: the routine's own practice modules (adapted in at creation) ----------
+  const traitFiles = (d.files?.traits) || [];
+  view.append(el("h2", {}, "Practice modules (traits)"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted small", style: "margin-bottom:8px" },
+        "reusable practices adapted into this routine at creation — its OWN files now, referenced ",
+        "from main.md and refined by the routine itself over time. Not toggles: change them like ",
+        "any other routine file."),
+      traitFiles.length
+        ? el("div", { class: "row" }, traitFiles.map((n) =>
+            el("button", { class: "btn small", onclick: () => editFile(`traits/${n}`, n) }, n)))
+        : el("div", { class: "muted" }, "none adopted at creation")));
 
   const fileEditor = el("div", {});
   view.append(fileEditor);

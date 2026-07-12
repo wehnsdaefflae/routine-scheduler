@@ -180,6 +180,7 @@ class FinalizeBody(BaseModel):
     tags: list[str] = []         # >=3 tags, suggested (reuse-first) then user-editable
     traits: list[str] | None = None       # practice modules to adapt in (None → workflow defaults)
     permissions: list[str] | None = None  # engine-enforced capabilities (None → defaults)
+    budgets: dict | None = None           # per-run ceilings (None → DEFAULT_BUDGETS)
     run_now: bool = False
 
 
@@ -228,7 +229,7 @@ async def _build_routine(app_state, wid: str, d: Path, body: "FinalizeBody", res
             workflow_slug=body.workflow_slug, cron=cron,
             tz=schedule.server_tz(), params=params, steps=steps, description=description,
             models=body.models, tags=normalize_tags(body.tags) or None,
-            traits=body.traits, permissions=body.permissions)
+            traits=body.traits, permissions=body.permissions, budgets=body.budgets)
     except Exception as exc:   # scaffold/decompose failure — the session stays so the user can retry
         partial = server.routines_home / body.slug   # clean up a half-built dir so the retry isn't blocked
         if partial.is_dir() and not (partial / "routine.yaml").exists():

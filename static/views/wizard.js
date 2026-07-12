@@ -13,7 +13,7 @@ import { mdInline } from "/static/md.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
-import { busy, el, grantsSummary, skeleton, streamStatus, toast } from "/static/util.js";
+import { busy, el, skeleton, streamStatus, toast } from "/static/util.js";
 import { stageSuggest, stageBuilding } from "/static/views/wizard-create.js";
 
 // Tell app.js a session started / was canceled / finalized so the setup banner updates at once.
@@ -83,25 +83,23 @@ export async function render(view, resumeWid) {
     const resumeBox = el("div", {});     // filled with any in-flight sessions to resume
     const ta = el("textarea", { class: "code", style: "min-height:160px",
       placeholder: "Describe the TASK the routine should do, in your own words — not when it runs.\n\ne.g. Collect new AI-agent papers from arxiv and keep a reading list with one-line takes." });
-    const fragBox = el("div", { class: "mt" }, el("div", { class: "muted small" }, "Standards — loading…"));
-    const chosen = () => Array.from(fragBox.querySelectorAll("input:checked")).map((c) => c.dataset.slug);
     const go = el("button", { class: "btn primary" }, "start clarification");
     go.onclick = async () => {
       if (!ta.value.trim()) return;
       go.disabled = true;
       try {
-        const r = await api("/api/wizard/start", { method: "POST", body: { draft: ta.value, fragments: chosen() } });
+        const r = await api("/api/wizard/start", { method: "POST", body: { draft: ta.value } });
         notifyChanged();
         navigate(`#/wizard/${r.wid}`);       // the session's URL is now the source of truth
       } catch (err) { toast(err.message, 4000, { error: true }); go.disabled = false; }
     };
     stage.append(resumeBox, el("div", { class: "panel" },
       el("div", { class: "muted prose", style: "margin-bottom:8px" },
-        "Describe the task in your own words. The wizard asks a few clarifying questions, then builds the ",
-        "routine. Below, choose its standards — reusable habits it follows every run, and the ONLY way it ",
-        "gains permissions: a fragment's grants unlock gated capabilities like writing utils or messaging ",
-        "you on Discord. You can change these, its schedule and its models afterwards."),
-      ta, fragBox, el("div", { class: "row mt" }, go)));
+        "Describe the task in your own words. The wizard asks a few clarifying questions, then suggests ",
+        "a workflow, the routine's traits (reusable practices, adapted into it at creation) and its ",
+        "permissions (what it is allowed to do) — all reviewable before anything is created. Schedule ",
+        "and models are set on the create page too."),
+      ta, el("div", { class: "row mt" }, go)));
 
     // Surface any in-flight sessions so the user resumes instead of starting a second one.
     api("/api/wizard").then((list) => {
@@ -116,26 +114,6 @@ export async function render(view, resumeWid) {
           el("a", { class: "btn small primary", href: `#/wizard/${w.wid}` }, "resume")))));
     }).catch(() => {});
 
-    // Fill the fragment picker; the defaults come from the backend (config.DEFAULT_FRAGMENTS
-    // via /api/library) so the UI never drifts from what a scaffold would actually apply.
-    api("/api/library").then((lib) => {
-      fragBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:3px" },
-        "Standards & capabilities — each fragment is a behaviour the routine applies every run; ",
-        "ones marked ▸ also GRANT it a gated capability (util authoring, a reserved util). Toggle the ones that fit:"));
-      const defaults = new Set(lib.default_fragments || []);
-      for (const f of (lib.fragments || [])) {
-        const cb = el("input", { type: "checkbox" });
-        cb.checked = defaults.has(f.slug);
-        cb.dataset.slug = f.slug;
-        const grants = grantsSummary(f.grants);
-        fragBox.append(el("label", { class: "row", style: "gap:6px;font-size:12px;margin:2px 0" },
-          cb, el("strong", { style: "min-width:130px" }, f.slug),
-          el("span", { class: "muted prose" }, f.summary || "",
-            grants ? el("span", { style: "color:var(--warn)" }, ` ▸ ${grants}`) : "")));
-      }
-    }).catch(() => {
-      fragBox.replaceChildren(el("div", { class: "muted" }, "(couldn't load fragments)"));
-    });
   }
 
   // ---- stage: clarify chat -------------------------------------------------------------------

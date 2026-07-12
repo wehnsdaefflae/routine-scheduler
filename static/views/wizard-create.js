@@ -5,7 +5,7 @@
 import { api } from "/static/api.js";
 import { navigate } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
-import { busy, el, toast } from "/static/util.js";
+import { busy, el, grantsSummary, toast } from "/static/util.js";
 
 // ---- stage: building (the routine is scaffolding in the background) -------------------------
 export function stageBuilding(ctx, wid, snap) {
@@ -97,6 +97,57 @@ export async function stageSuggest(ctx, wid) {
   ctx.stage.append(picksRow);
   renderPicks();
 
+  // ---- traits + permissions + budgets (preselected per task; all editable here) -------------
+  const lib = await api("/api/library").catch(() => ({ traits: [], permissions: [] }));
+  const traitBoxes = {};
+  const permBoxes = {};
+  const pickerRow = (boxes, doc, preset) => {
+    const cb = el("input", { type: "checkbox", checked: preset.has(doc.slug) ? "" : null });
+    boxes[doc.slug] = cb;
+    const grants = grantsSummary(doc.grants);
+    return el("label", { class: "row", style: "gap:6px;font-size:12px;margin:2px 0;align-items:baseline" },
+      cb, el("strong", { style: "min-width:170px" }, doc.slug),
+      el("span", { class: "muted prose" }, doc.summary || "",
+        grants ? el("span", { style: "color:var(--warn)" }, ` ▸ ${grants}`) : ""));
+  };
+  const presetTraits = new Set(data.suggested_traits || lib.default_traits || []);
+  const presetPerms = new Set(data.suggested_permissions || lib.default_permissions || []);
+  ctx.stage.append(el("h2", {}, "Traits"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted small", style: "margin-bottom:6px" },
+        "reusable practices, ADAPTED into the routine's own files at creation — preselected for this ",
+        "task; after creation they belong to the routine (it refines them itself; no toggles later)."),
+      ...(lib.traits || []).map((t) => pickerRow(traitBoxes, t, presetTraits))),
+    el("h2", {}, "Permissions"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted small", style: "margin-bottom:6px" },
+        "what the routine is ALLOWED to do — enforced by the engine on every action. Preselected ",
+        "conservatively for this task; changeable any time on the routine page (only by you)."),
+      ...(lib.permissions || []).map((p) => pickerRow(permBoxes, p, presetPerms))));
+
+  const BUDGET_FIELDS = [
+    ["max_turns", "turns per run"],
+    ["max_wall_clock_min", "minutes per run"],
+    ["max_total_tokens", "tokens per run"],
+    ["max_subruns", "sub-workflows per run"],
+    ["max_subrun_depth", "sub-workflow depth"],
+    ["ask_timeout_h", "blocking-question timeout (h)"],
+  ];
+  const budgetInputs = {};
+  ctx.stage.append(el("h2", {}, "Budgets"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted small", style: "margin-bottom:6px" },
+        "hard per-run ceilings (turns, time, tokens, sub-workflows, how long a blocking question ",
+        "waits for you). The defaults suit most routines — adjustable here and on the routine page."),
+      el("div", { class: "row", style: "flex-wrap:wrap;gap:10px" },
+        ...BUDGET_FIELDS.map(([key, label]) => {
+          const input = el("input", { type: "number", min: "1", style: "width:110px",
+            value: String((lib.default_budgets || {})[key] ?? "") });
+          budgetInputs[key] = input;
+          return el("label", { class: "field", style: "min-width:170px" },
+            el("span", {}, label), input);
+        }))));
+
   // Schedule is routine CONFIG, set here (or later on the routine page) — it is never
   // part of the instruction and never suggested by the model.
   const f = {
@@ -114,12 +165,19 @@ export async function stageSuggest(ctx, wid) {
     create.disabled = true;
     try {
       // The build runs in the BACKGROUND (decompose is a slow LLM step) — this returns at once.
+      const budgets = {};
+      for (const [key, input] of Object.entries(budgetInputs)) {
+        const v = parseInt(input.value, 10);
+        if (Number.isFinite(v) && v >= 1) budgets[key] = v;
+      }
       const r = await api(`/api/wizard/${encodeURIComponent(wid)}/finalize`, { method: "POST", body: {
         slug: f.slug.value.trim(), name: f.name.value.trim() || f.slug.value.trim(),
         workflow_slug: picked.slug, friendly: sched.value(), run_now: runNow.checked,
         instruction: instrTa.value,       // the (possibly edited) refined instruction
         tags: f.tags.value.split(",").map((t) => t.trim()).filter(Boolean),
-        // fragments are recovered from the session meta on the backend (chosen on the draft page)
+        traits: Object.entries(traitBoxes).filter(([, b]) => b.checked).map(([s]) => s),
+        permissions: Object.entries(permBoxes).filter(([, b]) => b.checked).map(([s]) => s),
+        budgets,
       }});
       ctx.notifyChanged();                 // the top banner now shows the build in progress
       stageBuilding(ctx, wid, { slug: r.slug });

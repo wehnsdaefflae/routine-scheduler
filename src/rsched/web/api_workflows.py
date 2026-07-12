@@ -43,7 +43,7 @@ def list_workflows(request: Request) -> dict:
 def library_overview(request: Request) -> dict:
     """Everything under the Library tab: workflows, traits, permissions, and global utils."""
     from .. import library_docs, utils_lib
-    from ..config import DEFAULT_PERMISSIONS, DEFAULT_TRAITS
+    from ..config import DEFAULT_BUDGETS, DEFAULT_PERMISSIONS, DEFAULT_TRAITS
 
     home = _home(request)
     server = request.app.state.server
@@ -58,6 +58,7 @@ def library_overview(request: Request) -> dict:
         "utils": utils_lib.list_utils(server.utils_home),
         "default_traits": list(DEFAULT_TRAITS),
         "default_permissions": list(DEFAULT_PERMISSIONS),
+        "default_budgets": dict(DEFAULT_BUDGETS),
         "heads": {"workflows": library.head_commit(home)},
     }
 
