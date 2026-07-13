@@ -455,6 +455,48 @@ def migrate_improvement_split(routines_home: Path, library_home: Path) -> int:
     return touched
 
 
+# The 2026-07 budget change: max_total_tokens -1 = unlimited became the default, and every
+# EXISTING routine and conversation switches too (Mark's call). One-time: a finite cap the
+# user sets afterwards is never overridden again.
+_TOKENS_MARKER = ".unlimited-tokens-adopted"
+
+
+def adopt_unlimited_tokens(routines_home: Path, conversations_home: Path) -> int:
+    """Set budgets.max_total_tokens to -1 (unlimited) in every existing routine and
+    conversation that pins a different value. Dirs without an explicit value already
+    follow DEFAULT_BUDGETS. Marker-tracked so it runs exactly once."""
+    if not routines_home.is_dir():
+        return 0
+    marker = routines_home / _TOKENS_MARKER
+    if marker.exists():
+        return 0
+    touched = 0
+    for home in (routines_home, conversations_home):
+        if not home or not Path(home).is_dir():
+            continue
+        for rdir in sorted(Path(home).iterdir()):
+            cfg = rdir / "routine.yaml"
+            if rdir.name.startswith(".") or not cfg.is_file():
+                continue
+            try:
+                raw = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+            except yaml.YAMLError:
+                continue
+            budgets = raw.get("budgets")
+            if not isinstance(budgets, dict) or budgets.get("max_total_tokens") in (None, -1):
+                continue
+            budgets["max_total_tokens"] = -1
+            cfg.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True),
+                           encoding="utf-8")
+            _git(rdir, "add", "-A")          # no-op for conversations (never git-versioned)
+            _git(rdir, "commit", "-qm", "adopt: unlimited token budget (-1)")
+            touched += 1
+    marker.write_text("done\n", encoding="utf-8")
+    if touched:
+        log.warning("token budget set to unlimited (-1) in %d routine(s)/conversation(s)", touched)
+    return touched
+
+
 def seed_libraries(home: Path) -> None:
     """Populate an empty library repo (workflows/ + traits/ + permissions/ + utils/) from the
     built-in seeds + git-init it (matches deploy/install.sh). The `gu` dispatcher is installed

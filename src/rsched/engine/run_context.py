@@ -24,7 +24,7 @@ class Budgets:
 
     max_turns: int
     max_wall_clock_min: int
-    max_total_tokens: int
+    max_total_tokens: int    # -1 = unlimited (the default): turns + wall clock bound the run
     max_subruns: int
     max_subrun_depth: int
     ask_timeout_min: int
@@ -104,7 +104,7 @@ class RunContext:
             return f"turn budget exhausted ({b.max_turns})"
         if self.elapsed_s() > b.max_wall_clock_min * 60:
             return f"wall-clock budget exhausted ({b.max_wall_clock_min} min)"
-        if self.usage["in"] + self.usage["out"] >= b.max_total_tokens:
+        if b.max_total_tokens >= 0 and self.usage["in"] + self.usage["out"] >= b.max_total_tokens:
             return f"token budget exhausted ({b.max_total_tokens})"
         return None
 
@@ -117,20 +117,24 @@ class RunContext:
         if self.elapsed_s() > 0.85 * b.max_wall_clock_min * 60:
             return f"~{max(0, int(b.max_wall_clock_min - self.elapsed_s() / 60))} minutes left"
         spent = self.usage["in"] + self.usage["out"]
-        if spent >= 0.85 * b.max_total_tokens:
+        if b.max_total_tokens >= 0 and spent >= 0.85 * b.max_total_tokens:
             return f"~{b.max_total_tokens - spent} tokens left"
         return None
 
-    def tokens_remaining(self) -> int:
+    def tokens_remaining(self) -> int | None:
+        """Tokens left in the budget; None = unlimited."""
+        if self.budgets.max_total_tokens < 0:
+            return None
         return max(0, self.budgets.max_total_tokens - self.usage["in"] - self.usage["out"])
 
     def child_budgets(self) -> Budgets:
-        """Remaining budgets ÷ 2 for a subrun."""
+        """Remaining budgets ÷ 2 for a subrun (an unlimited token budget stays unlimited)."""
         b = self.budgets
         return Budgets(
             max_turns=max(1, (b.max_turns - self.turn) // 2),
             max_wall_clock_min=max(1, int((b.max_wall_clock_min - self.elapsed_s() / 60) // 2)),
-            max_total_tokens=max(1000, (b.max_total_tokens - self.usage["in"] - self.usage["out"]) // 2),
+            max_total_tokens=(-1 if b.max_total_tokens < 0 else
+                              max(1000, (b.max_total_tokens - self.usage["in"] - self.usage["out"]) // 2)),
             max_subruns=b.max_subruns,
             max_subrun_depth=b.max_subrun_depth,
             ask_timeout_min=b.ask_timeout_min,

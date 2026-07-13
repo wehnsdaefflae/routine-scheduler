@@ -141,7 +141,8 @@ export async function stageSuggest(ctx, wid) {
         "waits for you). The defaults suit most routines — adjustable here and on the routine page."),
       el("div", { class: "row", style: "flex-wrap:wrap;gap:10px" },
         ...BUDGET_FIELDS.map(([key, label]) => {
-          const input = el("input", { type: "number", min: "1", style: "width:110px",
+          const input = el("input", { type: "number", style: "width:110px",
+            min: key === "max_total_tokens" ? "-1" : "1",   // -1 = unlimited tokens
             value: String((lib.default_budgets || {})[key] ?? "") });
           budgetInputs[key] = input;
           return el("label", { class: "field", style: "min-width:170px" },
@@ -168,7 +169,8 @@ export async function stageSuggest(ctx, wid) {
       const budgets = {};
       for (const [key, input] of Object.entries(budgetInputs)) {
         const v = parseInt(input.value, 10);
-        if (Number.isFinite(v) && v >= 1) budgets[key] = v;
+        if (Number.isFinite(v) && (v >= 1 || (key === "max_total_tokens" && v === -1)))
+          budgets[key] = v;
       }
       const r = await api(`/api/wizard/${encodeURIComponent(wid)}/finalize`, { method: "POST", body: {
         slug: f.slug.value.trim(), name: f.name.value.trim() || f.slug.value.trim(),

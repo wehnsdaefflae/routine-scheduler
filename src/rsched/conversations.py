@@ -33,9 +33,10 @@ CONVERSATION_TRAITS = ["ask-policy", "global-utils", "web-research", "ledger-dis
 CONVERSATION_PERMISSIONS = list(DEFAULT_PERMISSIONS)
 # ~10 turns per REPLY: each user message resumes the run with a fresh budget window, so
 # these are per-reply ceilings, not per-conversation ones. The engine's 85% warning cues
-# the model to wrap up with progress and offer to continue.
+# the model to wrap up with progress and offer to continue. Tokens ride the default
+# (-1 = unlimited) — the tight turn cap is what bounds a reply.
 CONVERSATION_BUDGETS = {**DEFAULT_BUDGETS, "max_turns": 10, "max_wall_clock_min": 30,
-                        "max_total_tokens": 400_000, "max_subruns": 4}
+                        "max_subruns": 4}
 # Permissions that only make sense for scheduled routines — the UI greys them out.
 ROUTINE_ONLY_PERMISSIONS = ["run-history", "run-history-full"]
 

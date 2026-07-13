@@ -103,8 +103,8 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (main / subroutine / tool_call),
   `permissions:` (held capability grants — user-changeable only, all surfaced on the routine page),
-  `budgets:` (max_turns / wall_clock_min / total_tokens / subruns / subrun_depth / ask_timeout_min — all
-  editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
+  `budgets:` (max_turns / wall_clock_min / total_tokens (-1 = unlimited, the default) / subruns /
+  subrun_depth / ask_timeout_min — all editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
   budgets/fs-roots/schedules are resources, never grants; `exclude_from_improvement` opts the
   routine out of the routine-improver's passes.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that

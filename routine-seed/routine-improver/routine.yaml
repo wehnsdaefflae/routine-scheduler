@@ -22,7 +22,7 @@ permissions:
 budgets:
   max_turns: 70
   max_wall_clock_min: 60
-  max_total_tokens: 2000000
+  max_total_tokens: -1
   max_subruns: 8
   max_subrun_depth: 2
   ask_timeout_min: 480

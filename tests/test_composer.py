@@ -346,3 +346,12 @@ def test_compaction_deterministic_and_bounded():
     assert again == compacted                                  # deterministic
     untouched, info2 = maybe_compact(list(messages), records, context_chars=10**9)
     assert info2 is None and untouched == messages
+
+
+def test_harness_contract_renders_unlimited_token_budget(make_routine, tmp_path):
+    """A -1 token budget (the default) reads as 'unlimited' in the harness contract, never -1."""
+    ctx = _ctx(make_routine, tmp_path, slug="unl")
+    ctx.budgets.max_total_tokens = -1
+    text = harness_contract(ctx)
+    assert "unlimited total tokens" in text
+    assert "-1" not in text.split("Budgets for this run")[1][:150]

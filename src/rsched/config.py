@@ -21,9 +21,10 @@ from .paths import config_file, expand
 DEFAULT_BUDGETS = {
     "max_turns": 60,
     "max_wall_clock_min": 45,
-    # The orchestrator re-sends the whole conversation every turn, so cumulative input
-    # tokens dominate: ~60 turns × ~25k prompt ≈ 1.5M. 500k proved too tight in practice.
-    "max_total_tokens": 1_500_000,
+    # -1 = unlimited (the default): turns + wall clock bound a run; every finite cap we
+    # tried (500k, then 1.5M) eventually cut off legitimate work. Set a positive number
+    # to bound spend on a specific routine.
+    "max_total_tokens": -1,
     "max_subruns": 8,
     "max_subrun_depth": 2,
     "ask_timeout_min": 5,

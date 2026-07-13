@@ -385,7 +385,9 @@ class EngineLoop:
         # remaining token budget per turn, archive it: the one compaction call costs what
         # the bloat would keep costing every single turn. Floored so a small prompt near
         # budget exhaustion doesn't thrash (compaction itself spends tokens).
-        budget_cap = max(40_000.0, 0.10 * 4 * ctx.tokens_remaining())
+        remaining = ctx.tokens_remaining()   # None = unlimited → only the context cap applies
+        budget_cap = (float("inf") if remaining is None
+                      else max(40_000.0, 0.10 * 4 * remaining))
         if (size <= min(context_cap, budget_cap)
                 or len(self.messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS):
             return

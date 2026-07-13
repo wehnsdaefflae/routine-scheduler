@@ -1046,6 +1046,31 @@ def test_second_shed_disables_provider_schema_for_the_run(make_routine, scripted
     assert len(note) == 1
 
 
+def test_unlimited_token_budget_never_trips():
+    """max_total_tokens = -1 (the default) disables the token ceiling: no violation, no 85%
+    warning, no compaction pressure — and a child inherits unlimited, not garbage halves."""
+    from rsched.engine.run_context import Budgets, RunContext
+
+    ctx = RunContext.__new__(RunContext)   # only budget fields matter here
+    ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=100, max_total_tokens=-1,
+                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5)
+    ctx.usage = {"in": 10_000_000, "out": 5_000_000}
+    ctx.turn = 1
+    ctx.budget_base_turn = 0
+    ctx._started_mono = __import__("time").monotonic()
+    ctx._suspended_s = 0.0
+    assert ctx.budget_violation() is None
+    assert ctx.budget_warning() is None
+    assert ctx.tokens_remaining() is None
+    child = ctx.child_budgets()
+    assert child.max_total_tokens == -1
+    # a finite budget still behaves exactly as before
+    ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=100, max_total_tokens=1000,
+                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5)
+    assert "token budget exhausted" in ctx.budget_violation()
+    assert ctx.tokens_remaining() == 0
+
+
 def test_budget_warning_appended_near_exhaustion(make_routine, scripted):
     """Past 85% of the turn budget, observations carry the wind-down nudge."""
     d, ep, status, run_dir, events = _run(make_routine, scripted, [

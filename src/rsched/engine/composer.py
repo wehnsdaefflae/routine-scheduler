@@ -93,8 +93,9 @@ runs) is a separate matter: PERMISSIONS, set only by the user and enforced by th
 on every action — see CAPABILITIES below; never restate permission-dependent conduct \
 inside instruction.md.
 
-Budgets for this run: {b.max_turns} turns, {b.max_wall_clock_min} minutes, {b.max_total_tokens} \
-total tokens, at most {b.max_subruns} subruns (depth ≤ {b.max_subrun_depth}). Spend them on the \
+Budgets for this run: {b.max_turns} turns, {b.max_wall_clock_min} minutes, \
+{b.max_total_tokens if b.max_total_tokens >= 0 else "unlimited"} total tokens, at most \
+{b.max_subruns} subruns (depth ≤ {b.max_subrun_depth}). Spend them on the \
 workflow's priorities and `finish` DELIBERATELY before they expire — a finish you wrote beats a \
 forced one.
 

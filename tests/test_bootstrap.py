@@ -257,3 +257,35 @@ def test_migrate_repoints_self_audit_off_fragment_gate(tmp_path):
     assert "fragment toggles" not in text and "routine-improver" in text
     step = (sa / "steps" / "act-apply-fixes.md").read_text()
     assert "fragment" not in step and "items inside your lenses" in step
+
+
+def test_adopt_unlimited_tokens_once(tmp_path):
+    """Every existing routine/conversation with a pinned finite token budget flips to -1 —
+    exactly once (marker): a cap the user re-pins afterwards stays."""
+    from rsched.bootstrap import adopt_unlimited_tokens
+
+    routines = tmp_path / "routines"
+    convs = tmp_path / "conversations"
+    for home, slug, tokens in ((routines, "r1", 1_500_000), (convs, "c-1", 400_000)):
+        d = home / slug
+        d.mkdir(parents=True)
+        (d / "routine.yaml").write_text(yaml.safe_dump(
+            {"slug": slug, "budgets": {"max_turns": 10, "max_total_tokens": tokens}}))
+    (routines / "r2").mkdir()
+    (routines / "r2" / "routine.yaml").write_text(yaml.safe_dump(
+        {"slug": "r2", "budgets": {"max_turns": 10}}))     # implicit → follows the default
+
+    assert adopt_unlimited_tokens(routines, convs) == 2
+    for home, slug in ((routines, "r1"), (convs, "c-1")):
+        raw = yaml.safe_load((home / slug / "routine.yaml").read_text())
+        assert raw["budgets"]["max_total_tokens"] == -1
+    raw = yaml.safe_load((routines / "r2" / "routine.yaml").read_text())
+    assert "max_total_tokens" not in raw["budgets"]        # untouched — default applies
+
+    # user pins a finite cap later → the one-time adoption never overrides it again
+    raw = yaml.safe_load((routines / "r1" / "routine.yaml").read_text())
+    raw["budgets"]["max_total_tokens"] = 250_000
+    (routines / "r1" / "routine.yaml").write_text(yaml.safe_dump(raw))
+    assert adopt_unlimited_tokens(routines, convs) == 0
+    raw = yaml.safe_load((routines / "r1" / "routine.yaml").read_text())
+    assert raw["budgets"]["max_total_tokens"] == 250_000

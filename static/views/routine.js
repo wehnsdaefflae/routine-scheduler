@@ -157,15 +157,15 @@ export async function render(view, slug, query = {}) {
   const BUDGET_FIELDS = [
     ["max_turns", "turns per run", "each model action is one turn; the run is stopped at the cap"],
     ["max_wall_clock_min", "minutes per run", "wall-clock ceiling (time waiting on you is credited back)"],
-    ["max_total_tokens", "tokens per run", "cumulative input+output tokens; the prompt is re-sent every turn"],
+    ["max_total_tokens", "tokens per run", "cumulative input+output tokens; -1 = unlimited (the default — turns and minutes bound the run)"],
     ["max_subruns", "sub-workflows per run", "how many parallel children a run may spawn in total"],
     ["max_subrun_depth", "sub-workflow depth", "how deep children may nest (children get half the parent's remainder)"],
     ["ask_timeout_min", "blocking-question timeout (min)", "minutes a blocking decision waits for you before the run continues without it (the question stays open on the Decisions page)"],
   ];
   const budgetInputs = {};
   const budgetRows = BUDGET_FIELDS.map(([key, label, help]) => {
-    const input = el("input", { type: "number", min: "0", value: String(d.budgets?.[key] ?? ""),
-      style: "width:110px" });
+    const input = el("input", { type: "number", min: key === "max_total_tokens" ? "-1" : "0",
+      value: String(d.budgets?.[key] ?? ""), style: "width:110px" });
     budgetInputs[key] = input;
     return el("div", { class: "row", style: "margin:5px 0" },
       input,
@@ -183,7 +183,11 @@ export async function render(view, slug, query = {}) {
           const budgets = {};
           for (const [key, input] of Object.entries(budgetInputs)) {
             const v = parseInt(input.value, 10);
-            if (!Number.isFinite(v) || v < 1) { toast(`${key}: needs a positive number`); return; }
+            const unlimitedOk = key === "max_total_tokens" && v === -1;
+            if (!Number.isFinite(v) || (v < 1 && !unlimitedOk)) {
+              toast(`${key}: needs a positive number${key === "max_total_tokens" ? " (or -1 = unlimited)" : ""}`);
+              return;
+            }
             budgets[key] = v;
           }
           try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { budgets } });
