@@ -69,7 +69,7 @@ def _card(request: Request, info: registry.RoutineInfo) -> dict:
         "last_run": ({"run_id": last.run_id, "ts": last.ts, "state": last.state,
                       "summary": last.summary[:280], "turns": last.turn,
                       "usage": last.usage, "elapsed_s": last.elapsed_s} if last else None),
-        "open_questions": len(info.open_questions),
+        "open_questions": sum(1 for q in info.open_questions if not q.get("answered")),
         "problems": info.problems,
     }
 

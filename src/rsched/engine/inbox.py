@@ -122,12 +122,19 @@ def resolve_question(routine_dir: Path, qid: str) -> None:
 
 
 def open_questions(routine_dir: Path) -> list[dict]:
+    """Pending questions. A question whose answer already waits in the inbox (answered on
+    the Decisions page, not yet drained by a run) is flagged `answered: True` so every
+    surface can show it as answered-and-queued instead of still-open."""
     pending = routine_dir / "questions" / "pending"
     if not pending.is_dir():
         return []
+    inbox = routine_dir / "inbox"
     out = []
     for path in sorted(pending.glob("*.json")):
         obj = read_json(path)
         if isinstance(obj, dict) and obj.get("question"):
+            qid = str(obj.get("qid") or path.stem)
+            if (inbox / f"answer-{qid}.json").exists():
+                obj = {**obj, "answered": True}
             out.append(obj)
     return out

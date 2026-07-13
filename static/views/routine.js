@@ -285,11 +285,14 @@ export async function render(view, slug, query = {}) {
 
   // -- questions ------------------------------------------------------------------
   if (d.questions?.length) {
-    view.append(el("h2", {}, `Decisions · ${d.questions.length}`),
+    const openCount = d.questions.filter((q) => !q.answered).length;
+    view.append(el("h2", {}, `Decisions · ${openCount}`),
       el("div", { class: "panel warn" }, d.questions.map((q) =>
         el("div", { class: "row spread", style: "padding:5px 0" },
-          el("span", { class: "prose" }, "❓ ", mdInline(q.question)),
-          el("a", { class: "btn small primary", href: "#/questions" }, "answer")))));
+          el("span", { class: "prose" }, q.answered ? "✓ " : "❓ ", mdInline(q.question)),
+          q.answered
+            ? chip("answered — queued for next run", "waiting_user")
+            : el("a", { class: "btn small primary", href: "#/questions" }, "answer")))));
   }
 
   // -- state + ledger -------------------------------------------------------------

@@ -30,6 +30,25 @@ def _events(run_dir):
     return read_events(run_dir / "transcript.jsonl")[0]
 
 
+def test_open_questions_flags_answered_when_answer_waiting(make_routine):
+    from rsched.engine.inbox import open_questions
+
+    d = make_routine(slug="answered")
+    pending = d / "questions" / "pending"
+    pending.mkdir(parents=True)
+    atomic_write_json(pending / "q1.json", {"qid": "q1", "question": "Ship it?", "options": []})
+    atomic_write_json(pending / "q2.json", {"qid": "q2", "question": "Later?", "options": []})
+    # No answers waiting -> neither flagged answered.
+    qs = {q["qid"]: q for q in open_questions(d)}
+    assert qs["q1"].get("answered") is None and qs["q2"].get("answered") is None
+    # An answer for q1 lands in the inbox (answered on the Decisions page, not yet drained
+    # by a run) -> q1 shows answered-and-queued, q2 stays open.
+    atomic_write_json(d / "inbox" / "answer-q1.json", {"qid": "q1", "text": "yes", "source": "web"})
+    qs = {q["qid"]: q for q in open_questions(d)}
+    assert qs["q1"]["answered"] is True
+    assert qs["q2"].get("answered") is None
+
+
 # ------------------------------------------------------------------ the decision record
 
 
