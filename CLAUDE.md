@@ -69,6 +69,11 @@ repeat until `finish`.
   routine's `tool_call` model when its window fits (machine work; main model is the fallback) and its
   spend is folded into the run's usage. Falls back to the deterministic one-line digest
   (`history.maybe_compact`) on any failure. The on-disk transcript keeps everything regardless.
+- **Phase is live state**: a run's write to `state/phase.json` (write_file or edit_file) is mirrored
+  into `ctx.phase` → status.json (every turn) → the run SSE `state` event, which also fires on phase
+  change. `statemap.py` parses the routine's own main.md (`## Run flow` bold leads; steps/ fallback)
+  into the UI's state-graph diagram (`/stategraph` endpoints, `static/components/stategraph.js` —
+  rendered in the run view's rail and the conversation artifact rail, current phase highlighted live).
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →
@@ -171,7 +176,9 @@ chat message; the next user message resumes the SAME run in place (fresh budget 
   `<conv>/attachments/` and ride the message text as an `[attached files]` block; vision util for
   images). **Artifacts**: deliverables the model `write_file`s into `<conv>/artifacts/` are
   listed/served here and rendered in the chat's side panel (html sandboxed, md/img/pdf/csv/json
-  inline). UI: `static/views/conversations.js` + `components/chat.js` (work folded per reply,
+  inline); routines get the SAME panel on the run view (`api_routines` `/artifacts` + `/artifact`,
+  `components/artifacts.js` with `base: "routines"`), with the state-graph card on top.
+  UI: `static/views/conversations.js` + `components/chat.js` (work folded per reply,
   `[new-topic]` first-line marker → warn + one-click fork) + `components/artifacts.js`.
 - Defaults: routine default permissions, shell OFF (one-click grant; `run-history*` greyed —
   routine-only); traits = ask-policy/global-utils/web-research/ledger-discipline/**git-checkpoint**
@@ -188,8 +195,12 @@ seedable from the repo and syncable to a remote, holding **workflows/** (control
 docs whose `grants:` frontmatter the engine enforces), and **utils/** (the ONLY way routines run
 code, with the `gu` dispatcher at the root). Repo seeds: `library-seed/` (workflows + traits +
 permissions),
-`util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `library-sync`,
-`meta-workflows` — installed **disabled**; the dashboard shows a notice until enabled). `library-sync`
+`util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `routine-improver`,
+`workflow-curator`, `token-lab` — installed **disabled**; the dashboard shows a notice until
+enabled; a seed added after first boot reaches existing instances via
+`bootstrap.adopt_seed_routine` at daemon boot, which respects an archived copy). `token-lab` is
+the token-efficiency R&D loop: measures real usage, tests methods via llm subcalls ONLY (never
+integrates), publishes `artifacts/report.html`. `library-sync`
 syncs the WHOLE instance into that one repo: `instance-export` copies each routine's working tree
 (minus `runs/`, `.git`, transient inbox/question state) into `routines/<slug>/` and the server config —
 token and api_key values redacted — into `config/`, then `git-sync` pushes. `bootstrap.py` seeds on

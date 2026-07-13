@@ -12,6 +12,7 @@ import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
 import { createChat } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
+import { createStateGraph } from "/static/components/stategraph.js";
 import { busy, chip, el, emptyState, relTime, storage, tagChip, toast } from "/static/util.js";
 
 const TERMINAL = new Set(["finished", "failed", "aborted"]);
@@ -271,7 +272,15 @@ export async function render(view, slug, _query = {}) {
     const composer = buildComposer();
     main.replaceChildren(head, chatBox, waiting, questionBox, composer.node);
 
-    const artifacts = createArtifacts((artBody.replaceChildren(), artBody), { slug });
+    artBody.replaceChildren();
+    // the state graph rides at the top of the artifact rail: current phase lit up,
+    // re-highlighted live on the SSE state events below
+    const graphBody = el("div", {});
+    artBody.append(el("div", { class: "rail-cap" }, "state"), graphBody,
+                   el("div", { class: "rail-cap" }, "artifacts"));
+    const stateGraph = createStateGraph(graphBody, {
+      graphUrl: `/api/conversations/${slug}/stategraph` });
+    const artifacts = createArtifacts(artBody, { slug });
     cleanup.push(() => artifacts.destroy());
 
     const chat = createChat(chatBox, {
@@ -311,7 +320,8 @@ export async function render(view, slug, _query = {}) {
       events: (o) => `/api/runs/${detail.run_id}/events?offset=${o}`,
       offset: 0,
       onEvent: (ev) => { chat.add(ev); scrollDown(); },
-      onState: (s) => { setState(s.state); showQuestion(questionBox, s.question); },
+      onState: (s) => { setState(s.state); stateGraph.setPhase(s.phase);
+                        showQuestion(questionBox, s.question); },
       onGone: () => setState("finished"),
     });
     cleanup.push(() => tail.stop());

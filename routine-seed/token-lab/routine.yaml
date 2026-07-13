@@ -1,0 +1,29 @@
+name: Token lab
+description: Daily R&D on token-saving methods — measures real usage, tests candidate
+  methods in isolation, and publishes artifacts/report.html ranking what's worth adopting.
+tags:
+- meta
+- research
+- tokens
+slug: token-lab
+enabled: false
+schedule:
+  cron: 30 4 * * *
+  tz: Europe/Berlin
+  catchup: skip
+permissions:
+- memory
+- util-authoring
+- run-history-full
+budgets:
+  max_turns: 70
+  max_wall_clock_min: 45
+  max_total_tokens: -1
+  max_subruns: 4
+  max_subrun_depth: 1
+  ask_timeout_h: 8
+retention:
+  keep_runs: 30
+fs_read_roots:
+- ~/routines
+- ~/conversations

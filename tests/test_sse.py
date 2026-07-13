@@ -73,6 +73,24 @@ async def test_run_stream_tails_appends_then_ends(tmp_path, monkeypatch):
     assert labels[-1] == ("end", "finished") and labels.count(("end", "finished")) == 1
 
 
+async def test_run_stream_emits_state_event_on_phase_change(tmp_path, monkeypatch):
+    """A phase transition (same run state) fires its own state event carrying `phase` —
+    the UI's state-graph diagram updates on it."""
+    monkeypatch.setattr(sse, "POLL_S", 0.01)
+    run_dir = _mk_run(tmp_path, "apir", TS, "running")
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": f"apir:{TS}", "state": "running", "phase": "orient"})
+    gen = sse.run_stream(run_dir)
+    first = [await asyncio.wait_for(anext(gen), 2) for _ in range(3)]
+    state_ev = json.loads(first[-1]["data"])
+    assert first[-1]["event"] == "state" and state_ev["phase"] == "orient"
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": f"apir:{TS}", "state": "running", "phase": "measure"})
+    nxt = await asyncio.wait_for(anext(gen), 2)
+    assert nxt["event"] == "state" and json.loads(nxt["data"])["phase"] == "measure"
+    await gen.aclose()
+
+
 async def test_run_stream_start_offset_skips_replay(tmp_path, monkeypatch):
     """A reconnecting client passes its offset and gets only what it has not seen."""
     monkeypatch.setattr(sse, "POLL_S", 0.01)

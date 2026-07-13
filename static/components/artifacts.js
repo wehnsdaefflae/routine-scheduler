@@ -1,8 +1,9 @@
-// The conversation's artifact panel: everything the model wrote into artifacts/ — listed
-// newest-first and rendered inline by type. Files are fetched WITH the auth header and
-// rendered from blob URLs (iframes/imgs can't carry Authorization); html renders in a
-// sandboxed iframe (scripts yes, same-origin no — an artifact can never read the console's
-// token). Re-writing the same filename updates the artifact in place: refresh() re-lists.
+// The artifact panel (conversations AND routines): everything the model wrote into
+// artifacts/ — listed newest-first and rendered inline by type. Files are fetched WITH the
+// auth header and rendered from blob URLs (iframes/imgs can't carry Authorization); html
+// renders in a sandboxed iframe (scripts yes, same-origin no — an artifact can never read
+// the console's token). Re-writing the same filename updates the artifact in place:
+// refresh() re-lists. `base` picks the API family: "conversations" (default) | "routines".
 
 import { api, apiBlobUrl } from "/static/api.js";
 import { md } from "/static/md.js";
@@ -29,7 +30,7 @@ function csvTable(text, sep) {
   return el("div", { class: "art-scroll" }, table);
 }
 
-export function createArtifacts(container, { slug }) {
+export function createArtifacts(container, { slug, base = "conversations" }) {
   const listBox = el("div", { class: "art-list" });
   const viewer = el("div", { class: "art-viewer", hidden: true });
   container.append(listBox, viewer);   // the pane's cap already says "artifacts"
@@ -37,7 +38,9 @@ export function createArtifacts(container, { slug }) {
   let openPath = null;
   let blobUrl = null;   // the viewer's current object URL (revoked on replace)
 
-  const fileUrl = (p) => `/api/conversations/${slug}/file?path=${encodeURIComponent(p)}`;
+  const fileUrl = (p) => (base === "routines"
+    ? `/api/routines/${slug}/artifact?path=${encodeURIComponent(p)}`
+    : `/api/conversations/${slug}/file?path=${encodeURIComponent(p)}`);
 
   async function open(item) {
     openPath = item.path;
@@ -101,7 +104,7 @@ export function createArtifacts(container, { slug }) {
   }
 
   async function refresh() {
-    try { items = await api(`/api/conversations/${slug}/artifacts`); }
+    try { items = await api(`/api/${base}/${slug}/artifacts`); }
     catch { return; }
     renderList();
     // the open artifact may have been re-written — reload it in place

@@ -269,6 +269,16 @@ def delete_conversation(request: Request, slug: str) -> dict:
     return {"ok": True}
 
 
+@router.get("/conversations/{slug}/stategraph")
+def stategraph(request: Request, slug: str) -> dict:
+    """The conversation's state graph (from its materialized converse workflow) + current
+    phase — same shape as the routines endpoint; the artifact rail renders it."""
+    from .. import statemap
+
+    info = _info(request, slug)
+    return statemap.state_graph(info.cfg.dir)
+
+
 @router.get("/conversations/{slug}/artifacts")
 def list_artifacts(request: Request, slug: str) -> list[dict]:
     info = _info(request, slug)

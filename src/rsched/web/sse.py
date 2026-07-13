@@ -38,11 +38,14 @@ async def run_stream(run_dir: Path, start_offset: int = 0):
             yield _event("transcript", ev)
         st = await asyncio.to_thread(read_json, run_dir / "status.json")
         state = st.get("state") if isinstance(st, dict) else None
-        if state and state != last_state:
-            last_state = state
-            yield _event("state", {"state": state, "question": st.get("question"),
+        phase = st.get("phase") if isinstance(st, dict) else None
+        # phase transitions ride the same event — the state-graph diagram updates on them
+        if state and (state, phase) != last_state:
+            last_state = (state, phase)
+            yield _event("state", {"state": state, "phase": phase,
+                                   "question": st.get("question"),
                                    "turn": st.get("turn"), "usage": st.get("usage"),
-                                   "model": st.get("model")})
+                                   "model": st.get("model"), "updated": st.get("updated")})
         if state in TERMINAL_STATES:
             terminal_grace -= 1
             if terminal_grace <= 0:

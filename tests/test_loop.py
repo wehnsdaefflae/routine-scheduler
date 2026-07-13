@@ -1344,6 +1344,20 @@ def test_schema_retry_debris_dropped_after_recovery(make_routine, scripted):
     assert "was not a valid action" not in joined
 
 
+def test_phase_write_tracked_live_in_status(make_routine, scripted):
+    """Writing state/phase.json IS the run's state transition: ctx.phase follows it and
+    status.json (written every turn) carries the live phase — the state-graph diagram's
+    data path."""
+    d, ep, status, run_dir, _ = _run(make_routine, scripted, [
+        write_file("state/phase.json", content={"phase": "measure"}),
+        probe(),
+        finish(),
+    ])
+    assert status == "ok"
+    st = read_json(run_dir / "status.json")
+    assert st["phase"] == "measure"
+
+
 def test_session_key_rides_every_completion(make_routine, scripted):
     """The loop hands each completion a stable per-run session key — the caching hint
     endpoints may use (claude-cli keeps a CLI session per key) and may ignore."""

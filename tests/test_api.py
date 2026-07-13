@@ -117,6 +117,40 @@ def test_file_read_guarded(client):
                  params={"path": "../../../etc/passwd"}).status_code == 404
 
 
+def test_stategraph_endpoint(client):
+    """The routine's state graph parsed from its own main.md + the current phase — what
+    the UI's live diagram renders. Tolerant: the test fixture's flow has no bold names,
+    so states come from wherever the parser can find them."""
+    c, tmp = client
+    d = tmp / "routines" / "apir"
+    d.joinpath("main.md").write_text(
+        "## Run flow\n1. **gather** — collect.\n2. **write** — emit.\n", encoding="utf-8")
+    (d / "state").mkdir(exist_ok=True)
+    (d / "state" / "phase.json").write_text('{"phase": "gather"}', encoding="utf-8")
+    g = c.get("/api/routines/apir/stategraph").json()
+    assert [s["name"] for s in g["states"]] == ["gather", "write"]
+    assert g["current"] == "gather"
+
+
+def test_routine_artifacts_listed_and_served(client):
+    """Routine artifacts get the conversations treatment: listed newest-first, served raw
+    — but ONLY artifacts/ (recipe/config stays on the JSON /file endpoint)."""
+    c, tmp = client
+    art = tmp / "routines" / "apir" / "artifacts"
+    art.mkdir()
+    (art / "report.html").write_text("<h1>findings</h1>", encoding="utf-8")
+    items = c.get("/api/routines/apir/artifacts").json()
+    assert [i["name"] for i in items] == ["report.html"]
+    r = c.get("/api/routines/apir/artifact", params={"path": "artifacts/report.html"})
+    assert r.status_code == 200 and r.text == "<h1>findings</h1>"
+    assert "text/html" in r.headers["content-type"]
+    # traversal and non-artifact paths are refused on the RESOLVED path
+    assert c.get("/api/routines/apir/artifact",
+                 params={"path": "artifacts/../routine.yaml"}).status_code == 400
+    assert c.get("/api/routines/apir/artifact",
+                 params={"path": "routine.yaml"}).status_code == 400
+
+
 def test_runs_and_transcript(client):
     c, tmp = client
     _mk_run(tmp / "routines", "apir", "20260707-070000", "finished")

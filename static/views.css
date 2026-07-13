@@ -403,3 +403,38 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .chip-finished { color: var(--live); border-color: rgba(69, 224, 176, 0.4); }
 .chip-failed, .chip-aborted { color: var(--err); border-color: rgba(230, 90, 90, 0.4); }
 .chip-running { color: var(--amber); border-color: rgba(242, 193, 78, 0.4); }
+
+/* ---------- state graph (run rail + conversation artifact rail) ---------- */
+.rail-cap {
+  font-size: 10px; color: var(--faint); letter-spacing: 0.14em; text-transform: uppercase;
+  margin: 10px 0 4px;
+}
+.stategraph { display: flex; flex-direction: column; font-family: var(--sans); }
+.sg-node {
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted);
+  padding: 2px 4px; border-radius: 6px;
+}
+.sg-node .sg-dot { width: 14px; text-align: center; flex: none; color: var(--faint); }
+.sg-node.done { color: var(--faint); }
+.sg-node.done .sg-dot { color: var(--live); }
+.sg-node.current {
+  color: var(--text); background: var(--surface-2); border: 1px solid var(--line-2);
+  font-weight: 600;
+}
+.sg-node.current .sg-dot { color: var(--amber); }
+.sg-link { width: 1px; height: 10px; background: var(--line-2); margin-left: 10px; }
+.sg-link.done { background: var(--live); opacity: 0.5; }
+
+/* the run view's side rail: normal collapsible block; parked in the right margin on
+   screens wide enough that the 1180px main column leaves room for it */
+.run-rail { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
+.run-rail > summary { cursor: pointer; color: var(--muted); }
+.run-rail .rail-cap:first-of-type { margin-top: 6px; }
+@media (min-width: 1560px) {
+  .run-rail {
+    position: fixed; top: 96px; right: 18px; bottom: 90px;
+    width: calc((100vw - 1180px) / 2 - 40px); max-width: 330px;
+    overflow-y: auto; background: var(--surface); z-index: 5;
+  }
+  .run-rail > summary { display: none; }
+}

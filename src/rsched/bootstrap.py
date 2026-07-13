@@ -66,6 +66,23 @@ def _install_seed_routine(src: Path, dst: Path) -> None:
     _git(dst, "commit", "-qm", f"seed {src.name} routine")
 
 
+def adopt_seed_routine(routines_home: Path, slug: str) -> bool:
+    """Install ONE bundled meta routine into an EXISTING instance — how a seed added
+    after first boot reaches deployments (seed_routines runs only on fresh installs).
+    Idempotent, and an archived copy is respected: the user removed it on purpose."""
+    seed = repo_root() / "routine-seed" / slug
+    dst = routines_home / slug
+    if not seed.is_dir() or not routines_home.is_dir() or dst.exists():
+        return False
+    archive = routines_home / ".archive"
+    if archive.is_dir() and any(d.name == slug or d.name.startswith(f"{slug}-")
+                                for d in archive.iterdir()):
+        return False
+    _install_seed_routine(seed, dst)
+    log.warning("installed the %s meta routine (disabled) — enable it on its routine page", slug)
+    return True
+
+
 def seed_routines(routines_home: Path) -> int:
     """On a fresh install (no routines yet), install the bundled meta routines — disabled, so they
     show up under the 'meta' tag for the user to enable, but don't run anything on their own."""

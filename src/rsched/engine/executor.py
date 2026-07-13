@@ -171,6 +171,20 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
     return None
 
 
+def _track_phase(ctx: RunContext, path) -> None:
+    """A write to state/phase.json IS the run's state transition — mirror it into
+    ctx.phase so status.json (written every turn) and the SSE state event carry the
+    live phase; the UI's state-graph diagram updates on it."""
+    if path != ctx.routine.dir / "state" / "phase.json":
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data.get("phase"):
+            ctx.phase = str(data["phase"])
+    except (OSError, ValueError):
+        pass  # a malformed phase file never fails the write that produced it
+
+
 def do_write_file(action: dict, ctx: RunContext) -> dict:
     try:
         roots = ctx.routine.fs_write_roots
@@ -188,6 +202,7 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
                 fh.write(data)
         else:
             path.write_text(data, encoding="utf-8")
+        _track_phase(ctx, path)
     except (OSError, PermissionError) as exc:
         return {"kind": "write_file", "path": action["path"], "error": str(exc)}
     return {"kind": "write_file", "path": action["path"], "bytes": len(data.encode("utf-8")),
@@ -219,6 +234,7 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
         new_text = text.replace(anchor, replacement) if action.get("all") \
             else text.replace(anchor, replacement, 1)
         path.write_text(new_text, encoding="utf-8")
+        _track_phase(ctx, path)
     except (OSError, PermissionError) as exc:
         return {"kind": "edit_file", "path": action["path"], "error": str(exc)}
     return {"kind": "edit_file", "path": action["path"],

@@ -340,3 +340,27 @@ def test_retire_self_modification_everywhere(tmp_path):
         assert "self-modification" not in perms, (slug, perms)
         assert "memory" in perms
     assert retire_self_modification(routines, convs, perms_home) == 0   # idempotent
+
+
+def test_adopt_seed_routine_installs_once_and_respects_archive(tmp_path):
+    """A seed added after first boot lands ONCE on an existing instance; an installed or
+    archived copy is never clobbered (archived = the user removed it on purpose)."""
+    from rsched.bootstrap import adopt_seed_routine
+
+    routines = tmp_path / "routines"
+    (routines / "worker").mkdir(parents=True)          # existing instance, not fresh
+    assert adopt_seed_routine(routines, "token-lab") is True
+    assert (routines / "token-lab" / "routine.yaml").is_file()
+    assert (routines / "token-lab" / "artifacts").exists() is False   # seed ships no artifacts
+    assert adopt_seed_routine(routines, "token-lab") is False         # idempotent
+
+    # archived copy → respected, never re-installed
+    import shutil
+    archive = routines / ".archive"
+    archive.mkdir()
+    shutil.move(str(routines / "token-lab"), str(archive / "token-lab"))
+    assert adopt_seed_routine(routines, "token-lab") is False
+    assert not (routines / "token-lab").exists()
+
+    # unknown seed slug → no-op
+    assert adopt_seed_routine(routines, "no-such-seed") is False

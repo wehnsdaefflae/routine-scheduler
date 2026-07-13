@@ -135,6 +135,57 @@ def routine_detail(request: Request, slug: str) -> dict:
     }
 
 
+@router.get("/routines/{slug}/stategraph")
+def stategraph(request: Request, slug: str) -> dict:
+    """The routine's state graph (parsed from its own main.md) + the current phase — the
+    UI's live diagram; phase transitions arrive over the run SSE `state` events."""
+    from .. import statemap
+
+    info = _info(request, slug)
+    return statemap.state_graph(info.cfg.dir)
+
+
+@router.get("/routines/{slug}/artifacts")
+def list_artifacts(request: Request, slug: str) -> list[dict]:
+    """Everything under <routine>/artifacts/ — the routine's deliverables, newest first
+    (the conversations panel's counterpart)."""
+    info = _info(request, slug)
+    art = info.cfg.dir / "artifacts"
+    out = []
+    if art.is_dir():
+        for p in art.rglob("*"):
+            if p.is_file():
+                st = p.stat()
+                out.append({"path": str(p.relative_to(info.cfg.dir)), "name": p.name,
+                            "size": st.st_size, "mtime": int(st.st_mtime)})
+    out.sort(key=lambda x: x["mtime"], reverse=True)
+    return out
+
+
+@router.get("/routines/{slug}/artifact")
+def get_artifact(request: Request, slug: str, path: str):
+    """Serve one artifact raw (blob-rendered client-side). ONLY artifacts/ is servable
+    here — routine config/recipe reads stay on the JSON /file endpoint."""
+    import mimetypes
+
+    from fastapi.responses import FileResponse
+
+    from ..paths import within
+
+    info = _info(request, slug)
+    try:
+        p = resolve_rel(info.cfg.dir, path.lstrip("/"))
+    except PermissionError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    # the check runs on the RESOLVED path — 'artifacts/../routine.yaml' must not pass
+    if not within(info.cfg.dir / "artifacts", p):
+        raise HTTPException(400, "only artifacts/ files are served")
+    if not p.is_file():
+        raise HTTPException(404, f"no file {path!r}")
+    media = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+    return FileResponse(p, media_type=media, filename=p.name)
+
+
 @router.get("/routines/{slug}/file")
 def get_routine_file(request: Request, slug: str, path: str) -> dict:
     info = _info(request, slug)

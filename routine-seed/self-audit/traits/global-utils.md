@@ -8,10 +8,11 @@ selftested script shared across all routines.
 
 **Discover, then use.** The CAPABILITIES section of your prompt lists every util at
 name + one-line-summary altitude — that map tells you WHAT exists, but it carries no flags.
-Before your FIRST call to a util, run the `util` action with name `list`: it returns the
-live catalog with each util's exact `usage:` line (derived live, so it can never be stale).
-Then call it with the `util` action (`name` + optional `args`; append `--json` for
-structured output you can parse). Prefer an existing util over building one.
+Before your FIRST call to a util, run the `util` action with name `list` and args
+`["<util-name>"]`: it returns THAT util's exact `usage:` line (derived live, never stale)
+without re-buying the whole catalog you already have. Then call it with the `util` action
+(`name` + optional `args`; append `--json` for structured output you can parse). Prefer an
+existing util over building one.
 
 **Composing.** Utils call each other, so prefer building on what exists: a new util can shell
 out to `gu <other-util> --json` internally. Don't reimplement a capability another util
