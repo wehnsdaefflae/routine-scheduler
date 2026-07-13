@@ -1,6 +1,6 @@
 [project]
 name = "rsched"
-version = "0.1.0"
+dynamic = ["version"]
 description = "LLM agent routine scheduler: provider-agnostic workflow-as-harness engine, cron daemon, web UI"
 requires-python = ">=3.12"
 dependencies = [
@@ -30,6 +30,10 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# single-source: the version lives in src/rsched/__init__.py (__version__)
+[tool.hatch.version]
+path = "src/rsched/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rsched"]

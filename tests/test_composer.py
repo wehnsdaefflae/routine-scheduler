@@ -77,21 +77,17 @@ def test_state_digest_contents(make_routine, tmp_path):
         assert needle in digest, needle
 
 
-def test_state_digest_enumerates_active_improve_lenses(make_routine):
+def test_state_digest_lists_traits_without_lens_gating(make_routine):
+    # Improvement moved to the routine-improver meta routine: the digest lists the trait
+    # files plainly and carries NO improve-* lens/authorization block anymore.
     d = make_routine(slug="lens")
     traits = d / "traits"
     traits.mkdir()
-    # A non-improve trait present -> report-only note, no enumeration line.
     (traits / "ask-policy.md").write_text("# ask", encoding="utf-8")
     digest = state_digest(d, [], [])
-    assert "Active improve-* lenses: (none)" in digest
-    assert "report-only" in digest
-    # Add two improve-* lenses -> they are enumerated as the authorization to act.
-    (traits / "improve-bugfix.md").write_text("# bugfix", encoding="utf-8")
-    (traits / "improve-ui.md").write_text("# ui", encoding="utf-8")
-    digest = state_digest(d, [], [])
-    assert "Active improve-* lenses (your authorization to ACT" in digest
-    assert "improve-bugfix" in digest and "improve-ui" in digest
+    assert "traits/ practice modules" in digest and "ask-policy.md" in digest
+    assert "Active improve-* lenses" not in digest
+    assert "report-only" not in digest
 
 
 def test_state_digest_surfaces_memory_index(make_routine):

@@ -28,14 +28,13 @@ Collect the raw signal. Touch nothing; keep your own context small by spawning p
 - Lint: if a lint util exists (`util name=list`), run it and record status; otherwise skip —
   the pytest gate is the hard gate.
 
-## D. UI friction — ONLY if `improve-ui` is among your active fragments (see the state digest)
+## D. UI friction
 - Read the newest 1–2 files under `/home/mark/routines/.ui-traces/` (`<YYYYMMDD>.jsonl`,
   one event per line: ts/kind/view/target/detail). No dir or no files = the console wasn't
   used — skip silently, that is not a finding.
 - Collect: `error` events (broken flows — pair each with its view), repeated `click` on one
   target within a minute (friction/rage-clicks), `reconnect` bursts (stream instability).
-  These feed the improve-ui lens in analyse-findings; skip this section entirely when the
-  fragment is inactive.
+  These feed the interface-quality lens in analyse-findings.
 
 ## Next
 Write `state/phase.json` = `{"state": "analyse-findings"}` and read `steps/analyse-findings.md`.

@@ -121,8 +121,7 @@ wording and examples concrete to THIS task, and cut anything that cannot apply t
 about as long as the original or shorter.
 
 End "main" with a `## Standing practices` section: one line per trait —
-`- traits/<slug>.md — <when to read it during a run>`. Any `improve-*` traits are after-run
-passes: the run flow must route to them after the main work, before finish. Do NOT copy trait
+`- traits/<slug>.md — <when to read it during a run>`. Do NOT copy trait
 text into main or the modules — reference the files."""
 
 

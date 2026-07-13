@@ -39,10 +39,10 @@ DEFAULT_PERMISSIONS = ["util-authoring", "memory", "self-modification"]
 # TRAITS a new routine gets when creation picks none explicitly (the wizard normally
 # preselects per task): reusable practice prose, adapted into the routine's own traits/
 # at creation and referenced from the end of its main.md. Not toggleable afterwards —
-# they are the routine's files from then on.
-DEFAULT_TRAITS = ["ask-policy", "global-utils", "ledger-discipline", "web-research",
-                  "improve-bugfix", "improve-research", "improve-features", "improve-ui",
-                  "improve-efficiency"]
+# they are the routine's files from then on. Improvement passes are NOT part of a
+# routine's own traits: the routine-improver meta routine runs them across all routines
+# (honoring each routine's `exclude_from_improvement` flag).
+DEFAULT_TRAITS = ["ask-policy", "global-utils", "ledger-discipline", "web-research"]
 # Each routine picks its own three models: the MAIN orchestrator loop, the model spawned
 # SUBROUTINEs run their main loop on, and the model TOOL_CALLs (the `llm` action) use.
 MODEL_KINDS = ("main", "subroutine", "tool_call")
@@ -95,6 +95,28 @@ class ModelRef:
     effort: str | None = None
 
 
+class LibrarySyncConfig(_Config):
+    """The daemon-scheduled library sync (`library_sync:` in config.yaml): mirror the
+    instance into the ONE library repo and git-sync it. Deliberately NOT a routine —
+    the exact same commands every time, no LLM in the path (see library_sync.py)."""
+
+    enabled: bool = False
+    cron: BlankableStr = "0 6 * * *"   # friendly-representable (daily 06:00) for the UI editor
+    tz: str = "Europe/Berlin"
+
+    @field_validator("cron")
+    @classmethod
+    def _croniter_accepts(cls, v: str) -> str:
+        if v:
+            from croniter import croniter
+
+            try:
+                croniter(v)
+            except (ValueError, KeyError) as exc:
+                raise ValueError(str(exc)) from exc
+        return v
+
+
 class ServerConfig(_Config):
     """The instance config (`~/.config/routine-scheduler/config.yaml`): bind/auth, the
     homes (routines, the one library repo, this source repo), endpoints, and the single
@@ -120,6 +142,8 @@ class ServerConfig(_Config):
     # The ONE fallback model for machine work that isn't a routine yet: workflow
     # generation/suggestion and the new-routine clarify wizard. Routines set their own models.
     system_model: ModelRef | None = None
+    # The scheduled instance→library sync job (Settings → Library sync).
+    library_sync: LibrarySyncConfig = Field(default_factory=LibrarySyncConfig)
     source: Path | None = None
 
     @property
@@ -221,6 +245,9 @@ class RoutineConfig(_Config):
     fs_read_roots: list[HomePath] = Field(default_factory=list)
     fs_write_roots: list[HomePath] = Field(default_factory=list)
     keep_runs: int = Field(30, validation_alias=AliasPath("retention", "keep_runs"))
+    # Opt-out from the routine-improver meta routine: a routine with this flag set is
+    # never visited by the cross-routine improvement passes (toggle on the routine page).
+    exclude_from_improvement: bool = False
 
     @field_validator("cron")
     @classmethod

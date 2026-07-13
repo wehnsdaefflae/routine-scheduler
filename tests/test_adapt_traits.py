@@ -1,6 +1,7 @@
-"""decompose + strip_inactive_improve: unselected improve-* passes never reach a routine's
-files — the generator is told the selected traits, its output is stripped deterministically,
-and each selected trait comes back ADAPTED (or is copied verbatim on fallback)."""
+"""decompose + strip_inactive_improve: selected traits come back ADAPTED (or copied
+verbatim on fallback), and improve-* sections a legacy pattern may still carry are
+stripped deterministically unless selected — the improve-* traits themselves are retired
+from the library (the routine-improver meta routine owns those lenses now)."""
 
 from pathlib import Path
 
@@ -46,8 +47,8 @@ class _FakeEndpoint:
         return Completion(text="", parsed={
             "main": "entry state machine\n\n### improve-ui — leaked\nshould be stripped\n",
             "modules": [{"name": "improve", "body": DOC}],
-            "traits": [{"slug": "improve-bugfix",
-                        "body": "# trait: improve-bugfix — adapted to this task\nadapted body\n"},
+            "traits": [{"slug": "web-research",
+                        "body": "# trait: web research — adapted to this task\nadapted body\n"},
                        {"slug": "not-selected", "body": "must be dropped"}]})
 
 
@@ -60,17 +61,17 @@ def test_decompose_adapts_traits_and_strips_leaks(monkeypatch, tmp_path):
 
     monkeypatch.setattr(endpoints_mod.EndpointRegistry, "for_system",
                         lambda self: (fake, ModelRef(endpoint="x", model="m")))
-    result = decompose(server, "general-task", "some task", traits=["improve-bugfix"])
+    result = decompose(server, "general-task", "some task", traits=["web-research"])
     # the prompt carries the selected traits' library text and asks for adaptation…
-    assert "TRAITS" in fake.prompts[0] and "trait: improve-bugfix" in fake.prompts[0]
+    assert "TRAITS" in fake.prompts[0] and "trait: web-research" in fake.prompts[0]
     assert "Standing practices" in fake.prompts[0]
     # …the adapted copy comes back keyed by slug, unknown slugs are dropped…
-    assert result["traits"] == {"improve-bugfix":
-                                "# trait: improve-bugfix — adapted to this task\nadapted body"}
-    # …and whatever improve-lens leaked anyway is stripped
+    assert result["traits"] == {"web-research":
+                                "# trait: web research — adapted to this task\nadapted body"}
+    # …and any improve-* section a legacy pattern leaked is stripped (none selected here)
     assert "improve-ui" not in result["main"]
     assert "improve-ui" not in result["modules"]["improve"]
-    assert "improve-bugfix" in result["modules"]["improve"]
+    assert "improve-bugfix" not in result["modules"]["improve"]
 
 
 def test_decompose_fallback_returns_no_adapted_traits(tmp_path):

@@ -51,7 +51,7 @@ def test_materialize_carries_workflow_and_provenance():
     # materialize = the un-decomposed baseline: the Python workflow rendered into main.md (the
     # orchestrator acts the pattern out; the pattern is fenced in the body).
     content, prov = materialize(SEED, "general-task")
-    assert prov["slug"] == "general-task" and prov["version"] == 7
+    assert prov["slug"] == "general-task" and prov["version"] == 8
     meta, body = frontmatter.parse(content)
     assert meta["materialized_from"]["slug"] == "general-task" and meta["name"] == "General task"
     assert "## Run flow" in body and "## Completion criteria" in body
@@ -131,7 +131,7 @@ def test_bootstrap_seeds_meta_routines(tmp_path):
     from rsched.bootstrap import seed_routines
     home = tmp_path / "routines"
     assert seed_routines(home) >= 1
-    for slug in ("self-audit", "library-sync", "meta-workflows"):
+    for slug in ("self-audit", "workflow-curator", "routine-improver"):
         p = home / slug
         assert (p / "main.md").exists() and (p / ".git").is_dir()
         cfg = yaml.safe_load((p / "routine.yaml").read_text())
@@ -276,11 +276,14 @@ def test_scaffold_creates_valid_routine(tmp_path):
     raw = yaml.safe_load((d / "routine.yaml").read_text())
     assert raw["budgets"]["max_turns"] == 60
     # traits = the workflow's includes, adapted (here: copied — no generator endpoint) into
-    # the routine's OWN traits/ and referenced from main.md's Standing practices tail
-    assert (d / "traits" / "improve-bugfix.md").exists()
+    # the routine's OWN traits/ and referenced from main.md's Standing practices tail.
+    # improve-* passes are NOT among them — the routine-improver meta routine owns those.
+    assert (d / "traits" / "web-research.md").exists()
     assert (d / "traits" / "global-utils.md").exists()
+    assert not list((d / "traits").glob("improve-*.md"))
     main_text = (d / "main.md").read_text()
-    assert "## Standing practices" in main_text and "traits/improve-bugfix.md" in main_text
+    assert "## Standing practices" in main_text and "traits/web-research.md" in main_text
+    assert "improve-" not in main_text
     # permissions default in and are pure config (no local copies)
     assert set(cfg.permissions) == set(raw["permissions"])
     assert "util-authoring" in cfg.permissions and "self-modification" in cfg.permissions

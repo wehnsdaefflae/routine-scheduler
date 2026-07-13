@@ -189,3 +189,71 @@ def test_sync_seed_utils_no_library_yet(tmp_path, monkeypatch):
     (fake_repo / "util-seed" / "utils" / "x").mkdir(parents=True)
     monkeypatch.setattr(bootstrap, "repo_root", lambda: fake_repo)
     assert bootstrap.sync_seed_utils(tmp_path / "nolib") == 0
+
+
+def test_migrate_improvement_split(tmp_path):
+    """The 2026-07 consolidation: library-sync retires to .archive/, meta-workflows becomes
+    workflow-curator, routine-improver installs, improve-* traits vanish from the library
+    and from every routine's own files (main.md references included)."""
+    from rsched.bootstrap import migrate_improvement_split
+
+    home = tmp_path / "routines"
+    lib = tmp_path / "library"
+    (lib / "traits").mkdir(parents=True)
+    (lib / "traits" / "improve-bugfix.md").write_text("# trait: improve-bugfix — x")
+    (lib / "traits" / "ask-policy.md").write_text("# trait: ask policy — x")
+
+    ls = home / "library-sync"
+    ls.mkdir(parents=True)
+    (ls / "routine.yaml").write_text(yaml.safe_dump(
+        {"slug": "library-sync", "workflow": {"library_slug": "library-sync"}}))
+
+    mw = home / "meta-workflows"
+    (mw / "traits").mkdir(parents=True)
+    (mw / "traits" / "improve-ui.md").write_text("# trait: improve-ui — x")
+    (mw / "traits" / "ask-policy.md").write_text("# trait: ask policy — x")
+    (mw / "routine.yaml").write_text(yaml.safe_dump(
+        {"slug": "meta-workflows", "name": "Meta: workflow library", "description": "d"}))
+    (mw / "main.md").write_text(
+        "---\nname: 'Meta: workflow library'\nslug: meta-workflows\nincludes:\n"
+        "- ask-policy\n- improve-ui\n---\n\nbody\n\n## Standing practices\n\n"
+        "- `traits/ask-policy.md` — ask\n- `traits/improve-ui.md` — polish\n\n"
+        "After the main work, before finish, run each improve pass in its own module: "
+        "`traits/improve-ui.md`.\n")
+
+    touched = migrate_improvement_split(home, lib)
+    assert touched >= 1
+    assert not (home / "library-sync").exists()
+    assert (home / ".archive" / "library-sync-retired" / "routine.yaml").is_file()
+    wc = home / "workflow-curator"
+    assert wc.is_dir() and not (home / "meta-workflows").exists()
+    raw = yaml.safe_load((wc / "routine.yaml").read_text())
+    assert raw["slug"] == "workflow-curator" and raw["name"] == "Workflow curator"
+    assert (home / "routine-improver" / "main.md").exists()          # installed on existing instances
+    assert (home / "routine-improver" / "steps" / "fresh-eyes.md").exists()
+    assert not (lib / "traits" / "improve-bugfix.md").exists()
+    assert (lib / "traits" / "ask-policy.md").exists()
+    assert not list((wc / "traits").glob("improve-*.md"))
+    main = (wc / "main.md").read_text()
+    assert "improve-" not in main and "traits/ask-policy.md" in main
+    assert migrate_improvement_split(home, lib) == 0                 # idempotent
+
+
+def test_migrate_repoints_self_audit_off_fragment_gate(tmp_path):
+    from rsched.bootstrap import _SELF_AUDIT_LEGACY, migrate_improvement_split
+
+    home = tmp_path / "routines"
+    sa = home / "self-audit"
+    (sa / "steps").mkdir(parents=True)
+    (sa / "routine.yaml").write_text(yaml.safe_dump({"slug": "self-audit", "description": "d"}))
+    (sa / "instruction.md").write_text("# Self-audit\n\n" + _SELF_AUDIT_LEGACY + "\n\ntail\n")
+    (sa / "steps" / "act-apply-fixes.md").write_text(
+        "APPLY may only contain what the autonomy gate authorized: items covered by an ACTIVE\n"
+        "`improve-*` fragment, plus decisions the user settled. **If no `improve-*` fragment is active\n"
+        "and no settled decision is pending, APPLY must be empty** — this is a report-only run.\n"
+        "If APPLY is empty, skip straight to Next (a no-change run is a good run — say so in the report).\n")
+    migrate_improvement_split(home, tmp_path / "library")
+    text = (sa / "instruction.md").read_text()
+    assert "fragment toggles" not in text and "routine-improver" in text
+    step = (sa / "steps" / "act-apply-fixes.md").read_text()
+    assert "fragment" not in step and "items inside your lenses" in step

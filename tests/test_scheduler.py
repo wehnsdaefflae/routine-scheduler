@@ -78,6 +78,32 @@ async def test_fire_on_due_tick(make_routine, tmp_path, monkeypatch):
     assert sched.next_fires["ticker"] > datetime.now(timezone.utc)  # advanced past the fire
 
 
+async def test_library_sync_fires_on_due_tick(tmp_path, monkeypatch):
+    server = _server(tmp_path)
+    server.library_sync.enabled = True
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+    ran = []
+    monkeypatch.setattr(sched_mod.library_sync, "run_sync",
+                        lambda s: ran.append(s) or {"status": "ok"})
+    sched = Scheduler(server, FakeRunner(), EventBus())
+    task = asyncio.create_task(sched.run_forever())
+    await asyncio.sleep(0.05)
+    assert sched.sync_next is not None                     # scheduled from config at rescan
+    sched.sync_next = datetime.now(timezone.utc) - timedelta(seconds=1)
+    assert await _wait_for(lambda: ran)
+    task.cancel()
+    assert ran == [server]
+    assert sched.sync_next > datetime.now(timezone.utc)    # advanced past the fire
+    assert sched.snapshot()["library_sync_next"]
+
+
+async def test_library_sync_disabled_never_scheduled(tmp_path):
+    sched = Scheduler(_server(tmp_path), FakeRunner(), EventBus())
+    sched.rescan()
+    assert sched.sync_next is None
+    assert sched.snapshot()["library_sync_next"] is None
+
+
 # --- Runner with stub engine processes -------------------------------------------
 
 

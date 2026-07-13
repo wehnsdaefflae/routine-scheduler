@@ -1,6 +1,6 @@
 ---
-name: 'Meta: workflow library'
-slug: meta-workflows
+name: Workflow curator
+slug: workflow-curator
 materialized_from:
   slug: meta-workflows
   commit: 4567d70
@@ -17,11 +17,6 @@ includes:
 - ask-policy
 - global-utils
 - ledger-discipline
-- improve-bugfix
-- improve-research
-- improve-features
-- improve-ui
-- improve-efficiency
 tags:
 - meta
 - maintenance
@@ -67,11 +62,7 @@ resumed run continues where it stopped.
 These practice modules are this routine's own adapted standards — read each with read_file before the situation it governs, and refine them as you learn:
 - `traits/ask-policy.md` — when and how to involve the user
 - `traits/global-utils.md` — your tools, and how to use them
-- `traits/improve-bugfix.md` — find and fix what's broken or wrong
-- `traits/improve-efficiency.md` — a leaner process and tidier files
-- `traits/improve-features.md` — grow what the routine delivers
-- `traits/improve-research.md` — sharpen the routine's inputs and knowledge
-- `traits/improve-ui.md` — the artifacts the user actually reads
 - `traits/ledger-discipline.md` — the routine's memory of its own changes
 
-After the main work, before finish, run each improve pass in its own module: `traits/improve-bugfix.md`, `traits/improve-efficiency.md`, `traits/improve-features.md`, `traits/improve-research.md`, `traits/improve-ui.md`.
+Improving THIS routine's own recipe is not your after-run job — the routine-improver meta
+routine does that across all routines (including this one), unless its exclusion flag is set.

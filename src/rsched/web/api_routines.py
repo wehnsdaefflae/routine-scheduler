@@ -71,6 +71,7 @@ def _card(request: Request, info: registry.RoutineInfo) -> dict:
                       "usage": last.usage, "elapsed_s": last.elapsed_s} if last else None),
         "open_questions": sum(1 for q in info.open_questions if not q.get("answered")),
         "problems": info.problems,
+        "exclude_from_improvement": info.cfg.exclude_from_improvement,
     }
 
 
@@ -193,6 +194,7 @@ class RoutinePatch(BaseModel):
     name: str | None = None
     description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
+    exclude_from_improvement: bool | None = None   # opt out of the routine-improver's passes
 
 
 @router.patch("/routines/{slug}")

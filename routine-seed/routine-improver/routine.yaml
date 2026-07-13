@@ -1,0 +1,34 @@
+name: Routine improver
+description: Sweeps every routine that hasn't opted out (including itself) and improves
+  it through the five lenses — bugfix, research, features, UI, efficiency — plus a
+  fresh-eyes de-clutter pass.
+tags:
+- meta
+- maintenance
+- improvement
+slug: routine-improver
+enabled: false
+schedule:
+  cron: 0 4 * * *
+  tz: Europe/Berlin
+  catchup: skip
+workflow:
+  library_slug: routine-improver
+  library_commit: seed
+permissions:
+- util-authoring
+- memory
+- self-modification
+budgets:
+  max_turns: 70
+  max_wall_clock_min: 60
+  max_total_tokens: 2000000
+  max_subruns: 8
+  max_subrun_depth: 2
+  ask_timeout_min: 480
+retention:
+  keep_runs: 30
+fs_read_roots:
+- ~/routines
+fs_write_roots:
+- ~/routines

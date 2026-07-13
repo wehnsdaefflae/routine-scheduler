@@ -12,6 +12,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from .. import library_sync
 from ..config import ServerConfig
 from ..ids import now_iso
 from . import registry, restart
@@ -38,6 +39,9 @@ class Scheduler:
         self.bus = bus
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
+        # the library-sync job (plain, not a routine) rides the same cron machinery
+        self.sync_next: datetime | None = None
+        self._sync_task: asyncio.Task | None = None
         self._last_scan = 0.0
         self._shutting_down = False
         self._deferred_logged = False
@@ -55,6 +59,10 @@ class Scheduler:
             # a fire that came due since the last tick is still owed — don't recompute past it
             fires[slug] = prev if (prev is not None and prev <= now) else nf
         self.next_fires = fires
+        # library sync: LibrarySyncConfig carries the same enabled/cron/tz trio next_fire reads
+        nf = registry.next_fire(self.server.library_sync, now)  # type: ignore[arg-type]
+        self.sync_next = self.sync_next if (nf is not None and self.sync_next is not None
+                                            and self.sync_next <= now) else nf
 
     async def boot_catchup(self) -> None:
         for slug, info in self.catalog.items():
@@ -92,6 +100,22 @@ class Scheduler:
                     continue
                 self.next_fires[slug] = registry.next_fire(info.cfg, now) or due
                 await self.runner.fire(info.cfg, reason="schedule")
+            if self.sync_next is not None and now >= self.sync_next:
+                self.sync_next = registry.next_fire(self.server.library_sync, now)  # type: ignore[arg-type]
+                self._fire_library_sync()
+
+    def _fire_library_sync(self) -> None:
+        """Run the sync off-loop (git talks to the network); one at a time — an overrun
+        skips the fire like a still-running routine does."""
+        if self._sync_task is not None and not self._sync_task.done():
+            log.info("library sync still running — skipping this fire")
+            return
+
+        async def _job() -> None:
+            result = await asyncio.to_thread(library_sync.run_sync, self.server)
+            self.bus.publish({"event": "library_sync", "status": result.get("status", "error")})
+
+        self._sync_task = asyncio.create_task(_job())
 
     def _maybe_restart(self) -> bool:
         """Drive the graceful self-restart state machine. Returns True when the scheduler
@@ -132,4 +156,5 @@ class Scheduler:
             "draining": self.runner.draining,
             "started": self.started,
             "restart_requested": restart.restart_requested(self.server),
+            "library_sync_next": self.sync_next.isoformat() if self.sync_next else None,
         }

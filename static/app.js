@@ -194,11 +194,21 @@ function renderMetaBanner(metaRoutines) {
   banner.hidden = false;
 }
 
+// The tiny build tag next to the brand: release version, with the running checkout's
+// commit stamp in the tooltip — enough to identify a deploy at a glance.
+function renderVersion(s) {
+  const node = document.getElementById("app-version");
+  if (!node || !s.version) return;
+  node.textContent = `v${s.version}`;
+  node.title = s.build ? `v${s.version} · ${s.build}` : `v${s.version}`;
+}
+
 async function refreshStatus() {
   try {
     const s = await api("/api/status");
     gateNav(s.llm_ready !== false);
     renderMetaBanner(s.meta_routines);
+    renderVersion(s);
     document.getElementById("daemon-dot").classList.add("on");
   } catch {
     document.getElementById("daemon-dot").classList.remove("on");
@@ -222,6 +232,7 @@ function globalStream() {
       if (ev.event === "run_finished") toast(`run ${ev.state}: ${ev.run_id}`);
       if (ev.event === "routine_created") { toast(`routine ${ev.slug} is ready`, 5000); refreshSetupBanner(); }
       if (ev.event === "routine_failed") { toast(`routine ${ev.slug} build failed`, 7000, { error: true }); refreshSetupBanner(); }
+      if (ev.event === "library_sync" && ev.status !== "ok") toast(`library sync ${ev.status}`, 7000, { error: true });
       refreshBadges();
       window.dispatchEvent(new CustomEvent("rsched-bus", { detail: ev }));
     },
@@ -261,6 +272,7 @@ function gateNav(ready) {
     const s = await api("/api/status");
     gateNav(s.llm_ready !== false);
     renderMetaBanner(s.meta_routines);
+    renderVersion(s);
     // First launch: send the user to setup (Settings) until they finish it. The redirect fires a
     // hashchange → route(), so we don't call route() again in that branch.
     if (s.needs_setup && !location.hash.startsWith("#/settings")) {

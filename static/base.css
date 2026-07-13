@@ -89,6 +89,7 @@ h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .brand-mark { width: 17px; height: 17px; color: var(--amber); filter: drop-shadow(0 0 5px rgba(255, 180, 84, 0.55)); }
 .brand-name { font-weight: 700; font-size: 14.5px; letter-spacing: 0.14em; }
 .brand-sub { font-size: 10px; color: var(--faint); letter-spacing: 0.14em; text-transform: uppercase; }
+.brand-ver { font-size: 10px; color: var(--faint); letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
 .topbar nav {
   display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none;
 }

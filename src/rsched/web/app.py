@@ -23,6 +23,22 @@ log = logging.getLogger("rsched.web")
 STATIC_DIR = Path(__file__).resolve().parents[3] / "static"
 
 
+def build_stamp(repo: Path | None) -> str:
+    """Short commit + date of the running checkout ('46e48e3 2026-07-13'), '' if unknown.
+
+    Computed once at boot: deploys always restart the daemon, so the stamp can't go stale."""
+    if not repo:
+        return ""
+    try:
+        import subprocess
+
+        out = subprocess.run(["git", "-C", str(repo), "log", "-1", "--format=%h %cs"],
+                             capture_output=True, text=True, timeout=5)
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
 def require_auth(request: Request) -> None:
     token = request.app.state.server.token
     if not token:
@@ -102,6 +118,8 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     def _setup_marker():
         return (server.source.parent / ".setup-complete") if server.source else None
 
+    build = build_stamp(server.source_repo)
+
     @app.get("/api/status", dependencies=deps)
     def status() -> dict:
         from .. import __version__
@@ -119,7 +137,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         # to notice that self-improvement is off on a fresh instance
         meta_routines = [{"slug": info.slug, "enabled": info.cfg.enabled}
                          for info in registry.scan(server).values() if "meta" in info.cfg.tags]
-        return {"version": __version__, "server_tz": server_tz(),
+        return {"version": __version__, "build": build, "server_tz": server_tz(),
                 "needs_setup": needs_setup, "llm_ready": llm_ready,
                 "meta_routines": meta_routines, **scheduler.snapshot()}
 

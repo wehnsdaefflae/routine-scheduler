@@ -4,11 +4,10 @@ Decide what you may settle yourself vs what needs the user.
 
 ## Do
 1. For each finding, apply the **autonomy gate** — BOTH conditions must hold to act:
-   - **Lens condition**: an ACTIVE `improve-*` fragment (state digest) covers it —
-     bugfix → defects + instrumentation; efficiency → waste; features → small self-contained
-     affordances; ui → interface/artifact quality. **No active lens covers it → it cannot go
-     to APPLY**, however self-evident; make it a decision or a report line instead.
-     (Exception: a decision the user settled is explicit authorization on its own.)
+   - **Lens condition**: it falls in one of your lenses — defects + instrumentation; waste;
+     small self-contained affordances; interface/artifact quality. Outside every lens → it
+     cannot go to APPLY, however self-evident; make it a decision or a report line instead.
+     (A decision the user settled is explicit authorization on its own.)
    - **Safety condition**: reversible code/tests/config edits, added logging/telemetry, docs,
      small refactors that keep contracts intact.
    - **Decision (surface, don't apply)** — anything failing either condition, anything that

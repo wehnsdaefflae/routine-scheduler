@@ -1,7 +1,7 @@
 """General task — the sane default workflow.
 
-Orient, do the instruction's work in small verified steps, record, then run the routine's
-improvement passes. This file is a PATTERN, not a program: the orchestrator never executes it —
+Orient, do the instruction's work in small verified steps, record, commit. This file is a
+PATTERN, not a program: the orchestrator never executes it —
 it *acts it out*, one engine action per turn, following the control flow below (its branches,
 loops, and error handling). The dummy imports name the parameters this routine works with; the
 clarifier pins them down for the concrete task, and `decompose` turns this pattern into the
@@ -26,18 +26,16 @@ from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md 
 META = {
     "name": "General task",
     "slug": "general-task",
-    "description": "The sane default — orient, do the work in small verified steps, record, "
-                   "run the improvement passes, commit.",
+    "description": "The sane default — orient, do the work in small verified steps, "
+                   "record, commit.",
     "when_to_use": "Most recurring instructions with no more specific pattern: collect / produce "
                    "/ maintain something on a schedule, tend a long-running goal, run a periodic "
                    "check. Use it when the instruction says WHAT to deliver and the HOW is "
                    "ordinary tool work.",
-    "version": 7,
+    "version": 8,
     "status": "stable",
     "tags": ["general", "research", "tool-use"],
-    "includes": ["ask-policy", "global-utils", "web-research", "ledger-discipline",
-                 "improve-bugfix", "improve-research", "improve-features", "improve-ui",
-                 "improve-efficiency"],
+    "includes": ["ask-policy", "global-utils", "web-research", "ledger-discipline"],
     "tools": None,          # None = every action kind is allowed
 }
 
@@ -86,7 +84,6 @@ def main():
                 continue                        # can't proceed now; move to the next item
 
     record()                                    # update state/phase.json + append the LEDGER entry
-    improve()                                   # the after-run improvement passes (see below)
     return finish("ok", "what was delivered, decisions taken, open ends")
 
 
@@ -129,13 +126,6 @@ def record():
     (what changed, why, decisions, and candidates rejected + why)."""
     ledger.append("what changed, why, decisions, rejected candidates")
 
-
-def improve():
-    """After the main work, run ONLY the improvement passes this routine adopted as traits —
-    the traits/improve-*.md modules listed in the state digest; read each with read_file and
-    skip any lens the routine does not carry. Each pass infers the routine's intention from
-    what THIS run just did, then acts in its lens, doing the safe, reversible changes itself
-    and filing a deferred `ask_user` (Decisions page) whenever it is unsure how to proceed."""
 
 
 if __name__ == "__main__":

@@ -105,7 +105,8 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   `permissions:` (held capability grants — user-changeable only, all surfaced on the routine page),
   `budgets:` (max_turns / wall_clock_min / total_tokens / subruns / subrun_depth / ask_timeout_min — all
   editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
-  budgets/fs-roots/schedules are resources, never grants.
+  budgets/fs-roots/schedules are resources, never grants; `exclude_from_improvement` opts the
+  routine out of the routine-improver's passes.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
   routes to `steps/<name>.md` modules, read on demand, and ends with a Standing practices tail
   referencing `traits/`). `instruction.md` — the task. `traits/*.md` — the routine's OWN practice
@@ -238,6 +239,12 @@ first boot; `deploy/install.sh` for host installs.
 - Tests accompany every module in the same commit; `ScriptedEndpoint` in `tests/conftest.py` replays
   canned actions and is the main engine harness. Endpoint adapters are mock-tested; anything touching the
   network hides behind `RSCHED_LIVE_TESTS=1`.
+
+## Versioning
+
+`src/rsched/__init__.py` `__version__` is the single source (pyproject reads it via hatch's
+version hook) — bump the minor on every user-facing revision. `/api/status` pairs it with the
+running checkout's git commit stamp; the header's brand shows `v<version>` (tooltip = commit).
 
 ## Deploy
 

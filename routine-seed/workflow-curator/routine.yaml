@@ -1,18 +1,18 @@
-name: 'Meta: workflow library'
+name: Workflow curator
 description: Reviews all routines' transcripts and ledgers, then fixes and improves
   the shared workflow library.
 tags:
 - meta
 - maintenance
 - workflows
-slug: meta-workflows
+slug: workflow-curator
 enabled: false
 schedule:
   cron: 0 8 * * 1
   tz: Europe/Berlin
   catchup: skip
 workflow:
-  library_slug: meta-workflows
+  library_slug: workflow-curator
   library_commit: eab87b5
 permissions:
 - util-authoring

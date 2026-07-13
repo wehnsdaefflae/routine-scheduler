@@ -40,7 +40,11 @@ is a lint error). The shipped set:
 | `global-utils` | util discovery (`util name=list`), composing utils, never silently working around a broken one |
 | `web-research` | verify external facts by searching instead of recalling; provenance discipline |
 | `ledger-discipline` | the append-only LEDGER entry every run writes, and its rotation |
-| `improve-bugfix` / `-research` / `-features` / `-ui` / `-efficiency` | the five after-run improvement passes, each one lens |
+
+Improvement passes are deliberately NOT traits anymore: the bundled **routine-improver**
+meta routine sweeps every routine that doesn't set `exclude_from_improvement: true` in its
+routine.yaml (toggle on the routine page) and runs the five lenses — bugfix, research,
+features, UI, efficiency — plus a fresh-eyes de-clutter pass on each, itself included.
 
 At creation the wizard **preselects** traits from the refined instruction + chosen
 workflow (editable before creating), and the generator LLM **adapts** each selected trait

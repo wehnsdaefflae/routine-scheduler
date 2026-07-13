@@ -298,8 +298,12 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .art-label { display: flex; flex-direction: column; min-width: 0; }
 .art-label .art-name { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .art-viewer { border: 1px solid var(--line); border-radius: 9px; background: var(--surface); padding: 10px; }
-.art-viewer-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-.art-viewer-head .art-name { font-size: 12px; font-weight: 600; margin-right: auto; overflow-wrap: anywhere; }
+/* The name must never dictate layout: nowrap + ellipsis keeps it to one line however long
+   it is, and flex-wrap drops the buttons onto their own row in narrow panels (instead of
+   flex crushing the name into a one-character-per-line column beside them). */
+.art-viewer-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.art-viewer-head .art-name { flex: 1 1 auto; min-width: 40px; font-size: 12px; font-weight: 600; margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.art-viewer-head .btn { flex: none; }
 .art-frame { width: 100%; height: 58vh; border: 0; border-radius: 6px; background: #fff; }
 .art-frame.tall { height: 70vh; }
 .art-img { max-width: 100%; border-radius: 6px; }

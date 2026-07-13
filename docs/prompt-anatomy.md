@@ -403,10 +403,6 @@ These practice modules are this routine's own adapted standards — read each wi
 - `traits/global-utils.md` — util discovery and repair discipline. Consult before the first util call.
 - `traits/web-research.md` — verify external facts by searching. Consult before relying on a fact about the world.
 - `traits/ledger-discipline.md` — the run's LEDGER entry. Consult before finishing.
-- `traits/improve-bugfix.md` — after the main work: find and fix what's broken.
-- `traits/improve-research.md` — after the main work: sharpen inputs and knowledge.
-
-After the main work, before finish, run each improve pass in its own module: `traits/improve-bugfix.md`, `traits/improve-research.md`.
 
 # INSTRUCTION (what this routine is for)
 Scan the usual freelance portals for new AI/ML/LLM project postings from the last 24 h.
@@ -441,7 +437,7 @@ Unlocks `write_file` on the routine's own recipe files: `main.md`, `steps/`, `tr
 and `instruction.md`. [...]
 
 Sub-workflow patterns for spawn — pick the one matching the CHILD's purpose, never reflexively the default:
-- general-task — bootstrap, then per run: orient on state, do the next increment of work, run the improvement passes, commit.
+- general-task — bootstrap, then per run: orient on state, do the next increment of work, record, commit.
 
 Global utils (4; run `util name=list` for each one's exact usage before calling it):
 - discord — two-way phone channel via a Discord bot: send to a channel, read/wait for replies.  [reserved — not granted to this routine]
@@ -456,7 +452,7 @@ state/: hits.json (2B), phase.json (44B)
 
 steps/ step modules (read the relevant one on demand with read_file): report.md, scan.md, score.md
 
-traits/ practice modules (this routine's own adapted standards — read each before the situation it governs; the workflow's Standing practices section says when): ask-policy.md, global-utils.md, improve-bugfix.md, improve-research.md, ledger-discipline.md, web-research.md
+traits/ practice modules (this routine's own adapted standards — read each before the situation it governs; the workflow's Standing practices section says when): ask-policy.md, global-utils.md, ledger-discipline.md, web-research.md
 
 Last run result (20260711-070000):
 Scanned 38 postings, shortlisted 5 (top score 9 — LLM agent platform, 95 €/h).

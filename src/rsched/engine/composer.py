@@ -275,14 +275,6 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
             parts.append("traits/ practice modules (this routine's own adapted standards — read "
                          "each before the situation it governs; the workflow's Standing practices "
                          "section says when): " + ", ".join(names))
-            improve = [n[:-3] for n in names if n.startswith("improve-")]
-            if improve:
-                parts.append("Active improve-* lenses (your authorization to ACT on findings "
-                             "this run, each in its own lens): " + ", ".join(improve) + ".")
-            else:
-                parts.append("Active improve-* lenses: (none) — no improve-* fragment is active, "
-                             "so acting on a finding needs a user-settled decision; otherwise "
-                             "this is a report-only audit.")
     runs = sorted((routine_dir / "runs").glob("*/result.md")) if (routine_dir / "runs").is_dir() else []
     if runs:
         last = runs[-1]

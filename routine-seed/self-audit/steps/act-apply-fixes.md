@@ -3,9 +3,8 @@
 Apply the APPLY list to the LIVE scheduler tree (`/home/mark/git-repos/routine-scheduler`).
 There is no worktree — precision and the test gate keep the daemon safe.
 
-APPLY may only contain what the autonomy gate authorized: items covered by an ACTIVE
-`improve-*` fragment, plus decisions the user settled. **If no `improve-*` fragment is active
-and no settled decision is pending, APPLY must be empty** — this is a report-only run.
+APPLY may only contain what the autonomy gate authorized: items inside your lenses that pass
+the safety condition, plus decisions the user settled.
 If APPLY is empty, skip straight to Next (a no-change run is a good run — say so in the report).
 
 ## For each change

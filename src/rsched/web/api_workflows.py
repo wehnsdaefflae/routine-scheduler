@@ -193,7 +193,7 @@ def decide(request: Request, proposal_id: str, body: Decision) -> dict:
                       {"decision": body.decision, "note": body.note, "ts": now_iso()})
     library.git_commit(home, f"proposal {proposal_id}: {body.decision}")
     # nudge the meta routine so its next run acts on the decision
-    meta_dir = request.app.state.server.routines_home / "meta-workflows"
+    meta_dir = request.app.state.server.routines_home / "workflow-curator"
     if meta_dir.is_dir():
         atomic_write_json(meta_dir / "inbox" / f"msg-proposal-{proposal_id}.json",
                           {"text": f"Proposal {proposal_id} was {body.decision}"

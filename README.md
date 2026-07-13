@@ -29,21 +29,22 @@ path: this scheduler is the only harness.
 
 ## How the system improves itself
 
-- **Per routine**: the `improve-*` fragments run after every run — five fresh-eyes passes
-  (bugfix, research, features, ui, efficiency) that infer the routine's intention from the
-  run just completed and improve it along four dimensions: technology, method, function,
-  aesthetics — grounding changes in online research. When a pass is unsure, it files a
-  deferred question to the **Decisions** page; answers are remembered in the routine's
-  LEDGER, so user interaction shrinks over time.
-- **As a whole**: three bundled meta routines use the exact same building blocks —
-  `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, but
-  *changing* anything is authorized only by the improve-* fragments you toggle on — none
-  active means report-only, with test-gated fixes and bigger decisions on the **Audit** page
-  once you enable the lenses), `meta-workflows` (fixes and drafts library
-  workflows from all routines' transcripts; big changes become proposals you approve in the
-  UI), and `library-sync` (exports the entire instance — routines, workflows, fragments,
-  utils, sanitized config — into one GitHub repo and syncs it). They ship **disabled**; the
-  dashboard says so until you enable them, because self-improvement costs tokens.
+- **Across routines**: the bundled `routine-improver` meta routine sweeps every routine
+  that hasn't set its `exclude_from_improvement` flag — **itself included** — and improves
+  each through five lenses (bugfix, research, features, ui, efficiency) plus a fresh-eyes
+  de-clutter pass that hunts what accumulated over many revisions. It infers each routine's
+  intention from its recent runs, grounds changes in online research, applies the safe
+  reversible ones directly (committed per routine), and files a deferred question to the
+  **Decisions** page when unsure; answers are remembered in the LEDGERs, so user
+  interaction shrinks over time.
+- **As a whole**: two more bundled meta routines use the exact same building blocks —
+  `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, acting
+  is lens-scoped and test-gated, with bigger decisions on the **Audit** page) and
+  `workflow-curator` (fixes and drafts library workflows from all routines' transcripts;
+  big changes become proposals you approve in the UI). They ship **disabled**; the
+  dashboard says so until you enable them, because self-improvement costs tokens. The
+  instance itself syncs to one GitHub repo — routines, workflows, traits, utils, sanitized
+  config — via the scheduled **Library sync** job in Settings (a plain daemon job, no LLM).
 - **Across routines**: workflows and global utils live in one shared library repo, so what
   one routine learns transfers to all — and utils compose (`gu` utils may call other utils),
   so capability compounds.

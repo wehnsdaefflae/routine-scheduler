@@ -14,16 +14,17 @@ healthy and improving, run over run.
 - Surface problems, improvement openings, redundancies, and systemic issues in the Audit tab's
   report: findings with concrete evidence, and decisions where you need my call. This reporting
   duty is unconditional — every run produces it.
-- **Changing anything is governed by my fragment toggles.** Your ACTIVE `improve-*` fragments
-  (listed in the state digest) are the only authorization to act on findings, each in its own
-  lens: `improve-bugfix` → defect fixes and the logging/telemetry a thin suspicion needs;
-  `improve-efficiency` → waste reduction; `improve-features` → small self-contained affordances;
-  `improve-ui` → interface/artifact quality; `improve-research` grounds the others in current
-  best practice. **With none of them active, this is a report-only audit: change nothing.**
-  All acting is **test-gated** — commit + push, log to the changelog, request the restart.
+- **Act on findings, in these lenses**: defect fixes (plus the logging/telemetry a thin
+  suspicion needs); waste reduction; small self-contained affordances; interface/artifact
+  quality — each grounded in current best practice (research before you patch). All acting is
+  **test-gated** — commit + push, log to the changelog, request the restart. Changing the
+  action-schema / transcript-event / ownership contracts, or anything scope-shaped, is a
+  decision for me, not a fix.
 - Act on my feedback from the Audit tab: comments on findings, decisions I settle, general
-  notes. A decision I settled is explicit authorization — apply it (test-gated) regardless of
-  which fragments are active.
+  notes. A decision I settled is explicit authorization — apply it (test-gated).
+- Your remit is the scheduler CODE and daemon behaviour. Improving individual routines'
+  recipes is the routine-improver meta routine's job, not yours — findings about a specific
+  routine become report entries or decisions naming it.
 
 ## Paths & conventions
 - Scheduler repo (edit + test + commit here): `/home/mark/git-repos/routine-scheduler`

@@ -37,6 +37,7 @@ def test_deployed_config_keys_load_exactly(tmp_path):
             "cc": {"kind": "claude-cli"},
         },
         "system_model": {"endpoint": "openrouter", "model": "deepseek/deepseek-chat"},
+        "library_sync": {"enabled": True, "cron": "0 6 * * *", "tz": "Europe/Berlin"},
     })
     assert problems == []
     assert (server.bind, server.port, server.token) == ("0.0.0.0", 9000, "s3cret")
@@ -55,6 +56,19 @@ def test_deployed_config_keys_load_exactly(tmp_path):
     assert server.library_home == server.libraries_home == server.utils_home
     assert server.traits_home == server.libraries_home / "traits"
     assert server.permissions_home == server.libraries_home / "permissions"
+    assert server.library_sync.enabled is True and server.library_sync.cron == "0 6 * * *"
+
+
+def test_library_sync_defaults_and_bad_cron_degrades(tmp_path):
+    server, problems = _load_server(tmp_path, {"bind": "127.0.0.1"})
+    assert problems == []
+    assert server.library_sync.enabled is False
+    assert server.library_sync.cron == "0 6 * * *"
+    server, problems = _load_server(tmp_path, {"library_sync": {"enabled": True,
+                                                                "cron": "not a cron"}})
+    assert any("library_sync.cron" in pr for pr in problems)
+    assert server.library_sync.cron == "0 6 * * *"      # bad key dropped, default survives
+    assert server.library_sync.enabled is True          # the valid sibling key still loads
 
 
 def test_server_defaults_and_missing_file(tmp_path):

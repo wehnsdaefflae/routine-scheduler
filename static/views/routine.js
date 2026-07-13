@@ -96,15 +96,19 @@ export async function render(view, slug, query = {}) {
   // -- schedule -------------------------------------------------------------------
   const sched = scheduleEditor(d.schedule_friendly || { frequency: "manual" }, d.server_tz);
   const enabledBox = el("input", { type: "checkbox", checked: d.enabled || null });
+  const noImproveBox = el("input", { type: "checkbox", checked: d.exclude_from_improvement || null });
   view.append(el("h2", {}, "Schedule"),
     el("div", { class: "panel" }, sched.node,
       el("label", { class: "row mt", style: "gap:8px" }, enabledBox, "enabled"),
+      el("label", { class: "row mt", style: "gap:8px" }, noImproveBox,
+        el("span", {}, "exclude from improvement — the routine-improver meta routine never touches this routine")),
       el("div", { class: "row mt" }, el("button", {
         class: "btn primary",
         onclick: async () => {
           try {
             await api(`/api/routines/${slug}`, { method: "PATCH",
-              body: { enabled: enabledBox.checked, schedule: { friendly: sched.value() } } });
+              body: { enabled: enabledBox.checked, exclude_from_improvement: noImproveBox.checked,
+                      schedule: { friendly: sched.value() } } });
             toast("schedule saved"); setTimeout(() => location.reload(), 400);
           } catch (err) { toast(err.message, 4000, { error: true }); }
         },

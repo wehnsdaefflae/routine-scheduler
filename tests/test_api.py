@@ -542,6 +542,52 @@ def test_status_meta_routines(client):
     assert c.get("/api/status").json()["meta_routines"] == [{"slug": "apir", "enabled": False}]
 
 
+def test_settings_library_sync_roundtrip(client):
+    """GET reflects defaults; PUT persists to config.yaml + live-patches; run-now responds
+    with a contained outcome even when the library repo is not a git repo yet."""
+    import subprocess
+
+    c, tmp = client
+    g = c.get("/api/settings/library-sync").json()
+    assert g["enabled"] is False and g["schedule_friendly"]["frequency"] == "daily"
+    r = c.put("/api/settings/library-sync",
+              json={"enabled": True,
+                    "schedule": {"friendly": {"frequency": "hourly", "minute": 30}}})
+    assert r.status_code == 200 and r.json()["enabled"] is True
+    assert r.json()["cron"] == "30 * * * *"
+    raw = yaml.safe_load((tmp / "config.yaml").read_text())
+    assert raw["library_sync"]["enabled"] is True and raw["library_sync"]["cron"] == "30 * * * *"
+    bad = c.put("/api/settings/library-sync",
+                json={"schedule": {"friendly": {"frequency": "hourly", "minute": 99}}})
+    assert bad.status_code == 400
+    lib = tmp / "library"
+    lib.mkdir(exist_ok=True)
+    subprocess.run(["git", "-C", str(lib), "init", "-q", "-b", "main"], check=True)
+    out = c.post("/api/settings/library-sync/run").json()
+    assert out["status"] == "ok", out
+    assert c.get("/api/settings/library-sync").json()["last"]["status"] == "ok"
+
+
+def test_status_reports_version_and_build(client):
+    from rsched import __version__
+
+    c, _ = client
+    s = c.get("/api/status").json()
+    assert s["version"] == __version__
+    assert isinstance(s["build"], str)            # commit stamp of the running checkout
+    assert "library_sync_next" in s
+
+
+def test_patch_exclude_from_improvement(client):
+    c, tmp = client
+    assert c.get("/api/routines/apir").json()["exclude_from_improvement"] is False
+    r = c.patch("/api/routines/apir", json={"exclude_from_improvement": True})
+    assert r.status_code == 200
+    raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
+    assert raw["exclude_from_improvement"] is True
+    assert c.get("/api/routines/apir").json()["exclude_from_improvement"] is True
+
+
 def test_first_run_setup_flag(client):
     """Fresh install → needs_setup true (drives the redirect); completing it writes the marker."""
     c, tmp = client

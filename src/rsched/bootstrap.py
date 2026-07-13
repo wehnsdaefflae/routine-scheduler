@@ -56,6 +56,16 @@ def install_push_hook(home: Path) -> None:
         dst.chmod(0o755)
 
 
+def _install_seed_routine(src: Path, dst: Path) -> None:
+    shutil.copytree(src, dst)
+    if not (dst / ".git").is_dir():
+        _git(dst, "init", "-q", "-b", "main")
+    _git(dst, "config", "user.name", "routine-scheduler")
+    _git(dst, "config", "user.email", "noreply@routine-scheduler.local")
+    _git(dst, "add", "-A")
+    _git(dst, "commit", "-qm", f"seed {src.name} routine")
+
+
 def seed_routines(routines_home: Path) -> int:
     """On a fresh install (no routines yet), install the bundled meta routines — disabled, so they
     show up under the 'meta' tag for the user to enable, but don't run anything on their own."""
@@ -67,14 +77,7 @@ def seed_routines(routines_home: Path) -> int:
         return 0
     n = 0
     for src in sorted(p for p in seed.iterdir() if p.is_dir()):
-        dst = routines_home / src.name
-        shutil.copytree(src, dst)
-        if not (dst / ".git").is_dir():
-            _git(dst, "init", "-q", "-b", "main")
-        _git(dst, "config", "user.name", "routine-scheduler")
-        _git(dst, "config", "user.email", "noreply@routine-scheduler.local")
-        _git(dst, "add", "-A")
-        _git(dst, "commit", "-qm", f"seed {src.name} routine")
+        _install_seed_routine(src, routines_home / src.name)
         n += 1
     if n:
         log.warning("first boot: installed %d bundled meta routines (disabled)", n)
@@ -252,6 +255,203 @@ def migrate_fragments_split(routines_home: Path, library_home: Path) -> int:
         touched += 1
     if touched:
         log.warning("migrated %d routine(s) to the traits + permissions split", touched)
+    return touched
+
+
+# The 2026-07 improvement consolidation: the five improve-* traits are retired from
+# per-routine adaptation — the routine-improver meta routine now runs those lenses across
+# every routine that doesn't set `exclude_from_improvement` — and library-sync stopped
+# being a routine (it's a scheduled daemon job now, see library_sync.py).
+_IMPROVE_TRAITS = ("improve-bugfix", "improve-research", "improve-features",
+                   "improve-ui", "improve-efficiency")
+
+
+# The exact acting-authorization paragraph the self-audit seed carried before the split —
+# it gated acting on ACTIVE improve-* fragment files, which this migration deletes. An
+# installed copy still carrying it would read itself as report-only forever.
+_SELF_AUDIT_LEGACY = """- **Changing anything is governed by my fragment toggles.** Your ACTIVE `improve-*` fragments
+  (listed in the state digest) are the only authorization to act on findings, each in its own
+  lens: `improve-bugfix` → defect fixes and the logging/telemetry a thin suspicion needs;
+  `improve-efficiency` → waste reduction; `improve-features` → small self-contained affordances;
+  `improve-ui` → interface/artifact quality; `improve-research` grounds the others in current
+  best practice. **With none of them active, this is a report-only audit: change nothing.**
+  All acting is **test-gated** — commit + push, log to the changelog, request the restart.
+- Act on my feedback from the Audit tab: comments on findings, decisions I settle, general
+  notes. A decision I settled is explicit authorization — apply it (test-gated) regardless of
+  which fragments are active."""
+_SELF_AUDIT_CURRENT = """- **Act on findings, in these lenses**: defect fixes (plus the logging/telemetry a thin
+  suspicion needs); waste reduction; small self-contained affordances; interface/artifact
+  quality — each grounded in current best practice (research before you patch). All acting is
+  **test-gated** — commit + push, log to the changelog, request the restart. Changing the
+  action-schema / transcript-event / ownership contracts, or anything scope-shaped, is a
+  decision for me, not a fix.
+- Act on my feedback from the Audit tab: comments on findings, decisions I settle, general
+  notes. A decision I settled is explicit authorization — apply it (test-gated).
+- Your remit is the scheduler CODE and daemon behaviour. Improving individual routines'
+  recipes is the routine-improver meta routine's job, not yours — findings about a specific
+  routine become report entries or decisions naming it."""
+
+
+# Same idea for the seed step modules that referenced the fragment gate: exact legacy
+# text → current text; anything user-edited stays and is warned about.
+_SELF_AUDIT_STEP_FIXES = [
+    ("gather-evidence.md",
+     "## D. UI friction — ONLY if `improve-ui` is among your active fragments (see the state digest)",
+     "## D. UI friction"),
+    ("gather-evidence.md",
+     """  These feed the improve-ui lens in analyse-findings; skip this section entirely when the
+  fragment is inactive.""",
+     "  These feed the interface-quality lens in analyse-findings."),
+    ("separate-decisions.md",
+     """   - **Lens condition**: an ACTIVE `improve-*` fragment (state digest) covers it —
+     bugfix → defects + instrumentation; efficiency → waste; features → small self-contained
+     affordances; ui → interface/artifact quality. **No active lens covers it → it cannot go
+     to APPLY**, however self-evident; make it a decision or a report line instead.
+     (Exception: a decision the user settled is explicit authorization on its own.)""",
+     """   - **Lens condition**: it falls in one of your lenses — defects + instrumentation; waste;
+     small self-contained affordances; interface/artifact quality. Outside every lens → it
+     cannot go to APPLY, however self-evident; make it a decision or a report line instead.
+     (A decision the user settled is explicit authorization on its own.)"""),
+    ("analyse-findings.md",
+     """That instrumentation is a real code change: it reaches `act-apply-fixes`
+   only under an active `improve-bugfix` lens; otherwise file it as a decision.""",
+     """That instrumentation is a real code change and goes through
+   `act-apply-fixes` like any other (test-gated)."""),
+    ("act-apply-fixes.md",
+     """APPLY may only contain what the autonomy gate authorized: items covered by an ACTIVE
+`improve-*` fragment, plus decisions the user settled. **If no `improve-*` fragment is active
+and no settled decision is pending, APPLY must be empty** — this is a report-only run.
+If APPLY is empty, skip straight to Next (a no-change run is a good run — say so in the report).""",
+     """APPLY may only contain what the autonomy gate authorized: items inside your lenses that pass
+the safety condition, plus decisions the user settled.
+If APPLY is empty, skip straight to Next (a no-change run is a good run — say so in the report)."""),
+]
+
+
+def _repoint_self_audit(rdir: Path) -> None:
+    """Best-effort: swap the legacy fragment-gated acting prose for the current lens-scoped
+    version, in instruction.md and the seed step modules. Only exact matches are replaced
+    (user-edited text is theirs); leftover fragment references are warned about instead."""
+    ins = rdir / "instruction.md"
+    if not ins.is_file():
+        return
+    changed = False
+    text = ins.read_text(encoding="utf-8")
+    if _SELF_AUDIT_LEGACY in text:
+        ins.write_text(text.replace(_SELF_AUDIT_LEGACY, _SELF_AUDIT_CURRENT), encoding="utf-8")
+        changed = True
+    for name, old, new in _SELF_AUDIT_STEP_FIXES:
+        step = rdir / "steps" / name
+        if step.is_file() and old in (t := step.read_text(encoding="utf-8")):
+            step.write_text(t.replace(old, new), encoding="utf-8")
+            changed = True
+    if changed:
+        _git(rdir, "add", "-A")
+        _git(rdir, "commit", "-qm", "migrate: acting is lens-scoped, no fragment toggles")
+    leftovers = [p.name for p in [ins, *sorted((rdir / "steps").glob("*.md"))]
+                 if p.is_file() and "fragment" in p.read_text(encoding="utf-8")]
+    if leftovers:
+        log.warning("self-audit still references fragment toggles in %s — the improve-* "
+                    "files are gone; review manually", ", ".join(leftovers))
+
+
+def migrate_improvement_split(routines_home: Path, library_home: Path) -> int:
+    """Carry an existing instance over to the consolidated-improvement layout. Every step
+    triggers only on the old layout, so the whole thing is naturally idempotent:
+    1. retire an installed library-sync routine into .archive/ (its job moved to the daemon),
+    2. rename an installed meta-workflows routine to workflow-curator,
+    3. install the routine-improver seed (seed_routines only runs on fresh installs),
+    4. delete the improve-* traits from the live library (the wizard stops offering them),
+    5. repoint self-audit's acting prose off the deleted fragment gate,
+    6. strip improve-* trait copies + their main.md references from every routine.
+    Returns how many routines step 6 touched."""
+    if not routines_home.is_dir():
+        return 0
+
+    old_sync = routines_home / "library-sync"
+    if old_sync.is_dir():
+        try:
+            raw = yaml.safe_load((old_sync / "routine.yaml").read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            raw = {}
+        if (raw.get("workflow") or {}).get("library_slug") == "library-sync":
+            archive = routines_home / ".archive"
+            archive.mkdir(exist_ok=True)
+            dest = archive / "library-sync-retired"
+            if not dest.exists():
+                old_sync.rename(dest)
+                log.warning("library-sync routine retired to %s — it is a scheduled daemon "
+                            "job now (Settings → Library sync)", dest)
+
+    old_meta = routines_home / "meta-workflows"
+    new_meta = routines_home / "workflow-curator"
+    if old_meta.is_dir() and not new_meta.exists():
+        old_meta.rename(new_meta)
+        try:
+            raw = yaml.safe_load((new_meta / "routine.yaml").read_text(encoding="utf-8")) or {}
+            raw["slug"] = "workflow-curator"
+            if raw.get("name") in ("Meta: workflow library", "meta-workflows"):
+                raw["name"] = "Workflow curator"
+            (new_meta / "routine.yaml").write_text(
+                yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+            main = new_meta / "main.md"
+            if main.is_file():
+                main.write_text(main.read_text(encoding="utf-8").replace(
+                    "slug: meta-workflows\n", "slug: workflow-curator\n", 1), encoding="utf-8")
+        except (OSError, yaml.YAMLError):
+            pass
+        _git(new_meta, "add", "-A")
+        _git(new_meta, "commit", "-qm", "migrate: renamed to workflow-curator")
+        log.warning("meta-workflows routine renamed to workflow-curator")
+
+    improver_seed = repo_root() / "routine-seed" / "routine-improver"
+    improver = routines_home / "routine-improver"
+    if improver_seed.is_dir() and not improver.exists():
+        _install_seed_routine(improver_seed, improver)
+        log.warning("installed the routine-improver meta routine (disabled) — it now owns "
+                    "the improvement passes")
+
+    removed = []
+    for slug in _IMPROVE_TRAITS:
+        f = library_home / "traits" / f"{slug}.md"
+        if f.exists():
+            f.unlink()
+            removed.append(slug)
+    if removed:
+        _git(library_home, "add", "-A")
+        _git(library_home, "commit", "-qm",
+             "migrate: improve-* traits retired (routine-improver owns the lenses)")
+
+    _repoint_self_audit(routines_home / "self-audit")
+
+    touched = 0
+    for rdir in sorted(routines_home.iterdir()):
+        if rdir.name.startswith(".") or not (rdir / "routine.yaml").is_file():
+            continue
+        if rdir.name == "routine-improver":
+            continue   # its lens modules are its recipe, not per-routine trait copies
+        changed = False
+        for slug in _IMPROVE_TRAITS:
+            f = rdir / "traits" / f"{slug}.md"
+            if f.exists():
+                f.unlink()
+                changed = True
+        main = rdir / "main.md"
+        if main.is_file():
+            lines = main.read_text(encoding="utf-8").splitlines(keepends=True)
+            kept = [ln for ln in lines
+                    if "traits/improve-" not in ln
+                    and ln.strip() not in {f"- {s}" for s in _IMPROVE_TRAITS}]
+            if len(kept) != len(lines):
+                main.write_text("".join(kept), encoding="utf-8")
+                changed = True
+        if changed:
+            _git(rdir, "add", "-A")
+            _git(rdir, "commit", "-qm",
+                 "migrate: improvement passes moved to the routine-improver meta routine")
+            touched += 1
+    if touched:
+        log.warning("stripped improve-* trait copies from %d routine(s)", touched)
     return touched
 
 
