@@ -186,3 +186,36 @@ def test_failed_util_teaches_repair_and_keeps_trace_tail(tmp_path):
 
     obs2 = do_util({"kind": "util", "name": "boomer", "args": []}, _ctx(tmp_path, GrantPolicy()))
     assert "cannot revise utils" in obs2["hint"] and "corrected script" not in obs2["hint"]
+
+
+GOOD_UTIL = (
+    "# /// script\n# dependencies = []\n# ///\n"
+    '"""demo — a demo util.\n\n'
+    "usage: gu demo [--json]\n"
+    "calls: (none)\n"
+    "secrets: DEMO_API_KEY\n"
+    "tags: demo, testing\n"
+    '"""\n'
+    "import os\nkey = os.environ.get(\"DEMO_API_KEY\")\n"
+)
+
+
+def test_header_problems_gate():
+    """The util doc standard is enforced: tags required, and every credential-looking env
+    var the code reads must be DECLARED in the docstring's secrets: line (a comment-form
+    `# secrets:` above the docstring is invisible — the deepgram failure mode)."""
+    from rsched.utils_lib import header_problems
+
+    assert header_problems(GOOD_UTIL) == []
+    no_tags = GOOD_UTIL.replace("tags: demo, testing\n", "")
+    assert any("tags" in p for p in header_problems(no_tags))
+    undeclared = GOOD_UTIL.replace("secrets: DEMO_API_KEY\n", "secrets: (none)\n")
+    probs = header_problems(undeclared)
+    assert any("DEMO_API_KEY" in p for p in probs)
+    # comment-form declaration outside the docstring does NOT count
+    comment_form = ("# secrets: DEMO_API_KEY\n"
+                    + GOOD_UTIL.replace("secrets: DEMO_API_KEY\n", ""))
+    assert any("DEMO_API_KEY" in p for p in header_problems(comment_form))
+    # plain env vars (no KEY/TOKEN/SECRET shape) need no declaration
+    plain = GOOD_UTIL.replace('os.environ.get("DEMO_API_KEY")', 'os.environ.get("HOME")')
+    assert header_problems(plain) == []

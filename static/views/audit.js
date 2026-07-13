@@ -158,8 +158,12 @@ export async function render(view) {
   }
 
   function generalSection(routineSlug) {
-    const box = el("textarea", { class: "code",
+    // data-persist gives the draft an explicit storage key (a fresh one — drafts stranded
+    // under the pre-forgetField key stop reappearing); discard clears a stale draft in one click.
+    const box = el("textarea", { class: "code", "data-persist": "audit-note",
       placeholder: "e.g. “add structured logging to the daemon runner”, or a priority/direction — a free-text prompt for the next self-audit run to act on" });
+    const discard = el("button", { class: "btn small mt", title: "clear this draft — nothing is sent" }, "discard draft");
+    discard.onclick = () => { box.value = ""; forgetField(box); };
     const send = el("button", { class: "btn primary mt" }, "send to the next run");
     send.onclick = async () => {
       if (!box.value.trim()) return;
@@ -189,7 +193,7 @@ export async function render(view) {
       el("div", { class: "panel" },
         el("div", { class: "muted small", style: "margin-bottom:8px" },
           "a prompt the self-audit routine reads on its next run — code changes to make, priorities, or anything not tied to a finding/decision above"),
-        box, el("div", { class: "row", style: "gap:8px" }, send, runNow),
+        box, el("div", { class: "row", style: "gap:8px" }, send, runNow, discard),
         el("div", { class: "flow-note" },
           el("span", {}, "submit"), el("span", { class: "arrow" }, "→"),
           el("span", {}, "routine inbox"), el("span", { class: "arrow" }, "→"),

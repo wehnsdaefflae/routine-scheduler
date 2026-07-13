@@ -289,3 +289,25 @@ def test_adopt_unlimited_tokens_once(tmp_path):
     assert adopt_unlimited_tokens(routines, convs) == 0
     raw = yaml.safe_load((routines / "r1" / "routine.yaml").read_text())
     assert raw["budgets"]["max_total_tokens"] == 250_000
+
+
+def test_migrate_strips_improve_includes_from_library_workflows(tmp_path):
+    """A live library workflow still including retired improve-* traits would lint red
+    forever (seed-sync never overwrites) — the migration strips the entries in place,
+    scoped to the includes list (prose mentioning a lens stays)."""
+    from rsched.bootstrap import migrate_improvement_split
+
+    home = tmp_path / "routines"
+    home.mkdir()
+    lib = tmp_path / "library"
+    (lib / "workflows").mkdir(parents=True)
+    wf = lib / "workflows" / "demo-flow.py"
+    wf.write_text(
+        'META = {"slug": "demo-flow", "includes": ["ask-policy", "improve-ui",\n'
+        '                                          "improve-bugfix"]}\n'
+        'DOC = "the improve-ui lens used to live here"\n')
+    migrate_improvement_split(home, lib)
+    text = wf.read_text()
+    assert '"improve-ui"' not in text.split("DOC")[0]
+    assert '"ask-policy"' in text
+    assert "the improve-ui lens used to live here" in text     # prose untouched

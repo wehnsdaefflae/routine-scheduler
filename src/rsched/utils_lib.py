@@ -170,6 +170,36 @@ def _parse_header(src: str) -> dict:
     return {"summary": summary, "usage": usage, "tags": tags, "secrets": secrets}
 
 
+# env-var names that smell like credentials — used by header_problems to catch a util that
+# reads a secret it never declared (the Settings page can only prompt for DECLARED secrets)
+_SECRETISH = re.compile(r"""os\.(?:environ(?:\.get\(|\[)|getenv\()\s*["']([A-Z][A-Z0-9_]*)["']""")
+_SECRET_HINT = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL)S?$")
+
+
+def header_problems(content: str) -> list[str]:
+    """Doc-standard gate for saving a util. The docstring header is the util's ONLY
+    machine-read surface (catalog, Settings secrets page): it must carry a summary, a
+    usage: line, at least one tag, and a secrets: declaration covering every
+    credential-looking env var the code reads. Comment-form `# secrets:` lines above the
+    docstring are invisible to the parser — that is exactly the failure this gate stops."""
+    h = _parse_header(content)
+    problems = []
+    if not h["summary"]:
+        problems.append("no module docstring — the first line must be '<name> — <summary>'")
+    if not h["usage"]:
+        problems.append("docstring needs a 'usage: gu <name> …' line")
+    if not h["tags"]:
+        problems.append("docstring needs a 'tags: <tag>, <tag>, …' line (at least one tag)")
+    declared = {s.upper() for s in h["secrets"]}
+    used = {v for v in _SECRETISH.findall(content) if _SECRET_HINT.search(v)}
+    undeclared = sorted(used - declared)
+    if undeclared:
+        problems.append("code reads credential env var(s) not declared in the docstring's "
+                        f"'secrets:' line: {', '.join(undeclared)} — declare them there "
+                        "(the Settings page only prompts for declared secrets)")
+    return problems
+
+
 def catalog_text(home: Path) -> str:
     utils = list_utils(home)
     if not utils:

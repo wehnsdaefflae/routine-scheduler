@@ -588,6 +588,18 @@ def test_patch_exclude_from_improvement(client):
     assert c.get("/api/routines/apir").json()["exclude_from_improvement"] is True
 
 
+def test_put_util_rejects_bad_header(client):
+    """The web util editor enforces the same doc standard as write_util: no tags or an
+    undeclared credential env var -> 422, nothing written."""
+    c, tmp = client
+    bad = ('"""x — no tags here.\n\nusage: gu x\n"""\n'
+           'import os\nk = os.environ["SOME_API_KEY"]\n')
+    r = c.put("/api/library/utils/x", json={"content": bad})
+    assert r.status_code == 422
+    assert "tags" in r.json()["detail"] and "SOME_API_KEY" in r.json()["detail"]
+    assert not (tmp / "library" / "utils" / "x").exists()
+
+
 def test_first_run_setup_flag(client):
     """Fresh install → needs_setup true (drives the redirect); completing it writes the marker."""
     c, tmp = client

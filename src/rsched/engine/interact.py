@@ -111,6 +111,12 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:
     if ctx.depth > 0:
         return {"kind": "write_util", "name": name, "declined": True,
                 "reason": "sub-workflows cannot create/revise utils — use existing ones"}
+    # Doc-standard gate BEFORE the approval ask: a util without tags or with undeclared
+    # secrets never reaches the user or the library — the observation names the fix.
+    problems = utils_lib.header_problems(content)
+    if problems:
+        return {"kind": "write_util", "name": name, "header_ok": False,
+                "problems": problems}
     home = ctx.server.utils_home
     utils_lib.ensure_library(home, remote=ctx.server.libraries_remote)
     creating = not utils_lib.exists(home, name)

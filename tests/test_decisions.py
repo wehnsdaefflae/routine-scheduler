@@ -111,7 +111,8 @@ def test_util_approval_is_the_same_record_with_its_own_type(make_routine, script
         "# permission: util-authoring — user-approved\nbody\n", encoding="utf-8")
     d = make_routine(slug="approval", budgets={"ask_timeout_min": 0})
     scripted([
-        {"say": "new util", "kind": "write_util", "name": "frob", "content": "# x"},
+        {"say": "new util", "kind": "write_util", "name": "frob",
+         "content": '"""frob — test util.\n\nusage: gu frob\ntags: test, demo\n"""\n'},
         finish(),
     ])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)

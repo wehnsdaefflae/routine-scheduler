@@ -40,8 +40,9 @@ do exactly what it says, then advance.
 4. Continue until the `record` module finishes the run.
 
 The steps, in order, are:
-- `steps/orient.md` — read `state/visits.json`, enumerate routines, apply the exclusion flag.
-- `steps/select-targets.md` — pick ~3 targets, least-recently-visited first.
+- `steps/orient.md` — read `state/visits.json`, enumerate routines, apply the exclusion
+  flag, keep only those with runs newer than `last_run_seen`.
+- `steps/select-targets.md` — the three least recently RUN of those, oldest first.
 - `steps/study-target.md` — read ONE target's recipe + recent runs; infer its intention.
 - `steps/apply-lenses.md` — run the five lens modules on the target and apply safe fixes.
 - `steps/fresh-eyes.md` — first-time-reader pass over the target's recipe; de-clutter.

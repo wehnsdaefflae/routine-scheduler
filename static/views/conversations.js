@@ -1,8 +1,10 @@
-// Conversations tab: a sidebar of all conversations (searchable, tag-filtered, deletable),
-// a chat-first center pane (components/chat.js — replies prominent, tool work folded), and
-// the artifact panel (components/artifacts.js). A conversation is one continuous run:
-// sending into a live reply injects; sending into a finished one resumes it in place, so
-// the view remounts its tail after every send.
+// Conversations tab, chat-first: the center pane is the conversation; everything else is
+// a COLLAPSIBLE side pane. Left: a dense one-line-per-conversation list (state dot, title,
+// time — details live in a hover card, tags collapse into one filter select). Right: the
+// artifact panel (components/artifacts.js), wide enough to actually read a deliverable.
+// Both panes fold to a slim rail (persisted), giving the chat or an artifact the room.
+// A conversation is one continuous run: sending into a live reply injects; sending into a
+// finished one resumes it in place, so the view remounts its tail after every send.
 
 import { api, apiUpload } from "/static/api.js";
 import { navigate } from "/static/router.js";
@@ -19,24 +21,57 @@ const PREFILL_KEY = "conv-new-prefill";
 export async function render(view, slug, _query = {}) {
   view.classList.add("conv-view");
   const sideList = el("div", { class: "conv-list" });
-  const sideTags = el("div", { class: "conv-tags" });
-  const search = el("input", { type: "search", placeholder: "search conversations…" });
+  const tagSel = el("select", { class: "conv-tagsel", "data-nopersist": "", title: "filter by tag" });
+  const search = el("input", { type: "search", placeholder: "search…" });
   const newBtn = el("a", { class: "btn primary small", href: "#/conversations" }, "+ new");
-  const side = el("aside", { class: "conv-side" },
-    el("div", { class: "row", style: "gap:6px" }, search, newBtn), sideTags, sideList);
+  const sideBody = el("div", { class: "pane-body" },
+    el("div", { class: "row", style: "gap:6px" }, search, newBtn),
+    el("div", { class: "row", style: "gap:6px" }, tagSel), sideList);
   const main = el("section", { class: "conv-main" });
-  const art = el("aside", { class: "conv-art", hidden: !slug });
+  const artBody = el("div", { class: "pane-body" });
 
-  // Resizable panes: two drag handles; widths persist in localStorage and apply as an
-  // inline grid template (only when the layout is wide enough for three panes — the
-  // responsive collapse below 1100px keeps winning because the inline style is cleared).
-  const widths = { side: 250, art: 320, ...JSON.parse(storage.get("conv-pane-widths") || "{}") };
+  // Pane chrome: widths (drag handles) AND a collapsed state both persist — either pane
+  // folds to a slim rail so the chat or an open artifact gets the full width.
+  const widths = { side: 250, art: 420, ...JSON.parse(storage.get("conv-pane-widths") || "{}") };
+  if (widths.art < 380) widths.art = 420;   // the old default was too small to read anything
+  const collapsed = { side: false, art: false,
+                      ...JSON.parse(storage.get("conv-pane-collapsed") || "{}") };
+  const saveCollapsed = () => storage.set("conv-pane-collapsed", JSON.stringify(collapsed));
+
+  const pane = (which, title, cls, body) => {
+    const fold = el("button", { class: "pane-fold", title: `collapse the ${title} pane` }, "◂▸");
+    fold.onclick = () => { collapsed[which] = true; saveCollapsed(); applyWidths(); };
+    const rail = el("button", { class: "pane-rail", title: `expand the ${title} pane` },
+      el("span", { class: "pane-rail-label" }, title));
+    rail.onclick = () => { collapsed[which] = false; saveCollapsed(); applyWidths(); };
+    const cap = el("div", { class: "pane-cap" },
+      el("span", { class: "pane-cap-title" }, title), fold);
+    const node = el("aside", { class: cls }, cap, body, rail);
+    return { node, rail };
+  };
+  const sideP = pane("side", "conversations", "conv-side", sideBody);
+  const artP = pane("art", "artifacts", "conv-art", artBody);
+  const side = sideP.node;
+  const art = artP.node;
+  art.hidden = !slug;
+
   const layout = el("div", { class: "conv-layout" });
   const applyWidths = () => {
-    if (window.innerWidth <= 1100) { layout.style.gridTemplateColumns = ""; return; }
-    layout.style.gridTemplateColumns = slug
-      ? `${widths.side}px 5px minmax(0,1fr) 5px ${widths.art}px`
-      : `${widths.side}px 5px minmax(0,1fr) 0 0`;
+    if (window.innerWidth <= 1100) {   // stacked responsive layout: rails make no sense
+      layout.style.gridTemplateColumns = "";
+      side.classList.remove("collapsed");
+      art.classList.remove("collapsed");
+      return;
+    }
+    side.classList.toggle("collapsed", collapsed.side);
+    art.classList.toggle("collapsed", collapsed.art);
+    const sideCol = collapsed.side ? "34px" : `${widths.side}px`;
+    const artCol = !slug ? "0" : collapsed.art ? "34px" : `${widths.art}px`;
+    layout.style.gridTemplateColumns =
+      `${sideCol} ${collapsed.side ? 0 : 5}px minmax(0,1fr) `
+      + `${!slug || collapsed.art ? 0 : 5}px ${artCol}`;
+    handleL.hidden = collapsed.side;
+    handleR.hidden = !slug || collapsed.art;
   };
   const makeHandle = (which, grow) => {
     const h = el("div", { class: "pane-handle", title: "drag to resize" });
@@ -61,7 +96,6 @@ export async function render(view, slug, _query = {}) {
   };
   const handleL = makeHandle("side", 1);
   const handleR = makeHandle("art", -1);
-  handleR.hidden = !slug;
   layout.append(side, handleL, main, handleR, art);
   applyWidths();
   window.addEventListener("resize", applyWidths);
@@ -76,36 +110,65 @@ export async function render(view, slug, _query = {}) {
     renderList();
   }
 
+  // One shared hover card: the list rows stay one line each; snippet, tags, and state
+  // detail appear beside the row on hover instead of costing permanent vertical space.
+  let hover = null, hoverHideT = 0;
+  const hideHover = () => { clearTimeout(hoverHideT); if (hover) hover.hidden = true; };
+  function showHover(row, it) {
+    if (!hover) {
+      hover = el("div", { class: "conv-hover", hidden: true });
+      view.append(hover);
+    }
+    clearTimeout(hoverHideT);
+    const when = it.updated ? relTime(it.updated) : "no replies yet";
+    hover.replaceChildren(...[
+      el("div", { class: "conv-hover-title" }, it.title || it.slug),
+      el("div", { class: "faint small" },
+        `${it.state} · ${when}${it.turns ? ` · ${it.turns} turns` : ""}`),
+      it.snippet ? el("div", { class: "conv-hover-snippet" }, it.snippet) : null,
+      it.tags?.length ? el("div", { class: "conv-hover-tags" },
+        ...it.tags.map((t) => el("span", { class: "tag" }, t))) : null,
+      it.question ? el("div", { class: "small", style: "color:var(--warn)" }, "❓ waiting for you") : null,
+    ].filter(Boolean));
+    hover.hidden = false;
+    const r = row.getBoundingClientRect();
+    hover.style.left = Math.min(r.right + 8, window.innerWidth - 300) + "px";
+    hover.style.top = Math.min(r.top, window.innerHeight - hover.offsetHeight - 12) + "px";
+  }
+
   function renderList() {
     const q = search.value.trim().toLowerCase();
     const tags = [...new Set(items.flatMap((i) => i.tags || []))].sort();
-    sideTags.replaceChildren(...tags.map((t) => tagChip(t, {
-      active: t === activeTag,
-      onClick: () => { activeTag = activeTag === t ? "" : t; renderList(); } })));
+    tagSel.replaceChildren(
+      el("option", { value: "" }, "all tags"),
+      ...tags.map((t) => el("option", { value: t, ...(t === activeTag ? { selected: true } : {}) }, t)));
+    tagSel.hidden = !tags.length;
     const shown = items.filter((i) =>
       (!activeTag || (i.tags || []).includes(activeTag))
       && (!q || `${i.title} ${i.snippet} ${(i.tags || []).join(" ")}`.toLowerCase().includes(q)));
     sideList.replaceChildren();
+    hideHover();
     if (!shown.length) {
       sideList.append(emptyState("💬", items.length ? "No matches" : "No conversations yet",
         items.length ? "" : "Start one — the first message is the task."));
       return;
     }
     for (const it of shown) {
-      sideList.append(el("a", {
+      const row = el("a", {
         class: `conv-item${it.slug === slug ? " on" : ""}`,
         href: `#/conversations/${it.slug}` },
-        el("div", { class: "conv-item-head" },
-          el("span", { class: `dot ${it.state}` }),
-          el("span", { class: "conv-title" }, it.title || it.slug),
-          el("span", { class: "faint small", style: "margin-left:auto" }, relTime(it.updated))),
-        it.snippet ? el("div", { class: "conv-snippet" }, it.snippet) : null,
-        it.tags?.length ? el("div", { class: "conv-item-tags" },
-          it.tags.map((t) => el("span", { class: "tag" }, t))) : null,
-        it.question ? el("div", { class: "small", style: "color:var(--warn)" }, "❓ waiting for you") : null));
+        el("span", { class: `dot ${it.state}` }),
+        el("span", { class: "conv-title" }, it.title || it.slug),
+        it.question ? el("span", { class: "conv-q", title: "waiting for you" }, "❓") : null,
+        el("span", { class: "conv-when" }, relTime(it.updated)));
+      row.addEventListener("mouseenter", () => showHover(row, it));
+      row.addEventListener("mouseleave",
+        () => { hoverHideT = setTimeout(() => { if (hover) hover.hidden = true; }, 120); });
+      sideList.append(row);
     }
   }
   search.oninput = renderList;
+  tagSel.onchange = () => { activeTag = tagSel.value; renderList(); };
 
   // ---- the center pane ------------------------------------------------------------------------
   const unmount = () => { for (const fn of cleanup.splice(0)) { try { fn(); } catch { /* gone */ } } };
@@ -206,7 +269,7 @@ export async function render(view, slug, _query = {}) {
     const composer = buildComposer();
     main.replaceChildren(head, chatBox, waiting, questionBox, composer.node);
 
-    const artifacts = createArtifacts((art.replaceChildren(), art), { slug });
+    const artifacts = createArtifacts((artBody.replaceChildren(), artBody), { slug });
     cleanup.push(() => artifacts.destroy());
 
     const chat = createChat(chatBox, {

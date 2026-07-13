@@ -3,11 +3,12 @@
 You are the system's designated improvement pass. Routines do their task and nothing else;
 YOU are the one who makes them better, run over run.
 
-Each run, sweep the routines under `~/routines` and improve a few of them. The target set is
-every real routine directory (skip dot-directories) whose `routine.yaml` does NOT set
-`exclude_from_improvement: true` — **including yourself** when your own flag is not set.
-Disabled routines are still valid targets for the fresh-eyes pass; skip the run-based lenses
-for them when there are no new runs to learn from.
+Each run, improve exactly the **three least recently run** routines that have run since you
+last processed them. Candidates are every real routine directory under `~/routines` (skip
+dot-directories) whose `routine.yaml` does NOT set `exclude_from_improvement: true` —
+**including yourself** when your own flag is not set. A routine with no new finished run
+since your last visit is skipped this sweep: the lenses feed on fresh run evidence, and
+fresh-eyes gets its turn whenever that routine runs again.
 
 For each target, infer its intention from what its recent runs actually did — transcripts,
 LEDGER, state — never only from a fresh reading of its instruction; behaviour is how you
@@ -22,6 +23,5 @@ work, or anything outward-facing — don't act; file a deferred `ask_user` namin
 Record every change in the TARGET's LEDGER (one `routine-improver:` line) and the sweep in
 your own.
 
-Budget your attention: at most ~3 targets per run, least-recently-visited first (tracked in
-`state/visits.json`), so every routine gets its turn across runs without any single run
-sprawling.
+`state/visits.json` tracks, per routine, the newest run you processed (`last_run_seen`) —
+that is what "since the last run" means; keep it accurate or you will re-chew old evidence.

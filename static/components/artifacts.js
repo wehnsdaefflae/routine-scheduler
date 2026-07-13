@@ -32,8 +32,7 @@ function csvTable(text, sep) {
 export function createArtifacts(container, { slug }) {
   const listBox = el("div", { class: "art-list" });
   const viewer = el("div", { class: "art-viewer", hidden: true });
-  container.append(el("div", { class: "art-head" }, el("strong", {}, "Artifacts")),
-                   listBox, viewer);
+  container.append(listBox, viewer);   // the pane's cap already says "artifacts"
   let items = [];
   let openPath = null;
   let blobUrl = null;   // the viewer's current object URL (revoked on replace)
@@ -90,13 +89,14 @@ export function createArtifacts(container, { slug }) {
     }
     for (const it of items) {
       const ext = (it.name.split(".").pop() || "").toLowerCase();
+      const size = `${(it.size / 1024).toFixed(it.size > 10240 ? 0 : 1)}kB`;
+      // one line per artifact — the viewer below is the star, the list just navigates
       listBox.append(el("button",
-        { class: `art-item${openPath === it.path ? " on" : ""}`, onclick: () => open(it) },
+        { class: `art-item${openPath === it.path ? " on" : ""}`, onclick: () => open(it),
+          title: `${it.name} · ${relTime(new Date(it.mtime * 1000))} · ${size}` },
         el("span", { class: "art-ico" }, ICON(ext)),
-        el("span", { class: "art-label" },
-          el("span", { class: "art-name" }, it.name),
-          el("span", { class: "faint small" },
-            `${relTime(new Date(it.mtime * 1000))} · ${(it.size / 1024).toFixed(it.size > 10240 ? 0 : 1)}kB`))));
+        el("span", { class: "art-name" }, it.name),
+        el("span", { class: "faint small", style: "flex:none" }, size)));
     }
   }
 

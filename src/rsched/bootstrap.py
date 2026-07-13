@@ -266,6 +266,29 @@ _IMPROVE_TRAITS = ("improve-bugfix", "improve-research", "improve-features",
                    "improve-ui", "improve-efficiency")
 
 
+_IMPROVE_ENTRY_RE = re.compile(
+    r"""["'](?:improve-(?:bugfix|research|features|ui|efficiency))["']\s*,?\s*""")
+_INCLUDES_LIST_RE = re.compile(r'(["\']includes["\']\s*:\s*\[)(.*?)(\])', re.DOTALL)
+
+
+def _strip_improve_includes(library_home: Path) -> int:
+    """Remove retired improve-* entries from library workflows' META `includes` lists —
+    scoped to the list literal, so prose mentioning a lens elsewhere is untouched. (The
+    workflow files are data, parsed with ast, never executed.) Returns files changed."""
+    wf_dir = library_home / "workflows"
+    if not wf_dir.is_dir():
+        return 0
+    changed = 0
+    for f in sorted(wf_dir.glob("*.py")):
+        text = f.read_text(encoding="utf-8")
+        new = _INCLUDES_LIST_RE.sub(
+            lambda m: m.group(1) + _IMPROVE_ENTRY_RE.sub("", m.group(2)) + m.group(3), text)
+        if new != text:
+            f.write_text(new, encoding="utf-8")
+            changed += 1
+    return changed
+
+
 # The exact acting-authorization paragraph the self-audit seed carried before the split —
 # it gated acting on ACTIVE improve-* fragment files, which this migration deletes. An
 # installed copy still carrying it would read itself as report-only forever.
@@ -417,7 +440,10 @@ def migrate_improvement_split(routines_home: Path, library_home: Path) -> int:
         if f.exists():
             f.unlink()
             removed.append(slug)
-    if removed:
+    # library workflows referencing the deleted traits would lint red forever (seed-sync
+    # never overwrites local copies) — strip the stale includes entries in place
+    stripped = _strip_improve_includes(library_home)
+    if removed or stripped:
         _git(library_home, "add", "-A")
         _git(library_home, "commit", "-qm",
              "migrate: improve-* traits retired (routine-improver owns the lenses)")

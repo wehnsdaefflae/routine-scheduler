@@ -53,6 +53,8 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
     by_kind = {"routine": _empty(), "conversation": _empty()}
     by_state: dict[str, int] = defaultdict(int)
 
+    runs: list[dict] = []   # per-run records — the raw series the configurable charts slice
+
     for kind, home in homes:
         catalog = registry.scan(server, home)
         for slug, info in catalog.items():
@@ -70,6 +72,12 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
                 _add(by_day[_run_day(r.ts)], r.usage, r.elapsed_s)
                 _add(by_kind[kind], r.usage, r.elapsed_s)
                 by_state[r.state] = by_state.get(r.state, 0) + 1
+                runs.append({"day": _run_day(r.ts), "routine": slug, "kind": kind,
+                             "state": r.state, "model": model, "endpoint": endpoint_name,
+                             "tokens_in": int((r.usage or {}).get("in") or 0),
+                             "tokens_out": int((r.usage or {}).get("out") or 0),
+                             "cost": float((r.usage or {}).get("cost") or 0.0),
+                             "elapsed_s": int(r.elapsed_s or 0)})
             if info.runs:
                 by_routine[slug] = {**racc, "kind": kind, "endpoint": endpoint_name,
                                     "model": (main_ref.model if main_ref else "unknown")}
@@ -93,4 +101,7 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
         "by_day": dict(sorted(by_day.items())),
         "by_kind": by_kind,
         "by_state": dict(by_state),
+        # per-run records (bounded by retention: keep_runs per routine) — the Stats tab's
+        # configurable charts bucket these client-side by any dimension × metric
+        "runs": sorted(runs, key=lambda r: r["day"]),
     }

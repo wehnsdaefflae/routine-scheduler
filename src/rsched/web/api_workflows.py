@@ -127,6 +127,9 @@ def put_util(request: Request, name: str, body: UtilBody) -> dict:
     from .. import utils_lib
 
     server = request.app.state.server
+    problems = utils_lib.header_problems(body.content)
+    if problems:
+        raise HTTPException(422, "header problems (not saved): " + "; ".join(problems))
     utils_lib.ensure_library(server.utils_home, remote=server.libraries_remote)
     utils_lib.write_util_file(server.utils_home, name, body.content)
     ok, output = utils_lib.selftest(server.utils_home, name)

@@ -94,7 +94,7 @@ back — `format_observation(obs)`, always starting `OBSERVATION (<kind>…)`:
 - `OBSERVATION (memory_write): note portal-quirks.md revised (14 lines); INDEX.md updated from 'about'.`
 - `OBSERVATION (llm reply):\n<the tool-call model's reply>`
 - `OBSERVATION (ask_user): question filed as deferred (q-…). … Continue.` / `…the user answered (via discord):\n<text>` / `…no answer within 8h — question stays open as deferred (q-…). Proceed on your stated default: …`
-- `OBSERVATION (write_util 'x': selftest passed, created and committed).` / `…approval requested from the user (q-…)…`
+- `OBSERVATION (write_util 'x': selftest passed, created and committed).` / `…approval requested from the user (q-…)…` / header problems (the doc standard: a `tags:` line, every credential env var declared on `secrets:`) are rejected before the approval ask, naming the fix.
 - `OBSERVATION (spawn): sub-workflow 1 'child' started … keep going.`
 - `OBSERVATION (wait):\nSUB-WORKFLOW 1 'child' FINISHED (status ok, 12 turns):\n<summary>`
 - `OBSERVATION (finish REJECTED): you have not executed a single action this run…` — the fabrication guard, if a fresh run's very first action is a `finish(ok)` (a resume seeds the guard from the replayed observations, so a continued conversation may re-finish immediately)

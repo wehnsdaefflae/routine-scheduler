@@ -1,6 +1,6 @@
 # Orient
 
-Build the candidate list: every routine that may be improved this run.
+Build the candidate list: every routine with runs you haven't processed yet.
 
 ## Do
 1. Read `state/visits.json` — a map `{slug: {last_visit: <iso>, last_run_seen: <run ts>}}`.
@@ -11,11 +11,13 @@ Build the candidate list: every routine that may be improved this run.
 3. For each candidate, `read_file` its `routine.yaml`:
    - `exclude_from_improvement: true` → drop it (note the skip for the LEDGER — the user
      chose this; never argue with it).
-   - otherwise keep `{slug, enabled, description}`. **You are a candidate too** — apply the
-     same flag check to yourself, nothing else is special about you.
-4. For each kept candidate, list `runs/` (dir-tree, depth 1) and note whether it has runs
-   newer than `last_run_seen`.
+   - **You are a candidate too** — apply the same flag check to yourself, nothing else is
+     special about you.
+4. For each remaining candidate, list its `runs/` (dir-tree, depth 1) and note its **newest
+   finished run timestamp**. A candidate qualifies ONLY if that newest run is newer than
+   `last_run_seen[slug]` — i.e. it has run since you last processed it. No new run since
+   your last visit → drop it this sweep (nothing new to learn from).
 
 ## Next
-Write `state/phase.json = {step: "select-targets", cursor: {candidates: [...]}}`.
-Read `steps/select-targets.md`.
+Write `state/phase.json = {step: "select-targets", cursor: {candidates: [{slug,
+newest_run}, ...]}}`. Read `steps/select-targets.md`.

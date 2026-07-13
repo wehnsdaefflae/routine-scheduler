@@ -1,10 +1,27 @@
 // Stats: usage analytics across every run in the routines + conversations homes — time,
 // tokens, and cost rolled up by routine, model, endpoint, day, kind, and run-state
 // (served by /api/stats → rsched.stats.aggregate). Read-only; the filesystem is the truth,
-// so a refresh always reflects the live state. Diagrams are dependency-free inline CSS bars.
+// so a refresh always reflects the live state. The charts section is USER-CONFIGURABLE:
+// each card is a metric × grouping × range × form over the per-run records, persisted in
+// localStorage — SVG, dependency-free (components/charts.js).
 
 import { api } from "/static/api.js";
-import { el, emptyState, skeleton, toast } from "/static/util.js";
+import { GROUPS, METRICS, RANGES, chartNode, colorMap, hideTip } from "/static/components/charts.js";
+import { el, emptyState, skeleton, storage, toast } from "/static/util.js";
+
+const CHARTS_KEY = "rsched.stats.charts";
+const DEFAULT_CHARTS = [
+  { metric: "tokens", group: "none", range: 30, type: "bars" },
+  { metric: "cost", group: "endpoint", range: 30, type: "bars" },
+];
+
+function loadChartSpecs() {
+  try {
+    const got = JSON.parse(storage.get(CHARTS_KEY) || "");
+    if (Array.isArray(got) && got.length) return got;
+  } catch { /* fall through to defaults */ }
+  return DEFAULT_CHARTS.map((c) => ({ ...c }));
+}
 
 const NBSP = " ";
 
@@ -38,14 +55,66 @@ function card(label, value, sub) {
     sub ? el("div", { class: "stat-sub" }, sub) : null);
 }
 
-// A labelled horizontal bar row, width proportional to `value`/`max`.
-function barRow(label, value, max, valueText) {
-  const pct = max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0;
-  return el("div", { class: "bar-row" },
-    el("div", { class: "bar-label", title: label }, label),
-    el("div", { class: "bar-track" },
-      el("div", { class: "bar-fill", style: `width:${pct}%` })),
-    el("div", { class: "bar-value" }, valueText));
+// The configurable charts panel: each card = one chart spec the user edits inline;
+// specs persist in localStorage, colors stay entity-stable per grouping dimension.
+function chartsSection(runs) {
+  const specs = loadChartSpecs();
+  const colorFor = {};   // per grouping dimension, computed once over the WHOLE dataset
+  const colorOf = (group) => (colorFor[group] ??= colorMap(runs, group));
+  const box = el("div", { class: "stat-section" });
+  const save = () => storage.set(CHARTS_KEY, JSON.stringify(specs));
+
+  const sel = (options, value, onchange, labelOf = (v) => v) => {
+    const node = el("select", { class: "chart-sel", "data-nopersist": "" },
+      ...options.map((o) => el("option", { value: o, ...(String(o) === String(value) ? { selected: true } : {}) },
+        labelOf(o))));
+    node.onchange = () => onchange(node.value);
+    return node;
+  };
+
+  function chartCard(spec) {
+    const card = el("div", { class: "panel chart-card" });
+    const plot = el("div", { class: "chart-plot" });
+    const redraw = () => {
+      hideTip();
+      plot.replaceChildren(chartNode(spec, runs, colorOf(spec.group)));
+      save();
+    };
+    const remove = el("button", { class: "btn small", title: "remove this chart" }, "×");
+    remove.onclick = () => {
+      specs.splice(specs.indexOf(spec), 1);
+      save();
+      card.remove();
+    };
+    card.append(
+      el("div", { class: "row chart-config" },
+        sel(Object.keys(METRICS), spec.metric, (v) => { spec.metric = v; redraw(); },
+            (m) => METRICS[m].label),
+        sel(Object.keys(GROUPS), spec.group, (v) => { spec.group = v; redraw(); },
+            (g) => GROUPS[g]),
+        sel(RANGES, spec.range, (v) => { spec.range = Number(v); redraw(); },
+            (r) => `${r} days`),
+        sel(["bars", "line"], spec.type, (v) => { spec.type = v; redraw(); }),
+        el("span", { style: "margin-left:auto" }, remove)),
+      plot);
+    redraw();
+    return card;
+  }
+
+  const add = el("button", { class: "btn small" }, "+ add chart");
+  const cards = el("div", {}, ...specs.map(chartCard));
+  add.onclick = () => {
+    const spec = { metric: "runs", group: "routine", range: 30, type: "bars" };
+    specs.push(spec);
+    save();
+    cards.append(chartCard(spec));
+  };
+  box.append(el("h2", {}, "charts"),
+    el("div", { class: "muted small", style: "margin-bottom:8px" },
+      "each card is yours to shape: metric × grouping × range × form, over every kept run. ",
+      "Layouts persist in this browser."),
+    cards, el("div", { class: "row mt" }, add));
+  return box;
 }
 
 // A table over a {key: metrics} slice, sorted by total tokens desc.
@@ -112,27 +181,8 @@ export async function render(view) {
       card("compute time", fmtDur(t.elapsed_s), "summed wall-clock"),
       card("success rate", successPct, "finished ÷ graded")));
 
-    // ---- tokens per day bar chart ----------------------------------------
-    const days = Object.entries(agg.by_day || {});
-    if (days.length) {
-      const max = Math.max(...days.map(([, d]) => tokensOf(d)));
-      parts.push(el("div", { class: "stat-section" },
-        el("h2", {}, "tokens per day"),
-        el("div", { class: "bar-chart" },
-          ...days.map(([day, d]) => barRow(day, tokensOf(d), max, fmtTokens(tokensOf(d)))))));
-    }
-
-    // ---- cost per endpoint bar chart (only when some cost is reported) ----
-    const eps = Object.entries(agg.by_endpoint || {});
-    const anyCost = eps.some(([, d]) => d.cost > 0);
-    if (eps.length && anyCost) {
-      const max = Math.max(...eps.map(([, d]) => d.cost || 0));
-      parts.push(el("div", { class: "stat-section" },
-        el("h2", {}, "cost per endpoint"),
-        el("div", { class: "bar-chart" },
-          ...eps.filter(([, d]) => d.cost > 0)
-            .map(([ep, d]) => barRow(ep, d.cost, max, fmtCost(d.cost))))));
-    }
+    // ---- configurable charts (metric × grouping × range × form, persisted) ----
+    parts.push(chartsSection(agg.runs || []));
 
     // ---- slice tables -----------------------------------------------------
     parts.push(sliceTable("By routine / conversation", agg.by_routine, "name", [

@@ -288,6 +288,35 @@ def test_util_missing_then_continue(make_routine, scripted):
     assert "does not exist" in ep.calls[1]["messages"][-1]["content"]
 
 
+# Minimal util source that passes the write_util doc-standard gate (header_problems).
+def util_src(name):
+    return ('# /// script\n# ///\n'
+            f'"""{name} — test util.\n\nusage: gu {name}\ntags: test, demo\nsecrets: (none)\n"""\n')
+
+
+def test_write_util_header_gate_blocks_bad_docs(make_routine, scripted, monkeypatch):
+    """A util without tags, or reading a credential env var its secrets: line does not
+    declare, is rejected BEFORE the approval ask and before any write — the observation
+    names the fix (this is what lets the Settings page prompt for every needed secret)."""
+    import rsched.utils_lib as ul
+
+    wrote = []
+    monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
+    monkeypatch.setattr(ul, "write_util_file", lambda *a: wrote.append(a))
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        {"say": "Create it.", "kind": "write_util", "name": "untagged",
+         "content": ('"""untagged — x.\n\nusage: gu untagged\n"""\n'
+                     'import os\nk = os.environ["FOO_API_KEY"]\n')},
+        finish(status="partial", summary="util rejected by the doc gate"),
+    ], slug="wugate")
+    assert status == "partial" and wrote == []
+    assert not any(e["type"] == "question" for e in events)     # gate fires before approval
+    wu = next(e for e in events if e["type"] == "observation" and e["payload"]["kind"] == "write_util")
+    assert wu["payload"]["header_ok"] is False
+    assert any("tags" in p for p in wu["payload"]["problems"])
+    assert any("FOO_API_KEY" in p for p in wu["payload"]["problems"])
+
+
 def test_write_util_gating_and_commit(make_routine, scripted, monkeypatch):
     import rsched.utils_lib as ul
 
@@ -300,7 +329,7 @@ def test_write_util_gating_and_commit(make_routine, scripted, monkeypatch):
     monkeypatch.setattr(ul, "git_commit", lambda home, msg: seen.update(commit=msg) or True)
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
         {"say": "No util fits — creating one.", "kind": "write_util", "name": "adder",
-         "content": "# /// script\n# ///\n\"\"\"adder — add.\"\"\"\n"},
+         "content": util_src("adder")},
         finish(summary="created adder"),
     ], slug="wu")
     assert status == "ok"
@@ -319,7 +348,7 @@ def test_write_util_selftest_failure_not_committed(make_routine, scripted, monke
     monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (False, "AssertionError: boom"))
     monkeypatch.setattr(ul, "git_commit", lambda home, msg: committed.append(msg) or True)
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
-        {"say": "Create it.", "kind": "write_util", "name": "bad", "content": "# broken"},
+        {"say": "Create it.", "kind": "write_util", "name": "bad", "content": util_src("bad")},
         finish(status="partial", summary="util did not pass selftest"),
     ], slug="wubad")
     assert status == "partial" and committed == []
@@ -340,7 +369,7 @@ def test_write_util_confirmation_declined(make_routine, scripted, monkeypatch):
     atomic_write_json(d / "inbox" / f"answer-{qid}.json", {"qid": qid, "text": "decline"})
     server = _server(d, util_authoring="true")   # grant with approval gate ON
     ep = scripted([
-        {"say": "Propose a util.", "kind": "write_util", "name": "risky", "content": "# x"},
+        {"say": "Propose a util.", "kind": "write_util", "name": "risky", "content": util_src("risky")},
         finish(status="partial", summary="util declined"),
     ])
     status, run_dir = run_routine(d, server, run_ts=TS)
@@ -383,7 +412,7 @@ def test_write_util_autonomous_revisions(make_routine, scripted, monkeypatch):
     monkeypatch.setattr(ul, "git_commit", lambda home, msg: True)
     d = make_routine(slug="wuauto")
     ep = scripted([
-        {"say": "Fix it.", "kind": "write_util", "name": "adder", "content": "# fixed"},
+        {"say": "Fix it.", "kind": "write_util", "name": "adder", "content": util_src("adder")},
         finish(summary="revised without a question"),
     ])
     status, run_dir = run_routine(d, _server(d, util_authoring="revisions-only"), run_ts=TS)

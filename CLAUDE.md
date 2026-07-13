@@ -208,10 +208,13 @@ first boot; `deploy/install.sh` for host installs.
   (config) is the source of truth; defaults added after routines exist reach them once via
   `bootstrap.adopt_permissions` at daemon boot; `bootstrap.migrate_fragments_split` converts pre-split
   instances (fragments/ dirs + `fragments:` keys) at boot.
-- **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`, `calls:`),
-  a `secrets: NAME,…` declaration line, and a `--selftest` the engine runs before saving (`write_util` is
-  selftest-gated; whether it needs user approval rides the held util-authoring permission's `confirm:`
-  grant). Discover with the `util` action `name: list`.
+- **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`,
+  `calls:`, `tags:`, `secrets: NAME,…` — the docstring is the ONLY machine-read surface; comment-form
+  declarations above it are invisible), and a `--selftest` the engine runs before saving. `write_util`
+  is gated twice: `utils_lib.header_problems` rejects a missing `tags:` line or a credential env var
+  the code reads but `secrets:` doesn't declare (the Settings page can only prompt for declared
+  secrets), then the selftest; approval rides the held util-authoring permission's `confirm:` grant.
+  Discover with the `util` action `name: list`.
 - **Secrets** are one central, write-only KEY→VALUE store injected into every util, endpoint, and the
   subscription at run time; utils declare which vars they need and the UI flags unset ones.
 
