@@ -137,7 +137,9 @@ export async function render(view, query = {}) {
       statCard(waiting, "waiting on you", "warn", () => setStatusFilter("waiting_user")),
       statCard(failed, "failed · 24h", "err", () => setStatusFilter("failed")),
       statCard(inWindow, `runs · ${filters.window}`, "amber", () => setStatusFilter("")),
-      statCard(questions.length, "open decisions", "warn", () => { location.hash = "#/questions"; }));
+      // truly open only — answered-and-queued items are settled, not waiting on the user
+      statCard(questions.filter((q) => !q.answered).length, "open decisions", "warn",
+        () => { location.hash = "#/questions"; }));
   }
 
   // ---- feed ----------------------------------------------------------------
