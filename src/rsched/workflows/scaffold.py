@@ -30,7 +30,8 @@ def _with_practices_tail(main_body: str, trait_summaries: dict[str, str]) -> str
     improve = [s for s in trait_summaries if s.startswith("improve-")]
     tail = [PRACTICES_HEADING, "",
             "These practice modules are this routine's own adapted standards — read each with "
-            "read_file before the situation it governs, and refine them as you learn:", *lines]
+            "read_file before the situation it governs (the routine-improver meta routine "
+            "refines them over time):", *lines]
     if improve:
         tail += ["", "After the main work, before finish, run each improve pass in its own "
                      "module: " + ", ".join(f"`traits/{s}.md`" for s in improve) + "."]

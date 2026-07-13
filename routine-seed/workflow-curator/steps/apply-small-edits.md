@@ -13,4 +13,4 @@ For each cluster in `cursor.clusters.small`:
 Keep each edit minimal and defensible by the evidence — a wording clarification, a hint, a corrected reference. Anything larger is not a small edit; move it to the big list instead.
 
 ## Next
-Write the list of applied edits into `cursor.applied`, set `step: "propose-big-changes"`. Read `steps/propose-big-changes.md`.
+Write the list of applied edits into `cursor.applied`, set `step: "apply-big-changes"`. Read `steps/apply-big-changes.md`.

@@ -286,7 +286,9 @@ def test_scaffold_creates_valid_routine(tmp_path):
     assert "improve-" not in main_text
     # permissions default in and are pure config (no local copies)
     assert set(cfg.permissions) == set(raw["permissions"])
-    assert "util-authoring" in cfg.permissions and "self-modification" in cfg.permissions
+    assert "util-authoring" in cfg.permissions and "memory" in cfg.permissions
+    # recipe improvement is centralized — self-modification is NOT a default anymore
+    assert "self-modification" not in cfg.permissions
     assert (d / ".gitignore").read_text().startswith("runs/")
     with pytest.raises(ValueError):
         scaffold(server, slug="papers-radar", name="dup", instruction="x",

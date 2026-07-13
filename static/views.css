@@ -214,6 +214,8 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   background: transparent; touch-action: none;
 }
 .pane-handle:hover, .pane-handle.dragging { background: var(--line-2); }
+/* a handle beside a collapsed pane keeps its 0-width grid slot but stops interacting */
+.pane-handle.off { pointer-events: none; background: none; }
 .conv-side, .conv-art { position: sticky; top: 66px; display: flex; flex-direction: column; gap: 8px; }
 .conv-side input[type="search"] { flex: 1; min-width: 0; }
 .conv-tagsel { width: 100%; font-size: 11px; padding: 3px 6px; color: var(--muted); }
@@ -227,14 +229,20 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .pane-fold:hover { color: var(--text); border-color: var(--line-2); }
 .pane-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .pane-rail {
-  display: none; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
-  color: var(--faint); cursor: pointer; padding: 12px 5px; min-height: 150px; font: inherit;
+  display: none; align-items: center; justify-content: flex-start;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  color: var(--faint); cursor: pointer; padding: 10px 0; min-height: 220px; width: 100%;
+  font: inherit;
 }
 .pane-rail:hover { color: var(--text); border-color: var(--line-2); }
-.pane-rail-label { writing-mode: vertical-rl; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+.pane-rail::before { content: "◂▸"; font-size: 9px; letter-spacing: -1px; }
+.pane-rail-label {
+  writing-mode: vertical-rl; text-orientation: mixed; margin-top: 10px;
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; white-space: nowrap;
+}
 .conv-side.collapsed .pane-cap, .conv-art.collapsed .pane-cap,
 .conv-side.collapsed .pane-body, .conv-art.collapsed .pane-body { display: none; }
-.conv-side.collapsed .pane-rail, .conv-art.collapsed .pane-rail { display: block; }
+.conv-side.collapsed .pane-rail, .conv-art.collapsed .pane-rail { display: flex; flex-direction: column; }
 .conv-list { display: flex; flex-direction: column; gap: 3px; max-height: calc(100vh - 230px); overflow: auto; }
 /* one line per conversation — details live in the hover card */
 .conv-item {

@@ -160,8 +160,9 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
         "Grant permissions conservatively: only what the task clearly needs (e.g. communication "
         "only if it must reach the user outside the web UI; run-history only if runs build on "
         "each other's details beyond the last summary; shell almost never). At most ONE "
-        "util-authoring variant. Include self-modification if the routine should refine its own "
-        "process over time.\n\n"
+        "util-authoring variant. Almost never self-modification: recipe improvement is the "
+        "routine-improver meta routine's job — suggest it only when the task itself is "
+        "self-rewriting.\n\n"
         "Reply with ONLY one JSON object matching this schema (no prose):\n"
         + json.dumps(TRAITS_PERMS_SCHEMA)
     )

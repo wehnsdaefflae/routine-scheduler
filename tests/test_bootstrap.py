@@ -311,3 +311,29 @@ def test_migrate_strips_improve_includes_from_library_workflows(tmp_path):
     assert '"improve-ui"' not in text.split("DOC")[0]
     assert '"ask-policy"' in text
     assert "the improve-ui lens used to live here" in text     # prose untouched
+
+
+def test_revoke_self_modification_once_keeps_improver(tmp_path):
+    """self-modification leaves every existing routine/conversation ONCE — except the
+    routine-improver, the centralized holder; a later user re-grant sticks."""
+    from rsched.bootstrap import revoke_self_modification
+
+    routines = tmp_path / "routines"
+    convs = tmp_path / "conversations"
+    for home, slug in ((routines, "worker"), (routines, "routine-improver"), (convs, "c-1")):
+        d = home / slug
+        d.mkdir(parents=True)
+        (d / "routine.yaml").write_text(yaml.safe_dump(
+            {"slug": slug, "permissions": ["util-authoring", "memory", "self-modification"]}))
+    assert revoke_self_modification(routines, convs) == 2
+    for home, slug, expect in ((routines, "worker", False), (convs, "c-1", False),
+                               (routines, "routine-improver", True)):
+        perms = yaml.safe_load((home / slug / "routine.yaml").read_text())["permissions"]
+        assert ("self-modification" in perms) is expect, (slug, perms)
+    # user re-grants → the one-time migration never takes it away again
+    raw = yaml.safe_load((routines / "worker" / "routine.yaml").read_text())
+    raw["permissions"].append("self-modification")
+    (routines / "worker" / "routine.yaml").write_text(yaml.safe_dump(raw))
+    assert revoke_self_modification(routines, convs) == 0
+    assert "self-modification" in yaml.safe_load(
+        (routines / "worker" / "routine.yaml").read_text())["permissions"]

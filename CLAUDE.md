@@ -105,8 +105,8 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   `permissions:` (held capability grants — user-changeable only, all surfaced on the routine page),
   `budgets:` (max_turns / wall_clock_min / total_tokens (-1 = unlimited, the default) / subruns /
   subrun_depth / ask_timeout_min — all editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
-  budgets/fs-roots/schedules are resources, never grants; `exclude_from_improvement` opts the
-  routine out of the routine-improver's passes.
+  budgets/fs-roots/schedules are resources, never grants; `improve: false` opts the routine
+  out of the routine-improver's passes (default: included).
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
   routes to `steps/<name>.md` modules, read on demand, and ends with a Standing practices tail
   referencing `traits/`). `instruction.md` — the task. `traits/*.md` — the routine's OWN practice
@@ -199,8 +199,8 @@ first boot; `deploy/install.sh` for host installs.
   nothing under a routine dir is consulted, so routines can't self-grant). The set: `util-authoring`
   (confirm: true, default), `util-authoring-autonomous` (revisions-only), `util-authoring-full-auto`
   (false), `memory` (memory_read/memory_write — indexed ≤100-line notes in `.memory/`; INDEX.md
-  engine-maintained, surfaced in the state digest; default), `self-modification` (recipe writes;
-  default), `communication` (reserves `discord`; also turns on engine-side Discord mirroring of
+  engine-maintained, surfaced in the state digest; default), `self-modification` (recipe writes; NOT a
+  default — the routine-improver is the only default holder, recipe improvement being its job), `communication` (reserves `discord`; also turns on engine-side Discord mirroring of
   blocking decisions), `run-history` / `run-history-full` (read the last / all previous runs under
   runs/), `shell` (reserves the `shell` util — the escape hatch). Permission bodies are SHORT (≤14
   lines reach the prompt's CAPABILITIES section when held). Any future permission-ish lever becomes a

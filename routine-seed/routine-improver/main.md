@@ -2,8 +2,8 @@
 name: Routine improver
 slug: routine-improver
 materialized_from:
-  slug: routine-improver
-  commit: seed
+  slug: hand-authored
+  commit: ''
   version: 1
 modules:
 - orient

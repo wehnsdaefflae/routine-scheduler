@@ -71,7 +71,7 @@ def _card(request: Request, info: registry.RoutineInfo) -> dict:
                       "usage": last.usage, "elapsed_s": last.elapsed_s} if last else None),
         "open_questions": sum(1 for q in info.open_questions if not q.get("answered")),
         "problems": info.problems,
-        "exclude_from_improvement": info.cfg.exclude_from_improvement,
+        "improve": info.cfg.improve,
     }
 
 
@@ -108,7 +108,13 @@ def routine_detail(request: Request, slug: str) -> dict:
         **_card(request, info),
         "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
         "server_tz": schedule.server_tz(),
-        "workflow_ref": {"slug": info.cfg.workflow_slug, "commit": info.cfg.workflow_commit},
+        # Provenance is a CLAIM ("generated from") — in_library says whether the referenced
+        # pattern actually exists in the current library, so the UI never implies a findable
+        # workflow that isn't there (hand-authored recipes carry an empty slug).
+        "workflow_ref": {"slug": info.cfg.workflow_slug, "commit": info.cfg.workflow_commit,
+                         "in_library": bool(info.cfg.workflow_slug) and
+                         (server.library_home / "workflows"
+                          / f"{info.cfg.workflow_slug}.py").exists()},
         # Per-routine models (main/subroutine/tool_call). A kind left null falls back to the
         # server system_model, shown so the UI can label the effective model.
         "models": {k: ({"endpoint": r.endpoint, "model": r.model, "effort": r.effort}
@@ -194,7 +200,7 @@ class RoutinePatch(BaseModel):
     name: str | None = None
     description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
-    exclude_from_improvement: bool | None = None   # opt out of the routine-improver's passes
+    improve: bool | None = None             # include in the routine-improver's passes (default on)
 
 
 @router.patch("/routines/{slug}")

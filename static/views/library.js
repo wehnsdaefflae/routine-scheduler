@@ -1,6 +1,6 @@
 // Library: workflows (control-flow patterns), traits (practice prose), permissions (grants), global utils.
 // A tag filter narrows all three sections; deep-link #/library/workflow/<slug> opens an
-// editor directly. Save failures (lint / selftest) render inline under the editor; proposal
+// editor directly. Save failures (lint / selftest) render inline under the editor;
 // decisions update in place — no page reloads.
 
 import { api } from "/static/api.js";
@@ -17,9 +17,8 @@ export async function render(view, sub, query = {}) {
   const filterBar = el("div", { class: "filterbar" });
   const sections = el("div", {});
   const editor = el("div", {});
-  const proposalsBox = el("div", {});
   sections.append(skeleton());
-  view.append(countLine, filterBar, sections, editor, proposalsBox);
+  view.append(countLine, filterBar, sections, editor);
 
   let data;
   try { data = await api("/api/library"); }
@@ -88,7 +87,13 @@ export async function render(view, sub, query = {}) {
     openSub = `workflow/${slug}`; updateURL();
     const d = await api(`/api/workflows/${slug}`);
     showEditor(`workflow: ${slug}`, d.content, d.log, async (content) =>
-      api(`/api/workflows/${slug}`, { method: "PUT", body: { content } }), "python");
+      api(`/api/workflows/${slug}`, { method: "PUT", body: { content } }), "python",
+      async () => {
+        if (!confirm(`Delete workflow "${slug}"? Routines born from it keep their own `
+                     + "recipes. A seed pattern returns at the next daemon boot.")) return false;
+        await api(`/api/workflows/${slug}`, { method: "DELETE" });
+        return true;
+      });
   }
   async function openDoc(kind, slug) {
     openSub = `${kind.slice(0, -1)}/${slug}`; updateURL();
@@ -104,10 +109,20 @@ export async function render(view, sub, query = {}) {
   }
 
   // workflows + utils are Python → highlighted editor; traits/permissions are markdown → plain
-  function showEditor(label, content, log, save, lang) {
+  function showEditor(label, content, log, save, lang, del) {
     editor.replaceChildren();
     const ed = codeEditor(content, { lang, minHeight: 360 });
     const errBox = el("div", {});
+    const delBtn = !del ? null : el("button", { class: "btn danger small" }, "delete");
+    if (delBtn) {
+      delBtn.onclick = async () => {
+        delBtn.disabled = true;
+        try {
+          if (await del()) { toast("deleted + committed"); location.reload(); return; }
+        } catch (err) { toast(err.message, 5000, { error: true }); }
+        delBtn.disabled = false;
+      };
+    }
     const btn = el("button", { class: "btn primary" }, "save + commit");
     btn.onclick = async () => {
       btn.disabled = true;
@@ -123,7 +138,7 @@ export async function render(view, sub, query = {}) {
     };
     editor.append(el("h2", {}, label),
       el("div", { class: "panel" }, ed.node,
-        el("div", { class: "row mt" }, btn),
+        el("div", { class: "row mt" }, btn, delBtn),
         errBox,
         el("div", { class: "muted mt small" },
           "tags live in this file's frontmatter/header — edit them here"),
@@ -148,34 +163,4 @@ export async function render(view, sub, query = {}) {
     if (opener && id) opener(id).catch((e) => toast(e.message, 4000, { error: true }));
   }
 
-  // ---- proposals (from the meta routine) — decided in place, no reload ------------------------
-  const proposals = await api("/api/proposals").catch(() => []);
-  if (proposals.length) {
-    proposalsBox.append(el("h2", {}, "Proposals (from the meta routine)"));
-    for (const p of proposals) proposalsBox.append(proposalPanel(p));
-  }
-
-  function proposalPanel(p) {
-    const head = el("div", { class: "row spread" },
-      el("strong", {}, p.id),
-      p.decision ? chip(p.decision.decision, p.decision.decision === "accepted" ? "ok" : "failed") : null);
-    const note = el("input", { type: "text", placeholder: "optional note…", style: "flex:1" });
-    const actions = el("div", { class: "row mt" });
-    const panel = el("div", { class: "panel mt" }, head,
-      el("pre", { class: "doc mt" }, p.content),
-      p.decision ? null : actions);
-    const decide = (decision) => el("button",
-      { class: `btn small ${decision === "accepted" ? "primary" : "danger"}`,
-        onclick: async (e) => {
-          e.target.disabled = true;
-          try {
-            await api(`/api/proposals/${p.id}/decide`, { method: "POST", body: { decision, note: note.value } });
-            toast(`proposal ${decision} — the meta routine acts on it next run`);
-            head.append(chip(decision, decision === "accepted" ? "ok" : "failed"));
-            actions.remove();
-          } catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
-        } }, decision);
-    actions.append(note, decide("accepted"), decide("declined"));
-    return panel;
-  }
 }

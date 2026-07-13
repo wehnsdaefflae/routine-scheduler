@@ -96,18 +96,18 @@ export async function render(view, slug, query = {}) {
   // -- schedule -------------------------------------------------------------------
   const sched = scheduleEditor(d.schedule_friendly || { frequency: "manual" }, d.server_tz);
   const enabledBox = el("input", { type: "checkbox", checked: d.enabled || null });
-  const noImproveBox = el("input", { type: "checkbox", checked: d.exclude_from_improvement || null });
+  const improveBox = el("input", { type: "checkbox", checked: d.improve !== false || null });
   view.append(el("h2", {}, "Schedule"),
     el("div", { class: "panel" }, sched.node,
       el("label", { class: "row mt", style: "gap:8px" }, enabledBox, "enabled"),
-      el("label", { class: "row mt", style: "gap:8px" }, noImproveBox,
-        el("span", {}, "exclude from improvement — the routine-improver meta routine never touches this routine")),
+      el("label", { class: "row mt", style: "gap:8px" }, improveBox,
+        el("span", {}, "include in improvement — the routine-improver meta routine visits this routine (on by default)")),
       el("div", { class: "row mt" }, el("button", {
         class: "btn primary",
         onclick: async () => {
           try {
             await api(`/api/routines/${slug}`, { method: "PATCH",
-              body: { enabled: enabledBox.checked, exclude_from_improvement: noImproveBox.checked,
+              body: { enabled: enabledBox.checked, improve: improveBox.checked,
                       schedule: { friendly: sched.value() } } });
             toast("schedule saved"); setTimeout(() => location.reload(), 400);
           } catch (err) { toast(err.message, 4000, { error: true }); }
@@ -116,12 +116,19 @@ export async function render(view, slug, query = {}) {
       d.next_fire ? el("div", { class: "muted mt small" }, "next run · ", when(d.next_fire)) : null));
 
   // -- workflow = the routine's OWN main.md (self-contained; generated from a recipe) ----------
+  // Provenance honesty: "hand-authored" when there is no origin pattern, and an explicit
+  // note when the claimed origin is no longer (or never was) in this instance's library.
+  const wf = d.workflow_ref || {};
   view.append(el("h2", {}, "Workflow (main.md)"),
     el("div", { class: "panel row spread" },
       el("div", {},
-        el("span", { class: "ref-tag" }, d.workflow_ref?.slug || "—"),
+        el("span", { class: "ref-tag" }, wf.slug || "hand-authored"),
         el("span", { class: "muted small", style: "margin-left:10px" },
-          "the recipe this routine was born from — main.md is the routine's OWN now, editable below")),
+          wf.slug
+            ? (wf.in_library
+               ? "the recipe this routine was born from — main.md is the routine's OWN now, editable below"
+               : "its origin pattern is not in this library (anymore) — main.md is the routine's OWN, editable below")
+            : "written directly, not generated from a library pattern — main.md is the routine's OWN, editable below")),
       el("button", { class: "btn small",
         onclick: () => editFile("main.md", "main.md — the routine's workflow") }, "edit main.md")));
 

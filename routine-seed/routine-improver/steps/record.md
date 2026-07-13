@@ -5,7 +5,8 @@
    `### <date> — routine-improver: <changes applied; candidates rejected + why; questions filed>`.
 2. Commit the target's dir: `util git-sync <target dir> -m "routine-improver: <one line>"`
    (routine dirs usually have no remote — the util then just commits; that is correct).
-   Verify the working tree is clean afterwards.
+   Conversations are NOT git repos — skip the commit there and verify edits by reading
+   them back instead.
 3. Update `state/visits.json[slug]` = `{last_visit: <now>, last_run_seen: <newest run ts>}`.
 
 ## Do — once

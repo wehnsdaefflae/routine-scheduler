@@ -40,8 +40,9 @@ path: this scheduler is the only harness.
 - **As a whole**: two more bundled meta routines use the exact same building blocks —
   `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, acting
   is lens-scoped and test-gated, with bigger decisions on the **Audit** page) and
-  `workflow-curator` (fixes and drafts library workflows from all routines' transcripts;
-  big changes become proposals you approve in the UI). They ship **disabled**; the
+  `workflow-curator` (fixes and drafts library workflows from all routines' transcripts —
+  applied directly, lint-gated and committed; you can edit or delete any workflow on the
+  Library tab). They ship **disabled**; the
   dashboard says so until you enable them, because self-improvement costs tokens. The
   instance itself syncs to one GitHub repo — routines, workflows, traits, utils, sanitized
   config — via the scheduled **Library sync** job in Settings (a plain daemon job, no LLM).

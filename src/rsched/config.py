@@ -32,17 +32,19 @@ DEFAULT_BUDGETS = {
 # PERMISSIONS a new routine holds when its routine.yaml names no explicit `permissions:`
 # list. Permissions are engine-enforced capabilities (see grants.py), user-changeable only:
 # `util-authoring` lets a routine write utils with user approval, `memory` unlocks the
-# .memory/ notebook, `self-modification` lets it refine its own recipe (main.md / steps/ /
-# traits/) — the behavior routines always had. `communication` (discord), `run-history`
-# (previous runs) and `shell` stay opt-in. Defaults added here AFTER routines exist reach
-# them via bootstrap.ADOPT_PERMISSIONS (one-time, at daemon boot).
-DEFAULT_PERMISSIONS = ["util-authoring", "memory", "self-modification"]
+# .memory/ notebook. `self-modification` (recipe writes) is NOT a default anymore: recipe
+# improvement is centralized in the routine-improver meta routine — the only holder by
+# default; grant it back per routine only when one genuinely must edit its own recipe
+# mid-run. `communication` (discord), `run-history` (previous runs) and `shell` stay
+# opt-in. Defaults added here AFTER routines exist reach them via
+# bootstrap.ADOPT_PERMISSIONS (one-time, at daemon boot).
+DEFAULT_PERMISSIONS = ["util-authoring", "memory"]
 # TRAITS a new routine gets when creation picks none explicitly (the wizard normally
 # preselects per task): reusable practice prose, adapted into the routine's own traits/
 # at creation and referenced from the end of its main.md. Not toggleable afterwards —
 # they are the routine's files from then on. Improvement passes are NOT part of a
 # routine's own traits: the routine-improver meta routine runs them across all routines
-# (honoring each routine's `exclude_from_improvement` flag).
+# and conversations (honoring each one's `improve: false` opt-out).
 DEFAULT_TRAITS = ["ask-policy", "global-utils", "ledger-discipline", "web-research"]
 # Each routine picks its own three models: the MAIN orchestrator loop, the model spawned
 # SUBROUTINEs run their main loop on, and the model TOOL_CALLs (the `llm` action) use.
@@ -246,9 +248,9 @@ class RoutineConfig(_Config):
     fs_read_roots: list[HomePath] = Field(default_factory=list)
     fs_write_roots: list[HomePath] = Field(default_factory=list)
     keep_runs: int = Field(30, validation_alias=AliasPath("retention", "keep_runs"))
-    # Opt-out from the routine-improver meta routine: a routine with this flag set is
-    # never visited by the cross-routine improvement passes (toggle on the routine page).
-    exclude_from_improvement: bool = False
+    # Whether the routine-improver meta routine visits this routine (default: yes; the
+    # toggle on the routine page opts out with `improve: false`).
+    improve: bool = True
 
     @field_validator("cron")
     @classmethod

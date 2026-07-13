@@ -1,5 +1,6 @@
 name: Routine improver
-description: Sweeps every routine that hasn't opted out (including itself) and improves
+description: Sweeps every routine and conversation that hasn't opted out (including
+  itself) and improves
   it through the five lenses — bugfix, research, features, UI, efficiency — plus a
   fresh-eyes de-clutter pass.
 tags:
@@ -13,8 +14,8 @@ schedule:
   tz: Europe/Berlin
   catchup: skip
 workflow:
-  library_slug: routine-improver
-  library_commit: seed
+  library_slug: ''
+  library_commit: ''
 permissions:
 - util-authoring
 - memory
@@ -30,5 +31,7 @@ retention:
   keep_runs: 30
 fs_read_roots:
 - ~/routines
+- ~/conversations
 fs_write_roots:
 - ~/routines
+- ~/conversations

@@ -1,13 +1,12 @@
 """Workflow library API: list with lint badges, content + git history, lint-gated edits,
-meta-routine proposals."""
+delete. The user's levers over workflows are EDIT and DELETE — there is no accept/decline
+gate; the workflow-curator routine applies its changes directly (lint-gated, committed)."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ..ids import now_iso
-from ..paths import atomic_write_json
 from ..workflows import library
 from ..workflows.lint import (lint_all, lint_permission_text, lint_trait_text,
                               lint_workflow_py)
@@ -170,36 +169,21 @@ def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
     return {"ok": True, "head": library.head_commit(home)}
 
 
+@router.delete("/workflows/{slug}")
+def delete_workflow(request: Request, slug: str) -> dict:
+    """Delete a workflow pattern (committed). Routines materialized from it are untouched —
+    they own their recipes. A deleted SEED pattern reappears at the next daemon boot
+    (sync_seed_library_docs restores missing seed docs)."""
+    home = _home(request)
+    path = _workflow_file(home, slug)
+    if path is None:
+        raise HTTPException(404, f"no workflow {slug!r}")
+    path.unlink()
+    library.git_commit(home, f"delete workflows/{slug}.py via web")
+    return {"ok": True, "head": library.head_commit(home)}
+
+
 @router.post("/workflows/lint")
 def lint(request: Request) -> dict:
     return {"results": lint_all(_home(request))}
 
-
-@router.get("/proposals")
-def proposals(request: Request) -> list[dict]:
-    return library.list_proposals(_home(request))
-
-
-class Decision(BaseModel):
-    decision: str  # accepted | declined
-    note: str = ""
-
-
-@router.post("/proposals/{proposal_id}/decide")
-def decide(request: Request, proposal_id: str, body: Decision) -> dict:
-    home = _home(request)
-    if body.decision not in ("accepted", "declined"):
-        raise HTTPException(400, "decision must be accepted|declined")
-    if not (library.proposals_dir(home) / f"{proposal_id}.md").exists():
-        raise HTTPException(404, f"no proposal {proposal_id!r}")
-    atomic_write_json(library.proposals_dir(home) / f"{proposal_id}.decision.json",
-                      {"decision": body.decision, "note": body.note, "ts": now_iso()})
-    library.git_commit(home, f"proposal {proposal_id}: {body.decision}")
-    # nudge the meta routine so its next run acts on the decision
-    meta_dir = request.app.state.server.routines_home / "workflow-curator"
-    if meta_dir.is_dir():
-        atomic_write_json(meta_dir / "inbox" / f"msg-proposal-{proposal_id}.json",
-                          {"text": f"Proposal {proposal_id} was {body.decision}"
-                                   + (f" — note: {body.note}" if body.note else ""),
-                           "ts": now_iso(), "via": "proposals"})
-    return {"ok": True}

@@ -203,7 +203,7 @@ learning your taste run over run.
 |---|---|---|
 | workflow | `general-task` | propose → feedback → learn → propose is steady-state work |
 | traits | ask-policy, web-research, ledger-discipline | the routine-improver's UI lens keeps `proposals.md` readable as it grows |
-| permissions | memory, self-modification, **communication**, **run-history** | taste questions belong on your phone (Discord), not buried in a console; run-history lets it diff proposals against exactly what you saw last time |
+| permissions | memory, **communication**, **run-history** | taste questions belong on your phone (Discord), not buried in a console; run-history lets it diff proposals against exactly what you saw last time |
 | budgets | 40 turns · 30 min · **ask_timeout_min 1440** | taste questions can wait a day; the run continues on its stated default and folds your late answer into the next one |
 | schedule | Tuesdays + Fridays 18:00 | often enough to converge, rare enough to have news |
 

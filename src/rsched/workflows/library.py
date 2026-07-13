@@ -18,10 +18,6 @@ def permissions_dir(home: Path) -> Path:
     return home / "permissions"
 
 
-def proposals_dir(home: Path) -> Path:
-    return home / "proposals"
-
-
 def _workflow_paths(home: Path) -> list[Path]:
     """Every workflow file, one `<slug>.py` pattern per slug."""
     d = workflows_dir(home)
@@ -103,18 +99,3 @@ def git_log(home: Path, rel_path: str | None = None, limit: int = 20) -> list[di
             out.append({"commit": parts[0], "date": parts[1], "subject": parts[2]})
     return out
 
-
-def list_proposals(home: Path) -> list[dict]:
-    d = proposals_dir(home)
-    if not d.is_dir():
-        return []
-    out = []
-    for path in sorted(d.glob("*.md")):
-        decision_file = path.with_suffix(".decision.json")
-        from ..paths import read_json
-
-        decision = read_json(decision_file)
-        out.append({"id": path.stem, "file": path.name,
-                    "content": path.read_text(encoding="utf-8"),
-                    "decision": decision if isinstance(decision, dict) else None})
-    return out

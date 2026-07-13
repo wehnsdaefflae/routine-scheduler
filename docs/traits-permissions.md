@@ -42,8 +42,8 @@ is a lint error). The shipped set:
 | `ledger-discipline` | the append-only LEDGER entry every run writes, and its rotation |
 
 Improvement passes are deliberately NOT traits anymore: the bundled **routine-improver**
-meta routine sweeps every routine that doesn't set `exclude_from_improvement: true` in its
-routine.yaml (toggle on the routine page) and runs the five lenses — bugfix, research,
+meta routine sweeps every routine that doesn't set `improve: false` in its
+routine.yaml (an include-by-default toggle on the routine page) and runs the five lenses — bugfix, research,
 features, UI, efficiency — plus a fresh-eyes de-clutter pass on each, itself included.
 
 At creation the wizard **preselects** traits from the refined instruction + chosen
@@ -54,8 +54,9 @@ a *Standing practices* section referencing each one ("read it before the situati
 governs"). The prompt never inlines them — the state digest lists the files and the run
 reads what it needs, which keeps every turn's prompt lean.
 
-Whether the routine may *edit* its trait files afterwards rides the `self-modification`
-permission, like the rest of its recipe.
+Editing trait files afterwards rides the `self-modification` permission, like the rest
+of the recipe — held by default only by the routine-improver meta routine, which does
+that refining centrally (conversations included).
 
 ## Permissions
 
@@ -86,7 +87,7 @@ The shipped set:
 | `util-authoring-autonomous` | `write_util`, revisions auto-approved after selftest, creations ask | opt-in |
 | `util-authoring-full-auto` | `write_util`, fully autonomous (selftest-gated, committed) | opt-in |
 | `memory` | `memory_read` / `memory_write` — the `.memory/` notebook | ✅ |
-| `self-modification` | writes to the routine's own recipe files | ✅ |
+| `self-modification` | writes to the routine's own recipe files | — (routine-improver only) |
 | `communication` | the reserved `discord` util — a second decision surface | opt-in |
 | `run-history` | read the LAST previous run under `runs/` | opt-in |
 | `run-history-full` | read ALL previous runs | opt-in |

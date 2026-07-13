@@ -481,6 +481,49 @@ def migrate_improvement_split(routines_home: Path, library_home: Path) -> int:
     return touched
 
 
+# The 2026-07 centralization: self-modification stopped being a default permission —
+# recipe improvement lives in the routine-improver meta routine, the only default holder.
+_SELF_MOD_MARKER = ".self-modification-revoked"
+
+
+def revoke_self_modification(routines_home: Path, conversations_home: Path) -> int:
+    """One-time revoke of `self-modification` from every existing routine and conversation
+    EXCEPT routine-improver (it improves itself under the same gate everyone else lost).
+    Marker-tracked: a grant the user makes afterwards is theirs to keep."""
+    if not routines_home.is_dir():
+        return 0
+    marker = routines_home / _SELF_MOD_MARKER
+    if marker.exists():
+        return 0
+    touched = 0
+    for home in (routines_home, conversations_home):
+        if not home or not Path(home).is_dir():
+            continue
+        for rdir in sorted(Path(home).iterdir()):
+            cfg = rdir / "routine.yaml"
+            if rdir.name.startswith(".") or rdir.name == "routine-improver" or not cfg.is_file():
+                continue
+            try:
+                raw = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+            except yaml.YAMLError:
+                continue
+            perms = raw.get("permissions")
+            if not isinstance(perms, list) or "self-modification" not in perms:
+                continue
+            raw["permissions"] = [p for p in perms if p != "self-modification"]
+            cfg.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True),
+                           encoding="utf-8")
+            _git(rdir, "add", "-A")
+            _git(rdir, "commit", "-qm",
+                 "revoke self-modification (recipe improvement is the routine-improver's job)")
+            touched += 1
+    marker.write_text("done\n", encoding="utf-8")
+    if touched:
+        log.warning("self-modification revoked from %d routine(s)/conversation(s) — "
+                    "the routine-improver is the default holder now", touched)
+    return touched
+
+
 # The 2026-07 budget change: max_total_tokens -1 = unlimited became the default, and every
 # EXISTING routine and conversation switches too (Mark's call). One-time: a finite cap the
 # user sets afterwards is never overridden again.

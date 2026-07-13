@@ -578,14 +578,15 @@ def test_status_reports_version_and_build(client):
     assert "library_sync_next" in s
 
 
-def test_patch_exclude_from_improvement(client):
+def test_patch_improve_flag(client):
+    """Inclusion in the routine-improver's passes is the DEFAULT; `improve: false` opts out."""
     c, tmp = client
-    assert c.get("/api/routines/apir").json()["exclude_from_improvement"] is False
-    r = c.patch("/api/routines/apir", json={"exclude_from_improvement": True})
+    assert c.get("/api/routines/apir").json()["improve"] is True
+    r = c.patch("/api/routines/apir", json={"improve": False})
     assert r.status_code == 200
     raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
-    assert raw["exclude_from_improvement"] is True
-    assert c.get("/api/routines/apir").json()["exclude_from_improvement"] is True
+    assert raw["improve"] is False
+    assert c.get("/api/routines/apir").json()["improve"] is False
 
 
 def test_put_util_rejects_bad_header(client):
@@ -598,6 +599,32 @@ def test_put_util_rejects_bad_header(client):
     assert r.status_code == 422
     assert "tags" in r.json()["detail"] and "SOME_API_KEY" in r.json()["detail"]
     assert not (tmp / "library" / "utils" / "x").exists()
+
+
+def test_workflow_delete_and_no_proposals_flow(client):
+    """Workflows are edited and DELETED, never accepted: DELETE removes + commits, and the
+    retired proposals endpoints are gone."""
+    c, tmp = client
+    wf_dir = tmp / "library" / "workflows"
+    wf_dir.mkdir(parents=True, exist_ok=True)
+    (wf_dir / "doomed.py").write_text("META = {}\n")
+    r = c.delete("/api/workflows/doomed")
+    assert r.status_code == 200
+    assert not (wf_dir / "doomed.py").exists()
+    assert c.delete("/api/workflows/doomed").status_code == 404
+    assert c.get("/api/proposals").status_code == 404          # flow retired
+
+
+def test_workflow_ref_reports_library_presence(client):
+    """Provenance honesty: workflow_ref.in_library is False when the claimed origin
+    pattern is not in this instance's library (and for hand-authored empty slugs)."""
+    c, tmp = client
+    d = c.get("/api/routines/apir").json()
+    assert d["workflow_ref"]["in_library"] is False            # tmp library has no patterns
+    wf_dir = tmp / "library" / "workflows"
+    wf_dir.mkdir(parents=True, exist_ok=True)
+    (wf_dir / (d["workflow_ref"]["slug"] + ".py")).write_text("META = {}\n")
+    assert c.get("/api/routines/apir").json()["workflow_ref"]["in_library"] is True
 
 
 def test_first_run_setup_flag(client):

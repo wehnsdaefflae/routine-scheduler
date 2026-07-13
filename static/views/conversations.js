@@ -70,8 +70,10 @@ export async function render(view, slug, _query = {}) {
     layout.style.gridTemplateColumns =
       `${sideCol} ${collapsed.side ? 0 : 5}px minmax(0,1fr) `
       + `${!slug || collapsed.art ? 0 : 5}px ${artCol}`;
-    handleL.hidden = collapsed.side;
-    handleR.hidden = !slug || collapsed.art;
+    // the handles must STAY in the grid (display:none would shift every pane one column
+    // left, squeezing the chat into a 0px track) — a collapsed handle just goes inert
+    handleL.classList.toggle("off", collapsed.side);
+    handleR.classList.toggle("off", !slug || collapsed.art);
   };
   const makeHandle = (which, grow) => {
     const h = el("div", { class: "pane-handle", title: "drag to resize" });

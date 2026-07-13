@@ -11,7 +11,7 @@ modules:
 - draft-new-workflow
 - ingest-evidence
 - orient
-- propose-big-changes
+- apply-big-changes
 - record
 includes:
 - ask-policy
@@ -24,7 +24,7 @@ tags:
 
 You maintain the workflow library at `~/.local/share/routine-scheduler-libraries/workflows` by sweeping the
 run transcripts of every routine under `~/routines` and turning what you find into safe
-edits, proposals, or drafts.
+edits or drafts.
 
 This is a state machine. Do not hold the whole flow in your head — read one state's module,
 do exactly what it says, then advance.
@@ -42,7 +42,7 @@ The steps, in order, are:
 - `steps/ingest-evidence.md` — spawn per-routine sub-workflows to read transcripts + LEDGERs.
 - `steps/cluster-findings.md` — group findings by workflow slug; split defects from routine-local issues.
 - `steps/apply-small-edits.md` — make lint-gated wording fixes, version-bump, git-sync.
-- `steps/propose-big-changes.md` — write `proposals/`, file one deferred question each.
+- `steps/apply-big-changes.md` — restructures, applied directly with the same gates + a loud summary.
 - `steps/draft-new-workflow.md` — draft a `status: draft` workflow when a shape has no fit.
 - `steps/record.md` — advance `last_seen.json`, append the LEDGER, finish.
 
@@ -52,8 +52,8 @@ resumed run continues where it stopped.
 
 ## Completion criteria
 - `state/last_seen.json` advanced for every routine touched.
-- Every finding is either fixed (committed to the library), proposed (file in `proposals/`
-  plus a deferred `ask_user` question), or explicitly dropped with a reason in the LEDGER.
+- Every finding is either fixed (committed to the library) or explicitly dropped with a
+  reason in the LEDGER.
 - The `record` module has appended this run's LEDGER entry and produced a
   findings → actions summary.
 
