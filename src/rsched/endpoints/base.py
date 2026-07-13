@@ -31,7 +31,12 @@ class EndpointError(Exception):
 @dataclass
 class Completion:
     """One whole model reply: raw text, the natively schema-parsed object when the
-    endpoint produced one, token usage, and the serving provider when reported."""
+    endpoint produced one, token usage, and the serving provider when reported.
+
+    usage keys: "in" (fresh input tokens) and "out" always; "cached_in" (input served
+    from the provider's prompt cache, ~0.1x price) and "cache_write" (input written into
+    it, ~1.25x) when the provider reports cache traffic; "cost" (real $) when known.
+    Adapters keep cache traffic OUT of "in" so token budgets keep their meaning."""
 
     text: str                     # raw reply text ("" when only parsed content came back)
     parsed: dict | None = None    # object from the endpoint's native schema mode, if any
@@ -41,7 +46,11 @@ class Completion:
 
 class ChatEndpoint(Protocol):
     """What every adapter implements: one stateless completion in, a Completion out.
-    No streaming, no state, no tools — endpoints are transports, never a second harness."""
+    No streaming, no state, no tools — endpoints are transports, never a second harness.
+    `session` is a CACHING hint only (a stable opaque key per conversation): an adapter
+    may use it to keep the provider's prompt cache warm across turns (claude-cli keeps a
+    CLI session per key); semantics never depend on it — every call still carries the
+    full message list and adapters are free to ignore it."""
 
     name: str
     context_chars: int
@@ -55,6 +64,7 @@ class ChatEndpoint(Protocol):
         effort: str | None = None,
         max_tokens: int | None = None,
         timeout: int = DEFAULT_TIMEOUT,
+        session: str | None = None,
     ) -> Completion: ...
 
 

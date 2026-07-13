@@ -94,7 +94,10 @@ export function fmtTokens(usage) {
   const f = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n ?? 0));
   const cost = usage.cost > 0
     ? ` · $${usage.cost >= 0.1 ? usage.cost.toFixed(2) : usage.cost.toFixed(4)}` : "";
-  return `${f(usage.in || 0)} in / ${f(usage.out || 0)} out${cost}`;
+  // cache traffic (cheap re-reads, ~0.1x) is reported separately from fresh input —
+  // showing it makes cache hit rates visible per run/turn
+  const cached = usage.cached_in > 0 ? ` (+${f(usage.cached_in)} cached)` : "";
+  return `${f(usage.in || 0)} in${cached} / ${f(usage.out || 0)} out${cost}`;
 }
 
 export function fmtCost(usage) {

@@ -15,7 +15,7 @@ import { el, fmtTime, fmtTokens, toast } from "/static/util.js";
 import { forgetField } from "/static/formpersist.js";
 
 const BRIEF_FIELD = { util: "name", write_util: "name", read_file: "path", write_file: "path",
-                      memory_read: "name", memory_write: "name",
+                      edit_file: "path", memory_read: "name", memory_write: "name",
                       llm: "prompt", spawn: "label", kill: "n", wait: "n",
                       ask_user: "question", finish: "status" };
 
@@ -112,6 +112,8 @@ export function createTranscript(container, opts = {}) {
     // visible at a glance, not one click deep in the action json.
     const brief = a.kind === "util"
       ? `${a.name ?? ""}${Array.isArray(a.args) && a.args.length ? " " + a.args.join(" ") : "  (no args)"}`.slice(0, 200)
+      : a.kind === "read_file" && Array.isArray(a.paths)
+      ? a.paths.join(", ").slice(0, 200)
       : String(a[BRIEF_FIELD[a.kind]] ?? "").slice(0, 200);
     const turn = el("div", { class: "turn" },
       el("div", { class: "say" },
@@ -157,11 +159,17 @@ export function createTranscript(container, opts = {}) {
         : o.selftest_ok ? `write_util "${o.name}": selftest passed, committed`
         : `write_util "${o.name}": selftest FAILED\n${o.output || ""}`;
     } else if (o.kind === "read_file") {
-      text = o.error || o.content || "";
+      text = o.files  // batched multi-path read: one section per file
+        ? o.files.map((f) => f.error ? `--- ${f.path} FAILED: ${f.error}`
+                                     : `--- ${f.path} (lines ${f.start_line}-${f.end_line} of ${f.total_lines}) ---\n${f.content}`)
+            .join("\n\n")
+        : o.error || o.content || "";
     } else if (o.kind === "llm") {
       text = o.error || o.reply || "";
     } else if (o.kind === "write_file") {
       text = o.error || `wrote ${o.bytes} bytes → ${o.path}`;
+    } else if (o.kind === "edit_file") {
+      text = o.error || `replaced ${o.replacements} occurrence(s) in ${o.path}`;
     } else if (o.kind === "memory_read") {
       text = o.missing ? `no note "${o.name}" (topics: ${(o.topics || []).join(", ") || "none yet"})`
         : o.content || "";

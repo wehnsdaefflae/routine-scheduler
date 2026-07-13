@@ -66,8 +66,9 @@ before re-discovering anything; revise notes that turned out wrong instead of ap
 contradictions. read_file / write_file are rejected on .memory/ paths.""")
     return f"""You are the orchestrator of the routine "{r.name}" ({r.slug}), run {ctx.run_id}\
 {f" (schedule: {r.cron})" if r.cron else ""}. This conversation IS the run: every turn you reply with \
-EXACTLY one JSON object matching the action schema below — no prose outside the JSON. Narrate what \
-you observed and decided in the "say" field.
+EXACTLY one JSON object matching the action schema below — no prose outside the JSON. The "say" \
+field is ONE short sentence — what you observed / why this action; keep it terse (a few words for \
+routine steps), spend words only on decisions and surprises.
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \
 conversation, one per turn, each answered by an observation before your next reply. Never state or \
@@ -104,8 +105,9 @@ forced one.
 Action kinds:
 - util: run a global util — name + optional args (append "--json" for structured output).
 Utils are your primary tools — the CAPABILITIES section below lists what exists (name + \
-summary); run `util name=list` for a util's exact usage before relying on it. Observation = \
-exit code + captured output.
+summary); for ONE util's exact usage run `util name=list args=["<util-name>"]` before relying \
+on it (bare name=list re-dumps the whole catalog you already have). Observation = exit code + \
+captured output.
 - write_util: create or revise a global util — name (kebab-case) + content (a complete
 PEP 723 script: `# /// script` deps block, a module docstring whose first line is
 `<name> — <one-line summary>` then a `usage:` line, a `--json` flag, a `--selftest` that runs
@@ -116,8 +118,11 @@ doesn't teach the correct call wastes every future caller's turn). The engine ru
 needs a secret (token, password, API key), read it env-first — `os.environ["NAME"]` — never hardcode \
 or prompt for it, AND declare the names in a header `secrets: NAME1, NAME2` line so the UI tells the \
 user what to set (they set it once in the Secrets store; the engine injects it).{util_confirm}
-- read_file / write_file: read or write a file (within the working dir or an allowed root).\
-{memory_line}
+- read_file / write_file / edit_file: read or write a file (within the working dir or an \
+allowed root). read_file takes `path` or `paths` (several files in ONE action — batch related \
+reads instead of spending a turn per file). edit_file replaces an exact `anchor` string with \
+`replacement` IN PLACE — for touching a few lines of a large file, use it instead of \
+re-emitting the whole document through write_file.{memory_line}
 - llm: one scoped, stateless LLM subcall (runs on this routine's tool-call model). It sees ONLY \
 your prompt/system — include everything it needs; set response_schema for structured replies.
 - spawn: start a SUB-WORKFLOW that runs IN PARALLEL with you — pick its "workflow" for the \
@@ -188,7 +193,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
         parts.append(f"Model: {ref.endpoint}/{ref.model} — context window ≈ "
                      f"{endpoint.context_chars:,} chars; the engine archives the middle of "
-                     "the conversation to on-disk history at ~60% of that, so budget your "
+                     "the conversation to on-disk history at ~60-80% of that, so budget your "
                      "reads (large files via read_file ranges, not whole).")
     except Exception:  # noqa: BLE001 — a bare test context has no registry; degrade silently
         pass
@@ -242,8 +247,8 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                     if g is not None and u["name"] in g.gated_utils
                     and u["name"] not in g.utils else "")
             lines.append(f"- {head}{note}")
-        header = (f"Global utils ({len(utils)}; run `util name=list` for each one's exact "
-                  "usage before calling it):" if "util" in kinds else
+        header = (f"Global utils ({len(utils)}; run `util name=list args=[\"<name>\"]` for "
+                  "one's exact usage before calling it):" if "util" in kinds else
                   f"Global utils ({len(utils)} — this workflow cannot CALL utils; the list "
                   "tells you what a routine can be built to do):")
         parts.append(header + "\n" + "\n".join(lines))
@@ -373,6 +378,15 @@ def format_observation(obs: dict) -> str:
                 f"{'created' if obs.get('created') else 'revised'} and committed). "
                 "You can now run it with the util action.")
     if kind == "read_file":
+        if obs.get("files") is not None:  # batched multi-path read
+            parts = []
+            for f in obs["files"]:
+                if f.get("error"):
+                    parts.append(f"--- {f['path']} FAILED: {f['error']}")
+                else:
+                    parts.append(f"--- {f['path']} (lines {f['start_line']}-{f['end_line']} "
+                                 f"of {f['total_lines']}) ---\n{f['content']}")
+            return f"OBSERVATION (read_file, {len(obs['files'])} files):\n" + "\n\n".join(parts)
         if err := obs.get("error"):
             return f"OBSERVATION (read_file {obs.get('path')} FAILED): {err}"
         return (f"OBSERVATION (read_file {obs['path']}, lines {obs['start_line']}-{obs['end_line']} "
@@ -382,6 +396,11 @@ def format_observation(obs: dict) -> str:
             return f"OBSERVATION (write_file {obs.get('path')} FAILED): {err}"
         return f"OBSERVATION (write_file): wrote {obs['bytes']} bytes to {obs['path']}" + (
             " (appended)" if obs.get("append") else "")
+    if kind == "edit_file":
+        if err := obs.get("error"):
+            return f"OBSERVATION (edit_file {obs.get('path')} FAILED): {err}"
+        return (f"OBSERVATION (edit_file): replaced {obs['replacements']} occurrence(s) in "
+                f"{obs['path']} (now {obs['bytes']} bytes)")
     if kind == "memory_read":
         if obs.get("missing"):
             topics = ", ".join(obs.get("topics") or []) or "(none yet)"

@@ -119,11 +119,11 @@ def test_replay_messages_rebuilds_conversation():
         {"type": "assistant_action", "turn": 2, "payload": {"kind": "finish", "status": "partial", "say": "s2"}},
         {"type": "finish", "payload": {"status": "partial"}},
     ]
-    msgs, last_turn, records = replay_messages(events, util_reminder=" [rm]")
+    msgs, last_turn, records = replay_messages(events)
     assert last_turn == 2 and len(records) == 2                 # header/compaction/finish don't add turns
     assert [m["role"] for m in msgs] == ["assistant", "user", "user", "assistant"]
     assert "a.txt" in msgs[0]["content"]
-    assert "wrote 3 bytes" in msgs[1]["content"] and msgs[1]["content"].endswith("[rm]")
+    assert "wrote 3 bytes" in msgs[1]["content"]
     assert "hi there" in msgs[2]["content"]
 
 
@@ -203,6 +203,16 @@ def test_format_observation_variants():
     assert "terminated" in format_observation({"kind": "kill", "n": 2, "killed": True, "status": "aborted"})
     assert "FINISHED" in format_observation({"kind": "wait", "finished": [
         {"n": 1, "label": "x", "status": "ok", "turns": 2, "summary": "s"}], "timed_out": False})
+    # batched multi-path read: one section per file, failures inline
+    multi = format_observation({"kind": "read_file", "files": [
+        {"path": "a.md", "start_line": 1, "end_line": 2, "total_lines": 2, "content": "A"},
+        {"path": "b.md", "error": "no such file"}]})
+    assert "2 files" in multi and "--- a.md (lines 1-2 of 2) ---\nA" in multi
+    assert "--- b.md FAILED: no such file" in multi
+    assert "replaced 1 occurrence" in format_observation(
+        {"kind": "edit_file", "path": "f.md", "replacements": 1, "bytes": 9})
+    assert "FAILED" in format_observation(
+        {"kind": "edit_file", "path": "f.md", "error": "anchor not found"})
 
 
 def _history_endpoint(payload):
@@ -250,6 +260,38 @@ def test_compact_to_history_writes_navigable_files(tmp_path):
     names = sorted(p.name for p in hist.glob("*.md"))              # safe-slugged, turn-prefixed
     assert names == ["INDEX.md", "t12-decisions.md", "t12-research-notes.md"]
     assert (hist / "t12-research-notes.md").read_text().strip() == "found X\nfound Y"
+
+
+def test_compact_to_history_reports_its_own_usage(tmp_path):
+    """The archival call's spend rides the compaction info so the loop can fold it into
+    the run's usage — full-context calls must never be invisible to accounting."""
+    from rsched.config import ModelRef
+    from rsched.engine.history import compact_to_history
+
+    ep = _history_endpoint({"files": [{"name": "n", "content": "c"}], "index": "- n: c"})
+    run_dir = tmp_path / "runs" / "20260710-070000"
+    run_dir.mkdir(parents=True)
+    _, info = compact_to_history(_history_messages(), [], ep, ModelRef("e", "m"),
+                                 run_dir, "history")
+    assert info["usage"] == {"in": 1, "out": 1} and info["model"] == "e/m"
+
+
+def test_prior_usage_sums_all_legs():
+    """Resume accounting: every usage-carrying event across the whole transcript counts —
+    actions, llm subcalls, compactions — so status.json shows the run's true total."""
+    from rsched.engine.history import prior_usage
+
+    events = [
+        {"type": "assistant_action", "usage": {"in": 100, "out": 10, "cached_in": 50}},
+        {"type": "observation", "payload": {"kind": "llm", "usage": {"in": 20, "out": 5,
+                                                                     "cost": 0.01}}},
+        {"type": "observation", "payload": {"kind": "write_file", "bytes": 3}},   # no usage
+        {"type": "compaction", "payload": {"usage": {"in": 200, "out": 40}}},
+        {"type": "finish", "payload": {"status": "partial"}},
+        {"type": "assistant_action", "usage": {"in": 30, "out": 3, "cache_write": 7}},
+    ]
+    assert prior_usage(events) == {"in": 350, "out": 58, "cached_in": 50,
+                                   "cache_write": 7, "cost": 0.01}
 
 
 def test_compact_to_history_second_pass_accumulates_atomically(tmp_path):

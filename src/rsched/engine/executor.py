@@ -1,6 +1,6 @@
 """Dispatch a validated action to its effect and return the observation dict.
 
-Handles util / read_file / write_file / memory_read / memory_write / llm here.
+Handles util / read_file / write_file / edit_file / memory_read / memory_write / llm here.
 Control-flow kinds (spawn, subruns, kill, wait, finish) live in loop.py — they change the
 run's state machine — and the user-facing kinds (ask_user, write_util) in interact.py.
 Every observation dict feeds both the transcript event and (via
@@ -26,7 +26,25 @@ def do_util(action: dict, ctx: RunContext) -> dict:
     name = action["name"]
     args = [str(a) for a in (action.get("args") or [])]
     home = ctx.server.utils_home
-    if name == "list":  # discovery: `gu list` — the catalog is derived live, never in-prompt
+    if name == "list":  # discovery: `gu list` — the catalog is derived live, never stale
+        # With a util name in args, list ONLY that util's entry (usage + tags + secrets):
+        # the full catalog is already in CAPABILITIES, so re-listing everything to learn
+        # one util's flags re-buys ~3k tokens of known information.
+        target = str(args[0]).lstrip("-") if args else ""
+        if target and target != "all":
+            entry = next((u for u in utils_lib.list_utils(home) if u["name"] == target), None)
+            if entry is None:
+                return {"kind": "util", "name": "list", "target": target, "missing": True,
+                        "available": [u["name"] for u in utils_lib.list_utils(home)]}
+            lines = [f"- {entry['name']} — {entry['summary']}"]
+            if entry.get("usage"):
+                lines.append(f"    {entry['usage']}")
+            if entry.get("tags"):
+                lines.append(f"    tags: {', '.join(entry['tags'])}")
+            if entry.get("secrets"):
+                lines.append(f"    secrets: {', '.join(entry['secrets'])}")
+            return {"kind": "util", "name": "list", "target": target,
+                    "listing": "\n".join(lines)}
         return {"kind": "util", "name": "list", "listing": utils_lib.catalog_text(home)}
     if name == "show":  # read a util's SOURCE — write_util's counterpart (repair needs read)
         target = str(args[0]) if args else ""
@@ -105,22 +123,29 @@ def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
     return None
 
 
-def do_read_file(action: dict, ctx: RunContext) -> dict:
+def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     try:
-        path = resolve_rel(ctx.routine.dir, action["path"], ctx.routine.fs_read_roots)
+        path = resolve_rel(ctx.routine.dir, rel_path, ctx.routine.fs_read_roots)
         if err := _runs_read_gate(ctx, path):
-            return {"kind": "read_file", "path": action["path"], "error": err}
+            return {"path": rel_path, "error": err}
         text = path.read_text(encoding="utf-8", errors="replace")
     except (OSError, PermissionError) as exc:
-        return {"kind": "read_file", "path": action["path"], "error": str(exc)}
+        return {"path": rel_path, "error": str(exc)}
     lines = text.splitlines()
     start = max(1, int(action.get("start_line") or 1))
     max_lines = min(int(action.get("max_lines") or READ_DEFAULT_MAX_LINES), 500)
     window = lines[start - 1 : start - 1 + max_lines]
     content, truncated = truncate("\n".join(window))
-    return {"kind": "read_file", "path": action["path"], "start_line": start,
+    return {"path": rel_path, "start_line": start,
             "end_line": min(start - 1 + max_lines, len(lines)), "total_lines": len(lines),
             "content": content, "truncated": truncated}
+
+
+def do_read_file(action: dict, ctx: RunContext) -> dict:
+    paths = action.get("paths")
+    if paths:  # batched read: several files in ONE action, one entry each
+        return {"kind": "read_file", "files": [_read_one(str(p), action, ctx) for p in paths]}
+    return {"kind": "read_file", **_read_one(action["path"], action, ctx)}
 
 
 def _write_gate(ctx: RunContext, resolved) -> str | None:
@@ -167,6 +192,38 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
         return {"kind": "write_file", "path": action["path"], "error": str(exc)}
     return {"kind": "write_file", "path": action["path"], "bytes": len(data.encode("utf-8")),
             "append": bool(action.get("append"))}
+
+
+def do_edit_file(action: dict, ctx: RunContext) -> dict:
+    """Anchor-replace in place — revisions cost the diff, not the whole document (the
+    write_file counterpart for touching a few lines of a large file)."""
+    try:
+        path = resolve_rel(ctx.routine.dir, action["path"], ctx.routine.fs_write_roots)
+        if err := _write_gate(ctx, path):
+            return {"kind": "edit_file", "path": action["path"], "error": err}
+        if not path.is_file():
+            return {"kind": "edit_file", "path": action["path"],
+                    "error": "file does not exist — create it with write_file"}
+        text = path.read_text(encoding="utf-8")
+        anchor = str(action["anchor"])
+        replacement = str(action.get("replacement") or "")
+        count = text.count(anchor)
+        if count == 0:
+            return {"kind": "edit_file", "path": action["path"],
+                    "error": "anchor not found in the file — copy it VERBATIM from a "
+                             "read_file observation (whitespace and line breaks included)"}
+        if count > 1 and not action.get("all"):
+            return {"kind": "edit_file", "path": action["path"],
+                    "error": f"anchor appears {count} times — extend it until it is unique, "
+                             "or set all: true to replace every occurrence"}
+        new_text = text.replace(anchor, replacement) if action.get("all") \
+            else text.replace(anchor, replacement, 1)
+        path.write_text(new_text, encoding="utf-8")
+    except (OSError, PermissionError) as exc:
+        return {"kind": "edit_file", "path": action["path"], "error": str(exc)}
+    return {"kind": "edit_file", "path": action["path"],
+            "replacements": count if action.get("all") else 1,
+            "bytes": len(new_text.encode("utf-8"))}
 
 
 def _memory_topics(mem_dir) -> list[str]:
@@ -244,6 +301,7 @@ DISPATCH = {
     "util": do_util,
     "read_file": do_read_file,
     "write_file": do_write_file,
+    "edit_file": do_edit_file,
     "memory_read": do_memory_read,
     "memory_write": do_memory_write,
     "llm": do_llm,

@@ -22,13 +22,16 @@ _BAD_STATES = {"failed", "aborted"}
 
 
 def _empty() -> dict:
-    return {"runs": 0, "tokens_in": 0, "tokens_out": 0, "cost": 0.0, "elapsed_s": 0}
+    return {"runs": 0, "tokens_in": 0, "tokens_out": 0, "tokens_cached": 0,
+            "cost": 0.0, "elapsed_s": 0}
 
 
 def _add(acc: dict, usage: dict, elapsed_s) -> None:
     acc["runs"] += 1
     acc["tokens_in"] += int((usage or {}).get("in") or 0)
     acc["tokens_out"] += int((usage or {}).get("out") or 0)
+    # prompt-cache reads (~0.1x price) — separate so cache hit rates are visible
+    acc["tokens_cached"] += int((usage or {}).get("cached_in") or 0)
     if (usage or {}).get("cost"):
         acc["cost"] = round(acc["cost"] + float(usage["cost"]), 6)
     acc["elapsed_s"] += int(elapsed_s or 0)
@@ -76,6 +79,7 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
                              "state": r.state, "model": model, "endpoint": endpoint_name,
                              "tokens_in": int((r.usage or {}).get("in") or 0),
                              "tokens_out": int((r.usage or {}).get("out") or 0),
+                             "tokens_cached": int((r.usage or {}).get("cached_in") or 0),
                              "cost": float((r.usage or {}).get("cost") or 0.0),
                              "elapsed_s": int(r.elapsed_s or 0)})
             if info.runs:

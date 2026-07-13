@@ -19,6 +19,10 @@ from .actions import BRIEF_FIELD
 from .composer import format_observation
 
 COMPACT_AT_FRACTION = 0.6
+# Once the endpoint demonstrably serves cache hits, carrying context is ~10x cheaper than
+# re-reading it uncached — but each compaction rewrites the prefix and invalidates the whole
+# cache. The economics flip: compact later.
+COMPACT_AT_FRACTION_CACHED = 0.8
 KEEP_HEAD_MSGS = 6    # system + kickoff + first 2 turn pairs
 KEEP_TAIL_MSGS = 24   # ~ last 12 turn pairs
 
@@ -147,11 +151,15 @@ def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint,
         f"the archived turns — consult the index."}
     new_messages = head + [pointer] + tail
     info = {"elided_messages": len(middle), "history_files": len(written), "mode": "llm-history",
-            "before_chars": messages_size(messages), "after_chars": messages_size(new_messages)}
+            "model": f"{ref.endpoint}/{ref.model}",
+            "before_chars": messages_size(messages), "after_chars": messages_size(new_messages),
+            # the compaction call's own spend — the caller folds it into the run's usage
+            # (this was invisible before: full-context calls that never hit the books)
+            "usage": dict(comp.usage)}
     return new_messages, info
 
 
-def replay_messages(events: list[dict], util_reminder: str = "") -> tuple[list[dict], int, list[dict]]:
+def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
     """Rebuild the (turn-pair) message list from a run's transcript events — for RESUME. Returns
     (messages, last_turn, turn_records); the caller prepends the freshly-composed system message.
     Every turn is replayed (compaction events are ignored — this reconstitutes the full
@@ -171,10 +179,36 @@ def replay_messages(events: list[dict], util_reminder: str = "") -> tuple[list[d
                 records.append({"turn": turn, "kind": p.get("kind", "?"),
                                 "brief": json.dumps(brief, ensure_ascii=False), "say": p.get("say", "")})
         elif kind_ev == "observation":
-            messages.append({"role": "user", "content": format_observation(p) + util_reminder})
+            messages.append({"role": "user", "content": format_observation(p)})
         elif kind_ev == "user_injection":
             messages.append({"role": "user", "content": f"USER MESSAGE (injected mid-run): {p.get('text', '')}"})
         elif kind_ev == "answer":
             messages.append({"role": "user", "content": f"ANSWER: {p.get('text', '')}"})
         # header / question / compaction / finish / error / subrun_* are not part of the prompt
     return messages, last_turn, records
+
+
+def prior_usage(events: list[dict]) -> dict:
+    """Token spend recorded across ALL prior legs of a run's transcript. A resume starts a
+    fresh budget window (ctx.usage), so without this base status.json under-reports resumed
+    runs by however much the earlier legs spent. Sums every event that carries usage:
+    assistant actions, llm-subcall observations, and compaction calls."""
+    total: dict = {"in": 0, "out": 0}
+    for ev in events:
+        etype = ev.get("type")
+        if etype == "assistant_action":
+            u = ev.get("usage")
+        elif etype == "observation" and (ev.get("payload") or {}).get("kind") == "llm":
+            u = (ev.get("payload") or {}).get("usage")
+        elif etype == "compaction":
+            u = (ev.get("payload") or {}).get("usage")
+        else:
+            continue
+        if not isinstance(u, dict):
+            continue
+        for key in ("in", "out", "cached_in", "cache_write"):
+            if u.get(key):
+                total[key] = total.get(key, 0) + int(u[key])
+        if u.get("cost"):
+            total["cost"] = round(total.get("cost", 0.0) + float(u["cost"]), 6)
+    return total

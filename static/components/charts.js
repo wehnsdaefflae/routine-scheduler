@@ -15,6 +15,7 @@ export const METRICS = {
   tokens: { label: "tokens", of: (r) => r.tokens_in + r.tokens_out, fmt: fmtTokens },
   tokens_in: { label: "tokens in", of: (r) => r.tokens_in, fmt: fmtTokens },
   tokens_out: { label: "tokens out", of: (r) => r.tokens_out, fmt: fmtTokens },
+  tokens_cached: { label: "tokens cached", of: (r) => r.tokens_cached || 0, fmt: fmtTokens },
   cost: { label: "cost", of: (r) => r.cost, fmt: (v) => "$" + v.toFixed(v && v < 1 ? 3 : 2) },
   minutes: { label: "compute minutes", of: (r) => r.elapsed_s / 60, fmt: (v) => v.toFixed(v < 10 ? 1 : 0) + "m" },
 };

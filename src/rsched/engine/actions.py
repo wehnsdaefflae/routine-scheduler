@@ -13,8 +13,10 @@ from __future__ import annotations
 
 from ..ids import is_slug
 
-KINDS = ("util", "write_util", "read_file", "write_file", "memory_read", "memory_write",
-         "llm", "spawn", "subruns", "kill", "wait", "ask_user", "finish")
+KINDS = ("util", "write_util", "read_file", "write_file", "edit_file", "memory_read",
+         "memory_write", "llm", "spawn", "subruns", "kill", "wait", "ask_user", "finish")
+
+READ_PATHS_MAX = 8
 
 MEMORY_NOTE_MAX_LINES = 100
 
@@ -25,7 +27,8 @@ ACTION_SCHEMA: dict = {
     "properties": {
         "say": {
             "type": "string",
-            "description": "1-3 sentences: what you observed, what you decided, why this action now. "
+            "description": "ONE short sentence: what you observed / why this action. A few words "
+                           "suffice for routine steps; spend words only on decisions and surprises. "
                            "Simple Markdown (bold, `code`, links) renders in the UI.",
         },
         "kind": {"type": "string", "enum": list(KINDS)},
@@ -43,15 +46,31 @@ ACTION_SCHEMA: dict = {
             "type": "integer", "minimum": 1, "maximum": 600,
             "description": "util: seconds before the util is killed (default 300) · wait: max seconds to block (default 600)",
         },
-        # read_file / write_file
+        # read_file / write_file / edit_file
         "path": {
             "type": "string",
-            "description": "read_file/write_file: path relative to the routine dir (or an allowed root)",
+            "description": "read_file/write_file/edit_file: path relative to the routine dir "
+                           "(or an allowed root)",
+        },
+        "paths": {
+            "type": "array", "items": {"type": "string"}, "maxItems": READ_PATHS_MAX,
+            "description": "read_file: read SEVERAL files in one action (instead of `path`; "
+                           "start_line/max_lines apply to each) — batch related reads",
         },
         "start_line": {"type": "integer", "minimum": 1, "description": "read_file: first line (default 1)"},
         "max_lines": {
             "type": "integer", "minimum": 1, "maximum": 500,
             "description": "read_file: line cap (default 200)",
+        },
+        "anchor": {
+            "type": "string",
+            "description": "edit_file: exact text to find in the file (must be unique unless "
+                           "all: true) — copy it verbatim, whitespace included",
+        },
+        "replacement": {
+            "type": "string",
+            "description": "edit_file: the text that replaces the anchor (omit or \"\" to delete "
+                           "it) — edit in place instead of rewriting whole files with write_file",
         },
         "content": {"type": ["string", "object", "array"],
                     "description": "write_file: the full new content — a string, or a JSON object/array "
@@ -75,7 +94,10 @@ ACTION_SCHEMA: dict = {
         "label": {"type": "string", "description": "spawn: short name shown in the run tree"},
         # subruns / kill / wait
         "n": {"type": "integer", "minimum": 1, "description": "kill/wait: the sub-workflow number"},
-        "all": {"type": "boolean", "description": "wait: wait for ALL running sub-workflows (default: any next)"},
+        "all": {"type": "boolean",
+                "description": "wait: wait for ALL running sub-workflows (default: any next) · "
+                               "edit_file: replace EVERY occurrence of the anchor (default: the "
+                               "anchor must be unique)"},
         # ask_user
         "question": {"type": "string",
                      "description": "ask_user: the question, self-contained (simple Markdown renders in the UI)"},
@@ -109,7 +131,7 @@ ACTION_SCHEMA: dict = {
 # The one field that best identifies a turn of each kind — the one-line "briefs" used by
 # turn records, compaction digests, and transcript replay.
 BRIEF_FIELD = {"util": "name", "write_util": "name", "read_file": "path", "write_file": "path",
-               "memory_read": "name", "memory_write": "name",
+               "edit_file": "path", "memory_read": "name", "memory_write": "name",
                "llm": "prompt", "spawn": "label", "kill": "n", "wait": "n",
                "ask_user": "question", "finish": "status"}
 
@@ -124,6 +146,9 @@ KIND_EXAMPLES: dict[str, dict] = {
     "write_file": {"say": "<why this write>", "kind": "write_file", "path": "state/phase.json",
                    "content": {"phase": "<structured data may be a plain JSON object — "
                                         "text files take one string instead>"}},
+    "edit_file": {"say": "<why this edit>", "kind": "edit_file", "path": "state/notes.md",
+                  "anchor": "<exact text to find (verbatim)>",
+                  "replacement": "<what replaces it>"},
     "memory_read": {"say": "<why this note now>", "kind": "memory_read", "name": "topic-slug"},
     "memory_write": {"say": "<what surprised you>", "kind": "memory_write", "name": "topic-slug",
                      "content": "<the note's full markdown, at most 100 lines>",
@@ -144,8 +169,9 @@ KIND_EXAMPLES: dict[str, dict] = {
 _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s")),
     "write_util": (("name", "content"), ()),
-    "read_file": (("path",), ("start_line", "max_lines")),
+    "read_file": ((), ("path", "paths", "start_line", "max_lines")),
     "write_file": (("path", "content"), ("append",)),
+    "edit_file": (("path", "anchor"), ("replacement", "all")),
     "memory_read": (("name",), ()),
     "memory_write": (("name",), ("content", "about", "delete")),
     "llm": (("prompt",), ("system", "response_schema")),
@@ -232,15 +258,31 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,
             problems.append(f"kind={kind} requires a non-empty {field!r} field")
     if kind == "write_util" and not isinstance(obj.get("content"), str | None):
         problems.append("kind=write_util requires 'content' to be the script text (one string)")
+    if kind == "read_file":
+        paths = obj.get("paths")
+        if paths is not None and (not isinstance(paths, list)
+                                  or not all(isinstance(p, str) and p.strip() for p in paths)):
+            problems.append("kind=read_file: 'paths' must be a list of non-empty path strings")
+            paths = None
+        if not str(obj.get("path") or "").strip() and not paths:
+            problems.append("kind=read_file requires 'path' (one file) or 'paths' (several)")
+        elif str(obj.get("path") or "").strip() and paths:
+            problems.append("kind=read_file takes 'path' OR 'paths', not both")
+        elif paths and len(paths) > READ_PATHS_MAX:
+            problems.append(f"kind=read_file: at most {READ_PATHS_MAX} paths per action")
+    if kind == "edit_file" and "replacement" in obj and not isinstance(obj["replacement"], str):
+        problems.append("kind=edit_file: 'replacement' must be a string (\"\" deletes the anchor)")
     # .memory/ is reachable ONLY through the memory actions — the engine owns INDEX.md and
     # enforces the note cap there; generic file access would silently bypass both.
-    if kind in ("read_file", "write_file"):
-        rel = str(obj.get("path") or "")
-        while rel.startswith("./"):
-            rel = rel[2:]
-        if rel == ".memory" or rel.startswith(".memory/"):
-            problems.append(f"kind={kind} may not touch .memory/ — use memory_read / "
-                            "memory_write (the engine maintains .memory/INDEX.md for you)")
+    if kind in ("read_file", "write_file", "edit_file"):
+        for raw in [obj.get("path"), *(obj.get("paths") or [] if kind == "read_file" else [])]:
+            rel = str(raw or "")
+            while rel.startswith("./"):
+                rel = rel[2:]
+            if rel == ".memory" or rel.startswith(".memory/"):
+                problems.append(f"kind={kind} may not touch .memory/ — use memory_read / "
+                                "memory_write (the engine maintains .memory/INDEX.md for you)")
+                break
     if kind in ("memory_read", "memory_write"):
         name = str(obj.get("name") or "")
         if name and not is_slug(name):
@@ -270,9 +312,11 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,
 
 
 def example_action() -> dict:
-    """The few-shot example embedded in the harness contract — also models tool discovery."""
+    """The few-shot example embedded in the harness contract — models on-demand step
+    reading with a terse `say` (NOT util discovery: the catalog is already in
+    CAPABILITIES, so opening a run by re-listing it just re-buys known information)."""
     return {
-        "say": "Before choosing a tool I list what global utils exist, so I use the right one.",
-        "kind": "util",
-        "name": "list",
+        "say": "Workflow step 1 — reading its module before acting.",
+        "kind": "read_file",
+        "path": "steps/scan.md",
     }

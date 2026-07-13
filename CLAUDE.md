@@ -49,27 +49,40 @@ repeat until `finish`.
   + example → workflow body (the routine's own `main.md`, ending in a `## Standing practices` tail that
   references `traits/*.md` — practice prose is NEVER inlined) → instruction → **capabilities** (model +
   context window, the action kinds usable this run, held permissions + their short capability notes,
-  spawnable workflow patterns, the util catalog at name+summary altitude — usage stays on-demand via
-  `util name=list`) → **state digest** (phase, `state/`, step + trait modules, last result, LEDGER tail,
-  open/answered questions, inbox messages). Effect actions (`util`/`read_file`/`write_file`/`llm`) run
-  through `engine/executor.py`. A default routine's composed prompt is ~25k chars; everything else is
-  reachable on demand (read_file steps/traits/history, util name=list, memory_read).
+  spawnable workflow patterns, the util catalog at name+summary altitude — ONE util's usage on demand via
+  `util name=list args=["<name>"]`) → **state digest** (phase, `state/`, step + trait modules, last result,
+  LEDGER tail, open/answered questions, inbox messages). Effect actions (`util`/`read_file`/`write_file`/
+  `edit_file`/`llm`) run through `engine/executor.py`. A default routine's composed prompt is ~25k chars;
+  everything else is reachable on demand (read_file steps/traits/history, util name=list, memory_read).
+- **The message list is a prompt-caching contract**: composed once, appended-to only, never mutated —
+  so providers serve each turn's prefix from cache (~0.1x). Per-turn boilerplate is banned: the util
+  reminder is ONE-SHOT on the kickoff/resume note, the history pointer re-appears only every 10th turn,
+  and schema-retry debris is dropped from the live prompt once a retry succeeds (the transcript keeps
+  the error events). Cache traffic reports as usage `cached_in`/`cache_write` (kept OUT of `in`, so
+  token budgets keep their meaning); the loop hands every completion a stable `session` key (str(run_dir))
+  that adapters may use as a cache hint.
 - **Compaction archives context to a navigable on-disk history** (`history.compact_to_history`): when
-  the prompt exceeds ~60% of the endpoint's `context_chars`, the middle turns are reorganized by the model
-  into a set of markdown files (~≤100 lines each) under `runs/<ts>/history/` + `INDEX.md`; the prompt keeps
-  only a pointer, and every later turn is reminded to consult the index (read_file). Falls back to the
-  deterministic one-line digest (`history.maybe_compact`) on any failure. The on-disk transcript keeps
-  everything regardless.
+  the prompt exceeds ~60% of the endpoint's `context_chars` — ~80% once cache hits are observed
+  (compaction rewrites the prefix and invalidates the cache, so carried context is cheaper than
+  re-archiving) — the middle turns are reorganized into markdown files (~≤100 lines each) under
+  `runs/<ts>/history/` + `INDEX.md`; the prompt keeps only a pointer. The archival call runs on the
+  routine's `tool_call` model when its window fits (machine work; main model is the fallback) and its
+  spend is folded into the run's usage. Falls back to the deterministic one-line digest
+  (`history.maybe_compact`) on any failure. The on-disk transcript keeps everything regardless.
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
-  (`budget_base_turn`). The **model can be switched mid-run** — a `control.json` `switch_model` signal
-  applied at the turn boundary (`for_model` re-resolves every turn).
+  (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →
+  `ctx.usage_base`; budgets ignore it). The **model can be switched mid-run** — a `control.json`
+  `switch_model` signal applied at the turn boundary (`for_model` re-resolves every turn).
 
 ## Core contracts — extend, never repurpose
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
-  far better than `oneOf`): `util, write_util, read_file, write_file, memory_read, memory_write, llm,
-  spawn, subruns, kill, wait, ask_user, finish`. Every action carries `say` (narration) + `kind`.
+  far better than `oneOf`): `util, write_util, read_file, write_file, edit_file, memory_read,
+  memory_write, llm, spawn, subruns, kill, wait, ask_user, finish`. Every action carries `say` (ONE
+  terse sentence of narration) + `kind`. `read_file` batches related reads via `paths` (one turn, one
+  observation section per file); `edit_file` anchor-replaces in place so revisions cost the diff, not
+  the document.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out.
   `memory_*` are the ONLY way into `.memory/` (generic file actions are rejected there); the engine
   owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line note cap.
@@ -84,14 +97,22 @@ repeat until `finish`.
 
 Chat-completion adapters implementing one `ChatEndpoint.complete(...)` (`base.py` — tenacity retries on
 retryable `EndpointError`s; a 200 with an unparseable body is one of them). All three honor
-`ModelRef.effort`. Three kinds:
+`ModelRef.effort` and report prompt-cache traffic as usage `cached_in`/`cache_write` (kept out of `in`).
+`complete()` takes an optional `session` caching hint (a stable key per run) adapters may ignore. Three kinds:
 - **openai** — any OpenAI-compatible API (OpenRouter, vLLM, Ollama). Schema via json_schema / json_object
-  / ollama-native; degrades gracefully (retries without `response_format`/`reasoning` on a 400).
+  / ollama-native; degrades gracefully (retries without `response_format`/`reasoning` on a 400). Caching
+  is the provider's implicit prefix caching; `cached_tokens` is surfaced from usage details.
 - **anthropic** — Messages API, METERED per-token billing. Schema via a single forced tool-use; effort via
-  `output_config`, degraded on a 400 that names it.
-- **claude-cli** — `claude -p` fully stripped (`--tools ""`, no MCP/settings/session, our `--system-prompt`
+  `output_config`, degraded on a 400 that names it. Always sets `cache_control` breakpoints (tools +
+  system static, a moving one on the last message) — ~0.1x reads on the whole prefix every turn; a 400
+  naming cache_control gets a degraded retry without the markers.
+- **claude-cli** — `claude -p` fully stripped (`--tools ""`, no MCP/settings, our `--system-prompt`
   replacing its own, `--json-schema`), SUBSCRIPTION-billed via `CLAUDE_CODE_OAUTH_TOKEN`. Metered-auth env
-  vars are scrubbed so it can't silently fall back to API billing.
+  vars are scrubbed so it can't silently fall back to API billing. With a `session` key it keeps ONE CLI
+  session per run (`--session-id` / `--resume`, stable cwd under `~/.cache/rsched/claude-cli/`) and sends
+  per-turn deltas so Anthropic's cache serves the prior turns; any prefix change (compaction, resume in a
+  new process) or resume failure reseeds a fresh session from the full conversation. Without a session
+  key: one-shot, temp cwd, `--no-session-persistence` (unchanged).
 
 Each **routine sets its own three models** (`routine.yaml` `models:`): `main` (the loop),
 `subroutine` (a spawned child's main model), `tool_call` (the `llm` action). A model a routine

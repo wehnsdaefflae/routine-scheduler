@@ -192,26 +192,32 @@ class GrantPolicy:
                         f"permission — this routine does not, so this channel is off "
                         f"limits. Continue without it; if it seems essential, file a "
                         f"deferred ask_user so the user can grant the permission.")
-        if kind in ("read_file", "write_file"):
-            path = str(action.get("path") or "")
-            own_run = bool(self.current_run_ts) and _norm_rel(path).startswith(
-                f"runs/{self.current_run_ts}/")
-            if is_runs_path(path) and not own_run:
-                if kind == "write_file":
-                    return ("runs/ is engine-owned and read-only — transcripts and results "
-                            "are written by the engine, never by the run.")
-                if self.run_history == "none":
-                    srcs = ", ".join(self.runs_sources)
-                    return (f"reading previous runs under runs/ is not granted to this "
-                            f"routine (the {srcs} permissions unlock it — last run only, or "
-                            f"all). The state digest already carries the last run's result; "
-                            f"if you need more, file a deferred ask_user.")
-            if kind == "write_file" and is_recipe_path(path) and not self.recipe_unlocked:
-                return (f"writing {_norm_rel(path)!r} would modify this routine's own recipe "
-                        f"or config (main.md / steps/ / traits/ / instruction.md / "
-                        f"routine.yaml) — a run never edits its own: recipes are refined by "
-                        f"the routine-improver meta routine, config by the user. File a "
-                        f"deferred ask_user describing the change instead.")
+        if kind in ("read_file", "write_file", "edit_file"):
+            writes = kind in ("write_file", "edit_file")
+            paths = [str(action.get("path") or "")]
+            if kind == "read_file":
+                paths += [str(p) for p in action.get("paths") or []]
+            for path in paths:
+                if not path:
+                    continue
+                own_run = bool(self.current_run_ts) and _norm_rel(path).startswith(
+                    f"runs/{self.current_run_ts}/")
+                if is_runs_path(path) and not own_run:
+                    if writes:
+                        return ("runs/ is engine-owned and read-only — transcripts and results "
+                                "are written by the engine, never by the run.")
+                    if self.run_history == "none":
+                        srcs = ", ".join(self.runs_sources)
+                        return (f"reading previous runs under runs/ is not granted to this "
+                                f"routine (the {srcs} permissions unlock it — last run only, or "
+                                f"all). The state digest already carries the last run's result; "
+                                f"if you need more, file a deferred ask_user.")
+                if writes and is_recipe_path(path) and not self.recipe_unlocked:
+                    return (f"writing {_norm_rel(path)!r} would modify this routine's own recipe "
+                            f"or config (main.md / steps/ / traits/ / instruction.md / "
+                            f"routine.yaml) — a run never edits its own: recipes are refined by "
+                            f"the routine-improver meta routine, config by the user. File a "
+                            f"deferred ask_user describing the change instead.")
         return None
 
 

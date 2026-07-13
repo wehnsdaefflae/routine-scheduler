@@ -72,7 +72,10 @@ class OpenAICompatEndpoint:
 
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
-                 timeout: int = DEFAULT_TIMEOUT) -> Completion:
+                 timeout: int = DEFAULT_TIMEOUT, session: str | None = None) -> Completion:
+        # `session` is unused here: OpenAI-style providers cache implicitly on byte-stable
+        # prefixes, which the engine's append-only message list already gives them; the
+        # cached share shows up as usage "cached_in" (see _parse).
         if self.native and schema is not None:
             return self._complete_native(messages, model, schema, max_tokens, timeout)
         body: dict = {"model": model, "messages": messages, **self.extra_body}
@@ -165,6 +168,12 @@ class OpenAICompatEndpoint:
         usage = data.get("usage") or {}
         out = {"in": int(usage.get("prompt_tokens") or 0),
                "out": int(usage.get("completion_tokens") or 0)}
+        # Implicit prompt caching (OpenAI/OpenRouter/DeepSeek-style): cached_tokens is the
+        # SUBSET of prompt_tokens served from cache — surfaced so cache hit rates are
+        # visible per run; "in" stays the full prompt count (this API's convention).
+        details = usage.get("prompt_tokens_details") or {}
+        if details.get("cached_tokens"):
+            out["cached_in"] = int(details["cached_tokens"])
         if usage.get("cost") is not None:   # OpenRouter usage accounting → $ (credits)
             out["cost"] = float(usage.get("cost") or 0)
         return Completion(text=text, usage=out, provider=str(data.get("provider") or ""))

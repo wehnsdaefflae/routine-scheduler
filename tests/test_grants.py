@@ -198,6 +198,20 @@ def test_deny_gates_previous_runs_but_not_the_live_run():
     assert full.deny({"kind": "read_file", "path": "runs/20260101-000000/result.md"}) is None
     w = full.deny({"kind": "write_file", "path": "runs/20260101-000000/x.md", "content": "x"})
     assert w and "read-only" in w
+    # a batched read is gated per path — one gated entry denies the whole action
+    batched = none.deny({"kind": "read_file",
+                         "paths": ["state/a.md", "runs/20260101-000000/result.md"]})
+    assert batched and "run-history" in batched
+    assert none.deny({"kind": "read_file", "paths": ["state/a.md", "LEDGER.md"]}) is None
+
+
+def test_deny_gates_edit_file_like_write_file():
+    none = GrantPolicy()
+    denial = none.deny({"kind": "edit_file", "path": "main.md", "anchor": "a", "replacement": "b"})
+    assert denial and "routine-improver" in denial
+    w = none.deny({"kind": "edit_file", "path": "runs/20260101-000000/x.md", "anchor": "a"})
+    assert w and "read-only" in w
+    assert none.deny({"kind": "edit_file", "path": "state/notes.md", "anchor": "a"}) is None
 
 
 def test_deny_blocks_own_recipe_and_config_writes():

@@ -1,19 +1,33 @@
 """Claude Code CLI as a dumb completion endpoint (subscription-billed) — NEVER a harness.
 
 Ports the mechanics of `gu claude` (~/.local/share/global-utils/utils/claude/main.py):
-stripped-down `claude -p` (all tools off, no settings, no session persistence, temp cwd),
-metered-auth env vars scrubbed, subscription token injected from the credentials env-file,
-schema via `--json-schema`, result envelope parsed. Multi-turn conversations are
-re-serialized into one prompt per call — the CLI is stateless by design.
+stripped-down `claude -p` (all tools off, no settings), metered-auth env vars scrubbed,
+subscription token injected from the credentials env-file, schema via `--json-schema`,
+result envelope parsed.
+
+Two modes:
+- One-shot (no `session`): temp cwd, --no-session-persistence, the whole conversation
+  re-serialized into one prompt — the original stateless behavior.
+- Session (the engine passes a stable `session` key per run): a CLI session is kept per
+  key (--session-id first, --resume after) and each turn sends ONLY the new user
+  messages. This is the caching-shaped path: the single-growing-prompt serialization can
+  never prefix-match on the server, so every turn used to re-process the entire
+  transcript (quota-charged); with a real session the prior turns are proper messages
+  and Anthropic's prompt cache serves them at cache-read weight. Any prefix change
+  (compaction, model switch mid-run) or resume failure falls back to a fresh session
+  seeded with the full conversation — semantics never depend on session state.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import tempfile
+import threading
+import uuid
 
 from ..config import EndpointConfig
 from ..paths import expand
@@ -62,14 +76,20 @@ def scrub_env(base: dict, *, token: str | None, max_tokens: int | None = None) -
 
 
 def build_cmd(cli: str, model: str, *, system: str | None, schema_str: str | None,
-              effort: str | None) -> list[str]:
+              effort: str | None, session_id: str | None = None,
+              resume: str | None = None) -> list[str]:
     cmd = [cli, "-p", "--model", model,
            "--tools", "",                 # no built-in tools → no agentic loop
            "--disable-slash-commands",
-           "--no-session-persistence",
            "--strict-mcp-config",         # with no --mcp-config: no MCP servers
            "--setting-sources", "",       # ignore user/project settings
            "--output-format", "json"]
+    if resume:
+        cmd += ["--resume", resume]       # continue the per-run CLI session (delta turns)
+    elif session_id:
+        cmd += ["--session-id", session_id]   # open the per-run CLI session
+    else:
+        cmd += ["--no-session-persistence"]   # one-shot mode: leave nothing behind
     if system:
         cmd += ["--system-prompt", system]
     if effort:
@@ -106,6 +126,12 @@ def parse_result(stdout_text: str, want_json: bool) -> tuple[str, dict | None, d
     usage_raw = obj.get("usage") or {}
     usage = {"in": int(usage_raw.get("input_tokens") or 0),
              "out": int(usage_raw.get("output_tokens") or 0)}
+    # input_tokens excludes cache traffic on this API — without these two fields a run
+    # shows "in=4" while the real prompt was served from (and written into) the cache.
+    if usage_raw.get("cache_read_input_tokens"):
+        usage["cached_in"] = int(usage_raw["cache_read_input_tokens"])
+    if usage_raw.get("cache_creation_input_tokens"):
+        usage["cache_write"] = int(usage_raw["cache_creation_input_tokens"])
     text = obj.get("result", "") or ""
     parsed = None
     if want_json:
@@ -121,20 +147,30 @@ def parse_result(stdout_text: str, want_json: bool) -> tuple[str, dict | None, d
     return text, parsed, usage
 
 
+def _msg_hashes(messages: list[Message]) -> list[str]:
+    return [hashlib.sha1(f"{m['role']}\x00{m['content']}".encode("utf-8")).hexdigest()
+            for m in messages]
+
+
 class ClaudeCliEndpoint:
-    """`claude -p` fully stripped (tools off, no MCP/settings/session, our system prompt
-    replacing its own) — a SUBSCRIPTION-billed completion function. Metered-auth env vars
-    are scrubbed so it can never silently fall back to API billing."""
+    """`claude -p` fully stripped (tools off, no MCP/settings, our system prompt replacing
+    its own) — a SUBSCRIPTION-billed completion function. Metered-auth env vars are
+    scrubbed so it can never silently fall back to API billing. With a `session` key it
+    keeps one CLI session per run and sends per-turn deltas (see the module docstring)."""
 
     def __init__(self, cfg: EndpointConfig):
         self.name = cfg.name
         self.credentials_env = cfg.credentials_env
         self.oauth_token = cfg.api_key            # inline token pasted in Settings (optional)
         self.context_chars = cfg.context_chars
+        # session key → {"sid": CLI session id, "hashes": per-message sha1 of what the
+        # session has already seen, "cwd": the stable dir the CLI keys its store to}
+        self._sessions: dict[str, dict] = {}
+        self._lock = threading.Lock()
 
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
-                 timeout: int = DEFAULT_TIMEOUT) -> Completion:
+                 timeout: int = DEFAULT_TIMEOUT, session: str | None = None) -> Completion:
         cli = find_cli()
         if not cli:
             raise EndpointError("claude-cli: claude CLI not found on PATH (or set $CLAUDE_CLI)")
@@ -147,10 +183,35 @@ class ClaudeCliEndpoint:
                 auth=True,
             )
         system, rest = split_system(messages)
-        prompt = render_prompt(rest)
         schema_str = json.dumps(schema) if schema is not None else None
-        cmd = build_cmd(cli, model, system=system or None, schema_str=schema_str, effort=effort)
         env = scrub_env(os.environ, token=token, max_tokens=max_tokens)
+
+        if session:
+            hashes = _msg_hashes(messages)
+            with self._lock:
+                st = dict(self._sessions.get(session) or {})
+            delta = self._session_delta(st, messages, hashes)
+            if delta is not None:
+                try:
+                    return self._run_session(cli, model, system, schema_str, effort, env,
+                                             timeout, session, st["sid"], st["cwd"],
+                                             prompt=delta, hashes=hashes, resume=True,
+                                             want_json=schema is not None)
+                except EndpointError:
+                    # a broken/expired CLI session must never break the run — reseed fresh
+                    with self._lock:
+                        self._sessions.pop(session, None)
+            sid = str(uuid.uuid4())
+            cwd = expand("~/.cache/rsched/claude-cli") / hashlib.sha1(
+                session.encode("utf-8")).hexdigest()[:16]
+            cwd.mkdir(parents=True, exist_ok=True)
+            return self._run_session(cli, model, system, schema_str, effort, env, timeout,
+                                     session, sid, str(cwd), prompt=render_prompt(rest),
+                                     hashes=hashes, resume=False,
+                                     want_json=schema is not None)
+
+        prompt = render_prompt(rest)
+        cmd = build_cmd(cli, model, system=system or None, schema_str=schema_str, effort=effort)
         try:
             with tempfile.TemporaryDirectory(prefix="rsched-claude-") as cwd:
                 r = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
@@ -163,4 +224,42 @@ class ClaudeCliEndpoint:
                 retryable=True,
             )
         text, parsed, usage = parse_result(r.stdout, want_json=schema is not None)
+        return Completion(text=text, parsed=parsed, usage=usage)
+
+    @staticmethod
+    def _session_delta(st: dict, messages: list[Message], hashes: list[str]) -> str | None:
+        """The new user content since the session last saw this conversation — or None
+        when the session can't continue it (no state, rewritten prefix after compaction,
+        or unexpected roles in the delta)."""
+        seen = st.get("hashes")
+        if not st.get("sid") or not st.get("cwd") or not seen:
+            return None
+        if len(hashes) <= len(seen) or hashes[:len(seen)] != seen:
+            return None
+        new = messages[len(seen):]
+        if new and new[0]["role"] == "assistant":
+            new = new[1:]   # the model's own last reply — the CLI session already holds it
+        if not new or any(m["role"] != "user" for m in new):
+            return None
+        return "\n\n".join(m["content"] for m in new)
+
+    def _run_session(self, cli, model, system, schema_str, effort, env, timeout,
+                     session: str, sid: str, cwd: str, *, prompt: str, hashes: list[str],
+                     resume: bool, want_json: bool) -> Completion:
+        cmd = build_cmd(cli, model, system=system or None, schema_str=schema_str,
+                        effort=effort, session_id=None if resume else sid,
+                        resume=sid if resume else None)
+        try:
+            r = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+                               timeout=timeout, env=env, cwd=cwd)
+        except subprocess.TimeoutExpired as exc:
+            raise EndpointError(f"claude-cli: call timed out after {timeout}s", retryable=True) from exc
+        if r.returncode != 0 and not r.stdout.strip():
+            raise EndpointError(
+                f"claude-cli: exited {r.returncode}: {r.stderr.strip()[:300] or '(no stderr)'}",
+                retryable=True,
+            )
+        text, parsed, usage = parse_result(r.stdout, want_json=want_json)
+        with self._lock:
+            self._sessions[session] = {"sid": sid, "hashes": list(hashes), "cwd": cwd}
         return Completion(text=text, parsed=parsed, usage=usage)

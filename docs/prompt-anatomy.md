@@ -13,6 +13,14 @@ replay), `schema_guard.py` (retry messages). **This page is contract documentati
 any of those change the prompt surface, revise it** — `tests/test_prompt_anatomy.py` pins
 the load-bearing strings and fails until the page matches.
 
+The append-only shape is also the **prompt-caching contract**: because the system prompt
+never changes within a run and messages only ever get appended, providers can serve every
+turn's prefix from cache (~0.1x price). The adapters exploit it (anthropic sets
+`cache_control` breakpoints; claude-cli keeps a per-run CLI session; OpenAI-style
+providers cache implicitly) and report cache traffic as usage `cached_in` / `cache_write`
+— visible in status.json. Only compaction rewrites the prefix, which is why its threshold
+rises once cache hits are observed (§3e).
+
 ---
 
 ## 1 · The system prompt (composed once, `build_system_prompt`)
@@ -21,12 +29,12 @@ Eight sections, in this order:
 
 | # | Section | Source | What the model learns |
 |---|---|---|---|
-| 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract, "the run starts NOW", steps-on-demand, working dir + extra fs roots, **no shell**, grant-aware `write_util` and memory-action glosses, the traits-vs-permissions prose ownership rule, the concrete budgets, a prose gloss of every action kind, the injection warning. |
-| 2 | `# ACTION SCHEMA (your every reply matches this)` | `ACTION_SCHEMA` | The exact reply grammar; field descriptions double as micro-docs (`say`/`question`/`summary` say that simple Markdown renders in the UI; `summary` demands a DETAILED 8-20 lines). |
-| 3 | `# EXAMPLE of a valid reply` | `example_action()` | One few-shot example (`util name=list`) that also models tool discovery. |
+| 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a TERSE `say` (one short sentence — words are spent on decisions and surprises, not routine steps), "the run starts NOW", steps-on-demand, working dir + extra fs roots, **no shell**, grant-aware `write_util` and memory-action glosses, the traits-vs-permissions prose ownership rule, the concrete budgets, a prose gloss of every action kind (including `read_file` batching via `paths` and in-place `edit_file` instead of whole-file rewrites), the injection warning. |
+| 2 | `# ACTION SCHEMA (your every reply matches this)` | `ACTION_SCHEMA` | The exact reply grammar; field descriptions double as micro-docs (`say`/`question`/`summary` say that simple Markdown renders in the UI; `say` demands ONE short sentence; `summary` demands a DETAILED 8-20 lines). |
+| 3 | `# EXAMPLE of a valid reply` | `example_action()` | One few-shot example (`read_file steps/scan.md`) that models on-demand step reading and a terse `say` — deliberately NOT `util name=list`: the catalog already sits in CAPABILITIES, so opening a run by re-listing it just re-buys known information. |
 | 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow; step detail stays in `steps/*.md`, practice detail in `traits/*.md` — both read on demand. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
 | 5 | `# INSTRUCTION (what this routine is for)` | `instruction.md` verbatim | The task: goal, deliverable, constraints, completion criteria. |
-| 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60%), action kinds usable this run (workflow `tools:` ∩ grants — ungranted gated kinds like `memory_*`/`write_util` simply don't appear), the held permissions + what they unlock, each held permission's short capability note (the library doc's body, capped), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary, reserved utils flagged). The map says WHAT exists; exact flags come from `util name=list` at call time, so the prompt never serves stale usage. |
+| 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ grants — ungranted gated kinds like `memory_*`/`write_util` simply don't appear), the held permissions + what they unlock, each held permission's short capability note (the library doc's body, capped), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary, reserved utils flagged). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
 | 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the `state/` file list, `steps/` module names, the `traits/` practice-module names, the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), open deferred questions, answers that arrived since the last run. |
 | 8 | `# MESSAGES FROM THE USER (consume now)` | inbox drain at boot | Only present if messages were waiting — and only on a FRESH run: a resume delivers waiting messages as trailing `USER MESSAGE` injections instead (§2). |
 
@@ -89,7 +97,9 @@ back — `format_observation(obs)`, always starting `OBSERVATION (<kind>…)`:
 
 - `OBSERVATION (util websearch, exit 0):\n<stdout>` — on failure plus `[stderr]`, `[usage]`, and a `[hint]` that teaches the call shape and the grant-aware repair route
 - `OBSERVATION (read_file state/hits.json, lines 1-200 of 412):\n<content>`
+- `OBSERVATION (read_file, 3 files):\n--- state/a.md (lines 1-40 of 40) ---\n<content>\n\n--- state/b.md …` — a `paths` batch: one section per file, failures inline (`--- x FAILED: …`)
 - `OBSERVATION (write_file): wrote 1832 bytes to state/shortlist.md`
+- `OBSERVATION (edit_file): replaced 1 occurrence(s) in state/shortlist.md (now 1790 bytes)` — failures teach the fix (`anchor not found … copy it VERBATIM`, `anchor appears N times — extend it … or set all: true`)
 - `OBSERVATION (memory_read portal-quirks.md, 14 lines):\n<note>` / `no note named 'x'. Existing topics: …`
 - `OBSERVATION (memory_write): note portal-quirks.md revised (14 lines); INDEX.md updated from 'about'.`
 - `OBSERVATION (llm reply):\n<the tool-call model's reply>`
@@ -104,9 +114,10 @@ Observations are truncated head+tail at 8k chars.
 ### 3b · Tails appended to the observation (in order, each only when applicable)
 
 1. **Repeat warning** (3–4 identical actions): `[ENGINE WARNING: this exact action has now run N times in a row — 5 identical actions fail the run. Change course. …]`
-2. **Util reminder** (every turn, whenever the workflow permits the `util` kind): `[tools: run `util name=list` to see the available global utils and their usage; …]` — the tail varies with the util-authoring permission.
-3. **Budget warning**: `[BUDGET: … — wind down DELIBERATELY now: record what matters (LEDGER, state files), then finish with an authored summary. …]`
-4. **History note** (every turn after a compaction): `[history: earlier turns are archived under runs/<ts>/history/INDEX.md — read_file the index and the relevant files before relying on memory.]`
+2. **Budget warning**: `[BUDGET: … — wind down DELIBERATELY now: record what matters (LEDGER, state files), then finish with an authored summary. …]`
+3. **History note** (right after a compaction, then every 10th turn — NOT every turn): `[history: earlier turns are archived under runs/<ts>/history/INDEX.md — read_file the index and the relevant files before relying on memory.]`
+
+The **util reminder** — `[tools: the CAPABILITIES catalog lists the global utils; run `util name=list args=["<name>"]` for one util's exact usage; if none fits, …]` (the tail varies with the util-authoring permission) — is ONE-SHOT: appended to the kickoff (or the resume ENGINE NOTE), never to observations. An identical tail on every turn was rent re-read for the rest of the run; a failed util call carries its own `[hint]` repair route anyway.
 
 ### 3c · Between-turn feed messages (separate user messages)
 
@@ -131,11 +142,20 @@ ungranted capabilities (`write_util`, `memory_*`, reserved utils, previous-run r
 own-recipe/config writes (never permitted — the routine-improver's beat) are corrected the
 same way — the error names the way out.
 
+Once a retry SUCCEEDS, the failed-attempt/correction pairs are dropped from the live
+message list — they earned their keep eliciting the valid reply and would otherwise be
+re-read on every remaining turn. The transcript's `error` events keep the full record.
+
 ### 3e · Compaction (the middle gets replaced)
 
-Past ~60% of the context window (or when the prompt eats >10% of the remaining token
-budget per turn), the middle messages (all but the first 6 and last 24) are reorganized by
-the model into `runs/<ts>/history/*.md` + `INDEX.md` and replaced by ONE pointer:
+Past ~60% of the context window — ~80% once the endpoint demonstrably serves prompt-cache
+hits (usage `cached_in` > 0), since cached re-reads are ~10x cheaper while each compaction
+rewrites the prefix and invalidates the cache — or when the prompt eats >10% of the
+remaining token budget per turn, the middle messages (all but the first 6 and last 24) are
+reorganized into `runs/<ts>/history/*.md` + `INDEX.md` and replaced by ONE pointer. The
+archival call runs on the routine's TOOL-CALL model when its window fits the middle (it is
+machine work — the main model is the fallback, never the default), and its token spend is
+folded into the run's usage:
 
 ```
 CONTEXT COMPACTED — 57 earlier messages have been archived to an on-disk, navigable
@@ -187,7 +207,7 @@ state digest point at the files, read on demand. The working-directory path is s
 ### 5.1 System prompt
 
 ```
-You are the orchestrator of the routine "Job radar" (job-radar), run job-radar:20260712-070000 (schedule: 0 7 * * *). This conversation IS the run: every turn you reply with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. Narrate what you observed and decided in the "say" field.
+You are the orchestrator of the routine "Job radar" (job-radar), run job-radar:20260712-070000 (schedule: 0 7 * * *). This conversation IS the run: every turn you reply with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. The "say" field is ONE short sentence — what you observed / why this action; keep it terse (a few words for routine steps), spend words only on decisions and surprises.
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this conversation, one per turn, each answered by an observation before your next reply. Never state or summarize results that no observation here has shown; finishing with claims of unperformed work is the single worst failure this system knows. The engine rejects a finish(ok) before any action ran.
 
@@ -203,7 +223,7 @@ Budgets for this run: 60 turns, 45 minutes, unlimited total tokens, at most 8 su
 
 Action kinds:
 - util: run a global util — name + optional args (append "--json" for structured output).
-Utils are your primary tools — the CAPABILITIES section below lists what exists (name + summary); run `util name=list` for a util's exact usage before relying on it. Observation = exit code + captured output.
+Utils are your primary tools — the CAPABILITIES section below lists what exists (name + summary); for ONE util's exact usage run `util name=list args=["<util-name>"]` before relying on it (bare name=list re-dumps the whole catalog you already have). Observation = exit code + captured output.
 - write_util: create or revise a global util — name (kebab-case) + content (a complete
 PEP 723 script: `# /// script` deps block, a module docstring whose first line is
 `<name> — <one-line summary>` then a `usage:` line, a `--json` flag, a `--selftest` that runs
@@ -211,7 +231,7 @@ built-in checks, data on stdout / diagnostics on stderr / exit 0 on success; on 
 missing arguments it MUST print its own usage line to stderr and exit 2 — an error that
 doesn't teach the correct call wastes every future caller's turn). The engine runs
 `--selftest` and only commits if it passes; a util may call sibling utils via `gu <name>`. If it needs a secret (token, password, API key), read it env-first — `os.environ["NAME"]` — never hardcode or prompt for it, AND declare the names in a header `secrets: NAME1, NAME2` line so the UI tells the user what to set (they set it once in the Secrets store; the engine injects it). Creating/revising a util needs the user's approval (a blocking question is filed automatically) before it takes effect.
-- read_file / write_file: read or write a file (within the working dir or an allowed root).
+- read_file / write_file / edit_file: read or write a file (within the working dir or an allowed root). read_file takes `path` or `paths` (several files in ONE action — batch related reads instead of spending a turn per file). edit_file replaces an exact `anchor` string with `replacement` IN PLACE — for touching a few lines of a large file, use it instead of re-emitting the whole document through write_file.
 - memory_read / memory_write: your persistent topic notes under .memory/ — for what was EXPENSIVE to find out (environment quirks, working solutions, constraints nobody wrote down), not what the instruction or a plain look at the data would tell anyone. memory_write(name, content, about) writes ONE kebab-named note of at most 100 lines and the engine maintains .memory/INDEX.md from `about`; delete: true removes a note. memory_read(name) returns one. The state digest shows the INDEX at run start — consult it before re-discovering anything; revise notes that turned out wrong instead of appending contradictions. read_file / write_file are rejected on .memory/ paths.
 - llm: one scoped, stateless LLM subcall (runs on this routine's tool-call model). It sees ONLY your prompt/system — include everything it needs; set response_schema for structured replies.
 - spawn: start a SUB-WORKFLOW that runs IN PARALLEL with you — pick its "workflow" for the child's PURPOSE from the patterns listed under CAPABILITIES (default general-task) and give it a fully self-contained "prompt" as its instruction; it sees nothing else and returns only its finish summary. You keep working while it runs; you are notified automatically when it exits. Give parallel children disjoint outputs (they share your working directory); they must not write LEDGER.md or state/phase.json.
@@ -233,7 +253,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
  "properties": {
   "say": {
    "type": "string",
-   "description": "1-3 sentences: what you observed, what you decided, why this action now. Simple Markdown (bold, `code`, links) renders in the UI."
+   "description": "ONE short sentence: what you observed / why this action. A few words suffice for routine steps; spend words only on decisions and surprises. Simple Markdown (bold, `code`, links) renders in the UI."
   },
   "kind": {
    "type": "string",
@@ -242,6 +262,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
     "write_util",
     "read_file",
     "write_file",
+    "edit_file",
     "memory_read",
     "memory_write",
     "llm",
@@ -272,7 +293,15 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   },
   "path": {
    "type": "string",
-   "description": "read_file/write_file: path relative to the routine dir (or an allowed root)"
+   "description": "read_file/write_file/edit_file: path relative to the routine dir (or an allowed root)"
+  },
+  "paths": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   },
+   "maxItems": 8,
+   "description": "read_file: read SEVERAL files in one action (instead of `path`; start_line/max_lines apply to each) \u2014 batch related reads"
   },
   "start_line": {
    "type": "integer",
@@ -284,6 +313,14 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
    "minimum": 1,
    "maximum": 500,
    "description": "read_file: line cap (default 200)"
+  },
+  "anchor": {
+   "type": "string",
+   "description": "edit_file: exact text to find in the file (must be unique unless all: true) \u2014 copy it verbatim, whitespace included"
+  },
+  "replacement": {
+   "type": "string",
+   "description": "edit_file: the text that replaces the anchor (omit or \"\" to delete it) \u2014 edit in place instead of rewriting whole files with write_file"
   },
   "content": {
    "type": [
@@ -332,7 +369,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   },
   "all": {
    "type": "boolean",
-   "description": "wait: wait for ALL running sub-workflows (default: any next)"
+   "description": "wait: wait for ALL running sub-workflows (default: any next) \u00b7 edit_file: replace EVERY occurrence of the anchor (default: the anchor must be unique)"
   },
   "question": {
    "type": "string",
@@ -376,9 +413,9 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
 
 # EXAMPLE of a valid reply
 {
- "say": "Before choosing a tool I list what global utils exist, so I use the right one.",
- "kind": "util",
- "name": "list"
+ "say": "Workflow step 1 \u2014 reading its module before acting.",
+ "kind": "read_file",
+ "path": "steps/scan.md"
 }
 
 # WORKFLOW (the control flow you follow)
@@ -413,7 +450,7 @@ Constraints: never apply automatically; skip postings older than 7 days.
 Done when: shortlist written and (if warranted) the Discord ping sent.
 
 # CAPABILITIES (what this run can actually use)
-Model: openrouter/qwen/qwen3-235b-a22b — context window ≈ 200,000 chars; the engine archives the middle of the conversation to on-disk history at ~60% of that, so budget your reads (large files via read_file ranges, not whole).
+Model: openrouter/qwen/qwen3-235b-a22b — context window ≈ 200,000 chars; the engine archives the middle of the conversation to on-disk history at ~60-80% of that, so budget your reads (large files via read_file ranges, not whole).
 
 Action kinds usable this run: util, write_util, read_file, write_file, memory_read, memory_write, llm, spawn, subruns, kill, wait, ask_user, finish. Anything else is rejected by the engine before it becomes a turn.
 
@@ -434,7 +471,7 @@ notebook of things this routine learned the hard way. [...]
 Sub-workflow patterns for spawn — pick the one matching the CHILD's purpose, never reflexively the default:
 - general-task — bootstrap, then per run: orient on state, do the next increment of work, record, commit.
 
-Global utils (4; run `util name=list` for each one's exact usage before calling it):
+Global utils (4; run `util name=list args=["<name>"]` for one's exact usage before calling it):
 - discord — two-way phone channel via a Discord bot: send to a channel, read/wait for replies.  [reserved — not granted to this routine]
 - git-sync — bidirectionally sync a git repo with its remote (routines have no shell).
 - page-fetch — render a JS-heavy web page with a real (headless) browser and return its text/HTML.
@@ -480,33 +517,32 @@ ANSWERS received to earlier questions (consume now):
 Also watch for postings mentioning 'RAG evaluation' — a friend says those pay well right now.
 ```
 
-### 5.2 First user message (kickoff)
+### 5.2 First user message (kickoff, with the ONE-SHOT util reminder tail)
 
 ```
 Begin run job-radar:20260712-070000. Nothing has been executed yet — the workflow starts now, at step 1. Reply with ONE JSON action object: your first actual step (not a plan, not a summary, not a finish).
+[tools: the CAPABILITIES catalog lists the global utils; run `util name=list args=["<name>"]` for one util's exact usage; if none fits, write_util to create/revise one (needs the user's approval first).]
 ```
 
 ### 5.3 A turn in the middle
 
-The model's message (always just the JSON):
+The model's message (always just the JSON, `say` terse):
 
 ```json
-{"say": "Phase is scan and .memory warns about portal quirks — searching the first portal for fresh LLM postings.", "kind": "util", "name": "websearch", "args": ["site:freelance.de LLM projekt", "--json"]}
+{"say": "Scanning portal 1 (portal quirks note consulted).", "kind": "util", "name": "websearch", "args": ["site:freelance.de LLM projekt", "--json"]}
 ```
 
-The engine's reply (observation + per-turn tail):
+The engine's reply (the observation, nothing else on an ordinary turn):
 
 ```
 OBSERVATION (util websearch, exit 0):
 [{"title": "LLM Engineer (remote) …", "url": "https://…"}, …]
-[tools: run `util name=list` to see the available global utils and their usage; if none fits, write_util to create/revise one (needs the user's approval first).]
 ```
 
-### 5.4 Near the end
+### 5.4 Near the end (conditional tails)
 
 ```
 OBSERVATION (write_file): wrote 1832 bytes to state/shortlist.md
-[tools: run `util name=list` to see the available global utils and their usage; if none fits, write_util to create/revise one (needs the user's approval first).]
 [BUDGET: 6 of 60 turns left — wind down DELIBERATELY now: record what matters (LEDGER, state files), then finish with an authored summary. An engine-forced stop loses your conclusions.]
 [history: earlier turns are archived under runs/20260712-070000/history/INDEX.md — read_file the index and the relevant files before relying on memory.]
 ```

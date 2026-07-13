@@ -143,7 +143,7 @@ export function createChat(container, opts = {}) {
           }
           return;
         case "observation":
-          if (p.kind === "write_file" && !p.error
+          if ((p.kind === "write_file" || p.kind === "edit_file") && !p.error
               && String(p.path || "").includes("artifacts/") && opts.onArtifact) {
             opts.onArtifact(p.path);
           }

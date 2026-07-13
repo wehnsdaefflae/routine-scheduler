@@ -27,8 +27,9 @@ from .actions import ACTION_SCHEMA, BRIEF_FIELD, KIND_EXAMPLES, normalize_action
 from .composer import build_system_prompt, format_observation, kickoff_message, state_digest
 from .control import (_ABORT, RunAborted, announce_finished_subruns, apply_model_switch,
                       drain_injections, pause_gate, request_abort)
-from .history import (COMPACT_AT_FRACTION, KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history,
-                      maybe_compact, messages_size, replay_messages)
+from .history import (COMPACT_AT_FRACTION, COMPACT_AT_FRACTION_CACHED, KEEP_HEAD_MSGS,
+                      KEEP_TAIL_MSGS, compact_to_history, maybe_compact, messages_size,
+                      prior_usage, replay_messages)
 from .autocommit import autocommit as _autocommit
 from ..health_events import log_health_event
 from .run_context import RunContext
@@ -96,9 +97,11 @@ class EngineLoop:
         self._shed_schema_turns = 0
         self._sheds = 0
         self._schema_off = False
-        # Once the conversation has been archived to on-disk history, every turn reminds the model
-        # to consult its index (compaction-proof — re-appended to the observation each turn).
+        # Once the conversation has been archived to on-disk history, the model is reminded
+        # to consult its index — right after each compaction, then every 10th turn (NOT every
+        # turn: an identical tail on every observation is pure rent on the context).
         self._history_active = False
+        self._hist_note_countdown = 0
         self._last_compact_after = 0   # post-compaction size; gates re-compaction (anti-thrash)
         try:
             hist_rel = str((ctx.run_dir / "history").relative_to(ctx.routine.dir))
@@ -109,8 +112,10 @@ class EngineLoop:
                               "read_file the index and the relevant files before relying on memory.]")
 
     def _build_util_reminder(self) -> str:
-        # Per-turn nudge — utils are every routine's only way to run code, so the reminder
-        # rides along whenever the workflow permits the util kind at all.
+        # One-shot nudge appended to the FIRST user message only (kickoff / resume note) —
+        # the catalog already sits in CAPABILITIES and a failed util call carries its own
+        # repair hint, so repeating this on every observation was rent without information
+        # (~60 tokens × every turn, re-read for the rest of the run).
         if self.allowed_tools is not None and "util" not in self.allowed_tools:
             return ""
         if self.grants.allows_kind("write_util"):
@@ -120,8 +125,8 @@ class EngineLoop:
         else:
             create = ("note the gap with a deferred ask_user — creating/revising utils "
                       "needs a util-authoring permission this routine does not hold")
-        return ("\n[tools: run `util name=list` to see the available global utils and their "
-                f"usage; if none fits, {create}.]")
+        return ("\n[tools: the CAPABILITIES catalog lists the global utils; run `util "
+                f"name=list args=[\"<name>\"]` for one util's exact usage; if none fits, {create}.]")
 
     def _aborted(self) -> bool:
         return _ABORT["flag"] or self.abort_event.is_set()
@@ -205,13 +210,15 @@ class EngineLoop:
                              f"in a row — {REPEAT_FAIL} identical actions fail the run. Change course. "
                              "The structured-output constraint is lifted for your next reply: emit ONE "
                              "JSON object and include every field the action needs (args, content, …).]")
-                text += self.util_reminder
                 if warning := ctx.budget_warning():
                     text += (f"\n[BUDGET: {warning} — wind down DELIBERATELY now: record what "
                              "matters (LEDGER, state files), then finish with an authored "
                              "summary. An engine-forced stop loses your conclusions.]")
                 if self._history_active:
-                    text += self._history_note
+                    self._hist_note_countdown -= 1
+                    if self._hist_note_countdown <= 0:
+                        text += self._history_note
+                        self._hist_note_countdown = 10
                 self.messages.append({"role": "user", "content": text})
                 ctx.write_status()
         except RunAborted:
@@ -246,11 +253,14 @@ class EngineLoop:
         if resuming:
             from .transcript import read_events
             events, _ = read_events(ctx.run_dir / "transcript.jsonl", 0)
-            replayed, last_turn, records = replay_messages(events, self.util_reminder)
+            replayed, last_turn, records = replay_messages(events)
             self.messages = [{"role": "system", "content": system}, *replayed]
             self.turn_records = records
             ctx.turn = last_turn
             ctx.budget_base_turn = last_turn        # a fresh budget window from the resume point
+            # reporting stays cumulative even though the budget window is fresh — without
+            # this base, status.json shows only the last leg of a resumed run
+            ctx.usage_base = prior_usage(events)
             # replayed observations ground the fabrication guard — a continued conversation
             # may legitimately answer and re-finish as its very first action
             self.executed_actions = sum(1 for e in events if e.get("type") == "observation"
@@ -278,13 +288,16 @@ class EngineLoop:
                     "ENGINE NOTE: this run was interrupted (budget/error) and is now RESUMED. The "
                     "conversation above is the run so far — continue from the last observation; do NOT "
                     "restart from step 1. Re-orient briefly, then proceed."})
+            if self.util_reminder:   # one-shot, on the resume note (the kickoff's counterpart)
+                self.messages[-1] = {"role": "user",
+                                     "content": self.messages[-1]["content"] + self.util_reminder}
             for text in msgs:   # boot-drained messages: visible injections AFTER the note,
                 ctx.transcript.event("user_injection", {"text": text})   # not a prompt section
                 self.messages.append({"role": "user",
                                       "content": f"USER MESSAGE (injected mid-run):\n{text}"})
         else:
             self.messages = [{"role": "system", "content": system},
-                             {"role": "user", "content": kickoff_message(ctx)}]
+                             {"role": "user", "content": kickoff_message(ctx) + self.util_reminder}]
         ctx.write_status("running")
 
     def _finish_run(self, status: str, summary: str, *, authored: bool = False) -> str:
@@ -293,7 +306,7 @@ class EngineLoop:
         if killed:
             summary += f"\n[{killed} still-running sub-workflow(s) were terminated at run end.]"
         ctx.transcript.event("finish", {"status": status, "summary": summary, "authored": authored},
-                             usage_total=dict(ctx.usage), turns=ctx.turn)
+                             usage_total=ctx.usage_total(), turns=ctx.turn)
         if status in ("partial", "failed", "aborted") and ctx.depth == 0:
             event_type = "budget_exhausted" if status == "partial" else "run_failed"
             log_health_event(ctx.server.routines_home, event_type,
@@ -321,14 +334,20 @@ class EngineLoop:
             self._shed_schema_turns -= 1
             schema = None
         prev_raw: str | None = None
+        base_len = len(self.messages)   # schema-retry debris beyond this is dropped on success
         for attempt in range(1, MAX_SCHEMA_ATTEMPTS + 1):
             # Generous output cap: reasoning models need room to think AND answer — a
             # provider's small default can swallow the content entirely.
             completion = endpoint.complete(self.messages, model=ref.model,
                                            schema=schema, effort=ref.effort,
-                                           max_tokens=16_384)
+                                           max_tokens=16_384,
+                                           session=str(ctx.run_dir))
             usage_sum["in"] += completion.usage["in"]
             usage_sum["out"] += completion.usage["out"]
+            for cache_key in ("cached_in", "cache_write"):
+                if completion.usage.get(cache_key):
+                    usage_sum[cache_key] = (usage_sum.get(cache_key, 0)
+                                            + int(completion.usage[cache_key]))
             if completion.usage.get("cost"):
                 usage_sum["cost"] = round(usage_sum.get("cost", 0.0)
                                           + float(completion.usage["cost"]), 6)
@@ -358,6 +377,11 @@ class EngineLoop:
                                                grants=self.grants))
                 if problems:
                     raise SchemaViolation(problems)
+                if len(self.messages) > base_len:
+                    # Drop the failed-attempt/correction pairs from the live prompt — they
+                    # earned their keep eliciting THIS reply and would otherwise be re-read
+                    # every remaining turn. The transcript's error events keep the record.
+                    del self.messages[base_len:]
                 return candidate, usage_sum
             except SchemaViolation as exc:
                 raw = completion.text or json.dumps(completion.parsed or {})
@@ -385,7 +409,13 @@ class EngineLoop:
         that fails, so a run never stalls on compaction."""
         ctx = self.ctx
         size = messages_size(self.messages)
-        context_cap = COMPACT_AT_FRACTION * endpoint.context_chars
+        # Observed cache hits flip the economics: re-reading carried context costs ~0.1x,
+        # while compacting rewrites the prefix and invalidates the whole cache — so compact
+        # later (0.8) once the provider demonstrably serves from cache, earlier (0.6) when
+        # every turn re-reads at full price.
+        fraction = (COMPACT_AT_FRACTION_CACHED if ctx.usage.get("cached_in")
+                    else COMPACT_AT_FRACTION)
+        context_cap = fraction * endpoint.context_chars
         # Long prompts also burn the token BUDGET — every turn re-sends everything, so a
         # bloated prompt taxes each remaining turn. Once the prompt would eat >10% of the
         # remaining token budget per turn, archive it: the one compaction call costs what
@@ -406,9 +436,21 @@ class EngineLoop:
         middle_n = len(self.messages) - KEEP_HEAD_MSGS - KEEP_TAIL_MSGS
         if middle_n < 8 or size < self._last_compact_after + 20_000:
             return
+        # Archival is machine work — route it to the (usually cheaper) tool-call model
+        # whenever its window can hold the middle being archived; the main model is the
+        # fallback, never the default.
+        c_endpoint, c_ref = endpoint, ref
+        try:
+            t_endpoint, t_ref = ctx.registry.for_model("tool_call", ctx.routine.models)
+            middle_size = messages_size(
+                self.messages[KEEP_HEAD_MSGS:len(self.messages) - KEEP_TAIL_MSGS])
+            if t_endpoint.context_chars * 0.7 >= middle_size:
+                c_endpoint, c_ref = t_endpoint, t_ref
+        except Exception:  # noqa: BLE001 — no registry/role in bare test contexts
+            pass
         cinfo = None
         try:
-            result = compact_to_history(self.messages, self.turn_records, endpoint, ref,
+            result = compact_to_history(self.messages, self.turn_records, c_endpoint, c_ref,
                                         ctx.run_dir, self._hist_rel)
         except Exception as exc:
             ctx.transcript.event("error", {"where": "compaction", "message": str(exc)[:300]})
@@ -416,9 +458,12 @@ class EngineLoop:
         if result is not None:
             self.messages, cinfo = result
             self._history_active = True
+            self._hist_note_countdown = 0   # the next observation carries the history pointer
         else:
             self.messages, cinfo = maybe_compact(self.messages, self.turn_records, endpoint.context_chars)
         if cinfo:
+            if cinfo.get("usage"):
+                ctx.add_usage(cinfo["usage"])   # the archival call itself now hits the books
             self._last_compact_after = messages_size(self.messages)
             ctx.transcript.event("compaction", cinfo)
 

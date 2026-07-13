@@ -57,6 +57,10 @@ class RunContext:
     turn: int = 0
     phase: str = ""
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
+    # Spend recorded by EARLIER legs of this run (set on resume from the transcript).
+    # Budgets deliberately ignore it — a resume gets a fresh window — but reporting must
+    # not: status.json and the finish event carry usage_total() = base + this window.
+    usage_base: dict = field(default_factory=dict)
     state: str = "starting"
     question: dict | None = None
     main_model: str = ""              # "<endpoint>/<model>" resolved each turn (surfaced in status.json)
@@ -87,8 +91,26 @@ class RunContext:
     def add_usage(self, usage: dict) -> None:
         self.usage["in"] += int(usage.get("in") or 0)
         self.usage["out"] += int(usage.get("out") or 0)
+        # Cache traffic (adapters report it when the provider does): cached_in = input
+        # served from the provider's prompt cache (~0.1x price), cache_write = input
+        # written into it (~1.25x). Kept OUT of "in" so token budgets keep their meaning.
+        for key in ("cached_in", "cache_write"):
+            if usage.get(key):
+                self.usage[key] = self.usage.get(key, 0) + int(usage[key])
         if usage.get("cost"):   # real $ cost, when the provider reports it (OpenRouter)
             self.usage["cost"] = round(self.usage.get("cost", 0.0) + float(usage["cost"]), 6)
+
+    def usage_total(self) -> dict:
+        """This window's usage plus earlier legs' (usage_base) — what reporting shows."""
+        if not self.usage_base:
+            return dict(self.usage)
+        total = dict(self.usage_base)
+        for key, val in self.usage.items():
+            if key == "cost":
+                total["cost"] = round(total.get("cost", 0.0) + float(val), 6)
+            else:
+                total[key] = total.get(key, 0) + int(val)
+        return total
 
     def note_schema_retry(self) -> None:
         """Telemetry: one schema-violation retry occurred this turn."""
@@ -161,7 +183,7 @@ class RunContext:
             "elapsed_s": int(self.elapsed_s()),
             "phase": self.phase,
             "question": self.question,
-            "usage": dict(self.usage),
+            "usage": self.usage_total(),
             "model": self.main_model,
             "schema_retries": self.schema_retries,
             "schema_forcefails": self.schema_forcefails,

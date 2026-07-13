@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -89,6 +90,17 @@ def test_openai_request_and_usage(monkeypatch):
     assert seen["body"]["temperature"] == 0.2
     assert seen["headers"]["Authorization"] == "Bearer k"
     assert c.usage == {"in": 10, "out": 5} and "finish" in c.text
+
+
+def test_openai_cached_tokens_captured(monkeypatch):
+    """Implicit prompt caching (OpenAI/OpenRouter style): cached_tokens is surfaced as
+    usage cached_in so per-run cache hit rates are visible; "in" stays the full count."""
+    monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
+        "choices": [{"message": {"content": "x"}}],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 5,
+                  "prompt_tokens_details": {"cached_tokens": 896}}}))
+    c = _oai().complete(MESSAGES, model="m")
+    assert c.usage == {"in": 1000, "out": 5, "cached_in": 896}
 
 
 def test_openai_schema_mode_degradation(monkeypatch):
@@ -235,9 +247,15 @@ def test_anthropic_forced_tool_and_parse(monkeypatch, tmp_path):
     monkeypatch.setattr(anth_mod.httpx, "post", fake_post)
     c = ep.complete(MESSAGES, model="m", schema={"type": "object"})
     assert seen["headers"]["x-api-key"] == "sk-test"
-    assert seen["body"]["system"] == "be brief"
+    # prompt caching: system + tools carry static breakpoints, the last message a moving one
+    assert seen["body"]["system"] == [{"type": "text", "text": "be brief",
+                                       "cache_control": {"type": "ephemeral"}}]
+    assert seen["body"]["tools"][0]["cache_control"] == {"type": "ephemeral"}
     assert seen["body"]["tool_choice"] == {"type": "tool", "name": "action"}
     assert all(m["role"] != "system" for m in seen["body"]["messages"])
+    last = seen["body"]["messages"][-1]
+    assert last["content"][0]["cache_control"] == {"type": "ephemeral"}
+    assert last["content"][0]["text"] == "continue"
     assert c.parsed == {"say": "s", "kind": "finish"} and c.usage == {"in": 7, "out": 3}
 
 
@@ -306,6 +324,36 @@ def test_anthropic_effort_wiring(monkeypatch):
     assert seen["body"]["output_config"] == {"effort": "xhigh"}
     _anth().complete(MESSAGES, model="m")                 # no effort → no output_config
     assert "output_config" not in seen["body"]
+
+
+def test_anthropic_cache_usage_captured(monkeypatch):
+    monkeypatch.setattr(anth_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
+        "content": [{"type": "text", "text": "hi"}],
+        "usage": {"input_tokens": 12, "output_tokens": 3,
+                  "cache_read_input_tokens": 9000, "cache_creation_input_tokens": 400}}))
+    c = _anth().complete(MESSAGES, model="m")
+    assert c.usage == {"in": 12, "out": 3, "cached_in": 9000, "cache_write": 400}
+
+
+def test_anthropic_cache_control_degradation_on_400(monkeypatch):
+    """A gateway that rejects cache_control gets one degraded retry without the markers
+    (string-form system restored) — caching is an optimization, never a hard dependency."""
+    bodies = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        bodies.append(json)
+        if "cache_control" in __import__("json").dumps(json):
+            return FakeResponse(status_code=400,
+                                text='{"error": {"message": "cache_control: unknown field"}}')
+        return FakeResponse(payload=_ANTH_OK)
+
+    monkeypatch.setattr(anth_mod.httpx, "post", fake_post)
+    c = _anth().complete(MESSAGES, model="m", schema={"type": "object"})
+    assert len(bodies) == 2
+    degraded = __import__("json").dumps(bodies[1])
+    assert "cache_control" not in degraded
+    assert bodies[1]["system"] == "be brief"          # block-form collapsed back to a string
+    assert c.parsed == {"say": "s", "kind": "finish"}
 
 
 def test_anthropic_effort_degradation_on_400(monkeypatch):
@@ -444,6 +492,94 @@ def test_claude_cli_timeout_is_retryable(monkeypatch, tmp_path):
     with pytest.raises(EndpointError) as exc:
         ep.complete(MESSAGES, model="opus", timeout=7)
     assert exc.value.retryable and "timed out after 7s" in str(exc.value)
+
+
+def test_claude_cli_cache_usage_captured():
+    _, _, usage = parse_result(json.dumps(
+        {"is_error": False, "result": "hi",
+         "usage": {"input_tokens": 4, "output_tokens": 2,
+                   "cache_read_input_tokens": 30000, "cache_creation_input_tokens": 1200}}), False)
+    assert usage == {"in": 4, "out": 2, "cached_in": 30000, "cache_write": 1200}
+
+
+def _ok_cli_result(cmd):
+    return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(
+        {"is_error": False, "result": "ok",
+         "usage": {"input_tokens": 3, "output_tokens": 4}}), stderr="")
+
+
+def test_claude_cli_session_opens_then_resumes_with_delta(monkeypatch, tmp_path):
+    """With a session key: first call opens a CLI session (--session-id, full conversation
+    rendered), the next call resumes it (--resume) sending ONLY the new user content —
+    the caching-shaped path that stops re-processing the whole transcript every turn."""
+    ep = _cli_endpoint(monkeypatch, tmp_path)
+    monkeypatch.setattr("rsched.endpoints.claude_cli.expand",
+                        lambda p: tmp_path / "cache" if str(p).startswith("~") else Path(p))
+    calls = []
+
+    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None, env=None, cwd=None):
+        calls.append({"cmd": list(cmd), "input": input, "cwd": cwd})
+        return _ok_cli_result(cmd)
+
+    monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
+    ep.complete(MESSAGES, model="opus", session="run-A")
+    first = calls[0]
+    assert "--session-id" in first["cmd"] and "--no-session-persistence" not in first["cmd"]
+    assert "<<USER>>" in first["input"]                    # full conversation seeds the session
+    sid = first["cmd"][first["cmd"].index("--session-id") + 1]
+
+    grown = MESSAGES + [{"role": "assistant", "content": '{"kind":"util"}'},
+                        {"role": "user", "content": "OBSERVATION (util x, exit 0): fine"}]
+    ep.complete(grown, model="opus", session="run-A")
+    second = calls[1]
+    assert second["cmd"][second["cmd"].index("--resume") + 1] == sid
+    assert second["input"] == "OBSERVATION (util x, exit 0): fine"   # the delta, nothing else
+    assert second["cwd"] == first["cwd"]                   # same cwd — the CLI's session key
+
+    # a rewritten prefix (compaction) cannot resume — a FRESH session is seeded instead
+    compacted = [MESSAGES[0], {"role": "user", "content": "CONTEXT COMPACTED — pointer"},
+                 {"role": "user", "content": "next observation"}]
+    ep.complete(compacted, model="opus", session="run-A")
+    third = calls[2]
+    assert "--resume" not in third["cmd"] and "--session-id" in third["cmd"]
+    assert third["cmd"][third["cmd"].index("--session-id") + 1] != sid
+
+
+def test_claude_cli_resume_failure_reseeds_fresh_session(monkeypatch, tmp_path):
+    """A broken/expired CLI session must never break the run: the resume attempt's failure
+    drops the state and the call is retried as a fresh session with the full conversation."""
+    ep = _cli_endpoint(monkeypatch, tmp_path)
+    monkeypatch.setattr("rsched.endpoints.claude_cli.expand",
+                        lambda p: tmp_path / "cache" if str(p).startswith("~") else Path(p))
+    calls = []
+
+    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None, env=None, cwd=None):
+        calls.append(list(cmd))
+        if "--resume" in cmd:
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="No conversation found")
+        return _ok_cli_result(cmd)
+
+    monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
+    ep.complete(MESSAGES, model="opus", session="run-B")
+    grown = MESSAGES + [{"role": "assistant", "content": "a"}, {"role": "user", "content": "o"}]
+    c = ep.complete(grown, model="opus", session="run-B")
+    assert c.text == "ok"
+    assert ["--resume" in c_ for c_ in calls].count(True) == 1     # one failed resume …
+    assert ["--session-id" in c_ for c_ in calls].count(True) == 2  # … then a fresh seed
+
+
+def test_claude_cli_no_session_stays_stateless(monkeypatch, tmp_path):
+    ep = _cli_endpoint(monkeypatch, tmp_path)
+    seen = {}
+
+    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None, env=None, cwd=None):
+        seen.update(cmd=list(cmd))
+        return _ok_cli_result(cmd)
+
+    monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
+    ep.complete(MESSAGES, model="opus")
+    assert "--no-session-persistence" in seen["cmd"]
+    assert "--session-id" not in seen["cmd"] and "--resume" not in seen["cmd"]
 
 
 # --- registry ----------------------------------------------------------------------

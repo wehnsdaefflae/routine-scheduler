@@ -204,6 +204,9 @@ def test_resume_rehydrates_and_continues(make_routine, scripted):
     assert "state/probe.txt" in joined and "ENGINE NOTE" in joined
     st = read_json(run_dir / "status.json")
     assert st["state"] == "finished" and st["turn"] == 4      # continued past the first run's 2 turns
+    # usage reporting is CUMULATIVE across legs (ScriptedEndpoint bills 10 in / 5 out per
+    # completion; 2 turns per leg): a resume must not zero the dashboard's numbers
+    assert st["usage"]["in"] == 40 and st["usage"]["out"] == 20
 
 
 def test_converse_resume_delivers_message_and_allows_immediate_refinish(make_routine, scripted):
@@ -1096,6 +1099,32 @@ def test_unlimited_token_budget_never_trips():
     assert ctx.tokens_remaining() == 0
 
 
+def test_usage_accounting_cache_keys_and_resume_base():
+    """add_usage folds cache traffic in (kept out of "in" so token budgets keep meaning);
+    usage_total() adds earlier legs' spend — budgets stay on the fresh window."""
+    from rsched.engine.run_context import Budgets, RunContext
+
+    ctx = RunContext.__new__(RunContext)
+    ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=100, max_total_tokens=1000,
+                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5)
+    ctx.usage = {"in": 0, "out": 0}
+    ctx.usage_base = {}
+    ctx.turn = 1
+    ctx.budget_base_turn = 0
+    ctx._started_mono = __import__("time").monotonic()
+    ctx._suspended_s = 0.0
+    ctx.add_usage({"in": 100, "out": 10, "cached_in": 9000, "cache_write": 400, "cost": 0.02})
+    ctx.add_usage({"in": 50, "out": 5, "cached_in": 1000})
+    assert ctx.usage == {"in": 150, "out": 15, "cached_in": 10000, "cache_write": 400,
+                         "cost": 0.02}
+    assert ctx.budget_violation() is None          # cache traffic never trips the budget
+    ctx.usage_base = {"in": 800, "out": 80, "cost": 0.10}
+    total = ctx.usage_total()
+    assert total["in"] == 950 and total["out"] == 95 and total["cost"] == 0.12
+    assert total["cached_in"] == 10000
+    assert ctx.budget_violation() is None          # …and neither does the prior-leg base
+
+
 def test_budget_warning_appended_near_exhaustion(make_routine, scripted):
     """Past 85% of the turn budget, observations carry the wind-down nudge."""
     d, ep, status, run_dir, events = _run(make_routine, scripted, [
@@ -1196,3 +1225,129 @@ def test_compaction_antithrash(make_routine, monkeypatch):
     loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]
     loop._compact_if_needed(_Tiny(), None)
     assert not attempts, "no meaningful growth since the last archive → skip"
+
+
+def test_edit_file_replaces_anchor_in_place(make_routine, scripted):
+    """edit_file: revisions cost the diff, not the document — and the failure modes teach
+    the fix (anchor not found → copy verbatim; ambiguous → extend or all: true)."""
+    d, ep, status, _, events = _run(make_routine, scripted, [
+        write_file("state/notes.md", content="alpha\nbeta\nalpha\n"),
+        {"say": "s", "kind": "edit_file", "path": "state/notes.md",
+         "anchor": "gamma", "replacement": "x"},                      # not found
+        {"say": "s", "kind": "edit_file", "path": "state/notes.md",
+         "anchor": "alpha", "replacement": "x"},                      # ambiguous
+        {"say": "s", "kind": "edit_file", "path": "state/notes.md",
+         "anchor": "alpha", "replacement": "omega", "all": True},     # replace all
+        {"say": "s", "kind": "edit_file", "path": "state/notes.md",
+         "anchor": "beta\n", "replacement": ""},                      # delete via ""
+        finish(),
+    ])
+    assert status == "ok"
+    obs = [e["payload"] for e in events if e["type"] == "observation"
+           and e["payload"].get("kind") == "edit_file"]
+    assert "not found" in obs[0]["error"] and "VERBATIM" in obs[0]["error"]
+    assert "2 times" in obs[1]["error"] and "all: true" in obs[1]["error"]
+    assert obs[2]["replacements"] == 2 and obs[3]["replacements"] == 1
+    assert (d / "state" / "notes.md").read_text() == "omega\nomega\n"
+
+
+def test_edit_file_respects_recipe_write_gate(make_routine, scripted):
+    """edit_file is a write: the own-recipe gate rejects it inside the schema-retry cycle
+    (never a turn), exactly like write_file."""
+    d, ep, status, _, events = _run(make_routine, scripted, [
+        {"say": "s", "kind": "edit_file", "path": "main.md",
+         "anchor": "Run flow", "replacement": "Hacked"},
+        probe(),
+        finish(),
+    ])
+    assert status == "ok"
+    errors = [e for e in events if e["type"] == "error" and e["payload"].get("where") == "schema"]
+    assert errors and "routine-improver" in errors[0]["payload"]["message"]
+    assert "Hacked" not in (d / "main.md").read_text()
+
+
+def test_read_file_paths_batches_several_files(make_routine, scripted):
+    """`paths` reads several files in ONE action — one observation section per file,
+    failures inline instead of failing the batch."""
+    d, ep, status, _, events = _run(make_routine, scripted, [
+        write_file("state/a.md", content="AAA"),
+        write_file("state/b.md", content="BBB"),
+        {"say": "s", "kind": "read_file", "paths": ["state/a.md", "state/b.md", "state/nope.md"]},
+        finish(),
+    ])
+    assert status == "ok"
+    obs = next(e["payload"] for e in events if e["type"] == "observation"
+               and e["payload"].get("kind") == "read_file")
+    assert [f["path"] for f in obs["files"]] == ["state/a.md", "state/b.md", "state/nope.md"]
+    assert obs["files"][0]["content"] == "AAA" and obs["files"][1]["content"] == "BBB"
+    assert "error" in obs["files"][2]
+
+
+def test_util_list_with_name_returns_one_entry(make_routine, scripted):
+    """`util name=list args=["<name>"]` returns ONE util's usage instead of re-dumping the
+    whole catalog the prompt already carries."""
+    d = make_routine(slug="lister")
+    server = _server(d)
+    util_dir = server.utils_home / "utils" / "frob"
+    util_dir.mkdir(parents=True)
+    util_dir.joinpath("main.py").write_text(
+        '"""frob — frobnicates things.\n\nusage: gu frob TARGET [--json]\n\ntags: test\n"""\n',
+        encoding="utf-8")
+    (server.utils_home / "utils" / "other").mkdir(parents=True)
+    (server.utils_home / "utils" / "other" / "main.py").write_text(
+        '"""other — another util.\n\nusage: gu other\n\ntags: test\n"""\n', encoding="utf-8")
+    ep = scripted([
+        util("list", args=["frob"]),
+        finish(),
+    ])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    obs = next(e["payload"] for e in events if e["type"] == "observation"
+               and e["payload"].get("kind") == "util")
+    assert "frob — frobnicates things." in obs["listing"]
+    assert "usage: gu frob TARGET" in obs["listing"]
+    assert "other" not in obs["listing"]                # exactly one entry, not the catalog
+
+
+def test_util_reminder_rides_first_message_only(make_routine, scripted):
+    """The util nudge is one-shot on the kickoff — observations no longer carry an
+    identical [tools: …] tail every turn (that was rent re-read for the whole run)."""
+    d, ep, status, _, events = _run(make_routine, scripted, [
+        probe(),
+        probe("More work."),
+        finish(),
+    ])
+    assert status == "ok"
+    final_msgs = ep.calls[-1]["messages"]
+    kickoff = final_msgs[1]["content"]
+    assert kickoff.startswith("Begin run") and "[tools:" in kickoff
+    observations = [m["content"] for m in final_msgs[2:] if m["role"] == "user"]
+    assert observations and all("[tools:" not in c for c in observations)
+
+
+def test_schema_retry_debris_dropped_after_recovery(make_routine, scripted):
+    """A failed attempt + correction earn their keep eliciting the valid reply, then leave
+    the live prompt (the transcript keeps the error events) — later turns don't re-read
+    the poison every time."""
+    d, ep, status, _, events = _run(make_routine, scripted, [
+        "utter garbage, no JSON at all",     # attempt 1: invalid
+        probe(),                              # attempt 2: valid
+        finish(),
+    ])
+    assert status == "ok"
+    assert any(e["type"] == "error" and e["payload"].get("where") == "schema"
+               for e in events)                                   # the record survives …
+    final_msgs = ep.calls[-1]["messages"]
+    joined = json.dumps(final_msgs)
+    assert "utter garbage" not in joined                          # … the debris does not
+    assert "was not a valid action" not in joined
+
+
+def test_session_key_rides_every_completion(make_routine, scripted):
+    """The loop hands each completion a stable per-run session key — the caching hint
+    endpoints may use (claude-cli keeps a CLI session per key) and may ignore."""
+    d, ep, status, run_dir, _ = _run(make_routine, scripted, [probe(), finish()])
+    assert status == "ok"
+    sessions = {c["session"] for c in ep.calls}
+    assert sessions == {str(run_dir)}

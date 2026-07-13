@@ -63,11 +63,12 @@ class ScriptedEndpoint:
         self.name = "scripted"
         self.context_chars = 200_000
 
-    def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None, timeout=600):
+    def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None,
+                 timeout=600, session=None):
         system = messages[0]["content"] if messages else ""
         with self.lock:
             self.calls.append({"messages": [dict(m) for m in messages], "model": model,
-                               "schema": schema})
+                               "schema": schema, "session": session})
             item = None
             for i, entry in enumerate(self.replies):
                 if isinstance(entry, tuple):

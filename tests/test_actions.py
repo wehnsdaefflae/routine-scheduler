@@ -23,6 +23,8 @@ def test_schema_compiles_and_example_passes():
         {"say": "s", "kind": "write_util", "name": "my-util", "content": "# script"},
         {"say": "s", "kind": "read_file", "path": "LEDGER.md", "max_lines": 40},
         {"say": "s", "kind": "write_file", "path": "state/x.json", "content": "{}", "append": False},
+        {"say": "s", "kind": "edit_file", "path": "state/x.md", "anchor": "old text",
+         "replacement": "new text"},
         {"say": "s", "kind": "memory_read", "name": "portal-quirks"},
         {"say": "s", "kind": "memory_write", "name": "portal-quirks", "content": "# note",
          "about": "per-portal gotchas — read before scanning"},
