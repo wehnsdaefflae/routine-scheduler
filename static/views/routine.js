@@ -6,6 +6,7 @@ import { mdInline } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { chip, el, emptyState, fmtDur, fmtTokens, grantsSummary, skeleton, tagChip, toast, when } from "/static/util.js";
+import { forgetField } from "/static/formpersist.js";
 
 export async function render(view, slug, query = {}) {
   view.append(skeleton(["35%", "100%", "70%"]));
@@ -72,7 +73,7 @@ export async function render(view, slug, query = {}) {
   }
   function addTag() {
     const v = tagInput.value.trim().toLowerCase().replace(/\s+/g, "-");
-    if (v && !tags.includes(v)) { tags.push(v); tagInput.value = ""; renderTags(); }
+    if (v && !tags.includes(v)) { tags.push(v); tagInput.value = ""; forgetField(tagInput); renderTags(); }
     tagInput.focus();
   }
   tagInput.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } };

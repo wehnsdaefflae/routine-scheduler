@@ -67,6 +67,13 @@ function restoreTree(root) {
   root.querySelectorAll(SEL).forEach(restore);
 }
 
+// Forget a field's saved draft — views call this right after the field's content was
+// successfully SUBMITTED, so a later render or reload never refills text the server
+// already has (submitted content must not come back as a draft).
+export function forgetField(node) {
+  try { sessionStorage.removeItem(storeKey(node)); } catch { /* ignore */ }
+}
+
 export function installFormPersistence() {
   // Capture edits everywhere via delegation (works for nodes added later).
   document.addEventListener("input", (e) => { if (e.target) save(e.target); }, true);

@@ -13,6 +13,7 @@ import { mdInline } from "/static/md.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
+import { forgetField } from "/static/formpersist.js";
 import { busy, el, skeleton, streamStatus, toast } from "/static/util.js";
 import { stageSuggest, stageBuilding } from "/static/views/wizard-create.js";
 
@@ -143,7 +144,9 @@ export async function render(view, resumeWid) {
     function showQuestion(q) {
       setThinking(null);                // a question is on screen → no longer waiting on the model
       qBox.replaceChildren();
-      const input = el("input", { type: "text", placeholder: "your answer…", style: "flex:1" });
+      // data-persist keyed by qid: this question's draft is its own — never another's.
+      const input = el("input", { type: "text", placeholder: "your answer…",
+        "data-persist": `answer-${q.qid}`, style: "flex:1" });
       const send = el("button", { class: "btn primary" }, "answer");
       // A dialog reply: the model responds and re-asks — for when you need to ask back
       // (or think out loud) before you can actually answer.
@@ -155,6 +158,7 @@ export async function render(view, resumeWid) {
         try {
           await api(`/api/wizard/${encodeURIComponent(wid)}/answer`, { method: "POST",
             body: { qid: q.qid, text: input.value, intermediate } });
+          forgetField(input);   // sent — the draft must never refill
           qBox.replaceChildren();
           setThinking(intermediate ? "Waiting for the model — replying in the dialog…"
                                    : "Waiting for the model — considering your answer…");

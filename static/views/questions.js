@@ -5,6 +5,7 @@
 // Priority rank: blocking (a run is waiting) > meta (system-level) > deferred.
 
 import { api } from "/static/api.js";
+import { forgetField } from "/static/formpersist.js";
 import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, skeleton, toast, when } from "/static/util.js";
 
@@ -122,7 +123,9 @@ export async function render(view) {
         el("div", { class: "flow-note mt" },
           el("span", {}, `“${q.answer}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run" : "next run"}`)));
     }
-    const input = el("input", { type: "text", placeholder: "your answer…  (↵ to send)", style: "flex:1" });
+    // data-persist keyed by qid: each question's draft is its own — never another question's.
+    const input = el("input", { type: "text", placeholder: "your answer…  (↵ to send)",
+      "data-persist": `answer-${q.qid}`, style: "flex:1" });
     inputs.push(input);
     const send = el("button", { class: "btn primary" }, "answer");
     const options = q.options || [];
@@ -131,6 +134,7 @@ export async function render(view) {
       send.disabled = true;
       try {
         await api(`/api/questions/${q.qid}/answer`, { method: "POST", body: { text: input.value } });
+        forgetField(input);   // submitted — the draft must never refill this or any later question
         toast(q.mode === "blocking" ? "answered — the run resumes"
           : q.meta ? "recorded — the next self-audit run acts on it"
           : "answered — the next run picks it up");

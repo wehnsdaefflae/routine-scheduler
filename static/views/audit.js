@@ -8,6 +8,7 @@
 
 import { api } from "/static/api.js";
 import { chip, el, emptyState, fmtTs, skeleton, toast, when } from "/static/util.js";
+import { forgetField } from "/static/formpersist.js";
 
 const SEV = ["problem", "systemic", "redundancy", "improvement", "info"];
 
@@ -163,7 +164,7 @@ export async function render(view) {
     send.onclick = async () => {
       if (!box.value.trim()) return;
       send.disabled = true;
-      try { await submit({ kind: "general", text: box.value }, "prompt sent"); box.value = ""; }
+      try { await submit({ kind: "general", text: box.value }, "prompt sent"); box.value = ""; forgetField(box); }
       catch (err) { toast(err.message, 4000, { error: true }); }
       finally { send.disabled = false; }
     };
@@ -176,6 +177,7 @@ export async function render(view) {
         if (box.value.trim()) {
           await submit({ kind: "general", text: box.value }, "prompt sent");
           box.value = "";
+          forgetField(box);   // sent — the draft must not refill
         }
         const r = await api(`/api/routines/${routineSlug}/run`, { method: "POST" });
         toast("self-audit started");

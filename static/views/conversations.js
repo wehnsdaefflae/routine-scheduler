@@ -7,6 +7,7 @@
 import { api, apiUpload } from "/static/api.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
+import { forgetField } from "/static/formpersist.js";
 import { createChat } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { busy, chip, el, emptyState, relTime, storage, tagChip, toast } from "/static/util.js";
@@ -147,6 +148,7 @@ export async function render(view, slug, _query = {}) {
         if (shellChk.checked) fd.append("shell", "1");
         for (const f of files()) fd.append("files", f);
         const r = await apiUpload("/api/conversations", fd);
+        forgetField(text); forgetField(workdir);   // submitted — never refill the next composer
         clearFiles();
         navigate(`#/conversations/${r.slug}`);
       } catch (err) { toast(err.message, 5000, { error: true }); send.disabled = false; }
@@ -261,6 +263,7 @@ export async function render(view, slug, _query = {}) {
           for (const f of files()) fd.append("files", f);
           const r = await apiUpload(`/api/conversations/${slug}/message`, fd);
           input.value = "";
+          forgetField(input);   // sent — the draft must not refill on reload
           clearFiles();
           toast(r.delivery === "mid-run" ? "delivered — picked up next turn" : "waking the conversation…");
           if (r.delivery !== "mid-run") setTimeout(mountConversation, 700);   // reattach to the live run
@@ -278,12 +281,15 @@ export async function render(view, slug, _query = {}) {
   function showQuestion(box, q) {
     box.replaceChildren();
     if (!q) return;
-    const input = el("input", { type: "text", placeholder: "your answer…", style: "flex:1" });
+    // data-persist keyed by qid: this question's draft is its own — never another's.
+    const input = el("input", { type: "text", placeholder: "your answer…",
+      "data-persist": `answer-${q.qid}`, style: "flex:1" });
     const send = el("button", { class: "btn primary" }, "answer");
     const submit = async () => {
       if (!input.value.trim()) return;
       try {
         await api(`/api/questions/${q.qid}/answer`, { method: "POST", body: { text: input.value } });
+        forgetField(input);   // answered — the draft must never refill
         toast("answer sent");
         box.replaceChildren();
       } catch (err) { toast(err.message, 4000, { error: true }); }

@@ -894,9 +894,11 @@ def test_audit_decision_answer_survives_inbox_consumption(client):
         p.unlink()
     assert not [q for q in c.get("/api/questions").json() if q.get("meta")]
 
-    # a NEWER report listing it open again re-opens it (the routine deliberately re-asks)
+    # a NEWER report listing it open again re-opens it (the routine deliberately re-asks).
+    # Far-future stamp: the answered-marker is written with REAL now(), so a near-past
+    # constant here turns into a time-bomb the moment the wall clock passes it.
     atomic_write_json(adir / "report.json", {
-        "generated": "2026-07-13T09:00:00+00:00",
+        "generated": "2099-01-01T00:00:00+00:00",
         "findings": [],
         "decisions": [{"id": "D2", "title": "Pick a path (round 2)", "detail": "new context",
                        "status": "open", "options": ["A", "B"]}]})

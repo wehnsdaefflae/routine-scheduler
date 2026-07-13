@@ -12,6 +12,7 @@
 
 import { md, mdInline } from "/static/md.js";
 import { el, fmtTime, fmtTokens, toast } from "/static/util.js";
+import { forgetField } from "/static/formpersist.js";
 
 const BRIEF_FIELD = { util: "name", write_util: "name", read_file: "path", write_file: "path",
                       memory_read: "name", memory_write: "name",
@@ -41,8 +42,9 @@ export function createTranscript(container, opts = {}) {
     // Inline answering: deferred questions used to be dead text here, answerable only on
     // the Decisions page. Blocking ones stay with the run view's panel (it handles dialog).
     if (!opts.answer || !p.qid || p.mode !== "deferred") return el("div", { class: "ev question" }, head);
+    // data-persist keyed by qid: this question's draft is its own — never another's.
     const input = el("input", { type: "text", placeholder: "answer here — or on the Decisions page…",
-                                style: "flex:1" });
+                                "data-persist": `answer-${p.qid}`, style: "flex:1" });
     const send = el("button", { class: "btn small primary" }, "answer");
     const controls = el("div", { class: "row mt", style: "gap:6px" },
       p.options?.length ? p.options.map((o) =>
@@ -53,6 +55,7 @@ export function createTranscript(container, opts = {}) {
       send.disabled = true;
       try {
         await opts.answer(p.qid, input.value.trim());
+        forgetField(input);   // answered — the draft must never refill
         closeQuestion(p.qid, `✅ answered: ${input.value.trim()} (queued for the next run)`);
       } catch (err) { send.disabled = false; toast(err.message, 4000, { error: true }); }
     };

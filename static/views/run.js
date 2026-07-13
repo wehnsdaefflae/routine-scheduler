@@ -9,6 +9,7 @@ import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtDur, fmtTokens, fmtTs, skeleton, streamStatus,
          toDate, toast, when } from "/static/util.js";
+import { forgetField } from "/static/formpersist.js";
 
 const TERMINAL = new Set(["finished", "failed", "aborted"]);
 const WORKING = new Set(["running", "starting", "queued"]);
@@ -201,7 +202,9 @@ export async function render(view, runId, query = {}) {
   function showQuestion(q) {
     questionBox.replaceChildren();
     if (!q) return;
-    const input = el("input", { type: "text", placeholder: "your answer…", style: "flex:1" });
+    // data-persist keyed by qid: this question's draft is its own — never another's.
+    const input = el("input", { type: "text", placeholder: "your answer…",
+      "data-persist": `answer-${q.qid}`, style: "flex:1" });
     const send = el("button", { class: "btn primary" }, "answer");
     const discuss = el("button", { class: "btn",
       title: "send as a follow-up question / thought — the model replies and the question stays open" },
@@ -223,6 +226,7 @@ export async function render(view, runId, query = {}) {
       try {
         await api(`/api/questions/${q.qid}/answer`, { method: "POST",
           body: { text: input.value, intermediate } });
+        forgetField(input);   // sent — the draft must never refill
         toast(intermediate ? "sent — the model will reply and re-ask" : "answer sent");
         questionBox.replaceChildren();
       } catch (err) { toast(err.message, 4000, { error: true }); }
@@ -248,6 +252,7 @@ export async function render(view, runId, query = {}) {
       const r = await api(`/api/runs/${runId}/inject`, { method: "POST", body: { text: injectInput.value } });
       toast(r.delivery === "mid-run" ? "injected — picked up at the next turn" : "queued for the next run");
       injectInput.value = "";
+      forgetField(injectInput);   // sent — the draft must not refill on reload
     } catch (err) { toast(err.message, 4000, { error: true }); }
   };
   injectBtn.onclick = doInject;
@@ -256,6 +261,7 @@ export async function render(view, runId, query = {}) {
     converseBtn.disabled = true;
     try {
       await api(`/api/runs/${runId}/converse`, { method: "POST", body: { text: injectInput.value } });
+      forgetField(injectInput);   // delivered — must not refill after the reload below
       toast("message delivered — waking the run to continue the conversation…");
       setTimeout(() => location.reload(), 800);   // reattach the tail to the now-live run
     } catch (err) { toast(err.message, 5000, { error: true }); converseBtn.disabled = false; }
