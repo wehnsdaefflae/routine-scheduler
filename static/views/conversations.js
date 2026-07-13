@@ -134,16 +134,31 @@ export async function render(view, slug, _query = {}) {
     const prefill = sessionStorage.getItem(PREFILL_KEY);
     if (prefill) { text.value = prefill; sessionStorage.removeItem(PREFILL_KEY); }
     const workdir = el("input", { type: "text", placeholder: "~/path/to/project (optional)" });
+    // Pre-start model picker: the create endpoint already accepts endpoint+model — this
+    // just surfaces it, so a conversation can start on the right model instead of
+    // system-default-then-switch.
+    const epSel = el("select", { "data-nopersist": "" },
+      el("option", { value: "" }, "default · system model"));
+    const modelIn = el("input", { type: "text", placeholder: "model id", hidden: true,
+      style: "width:220px" });
+    epSel.onchange = () => { modelIn.hidden = !epSel.value; if (epSel.value) modelIn.focus(); };
+    api("/api/settings/endpoints").then((r) => {
+      if (r.system_model) epSel.options[0].textContent =
+        `default · ${r.system_model.endpoint}/${r.system_model.model}`;
+      (r.endpoints || []).forEach((e) => epSel.append(el("option", { value: e.name }, e.name)));
+    }).catch(() => { /* settings unreachable — the default option still works */ });
     const shellChk = el("input", { type: "checkbox" });
     const { picker, files, clearFiles, wirePaste } = filePicker();
     wirePaste(text);
     const send = el("button", { class: "btn primary" }, "start conversation");
     send.onclick = async () => {
       if (!text.value.trim()) { toast("write the first message"); return; }
+      if (epSel.value && !modelIn.value.trim()) { toast("enter a model id for the picked endpoint"); return; }
       send.disabled = true;
       try {
         const fd = new FormData();
         fd.append("text", text.value);
+        if (epSel.value) { fd.append("endpoint", epSel.value); fd.append("model", modelIn.value.trim()); }
         if (workdir.value.trim()) fd.append("workdir", workdir.value.trim());
         if (shellChk.checked) fd.append("shell", "1");
         for (const f of files()) fd.append("files", f);
@@ -160,6 +175,8 @@ export async function render(view, slug, _query = {}) {
       el("div", { class: "panel conv-new" },
         text,
         el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, send),
+        el("div", { class: "row mt", style: "gap:8px;align-items:center" },
+          el("span", { class: "faint small" }, "model"), epSel, modelIn),
         el("details", { class: "mt small" },
           el("summary", { style: "cursor:pointer;color:var(--muted)" }, "⚙ options: project dir, shell"),
           el("div", { class: "conv-opts" },
@@ -167,7 +184,7 @@ export async function render(view, slug, _query = {}) {
             el("label", { class: "row", style: "gap:8px" }, shellChk,
               el("span", {}, "allow shell commands (the escape hatch — off by default)")))),
         el("div", { class: "faint small mt" },
-          "starts on the system default model — switch it any time at the top of the conversation")));
+          "pick a model above or start on the system default — switch it any time at the top of the conversation")));
     text.focus();
   }
 
