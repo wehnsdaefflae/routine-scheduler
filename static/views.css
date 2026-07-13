@@ -320,3 +320,35 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 }
 .attach-chip.removable { cursor: pointer; }
 .attach-chip.removable:hover { border-color: var(--err); color: var(--err); }
+
+
+/* ---------- stats: usage analytics ---------- */
+.stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 14px 0; }
+.stat-card {
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
+}
+.stat-card .stat-value { font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: 0.01em; }
+.stat-card .stat-label { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.stat-card .stat-sub { font-size: 11px; color: var(--muted); font-family: var(--sans); }
+.stat-section { margin: 22px 0; }
+.stat-section h2 { font-size: 14px; color: var(--text); margin: 0 0 10px; letter-spacing: 0.01em; }
+.bar-chart { display: flex; flex-direction: column; gap: 5px; }
+.bar-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.bar-row .bar-label { flex: 0 0 130px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sans); }
+.bar-row .bar-track { flex: 1 1 auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; height: 14px; overflow: hidden; }
+.bar-row .bar-fill { height: 100%; background: linear-gradient(90deg, var(--amber), var(--warn)); }
+.bar-row .bar-value { flex: 0 0 72px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+.stat-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.stat-table th, .stat-table td { padding: 7px 11px; text-align: left; border-bottom: 1px solid var(--line); }
+.stat-table thead th { color: var(--muted); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.04em; background: var(--surface-2); }
+.stat-table td.num, .stat-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.stat-table tbody tr:last-child td { border-bottom: none; }
+.stat-table tbody tr:hover { background: var(--surface-2); }
+.stat-foot { color: var(--muted); font-size: 11px; margin: 16px 0 4px; font-family: var(--sans); }
+.chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip-finished { color: var(--live); border-color: rgba(69, 224, 176, 0.4); }
+.chip-failed, .chip-aborted { color: var(--err); border-color: rgba(230, 90, 90, 0.4); }
+.chip-running { color: var(--amber); border-color: rgba(242, 193, 78, 0.4); }
