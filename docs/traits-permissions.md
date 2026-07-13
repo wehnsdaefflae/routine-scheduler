@@ -54,9 +54,10 @@ a *Standing practices* section referencing each one ("read it before the situati
 governs"). The prompt never inlines them — the state digest lists the files and the run
 reads what it needs, which keeps every turn's prompt lean.
 
-Editing trait files afterwards rides the `self-modification` permission, like the rest
-of the recipe — held by default only by the routine-improver meta routine, which does
-that refining centrally (conversations included).
+Trait files (like the whole recipe and routine.yaml) are read-only to the owning run —
+not a permission but a fixed engine rule. The one unlock is a user-granted fs_write_root
+covering the routine's dir, which is exactly how the routine-improver meta routine
+refines every recipe centrally (conversations included).
 
 ## Permissions
 
@@ -73,7 +74,6 @@ grants:
   utils: [discord]             # utils reserved for holders of this permission
   confirm: true                # write_util approval: true | false | revisions-only
   runs: last                   # previous-run read access: last | all
-  self_modify: true            # may rewrite own main.md / steps/ / traits/ / instruction.md
 ---
 # permission: <name> — <summary>
 <a SHORT body: shown in the UI, and appended to the prompt's CAPABILITIES section when held>
@@ -87,7 +87,6 @@ The shipped set:
 | `util-authoring-autonomous` | `write_util`, revisions auto-approved after selftest, creations ask | opt-in |
 | `util-authoring-full-auto` | `write_util`, fully autonomous (selftest-gated, committed) | opt-in |
 | `memory` | `memory_read` / `memory_write` — the `.memory/` notebook | ✅ |
-| `self-modification` | writes to the routine's own recipe files | — (routine-improver only) |
 | `communication` | the reserved `discord` util — a second decision surface | opt-in |
 | `run-history` | read the LAST previous run under `runs/` | opt-in |
 | `run-history-full` | read ALL previous runs | opt-in |
@@ -97,11 +96,12 @@ The shipped set:
 
 A run's allowed action kinds are **workflow `tools:` ∩ (base ∪ union of held grants)**
 (`finish` always allowed). Gated calls — `write_util` without util-authoring, a reserved
-util, a `read_file` into `runs/` without run-history, a `write_file` into `main.md` /
-`steps/` / `traits/` / `instruction.md` without self-modification — are rejected inside
-the schema-retry cycle by `validate_action`, with an error naming the permission that
-would unlock the capability and routing the model to a deferred `ask_user` (only you can
-grant it). A rejected call never becomes a turn. The current run's own `runs/<ts>/` tree
+util, a `read_file` into `runs/` without run-history, and any `write_file` into the run's
+OWN `main.md` / `steps/` / `traits/` / `instruction.md` / `routine.yaml` (a fixed rule,
+not a permission — unlocked only when a user-granted fs_write_root covers the routine
+dir, the routine-improver's case) — are rejected inside the schema-retry cycle by
+`validate_action`, with an error naming the way out (a permission the user could grant,
+or a deferred `ask_user`). A rejected call never becomes a turn. The current run's own `runs/<ts>/` tree
 (status, archived history) stays readable regardless — the engine itself points the model
 there after compaction. `runs/` is never writable.
 

@@ -86,21 +86,20 @@ def test_normalize_grants_accepts_the_schema():
     assert normalize_grants({"confirm": False})[0] == {"confirm": "never"}
     assert normalize_grants({"runs": "last"})[0] == {"runs": "last"}
     assert normalize_grants({"runs": "all"})[0] == {"runs": "all"}
-    assert normalize_grants({"self_modify": True})[0] == {"self_modify": True}
     assert normalize_grants(None) == ({}, [])
 
 
 def test_normalize_grants_reports_and_drops_invalid_parts():
     g, problems = normalize_grants({"actions": ["util", "dance"], "utils": ["Not A Slug"],
                                     "confirm": "sometimes", "shell": True,
-                                    "runs": "some", "self_modify": "yes"})
+                                    "runs": "some", "self_modify": True})
     text = " | ".join(problems)
     assert "'dance' is not an action kind" in text
     assert "'Not A Slug' is not a kebab-case util name" in text
     assert "confirm must be true, false or revisions-only" in text
     assert "grants.shell: unknown key" in text
     assert "runs must be last or all" in text
-    assert "self_modify must be true" in text
+    assert "grants.self_modify: unknown key" in text   # the grant is retired
     assert g == {"actions": ["util"], "utils": []}      # invalid entries dropped, valid kept
     assert normalize_grants("write_util")[1]            # non-mapping → problem
     bad_list, problems2 = normalize_grants({"actions": "util"})
@@ -166,13 +165,10 @@ def test_needs_confirm_semantics():
 
 
 def test_run_history_most_permissive_wins(tmp_path):
-    home = _lib(tmp_path, {"run-history": RUN_HISTORY, "run-history-full": RUN_HISTORY_FULL,
-                           "self-modification": SELF_MOD})
+    home = _lib(tmp_path, {"run-history": RUN_HISTORY, "run-history-full": RUN_HISTORY_FULL})
     assert load_policy(home, []).run_history == "none"
     assert load_policy(home, ["run-history"]).run_history == "last"
     assert load_policy(home, ["run-history", "run-history-full"]).run_history == "all"
-    assert load_policy(home, ["self-modification"]).self_modify is True
-    assert load_policy(home, ["run-history"]).self_modify is False
 
 
 # ------------------------------------------------------------------ denial messages
@@ -204,18 +200,21 @@ def test_deny_gates_previous_runs_but_not_the_live_run():
     assert w and "read-only" in w
 
 
-def test_deny_gates_recipe_writes_without_self_modification():
+def test_deny_blocks_own_recipe_and_config_writes():
+    """Own recipe + routine.yaml writes are a FIXED rule, not a permission: denied for
+    everyone, unlocked only via recipe_unlocked (a user fs_write_root covering the dir)."""
     none = GrantPolicy()
     for path in ("main.md", "steps/collect.md", "traits/ask-policy.md", "instruction.md",
-                 "./main.md"):
+                 "./main.md", "routine.yaml"):
         denial = none.deny({"kind": "write_file", "path": path, "content": "x"})
-        assert denial and "self-modification" in denial, path
+        assert denial and "routine-improver" in denial, path
         assert none.deny({"kind": "read_file", "path": path}) is None, path
     # non-recipe writes stay open
     assert none.deny({"kind": "write_file", "path": "state/notes.md", "content": "x"}) is None
     assert none.deny({"kind": "write_file", "path": "LEDGER.md", "content": "x"}) is None
-    granted = GrantPolicy(self_modify=True)
-    assert granted.deny({"kind": "write_file", "path": "main.md", "content": "x"}) is None
+    unlocked = GrantPolicy(recipe_unlocked=True)
+    assert unlocked.deny({"kind": "write_file", "path": "main.md", "content": "x"}) is None
+    assert unlocked.deny({"kind": "write_file", "path": "routine.yaml", "content": "x"}) is None
 
 
 def test_validate_action_carries_grant_denials():

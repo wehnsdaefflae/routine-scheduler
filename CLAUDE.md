@@ -39,8 +39,10 @@ repeat until `finish`.
   models and return precise per-kind errors. `actions.py` is the single source of truth for what a turn
   may do — adapters, UI, and the CLI event renderer all key off it. A workflow's `tools:` allowlist AND
   the routine's permission **grants** (`grants.py`) are enforced there too: allowed kinds = workflow tools
-  ∩ (base ∪ held grants), plus path gates (runs/ needs run-history; writes to main.md / steps/ / traits/ /
-  instruction.md need self-modification; executor.py backstops absolute paths and scopes `runs: last`).
+  ∩ (base ∪ held grants), plus path gates (runs/ needs run-history; a run NEVER writes its own
+  main.md / steps/ / traits/ / instruction.md / routine.yaml — not a permission but a fixed rule,
+  unlocked only when a user-granted fs_write_root covers the routine dir, the routine-improver's
+  case; executor.py backstops absolute paths and scopes `runs: last`).
   A disallowed/ungranted call is corrected inside the schema-retry cycle with an error naming the
   granting permission, and never becomes a turn.
 - **The system prompt is composed once at boot** (`engine/composer.py`): harness contract → action schema
@@ -194,13 +196,12 @@ first boot; `deploy/install.sh` for host installs.
   routine's intention from the run just completed and acts in its lens, asking a deferred question when
   unsure). `DEFAULT_TRAITS` (config) is the no-LLM fallback selection.
 - **Permissions** (`library-seed/permissions/`, `# permission:` heading + machine-read `grants:` —
-  {actions, utils, confirm, runs, self_modify}): the routine's engine-enforced capability surface,
+  {actions, utils, confirm, runs}): the routine's engine-enforced capability surface,
   held via `routine.yaml` `permissions:`, user-changeable ONLY (`grants.py` reads the LIBRARY copy;
   nothing under a routine dir is consulted, so routines can't self-grant). The set: `util-authoring`
   (confirm: true, default), `util-authoring-autonomous` (revisions-only), `util-authoring-full-auto`
   (false), `memory` (memory_read/memory_write — indexed ≤100-line notes in `.memory/`; INDEX.md
-  engine-maintained, surfaced in the state digest; default), `self-modification` (recipe writes; NOT a
-  default — the routine-improver is the only default holder, recipe improvement being its job), `communication` (reserves `discord`; also turns on engine-side Discord mirroring of
+  engine-maintained, surfaced in the state digest; default),  `communication` (reserves `discord`; also turns on engine-side Discord mirroring of
   blocking decisions), `run-history` / `run-history-full` (read the last / all previous runs under
   runs/), `shell` (reserves the `shell` util — the escape hatch). Permission bodies are SHORT (≤14
   lines reach the prompt's CAPABILITIES section when held). Any future permission-ish lever becomes a

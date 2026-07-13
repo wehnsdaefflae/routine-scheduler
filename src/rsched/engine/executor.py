@@ -131,7 +131,7 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
         return None
     if resolved.is_relative_to(ctx.routine.dir / "runs"):
         return "runs/ is engine-owned and read-only for the run"
-    if not g.self_modify:
+    if not getattr(g, "recipe_unlocked", False):
         from ..grants import RECIPE_PREFIXES
 
         try:
@@ -140,8 +140,9 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
             return None
         rel_s = str(rel)
         if any(rel_s == p.rstrip("/") or rel_s.startswith(p) for p in RECIPE_PREFIXES):
-            return ("modifying the routine's own recipe files needs the self-modification "
-                    "permission this routine does not hold")
+            return ("a run never edits its own recipe or config (main.md / steps/ / traits/ "
+                    "/ instruction.md / routine.yaml) — the routine-improver refines recipes, "
+                    "the user owns config; file a deferred ask_user instead")
     return None
 
 

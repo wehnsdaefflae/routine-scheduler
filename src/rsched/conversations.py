@@ -92,7 +92,7 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
     for sub in ("state", "inbox", "traits", "attachments", "artifacts"):
         (conv_dir / sub).mkdir(parents=True)
     # trait copies: library text verbatim — the conversation's own files from here on
-    # (self-refined via the self-modification permission, like any routine's).
+    # (refined by the routine-improver meta routine, like any routine's).
     available = set(library_docs.slugs(server.traits_home))
     trait_summaries: dict[str, str] = {}
     for t in [t for t in CONVERSATION_TRAITS if t in available]:

@@ -127,9 +127,9 @@ Reply again with ONLY one JSON object matching the action schema — no prose ou
 ```
 
 Up to 3 attempts; the last drops the provider-side schema constraint. Disallowed kinds and
-ungranted capabilities (`write_util`, `memory_*`, reserved utils, previous-run reads,
-recipe writes without self-modification) are corrected the same way — the error names the
-granting permission.
+ungranted capabilities (`write_util`, `memory_*`, reserved utils, previous-run reads) and
+own-recipe/config writes (never permitted — the routine-improver's beat) are corrected the
+same way — the error names the way out.
 
 ### 3e · Compaction (the middle gets replaced)
 
@@ -179,8 +179,8 @@ failure (`failed`) — these write the transcript `finish` event directly.
 
 Produced by `engine/composer.py` for a realistic routine ("job-radar": 3 steps, previous
 runs, LEDGER, `.memory/`, one open + one answered question, one waiting inbox message,
-`discord` reserved and NOT granted, `write_util` granted with confirm: always, memory and
-self-modification granted). Note what is NOT here: the routine's practice prose (its
+`discord` reserved and NOT granted, `write_util` granted with confirm: always, memory
+granted). Note what is NOT here: the routine's practice prose (its
 `traits/*.md` files) is never inlined — the workflow's Standing practices tail and the
 state digest point at the files, read on demand. The working-directory path is shortened.
 
@@ -197,7 +197,7 @@ Working directory: /home/user/routines/job-radar. All relative paths resolve the
 
 You have NO shell. The ONLY way to run code is a global util (the `util` action). If no util does what you need, WRITE one (the `write_util` action) and then call it — utils are reusable, selftested, and shared across all routines. You never run git yourself: the engine commits your working directory automatically at run end.
 
-Ownership of prose: instruction.md holds ONLY the task — goal, deliverable, constraints, completion criteria. Cross-cutting conduct (when to ask the user, after-run improvement passes, util and research discipline) lives in this routine's PRACTICE MODULES under traits/ — your own adapted copies, referenced at the end of the workflow below; read the relevant one before the situation it governs and refine them as you learn. What you are ALLOWED to do (util authoring, reserved channels, memory, self-modification, previous runs) is a separate matter: PERMISSIONS, set only by the user and enforced by the engine on every action — see CAPABILITIES below; never restate permission-dependent conduct inside instruction.md.
+Ownership of prose: instruction.md holds ONLY the task — goal, deliverable, constraints, completion criteria. Cross-cutting conduct (when to ask the user, after-run improvement passes, util and research discipline) lives in this routine's PRACTICE MODULES under traits/ — your own adapted copies, referenced at the end of the workflow below; read the relevant one before the situation it governs. Your own recipe and config (main.md, steps/, traits/, instruction.md, routine.yaml) are READ-ONLY to you: the routine-improver meta routine refines recipes, the user owns config — file a deferred ask_user for changes you believe are needed. What you are ALLOWED to do (util authoring, reserved channels, memory, previous runs) is a separate matter: PERMISSIONS, set only by the user and enforced by the engine on every action — see CAPABILITIES below; never restate permission-dependent conduct inside instruction.md.
 
 Budgets for this run: 60 turns, 45 minutes, unlimited total tokens, at most 8 subruns (depth ≤ 2). Spend them on the workflow's priorities and `finish` DELIBERATELY before they expire — a finish you wrote beats a forced one.
 
@@ -417,7 +417,7 @@ Model: openrouter/qwen/qwen3-235b-a22b — context window ≈ 200,000 chars; the
 
 Action kinds usable this run: util, write_util, read_file, write_file, memory_read, memory_write, llm, spawn, subruns, kill, wait, ask_user, finish. Anything else is rejected by the engine before it becomes a turn.
 
-Permissions held (user-set, engine-enforced): util-authoring, memory, self-modification — unlocking: write_util (every create/revise needs the user's approval); rewrite own recipe files (main.md, steps/, traits/).
+Permissions held (user-set, engine-enforced): util-authoring, memory — unlocking: write_util (every create/revise needs the user's approval).
 
 # permission: util authoring — create and revise global utils, user-approved
 
@@ -430,11 +430,6 @@ the wait and batch other work while it is pending. [...]
 
 Unlocks the `memory_read` / `memory_write` actions — the ONLY way into `.memory/`, the
 notebook of things this routine learned the hard way. [...]
-
-# permission: self-modification — refine the routine's own recipe
-
-Unlocks `write_file` on the routine's own recipe files: `main.md`, `steps/`, `traits/`,
-and `instruction.md`. [...]
 
 Sub-workflow patterns for spawn — pick the one matching the CHILD's purpose, never reflexively the default:
 - general-task — bootstrap, then per run: orient on state, do the next increment of work, record, commit.

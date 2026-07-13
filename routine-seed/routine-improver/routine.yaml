@@ -19,7 +19,6 @@ workflow:
 permissions:
 - util-authoring
 - memory
-- self-modification
 budgets:
   max_turns: 70
   max_wall_clock_min: 60

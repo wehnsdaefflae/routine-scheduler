@@ -212,7 +212,7 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,
     """Semantic per-kind checks on an object that already passed the JSON Schema.
     `allowed_kinds` narrows the vocabulary to a workflow's `tools:` allowlist; `grants`
     (a grants.GrantPolicy) gates capabilities the routine's permissions must unlock
-    (write_util, reserved utils, runs/ access, recipe self-modification) — so allowed
+    (write_util, reserved utils, runs/ access, own-recipe/config writes) — so allowed
     kinds = workflow tools ∩ (base ∪ grants). `finish` is always permitted so a run can
     end. Both rejections happen here, inside the schema-retry cycle, so a denied call is
     corrected and never becomes a turn. Returns a list of problems (empty = valid)."""

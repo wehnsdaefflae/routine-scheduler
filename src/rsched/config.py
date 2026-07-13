@@ -32,12 +32,11 @@ DEFAULT_BUDGETS = {
 # PERMISSIONS a new routine holds when its routine.yaml names no explicit `permissions:`
 # list. Permissions are engine-enforced capabilities (see grants.py), user-changeable only:
 # `util-authoring` lets a routine write utils with user approval, `memory` unlocks the
-# .memory/ notebook. `self-modification` (recipe writes) is NOT a default anymore: recipe
-# improvement is centralized in the routine-improver meta routine — the only holder by
-# default; grant it back per routine only when one genuinely must edit its own recipe
-# mid-run. `communication` (discord), `run-history` (previous runs) and `shell` stay
-# opt-in. Defaults added here AFTER routines exist reach them via
-# bootstrap.ADOPT_PERMISSIONS (one-time, at daemon boot).
+# .memory/ notebook. `communication` (discord), `run-history` (previous runs) and `shell`
+# stay opt-in. There is NO self-modification permission: a run never edits its own recipe
+# or routine.yaml — the routine-improver meta routine refines recipes centrally (its
+# fs_write_roots covering the homes is the one engine-recognized unlock). Defaults added
+# here AFTER routines exist reach them via bootstrap.ADOPT_PERMISSIONS (one-time, at boot).
 DEFAULT_PERMISSIONS = ["util-authoring", "memory"]
 # TRAITS a new routine gets when creation picks none explicitly (the wizard normally
 # preselects per task): reusable practice prose, adapted into the routine's own traits/

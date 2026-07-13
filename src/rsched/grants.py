@@ -14,13 +14,18 @@ Schema (permission frontmatter):
       utils: [discord]                 # utils reserved for routines carrying this grant
       confirm: true | false | revisions-only   # write_util approval policy
       runs: last | all                 # read access to previous runs under runs/
-      self_modify: true                # may rewrite its own recipe (main.md, steps/, traits/)
 
 Enforced per turn by `engine.actions.validate_action` (a run's allowed action kinds are
 workflow `tools:` ∩ (base ∪ union of active grants)) plus path gates for runs/ and the
-routine's recipe files — a rejected call is corrected inside the schema-retry cycle and
-never becomes a turn. Base kinds — util, read_file, write_file, llm, spawn, … — stay
+routine's recipe/config files — a rejected call is corrected inside the schema-retry cycle
+and never becomes a turn. Base kinds — util, read_file, write_file, llm, spawn, … — stay
 ungated.
+
+Recipe writes are NOT a permission: a run never edits its own recipe (main.md, steps/,
+traits/, instruction.md) or its own routine.yaml — recipe improvement is the
+routine-improver meta routine's job, and config is the user's. The single override is the
+user-granted resource `fs_write_roots`: when a write root covers the routine's own dir
+(the improver's case), the engine unlocks these paths for that run.
 """
 
 from __future__ import annotations
@@ -40,7 +45,6 @@ GATED_KINDS = ("write_util", "memory_read", "memory_write")
 _DEFAULT_KIND_SOURCE = {"write_util": "util-authoring",
                         "memory_read": "memory", "memory_write": "memory"}
 _DEFAULT_RUNS_SOURCE = ("run-history", "run-history-full")
-_DEFAULT_SELF_MODIFY_SOURCE = ("self-modification",)
 # write_util approval policy, least → most permissive. The raw `confirm:` vocabulary maps
 # to it: true → "always" (user approves create AND revise), "revisions-only" → "creations"
 # (revisions are autonomous once the selftest passes; NEW utils still ask), false → "never".
@@ -48,9 +52,11 @@ CONFIRM_LEVELS = ("always", "creations", "never")
 _RAW_CONFIRM = {True: "always", "revisions-only": "creations", False: "never"}
 # runs: access to previous runs, none → last (only the previous run) → all
 RUN_HISTORY_LEVELS = ("none", "last", "all")
-# The routine's own recipe files — writable only with a self_modify grant. traits/ holds the
-# routine's adapted practice copies; steps/ + main.md the materialized workflow.
-RECIPE_PREFIXES = ("main.md", "instruction.md", "steps/", "traits/")
+# The routine's own recipe + config files — never writable by the owning run unless a
+# user-granted fs_write_root covers the routine dir (see the module docstring). traits/
+# holds the routine's adapted practice copies; steps/ + main.md the materialized workflow;
+# routine.yaml is the user's config (permissions held, budgets, roots).
+RECIPE_PREFIXES = ("main.md", "instruction.md", "steps/", "traits/", "routine.yaml")
 
 
 def normalize_grants(raw: object) -> tuple[dict, list[str]]:
@@ -60,8 +66,8 @@ def normalize_grants(raw: object) -> tuple[dict, list[str]]:
     if raw is None:
         return {}, []
     if not isinstance(raw, dict):
-        return {}, ["grants must be a mapping (actions / utils / confirm / runs / self_modify)"]
-    known = ("actions", "utils", "confirm", "runs", "self_modify")
+        return {}, ["grants must be a mapping (actions / utils / confirm / runs)"]
+    known = ("actions", "utils", "confirm", "runs")
     problems = [f"grants.{k}: unknown key (expected {' / '.join(known)})"
                 for k in raw if k not in known]
     out: dict = {}
@@ -86,11 +92,6 @@ def normalize_grants(raw: object) -> tuple[dict, list[str]]:
             out["runs"] = raw["runs"]
         else:
             problems.append("grants.runs must be last or all")
-    if "self_modify" in raw:
-        if raw["self_modify"] is True:
-            out["self_modify"] = True
-        else:
-            problems.append("grants.self_modify must be true (omit it to not grant)")
     return out, problems
 
 
@@ -154,9 +155,10 @@ class GrantPolicy:
     kind_sources: dict = field(default_factory=dict)  # gated kind → library permissions granting it
     confirm: str = "always"                    # effective write_util approval policy
     run_history: str = "none"                  # previous-runs read access: none | last | all
-    self_modify: bool = False                  # may rewrite own recipe files
+    # own recipe/config writable? True only when a user fs_write_root covers the routine
+    # dir (the routine-improver's case) — computed at policy load, never a permission.
+    recipe_unlocked: bool = False
     runs_sources: tuple = _DEFAULT_RUNS_SOURCE            # permissions granting runs access
-    self_modify_sources: tuple = _DEFAULT_SELF_MODIFY_SOURCE
     # The live run's ts: paths under runs/<current_run_ts>/ are the run's OWN tree (status,
     # archived history) and stay readable regardless of run_history — the engine itself
     # points the model there after compaction.
@@ -204,17 +206,17 @@ class GrantPolicy:
                             f"routine (the {srcs} permissions unlock it — last run only, or "
                             f"all). The state digest already carries the last run's result; "
                             f"if you need more, file a deferred ask_user.")
-            if kind == "write_file" and is_recipe_path(path) and not self.self_modify:
-                srcs = ", ".join(self.self_modify_sources)
+            if kind == "write_file" and is_recipe_path(path) and not self.recipe_unlocked:
                 return (f"writing {_norm_rel(path)!r} would modify this routine's own recipe "
-                        f"(main.md / steps/ / traits/ / instruction.md), which needs the "
-                        f"{srcs} permission this routine does not hold. Leave the recipe as "
-                        f"is; if a change is needed, file a deferred ask_user describing it.")
+                        f"or config (main.md / steps/ / traits/ / instruction.md / "
+                        f"routine.yaml) — a run never edits its own: recipes are refined by "
+                        f"the routine-improver meta routine, config by the user. File a "
+                        f"deferred ask_user describing the change instead.")
         return None
 
 
 def load_policy(permissions_home: Path, active: list[str] | None,
-                current_run_ts: str = "") -> GrantPolicy:
+                current_run_ts: str = "", recipe_unlocked: bool = False) -> GrantPolicy:
     """Build the run policy: union the held permissions' grants; index the whole library's
     grants so denials can point at the permission that would unlock the capability. The most
     permissive confirm level among held write_util-granting permissions wins (grants are
@@ -223,7 +225,6 @@ def load_policy(permissions_home: Path, active: list[str] | None,
     gated_utils: dict[str, list[str]] = {}
     kind_sources: dict[str, list[str]] = {}
     runs_sources: list[str] = []
-    self_modify_sources: list[str] = []
     for slug, g in lib.items():
         for kind in g.get("actions") or []:
             if kind in GATED_KINDS:
@@ -232,13 +233,10 @@ def load_policy(permissions_home: Path, active: list[str] | None,
             gated_utils.setdefault(util, []).append(slug)
         if g.get("runs"):
             runs_sources.append(slug)
-        if g.get("self_modify"):
-            self_modify_sources.append(slug)
     actions: set[str] = set()
     utils: set[str] = set()
     confirm = "always"
     run_history = "none"
-    self_modify = False
     for slug in active or []:
         g = lib.get(slug) or {}
         actions.update(g.get("actions") or [])
@@ -249,13 +247,11 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                 confirm = level
         if _RUNS_RANK.get(g.get("runs") or "none", 0) > _RUNS_RANK[run_history]:
             run_history = g["runs"]
-        self_modify = self_modify or bool(g.get("self_modify"))
     return GrantPolicy(active=tuple(active or []), actions=frozenset(actions),
                        utils=frozenset(utils),
                        gated_utils={k: tuple(v) for k, v in gated_utils.items()},
                        kind_sources={k: tuple(v) for k, v in kind_sources.items()},
-                       confirm=confirm, run_history=run_history, self_modify=self_modify,
+                       confirm=confirm, run_history=run_history,
+                       recipe_unlocked=recipe_unlocked,
                        runs_sources=tuple(runs_sources) or _DEFAULT_RUNS_SOURCE,
-                       self_modify_sources=(tuple(self_modify_sources)
-                                            or _DEFAULT_SELF_MODIFY_SOURCE),
                        current_run_ts=current_run_ts)

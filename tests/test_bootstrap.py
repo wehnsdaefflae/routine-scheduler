@@ -119,8 +119,7 @@ def test_migrate_splits_the_library(tmp_path):
     assert (lib / "permissions" / "communication.md").exists()
     zulip = (lib / "permissions" / "zulip-channel.md").read_text(encoding="utf-8")
     assert "# permission: zulip-channel" in zulip
-    # new-world seeds arrive alongside (run-history, self-modification, shell, …)
-    assert (lib / "permissions" / "self-modification.md").exists()
+    # new-world seeds arrive alongside (run-history, shell, …)
     assert (lib / "permissions" / "run-history.md").exists()
     # idempotent: a second call finds no fragments/ dir and changes nothing
     migrate_fragments_split(tmp_path / "routines", lib)
@@ -139,8 +138,8 @@ def test_migrate_converts_a_routine(make_routine, tmp_path):
     assert migrate_fragments_split(tmp_path / "routines", lib) == 1
     raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
     assert "fragments" not in raw
-    # permission slugs kept, self-modification added (the behavior routines always had)
-    assert raw["permissions"] == ["util-authoring", "communication", "self-modification"]
+    # permission slugs kept (self-modification is retired — never granted anymore)
+    assert raw["permissions"] == ["util-authoring", "communication"]
     assert not (d / "fragments").exists()
     trait = (d / "traits" / "ask-policy.md").read_text(encoding="utf-8")
     assert "# trait: ask policy" in trait
@@ -313,27 +312,31 @@ def test_migrate_strips_improve_includes_from_library_workflows(tmp_path):
     assert "the improve-ui lens used to live here" in text     # prose untouched
 
 
-def test_revoke_self_modification_once_keeps_improver(tmp_path):
-    """self-modification leaves every existing routine/conversation ONCE — except the
-    routine-improver, the centralized holder; a later user re-grant sticks."""
-    from rsched.bootstrap import revoke_self_modification
+def test_retire_self_modification_everywhere(tmp_path):
+    """The permission no longer exists: the library doc is deleted and the slug leaves
+    every routine/conversation yaml — the improver included (its unlock is fs_write_roots).
+    Idempotent: safe to run every boot."""
+    from rsched.bootstrap import retire_self_modification
 
     routines = tmp_path / "routines"
     convs = tmp_path / "conversations"
+    perms_home = tmp_path / "library" / "permissions"
+    perms_home.mkdir(parents=True)
+    (perms_home / "self-modification.md").write_text("# permission: self-modification — x")
+    (perms_home / "memory.md").write_text("# permission: memory — x")
     for home, slug in ((routines, "worker"), (routines, "routine-improver"), (convs, "c-1")):
         d = home / slug
         d.mkdir(parents=True)
         (d / "routine.yaml").write_text(yaml.safe_dump(
             {"slug": slug, "permissions": ["util-authoring", "memory", "self-modification"]}))
-    assert revoke_self_modification(routines, convs) == 2
-    for home, slug, expect in ((routines, "worker", False), (convs, "c-1", False),
-                               (routines, "routine-improver", True)):
+    (routines / ".self-modification-revoked").write_text("done\n")   # pre-retirement marker
+
+    assert retire_self_modification(routines, convs, perms_home) == 3
+    assert not (perms_home / "self-modification.md").exists()
+    assert (perms_home / "memory.md").exists()
+    assert not (routines / ".self-modification-revoked").exists()
+    for home, slug in ((routines, "worker"), (routines, "routine-improver"), (convs, "c-1")):
         perms = yaml.safe_load((home / slug / "routine.yaml").read_text())["permissions"]
-        assert ("self-modification" in perms) is expect, (slug, perms)
-    # user re-grants → the one-time migration never takes it away again
-    raw = yaml.safe_load((routines / "worker" / "routine.yaml").read_text())
-    raw["permissions"].append("self-modification")
-    (routines / "worker" / "routine.yaml").write_text(yaml.safe_dump(raw))
-    assert revoke_self_modification(routines, convs) == 0
-    assert "self-modification" in yaml.safe_load(
-        (routines / "worker" / "routine.yaml").read_text())["permissions"]
+        assert "self-modification" not in perms, (slug, perms)
+        assert "memory" in perms
+    assert retire_self_modification(routines, convs, perms_home) == 0   # idempotent

@@ -50,7 +50,7 @@ out only after your explicit go.
 |---|---|---|
 | workflow | `general-task` | scan → score → draft → gate is ordinary tool work |
 | traits | ask-policy, global-utils, web-research, ledger-discipline | the routine-improver meta routine handles improvement passes for every routine |
-| permissions | **util-authoring-autonomous**, memory, self-modification, **communication** | scrapers break at 6 a.m. — autonomous *revisions* fix them without waking you (new utils still ask); communication mirrors the send-gate to Discord |
+| permissions | **util-authoring-autonomous**, memory, **communication** | scrapers break at 6 a.m. — autonomous *revisions* fix them without waking you (new utils still ask); communication mirrors the send-gate to Discord |
 | budgets | 60 turns · 45 min · defaults; **ask_timeout_min 240** | a send-gate that waits longer than half a day is stale anyway |
 | schedule | weekdays 06:30 | the shortlist is ready with your coffee |
 
@@ -103,7 +103,7 @@ submitted only after your sign-off.
 |---|---|---|
 | workflow | `general-task` (or generate a pipeline pattern once the library has traffic) | |
 | traits | ask-policy, global-utils, web-research, ledger-discipline | source tuning and pipeline growth come from the routine-improver's research/features lenses |
-| permissions | util-authoring, memory, self-modification, **run-history-full**, communication | **full run history** is the point: "did we already see this program in March?", "what did the run that submitted X actually do?" — longitudinal questions the LEDGER alone can't answer |
+| permissions | util-authoring, memory, **run-history-full**, communication | **full run history** is the point: "did we already see this program in March?", "what did the run that submitted X actually do?" — longitudinal questions the LEDGER alone can't answer |
 | budgets | **80 turns · 60 min** · ask_timeout_min 480 | a weekly run may verify dozens of pages; give it room |
 | schedule | Mondays 07:00 | deadlines are usually weekday-anchored |
 
@@ -154,7 +154,7 @@ grant-funded open-source project: deliverables register, worklog, public repo hy
 |---|---|---|
 | workflow | `general-task` | orient → decide one thing → execute → record |
 | traits | ask-policy, global-utils, ledger-discipline, web-research | engineering improvement arrives via the routine-improver's lenses |
-| permissions | **shell**, util-authoring, memory, self-modification, run-history | **this is the routine the shell permission exists for**: `gu shell "cd ~/projects/llmsectest && uv run pytest -q"` — builds, test suites, linters. Repeatable operations still get promoted to utils (`pytest-run`, `git-sync` already exist) |
+| permissions | **shell**, util-authoring, memory, run-history | **this is the routine the shell permission exists for**: `gu shell "cd ~/projects/llmsectest && uv run pytest -q"` — builds, test suites, linters. Repeatable operations still get promoted to utils (`pytest-run`, `git-sync` already exist) |
 | fs roots | read+write: `~/projects/llmsectest` | the project lives outside the routine dir |
 | budgets | 80 turns · **90 min** · ask_timeout_min 480 | test suites take wall-clock time |
 | schedule | weekdays 07:00 | |

@@ -175,8 +175,8 @@ def migrate_fragments_split(routines_home: Path, library_home: Path) -> int:
     """One-time migration of a pre-split instance. Library: fragments/ is divided into
     traits/ + permissions/ — known seed slugs are replaced by the current repo seeds (the
     split rewrote them), unknown user fragments move mechanically by grants-presence.
-    Routines: routine.yaml `fragments:` becomes `permissions:` (permission slugs kept,
-    self-modification added — the behavior routines always had), local prose copies move to
+    Routines: routine.yaml `fragments:` becomes `permissions:` (permission slugs kept;
+    the retired self-modification slug is never granted), local prose copies move to
     traits/, and main.md gains the Standing practices tail referencing them. Naturally
     idempotent: it triggers on the presence of the old layout. Returns touched routines."""
     root = repo_root()
@@ -230,7 +230,6 @@ def migrate_fragments_split(routines_home: Path, library_home: Path) -> int:
             perms = list(DEFAULT_PERMISSIONS)
         else:
             perms = [f for f in fragments if f in _LEGACY_PERMISSION_SLUGS]
-            perms.append("self-modification")
         raw["permissions"] = list(dict.fromkeys(perms))
         (rdir / "routine.yaml").write_text(
             yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
@@ -481,27 +480,33 @@ def migrate_improvement_split(routines_home: Path, library_home: Path) -> int:
     return touched
 
 
-# The 2026-07 centralization: self-modification stopped being a default permission —
-# recipe improvement lives in the routine-improver meta routine, the only default holder.
-_SELF_MOD_MARKER = ".self-modification-revoked"
-
-
-def revoke_self_modification(routines_home: Path, conversations_home: Path) -> int:
-    """One-time revoke of `self-modification` from every existing routine and conversation
-    EXCEPT routine-improver (it improves itself under the same gate everyone else lost).
-    Marker-tracked: a grant the user makes afterwards is theirs to keep."""
+# The 2026-07 centralization, completed: the self-modification PERMISSION no longer
+# exists. The engine rule is fixed — a run never edits its own recipe or routine.yaml;
+# the single unlock is a user-granted fs_write_root covering the routine dir (the
+# routine-improver's case). This retirement runs every boot and is naturally idempotent:
+# nothing can legitimately hold the slug anymore.
+def retire_self_modification(routines_home: Path, conversations_home: Path,
+                             permissions_home: Path) -> int:
+    """Delete the self-modification permission doc from the live library and strip the
+    slug from every routine/conversation yaml (routine-improver included — its unlock is
+    its fs_write_roots now). Returns how many yamls were touched."""
+    doc = permissions_home / "self-modification.md"
+    if doc.exists():
+        doc.unlink()
+        _git(permissions_home.parent, "add", "-A")
+        _git(permissions_home.parent, "commit", "-qm",
+             "retire the self-modification permission (fixed engine rule + fs_write_roots)")
+        log.warning("self-modification permission retired from the library")
     if not routines_home.is_dir():
         return 0
-    marker = routines_home / _SELF_MOD_MARKER
-    if marker.exists():
-        return 0
+    (routines_home / ".self-modification-revoked").unlink(missing_ok=True)  # pre-retirement marker
     touched = 0
     for home in (routines_home, conversations_home):
         if not home or not Path(home).is_dir():
             continue
         for rdir in sorted(Path(home).iterdir()):
             cfg = rdir / "routine.yaml"
-            if rdir.name.startswith(".") or rdir.name == "routine-improver" or not cfg.is_file():
+            if rdir.name.startswith(".") or not cfg.is_file():
                 continue
             try:
                 raw = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
@@ -514,13 +519,10 @@ def revoke_self_modification(routines_home: Path, conversations_home: Path) -> i
             cfg.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True),
                            encoding="utf-8")
             _git(rdir, "add", "-A")
-            _git(rdir, "commit", "-qm",
-                 "revoke self-modification (recipe improvement is the routine-improver's job)")
+            _git(rdir, "commit", "-qm", "retire self-modification (now a fixed engine rule)")
             touched += 1
-    marker.write_text("done\n", encoding="utf-8")
     if touched:
-        log.warning("self-modification revoked from %d routine(s)/conversation(s) — "
-                    "the routine-improver is the default holder now", touched)
+        log.warning("self-modification stripped from %d routine(s)/conversation(s)", touched)
     return touched
 
 

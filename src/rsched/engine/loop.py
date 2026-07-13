@@ -71,13 +71,19 @@ class EngineLoop:
         self.consumed_dir = ctx.root_run_dir / "consumed"
         self.final_summary = ""
         self.executed_actions = 0  # actions that produced an observation this run
-        # Gated capabilities (write_util, reserved utils, runs/ access, self-modification)
-        # come from the routine's PERMISSIONS, whose grants are read from the LIBRARY copies
-        # only — a routine cannot self-grant by editing anything it owns. Enforced per turn
-        # by validate_action.
+        # Gated capabilities (write_util, reserved utils, runs/ access) come from the
+        # routine's PERMISSIONS, whose grants are read from the LIBRARY copies only — a
+        # routine cannot self-grant by editing anything it owns (its own routine.yaml is
+        # write-protected like the recipe). Own recipe/config writes unlock ONLY when a
+        # user-granted fs_write_root covers the routine dir — the routine-improver's case.
+        # Enforced per turn by validate_action.
+        from ..paths import within
+        unlocked = any(within(root, ctx.routine.dir)
+                       for root in ctx.routine.fs_write_roots or [])
         self.grants = ctx.grants = load_policy(ctx.server.permissions_home,
                                                ctx.routine.permissions,
-                                               current_run_ts=ctx.run_ts)
+                                               current_run_ts=ctx.run_ts,
+                                               recipe_unlocked=unlocked)
         self.util_reminder = self._build_util_reminder()
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
         # Repeat-streak escape hatch: identical-but-valid actions in a row are the second

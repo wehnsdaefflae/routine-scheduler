@@ -168,7 +168,7 @@ def cmd_daemon(_args) -> int:
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     from .bootstrap import (adopt_permissions, adopt_unlimited_tokens, ensure_config,
                             migrate_fragments_split, migrate_improvement_split,
-                            revoke_self_modification, seed_routines,
+                            retire_self_modification, seed_routines,
                             sync_seed_library_docs, sync_seed_utils)
     ensure_config()                       # fresh deploy: generate config+token so the API isn't open
     server, problems = load_server_config()
@@ -177,7 +177,8 @@ def cmd_daemon(_args) -> int:
     migrate_improvement_split(server.routines_home, server.libraries_home)  # pre-improver instances
     adopt_permissions(server.routines_home, server.permissions_home)  # new defaults → existing routines
     adopt_unlimited_tokens(server.routines_home, server.conversations_home)  # tokens: -1 everywhere (once)
-    revoke_self_modification(server.routines_home, server.conversations_home)  # improver-only now (once)
+    retire_self_modification(server.routines_home, server.conversations_home,
+                             server.permissions_home)  # the permission no longer exists
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since this instance bootstrapped
     sync_seed_library_docs(server.libraries_home)  # workflows/traits/permissions added since, too
     for pr in problems:

@@ -113,7 +113,6 @@ export function chip(text, cls = "") {
 export function grantsSummary(g) {
   const caps = [...(g?.actions || []), ...(g?.utils || []).map((u) => `util: ${u}`)];
   if (g?.runs) caps.push(g.runs === "last" ? "read the previous run" : "read all previous runs");
-  if (g?.self_modify) caps.push("rewrite own recipe (main.md / steps/ / traits/)");
   if (!caps.length) return "";
   const confirm = (g.actions || []).includes("write_util")
     ? { always: " (every util change needs your approval)",

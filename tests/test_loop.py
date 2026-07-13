@@ -936,17 +936,15 @@ def test_schema_forcefail_telemetry(make_routine, scripted):
     assert st["schema_forcefails"] == 1
 
 
-def test_recipe_writes_ride_the_self_modification_permission(make_routine, scripted):
-    """write_file into main.md/steps/traits is rejected without the self-modification
-    permission (inside the schema-retry cycle), and passes once the routine holds it."""
+def test_own_recipe_writes_blocked_unless_write_root_covers_dir(make_routine, scripted):
+    """write_file into own main.md/steps/traits/routine.yaml is rejected for every routine
+    (inside the schema-retry cycle) — no permission unlocks it. A user-granted
+    fs_write_root covering the routine dir (the routine-improver's case) does."""
     import yaml as _yaml
 
     from rsched.engine.transcript import read_events as _read
 
     d = make_routine(slug="frozen")
-    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
-    cfg["permissions"] = []                         # nothing granted
-    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
     scripted([
         write_file("steps/collect.md", content="rewritten"),   # denied
         probe(),
@@ -956,22 +954,20 @@ def test_recipe_writes_ride_the_self_modification_permission(make_routine, scrip
     events, _ = _read(run_dir / "transcript.jsonl")
     assert status == "ok"
     errs = [e for e in events if e["type"] == "error"]
-    assert len(errs) == 1 and "self-modification" in errs[0]["payload"]["message"]
+    assert len(errs) == 1 and "routine-improver" in errs[0]["payload"]["message"]
     assert not (d / "steps" / "collect.md").exists()
 
     d2 = make_routine(slug="unfrozen")
     cfg2 = _yaml.safe_load((d2 / "routine.yaml").read_text())
-    cfg2["permissions"] = ["self-modification"]
+    cfg2["fs_write_roots"] = [str(d2.parent)]      # user-granted root covers the own dir
     (d2 / "routine.yaml").write_text(_yaml.safe_dump(cfg2))
-    server2 = _server(d2)
-    server2.permissions_home.mkdir(parents=True, exist_ok=True)
-    (server2.permissions_home / "self-modification.md").write_text(
-        "---\ntags: [a, b, c]\ngrants:\n  self_modify: true\n---\n"
-        "# permission: self-modification — refine own recipe\nbody\n")
-    scripted([write_file("steps/collect.md", content="rewritten"), finish()])
-    status2, _ = run_routine(d2, server2, run_ts=TS)
+    scripted([
+        write_file("steps/collect.md", content="rewritten"),
+        finish(),
+    ])
+    status2, run_dir2 = run_routine(d2, _server(d2), run_ts=TS)
     assert status2 == "ok"
-    assert (d2 / "steps" / "collect.md").read_text() == "rewritten"
+    assert (d2 / "steps" / "collect.md").read_text().strip() == "rewritten"
 
 
 def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):

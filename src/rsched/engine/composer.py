@@ -87,11 +87,13 @@ Ownership of prose: instruction.md holds ONLY the task — goal, deliverable, co
 completion criteria. Cross-cutting conduct (when to ask the user, after-run improvement \
 passes, util and research discipline) lives in this routine's PRACTICE MODULES under \
 traits/ — your own adapted copies, referenced at the end of the workflow below; read the \
-relevant one before the situation it governs and refine them as you learn. What you are \
-ALLOWED to do (util authoring, reserved channels, memory, self-modification, previous \
-runs) is a separate matter: PERMISSIONS, set only by the user and enforced by the engine \
-on every action — see CAPABILITIES below; never restate permission-dependent conduct \
-inside instruction.md.
+relevant one before the situation it governs. Your own recipe and config (main.md, steps/, \
+traits/, instruction.md, routine.yaml) are READ-ONLY to you: the routine-improver meta \
+routine refines recipes, the user owns config — file a deferred ask_user for changes you \
+believe are needed. What you are ALLOWED to do (util authoring, reserved channels, memory, \
+previous runs) is a separate matter: PERMISSIONS, set only by the user and enforced by the \
+engine on every action — see CAPABILITIES below; never restate permission-dependent \
+conduct inside instruction.md.
 
 Budgets for this run: {b.max_turns} turns, {b.max_wall_clock_min} minutes, \
 {b.max_total_tokens if b.max_total_tokens >= 0 else "unlimited"} total tokens, at most \
@@ -210,8 +212,6 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             grant_bits.append("read previous runs under runs/ "
                               + ("(the last run only)" if g.run_history == "last"
                                  else "(all of them)"))
-        if g.self_modify:
-            grant_bits.append("rewrite own recipe files (main.md, steps/, traits/)")
         parts.append("Permissions held (user-set, engine-enforced): "
                      + (", ".join(g.active) if g.active else "(none)")
                      + (" — unlocking: " + "; ".join(grant_bits) if grant_bits
