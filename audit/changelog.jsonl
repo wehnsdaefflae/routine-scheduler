@@ -16,3 +16,9 @@
   "summary": "Versioning hygiene (user work order). Bumped __version__ 0.15.0 -> 0.16.0 for the changes shipped since 0.15.0 (Mark's max_cost/wall-clock commit 4bf63bd5bd + this run's 56d620dbe3 and c6ca03ffa8) that had landed without a version bump. Added a comprehensive root CHANGELOG.md (Keep a Changelog + SemVer): detailed sections for 0.16.0 and the tagged releases 0.15.0/0.14.1/0.14.0/0.13.1, plus a thematic reconstruction of pre-0.13.1 development from git history. The version comment already mandated 'bump the minor on every user-facing revision' — the gate that was being skipped. pytest 480 passed / 3 skipped (status test reads __version__ dynamically); rsched-lint green.",
   "run_id": "self-audit:20260714-194518"
 }
+{
+  "ts": "2026-07-14T20:52:00+00:00",
+  "commit": "(this bookkeeping commit)",
+  "summary": "Follow-up user order 'remove the orphans and implement the rest'. Implemented both filed recipe recommendations in ~/routines (outside the scheduler repo): q-152 — routine-improver/steps/study-target.md now reads each target's audit/report.json findings + settled/answered decisions (decisions-answered.json, inbox/answer-*.json) + open deferred questions, and scans the full LEDGER for recipe-change work orders (committed in the routine-improver git repo); q-144 — self-audit/steps/act-apply-fixes.md now requires a __version__ bump + CHANGELOG.md entry + (x.y.z) subject tag on every user-facing scheduler commit (auto-committed by the engine with self-audit's dir). Removed 2 orphaned decision artifacts (self-audit/inbox/answer-q-20260711-082732-35.json; runs/.../sub/2/questions/pending/q-...-31.json). This scheduler commit is audit/ bookkeeping only (report.json gains findings F45+F46, changelog.jsonl this line) — no code or version change.",
+  "run_id": "self-audit:20260714-194518"
+}

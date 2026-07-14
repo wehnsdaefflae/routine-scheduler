@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "run_id": "self-audit:20260714-194518",
-  "generated": "2026-07-14T20:40:00+00:00",
+  "generated": "2026-07-14T20:52:00+00:00",
   "since": {
     "commit": "56d620dbe3",
     "window": "Follow-up work order on the same run: fix F39 + D8. Committed c6ca03ffa8 on top of this run's earlier 56d620dbe3; pytest 480 passed / 3 skipped (+3 tests, 1 updated); rsched-lint green; journal still unavailable."
   },
-  "summary": "User-driven run + follow-up: 8 [AUDIT notes]. SIX fixed in commit 56d620dbe3 (F42 turns -1=unlimited, F43 live-diagram phase-key tolerance, F36 change conversation settings during a reply, F37 note-field reset, F41 conversation stop button, F38 multiline answers). Then a follow-up order fixed the last two in commit c6ca03ffa8: F39 (answering a decision on a FINISHED conversation now resumes it so the answer is consumed) and D8 (gated capabilities are now BOUND to held permissions — a capability exists only as the means of a held permission; confirm level + run depth stay user policy). All decisions settled; nothing open. Restart requested (code committed twice this run).",
+  "summary": "User-driven run + follow-up: 8 [AUDIT notes]. SIX fixed in commit 56d620dbe3 (F42 turns -1=unlimited, F43 live-diagram phase-key tolerance, F36 change conversation settings during a reply, F37 note-field reset, F41 conversation stop button, F38 multiline answers). Then a follow-up order fixed the last two in commit c6ca03ffa8: F39 (answering a decision on a FINISHED conversation now resumes it so the answer is consumed) and D8 (gated capabilities are now BOUND to held permissions — a capability exists only as the means of a held permission; confirm level + run depth stay user policy). All decisions settled; nothing open. Restart requested (code committed twice this run). FOLLOW-UP (user order 'remove the orphans and implement the rest'): applied both filed recipe recommendations — q-152 (routine-improver/steps/study-target.md now reads each target's audit report + settled/answered decisions + open deferred questions and scans the full LEDGER for recipe-change work orders, committed in that repo) and q-144 (self-audit/steps/act-apply-fixes.md now requires a __version__ bump + CHANGELOG.md entry + (x.y.z) subject tag on every user-facing scheduler commit); removed 2 orphaned decision artifacts; recorded 2 new engine findings F45+F46.",
   "findings": [
     {
       "id": "F42",
@@ -96,6 +96,27 @@
         "src/rsched/__init__.py __version__ + its 'bump the minor' comment",
         "git log: version tags in subjects only from 0.13.1 onward; 3 unbumped commits since 0.15.0",
         "commit ebdda2363497; CHANGELOG.md added; pytest 480 passed / 3 skipped"
+      ]
+    },
+    {
+      "id": "F45",
+      "severity": "systemic",
+      "title": "Orphaned inbox answers accumulate forever — no engine cleanup",
+      "detail": "Found while answering a user question about stale decisions: engine.inbox.collect_deferred_answers deliberately LEAVES an answer file whose qid has no matching questions/pending record ('belongs to someone else'), so a stray answer-<qid>.json can sit in a routine's inbox indefinitely. Concrete case: self-audit/inbox/answer-q-20260711-082732-35.json ('Both A and B', 07-11) had no matching pending question and survived 3+ runs; removed by hand this follow-up. Fix candidate (next run, with tests): when an answer has no pending match AND no live blocking question expecting it, move it to consumed/ (or a dead-letter) after a grace period instead of leaving it forever.",
+      "evidence": [
+        "src/rsched/engine/inbox.py collect_deferred_answers (unmatched answer left in place)",
+        "removed self-audit/inbox/answer-q-20260711-082732-35.json by hand this follow-up"
+      ]
+    },
+    {
+      "id": "F46",
+      "severity": "problem",
+      "title": "Sub-run-filed deferred questions are never surfaced or drained",
+      "detail": "A deferred ask_user filed by a SUB-workflow writes to runs/<ts>/sub/<n>/questions/pending/<qid>.json inside a finished run's subrun tree. api_questions._all_questions scans only a routine's top-level questions/pending plus live status.json, and a finished subrun has no 'next run' to drain it — so the question is invisible and permanent. Concrete case: self-audit/runs/20260713-061959/sub/2/questions/pending/q-...-31.json (grant self-audit the shell permission) sat unseen; removed by hand this follow-up (self-audit now holds shell, so it was moot). Fix candidate (next run, with tests): surface subrun-filed pending questions on the Decisions page, or re-file a child's unresolved deferred questions to the parent routine's pending dir at subrun exit.",
+      "evidence": [
+        "src/rsched/web/api_questions.py _all_questions (scans only top-level questions/pending)",
+        "found self-audit/runs/20260713-061959/sub/2/questions/pending/q-20260713-061959-31.json — never surfaced",
+        "removed by hand this follow-up"
       ]
     },
     {
