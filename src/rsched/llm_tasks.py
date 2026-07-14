@@ -48,6 +48,13 @@ class TaskCenter:
         pr["closed_at"] = time.monotonic()
         if error:
             pr["error"] = error
+        # A closed process's calls can't still be running — the run/subprocess ended, possibly
+        # killed mid-call (an abort leaves a `started` sidecar record with no `finished`). Orphan
+        # any in-flight child so it, and then this process, can prune instead of leaking forever.
+        for t in self.tasks.values():
+            if t.get("process_id") == id and t.get("status") == "running":
+                t.update(status="error", error=t.get("error") or "ended before completion",
+                         done_at=time.monotonic())
         self._prune()
         self.bus.publish({"event": "llm_process", "phase": "closed", "id": id, "error": error})
 
@@ -84,13 +91,14 @@ class TaskCenter:
     # --- housekeeping --------------------------------------------------------
     def _prune(self) -> None:
         now = time.monotonic()
-        # drop terminal tasks past the linger
+        # drop terminal tasks past the linger (done_at may legitimately be 0.0 → test `is not None`)
         for tid in [t for t, e in self.tasks.items()
-                    if e.get("done_at") and now - e["done_at"] > LINGER_S]:
+                    if e.get("done_at") is not None and now - e["done_at"] > LINGER_S]:
             del self.tasks[tid]
         # bound memory: over the cap, evict oldest terminal tasks first
         if len(self.tasks) > MAX_TASKS:
-            terminal = sorted((e["done_at"], t) for t, e in self.tasks.items() if e.get("done_at"))
+            terminal = sorted((e["done_at"], t) for t, e in self.tasks.items()
+                              if e.get("done_at") is not None)
             for _, tid in terminal[: len(self.tasks) - MAX_TASKS]:
                 self.tasks.pop(tid, None)
         # remove a closed process once its children are all terminal and the linger elapsed

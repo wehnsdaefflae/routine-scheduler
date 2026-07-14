@@ -80,6 +80,22 @@ def test_closed_process_removed_once_children_terminal(monkeypatch):
     assert not any(p["id"] == "p1" for p in tc.snapshot()["processes"])
 
 
+def test_close_process_orphans_in_flight_children(monkeypatch):
+    # a run/subprocess killed mid-call leaves a `started` record with no `finished`; closing
+    # its process must orphan that child so it (and the process) prune instead of leaking.
+    clock = [1000.0]
+    monkeypatch.setattr(m.time, "monotonic", lambda: clock[0])
+    tc = TaskCenter(FakeBus())
+    tc.open_process("p1", kind="run", label="r")
+    tc.ingest(_rec("t1", "started", process_id="p1"))   # still in flight
+    tc.close_process("p1")                               # e.g. aborted mid-call
+    orphan = next(iter(tc.tasks.values()))
+    assert orphan["status"] == "error" and orphan["error"]
+    clock[0] += m.LINGER_S + 1
+    snap = tc.snapshot()
+    assert snap["tasks"] == [] and snap["processes"] == []   # both pruned, no leak
+
+
 def test_task_cap_evicts_oldest_terminal(monkeypatch):
     clock = [0.0]
     monkeypatch.setattr(m.time, "monotonic", lambda: clock[0])

@@ -41,6 +41,8 @@ export function initTaskManager() {
     } else if (ev.phase === "closed") {
       const p = processes.get(ev.id);
       if (p) { p.closed = true; if (ev.error) p.error = ev.error; }
+      // the process ended — any child still shown running was orphaned (killed mid-call)
+      for (const t of tasks.values()) if (t.process_id === ev.id && t.status === "running") t.status = "error";
     }
   }
   function onBus(e) {
