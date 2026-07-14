@@ -249,9 +249,9 @@ first boot; `deploy/install.sh` for host installs.
   Any future permission-ish lever becomes a capability + a `requires:` entry, not a new yaml key.
   See docs/traits-permissions.md. `DEFAULT_PERMISSIONS`/`DEFAULT_CAPABILITIES` (config) are the
   source of truth; defaults added after routines exist reach them once via
-  `bootstrap.adopt_permissions` at daemon boot; `bootstrap.migrate_fragments_split` converts
-  pre-split instances and `bootstrap.migrate_capability_split` expands pre-capability ones
-  (grants: docs + doc-only permissions lists) at boot.
+  `bootstrap.adopt_permissions` at daemon boot. Historical data migrations are NOT kept:
+  each runs once on the production instance and is deleted after convergence — a pre-0.8
+  backup converts by booting the matching older tag first.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`,
   `calls:`, `tags:`, `secrets: NAME,…` — the docstring is the ONLY machine-read surface; comment-form
   declarations above it are invisible), and a `--selftest` the engine runs before saving. `write_util`
