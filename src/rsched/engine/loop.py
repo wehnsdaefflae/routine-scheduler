@@ -343,7 +343,12 @@ class EngineLoop:
             completion = endpoint.complete(self.messages, model=ref.model,
                                            schema=schema, effort=ref.effort,
                                            max_tokens=16_384,
-                                           session=str(ctx.run_dir))
+                                           session=str(ctx.run_dir),
+                                           # bookkeeping only — the wrapper consumes these; they
+                                           # never reach the transport, so the prompt is untouched
+                                           purpose=f"turn {ctx.turn + 1}"
+                                                   + ("" if attempt == 1 else f" · retry {attempt}"),
+                                           kind="turn")
             usage_sum["in"] += completion.usage["in"]
             usage_sum["out"] += completion.usage["out"]
             for cache_key in ("cached_in", "cache_write"):

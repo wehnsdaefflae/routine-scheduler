@@ -12,9 +12,11 @@ from ..config import EndpointConfig, ModelRef, ServerConfig
 from .anthropic_api import AnthropicEndpoint
 from .base import ChatEndpoint, Completion, EndpointError
 from .claude_cli import ClaudeCliEndpoint
+from .instrument import InstrumentedEndpoint
 from .openai_compat import OpenAICompatEndpoint
 
-__all__ = ["ChatEndpoint", "Completion", "EndpointError", "EndpointRegistry", "make_endpoint"]
+__all__ = ["ChatEndpoint", "Completion", "EndpointError", "EndpointRegistry",
+           "InstrumentedEndpoint", "make_endpoint"]
 
 _KINDS = {
     "openai": OpenAICompatEndpoint,
@@ -40,12 +42,15 @@ class EndpointRegistry:
         self._cache: dict[str, ChatEndpoint] = {}
 
     def get(self, name: str) -> ChatEndpoint:
+        """Resolve a configured endpoint. The raw adapter is cached, but every caller gets a
+        fresh InstrumentedEndpoint wrapper — the single seam through which all LLM calls are
+        observed (nothing reaches a transport except via a wrapped endpoint)."""
         if name not in self._cache:
             cfg = self.server.endpoints.get(name)
             if cfg is None:
                 raise EndpointError(f"endpoint {name!r} is not configured")
             self._cache[name] = make_endpoint(cfg)
-        return self._cache[name]
+        return InstrumentedEndpoint(self._cache[name])
 
     def for_model(self, kind: str, models: dict[str, ModelRef]) -> tuple[ChatEndpoint, ModelRef]:
         """Resolve one of a routine's models (main/subroutine/tool_call). A model the routine

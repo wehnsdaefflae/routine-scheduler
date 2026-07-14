@@ -17,6 +17,8 @@ from ..config import ServerConfig, load_server_config
 from ..daemon.events import EventBus
 from ..daemon.runner import Runner
 from ..daemon.scheduler import Scheduler
+from ..endpoints.instrument import set_sink
+from ..llm_tasks import DaemonSink, TaskCenter
 
 log = logging.getLogger("rsched.web")
 
@@ -78,7 +80,11 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         from . import push as push_mod
 
         push_task = asyncio.create_task(push_mod.bus_listener(server, bus))
+        # The LLM task manager sink: every instrumented complete() (run in threadpool/to_thread
+        # workers) marshals its lifecycle records onto THIS loop, where the task center + bus live.
+        set_sink(DaemonSink(task_center, asyncio.get_running_loop()))
         yield
+        set_sink(None)
         docs_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await docs_task
@@ -92,16 +98,18 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
 
     app = FastAPI(title="routine-scheduler", lifespan=lifespan)
     bus = EventBus()
-    runner = Runner(server, bus)
+    task_center = TaskCenter(bus)
+    runner = Runner(server, bus, task_center)   # runs are processes; their turns/llm-calls are children
     scheduler = Scheduler(server, runner, bus)
     app.state.server = server
     app.state.bus = bus
     app.state.runner = runner
     app.state.scheduler = scheduler
+    app.state.llm_tasks = task_center
 
-    from . import (api_audit, api_conversations, api_push, api_questions, api_routines,
-                   api_runs, api_schedule, api_stats, api_traces, api_wizard, api_workflows,
-                   settings)
+    from . import (api_audit, api_conversations, api_llm_tasks, api_push, api_questions,
+                   api_routines, api_runs, api_schedule, api_stats, api_traces, api_wizard,
+                   api_workflows, settings)
 
     deps = [Depends(require_auth)]
     app.include_router(api_push.router, prefix="/api", dependencies=deps)
@@ -116,6 +124,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.include_router(settings.router, prefix="/api", dependencies=deps)
     app.include_router(api_workflows.router, prefix="/api", dependencies=deps)
     app.include_router(api_wizard.router, prefix="/api", dependencies=deps)
+    app.include_router(api_llm_tasks.router, prefix="/api", dependencies=deps)
 
     def _setup_marker():
         return (server.source.parent / ".setup-complete") if server.source else None

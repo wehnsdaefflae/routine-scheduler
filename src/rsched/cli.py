@@ -122,11 +122,16 @@ def cmd_run_once(args) -> int:
 
 def cmd_engine_run(args) -> int:
     """Internal: spawned by the daemon. Same as run-once but quiet, with a fixed run_ts."""
+    from .endpoints.instrument import FileSink, set_sink
     from .engine.control import request_abort
     from .engine.runtime import run_routine
 
     server, _ = load_server_config()
     routine_dir = _routine_dir(server, args.routine)
+    # LLM task manager: this subprocess can't reach the daemon bus, so every instrumented
+    # complete() appends a lifecycle record to a sidecar the daemon tails and republishes.
+    if args.run_ts:
+        set_sink(FileSink(routine_dir / "runs" / args.run_ts / "llm-tasks.jsonl"))
     signal.signal(signal.SIGTERM, lambda *a: request_abort())
     try:
         status, _ = run_routine(routine_dir, server, run_ts=args.run_ts,

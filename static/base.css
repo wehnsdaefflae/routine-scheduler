@@ -371,3 +371,75 @@ input[type=time], input[type=number] { width: auto; }
   h1 { font-size: 18px; }
   .filterbar select, .filterbar input[type="search"] { flex: 1 1 140px; }
 }
+
+/* ---------- LLM task manager (global overlay) ---------- */
+/* Always-accessible, hideable dock mirroring in-flight LLM work; mounted globally so it
+   survives navigation. Sits above banners/side-panel, below toast (100) and the gate (200). */
+#llm-tasks {
+  position: fixed; right: 18px; bottom: 18px; z-index: 60;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  font-family: var(--mono); pointer-events: none;
+}
+#llm-tasks > * { pointer-events: auto; }
+/* a class/id `display` beats the UA [hidden] rule — restore hiding explicitly */
+#llm-tasks[hidden], .lt-pill[hidden], .lt-panel[hidden] { display: none; }
+
+.lt-pill {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  background: var(--raised); color: var(--muted); border: 1px solid var(--line-2);
+  border-radius: 20px; padding: 6px 12px; font-size: 12px; font-family: var(--mono);
+  box-shadow: var(--shadow);
+}
+.lt-pill:hover { color: var(--text); border-color: var(--faint); }
+.lt-pill.on { border-color: var(--amber-dim); color: var(--amber-2); }
+.lt-pill.active { color: var(--live); border-color: rgba(69, 224, 176, 0.4); }
+.lt-pill.active .lt-bolt { animation: pulse 1.4s infinite; }
+.lt-pill-n { font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+
+.lt-panel {
+  width: min(360px, calc(100vw - 36px)); max-height: min(60vh, 520px); overflow-y: auto;
+  background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 10px;
+  box-shadow: var(--shadow); font-size: 12px;
+}
+.lt-head {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px; position: sticky; top: 0;
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
+}
+.lt-title { color: var(--amber); font-weight: 600; letter-spacing: 0.04em; }
+.lt-head-n { color: var(--faint); font-size: 11px; margin-left: auto; }
+.lt-close {
+  background: none; border: none; color: var(--muted); cursor: pointer; font-size: 17px;
+  line-height: 1; padding: 0 4px;
+}
+.lt-close:hover { color: var(--text); }
+
+.lt-list { padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.lt-empty { padding: 16px 12px; color: var(--faint); text-align: center; }
+
+/* status dot: running (mint pulse) / done (green) / error (red) */
+.lt-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; margin-top: 3px; background: var(--faint); }
+.lt-dot.running { background: var(--live); box-shadow: 0 0 6px var(--live); animation: pulse 1.4s infinite; }
+.lt-dot.done { background: var(--ok); }
+.lt-dot.error { background: var(--err); }
+
+.lt-task { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; border-radius: 6px; }
+.lt-task:hover { background: rgba(255, 255, 255, 0.02); }
+.lt-task-body { min-width: 0; flex: 1; }
+.lt-purpose { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lt-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 1px; font-size: 10.5px; color: var(--muted); }
+.lt-model { color: var(--faint); }
+.lt-err { color: var(--err); }
+
+.lt-proc { border: 1px solid var(--line); border-radius: 7px; margin: 2px 0; overflow: hidden; }
+.lt-proc-head { display: flex; align-items: center; gap: 7px; padding: 7px 9px; cursor: pointer; background: var(--surface); }
+.lt-proc-head:hover { background: var(--raised); }
+.lt-proc-head .lt-dot { margin-top: 0; }
+.lt-caret { color: var(--faint); width: 10px; flex: 0 0 auto; }
+.lt-proc-label { color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lt-proc-head.running .lt-proc-label { color: var(--amber-2); }
+.lt-proc-count { color: var(--faint); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.lt-proc-children { padding: 2px 4px 4px 14px; border-top: 1px solid var(--line); }
+
+@media (max-width: 860px) {
+  #llm-tasks { right: 12px; bottom: 12px; }
+}

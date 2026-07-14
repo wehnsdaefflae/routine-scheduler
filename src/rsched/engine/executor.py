@@ -301,6 +301,7 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
         completion = endpoint.complete(
             messages, model=ref.model, schema=action.get("response_schema"),
             effort=ref.effort, max_tokens=16_384,
+            purpose=("llm · " + str(action.get("say") or "sub-call"))[:80], kind="llm_action",
         )
     except EndpointError as exc:
         return {"kind": "llm", "error": str(exc)}

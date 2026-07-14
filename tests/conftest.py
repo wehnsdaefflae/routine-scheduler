@@ -101,7 +101,10 @@ class ScriptedRegistry(EndpointRegistry):
         self.endpoint = endpoint
 
     def get(self, name: str):
-        return self.endpoint
+        # Wrap like the real registry so tests exercise the instrumentation seam. With the
+        # default sink (None) the wrapper is a pure passthrough — existing tests are unaffected.
+        from rsched.endpoints.instrument import InstrumentedEndpoint
+        return InstrumentedEndpoint(self.endpoint)
 
 
 @pytest.fixture

@@ -164,7 +164,8 @@ def autolabel(server: ServerConfig, conv_dir: Path, text: str) -> None:
             [{"role": "user", "content":
               "Title this new conversation with an agent, and tag it. First message:\n---\n"
               + text[:2000] + "\n---\nReturn ONLY the JSON object {title, tags}."}],
-            model=ref.model, schema=_LABEL_SCHEMA, effort=ref.effort, timeout=60)
+            model=ref.model, schema=_LABEL_SCHEMA, effort=ref.effort, timeout=60,
+            purpose="Conversation title & tags", kind="autolabel")
         import json
 
         data = comp.parsed if comp.parsed is not None else json.loads(comp.text)

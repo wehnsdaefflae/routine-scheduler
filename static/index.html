@@ -47,6 +47,9 @@
 <nav id="crumbs" class="crumbs" aria-label="breadcrumb"></nav>
 <main id="view"></main>
 <div id="toast" hidden></div>
+<!-- LLM task manager: a global, hideable dock mirroring what LLM work is in flight across the
+     backend. Mounted here (sibling of #view) so it survives navigation; driven by taskmanager.js. -->
+<div id="llm-tasks" hidden></div>
 <script type="module" src="/static/app.js"></script>
 </body>
 </html>

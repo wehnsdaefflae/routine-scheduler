@@ -168,7 +168,8 @@ async def test_endpoint(request: Request, name: str, body: TestBody) -> dict:
         start = time.monotonic()
         completion = ep.complete(
             [{"role": "user", "content": "What is 2+3? Reply as one JSON object matching the schema."}],
-            model=body.model, schema=TEST_SCHEMA, timeout=90)
+            model=body.model, schema=TEST_SCHEMA, timeout=90,
+            purpose=f"Test endpoint {name}", kind="test")
         latency = round((time.monotonic() - start) * 1000)
         schema_ok, value = True, None
         try:

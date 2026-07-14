@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from .. import schedule
 from ..config import MODEL_KINDS
 from ..daemon import registry
+from ..endpoints.instrument import process_scope
 from ..ids import now_iso, run_ts
 from ..paths import atomic_write_json, read_json, resolve_rel
 
@@ -369,6 +370,8 @@ async def recompile(request: Request, slug: str) -> dict:
     runner.reserved.add(slug)   # guard already ensured not busy; single-threaded → no race to add
     atomic_write_json(info.cfg.dir / "state" / "recompile.json",
                       {"state": "building", "started": now_iso()})
+    if (c := getattr(request.app.state, "llm_tasks", None)) is not None:
+        c.open_process(f"recompile:{slug}", kind="recompile", label=f"Recompile {slug}")
     asyncio.create_task(_run_recompile(request.app.state, info.cfg.dir, slug))
     return {"recompiling": True, "slug": slug}
 
@@ -380,12 +383,14 @@ async def _run_recompile(app_state, routine_dir: Path, slug: str) -> None:
     from ..workflows.recompile import recompile_routine
 
     server, bus, runner = app_state.server, app_state.bus, app_state.runner
+    center = getattr(app_state, "llm_tasks", None)
     status_path = routine_dir / "state" / "recompile.json"
     try:
         cfg, _ = load_routine(routine_dir)
         if cfg is None:
             raise RuntimeError("routine config is invalid")
-        summary = await asyncio.to_thread(recompile_routine, server, routine_dir, cfg)
+        with process_scope(f"recompile:{slug}"):   # the decompose call attaches to this process
+            summary = await asyncio.to_thread(recompile_routine, server, routine_dir, cfg)
         await asyncio.to_thread(_git_commit, routine_dir, "recompile main.md + steps from the seed")
         atomic_write_json(status_path, {"state": "done", "finished": now_iso(), **summary})
         bus.publish({"event": "routine_recompiled", "slug": slug, **summary})
@@ -393,6 +398,8 @@ async def _run_recompile(app_state, routine_dir: Path, slug: str) -> None:
         atomic_write_json(status_path, {"state": "error", "finished": now_iso(), "error": str(exc)[:300]})
         bus.publish({"event": "routine_recompile_failed", "slug": slug, "error": str(exc)[:300]})
     finally:
+        if center is not None:
+            center.close_process(f"recompile:{slug}")
         runner.reserved.discard(slug)
         app_state.scheduler.rescan()
 

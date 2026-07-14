@@ -14,7 +14,9 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sse_starlette import EventSourceResponse
 
+from ..daemon.llm_tailer import tail_llm_sidecar
 from ..daemon.runner import abort_process
+from ..endpoints.instrument import process_scope
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
 from ..workflows.generate import generate
@@ -24,6 +26,31 @@ from . import wizard_store
 from .sse import run_stream
 
 router = APIRouter(tags=["wizard"])
+
+
+def _wizard_pid(wid: str) -> str:
+    """The LLM-task-manager process id for a whole routine-creation flow — shared across the
+    separate wizard requests (start → suggest → generate → finalize) so their calls group."""
+    return f"create:{wid.lstrip('.')}"
+
+
+def _center(state):
+    return getattr(state, "llm_tasks", None)
+
+
+def _wizard_recorder(center, pid: str, rid: str):
+    """Fold the clarify subprocess's LLM records into the create process (cross-process link)."""
+    def _on(rec: dict) -> None:
+        rec["run_id"] = rid
+        rec["process_id"] = pid
+        center.ingest(rec)
+    return _on
+
+
+def _stop_tailer(sess) -> None:
+    t = (sess or {}).get("tailer")
+    if t is not None:
+        t.cancel()
 
 
 def _wizard_dir(request: Request, wid: str) -> Path:
@@ -51,6 +78,7 @@ async def wizard_cancel(request: Request, wid: str) -> dict:
     stops showing as in-flight (mirrors finalize's archive move — no dangling process or dir)."""
     d = _wizard_dir(request, wid)
     sess = wizard_store.sessions(request.app.state).pop(wid, None)
+    _stop_tailer(sess)
     proc = (sess or {}).get("proc")
     if proc is not None and proc.returncode is None:
         with contextlib.suppress(ProcessLookupError):
@@ -61,6 +89,8 @@ async def wizard_cancel(request: Request, wid: str) -> dict:
         await abort_process(st.get("pid") if isinstance(st, dict) else None, d / "runs" / ts, f"{wid}:{ts}")
     await asyncio.to_thread(wizard_store.archive_session, request.app.state.server.routines_home,
                             d, f"{wid.lstrip('.')}-canceled")
+    if (c := _center(request.app.state)) is not None:
+        c.close_process(_wizard_pid(wid))
     return {"ok": True}
 
 
@@ -79,7 +109,14 @@ async def start(request: Request, body: StartBody) -> dict:
         sys.executable, "-m", "rsched.cli", "engine-run", str(d), "--run-ts", ts,
         stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
         start_new_session=True, cwd=str(d))
-    wizard_store.sessions(request.app.state)[wid] = {"proc": proc, "run_ts": ts, "dir": d}
+    sess = {"proc": proc, "run_ts": ts, "dir": d}
+    if (c := _center(request.app.state)) is not None:
+        c.open_process(_wizard_pid(wid), kind="wizard",
+                       label=f"Create routine: {body.draft.strip()[:50]}")
+        # tail the clarify subprocess's sidecar → its turns become children of the create process
+        sess["tailer"] = asyncio.create_task(tail_llm_sidecar(
+            d / "runs" / ts, _wizard_recorder(c, _wizard_pid(wid), f"{wid}:{ts}")))
+    wizard_store.sessions(request.app.state)[wid] = sess
     return {"wid": wid, "run_ts": ts}
 
 
@@ -131,7 +168,8 @@ def wizard_suggest(request: Request, wid: str) -> dict:
     if not isinstance(result, dict) or not result.get("refined_instruction"):
         raise HTTPException(409, "the clarify run has not produced state/wizard_result.json yet")
     server = request.app.state.server
-    suggested_tags = suggest_tags(server, result["refined_instruction"])
+    with process_scope(_wizard_pid(wid)):
+        suggested_tags = suggest_tags(server, result["refined_instruction"])
     # The clarifier already suggested a pattern (it read the candidates and married the task to one).
     # Lead the pick list with its choice so the wizard pre-selects it; the rest are override options.
     choice = result.get("workflow_choice") if isinstance(result.get("workflow_choice"), dict) else {}
@@ -145,7 +183,8 @@ def wizard_suggest(request: Request, wid: str) -> dict:
     # Preselect the routine's traits (practice modules, adapted in at creation) and
     # permissions (engine-enforced) from the refined task + the chosen pattern — shown on
     # the create page as an editable preselection.
-    tp = suggest_traits_permissions(server, result["refined_instruction"], chosen)
+    with process_scope(_wizard_pid(wid)):
+        tp = suggest_traits_permissions(server, result["refined_instruction"], chosen)
     return {"wizard_result": result, "suggested_tags": suggested_tags, "suggestions": suggestions,
             "suggested_traits": tp["traits"], "suggested_permissions": tp["permissions"],
             "none_fit": none_fit, "new_workflow_hint": str(choice.get("hint") or "")}
@@ -162,7 +201,8 @@ def wizard_generate(request: Request, wid: str, body: GenerateBody) -> dict:
     if not isinstance(result, dict):
         raise HTTPException(409, "no wizard result yet")
     try:
-        slug, note = generate(request.app.state.server, result["refined_instruction"], body.hint)
+        with process_scope(_wizard_pid(wid)):
+            slug, note = generate(request.app.state.server, result["refined_instruction"], body.hint)
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
     return {"workflow_slug": slug, "note": note}
@@ -204,7 +244,8 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
     except (ValueError, KeyError) as exc:
         raise HTTPException(400, f"invalid schedule: {exc}") from exc
     atomic_write_json(d / "state" / "finalize.json", {"state": "building", "slug": body.slug})
-    wizard_store.sessions(request.app.state).pop(wid, None)  # the clarify process is done
+    # the clarify process is done — stop its sidecar tailer (the create process stays open until build)
+    _stop_tailer(wizard_store.sessions(request.app.state).pop(wid, None))
     asyncio.create_task(_build_routine(request.app.state, wid, d, body, result))
     return {"building": True, "slug": body.slug, "wid": wid}
 
@@ -223,18 +264,21 @@ async def _build_routine(app_state, wid: str, d: Path, body: "FinalizeBody", res
         steps = result.get("steps") if isinstance(result.get("steps"), dict) else None
         description = body.description.strip() or str(result.get("description") or "").strip()
         params = body.params or (result.get("params") if isinstance(result.get("params"), dict) else {})
-        routine_dir = await asyncio.to_thread(
-            scaffold, server, slug=body.slug, name=body.name,
-            instruction=body.instruction.strip() or result["refined_instruction"],
-            workflow_slug=body.workflow_slug, cron=cron,
-            tz=schedule.server_tz(), params=params, steps=steps, description=description,
-            models=body.models, tags=normalize_tags(body.tags) or None,
-            traits=body.traits, permissions=body.permissions, budgets=body.budgets)
+        with process_scope(_wizard_pid(wid)):   # the decompose LLM call attaches to the create process
+            routine_dir = await asyncio.to_thread(
+                scaffold, server, slug=body.slug, name=body.name,
+                instruction=body.instruction.strip() or result["refined_instruction"],
+                workflow_slug=body.workflow_slug, cron=cron,
+                tz=schedule.server_tz(), params=params, steps=steps, description=description,
+                models=body.models, tags=normalize_tags(body.tags) or None,
+                traits=body.traits, permissions=body.permissions, budgets=body.budgets)
     except Exception as exc:   # scaffold/decompose failure — the session stays so the user can retry
         partial = server.routines_home / body.slug   # clean up a half-built dir so the retry isn't blocked
         if partial.is_dir() and not (partial / "routine.yaml").exists():
             shutil.rmtree(partial, ignore_errors=True)
         atomic_write_json(status_path, {"state": "error", "slug": body.slug, "error": str(exc)[:300]})
+        if (c := _center(app_state)) is not None:
+            c.close_process(_wizard_pid(wid), error=str(exc)[:200])
         bus.publish({"event": "routine_failed", "wid": wid, "slug": body.slug, "error": str(exc)[:300]})
         return
 
@@ -255,6 +299,8 @@ async def _build_routine(app_state, wid: str, d: Path, body: "FinalizeBody", res
         if cfg:
             run_id = await runner.fire(cfg, reason="wizard")
     atomic_write_json(status_path, {"state": "done", "slug": body.slug, "run_id": run_id})
+    if (c := _center(app_state)) is not None:
+        c.close_process(_wizard_pid(wid))   # every create call has finished — remove the parent
     bus.publish({"event": "routine_created", "wid": wid, "slug": body.slug, "run_id": run_id})
     # archive the finished session (also excluded from the in-flight list via its 'done' state)
     await asyncio.to_thread(wizard_store.archive_session, server.routines_home, d, wid.lstrip("."))

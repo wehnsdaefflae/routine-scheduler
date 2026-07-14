@@ -69,7 +69,8 @@ def generate(server: ServerConfig, instruction: str, hint: str = "") -> tuple[st
     )
     endpoint, ref = EndpointRegistry(server).for_system()
     draft = _strip_fence(endpoint.complete([{"role": "user", "content": prompt}],
-                                           model=ref.model, timeout=180).text)
+                                           model=ref.model, timeout=180,
+                                           purpose="Draft workflow", kind="generate").text)
 
     problems: list[str] = []
     for attempt in range(2):
@@ -88,7 +89,8 @@ def generate(server: ServerConfig, instruction: str, hint: str = "") -> tuple[st
                 f"This Python workflow file failed lint:\n{draft}\n\nProblems:\n"
                 + "\n".join(f"- {p}" for p in problems)
                 + "\n\nReply with ONLY the corrected complete .py file content."}],
-                model=ref.model, timeout=180)
+                model=ref.model, timeout=180,
+                purpose="Fix drafted workflow", kind="generate")
             draft = _strip_fence(fix.text)
     raise RuntimeError(f"generated workflow failed lint twice: {problems}")
 

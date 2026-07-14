@@ -8,6 +8,7 @@ run parked in waiting_user releases its slot (the daemon polls status.json cheap
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -22,6 +23,7 @@ from ..paths import atomic_write_json, read_json
 from ..health_events import log_health_event
 from . import registry
 from .events import EventBus
+from .llm_tailer import tail_llm_sidecar
 
 log = logging.getLogger("rsched.runner")
 
@@ -61,9 +63,10 @@ class Runner:
     from their own INTERACTIVE_SLOTS pool instead), plus the drain mode a self-update
     restart uses to quiesce without killing active runs."""
 
-    def __init__(self, server: ServerConfig, bus: EventBus):
+    def __init__(self, server: ServerConfig, bus: EventBus, center=None):
         self.server = server
         self.bus = bus
+        self.center = center   # llm_tasks.TaskCenter — each run is a process; its calls are children
         self.semaphore = asyncio.Semaphore(server.max_concurrent_runs)
         self.interactive_semaphore = asyncio.Semaphore(INTERACTIVE_SLOTS)
         self.active: dict[str, ActiveRun] = {}  # slug → run
@@ -152,14 +155,22 @@ class Runner:
             )
             self.bus.publish({"event": "run_started", "routine": cfg.slug,
                               "run_id": run.run_id, "reason": reason})
+            if self.center is not None:
+                self.center.open_process(run.run_id, kind="run", label=run.slug, run_id=run.run_id)
             log.info("run_started routine=%s run=%s pid=%s reason=%s",
                      cfg.slug, run.run_id, run.proc.pid, reason)
             waiter = asyncio.create_task(self._watch_waiting(run))
+            tailer = (asyncio.create_task(tail_llm_sidecar(run.run_dir, self._llm_recorder(run)))
+                      if self.center is not None else None)
             try:
                 _, err = await run.proc.communicate()
                 stderr = err or b""
             finally:
                 waiter.cancel()
+                if tailer is not None:
+                    tailer.cancel()   # its finally drains any last-moment records before reap
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await tailer
         finally:
             if run.holds_slot:
                 sem.release()
@@ -186,6 +197,15 @@ class Runner:
                 self.bus.publish({"event": "run_state", "routine": run.slug,
                                   "run_id": run.run_id, "state": state})
 
+    def _llm_recorder(self, run: ActiveRun):
+        """Callback for this run's sidecar tailer: attribute each engine LLM record to the run
+        (which is its own process in the task manager) and fold it into the center."""
+        def _on(rec: dict) -> None:
+            rec["run_id"] = run.run_id
+            rec.setdefault("process_id", run.run_id)   # engine calls have no scope → the run IS the process
+            self.center.ingest(rec)
+        return _on
+
     def _reap(self, run: ActiveRun, cfg: RoutineConfig, stderr: bytes) -> None:
         self.active.pop(run.slug, None)
         rc = run.proc.returncode if run.proc else None
@@ -196,6 +216,10 @@ class Runner:
                             f"engine exited rc={rc} without a finish "
                             f"({stderr.decode('utf-8', 'replace')[-400:].strip() or 'no stderr'})")
             info = registry.read_run(run.run_dir, run.slug)
+        if self.center is not None:
+            self.center.close_process(
+                run.run_id,
+                error=(info.summary[:200] if info.state in ("failed", "aborted") else None))
         self.bus.publish({"event": "run_finished", "routine": run.slug, "run_id": run.run_id,
                           "state": info.state, "summary": info.summary[:300]})
         log.info("run_finished routine=%s run=%s rc=%s state=%s", run.slug, run.run_id, rc, info.state)
