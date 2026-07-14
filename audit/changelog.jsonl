@@ -4,3 +4,9 @@
   "summary": "Six user-reported UX/budget fixes: F42 max_turns honors -1=unlimited (symmetric with time/tokens/cost; guarded budget_violation/warning/child_budgets/status/composer); F43 engine+statemap accept 'state' key in phase.json so the live state diagram tracks recipes (e.g. self-audit) that use it; F36 conversation permission edits no longer 409 during an active reply (apply next reply, like budgets); F37 audit note-for-next-run draft cleared BEFORE reload so it doesn't refill; F41 conversation composer gains a live '✕ stop' (abort) button; F38 decision/question answer fields are textareas with Enter=submit/Shift+Enter=newline. +3 tests.",
   "run_id": "self-audit:20260714-194518"
 }
+{
+  "ts": "2026-07-14T20:20:00+00:00",
+  "commit": "c6ca03ffa8269f52b8da6dc96f9c8073de915262",
+  "summary": "Follow-up user work order (fix F39 + D8). F39: POST /api/questions/{qid}/answer is now async and, after filing the answer, resumes a FINISHED conversation in place (runner.resume, as message() does) so the engine's collect_deferred_answers actually consumes the answer — a live reply/scheduled routine is untouched. D8 (user framing: 'one is the permission, the other the means of asking for it'): added grants.floor_capabilities and applied raise+floor in resolve_permission_layers so a gated action / reserved util / run access survives ONLY as the means of a HELD conduct permission (confirm level + run depth kept as user policy); permissions.js gains the inverse cascade (enabling a capability holds its covering permission) so the panel can't express a contradiction. +3 tests, updated 1 (the cascade test now asserts the floor). pytest 480 passed / 3 skipped, rsched-lint green.",
+  "run_id": "self-audit:20260714-194518"
+}

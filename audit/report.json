@@ -1,34 +1,32 @@
 {
   "schema": 1,
   "run_id": "self-audit:20260714-194518",
-  "generated": "2026-07-14T20:06:00+00:00",
+  "generated": "2026-07-14T20:20:00+00:00",
   "since": {
-    "commit": "4bf63bd5bd",
-    "window": "0 new scheduler commits since anchor (HEAD == 4bf63bd5bd); 8 [AUDIT note] user reports drove the run; pytest 474→477 (3 new tests) green; rsched-lint green; journal still unavailable. Committed 56d620dbe3 this run."
+    "commit": "56d620dbe3",
+    "window": "Follow-up work order on the same run: fix F39 + D8. Committed c6ca03ffa8 on top of this run's earlier 56d620dbe3; pytest 480 passed / 3 skipped (+3 tests, 1 updated); rsched-lint green; journal still unavailable."
   },
-  "summary": "User-driven run: 8 [AUDIT notes] about scheduler UX/budget behaviour. Fixed SIX in one test-gated commit (56d620dbe3, pytest 477 passed / 3 skipped): F42 turns -1=unlimited, F43 live state-diagram phase-key tolerance, F36 change conversation settings during an active reply, F37 note-for-next-run draft reset, F41 conversation stop button, F38 multiline answer fields. F39 (answering a decision on a FINISHED conversation never resumes it, so the answer is filed but never consumed) is documented with root cause + fix but NOT applied (needs an async resume + test). F40 (permission 'util-authoring' vs capability 'write_util'/confirm dropdown are two overlapping, contradictable controls) is surfaced as open decision D8. Restart requested (code committed).",
+  "summary": "User-driven run + follow-up: 8 [AUDIT notes]. SIX fixed in commit 56d620dbe3 (F42 turns -1=unlimited, F43 live-diagram phase-key tolerance, F36 change conversation settings during a reply, F37 note-field reset, F41 conversation stop button, F38 multiline answers). Then a follow-up order fixed the last two in commit c6ca03ffa8: F39 (answering a decision on a FINISHED conversation now resumes it so the answer is consumed) and D8 (gated capabilities are now BOUND to held permissions — a capability exists only as the means of a held permission; confirm level + run depth stay user policy). All decisions settled; nothing open. Restart requested (code committed twice this run).",
   "findings": [
     {
       "id": "F42",
       "severity": "problem",
       "title": "Turn budget ignored -1=unlimited (set -1, still stopped at 10) — FIXED this run",
-      "detail": "User report: set a conversation's turn limit to -1 but the run stopped with 'turn budget exhausted (10)'. Root cause: F33 (prior run) made time+tokens+cost honor -1=unlimited but DELIBERATELY kept max_turns as a finite backstop, while the UI budget editor still accepts -1 for turns. With max_turns=-1, budget_violation's 'turn - base >= max_turns' is '>= -1' → always true (and the running reply used the CONVERSATION_BUDGETS default of 10, which is what the user saw). FIX (run_context.py): guarded the turn checks with 'max_turns >= 0' in budget_violation and budget_warning; child_budgets inherits -1 (unlimited) instead of clamping to 1; status.json reports turns_left=None when unlimited; composer prose shows 'unlimited' turns. SAFETY REVERSAL, applied under the user's explicit repeated order (notes 6 & 7): unlimited turns removes the last automatic terminator — the manual stop button (F41) is now the backstop, and finite defaults still apply unless the user opts into -1. Test: test_unlimited_turn_budget_honors_minus_one.",
+      "detail": "User report: set a conversation's turn limit to -1 but the run stopped with 'turn budget exhausted (10)'. Root cause: F33 made time+tokens+cost honor -1=unlimited but DELIBERATELY kept max_turns finite, while the UI budget editor accepts -1 for turns; with max_turns=-1, budget_violation's 'turn-base >= -1' is always true. FIX (run_context.py): guarded the turn checks with 'max_turns >= 0' in budget_violation/budget_warning; child_budgets inherits -1; status.json turns_left=None; composer prose shows 'unlimited'. Safety reversal under the user's explicit repeated order; the F41 stop button is the backstop. Test test_unlimited_turn_budget_honors_minus_one. Commit 56d620dbe3.",
       "evidence": [
-        "user [AUDIT note] 7 (-1 still stopped at 10) + note 6 (need a manual stop)",
-        "src/rsched/conversations.py:38 CONVERSATION_BUDGETS max_turns=10",
+        "user [AUDIT note] 7+6",
         "src/rsched/engine/run_context.py budget_violation/budget_warning/child_budgets/write_status",
-        "commit 56d620dbe3; pytest 477 passed"
+        "commit 56d620dbe3; pytest green"
       ]
     },
     {
       "id": "F43",
       "severity": "problem",
       "title": "Live state diagram never updates during an audit run — FIXED this run",
-      "detail": "User report: running an audit, its state diagram does not update. Root cause: the engine's phase mirror reads state/phase.json under the key 'phase' (executor._track_phase, loop.py, statemap.current_phase; actions.py documents {\"phase\": ...} as canonical), but the self-audit recipe writes {\"state\": \"gather-evidence\"} — so ctx.phase stayed empty, status.json/SSE carried no phase, and statemap 'current' was ''. Since recipes are prose owned by the routine ('tolerant by design', per statemap's own docstring) and self-audit's recipe is read-only to this run, the scheduler-side fix is tolerance: executor, loop, and statemap now accept 'phase' OR 'state'. Test: test_state_graph_accepts_state_key. Follow-up (routine-improver/config scope): self-audit's steps could be migrated to the canonical 'phase' key.",
+      "detail": "User report: running an audit, its state diagram does not update. Root cause: the engine mirrors phase from state/phase.json under key 'phase' but the self-audit recipe writes {'state': ...}, so ctx.phase stayed empty. Recipe is read-only to this run → scheduler-side tolerance: executor/loop/statemap now accept 'phase' OR 'state'. Test test_state_graph_accepts_state_key. Follow-up (improver scope): migrate self-audit steps to canonical 'phase'. Commit 56d620dbe3.",
       "evidence": [
-        "user [AUDIT note] 8 (state diagram does not update)",
+        "user [AUDIT note] 8",
         "src/rsched/engine/executor.py _track_phase, loop.py:252, statemap.py current_phase",
-        "self-audit steps write {\"state\": ...}; actions.py:152 documents {\"phase\": ...}",
         "commit 56d620dbe3"
       ]
     },
@@ -36,11 +34,10 @@
       "id": "F36",
       "severity": "problem",
       "title": "Could not change a conversation's settings during an active reply — FIXED this run",
-      "detail": "User report: changing a running conversation's budget said 'conversation X has an active reply — try again after it'. The budget PATCH endpoint was ALREADY unguarded (its docstring: conversation edits apply at the next reply, no race), but the sibling permissions/capabilities PUT still called _guard_not_active — the only source of that exact message besides delete. Since the panel bundles budgets AND permissions, the user hit the guard via the permissions save. FIX (api_conversations.py): dropped _guard_not_active from the conversation permissions PUT so ALL settings retune anytime and land on the next reply (delete keeps its guard — removing a live dir IS unsafe). Test: test_settings_editable_while_active. If the user's exact repro was the budget button specifically, it already worked post the F33 tree — worth a re-verify.",
+      "detail": "User report: changing a running conversation's settings said 'has an active reply — try again after it'. The budget PATCH was already unguarded; the sibling permissions PUT still called _guard_not_active (the shared panel saves both). FIX (api_conversations.py): dropped the guard from the conversation permissions PUT so all settings retune anytime and land on the next reply; delete keeps its guard. Test test_settings_editable_while_active. Commit 56d620dbe3.",
       "evidence": [
         "user [AUDIT note] 1",
-        "src/rsched/web/api_conversations.py:57 _guard_not_active (only source of the message besides delete)",
-        "PATCH docstring: 'conversation edits apply at the NEXT reply'",
+        "src/rsched/web/api_conversations.py set_permissions",
         "commit 56d620dbe3"
       ]
     },
@@ -48,11 +45,10 @@
       "id": "F37",
       "severity": "problem",
       "title": "'Note for the next run' field did not reset after send — FIXED this run",
-      "detail": "User report: the note input does not reset on 'send to the next run'. Root cause (audit.js): send.onclick did 'await submit(...)' (which calls load() → re-renders the whole Audit body) THEN cleared box.value + forgetField(box) on the now-DETACHED old node. formpersist's MutationObserver refills the freshly-mounted empty box from the still-present sessionStorage draft, so it looks unsent. FIX: clear box.value + forgetField(box) BEFORE calling submit() (so the draft store is empty when the new box mounts); restore the text on error. Same reorder applied to the '▶ run self-audit now' handler.",
+      "detail": "User report: the note input does not reset on send. Root cause (audit.js): the box was cleared + forgetField'd AFTER submit()'s reload re-mounted a fresh empty box, which formpersist then refilled from the still-present draft. FIX: clear + forgetField BEFORE submit(); restore text on error. Same reorder in the run-now handler. Commit 56d620dbe3.",
       "evidence": [
         "user [AUDIT note] 2",
-        "static/views/audit.js generalSection send/runNow handlers",
-        "static/formpersist.js restore()/forgetField() semantics",
+        "static/views/audit.js generalSection",
         "commit 56d620dbe3"
       ]
     },
@@ -60,11 +56,10 @@
       "id": "F41",
       "severity": "improvement",
       "title": "No manual stop button for a live conversation reply — FIXED this run",
-      "detail": "User report: with -1 (infinite) budgets, need a manual stop button. The run view (run.js) already had ⏸ pause + ✕ abort, but the CONVERSATIONS view had neither — exactly where the user runs unlimited replies. Backend abort already exists (POST /api/runs/{run_id}/abort). FIX (conversations.js): the conversation composer gains a live '✕ stop' button (shown while the reply is live via composer.setLive) that POSTs the abort endpoint; the reply ends as 'aborted' at the next turn boundary with transcript+LEDGER intact. This is the safety backstop that makes F42's unlimited turns acceptable.",
+      "detail": "User report: with -1 (infinite) budgets, need a manual stop button. The run view had ⏸/✕ but the conversations view had neither. FIX (conversations.js): the conversation composer gains a live '✕ stop' button (POSTs the existing /api/runs/{id}/abort) shown while the reply is live. This is the backstop that makes F42's unlimited turns acceptable. Commit 56d620dbe3.",
       "evidence": [
         "user [AUDIT note] 6",
-        "src/rsched/web/api_runs.py:202 abort endpoint (already existed)",
-        "static/views/run.js pause/abort controls (pattern) vs conversations.js (had none)",
+        "src/rsched/web/api_runs.py:202 abort endpoint",
         "commit 56d620dbe3"
       ]
     },
@@ -72,31 +67,30 @@
       "id": "F38",
       "severity": "improvement",
       "title": "Could not enter newlines in answer fields (Enter always submitted) — FIXED this run",
-      "detail": "User report: want newlines in multi-line inputs without submitting. The message composer already used Enter=submit / Shift+Enter=newline, and the free-text composers (new-conversation, run-inject, audit note) have no Enter handler (newlines already work). The gap was the inline decision/question ANSWER fields — single-line <input> that submit on plain Enter, so a multi-line answer was impossible. FIX: converted the answer fields in transcript.js, chat.js, conversations.js and run.js to <textarea rows=1> with Enter=submit / Shift+Enter=newline (placeholders hint the shortcut). CSS not browser-verified (textarea-in-flex-row); low risk.",
+      "detail": "User report: want newlines in multi-line inputs without submitting. The inline decision/question ANSWER fields were single-line <input>. FIX: converted the answer fields in transcript.js, chat.js, conversations.js, run.js to <textarea rows=1> with Enter=submit / Shift+Enter=newline. CSS not browser-verified (low risk). Commit 56d620dbe3.",
       "evidence": [
         "user [AUDIT note] 3",
-        "static/components/{transcript,chat}.js + static/views/{conversations,run}.js answer inputs",
-        "conversations.js:417 message composer already had the Shift+Enter pattern",
+        "static/components/{transcript,chat}.js + static/views/{conversations,run}.js",
         "commit 56d620dbe3"
       ]
     },
     {
       "id": "F39",
       "severity": "problem",
-      "title": "Answering a decision on a FINISHED conversation never resumes it — OPEN (root-caused, not applied)",
-      "detail": "User report: answered a decision in a conversation that had finished (finish status 'partial'; run state is 'finished'), but the Decisions page representation did not update. Root cause: POST /api/questions/{qid}/answer files inbox/answer-{qid}.json and returns ok, but for a CONVERSATION (a one-shot run, not a scheduled routine) nothing resumes it, so the queued answer is never drained — the item shows 'answered · queued → consumed by the next run' but a conversation has no next run, so it sits forever. RECOMMENDED FIX (next run): when the matched question belongs to a terminal conversation (home == conversations_home and last run state in TERMINAL_STATES), resume the conversation (runner.resume(cfg, last.ts, reason='converse'), as api_conversations.message() already does) so the answer is actually consumed; add a test. NOT applied this run — needs the answer endpoint to gain async runner access + a test, and time was better spent on the six landed fixes.",
+      "title": "Answering a decision on a FINISHED conversation never resumed it — FIXED this run",
+      "detail": "User report: answered a decision in a conversation that had finished, but the Decisions representation never updated. Root cause: POST /api/questions/{qid}/answer filed inbox/answer-{qid}.json but, for a CONVERSATION (a one-shot run with no scheduled next run), nothing resumed it, so the queued answer was never drained. FIX (api_questions.py, commit c6ca03ffa8): the answer endpoint is now async; after filing the answer it calls _resume_terminal_conversation — when the matched question belongs to a conversation whose last run is terminal (and not currently active), it runner.resume(cfg, last.ts, reason='converse') exactly as api_conversations.message() does, so the engine's collect_deferred_answers drains the answer at run start. A live reply (drains at the next turn boundary) and a scheduled routine (has its own next run) are untouched. The response now carries resumed:true when it woke the conversation. Test test_answering_a_finished_conversation_resumes_it.",
       "evidence": [
         "user [AUDIT note] 4",
-        "src/rsched/web/api_questions.py answer() — files inbox answer, no resume",
-        "src/rsched/web/api_conversations.py message() — resumes a terminal conversation (the pattern to reuse)",
-        "src/rsched/engine/loop.py:345 partial-finish maps to state='finished' (so it IS terminal)"
+        "src/rsched/web/api_questions.py answer() + _resume_terminal_conversation",
+        "src/rsched/engine/inbox.py collect_deferred_answers (drains answer-*.json at run start)",
+        "commit c6ca03ffa8; pytest 480 passed"
       ]
     },
     {
       "id": "F35",
       "severity": "info",
       "title": "Reconnect bursts on the run-events SSE — benign-by-design (watch)",
-      "detail": "Carried from prior run. Offset-based resume + sse-starlette keepalive = zero event loss; irregular intervals point to operator network transience, not a scheduler defect. Revisit only on a fixed-interval reconnect signature or actual event loss.",
+      "detail": "Carried. Offset-based resume + sse-starlette keepalive = zero event loss; irregular intervals point to operator network transience. Revisit only on a fixed-interval reconnect signature or actual event loss.",
       "evidence": [
         "prior-run .ui-traces analysis",
         "src/rsched/web/sse.py run_stream"
@@ -106,7 +100,7 @@
       "id": "F34",
       "severity": "info",
       "title": "routine-improver hit turns_left 0 — budget-pressure watch",
-      "detail": "Carried. No fresh routine-improver run reviewed this window (run was user-note-driven). Watch for repeated turn-ceiling hits; consider raising its max_turns or a cost cap.",
+      "detail": "Carried. No fresh routine-improver run reviewed this window. Watch for repeated turn-ceiling hits; consider raising its max_turns or a cost cap.",
       "evidence": [
         "prior-run review"
       ]
@@ -115,7 +109,7 @@
       "id": "F25",
       "severity": "info",
       "title": "Files over the ~350-line one-responsibility budget — watch (improver scope)",
-      "detail": "Carried. conversations.js grew (~602→~640 with the F41 stop button + F38 textareas) and remains the largest static view; loop.py, settings.js, composer.py, api_routines.py, run.js, config.py also >350. Structural splits are routine-improver/lens-gated (settled D5), not applied ad-hoc here.",
+      "detail": "Carried. conversations.js keeps growing (now ~645 with the F41 stop button + F38 textareas). Structural splits are routine-improver/lens-gated (settled D5), not applied ad-hoc here.",
       "evidence": [
         "prior-run wc -l sweep",
         "this run's edits to conversations.js"
@@ -152,15 +146,15 @@
   "decisions": [
     {
       "id": "D8",
-      "title": "Permissions vs capabilities: two overlapping controls for the same gated action (e.g. util-authoring / write_util)",
-      "detail": "User report (note 5, emphatic): under 'permissions' there is a 'util-authoring' conduct doc; under 'capabilities' there is a 'write_util' action toggle AND a confirm dropdown (always/creations/never) — three controls for one concept that can CONTRADICT: capabilities.actions can hold write_util with the util-authoring permission OFF (Grants.allows() enforces purely off capabilities.actions), so a routine can be granted fully-autonomous util generation with no conduct permission held. capabilities_for() only RAISES caps to cover held docs' requires; it never FLOORS an orphan action not backed by any permission. Whether the two layers are intentionally separate (permissions = conduct prose + requires; capabilities = enforcement) or should be bound is the owner's design call. RECOMMEND option B: keep enforcement in capabilities but make the UI honest — a gated action's toggle + its confirm level live UNDER its permission and are locked/derived from it, so there is exactly one coherent control per gated capability and no contradictory state.",
+      "title": "Permissions vs capabilities: two overlapping controls for the same gated action — SETTLED this run",
+      "detail": "SETTLED by the user's follow-up order: 'consider one as the permission and the other as the means of asking for it.' Applied that framing — the conduct permission (e.g. util-authoring) is THE switch; the capability (write_util action) is only the means of asking for it. Implemented grants.floor_capabilities and applied raise+floor in resolve_permission_layers (shared by routines + conversations): a gated action / reserved util / run access survives only when a HELD permission's requires names it; the confirm level and run depth remain user policy under it. So capabilities.actions can no longer hold write_util with util-authoring off. permissions.js gains the inverse cascade (enabling a capability holds its covering permission) so the panel state matches the server floor and can't express a contradiction. Enforcement still reads capabilities alone (fail-closed); the binding governs what the save path can produce. Commit c6ca03ffa8; tests test_floor_capabilities_binds_gated_capabilities_to_held_permissions, test_capabilities_floored_to_held_permissions, and the updated test_put_permissions_cascades_capabilities.",
       "options": [
-        "A: bind capabilities to permissions — drop any gated action from capabilities.actions not required by a held permission (one mental model: the permission is the switch)",
-        "B: keep two layers but make the UI derive the action toggle + confirm level from the permission (one coherent control, no contradiction)",
-        "C: keep as-is but add a validation warning when capabilities grant a gated action with its permission off",
+        "A: bind capabilities to permissions — a gated capability survives only as the means of a held permission (CHOSEN + applied)",
+        "B: UI-only derivation",
+        "C: validation warning",
         "leave as-is"
       ],
-      "status": "open"
+      "status": "settled"
     },
     {
       "id": "D5",
@@ -176,7 +170,7 @@
     {
       "id": "D6",
       "title": "Conversation token budget: reset per reply or keep cumulative?",
-      "detail": "SETTLED: Mark's 3fa648e made token -1=unlimited the default; F33 extended -1=unlimited to time+cost; F42 (this run) extended it to turns.",
+      "detail": "SETTLED: token -1=unlimited is the default; F33 extended -1=unlimited to time+cost; F42 extended it to turns.",
       "options": [
         "A: reset per reply",
         "B: keep cumulative, raise default + fix wording",
@@ -187,10 +181,10 @@
     {
       "id": "D7",
       "title": "How to incentivize util use, generalization, and bottom-up workflow consolidation?",
-      "detail": "SETTLED: delivered by Mark's routine-improver meta routine + util-doc standard.",
+      "detail": "SETTLED: delivered by the routine-improver meta routine + util-doc standard.",
       "options": [
         "A: library-trait utilization pass",
-        "B: util-usage telemetry in the digest",
+        "B: util-usage telemetry",
         "C: both",
         "leave as-is"
       ],
