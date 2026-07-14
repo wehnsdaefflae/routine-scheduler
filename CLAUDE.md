@@ -167,9 +167,10 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
 A **conversation** is a routine-shaped dir under its OWN home (`conversations_home`, default
 `~/conversations`): schedule-less, `kind: conversation`, and — unlike routines — **never
 git-versioned** (no `.git`, so the engine autocommit no-ops; delete means gone). The user's first
-message IS `instruction.md`; the `converse` library workflow is materialized in verbatim at
-creation (no LLM in the path — `conversations.py`; title + editable tags arrive off-path via the
-system model). **Finish-per-reply**: every reply ends in an authored finish whose summary IS the
+message IS `instruction.md` (or, when a **playbook** is picked at creation, the playbook's brief
+seeds it and the first message specializes it — see Libraries & seeds → Playbooks); the `converse`
+library workflow is materialized in verbatim at creation (no LLM in the path — `conversations.py`;
+title + editable tags arrive off-path via the system model). **Finish-per-reply**: every reply ends in an authored finish whose summary IS the
 chat message; the next user message resumes the SAME run in place (fresh budget window —
 `max_turns: 10` per reply; the engine's 85% warning cues a wrap-up-and-offer-continue).
 - Runner: conversation replies draw from a **reserved interactive slot pool** (`INTERACTIVE_SLOTS`,
@@ -183,21 +184,27 @@ chat message; the next user message resumes the SAME run in place (fresh budget 
   `components/artifacts.js` with `base: "routines"`), with the state-graph card on top.
   UI: `static/views/conversations.js` + `components/chat.js` (work folded per reply,
   `[new-topic]` first-line marker → warn + one-click fork) + `components/artifacts.js`.
+- **Playbooks** (see Libraries & seeds → Playbooks): the new-conversation form has a playbook
+  picker (`GET /api/playbooks`); the composer carries **Save as playbook** (`POST …/playbook` →
+  distil a new one) and, when the conversation was seeded from a playbook, **Update playbook**
+  (`PUT …/playbook` → revise that one) — both distil from the transcript via the `system_model`.
 - Defaults: routine default permissions+capabilities, shell OFF (one-click grant; run-history +
   the previous-runs depth greyed — routine-only); traits = ask-policy/global-utils/web-research/ledger-discipline/**git-checkpoint**
   (checkpoint commits in external project repos — the conversation dir itself is unversioned).
   Conversations feed workflow-usage + health events; they are EXCLUDED from the dashboard,
   scheduler, and instance-export. `bootstrap.sync_seed_library_docs` (every boot) lands new seed
-  workflows/traits/permissions — how `converse`/`git-checkpoint` reach existing instances.
+  workflows/traits/permissions + playbooks (subfolder-aware) — how `converse`/`git-checkpoint` and
+  seed playbooks reach existing instances.
 
 ## Libraries & seeds
 
 ONE git-backed library repo (`libraries_home`, default `~/.local/share/routine-scheduler-libraries`),
 seedable from the repo and syncable to a remote, holding **workflows/** (control-flow patterns),
 **traits/** (reusable practice prose, adapted per routine at creation), **permissions/** (conduct
-docs whose `requires:` frontmatter names the capabilities they presume), and **utils/** (the ONLY way routines run
-code, with the `gu` dispatcher at the root). Repo seeds: `library-seed/` (workflows + traits +
-permissions),
+docs whose `requires:` frontmatter names the capabilities they presume), **playbooks/** (reusable
+one-shot conversation briefs — the save/use-instruction analog), and **utils/** (the ONLY way
+routines run code, with the `gu` dispatcher at the root). Repo seeds: `library-seed/` (workflows +
+traits + permissions + playbooks),
 `util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `routine-improver`,
 `workflow-curator`, `token-lab` — installed **disabled**; the dashboard shows a notice until
 enabled; a seed added after first boot reaches existing instances via
@@ -252,6 +259,22 @@ first boot; `deploy/install.sh` for host installs.
   `bootstrap.adopt_permissions` at daemon boot. Historical data migrations are NOT kept:
   each runs once on the production instance and is deleted after convergence — a pre-0.8
   backup converts by booting the matching older tag first.
+- **Playbooks** (`library-seed/playbooks/<slug>/`, `MAIN.md` + optional on-demand detail files):
+  reusable, generalized **conversation briefs** — the in-app analog of the save-instruction /
+  use-instruction pattern. A playbook is NOT a workflow (the `converse` workflow stays the harness);
+  it only varies the *instruction*. `MAIN.md` front matter is `slug/title/when/tags/axis/updated`
+  (`when` = the one-line catalog entry; `axis` = the generalization axis — what varies vs. stays
+  fixed); the body is `## Parameters` (with `{{named}}` placeholders) + `## Instructions` + optional
+  `## Detailed references` / `## Notes`. Storage + the live catalog are `playbooks.py` (a dedicated
+  subfolder reader — NOT single-file `library_docs.py`/`DOC_RE`); git is the library ROOT
+  (`workflows.library.git_commit`). A conversation is SEEDED from a picked playbook (its brief
+  becomes `instruction.md`, the first message specializes it, `playbook: {slug, commit}` in
+  `routine.yaml` records the binding → `cfg.playbook_slug`). The conversation's **Save as playbook**
+  distils a NEW one and **Update playbook** revises the bound one, both from the transcript via the
+  `system_model` (`playbook_distill.py` — `PLAYBOOK_SCHEMA`, mirroring `adapt.decompose` and
+  recompile's refuse-to-degrade). `workflows/lint.py` `lint_playbook_text` gates edits; the Library
+  tab has a Playbooks section (`web/api_playbooks.py`). Reaches existing instances at boot via
+  `bootstrap.sync_seed_library_docs` (subfolder-aware). See docs/playbooks.md.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`,
   `calls:`, `tags:`, `secrets: NAME,…` — the docstring is the ONLY machine-read surface; comment-form
   declarations above it are invisible), and a `--selftest` the engine runs before saving. `write_util`

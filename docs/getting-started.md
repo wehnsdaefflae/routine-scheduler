@@ -41,8 +41,9 @@ Two design rules explain most of the system's shape:
   Each routine picks its own three models — the main loop, spawned sub-workflows, and the
   `llm` tool-call action — or falls back to the one **system model**.
 - **The library** (Library tab) is one git repo holding the shared building blocks:
-  workflow **patterns**, **traits**, **permissions**, and **utils**. Routines are built
-  FROM it but never depend on it at run time.
+  workflow **patterns**, **traits**, **permissions**, **utils**, and **playbooks** (reusable
+  one-shot briefs for Conversations). Routines are built FROM it but never depend on it at
+  run time.
 - **Decisions** (Decisions tab) is the one inbox for everything routines need from you:
   blocking questions (a run is waiting), deferred ones (the next run picks the answer up),
   util approvals, and self-audit findings. A blocking question waits up to the routine's
@@ -118,6 +119,7 @@ session to lose.
 
 - **Examples** — four complete routine setups, from draft instruction to daily operation.
 - **Traits & permissions** — how conduct and capability are split, and why.
+- **Playbooks** — save a conversation as a reusable one-shot brief, and reuse it to seed new ones.
 - **Prompt anatomy** — exactly what the orchestrator model sees, message by message.
 - **Endpoints** — configuring the model transports.
 - **API reference** — the generated reference for the `rsched` package itself.
