@@ -10,6 +10,10 @@ the whole prefix at ~0.1x price instead of full price. The engine's message list
 append-only, which is exactly what prefix caching needs. Cache traffic is reported as
 usage "cached_in" / "cache_write" (kept out of "in"). A 400 naming cache_control gets one
 degraded retry without the markers.
+
+Multimodal: a message may carry a `media` list ([{path, media_type}]); this API takes
+images and PDFs natively, so those files become base64 image/document content blocks. Image
+blocks are cache-eligible like text, so a viewed image re-reads at cache-read weight too.
 """
 
 from __future__ import annotations
@@ -19,8 +23,9 @@ import json
 import httpx
 
 from ..config import EndpointConfig
-from .base import (DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT, Completion, EndpointError,
-                   Message, json_or_raise, key_from_env_file, split_system, with_retries)
+from .base import (DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT, PDF_MIME, Completion, EndpointError,
+                   Message, json_or_raise, key_from_env_file, read_media_b64, split_system,
+                   supports_media_type, with_retries)
 
 API_VERSION = "2023-06-01"
 
@@ -29,28 +34,65 @@ _EFFORT_ERROR_HINTS = ("effort", "output_config")
 
 def merge_consecutive(messages: list[Message]) -> list[Message]:
     """The Messages API requires alternating roles; the engine legitimately produces
-    consecutive user messages (observation + injection, compaction digests). Merge them."""
+    consecutive user messages (observation + injection, compaction digests). Merge them —
+    concatenating text content and carrying any `media` forward."""
     merged: list[Message] = []
     for m in messages:
         if merged and merged[-1]["role"] == m["role"]:
-            merged[-1] = {"role": m["role"], "content": merged[-1]["content"] + "\n\n" + m["content"]}
+            prev = merged[-1]
+            combined = {"role": m["role"], "content": prev["content"] + "\n\n" + m["content"]}
+            media = (prev.get("media") or []) + (m.get("media") or [])
+            if media:
+                combined["media"] = media
+            merged[-1] = combined
         else:
             merged.append(dict(m))
     return merged
 
 
+def _content_blocks(content: str, media: list[dict]) -> list[dict]:
+    """A message's string content + its media list → Anthropic content blocks (text first,
+    then each file as a base64 image or document block)."""
+    blocks: list[dict] = [{"type": "text", "text": content}] if content else []
+    for item in media:
+        mime = item["media_type"]
+        source = {"type": "base64", "media_type": mime, "data": read_media_b64(item["path"])}
+        blocks.append({"type": "document" if mime == PDF_MIME else "image", "source": source})
+    return blocks
+
+
+def _render_media(messages: list[Message]) -> list[Message]:
+    """Turn any message carrying `media` into block-form content; text-only messages keep
+    their plain string content (cache-stable). Drops the engine-side `media` key."""
+    out: list[Message] = []
+    for m in messages:
+        if m.get("media"):
+            out.append({"role": m["role"],
+                        "content": _content_blocks(m.get("content", ""), m["media"])})
+        else:
+            out.append({"role": m["role"], "content": m["content"]})
+    return out
+
+
 def _mark_tail(messages: list[Message]) -> list[Message]:
     """Moving cache breakpoint on the LAST message: each turn the lookup matches the
     previous turn's breakpoint (the prefix is append-only) and re-reads everything before
-    it from cache; only the newest exchange is fresh input."""
+    it from cache; only the newest exchange is fresh input. Handles both a plain string tail
+    and an already-rendered block list (a media message) — the breakpoint rides its last
+    block either way."""
     if not messages:
         return messages
     out = [dict(m) for m in messages]
     last = out[-1]
-    if isinstance(last.get("content"), str):
+    content = last.get("content")
+    if isinstance(content, str):
         out[-1] = {"role": last["role"],
-                   "content": [{"type": "text", "text": last["content"],
+                   "content": [{"type": "text", "text": content,
                                 "cache_control": {"type": "ephemeral"}}]}
+    elif isinstance(content, list) and content:
+        blocks = [dict(b) for b in content]
+        blocks[-1] = {**blocks[-1], "cache_control": {"type": "ephemeral"}}
+        out[-1] = {"role": last["role"], "content": blocks}
     return out
 
 
@@ -83,6 +125,12 @@ class AnthropicEndpoint:
         self.key_env_file = cfg.key_env_file
         self.key_var = cfg.key_var
         self.context_chars = cfg.context_chars
+        self._multimodal = cfg.native_multimodal()
+
+    def supports_media(self, media_type: str) -> bool:
+        """The Messages API takes images AND PDFs (document blocks) natively when this
+        endpoint is multimodal."""
+        return supports_media_type(media_type, multimodal=self._multimodal, pdf=True)
 
     def _api_key(self) -> str:
         if self.api_key:                                  # inline key (UI-set) wins over a file
@@ -105,7 +153,7 @@ class AnthropicEndpoint:
         body: dict = {
             "model": model,
             "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
-            "messages": _mark_tail(merge_consecutive(rest)),
+            "messages": _mark_tail(_render_media(merge_consecutive(rest))),
         }
         if system:
             # static per run → a cache breakpoint; block form is what cache_control needs

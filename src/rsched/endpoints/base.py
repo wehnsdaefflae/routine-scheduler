@@ -7,15 +7,52 @@ events). Retryable transport errors are raised as EndpointError(retryable=True);
 
 from __future__ import annotations
 
+import base64
+import mimetypes
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Protocol
 
 from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
 
-Message = dict  # {"role": "system"|"user"|"assistant", "content": str}
+# {"role": "system"|"user"|"assistant", "content": str} — plus an OPTIONAL "media" list for
+# multimodal input: [{"path": <abs file>, "media_type": <mime>}]. `content` stays a str
+# always (so every str-assuming site keeps working); only adapters whose model is multimodal
+# read `media` and fold the files into the provider payload at send time.
+Message = dict
 
 DEFAULT_TIMEOUT = 600
 DEFAULT_MAX_TOKENS = 8192
+
+# Native media the orchestrator can hand an endpoint. Base64 inflates ~33%, so the raw-byte
+# ceiling keeps most providers' ~10 MB request limit; a larger file (or an unlisted type)
+# routes to the `vision` util instead.
+IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+PDF_MIME = "application/pdf"
+NATIVE_MEDIA_MAX_BYTES = 7 * 1024 * 1024
+
+
+def guess_media_type(path: str | Path) -> str | None:
+    """The mime for a path IF it is a media type an endpoint might take natively, else None."""
+    mime = mimetypes.guess_type(str(path))[0]
+    return mime if (mime in IMAGE_MIMES or mime == PDF_MIME) else None
+
+
+def read_media_b64(path: str | Path) -> str:
+    """The file's bytes as a base64 ASCII string (built at send time, never stored)."""
+    return base64.b64encode(Path(path).read_bytes()).decode("ascii")
+
+
+def supports_media_type(mime: str, *, multimodal: bool, pdf: bool) -> bool:
+    """Shared `supports_media` core: images when multimodal; PDFs only where `pdf` (native
+    document support) is also true. Everything else → the caller's vision-util fallback."""
+    if not multimodal:
+        return False
+    if mime in IMAGE_MIMES:
+        return True
+    if mime == PDF_MIME:
+        return pdf
+    return False
 
 
 class EndpointError(Exception):
@@ -66,6 +103,12 @@ class ChatEndpoint(Protocol):
         timeout: int = DEFAULT_TIMEOUT,
         session: str | None = None,
     ) -> Completion: ...
+
+    def supports_media(self, media_type: str) -> bool:
+        """Whether this endpoint can take a file of `media_type` (an IMAGE_MIMES entry or
+        PDF_MIME) NATIVELY in a message's `media` list. False → the engine routes that file
+        through the `vision` util instead. Depends on the endpoint's `multimodal` config."""
+        ...
 
 
 def key_from_env_file(path: str, var: str) -> str | None:

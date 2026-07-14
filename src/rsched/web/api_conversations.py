@@ -136,6 +136,9 @@ async def create_conversation(request: Request, text: str = Form(...),
         instruction = (conv_dir / "instruction.md").read_text(encoding="utf-8")
         (conv_dir / "instruction.md").write_text(
             instruction.rstrip() + conv_mod.attachment_note(rels) + "\n", encoding="utf-8")
+        # the engine reads this at boot to auto-attach the first message's image/PDF
+        # attachments to the kickoff (later messages carry attachments through the inbox)
+        atomic_write_json(conv_dir / "state" / "pending-media.json", {"attachments": rels})
     cfg, _ = load_routine(conv_dir)
     rid = await request.app.state.runner.fire(cfg, reason="conversation")
     if rid is None:

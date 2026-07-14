@@ -151,12 +151,14 @@ export async function renderEndpoints(view) {
     const baseIn = el("input", { type: "text", value: ep.base_url || "", placeholder: "https://host/v1" });
     const keyVarIn = el("input", { type: "text", value: ep.key_var || "", placeholder: "KEY_VAR in Secrets (optional)" });
     const ctxIn = el("input", { type: "number", value: ep.context_chars });
+    const mmChk = el("input", { type: "checkbox" }); mmChk.checked = !!ep.multimodal;
     const saveEdit = el("button", { class: "btn small primary" }, "save changes");
     saveEdit.onclick = async () => {
       try {
         await api(`/api/settings/endpoints/${ep.name}`, { method: "PUT", body: {
           name: ep.name, kind: kindSel.value, base_url: baseIn.value.trim(), key_env_file: ep.key_env_file || "",
-          key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 100000 } });
+          key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 100000,
+          multimodal: mmChk.checked } });
         toast(`${ep.name}: updated`); await load();
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
@@ -169,6 +171,8 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "key_var (Secrets)"), keyVarIn),
         el("label", { class: "field" }, el("span", {}, "schema_mode"), schemaSel),
         el("label", { class: "field" }, el("span", {}, "context_chars"), ctxIn)),
+      el("label", { class: "field row", style: "gap:6px;align-items:center" }, mmChk,
+        el("span", {}, "multimodal — show images/PDFs to this model natively (off → the vision util)")),
       el("div", { class: "row" }, saveEdit));
 
     // Account balance, for providers that expose one (OpenRouter) — loaded lazily per card.
@@ -191,6 +195,7 @@ export async function renderEndpoints(view) {
     return el("div", { class: "panel mt" },
       el("div", { class: "row spread" },
         el("div", {}, el("strong", {}, ep.name), " ", el("span", { class: "chip bare" }, ep.kind), " ",
+          ep.multimodal ? el("span", { class: "chip bare", title: "sees images/PDFs natively" }, "👁 multimodal") : "", " ",
           el("span", { class: "muted small" }, ep.base_url || "")),
         delBtn),
       el("div", { class: "small" }, info.title),
@@ -209,16 +214,22 @@ export async function renderEndpoints(view) {
     const keyVarIn = el("input", { type: "text", placeholder: "KEY_VAR in Secrets (optional)" });
     const schemaSel = el("select", {}, SCHEMA_MODES.map((m) => el("option", {}, m)));
     const ctxIn = el("input", { type: "number", value: "200000" });
+    const mmChk = el("input", { type: "checkbox" });
+    const NATIVE_MM = ["anthropic", "claude-cli"];   // mirrors config.NATIVE_MM_KINDS
     const hint = el("div", { class: "muted small" });
-    const setHint = () => { const k = KIND[kindSel.value]; hint.textContent = k ? `${k.title} — ${k.hint}` : ""; };
-    kindSel.onchange = setHint; setHint();
+    const onKind = () => {
+      const k = KIND[kindSel.value]; hint.textContent = k ? `${k.title} — ${k.hint}` : "";
+      mmChk.checked = NATIVE_MM.includes(kindSel.value);   // default native vision by kind
+    };
+    kindSel.onchange = onKind; onKind();
     const save = el("button", { class: "btn primary" }, "add endpoint");
     save.onclick = async () => {
       if (!nameIn.value.trim()) { toast("name it"); return; }
       try {
         await api("/api/settings/endpoints", { method: "POST", body: {
           name: nameIn.value.trim(), kind: kindSel.value, base_url: baseIn.value.trim(),
-          key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 200000 } });
+          key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value,
+          context_chars: Number(ctxIn.value) || 200000, multimodal: mmChk.checked } });
         toast(`endpoint ${nameIn.value.trim()} added — set its ${KIND[kindSel.value]?.keyLabel || "key"} on its card`); await load();
       } catch (err) { toast(err.message, 4000, { error: true }); }
     };
@@ -233,6 +244,8 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "key_var (Secrets)"), keyVarIn),
         el("label", { class: "field" }, el("span", {}, "schema_mode"), schemaSel),
         el("label", { class: "field" }, el("span", {}, "context_chars"), ctxIn)),
+      el("label", { class: "field row", style: "gap:6px;align-items:center" }, mmChk,
+        el("span", {}, "multimodal — sees images/PDFs natively (default on for anthropic/claude-cli)")),
       el("div", { class: "row" }, save));
   }
 

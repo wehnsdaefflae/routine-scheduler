@@ -56,12 +56,17 @@ adapted: 2026-07-08
 
 
 class ScriptedEndpoint:
-    def __init__(self, replies: list):
+    def __init__(self, replies: list, multimodal: bool = False):
         self.replies = list(replies)
         self.calls: list[dict] = []
         self.lock = threading.Lock()
         self.name = "scripted"
         self.context_chars = 200_000
+        self.multimodal = multimodal   # drives supports_media (default off: view_image → vision util)
+
+    def supports_media(self, media_type: str) -> bool:
+        from rsched.endpoints.base import supports_media_type
+        return supports_media_type(media_type, multimodal=self.multimodal, pdf=True)
 
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None,
                  timeout=600, session=None):

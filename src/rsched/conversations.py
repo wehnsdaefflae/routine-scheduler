@@ -62,13 +62,16 @@ def fallback_title(text: str) -> str:
 
 def attachment_note(paths: list[str]) -> str:
     """The block appended to a message (or instruction.md) that carries file attachments.
-    Paths are relative to the conversation dir; the model reads text with read_file and is
-    steered to the vision util for images/PDFs by the converse workflow."""
+    Paths are relative to the conversation dir; the model reads text with read_file and SEES
+    images/PDFs with the view_image action (shown to it directly when the model is
+    multimodal, else described by the vision util). Images are auto-shown to a multimodal
+    model already, so view_image is mainly for when it wants another look."""
     if not paths:
         return ""
     lines = "\n".join(f"- {p}" for p in paths)
-    return ("\n\n[attached files — read text with read_file; images/PDFs via the `vision` "
-            f"util; spreadsheets via a fitting util]\n{lines}")
+    return ("\n\n[attached files — read text with read_file; SEE images/PDFs with the "
+            "view_image action (shown to you directly when this model is multimodal, else "
+            f"described by the vision util); spreadsheets via a fitting util]\n{lines}")
 
 
 def create_conversation(server: ServerConfig, *, slug: str, first_message: str,

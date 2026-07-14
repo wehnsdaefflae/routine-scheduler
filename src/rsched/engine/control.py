@@ -12,7 +12,7 @@ import time
 
 from ..config import ModelRef
 from ..paths import read_json
-from . import inbox
+from . import executor, inbox
 from .composer import truncate
 
 _ABORT = {"flag": False}
@@ -75,14 +75,18 @@ def apply_model_switch(loop) -> None:
 
 
 def drain_injections(loop) -> None:
-    """Feed mid-run user messages from the inbox into the conversation (root runs only)."""
+    """Feed mid-run user messages from the inbox into the conversation (root runs only).
+    Image/PDF attachments the main endpoint can show are auto-attached (media) to the
+    injected message so the model sees them without a separate view_image."""
     ctx = loop.ctx
     if ctx.depth > 0:
         return
-    for text in inbox.drain_messages(ctx.routine.dir, loop.consumed_dir):
-        ctx.transcript.event("user_injection", {"text": text})
-        loop.messages.append({"role": "user",
-                              "content": f"USER MESSAGE (injected mid-run):\n{text}"})
+    for m in inbox.drain_messages(ctx.routine.dir, loop.consumed_dir):
+        ctx.transcript.event("user_injection", {"text": m["text"]})
+        msg = {"role": "user", "content": f"USER MESSAGE (injected mid-run):\n{m['text']}"}
+        if m.get("attachments") and (media := executor.media_from_paths(ctx, m["attachments"])):
+            msg["media"] = media
+        loop.messages.append(msg)
 
 
 def announce_finished_subruns(loop) -> None:

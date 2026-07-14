@@ -27,8 +27,15 @@ KEEP_HEAD_MSGS = 6    # system + kickoff + first 2 turn pairs
 KEEP_TAIL_MSGS = 24   # ~ last 12 turn pairs
 
 
+# Rough context cost of one attached image/PDF (base64 is large and the model tokenizes it),
+# so compaction thresholds account for a media-carrying turn rather than counting only its
+# short text. The file bytes live on disk, never in `content`.
+_MEDIA_SIZE_EST = 4_000
+
+
 def messages_size(messages: list[dict]) -> int:
-    return sum(len(m["content"]) for m in messages)
+    return sum(len(m["content"]) + _MEDIA_SIZE_EST * len(m.get("media") or [])
+               for m in messages)
 
 
 def maybe_compact(messages: list[dict], turn_records: list[dict], context_chars: int

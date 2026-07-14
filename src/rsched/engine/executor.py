@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 
 from .. import utils_lib
-from ..endpoints.base import EndpointError
+from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, EndpointError, guess_media_type
 from ..ids import is_slug
 from ..paths import resolve_rel
 from .composer import truncate
@@ -20,6 +20,9 @@ from .run_context import RunContext
 
 READ_DEFAULT_MAX_LINES = 200
 UTIL_DEFAULT_TIMEOUT_S = 300
+VISION_UTIL = "vision"
+VIEW_DEFAULT_PROMPT = ("Describe this file in full detail — transcribe any text verbatim and "
+                       "note structure, data, and notable visual elements.")
 
 
 def do_util(action: dict, ctx: RunContext) -> dict:
@@ -146,6 +149,98 @@ def do_read_file(action: dict, ctx: RunContext) -> dict:
     if paths:  # batched read: several files in ONE action, one entry each
         return {"kind": "read_file", "files": [_read_one(str(p), action, ctx) for p in paths]}
     return {"kind": "read_file", **_read_one(action["path"], action, ctx)}
+
+
+def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
+    """Run the `vision` util on one file and return its text (or an 'error: …' string). The
+    single fallback used both by do_view_image and the loop's runtime net when the main
+    endpoint can't take a file natively; the util bills its own key, out of the run's usage."""
+    home = ctx.server.utils_home
+    if not utils_lib.exists(home, VISION_UTIL):
+        return "error: the `vision` util is not installed, so this file cannot be described"
+    args = [abspath, "--prompt", prompt or VIEW_DEFAULT_PROMPT, "--json"]
+    code, out, err = utils_lib.run_util(home, VISION_UTIL, args, timeout=UTIL_DEFAULT_TIMEOUT_S)
+    if code != 0:
+        return f"error: vision util failed (exit {code}): {(err or out or '').strip()[:800]}"
+    try:
+        return json.loads(out).get("text") or out
+    except (json.JSONDecodeError, AttributeError):
+        return out
+
+
+def _view_via_vision(rel_path: str, abspath: str, prompt: str, ctx: RunContext) -> dict:
+    text = vision_describe(ctx, abspath, prompt)
+    if text.startswith("error:"):
+        return {"path": rel_path, "via": "vision-util", "error": text[len("error:"):].strip()}
+    text, truncated = truncate(text)
+    return {"path": rel_path, "via": "vision-util", "text": text, "truncated": truncated}
+
+
+def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext) -> dict:
+    """Route one file: native (return a media entry for the endpoint to see) when the main
+    endpoint supports the type and it's within the native size cap, else the vision util."""
+    try:
+        path = resolve_rel(ctx.routine.dir, rel_path, ctx.routine.fs_read_roots)
+        if err := _runs_read_gate(ctx, path):
+            return {"path": rel_path, "error": err}
+        if not path.is_file():
+            return {"path": rel_path, "error": "file does not exist"}
+    except (OSError, PermissionError) as exc:
+        return {"path": rel_path, "error": str(exc)}
+    mime = guess_media_type(path)
+    if mime is None:
+        return {"path": rel_path, "error": "not a viewable image/PDF (png/jpeg/webp/gif/pdf) — "
+                                           "read text files with read_file instead"}
+    supports = getattr(endpoint, "supports_media", None)
+    native = (supports is not None and path.stat().st_size <= NATIVE_MEDIA_MAX_BYTES
+              and supports(mime))
+    if native:
+        return {"path": rel_path, "media_type": mime, "native": True, "abspath": str(path)}
+    return _view_via_vision(rel_path, str(path), prompt, ctx)
+
+
+def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
+    """`media` entries (path + media_type) for the image/PDF attachments among `rels` that
+    the main endpoint can show natively — conversation auto-attach. Unsupported files (wrong
+    type, too big, or a text-only endpoint) are skipped: the model can still view_image them,
+    which then routes through the vision util."""
+    try:
+        endpoint, _ = ctx.registry.for_model("main", ctx.routine.models)
+    except Exception:  # noqa: BLE001 — bare/degraded contexts: no registry
+        return []
+    supports = getattr(endpoint, "supports_media", None)
+    if supports is None:
+        return []
+    out: list[dict] = []
+    for rel in rels:
+        try:
+            path = resolve_rel(ctx.routine.dir, str(rel), ctx.routine.fs_read_roots)
+        except (OSError, PermissionError):
+            continue
+        mime = guess_media_type(path)
+        if (mime and path.is_file() and path.stat().st_size <= NATIVE_MEDIA_MAX_BYTES
+                and supports(mime)):
+            out.append({"path": str(path), "media_type": mime})
+    return out
+
+
+def do_view_image(action: dict, ctx: RunContext) -> dict:
+    """Let the orchestrator SEE an image/PDF: natively when the main endpoint is multimodal
+    (the file rides the next message as a `media` block), else via the vision util (text back
+    now). Path resolution and gating mirror read_file."""
+    prompt = str(action.get("prompt") or "")
+    try:
+        endpoint, _ = ctx.registry.for_model("main", ctx.routine.models)
+    except Exception:  # noqa: BLE001 — bare/degraded contexts: no registry → vision util only
+        endpoint = None
+    raw = action.get("paths") or ([action["path"]] if action.get("path") else [])
+    files = [_view_one(str(p), prompt, endpoint, ctx) for p in raw]
+    media = [{"path": f.pop("abspath"), "media_type": f["media_type"]}
+             for f in files if f.get("native")]
+    obs = {"kind": "view_image", "files": files}
+    if media:
+        obs["media"] = media   # the loop attaches this to the observation's user message
+    return obs
 
 
 def _write_gate(ctx: RunContext, resolved) -> str | None:
@@ -317,6 +412,7 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
 DISPATCH = {
     "util": do_util,
     "read_file": do_read_file,
+    "view_image": do_view_image,
     "write_file": do_write_file,
     "edit_file": do_edit_file,
     "memory_read": do_memory_read,

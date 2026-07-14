@@ -256,10 +256,10 @@ class GrantPolicy:
                         f"routine — this channel is off limits (the {perms} permission "
                         f"covers its conduct). Continue without it; if it seems essential, "
                         f"file a deferred ask_user so the user can switch it on.")
-        if kind in ("read_file", "write_file", "edit_file"):
+        if kind in ("read_file", "view_image", "write_file", "edit_file"):
             writes = kind in ("write_file", "edit_file")
             paths = [str(action.get("path") or "")]
-            if kind == "read_file":
+            if kind in ("read_file", "view_image"):
                 paths += [str(p) for p in action.get("paths") or []]
             for path in paths:
                 if not path:

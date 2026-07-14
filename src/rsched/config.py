@@ -60,6 +60,11 @@ EndpointKind = Literal["openai", "anthropic", "claude-cli"]
 SchemaMode = Literal["json_schema", "json_object", "ollama_native", "none"]
 ENDPOINT_KINDS = get_args(EndpointKind)
 SCHEMA_MODES = get_args(SchemaMode)
+# Kinds that are multimodal by construction, so an endpoint of this kind defaults to native
+# image/PDF input unless the user says otherwise (the `anthropic` Messages API and the
+# subscription CLI both take image blocks). `openai` varies per model (GLM 5.2 is text-only,
+# most vision models aren't) so it defaults OFF — the user flips it on per endpoint.
+NATIVE_MM_KINDS = {"anthropic", "claude-cli"}
 
 # YAML-friendly coercions: a bare `key:` (null) reads as the empty string; path strings
 # expand `~` and $VARS.
@@ -85,11 +90,19 @@ class EndpointConfig(_Config):
     schema_mode: SchemaMode = "json_schema"  # openai kind only
     context_chars: int = 100_000
     temperature: float | None = None
+    # Native image/PDF input: None = default by kind (see NATIVE_MM_KINDS — on for
+    # anthropic/claude-cli, off for openai); a bool overrides. When off, images/PDFs the
+    # orchestrator views route to the `vision` util instead of the endpoint itself.
+    multimodal: bool | None = None
     # openai kind only: merged verbatim into every request body. This is where aggregator
     # routing lives — e.g. OpenRouter {"provider": {"ignore": [...]}} to exclude serving
     # providers whose constrained decoding measurably corrupts output (drops declared
     # fields, leaks foreign keys through "strict" mode).
     extra_body: dict = Field(default_factory=dict)
+
+    def native_multimodal(self) -> bool:
+        """Effective multimodal capability: the explicit flag, else the kind default."""
+        return self.multimodal if self.multimodal is not None else (self.kind in NATIVE_MM_KINDS)
 
 
 @dataclass

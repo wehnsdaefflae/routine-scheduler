@@ -25,7 +25,8 @@ def _endpoint_view(name: str, ep: EndpointConfig) -> dict:
     return {"name": name, "kind": ep.kind, "base_url": ep.base_url,
             "key_env_file": ep.key_env_file, "key_var": ep.key_var,
             "schema_mode": ep.schema_mode, "context_chars": ep.context_chars,
-            "temperature": ep.temperature, "has_inline_key": bool(ep.api_key)}
+            "temperature": ep.temperature, "multimodal": ep.native_multimodal(),
+            "has_inline_key": bool(ep.api_key)}
 
 
 @router.get("/settings/endpoints")
@@ -60,6 +61,7 @@ class EndpointBody(BaseModel):
     schema_mode: str = "json_schema"
     context_chars: int = 100_000
     temperature: float | None = None
+    multimodal: bool | None = None   # None = default by kind (on for anthropic/claude-cli)
 
 
 @router.post("/settings/endpoints")
@@ -72,9 +74,16 @@ def upsert_endpoint(request: Request, body: EndpointBody, name: str | None = Non
     def mutate(endpoints: dict) -> None:
         spec = {k: v for k, v in body.model_dump().items()
                 if k != "name" and v not in ("", None)}
+        prev = endpoints.get(key, {})
         # keep a previously-saved inline key when the editor submits the key field blank
-        if not spec.get("api_key") and endpoints.get(key, {}).get("api_key"):
-            spec["api_key"] = endpoints[key]["api_key"]
+        if not spec.get("api_key") and prev.get("api_key"):
+            spec["api_key"] = prev["api_key"]
+        # A PUT is a full replace, but the credential-save form sends only a subset — preserve
+        # config-only / omitted fields (temperature, extra_body, multimodal) so saving a key
+        # never silently drops them (e.g. reverting an OpenAI endpoint's native vision).
+        for field in ("temperature", "extra_body", "multimodal"):
+            if field not in spec and field in prev:
+                spec[field] = prev[field]
         endpoints[key] = spec
 
     return _rewrite_endpoints(request, mutate)

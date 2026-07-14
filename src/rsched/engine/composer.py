@@ -135,7 +135,11 @@ user what to set (they set it once in the Secrets store; the engine injects it).
 allowed root). read_file takes `path` or `paths` (several files in ONE action — batch related \
 reads instead of spending a turn per file). edit_file replaces an exact `anchor` string with \
 `replacement` IN PLACE — for touching a few lines of a large file, use it instead of \
-re-emitting the whole document through write_file.{memory_line}
+re-emitting the whole document through write_file.
+- view_image: SEE an image or PDF (png/jpeg/webp/gif/pdf) at `path` (or `paths`) — for \
+attachments and files a util produced. When this run's model is multimodal the file is shown \
+to you DIRECTLY on the next turn; otherwise the `vision` util describes it and you get text \
+back. Set `prompt` (what to look for) so that fallback is useful.{memory_line}
 - llm: one scoped, stateless LLM subcall (runs on this routine's tool-call model). It sees ONLY \
 your prompt/system — include everything it needs; set response_schema for structured replies.
 - spawn: start a SUB-WORKFLOW that runs IN PARALLEL with you — pick its "workflow" for the \
@@ -409,6 +413,22 @@ def format_observation(obs: dict) -> str:
             return f"OBSERVATION (read_file {obs.get('path')} FAILED): {err}"
         return (f"OBSERVATION (read_file {obs['path']}, lines {obs['start_line']}-{obs['end_line']} "
                 f"of {obs['total_lines']}):\n{obs['content']}")
+    if kind == "view_image":
+        parts = []
+        for f in obs.get("files", []):
+            if f.get("error"):
+                parts.append(f"--- {f['path']} FAILED: {f['error']}")
+            elif f.get("native"):
+                parts.append(f"--- {f['path']} ({f['media_type']}) — shown to you below; "
+                             "look at it now.")
+            elif f.get("via") == "vision-util":
+                parts.append(f"--- {f['path']} (described by the vision util — this run's model "
+                             f"can't view it directly):\n{f.get('text', '')}")
+            else:
+                parts.append(f"--- {f['path']}: (no result)")
+        head = ("OBSERVATION (view_image — image(s) attached below for you to see):"
+                if obs.get("media") else "OBSERVATION (view_image):")
+        return head + "\n" + "\n\n".join(parts)
     if kind == "write_file":
         if err := obs.get("error"):
             return f"OBSERVATION (write_file {obs.get('path')} FAILED): {err}"

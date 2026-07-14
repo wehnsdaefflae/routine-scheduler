@@ -27,16 +27,19 @@ def _consume(path: Path, consumed_dir: Path) -> None:
     path.rename(target)
 
 
-def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[str]:
-    """Injected user messages, oldest first; answer-* files are left alone."""
+def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
+    """Injected user messages, oldest first; answer-* files are left alone. Each item is
+    {"text": str, "attachments": [rel, ...]} — the attachments (recorded by the web layer for
+    a conversation message) drive auto-attach of images/PDFs to the injected message."""
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
         return []
-    out: list[str] = []
+    out: list[dict] = []
     for path in sorted(p for p in inbox.iterdir() if p.is_file() and not p.name.startswith("answer-")):
         obj = read_json(path)
         if isinstance(obj, dict) and obj.get("text"):
-            out.append(str(obj["text"]))
+            out.append({"text": str(obj["text"]),
+                        "attachments": [str(a) for a in (obj.get("attachments") or [])]})
         else:
             try:
                 text = path.read_text(encoding="utf-8").strip()
@@ -45,7 +48,7 @@ def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[str]:
                             path.name, exc)
                 continue
             if text:
-                out.append(text)
+                out.append({"text": text, "attachments": []})
             else:
                 log.warning("inbox: %s carried no text — consumed without injection", path.name)
         _consume(path, consumed_dir)

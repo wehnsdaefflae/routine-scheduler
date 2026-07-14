@@ -16,6 +16,15 @@ Two modes:
   and Anthropic's prompt cache serves them at cache-read weight. Any prefix change
   (compaction, model switch mid-run) or resume failure falls back to a fresh session
   seeded with the full conversation — semantics never depend on session state.
+
+Multimodal (images): the CLI stays fully stripped (`--tools ""`) — the transport-only
+invariant is intact. When a message carries a `media` list, the send switches to
+`--input-format stream-json` and the image rides as a base64 block INSIDE the message (the
+same Anthropic vision shape), so the model sees it as data, never by reading a file. That
+CLI input format is undocumented, so it is de-risked: a stream-json send that fails flips a
+per-process capability flag (`supports_media` then routes further images to the vision util)
+AND raises so the engine's runtime net falls back for the current image. PDFs are not sent
+natively (stream-json takes images only) — they route to the vision util.
 """
 
 from __future__ import annotations
@@ -31,7 +40,35 @@ import uuid
 
 from ..config import EndpointConfig
 from ..paths import expand
-from .base import DEFAULT_TIMEOUT, Completion, EndpointError, Message, split_system
+from .base import (DEFAULT_TIMEOUT, Completion, EndpointError, Message, read_media_b64,
+                   split_system, supports_media_type)
+
+
+def _has_media(messages: list[Message]) -> bool:
+    return any(m.get("media") for m in messages)
+
+
+def _cli_content_blocks(content: str, media: list[dict]) -> list[dict]:
+    """Text + images → Anthropic-shape content blocks for a stream-json message (images
+    only; PDFs are filtered out upstream by supports_media)."""
+    blocks: list[dict] = [{"type": "text", "text": content}] if content else []
+    for item in media:
+        blocks.append({"type": "image", "source": {
+            "type": "base64", "media_type": item["media_type"],
+            "data": read_media_b64(item["path"])}})
+    return blocks
+
+
+def stream_json_stdin(messages: list[Message]) -> str:
+    """NDJSON stdin for `--input-format stream-json`: one line per message, each an
+    `{"type": <role>, "message": {role, content:[blocks]}}` envelope."""
+    lines = []
+    for m in messages:
+        role = m["role"]
+        blocks = _cli_content_blocks(m.get("content", ""), m.get("media") or [])
+        lines.append(json.dumps({"type": role, "message": {"role": role, "content": blocks}},
+                                ensure_ascii=False))
+    return "\n".join(lines)
 
 # Vars that would re-route the child CLI to metered API-key auth (or a proxy).
 STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
@@ -77,13 +114,15 @@ def scrub_env(base: dict, *, token: str | None, max_tokens: int | None = None) -
 
 def build_cmd(cli: str, model: str, *, system: str | None, schema_str: str | None,
               effort: str | None, session_id: str | None = None,
-              resume: str | None = None) -> list[str]:
+              resume: str | None = None, input_stream_json: bool = False) -> list[str]:
     cmd = [cli, "-p", "--model", model,
            "--tools", "",                 # no built-in tools → no agentic loop
            "--disable-slash-commands",
            "--strict-mcp-config",         # with no --mcp-config: no MCP servers
            "--setting-sources", "",       # ignore user/project settings
            "--output-format", "json"]
+    if input_stream_json:                 # image turns: base64 blocks ride an NDJSON stdin
+        cmd += ["--input-format", "stream-json"]
     if resume:
         cmd += ["--resume", resume]       # continue the per-run CLI session (delta turns)
     elif session_id:
@@ -148,8 +187,15 @@ def parse_result(stdout_text: str, want_json: bool) -> tuple[str, dict | None, d
 
 
 def _msg_hashes(messages: list[Message]) -> list[str]:
-    return [hashlib.sha1(f"{m['role']}\x00{m['content']}".encode("utf-8")).hexdigest()
-            for m in messages]
+    # A text-only message hashes exactly as before (session prefix-matching is unchanged);
+    # media adds a suffix so an image turn is never confused with a same-text one.
+    out = []
+    for m in messages:
+        key = f"{m['role']}\x00{m['content']}"
+        if m.get("media"):
+            key += "\x00" + json.dumps(m["media"], sort_keys=True)
+        out.append(hashlib.sha1(key.encode("utf-8")).hexdigest())
+    return out
 
 
 class ClaudeCliEndpoint:
@@ -163,10 +209,22 @@ class ClaudeCliEndpoint:
         self.credentials_env = cfg.credentials_env
         self.oauth_token = cfg.api_key            # inline token pasted in Settings (optional)
         self.context_chars = cfg.context_chars
+        self._multimodal = cfg.native_multimodal()
+        # None = untested; True/False set on the first stream-json send. Once False (a
+        # send failed → the CLI likely lacks stream-json image input), supports_media returns
+        # False so further images route to the vision util instead of re-failing.
+        self._media_capable: bool | None = None
         # session key → {"sid": CLI session id, "hashes": per-message sha1 of what the
         # session has already seen, "cwd": the stable dir the CLI keys its store to}
         self._sessions: dict[str, dict] = {}
         self._lock = threading.Lock()
+
+    def supports_media(self, media_type: str) -> bool:
+        """Images only, and only until a stream-json send has proven the CLI can't take them
+        (then everything routes to the vision util). PDFs always route to the vision util."""
+        if self._media_capable is False:
+            return False
+        return supports_media_type(media_type, multimodal=self._multimodal, pdf=False)
 
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
@@ -190,12 +248,14 @@ class ClaudeCliEndpoint:
             hashes = _msg_hashes(messages)
             with self._lock:
                 st = dict(self._sessions.get(session) or {})
-            delta = self._session_delta(st, messages, hashes)
+            delta = self._session_delta(st, messages, hashes)   # list[Message] | None
             if delta is not None:
                 try:
                     return self._run_session(cli, model, system, schema_str, effort, env,
                                              timeout, session, st["sid"], st["cwd"],
-                                             prompt=delta, hashes=hashes, resume=True,
+                                             msgs=delta,
+                                             plain="\n\n".join(m["content"] for m in delta),
+                                             hashes=hashes, resume=True,
                                              want_json=schema is not None)
                 except EndpointError:
                     # a broken/expired CLI session must never break the run — reseed fresh
@@ -206,8 +266,8 @@ class ClaudeCliEndpoint:
                 session.encode("utf-8")).hexdigest()[:16]
             cwd.mkdir(parents=True, exist_ok=True)
             return self._run_session(cli, model, system, schema_str, effort, env, timeout,
-                                     session, sid, str(cwd), prompt=render_prompt(rest),
-                                     hashes=hashes, resume=False,
+                                     session, sid, str(cwd), msgs=rest,
+                                     plain=render_prompt(rest), hashes=hashes, resume=False,
                                      want_json=schema is not None)
 
         prompt = render_prompt(rest)
@@ -227,10 +287,11 @@ class ClaudeCliEndpoint:
         return Completion(text=text, parsed=parsed, usage=usage)
 
     @staticmethod
-    def _session_delta(st: dict, messages: list[Message], hashes: list[str]) -> str | None:
-        """The new user content since the session last saw this conversation — or None
+    def _session_delta(st: dict, messages: list[Message], hashes: list[str]) -> list[Message] | None:
+        """The new user MESSAGES since the session last saw this conversation — or None
         when the session can't continue it (no state, rewritten prefix after compaction,
-        or unexpected roles in the delta)."""
+        or unexpected roles in the delta). Returned as messages (not joined text) so a
+        media-carrying turn keeps its `media` for stream-json encoding."""
         seen = st.get("hashes")
         if not st.get("sid") or not st.get("cwd") or not seen:
             return None
@@ -241,25 +302,46 @@ class ClaudeCliEndpoint:
             new = new[1:]   # the model's own last reply — the CLI session already holds it
         if not new or any(m["role"] != "user" for m in new):
             return None
-        return "\n\n".join(m["content"] for m in new)
+        return new
+
+    def _encode(self, msgs: list[Message], plain: str) -> tuple[str, bool]:
+        """(stdin, use_stream_json). Media present → an NDJSON stream-json body; else the
+        plain text prompt. If native image input is already known-broken this run, raise so
+        the engine's runtime net falls back to the vision util for the current image."""
+        if _has_media(msgs):
+            if self._media_capable is False:
+                raise EndpointError("claude-cli: native image input unavailable this run — "
+                                    "routing to the vision util")
+            return stream_json_stdin(msgs), True
+        return plain, False
 
     def _run_session(self, cli, model, system, schema_str, effort, env, timeout,
-                     session: str, sid: str, cwd: str, *, prompt: str, hashes: list[str],
-                     resume: bool, want_json: bool) -> Completion:
+                     session: str, sid: str, cwd: str, *, msgs: list[Message], plain: str,
+                     hashes: list[str], resume: bool, want_json: bool) -> Completion:
+        stdin, stream = self._encode(msgs, plain)
         cmd = build_cmd(cli, model, system=system or None, schema_str=schema_str,
                         effort=effort, session_id=None if resume else sid,
-                        resume=sid if resume else None)
+                        resume=sid if resume else None, input_stream_json=stream)
         try:
-            r = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+            r = subprocess.run(cmd, input=stdin, capture_output=True, text=True,
                                timeout=timeout, env=env, cwd=cwd)
         except subprocess.TimeoutExpired as exc:
             raise EndpointError(f"claude-cli: call timed out after {timeout}s", retryable=True) from exc
         if r.returncode != 0 and not r.stdout.strip():
+            if stream:                    # a stream-json (image) send failed — stop trying it
+                self._media_capable = False
             raise EndpointError(
                 f"claude-cli: exited {r.returncode}: {r.stderr.strip()[:300] or '(no stderr)'}",
                 retryable=True,
             )
-        text, parsed, usage = parse_result(r.stdout, want_json=want_json)
+        try:
+            text, parsed, usage = parse_result(r.stdout, want_json=want_json)
+        except EndpointError:
+            if stream:
+                self._media_capable = False
+            raise
+        if stream:
+            self._media_capable = True    # native image input works on this CLI
         with self._lock:
             self._sessions[session] = {"sid": sid, "hashes": list(hashes), "cwd": cwd}
         return Completion(text=text, parsed=parsed, usage=usage)

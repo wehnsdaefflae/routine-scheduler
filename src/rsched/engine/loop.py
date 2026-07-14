@@ -221,7 +221,10 @@ class EngineLoop:
                     if self._hist_note_countdown <= 0:
                         text += self._history_note
                         self._hist_note_countdown = 10
-                self.messages.append({"role": "user", "content": text})
+                msg = {"role": "user", "content": text}
+                if obs.get("media"):  # view_image / auto-attach: the model sees it next turn
+                    msg["media"] = obs["media"]
+                self.messages.append(msg)
                 ctx.write_status()
         except RunAborted:
             return self._finish_run("aborted", "Run aborted by the user/daemon.")
@@ -250,7 +253,7 @@ class EngineLoop:
             ctx.phase = str(phase["phase"])
         resuming = self.resume and ctx.depth == 0
         system = build_system_prompt(ctx, self.workflow_body, self.instruction, digest,
-                                     [] if resuming else msgs,
+                                     [] if resuming else [m["text"] for m in msgs],
                                      allowed_kinds=self.allowed_tools)
         if resuming:
             from .transcript import read_events
@@ -293,14 +296,35 @@ class EngineLoop:
             if self.util_reminder:   # one-shot, on the resume note (the kickoff's counterpart)
                 self.messages[-1] = {"role": "user",
                                      "content": self.messages[-1]["content"] + self.util_reminder}
-            for text in msgs:   # boot-drained messages: visible injections AFTER the note,
-                ctx.transcript.event("user_injection", {"text": text})   # not a prompt section
-                self.messages.append({"role": "user",
-                                      "content": f"USER MESSAGE (injected mid-run):\n{text}"})
+            for m in msgs:   # boot-drained messages: visible injections AFTER the note,
+                ctx.transcript.event("user_injection", {"text": m["text"]})  # not a prompt section
+                inj = {"role": "user", "content": f"USER MESSAGE (injected mid-run):\n{m['text']}"}
+                if m.get("attachments") and (media := executor.media_from_paths(ctx, m["attachments"])):
+                    inj["media"] = media
+                self.messages.append(inj)
         else:
-            self.messages = [{"role": "system", "content": system},
-                             {"role": "user", "content": kickoff_message(ctx) + self.util_reminder}]
+            kickoff = {"role": "user", "content": kickoff_message(ctx) + self.util_reminder}
+            self._attach_first_message_media(kickoff)  # conversation: images the user attached
+            self.messages = [{"role": "system", "content": system}, kickoff]
         ctx.write_status("running")
+
+    def _attach_first_message_media(self, kickoff: dict) -> None:
+        """A conversation records its first message's attachments in state/pending-media.json;
+        auto-attach the image/PDF ones the main endpoint can show to the kickoff, then clear
+        the file (later replies carry attachments through the inbox instead)."""
+        ctx = self.ctx
+        if ctx.depth > 0:
+            return
+        pend = ctx.routine.dir / "state" / "pending-media.json"
+        data = read_json(pend)
+        rels = data.get("attachments") if isinstance(data, dict) else None
+        if rels and (media := executor.media_from_paths(ctx, [str(r) for r in rels])):
+            kickoff["media"] = media
+        if pend.exists():
+            try:
+                pend.unlink()
+            except OSError:
+                pass
 
     def _finish_run(self, status: str, summary: str, *, authored: bool = False) -> str:
         ctx = self.ctx
@@ -340,15 +364,23 @@ class EngineLoop:
         for attempt in range(1, MAX_SCHEMA_ATTEMPTS + 1):
             # Generous output cap: reasoning models need room to think AND answer — a
             # provider's small default can swallow the content entirely.
-            completion = endpoint.complete(self.messages, model=ref.model,
-                                           schema=schema, effort=ref.effort,
-                                           max_tokens=16_384,
-                                           session=str(ctx.run_dir),
-                                           # bookkeeping only — the wrapper consumes these; they
-                                           # never reach the transport, so the prompt is untouched
-                                           purpose=f"turn {ctx.turn + 1}"
-                                                   + ("" if attempt == 1 else f" · retry {attempt}"),
-                                           kind="turn")
+            try:
+                completion = endpoint.complete(self.messages, model=ref.model,
+                                               schema=schema, effort=ref.effort,
+                                               max_tokens=16_384,
+                                               session=str(ctx.run_dir),
+                                               # bookkeeping only — the wrapper consumes these; they
+                                               # never reach the transport, so the prompt is untouched
+                                               purpose=f"turn {ctx.turn + 1}"
+                                                       + ("" if attempt == 1 else f" · retry {attempt}"),
+                                               kind="turn")
+            except EndpointError as exc:
+                # Runtime net: if the failure is on a turn whose tail carries an image the
+                # endpoint couldn't show, convert it to vision-util text and retry text-only;
+                # otherwise it's a real endpoint failure — let it propagate.
+                if self._apply_media_fallback(exc):
+                    continue
+                raise
             usage_sum["in"] += completion.usage["in"]
             usage_sum["out"] += completion.usage["out"]
             for cache_key in ("cached_in", "cache_write"):
@@ -479,6 +511,30 @@ class EngineLoop:
         self.turn_records.append({"turn": self.ctx.turn, "kind": action["kind"],
                                   "brief": json.dumps(brief, ensure_ascii=False),
                                   "say": action.get("say", "")})
+
+    def _apply_media_fallback(self, exc: EndpointError) -> bool:
+        """The main endpoint failed on a turn whose tail user message carries image `media`
+        (it rejected the file, or claude-cli's stream-json path is unavailable). Convert that
+        media to vision-util text IN PLACE and drop it, so the retried completion is text-only
+        and the model still gets the content. False when the tail has no media — then the
+        failure is a genuine endpoint error that must propagate."""
+        if not self.messages:
+            return False
+        last = self.messages[-1]
+        media = last.get("media")
+        if not media:
+            return False
+        notes = []
+        for item in media:
+            desc = executor.vision_describe(self.ctx, item["path"], "")
+            notes.append(f"[{Path(item['path']).name}: this run's model could not display it — "
+                         f"description from the vision util]\n{desc}")
+        last.pop("media", None)
+        last["content"] = last["content"] + "\n\n" + "\n\n".join(notes)
+        self.ctx.transcript.event("error", {"where": "media",
+            "message": f"main endpoint could not show {len(media)} file(s) "
+                       f"({str(exc)[:120]}); fell back to the vision util"})
+        return True
 
     def _repeat_streak(self, action: dict) -> int:
         key = {k: v for k, v in action.items() if k != "say"}

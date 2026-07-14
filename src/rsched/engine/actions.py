@@ -13,8 +13,9 @@ from __future__ import annotations
 
 from ..ids import is_slug
 
-KINDS = ("util", "write_util", "read_file", "write_file", "edit_file", "memory_read",
-         "memory_write", "llm", "spawn", "subruns", "kill", "wait", "ask_user", "finish")
+KINDS = ("util", "write_util", "read_file", "view_image", "write_file", "edit_file",
+         "memory_read", "memory_write", "llm", "spawn", "subruns", "kill", "wait",
+         "ask_user", "finish")
 
 READ_PATHS_MAX = 8
 
@@ -46,16 +47,16 @@ ACTION_SCHEMA: dict = {
             "type": "integer", "minimum": 1, "maximum": 600,
             "description": "util: seconds before the util is killed (default 300) · wait: max seconds to block (default 600)",
         },
-        # read_file / write_file / edit_file
+        # read_file / view_image / write_file / edit_file
         "path": {
             "type": "string",
-            "description": "read_file/write_file/edit_file: path relative to the routine dir "
-                           "(or an allowed root)",
+            "description": "read_file/view_image/write_file/edit_file: path relative to the "
+                           "routine dir (or an allowed root)",
         },
         "paths": {
             "type": "array", "items": {"type": "string"}, "maxItems": READ_PATHS_MAX,
-            "description": "read_file: read SEVERAL files in one action (instead of `path`; "
-                           "start_line/max_lines apply to each) — batch related reads",
+            "description": "read_file/view_image: act on SEVERAL files in one action (instead "
+                           "of `path`) — batch related reads/images",
         },
         "start_line": {"type": "integer", "minimum": 1, "description": "read_file: first line (default 1)"},
         "max_lines": {
@@ -84,9 +85,11 @@ ACTION_SCHEMA: dict = {
                                  "consult it (the engine maintains .memory/INDEX.md from it)"},
         "delete": {"type": "boolean",
                    "description": "memory_write: remove the note and its INDEX line (content/about not needed)"},
-        # llm / spawn
+        # llm / spawn / view_image
         "prompt": {"type": "string",
-                   "description": "llm: the prompt · spawn: the sub-workflow's full self-contained instruction"},
+                   "description": "llm: the prompt · spawn: the sub-workflow's full self-contained "
+                                  "instruction · view_image: what to look for (used only if the "
+                                  "file falls back to the vision util)"},
         "system": {"type": "string", "description": "llm: optional system prompt"},
         "response_schema": {"type": "object", "description": "llm: optional JSON schema constraining the reply"},
         "workflow": {"type": "string",
@@ -130,10 +133,10 @@ ACTION_SCHEMA: dict = {
 
 # The one field that best identifies a turn of each kind — the one-line "briefs" used by
 # turn records, compaction digests, and transcript replay.
-BRIEF_FIELD = {"util": "name", "write_util": "name", "read_file": "path", "write_file": "path",
-               "edit_file": "path", "memory_read": "name", "memory_write": "name",
-               "llm": "prompt", "spawn": "label", "kill": "n", "wait": "n",
-               "ask_user": "question", "finish": "status"}
+BRIEF_FIELD = {"util": "name", "write_util": "name", "read_file": "path", "view_image": "path",
+               "write_file": "path", "edit_file": "path", "memory_read": "name",
+               "memory_write": "name", "llm": "prompt", "spawn": "label", "kill": "n",
+               "wait": "n", "ask_user": "question", "finish": "status"}
 
 # kind → a minimal VALID action, shown to the model when a reply fails validation. Weak
 # models merge payload keys into the action object (file bodies, finish fields at top
@@ -143,6 +146,9 @@ KIND_EXAMPLES: dict[str, dict] = {
     "write_util": {"say": "<why a new util>", "kind": "write_util", "name": "my-util",
                    "content": "<the complete PEP 723 script as ONE string>"},
     "read_file": {"say": "<why this file>", "kind": "read_file", "path": "state/notes.md"},
+    "view_image": {"say": "<why look at it>", "kind": "view_image",
+                   "path": "attachments/shot.png",
+                   "prompt": "<what to look for, if it falls back to the vision util>"},
     "write_file": {"say": "<why this write>", "kind": "write_file", "path": "state/phase.json",
                    "content": {"phase": "<structured data may be a plain JSON object — "
                                         "text files take one string instead>"}},
@@ -170,6 +176,7 @@ _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s")),
     "write_util": (("name", "content"), ()),
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
+    "view_image": ((), ("path", "paths", "prompt")),
     "write_file": (("path", "content"), ("append",)),
     "edit_file": (("path", "anchor"), ("replacement", "all")),
     "memory_read": (("name",), ()),
@@ -258,24 +265,25 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,
             problems.append(f"kind={kind} requires a non-empty {field!r} field")
     if kind == "write_util" and not isinstance(obj.get("content"), str | None):
         problems.append("kind=write_util requires 'content' to be the script text (one string)")
-    if kind == "read_file":
+    if kind in ("read_file", "view_image"):
         paths = obj.get("paths")
         if paths is not None and (not isinstance(paths, list)
                                   or not all(isinstance(p, str) and p.strip() for p in paths)):
-            problems.append("kind=read_file: 'paths' must be a list of non-empty path strings")
+            problems.append(f"kind={kind}: 'paths' must be a list of non-empty path strings")
             paths = None
         if not str(obj.get("path") or "").strip() and not paths:
-            problems.append("kind=read_file requires 'path' (one file) or 'paths' (several)")
+            problems.append(f"kind={kind} requires 'path' (one file) or 'paths' (several)")
         elif str(obj.get("path") or "").strip() and paths:
-            problems.append("kind=read_file takes 'path' OR 'paths', not both")
+            problems.append(f"kind={kind} takes 'path' OR 'paths', not both")
         elif paths and len(paths) > READ_PATHS_MAX:
-            problems.append(f"kind=read_file: at most {READ_PATHS_MAX} paths per action")
+            problems.append(f"kind={kind}: at most {READ_PATHS_MAX} paths per action")
     if kind == "edit_file" and "replacement" in obj and not isinstance(obj["replacement"], str):
         problems.append("kind=edit_file: 'replacement' must be a string (\"\" deletes the anchor)")
     # .memory/ is reachable ONLY through the memory actions — the engine owns INDEX.md and
     # enforces the note cap there; generic file access would silently bypass both.
-    if kind in ("read_file", "write_file", "edit_file"):
-        for raw in [obj.get("path"), *(obj.get("paths") or [] if kind == "read_file" else [])]:
+    if kind in ("read_file", "view_image", "write_file", "edit_file"):
+        multi = obj.get("paths") or [] if kind in ("read_file", "view_image") else []
+        for raw in [obj.get("path"), *multi]:
             rel = str(raw or "")
             while rel.startswith("./"):
                 rel = rel[2:]

@@ -194,7 +194,7 @@ def test_inbox_unreadable_message_logged_and_left(tmp_path, caplog):
             out = inbox_mod.drain_messages(d, tmp_path / "consumed")
     finally:
         bad.chmod(0o600)
-    assert out == ["hello"]
+    assert out == [{"text": "hello", "attachments": []}]
     assert bad.exists()                          # left in place for the next drain
     assert "cannot read msg-2.json" in caplog.text
 

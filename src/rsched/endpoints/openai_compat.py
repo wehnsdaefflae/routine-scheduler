@@ -13,14 +13,40 @@ without it — the schema guard downstream still validates every reply.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 
 from ..config import EndpointConfig
-from .base import (DEFAULT_TIMEOUT, Completion, EndpointError, Message,
-                   json_or_raise, key_from_env_file, with_retries)
+from .base import (DEFAULT_TIMEOUT, PDF_MIME, Completion, EndpointError, Message,
+                   json_or_raise, key_from_env_file, read_media_b64, supports_media_type,
+                   with_retries)
 
 _RF_ERROR_HINTS = ("response_format", "json_schema", "structured", "structured_outputs")
+
+
+def _openai_content(content: str, media: list[dict]) -> list[dict]:
+    """A message's string content + media list → OpenAI content parts: text first, then each
+    image as a base64 data-URI `image_url` part (the shape the `vision` util already uses)."""
+    parts: list[dict] = [{"type": "text", "text": content}] if content else []
+    for item in media:
+        mime = item["media_type"]
+        b64 = read_media_b64(item["path"])
+        if mime == PDF_MIME:  # defensive — supports_media routes PDFs to the vision util
+            parts.append({"type": "file", "file": {"filename": Path(item["path"]).name,
+                                                    "file_data": f"data:{mime};base64,{b64}"}})
+        else:
+            parts.append({"type": "image_url",
+                          "image_url": {"url": f"data:{mime};base64,{b64}"}})
+    return parts
+
+
+def _render_media(messages: list[Message]) -> list[Message]:
+    """Rewrite any message carrying `media` into OpenAI content-array form; text-only
+    messages keep their plain string content. Drops the engine-side `media` key."""
+    return [{"role": m["role"], "content": _openai_content(m.get("content", ""), m["media"])}
+            if m.get("media") else {"role": m["role"], "content": m["content"]}
+            for m in messages]
 
 
 class OpenAICompatEndpoint:
@@ -42,6 +68,12 @@ class OpenAICompatEndpoint:
         # decoding to the schema (the OpenAI-compat response_format is not enforced by Ollama).
         self.native = cfg.schema_mode == "ollama_native"
         self.native_url = self.base_url.removesuffix("/v1") + "/api/chat"
+        self._multimodal = cfg.native_multimodal()
+
+    def supports_media(self, media_type: str) -> bool:
+        """OpenAI-compatible vision models take images natively when this endpoint is
+        multimodal; PDF support is spotty across providers, so PDFs route to the vision util."""
+        return supports_media_type(media_type, multimodal=self._multimodal, pdf=False)
 
     def _resolve_key(self) -> str:
         if self.api_key:                                  # inline key (UI-set) wins over a file
@@ -78,6 +110,8 @@ class OpenAICompatEndpoint:
         # cached share shows up as usage "cached_in" (see _parse).
         if self.native and schema is not None:
             return self._complete_native(messages, model, schema, max_tokens, timeout)
+        if any(m.get("media") for m in messages):  # only touched when an image rides a turn
+            messages = _render_media(messages)
         body: dict = {"model": model, "messages": messages, **self.extra_body}
         if "openrouter" in self.base_url:
             # usage accounting: the response's usage block then carries the real $ cost
