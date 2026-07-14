@@ -32,8 +32,8 @@ Eight sections, in this order:
 | 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a TERSE `say` (one short sentence — words are spent on decisions and surprises, not routine steps), "the run starts NOW", steps-on-demand, working dir + extra fs roots, **no shell**, capability-aware `write_util` and memory-action glosses, the traits-vs-capabilities prose ownership rule, the concrete budgets, a prose gloss of every action kind (including `read_file` batching via `paths` and in-place `edit_file` instead of whole-file rewrites), the injection warning. |
 | 2 | `# ACTION SCHEMA (your every reply matches this)` | `ACTION_SCHEMA` | The exact reply grammar; field descriptions double as micro-docs (`say`/`question`/`summary` say that simple Markdown renders in the UI; `say` demands ONE short sentence; `summary` demands a DETAILED 8-20 lines). |
 | 3 | `# EXAMPLE of a valid reply` | `example_action()` | One few-shot example (`read_file steps/scan.md`) that models on-demand step reading and a terse `say` — deliberately NOT `util name=list`: the catalog already sits in CAPABILITIES, so opening a run by re-listing it just re-buys known information. |
-| 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow; step detail stays in `steps/*.md`, practice detail in `traits/*.md` — both read on demand. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
-| 5 | `# INSTRUCTION (what this routine is for)` | `instruction.md` verbatim | The task: goal, deliverable, constraints, completion criteria. |
+| 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow **and the task**: a top-level routine's recipe is self-contained — goal, deliverable, constraints and completion criteria are compiled into `main.md` + `steps/*.md` (step detail read on demand), practice detail in `traits/*.md`. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
+| 5 | `# INSTRUCTION (your assigned task)` | the parent's spawn `prompt` — **subruns only** | SUBRUN-ONLY. A top-level routine's `instruction.md` is the compile **SEED** the recipe was generated from — NOT a runtime section (it can lag the steps, so the run never reads it as the task). A subrun has no decomposed steps, so its self-contained brief (the parent's `prompt`) rides here instead. |
 | 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ capabilities — switched-off gated kinds like `memory_*`/`write_util` simply don't appear), the enabled capabilities + the held conduct permissions, each held permission's short capability note (the library doc's body, capped), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary, reserved utils flagged). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
 | 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the `state/` file list, `steps/` module names, the `traits/` practice-module names, the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), open deferred questions, answers that arrived since the last run. |
 | 8 | `# MESSAGES FROM THE USER (consume now)` | inbox drain at boot | Only present if messages were waiting — and only on a FRESH run: a resume delivers waiting messages as trailing `USER MESSAGE` injections instead (§2). |
@@ -44,9 +44,11 @@ whatever is not in the prompt is reachable by an action (`util name=list`,
 `read_file steps/…`, `read_file traits/…`, `memory_read <topic>`).
 
 **Subrun variant** (spawned children): same composer, but the workflow is the library
-pattern materialized under `runs/<ts>/sub/<n>/`, the instruction is the parent's `prompt`
-verbatim, permissions and capabilities are off (so no `write_util`, no `memory_*`, no reserved
-utils, no traits of their own), and section 7 collapses to `(subrun — no routine state
+pattern materialized under `runs/<ts>/sub/<n>/`, and — because a subrun has no decomposed
+steps — section 5 (`# INSTRUCTION (your assigned task)`) IS present, carrying the parent's
+self-contained `prompt` verbatim (a top-level routine omits section 5 entirely — its task is
+in the workflow). Permissions and capabilities are off (so no `write_util`, no `memory_*`, no
+reserved utils, no traits of their own), and section 7 collapses to `(subrun — no routine state
 digest; everything you need is in the instruction)`.
 
 ---
@@ -217,7 +219,7 @@ Working directory: /home/user/routines/job-radar. All relative paths resolve the
 
 You have NO shell. The ONLY way to run code is a global util (the `util` action). If no util does what you need, WRITE one (the `write_util` action) and then call it — utils are reusable, selftested, and shared across all routines. You never run git yourself: the engine commits your working directory automatically at run end.
 
-Ownership of prose: instruction.md holds ONLY the task — goal, deliverable, constraints, completion criteria. Cross-cutting conduct (when to ask the user, after-run improvement passes, util and research discipline) lives in this routine's PRACTICE MODULES under traits/ — your own adapted copies, referenced at the end of the workflow below; read the relevant one before the situation it governs. Your own recipe and config (main.md, steps/, traits/, instruction.md, routine.yaml) are READ-ONLY to you: the routine-improver meta routine refines recipes, the user owns config — file a deferred ask_user for changes you believe are needed. What you are ALLOWED to do (util authoring, reserved channels, memory, previous runs) is a separate matter: CAPABILITIES, set only by the user and enforced by the engine on every action — the held permissions' notes below state the conduct for each; never restate capability-dependent conduct inside instruction.md.
+Ownership of prose: your recipe is self-contained — the WORKFLOW below (its main.md entry and the steps/<name>.md modules it routes to) fully defines your task: goal, deliverable, constraints, completion criteria. The instruction.md file in your working dir is only the SEED this recipe was compiled from; it can lag behind the steps, so treat the workflow and its steps as the source of truth and do NOT read instruction.md as the task. (A subrun instead gets its task in the `# INSTRUCTION (your assigned task)` section — its parent's self-contained brief.) Cross-cutting conduct (when to ask the user, after-run improvement passes, util and research discipline) lives in this routine's PRACTICE MODULES under traits/ — your own adapted copies, referenced at the end of the workflow below; read the relevant one before the situation it governs. Your own recipe and config (main.md, steps/, traits/, instruction.md, routine.yaml) are READ-ONLY to you: the routine-improver meta routine refines recipes, the user owns config — file a deferred ask_user for changes you believe are needed. What you are ALLOWED to do (util authoring, reserved channels, memory, previous runs) is a separate matter: CAPABILITIES, set only by the user and enforced by the engine on every action — the held permissions' notes below state the conduct for each.
 
 Budgets for this run: 60 turns, 45 minutes, unlimited total tokens, at most 8 subruns (depth ≤ 2). Spend them on the workflow's priorities and `finish` DELIBERATELY before they expire — a finish you wrote beats a forced one.
 
@@ -441,13 +443,10 @@ These practice modules are this routine's own adapted standards — read each wi
 - `traits/web-research.md` — verify external facts by searching. Consult before relying on a fact about the world.
 - `traits/ledger-discipline.md` — the run's LEDGER entry. Consult before finishing.
 
-# INSTRUCTION (what this routine is for)
-Scan the usual freelance portals for new AI/ML/LLM project postings from the last 24 h.
-Score each against my profile (LLM engineering, Python, agent systems; German or remote).
-Deliverable: `state/shortlist.md` — the top 5 with title, rate, link, one-line fit
-rationale — and a Discord message with the top 3 when at least one scores ≥ 8/10.
-Constraints: never apply automatically; skip postings older than 7 days.
-Done when: shortlist written and (if warranted) the Discord ping sent.
+*(No `# INSTRUCTION` section — this is a top-level routine: its task is compiled into the WORKFLOW
+above. The original instruction is retained on disk as `instruction.md`, the SEED the recipe was
+generated from, but is not placed in the prompt. A subrun would show `# INSTRUCTION (your assigned
+task)` here, carrying its parent's self-contained brief.)*
 
 # CAPABILITIES (what this run can actually use)
 Model: openrouter/qwen/qwen3-235b-a22b — context window ≈ 200,000 chars; the engine archives the middle of the conversation to on-disk history at ~60-80% of that, so budget your reads (large files via read_file ranges, not whole).

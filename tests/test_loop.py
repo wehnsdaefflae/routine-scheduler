@@ -293,9 +293,10 @@ def test_happy_path(make_routine, scripted):
     assert (run_dir / "result.md").read_text().startswith("Wrote state/out.txt")
     st = read_json(run_dir / "status.json")
     assert st["state"] == "finished" and st["turn"] == 2 and st["usage"]["in"] > 0
-    # the system prompt carried workflow + instruction + digest
+    # the top-level system prompt carries the workflow + digest; the instruction is the compile
+    # seed (baked into the steps), NOT a runtime prompt section
     system = ep.calls[0]["messages"][0]["content"]
-    assert "# WORKFLOW" in system and "Test instruction" in system and "no previous runs" in system
+    assert "# WORKFLOW" in system and "Test instruction" not in system and "no previous runs" in system
 
 
 def test_util_missing_then_continue(make_routine, scripted):
@@ -603,7 +604,9 @@ def test_deferred_answer_reaches_next_run_digest(make_routine, scripted):
     assert not list((d / "questions" / "pending").glob("*.json"))
 
 
-PARENT = "Test instruction"  # marker present only in the parent's system prompt
+PARENT = "(no previous runs)"  # structurally parent-only: it is in the parent's STATE DIGEST,
+# while every subrun's digest is the fixed "(subrun — no routine state digest …)" sentinel. (The
+# parent's instruction is no longer in its prompt, so the old instruction-text marker can't be used.)
 
 
 def test_spawn_and_wait_collects_child(make_routine, scripted):

@@ -6,7 +6,7 @@ import { mdInline } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { permissionsPanel } from "/static/components/permissions.js";
-import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, tagChip, toast, when } from "/static/util.js";
+import { busy, chip, el, emptyState, fmtDur, fmtTokens, skeleton, tagChip, toast, when } from "/static/util.js";
 import { forgetField } from "/static/formpersist.js";
 
 export async function render(view, slug, query = {}) {
@@ -228,15 +228,93 @@ export async function render(view, slug, query = {}) {
           catch (err) { toast(err.message, 4000, { error: true }); }
         } }, "save models"))));
 
-  // -- editable files: instruction + steps -------------------------------------
-  view.append(el("h2", {}, "Instruction"));
-  view.append(docEditor("Instruction (the task)", d.instruction, async (content) => {
+  // -- seed (the instruction) → compiled step modules --------------------------
+  // The instruction is the SEED: the workflow is compiled against it into main.md + the step
+  // modules. Editing the seed does NOT recompile on its own; the drift notes surface the two ways
+  // seed and steps fall out of sync (seed edited without recompiling ↔ steps changed under it,
+  // e.g. by the routine-improver, leaving the seed stale).
+  const seed = d.seed || { tracked: false, instruction: false, steps: false };
+  const canRecompile = !!d.recompilable;
+  const recompileStatus = el("span", { class: "muted small", style: "margin-left:8px" });
+  const recompileBtn = el("button", {
+    class: "btn primary", disabled: !canRecompile || !llmReady,
+    title: !wf.slug ? "hand-authored — no source workflow to recompile from"
+      : !canRecompile ? "its origin workflow isn't in this library — nothing to recompile from"
+        : !llmReady ? "connect an LLM endpoint in Settings first" : "",
+  }, "⟳ recompile into steps");
+  recompileBtn.onclick = () => startRecompile(recompileBtn, recompileStatus);
+
+  const driftNotes = el("div", {});
+  if (seed.instruction) {
+    driftNotes.append(el("div", { class: "panel warn", style: "margin-bottom:8px" },
+      "⟳ The seed has changed since the steps were last compiled — the next run still follows the ",
+      el("strong", {}, "old"), " step modules. Recompile to regenerate them from the seed."));
+  }
+  if (seed.steps) {
+    driftNotes.append(el("div", { class: "panel warn", style: "margin-bottom:8px" },
+      "✎ The step modules have changed since they were compiled from this seed (hand edits, or the ",
+      "routine-improver). The seed no longer describes what the routine actually does — ",
+      el("strong", {}, "recompiling will overwrite those step edits.")));
+  }
+  if (!seed.tracked) {
+    driftNotes.append(el("div", { class: "muted small", style: "margin-bottom:8px" },
+      "no compile baseline yet — recompile once to start tracking seed ↔ steps drift."));
+  }
+
+  view.append(el("h2", {}, "Seed"));
+  view.append(el("div", { class: "panel" },
+    el("div", { class: "muted small", style: "margin-bottom:8px" },
+      "the task in plain language — the ", el("strong", {}, "seed"), " the workflow (",
+      el("span", { class: "ref-tag" }, wf.slug || "hand-authored"),
+      ") is compiled from into the step modules below. Editing it does not recompile automatically."),
+    driftNotes,
+    el("div", { class: "row" }, recompileBtn, recompileStatus)));
+  view.append(docEditor("Seed instruction (the task)", d.instruction, async (content) => {
     await api(`/api/routines/${slug}/instruction`, { method: "PUT", body: { content } });
   }));
+
+  async function startRecompile(btn, statusEl) {
+    const warn = seed.steps
+      ? "The step modules have changed since they were compiled from this seed — recompiling "
+        + "regenerates them from the current seed and OVERWRITES those changes (including any by "
+        + "the routine-improver).\n\nContinue?"
+      : "Recompiling regenerates main.md and the step modules from the current seed instruction, "
+        + "replacing the current steps.\n\nContinue?";
+    if (!confirm(warn)) return;
+    btn.disabled = true;
+    try { await api(`/api/routines/${slug}/recompile`, { method: "POST" }); }
+    catch (err) { toast(err.message, 5000, { error: true }); btn.disabled = false; return; }
+    statusEl.replaceChildren(busy("recompiling — decomposing the workflow into steps (a minute or two)…"));
+    let done = false;
+    const finish = (ok, msg) => {
+      if (done) return; done = true;
+      window.removeEventListener("rsched-bus", onBus); clearInterval(poll);
+      if (ok) { toast("recompiled from the seed"); location.reload(); }
+      else { toast(msg || "recompile failed", 7000, { error: true }); btn.disabled = false; statusEl.replaceChildren(); }
+    };
+    const onBus = (e) => {
+      const ev = e.detail || {}; if (ev.slug !== slug) return;
+      if (ev.event === "routine_recompiled") finish(true);
+      else if (ev.event === "routine_recompile_failed") finish(false, ev.error);
+    };
+    window.addEventListener("rsched-bus", onBus);   // instant hand-off when the recompile finishes
+    const started = Date.now();
+    const poll = setInterval(async () => {          // robust fallback (survives a missed event / reload)
+      if (done) return;
+      let s;
+      try { s = await api(`/api/routines/${slug}/recompile`); } catch { return; }
+      if (s.state === "done") finish(true);
+      else if (s.state === "error" || s.state === "stale") finish(false, s.error);
+      else if (Date.now() - started > 300000) finish(false, "the recompile is taking unusually long — it may be stuck");
+    }, 3000);
+  }
 
   const stepFiles = (d.files?.steps) || [];
   view.append(el("h2", {}, "Step modules"),
     el("div", { class: "panel" },
+      el("div", { class: "muted small", style: "margin-bottom:8px" },
+        "compiled from the seed above — edit freely; the routine-improver may also refine these. ",
+        "Changes here make the seed drift, and a recompile would overwrite them."),
       stepFiles.length
         ? el("div", { class: "row" }, stepFiles.map((n) =>
             el("button", { class: "btn small", onclick: () => editFile(`steps/${n}`, n) }, n)))

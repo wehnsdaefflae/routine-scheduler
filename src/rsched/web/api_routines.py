@@ -3,6 +3,7 @@ manual fire, archive, file reads."""
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import subprocess
 from pathlib import Path
@@ -15,7 +16,7 @@ from .. import schedule
 from ..config import MODEL_KINDS
 from ..daemon import registry
 from ..ids import now_iso, run_ts
-from ..paths import resolve_rel
+from ..paths import atomic_write_json, read_json, resolve_rel
 
 router = APIRouter(tags=["routines"])
 
@@ -38,8 +39,9 @@ def _info(request: Request, slug: str) -> registry.RoutineInfo:
 
 
 def _guard_not_active(request: Request, info: registry.RoutineInfo) -> None:
-    if info.active_run or _state(request).runner.is_active(info.slug):
-        raise HTTPException(409, f"routine {info.slug!r} has an active run — try again after it ends")
+    if info.active_run or _state(request).runner.is_busy(info.slug):
+        raise HTTPException(409, f"routine {info.slug!r} is busy (a run or recompile is in progress) "
+                                 "— try again after it ends")
 
 
 def _git_commit(routine_dir: Path, message: str) -> None:
@@ -102,6 +104,10 @@ def routine_detail(request: Request, slug: str) -> dict:
     # this routine's), plus the machine-enforced capabilities mapping + its vocabulary
     from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
 
+    from ..workflows import provenance
+
+    instruction = (d / "instruction.md").read_text(encoding="utf-8") \
+        if (d / "instruction.md").exists() else ""
     all_perms = library_docs.list_docs(server.permissions_home)
     held = set(info.cfg.permissions)
     permissions = [{"slug": p["slug"], "summary": p["summary"], "title": p["title"],
@@ -112,6 +118,8 @@ def routine_detail(request: Request, slug: str) -> dict:
     capabilities = {"active": {**EMPTY_CAPABILITIES, **own_caps},
                     "vocabulary": {"actions": list(GATED_KINDS), "utils": reservable}}
     sm = server.system_model
+    in_library = bool(info.cfg.workflow_slug) and \
+        (server.library_home / "workflows" / f"{info.cfg.workflow_slug}.py").exists()
     return {
         **_card(request, info),
         "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
@@ -120,9 +128,12 @@ def routine_detail(request: Request, slug: str) -> dict:
         # pattern actually exists in the current library, so the UI never implies a findable
         # workflow that isn't there (hand-authored recipes carry an empty slug).
         "workflow_ref": {"slug": info.cfg.workflow_slug, "commit": info.cfg.workflow_commit,
-                         "in_library": bool(info.cfg.workflow_slug) and
-                         (server.library_home / "workflows"
-                          / f"{info.cfg.workflow_slug}.py").exists()},
+                         "in_library": in_library},
+        # the seed = instruction.md; drift tells the UI whether it has been edited since the
+        # steps were compiled, or the steps changed under it. Recompilable only when a source
+        # workflow is actually present to re-derive from.
+        "seed": provenance.drift(d, instruction),
+        "recompilable": in_library,
         # Per-routine models (main/subroutine/tool_call). A kind left null falls back to the
         # server system_model, shown so the UI can label the effective model.
         "models": {k: ({"endpoint": r.endpoint, "model": r.model, "effort": r.effort}
@@ -131,8 +142,7 @@ def routine_detail(request: Request, slug: str) -> dict:
         "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None,
         "permissions": permissions,
         "capabilities": capabilities,
-        "instruction": (d / "instruction.md").read_text(encoding="utf-8")
-        if (d / "instruction.md").exists() else "",
+        "instruction": instruction,
         "ledger_tail": ledger_tail,
         "files": files,
         "questions": info.open_questions,
@@ -333,6 +343,70 @@ def _put_doc(request: Request, slug: str, filename: str, content: str) -> dict:
     (info.cfg.dir / filename).write_text(content, encoding="utf-8")
     _git_commit(info.cfg.dir, f"{filename} edit via web")
     return {"ok": True}
+
+
+@router.post("/routines/{slug}/recompile")
+async def recompile(request: Request, slug: str) -> dict:
+    """Re-derive main.md + steps/ from the CURRENT instruction (the seed) × the routine's workflow —
+    the slow decompose runs in the BACKGROUND (state/recompile.json: building | done | error, plus a
+    bus event), mirroring the new-routine wizard. The slug is RESERVED so no scheduled run fires
+    mid-recompile. 400 if there's no source workflow to re-derive from; 409 if the routine is busy."""
+    info = _info(request, slug)
+    _guard_not_active(request, info)
+    server = _state(request).server
+    if not info.cfg.workflow_slug:
+        raise HTTPException(400, "this routine was written directly (no source workflow) — "
+                                 "edit main.md / steps below instead")
+    if not (server.library_home / "workflows" / f"{info.cfg.workflow_slug}.py").exists():
+        raise HTTPException(400, f"its workflow {info.cfg.workflow_slug!r} is not in this library "
+                                 "— nothing to recompile from")
+    from ..endpoints import EndpointRegistry
+    try:   # decompose needs a system model — fail fast rather than degrade to a main-only flatten
+        EndpointRegistry(server).for_system()
+    except Exception as exc:  # noqa: BLE001 — surface any resolution failure as a clear 400
+        raise HTTPException(400, f"no system model configured to recompile with: {exc}") from exc
+    runner = _state(request).runner
+    runner.reserved.add(slug)   # guard already ensured not busy; single-threaded → no race to add
+    atomic_write_json(info.cfg.dir / "state" / "recompile.json",
+                      {"state": "building", "started": now_iso()})
+    asyncio.create_task(_run_recompile(request.app.state, info.cfg.dir, slug))
+    return {"recompiling": True, "slug": slug}
+
+
+async def _run_recompile(app_state, routine_dir: Path, slug: str) -> None:
+    """Background: run the (blocking) recompile off the loop, record the outcome to
+    state/recompile.json + a bus event, and ALWAYS release the reservation."""
+    from ..config import load_routine
+    from ..workflows.recompile import recompile_routine
+
+    server, bus, runner = app_state.server, app_state.bus, app_state.runner
+    status_path = routine_dir / "state" / "recompile.json"
+    try:
+        cfg, _ = load_routine(routine_dir)
+        if cfg is None:
+            raise RuntimeError("routine config is invalid")
+        summary = await asyncio.to_thread(recompile_routine, server, routine_dir, cfg)
+        await asyncio.to_thread(_git_commit, routine_dir, "recompile main.md + steps from the seed")
+        atomic_write_json(status_path, {"state": "done", "finished": now_iso(), **summary})
+        bus.publish({"event": "routine_recompiled", "slug": slug, **summary})
+    except Exception as exc:  # noqa: BLE001 — any failure leaves the routine's files untouched-enough
+        atomic_write_json(status_path, {"state": "error", "finished": now_iso(), "error": str(exc)[:300]})
+        bus.publish({"event": "routine_recompile_failed", "slug": slug, "error": str(exc)[:300]})
+    finally:
+        runner.reserved.discard(slug)
+        app_state.scheduler.rescan()
+
+
+@router.get("/routines/{slug}/recompile")
+def recompile_status(request: Request, slug: str) -> dict:
+    """Poll target for the background recompile (the wizard-style fallback to the bus event)."""
+    info = _info(request, slug)
+    st = read_json(info.cfg.dir / "state" / "recompile.json", {}) or {}
+    state = st.get("state", "idle")
+    if state == "building" and not _state(request).runner.is_busy(slug):
+        state = "stale"   # the daemon restarted mid-recompile — never completed
+    return {"state": state, "error": st.get("error"),
+            **{k: st[k] for k in ("modules", "removed") if k in st}}
 
 
 @router.post("/routines/{slug}/run")

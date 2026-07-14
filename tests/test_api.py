@@ -111,6 +111,84 @@ def test_put_docs(client):
     assert (tmp / "routines" / "apir" / "instruction.md").read_text() == "# New instruction"
 
 
+def test_recompile_endpoint_launches_and_guards(client, monkeypatch):
+    """recompile() returns immediately (the slow decompose runs in the background), reserves the
+    slug so no run can fire, and refuses when there is nothing to recompile from."""
+    import asyncio
+
+    from rsched.web import api_routines
+
+    c, tmp = client
+    # the fixture routine references 'test-flow', absent from the empty test library → 400
+    assert c.post("/api/routines/apir/recompile").status_code == 400
+    # seed the workflow file so the existence + system-model checks pass; stub the worker so the
+    # background task is a no-op and the building/reserved state is deterministic to assert
+    lib = tmp / "library" / "workflows"
+    lib.mkdir(parents=True, exist_ok=True)
+    (lib / "test-flow.py").write_text("META = {'slug': 'test-flow'}\ndef run():\n    pass\n")
+
+    async def _noop(*a, **k):
+        return None
+    monkeypatch.setattr(api_routines, "_run_recompile", _noop)
+
+    r = c.post("/api/routines/apir/recompile")
+    assert r.status_code == 200 and r.json()["recompiling"] is True
+    assert read_json(tmp / "routines" / "apir" / "state" / "recompile.json")["state"] == "building"
+    assert "apir" in c.app.state.runner.reserved
+    # while reserved, config/file edits and a second recompile are all refused (busy)
+    assert c.put("/api/routines/apir/instruction", json={"content": "x"}).status_code == 409
+    assert c.post("/api/routines/apir/recompile").status_code == 409
+    assert c.patch("/api/routines/apir", json={"enabled": False}).status_code == 409
+    c.app.state.runner.reserved.discard("apir")
+
+
+def test_run_recompile_worker_records_done_and_releases(client, monkeypatch):
+    """The background worker runs the recompile off the loop, records 'done' + the summary, emits a
+    bus event, and always frees the reservation."""
+    import asyncio
+
+    from rsched.web import api_routines
+
+    c, tmp = client
+    d = tmp / "routines" / "apir"
+    c.app.state.runner.reserved.add("apir")
+    monkeypatch.setattr("rsched.workflows.recompile.recompile_routine",
+                        lambda server, routine_dir, cfg: {"modules": ["x"], "removed": ["old"]})
+    asyncio.run(api_routines._run_recompile(c.app.state, d, "apir"))
+    st = read_json(d / "state" / "recompile.json")
+    assert st["state"] == "done" and st["modules"] == ["x"] and st["removed"] == ["old"]
+    assert "apir" not in c.app.state.runner.reserved
+    assert c.get("/api/routines/apir/recompile").json()["state"] == "done"
+
+
+def test_run_recompile_worker_records_error_and_releases(client, monkeypatch):
+    """A failing recompile is recorded as 'error' (retryable) and still frees the reservation."""
+    import asyncio
+
+    from rsched.web import api_routines
+
+    c, tmp = client
+    d = tmp / "routines" / "apir"
+    c.app.state.runner.reserved.add("apir")
+
+    def boom(server, routine_dir, cfg):
+        raise RuntimeError("decompose blew up")
+    monkeypatch.setattr("rsched.workflows.recompile.recompile_routine", boom)
+    asyncio.run(api_routines._run_recompile(c.app.state, d, "apir"))
+    st = read_json(d / "state" / "recompile.json")
+    assert st["state"] == "error" and "decompose blew up" in st["error"]
+    assert "apir" not in c.app.state.runner.reserved
+
+
+def test_routine_detail_reports_seed_drift(client):
+    """The detail payload carries the seed ↔ steps drift block so the page can surface it. The
+    fixture routine has no provenance baseline → tracked False."""
+    c, _ = client
+    detail = c.get("/api/routines/apir").json()
+    assert detail["seed"] == {"tracked": False, "instruction": False, "steps": False}
+    assert "recompilable" in detail
+
+
 def test_file_read_guarded(client):
     c, _ = client
     assert c.get("/api/routines/apir/files", params={"path": "LEDGER.md"}).status_code == 200

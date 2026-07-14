@@ -94,6 +94,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     capabilities = capabilities_for(active_perms, read_library_requires(server.permissions_home))
     commit = library.head_commit(server.library_home)
 
+    from . import provenance
     from .adapt import decompose, dump_markdown
 
     for sub in ("state", "steps", "inbox", "traits"):
@@ -124,8 +125,6 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
         (routine_dir / "traits" / f"{slug_t}.md").write_text(body.rstrip() + "\n", encoding="utf-8")
         m = library_docs.DOC_RE.search(body)
         trait_summaries[slug_t] = m.group("summary").strip() if m else ""
-    main_body = _with_practices_tail(result["main"], trait_summaries)
-    (routine_dir / "main.md").write_text(dump_markdown(main_meta, main_body), encoding="utf-8")
     for mod_name, mod_body in result["modules"].items():
         (routine_dir / "steps" / f"{mod_name}.md").write_text(mod_body.rstrip() + "\n", encoding="utf-8")
     # extra purpose-specific step modules from the wizard also land in steps/
@@ -133,6 +132,12 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
         safe = fname if fname.endswith(".md") else f"{fname}.md"
         (routine_dir / "steps" / Path(safe).name).write_text(fcontent, encoding="utf-8")
     (routine_dir / "instruction.md").write_text(instruction.rstrip() + "\n", encoding="utf-8")
+    # main.md last: stamp the seed ↔ steps provenance baseline over the now-complete steps/
+    main_body = _with_practices_tail(result["main"], trait_summaries)
+    (routine_dir / "main.md").write_text(
+        dump_markdown(provenance.stamp(main_meta, routine_dir=routine_dir,
+                                       main_body=main_body, instruction=instruction), main_body),
+        encoding="utf-8")
     (routine_dir / "LEDGER.md").write_text(
         f"# LEDGER — {name}\n\n### seed — scaffolded from workflow '{workflow_slug}' @ {commit}\n",
         encoding="utf-8")

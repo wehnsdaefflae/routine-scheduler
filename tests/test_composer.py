@@ -129,13 +129,24 @@ def test_replay_messages_rebuilds_conversation():
 
 def test_build_system_prompt_sections(make_routine, tmp_path):
     ctx = _ctx(make_routine, tmp_path, slug="sects")
-    sp = build_system_prompt(ctx, "## Run flow\n1. step", "The instruction.",
+    sp = build_system_prompt(ctx, "## Run flow\n1. step", "SEED-BODY-SENTINEL",
                              "digest text", ["inbox msg one"])
     for needle in ("# ACTION SCHEMA", "# EXAMPLE", "# WORKFLOW", "## Run flow",
-                   "# INSTRUCTION", "The instruction.", "# CAPABILITIES", "# STATE DIGEST",
+                   "# CAPABILITIES", "# STATE DIGEST",
                    "# MESSAGES FROM THE USER", "inbox msg one"):
         assert needle in sp, needle
+    # a top-level routine's instruction is the SEED, compiled into the steps — NOT in the prompt
+    assert "# INSTRUCTION (your assigned task)" not in sp and "SEED-BODY-SENTINEL" not in sp
     assert "(none in the library yet)" in sp   # empty test library → capabilities say so
+
+
+def test_subrun_prompt_carries_its_instruction(make_routine, tmp_path):
+    # a subrun (depth > 0) has no decomposed steps — its instruction IS the parent's self-contained
+    # brief, so it stays in the prompt (unlike a top-level routine, whose task lives in its steps)
+    ctx = _ctx(make_routine, tmp_path, slug="subsects")
+    ctx.depth = 1
+    sp = build_system_prompt(ctx, "## Run flow", "Do the delegated thing.", "(subrun)", [])
+    assert "# INSTRUCTION (your assigned task)" in sp and "Do the delegated thing." in sp
 
 
 def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):

@@ -16,8 +16,8 @@ from rsched.schema_guard import retry_message
 DOC = (Path(__file__).resolve().parents[1] / "docs" / "prompt-anatomy.md").read_text(encoding="utf-8")
 
 
-def _system_prompt(make_routine, tmp_path) -> str:
-    d = make_routine(slug="anatomy")
+def _system_prompt(make_routine, tmp_path, depth=0) -> str:
+    d = make_routine(slug=f"anatomy{depth}")
     cfg, _ = load_routine(d)
     run_dir = d / "runs" / "20260712-070000"
     run_dir.mkdir(parents=True)
@@ -26,6 +26,7 @@ def _system_prompt(make_routine, tmp_path) -> str:
     ctx = RunContext(routine=cfg, server=server, registry=None, run_ts="20260712-070000",
                      run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
                      budgets=Budgets.from_config(cfg.budgets))
+    ctx.depth = depth
     ctx.grants = GrantPolicy(active=("util-authoring", "memory"),
                              actions=frozenset({"write_util", "memory_read", "memory_write"}))
     return build_system_prompt(ctx, "## Run flow", "task", state_digest(d, [], []),
@@ -33,11 +34,14 @@ def _system_prompt(make_routine, tmp_path) -> str:
 
 
 def test_doc_carries_every_system_prompt_section_header(make_routine, tmp_path):
-    prompt = _system_prompt(make_routine, tmp_path)
+    # collect headers from both a top-level prompt AND a subrun prompt — the # INSTRUCTION section
+    # is subrun-only now (a top-level routine's instruction is the compile seed, not in the prompt)
+    prompts = (_system_prompt(make_routine, tmp_path, depth=0),
+               _system_prompt(make_routine, tmp_path, depth=1))
     # the composer's own section headers are "# UPPERCASE …" — fragment/workflow bodies may
     # carry their own "# …" headings, which are not part of the composition contract
-    headers = [ln for ln in prompt.splitlines()
-               if ln.startswith("# ") and ln.split()[1].isupper()]
+    headers = sorted({ln for p in prompts for ln in p.splitlines()
+                      if ln.startswith("# ") and ln.split()[1].isupper()})
     assert len(headers) >= 7          # the composed sections, straight from the composer
     for header in headers:
         assert header in DOC, f"system-prompt section {header!r} missing from docs/prompt-anatomy.md"

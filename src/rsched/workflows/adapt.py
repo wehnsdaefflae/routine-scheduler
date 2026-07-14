@@ -107,6 +107,12 @@ agent will follow one action per turn:
 Turn each of the pattern's steps (the `main()` control flow and the functions it calls) into
 concrete prose for THIS task — never leave Python in the output.
 
+SELF-CONTAINED — the running agent will NOT be given this instruction; it acts ONLY from main.md
+and the step modules. So INLINE every concrete detail the task needs directly into them: exact
+values, thresholds, names, formats, category lists, file paths, URLs, output shapes, completion
+criteria. Never write "as the instruction says", "per instruction.md", or otherwise defer to the
+instruction — the instruction is the SEED you are compiling from, not a document the run can read.
+
 Return ONLY the JSON object {{main, modules}}."""
 
 _TRAITS_NOTE = """

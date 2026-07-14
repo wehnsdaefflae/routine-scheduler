@@ -32,7 +32,7 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
     raw pattern. Degrades to the whole workflow rendered as main.md if no endpoint is available."""
     if (routine_dir / "main.md").exists() or not cfg.workflow_slug:
         return
-    from ..workflows import library
+    from ..workflows import library, provenance
     from ..workflows.adapt import decompose, dump_markdown
 
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8") \
@@ -54,7 +54,10 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
     (routine_dir / "steps").mkdir(exist_ok=True)
     for mod_name, mod_body in result["modules"].items():
         (routine_dir / "steps" / f"{mod_name}.md").write_text(mod_body.rstrip() + "\n", encoding="utf-8")
-    (routine_dir / "main.md").write_text(dump_markdown(main_meta, result["main"]), encoding="utf-8")
+    (routine_dir / "main.md").write_text(
+        dump_markdown(provenance.stamp(main_meta, routine_dir=routine_dir,
+                                       main_body=result["main"], instruction=instruction),
+                      result["main"]), encoding="utf-8")
 
 
 def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:
