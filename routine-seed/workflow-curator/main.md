@@ -43,7 +43,7 @@ The steps, in order, are:
 - `steps/cluster-findings.md` — group findings by workflow slug; split defects from routine-local issues.
 - `steps/apply-small-edits.md` — make lint-gated wording fixes, version-bump, git-sync.
 - `steps/apply-big-changes.md` — restructures, applied directly with the same gates + a loud summary.
-- `steps/draft-new-workflow.md` — draft a `status: draft` workflow when a shape has no fit.
+- `steps/draft-new-workflow.md` — draft a new workflow when a shape has no fit.
 - `steps/record.md` — advance `last_seen.json`, append the LEDGER, finish.
 
 Phase model is **steady**: every run is the same full sweep, no cross-run milestones. The

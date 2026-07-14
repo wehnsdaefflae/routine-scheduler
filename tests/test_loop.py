@@ -773,7 +773,7 @@ def test_spawn_picks_library_workflow(make_routine, scripted, tmp_path):
     (lib / "workflows" / "echo-task.py").write_text(
         '"""Echo pattern."""\n'
         'META = {"name": "Echo", "slug": "echo-task", "description": "d", "when_to_use": "w",\n'
-        '        "version": 1, "status": "stable", "tags": ["a", "b", "c"]}\n'
+        '        "version": 1, "tags": ["a", "b", "c"]}\n'
         'PHASES = ["only"]\n'
         'COMPLETION = "done"\n'
         "def main():\n"

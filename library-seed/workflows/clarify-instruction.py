@@ -25,7 +25,6 @@ META = {
                    "fitting workflow pattern, asks the user blocking questions that overlay the task "
                    "on that pattern, then writes state/wizard_result.json. Not for scheduled use.",
     "version": 7,
-    "status": "stable",
     "tags": ["meta", "wizard", "intake"],
     "includes": ["ask-policy"],
     # Only these action kinds are permitted — there is nothing to run or discover, only to clarify.

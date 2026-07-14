@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import ast
 
-REQUIRED_META = ("name", "slug", "description", "when_to_use", "version", "status")
+REQUIRED_META = ("name", "slug", "description", "when_to_use", "version")
 
 
 def parse_py(source: str) -> dict:

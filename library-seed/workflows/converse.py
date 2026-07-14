@@ -27,7 +27,6 @@ META = {
                    "each new conversation. Not for scheduled routines: there is no schedule, "
                    "and the reply cycle assumes a user who reads the answer and writes back.",
     "version": 1,
-    "status": "stable",
     # "meta" keeps it out of spawn-pattern lists and wizard suggestions — a conversation
     # harness assumes a present user; it is materialized ONLY by the Conversations tab.
     "tags": ["conversation", "interactive", "assistant", "meta"],

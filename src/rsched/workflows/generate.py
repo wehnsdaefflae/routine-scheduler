@@ -1,5 +1,5 @@
 """Create a library workflow on demand: one LLM draft, lint-gated with one repair round,
-saved as status: draft and committed. Workflows are Python-pattern files (`.py`)."""
+committed and immediately in circulation. Workflows are Python-pattern files (`.py`)."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ META = {
     "name": "<Human name>", "slug": "<kebab-case, equals the filename>",
     "description": "<one line: what this workflow does>",
     "when_to_use": "<2-4 sentences a matcher uses to pair instructions with this workflow>",
-    "version": 1, "status": "draft",
+    "version": 1,
     "tags": [<at least 3 tags>],
     "includes": [<trait slugs from the available list — the practice modules this pattern suggests>],
     "tools": None,      # or a list of allowed action kinds, e.g. ["read_file", "write_file", "finish"]
@@ -64,7 +64,7 @@ def generate(server: ServerConfig, instruction: str, hint: str = "") -> tuple[st
         + f"{FORMAT_SPEC}\n\nAvailable traits for `includes`: {traits}\n\n"
         f"A good existing workflow for reference:\n\n{example_raw}\n\n"
         "Requirements: generalize (the workflow is a PATTERN — the instruction stays separate), "
-        "depict the control flow with real Python, status: draft, version: 1. "
+        "depict the control flow with real Python, version: 1. "
         "Reply with ONLY the complete .py file content."
     )
     endpoint, ref = EndpointRegistry(server).for_system()

@@ -36,10 +36,10 @@ INTERNAL_TAG = "meta"
 
 def suggest(server: ServerConfig, instruction: str) -> dict:
     candidates = [w for w in list_workflows(server.library_home)
-                  if INTERNAL_TAG not in (w.get("tags") or []) and w["status"] == "stable"]
+                  if INTERNAL_TAG not in (w.get("tags") or [])]
     if not candidates:
         return {"suggestions": [], "none_fit": True,
-                "new_workflow_hint": "library has no stable workflows yet"}
+                "new_workflow_hint": "library has no workflows yet"}
     listing = "\n\n".join(
         f"- slug: {w['slug']}\n  description: {w['description']}\n  when_to_use: {w['when_to_use']}"
         for w in candidates)

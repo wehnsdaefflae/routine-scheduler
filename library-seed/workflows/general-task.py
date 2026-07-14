@@ -33,7 +33,6 @@ META = {
                    "check. Use it when the instruction says WHAT to deliver and the HOW is "
                    "ordinary tool work.",
     "version": 8,
-    "status": "stable",
     "tags": ["general", "research", "tool-use"],
     "includes": ["ask-policy", "global-utils", "web-research", "ledger-discipline"],
     "tools": None,          # None = every action kind is allowed

@@ -6,7 +6,7 @@
 import { api } from "/static/api.js";
 import { codeEditor } from "/static/components/code.js";
 import { replaceHash } from "/static/router.js";
-import { chip, el, emptyState, requiresSummary, skeleton, tagChip, toast, when } from "/static/util.js";
+import { el, emptyState, requiresSummary, skeleton, tagChip, toast, when } from "/static/util.js";
 
 export async function render(view, sub, query = {}) {
   view.append(el("div", { class: "page-head" },
@@ -52,10 +52,10 @@ export async function render(view, sub, query = {}) {
     sections.replaceChildren();
     section("Workflows", "the control-flow patterns routines follow",
       data.workflows.filter((w) => matches(w.tags)).map((w) =>
-        item(w.name || w.slug, w.status, w.problems, w.tags, () => openWorkflow(w.slug))));
+        item(w.name || w.slug, w.problems, w.tags, () => openWorkflow(w.slug), w.description)));
     section("Traits", "reusable practices — adapted into each new routine at creation, then owned by the routine (this is only the template)",
       data.traits.filter((f) => matches(f.tags)).map((f) =>
-        item(f.slug, "", f.problems, f.tags, () => openDoc("traits", f.slug), f.summary)));
+        item(f.slug, f.problems, f.tags, () => openDoc("traits", f.slug), f.summary)));
     section("Permissions", "conduct docs — held per routine via its Permissions panel; the requires: frontmatter names the capabilities each doc's instructions presume (activating the doc switches them on; open a doc to edit the mapping)",
       data.permissions.filter((f) => matches(f.tags)).map((f) => {
         const req = requiresSummary(f.requires);
@@ -63,11 +63,11 @@ export async function render(view, sub, query = {}) {
           ? el("span", {}, f.summary || "",
               el("span", { style: "color:var(--warn)" }, ` ▸ ${req}`))
           : f.summary;
-        return item(f.slug, "", f.problems, f.tags, () => openDoc("permissions", f.slug), summary);
+        return item(f.slug, f.problems, f.tags, () => openDoc("permissions", f.slug), summary);
       }));
     section("Global utils", "the tools routines run (created + revised on demand, selftest-gated)",
       data.utils.filter((u) => matches(u.tags)).map((u) =>
-        item(u.name, "", [], u.tags, () => openUtil(u.name), u.summary)));
+        item(u.name, [], u.tags, () => openUtil(u.name), u.summary)));
   }
 
   function section(title, desc, rows) {
@@ -79,10 +79,9 @@ export async function render(view, sub, query = {}) {
           : el("tr", {}, el("td", { class: "muted" }, active.size ? "none match this filter" : "none")))))));
   }
 
-  function item(label, status, problems, tags, onopen, summary) {
+  function item(label, problems, tags, onopen, summary) {
     return el("tr", {},
       el("td", {}, el("a", { href: "#", onclick: (e) => { e.preventDefault(); onopen(); } }, label)),
-      el("td", {}, status ? chip(status, status === "stable" ? "ok" : "partial") : ""),
       el("td", {}, (tags || []).length ? el("div", { class: "tags" }, tags.map((t) => tagChip(t))) : ""),
       el("td", { class: "muted prose", style: "max-width:460px" }, summary || ""),
       el("td", {}, (problems && problems.length)

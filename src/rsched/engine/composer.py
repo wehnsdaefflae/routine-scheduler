@@ -229,7 +229,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             from ..workflows.library import list_workflows
 
             patterns = [w for w in list_workflows(ctx.server.library_home)
-                        if w.get("status") == "stable" and "meta" not in (w.get("tags") or [])]
+                        if "meta" not in (w.get("tags") or [])]
         except Exception:  # noqa: BLE001 — bare test contexts have no library
             patterns = []
         if patterns:

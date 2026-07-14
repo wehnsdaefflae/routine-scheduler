@@ -40,8 +40,6 @@ def lint_workflow_py(source: str, *, filename: str, trait_slugs: list[str]) -> l
         problems.append(f"{filename}: slug {slug!r} is not kebab-case")
     if slug and filename != f"{slug}.py":
         problems.append(f"{filename}: filename does not match slug {slug!r}")
-    if meta.get("status") not in ("stable", "draft"):
-        problems.append(f"{filename}: status must be stable|draft")
     tags = meta.get("tags")
     if tags is not None and not isinstance(tags, list):
         problems.append(f"{filename}: tags must be a list")

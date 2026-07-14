@@ -37,10 +37,10 @@ def test_lint_catches_defects():
     traits = ["ask-policy"]
     bad = ('"""bad pattern"""\n'
            'META = {"name": "X", "slug": "mismatch", "description": "d", "when_to_use": "w",\n'
-           '        "version": 1, "status": "wild", "includes": ["nope"], "tags": ["a", "b", "c"]}\n')
+           '        "version": 1, "includes": ["nope"], "tags": ["a", "b", "c"]}\n')
     problems = lint_workflow_py(bad, filename="bad.py", trait_slugs=traits)
     text = " | ".join(problems)
-    for needle in ("filename does not match", "status must be", "does not resolve",
+    for needle in ("filename does not match", "does not resolve",
                    "no top-level main()", "PHASES", "COMPLETION"):
         assert needle in text, needle
 
@@ -170,7 +170,7 @@ def test_util_declares_secrets(tmp_path):
 def _py_workflow(tags: str) -> str:
     return ('"""x pattern"""\n'
             'META = {"name": "X", "slug": "x", "description": "d", "when_to_use": "w",\n'
-            f'        "version": 1, "status": "draft", "tags": {tags}}}\n'
+            f'        "version": 1, "tags": {tags}}}\n'
             'PHASES = ["steady"]\n'
             'COMPLETION = "done"\n'
             "def main():\n    pass\n")
@@ -207,7 +207,7 @@ def test_suggest_candidate_filter_uses_meta_tag():
     from rsched.workflows.suggest import INTERNAL_TAG
 
     candidates = [w["slug"] for w in list_workflows(SEED)
-                  if INTERNAL_TAG not in (w.get("tags") or []) and w["status"] == "stable"]
+                  if INTERNAL_TAG not in (w.get("tags") or [])]
     assert candidates == ["general-task"]                 # the only shipped workflow, user-facing
 
 

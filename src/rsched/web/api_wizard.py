@@ -165,7 +165,7 @@ def wizard_generate(request: Request, wid: str, body: GenerateBody) -> dict:
         slug, note = generate(request.app.state.server, result["refined_instruction"], body.hint)
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
-    return {"workflow_slug": slug, "note": note, "status": "draft"}
+    return {"workflow_slug": slug, "note": note}
 
 
 class FinalizeBody(BaseModel):
