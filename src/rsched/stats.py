@@ -45,6 +45,20 @@ def _run_day(ts: str) -> str:
         return "unknown"
 
 
+def _run_ref(recorded, main_ref) -> tuple[str, str]:
+    """(endpoint, model) attribution for one run. status.json's `model` is the engine's
+    resolved `<endpoint>/<model>` for that run — authoritative, it survives a mid-run
+    switch_model. The routine's main ref (already system_model-backed by the caller,
+    mirroring `EndpointRegistry.for_model`) covers legacy runs that predate the field."""
+    endpoint, sep, model = str(recorded or "").partition("/")
+    if sep:
+        return endpoint, model
+    fallback = main_ref.endpoint if main_ref else "unknown"
+    if endpoint:  # a bare model name with no endpoint prefix (old status.json shape)
+        return fallback, endpoint
+    return fallback, (main_ref.model if main_ref else "unknown")
+
+
 def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
     """Walk both homes and roll up usage into every slice the Stats tab renders."""
     homes = [("routine", server.routines_home), ("conversation", server.conversations_home)]
@@ -61,30 +75,32 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
     for kind, home in homes:
         catalog = registry.scan(server, home)
         for slug, info in catalog.items():
-            main_ref = (info.cfg.models or {}).get("main")
-            endpoint_name = main_ref.endpoint if main_ref else "unknown"
+            # the engine's role resolution (EndpointRegistry.for_model): a routine that
+            # leaves models.main unset runs on the server's system_model
+            main_ref = (info.cfg.models or {}).get("main") or server.system_model
             racc = _empty()
             for r in info.runs:
                 st = read_json(r.dir / "status.json")
-                model = ((st.get("model") if isinstance(st, dict) else "")
-                         or (main_ref.model if main_ref else "") or "unknown")
+                endpoint, model = _run_ref(
+                    st.get("model") if isinstance(st, dict) else "", main_ref)
                 _add(totals, r.usage, r.elapsed_s)
                 _add(racc, r.usage, r.elapsed_s)
                 _add(by_model[model], r.usage, r.elapsed_s)
-                _add(by_endpoint[endpoint_name], r.usage, r.elapsed_s)
+                _add(by_endpoint[endpoint], r.usage, r.elapsed_s)
                 _add(by_day[_run_day(r.ts)], r.usage, r.elapsed_s)
                 _add(by_kind[kind], r.usage, r.elapsed_s)
                 by_state[r.state] = by_state.get(r.state, 0) + 1
                 runs.append({"day": _run_day(r.ts), "routine": slug, "kind": kind,
-                             "state": r.state, "model": model, "endpoint": endpoint_name,
+                             "state": r.state, "model": model, "endpoint": endpoint,
                              "tokens_in": int((r.usage or {}).get("in") or 0),
                              "tokens_out": int((r.usage or {}).get("out") or 0),
                              "tokens_cached": int((r.usage or {}).get("cached_in") or 0),
                              "cost": float((r.usage or {}).get("cost") or 0.0),
                              "elapsed_s": int(r.elapsed_s or 0)})
             if info.runs:
-                by_routine[slug] = {**racc, "kind": kind, "endpoint": endpoint_name,
-                                    "model": (main_ref.model if main_ref else "unknown")}
+                by_routine[slug] = {**racc, "kind": kind,
+                                    "endpoint": main_ref.endpoint if main_ref else "unknown",
+                                    "model": main_ref.model if main_ref else "unknown"}
 
     def _tok(d: dict) -> int:
         return d["tokens_in"] + d["tokens_out"]

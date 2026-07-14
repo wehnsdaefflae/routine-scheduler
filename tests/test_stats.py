@@ -2,7 +2,7 @@
 
 import yaml
 
-from rsched.config import ServerConfig
+from rsched.config import ModelRef, ServerConfig
 from rsched.paths import atomic_write_json
 from rsched.stats import aggregate
 
@@ -22,8 +22,9 @@ def _mk_routine(home, slug, *, endpoint="claude", model="opus"):
         "description": "A test routine.",
         "schedule": {"cron": "0 7 * * 1", "tz": "Etc/UTC", "catchup": "skip"},
         "workflow": {"library_slug": "test-flow", "library_commit": "abc123"},
-        "models": {"main": {"endpoint": endpoint, "model": model}},
     }
+    if endpoint:  # endpoint=None -> no models: block (the engine falls to system_model)
+        cfg["models"] = {"main": {"endpoint": endpoint, "model": model}}
     (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
     return d
 
@@ -49,11 +50,14 @@ def test_aggregate_rolls_up_every_slice(tmp_path):
     b = _mk_routine(home, "beta", endpoint="openrouter", model="glm-5.2")
     c = _mk_routine(conv, "chat1", endpoint="claude", model="opus")
 
-    _mk_run(a, "20260712-070000", "finished", tin=100, tout=40, elapsed_s=60, model="opus")
+    # status.json records the resolved "<endpoint>/<model>"; one bare legacy value stays
+    _mk_run(a, "20260712-070000", "finished", tin=100, tout=40, elapsed_s=60,
+            model="claude/opus")
     _mk_run(a, "20260713-070000", "failed", tin=50, tout=10, elapsed_s=30, model="opus")
     _mk_run(b, "20260713-080000", "finished", tin=200, tout=60, cost=0.5, elapsed_s=90,
-            model="glm-5.2")
-    _mk_run(c, "20260713-090000", "finished", tin=10, tout=5, elapsed_s=15, model="opus")
+            model="openrouter/glm-5.2")
+    _mk_run(c, "20260713-090000", "finished", tin=10, tout=5, elapsed_s=15,
+            model="claude/opus")
 
     agg = aggregate(_server(tmp_path))
 
@@ -69,7 +73,7 @@ def test_aggregate_rolls_up_every_slice(tmp_path):
     # by_endpoint attributes b's cost to openrouter; claude covers alpha + chat1
     assert agg["by_endpoint"]["openrouter"]["cost"] == 0.5
     assert agg["by_endpoint"]["claude"]["runs"] == 3
-    # by_model
+    # by_model buckets on the bare model id (endpoint prefix split off)
     assert agg["by_model"]["opus"]["runs"] == 3
     assert agg["by_model"]["glm-5.2"]["tokens_in"] == 200
     # by_kind separates routines vs conversations
@@ -83,6 +87,59 @@ def test_aggregate_rolls_up_every_slice(tmp_path):
     # by_routine carries endpoint/model attribution, sorted by tokens desc
     assert agg["by_routine"]["beta"]["endpoint"] == "openrouter"
     assert list(agg["by_routine"])[0] == "beta"  # most tokens
+
+
+def test_aggregate_no_models_block_falls_back_to_system_model(tmp_path):
+    """A routine without a models: block runs on the server's system_model (the engine's
+    for_model fallback) — its runs must not land in the "unknown" buckets."""
+    home = tmp_path / "routines"
+    d = _mk_routine(home, "improver", endpoint=None)
+    # a modern run records the resolved model; a legacy run recorded nothing
+    _mk_run(d, "20260713-070000", "finished", tin=100, tout=20, cost=0.55,
+            model="openrouter/z-ai/glm-5.2")
+    _mk_run(d, "20260712-070000", "finished", tin=10, tout=5)
+
+    server = _server(tmp_path)
+    server.system_model = ModelRef(endpoint="openrouter", model="z-ai/glm-5.2")
+    agg = aggregate(server)
+
+    assert "unknown" not in agg["by_endpoint"] and "unknown" not in agg["by_model"]
+    assert agg["by_endpoint"]["openrouter"]["runs"] == 2
+    # a model id containing "/" splits on the FIRST slash only
+    assert agg["by_model"]["z-ai/glm-5.2"]["runs"] == 2
+    assert agg["by_model"]["z-ai/glm-5.2"]["cost"] == 0.55
+    r = agg["by_routine"]["improver"]
+    assert r["endpoint"] == "openrouter" and r["model"] == "z-ai/glm-5.2"
+
+
+def test_aggregate_recorded_model_beats_routine_config(tmp_path):
+    """status.json's resolved "<endpoint>/<model>" wins over routine.yaml — a mid-run
+    switch_model attributes to the model that actually served the run."""
+    home = tmp_path / "routines"
+    d = _mk_routine(home, "switcher", endpoint="claude", model="opus")
+    _mk_run(d, "20260713-070000", "finished", tin=10, tout=5,
+            model="openrouter/z-ai/glm-5.2")
+
+    agg = aggregate(_server(tmp_path))
+
+    assert agg["by_endpoint"]["openrouter"]["runs"] == 1
+    assert agg["by_model"]["z-ai/glm-5.2"]["runs"] == 1
+    assert "claude" not in agg["by_endpoint"]
+
+
+def test_aggregate_unknown_only_when_unattributable(tmp_path):
+    """No models: block, no system_model, no recorded model — the one genuinely
+    unattributable (legacy) case keeps the "unknown" buckets."""
+    home = tmp_path / "routines"
+    d = _mk_routine(home, "legacy", endpoint=None)
+    _mk_run(d, "20260712-070000", "finished", tin=1, tout=1)
+
+    agg = aggregate(_server(tmp_path))
+
+    assert agg["by_endpoint"]["unknown"]["runs"] == 1
+    assert agg["by_model"]["unknown"]["runs"] == 1
+    r = agg["by_routine"]["legacy"]
+    assert r["endpoint"] == "unknown" and r["model"] == "unknown"
 
 
 def test_aggregate_empty_homes(tmp_path):
