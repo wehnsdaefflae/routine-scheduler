@@ -159,7 +159,7 @@ class Answer(BaseModel):
 
 
 @router.post("/questions/{qid}/answer")
-def answer(request: Request, qid: str, body: Answer) -> dict:
+async def answer(request: Request, qid: str, body: Answer) -> dict:
     if not body.text.strip():
         raise HTTPException(400, "empty answer")
     if qid.startswith("audit:"):
@@ -189,7 +189,14 @@ def answer(request: Request, qid: str, body: Answer) -> dict:
                        "intermediate": body.intermediate and match["mode"] == "blocking",
                        "ts": now_iso()})
     _announce_answer(request, qid, match["routine"])
-    return {"ok": True, "routine": match["routine"], "mode": match["mode"]}
+    # A conversation is a one-shot run with no scheduled "next run": an answer filed on a
+    # FINISHED conversation would sit in the inbox forever (F39). Resume it in place — as
+    # api_conversations.message() does — so the engine's collect_deferred_answers drains the
+    # answer at run start. A LIVE conversation reply needs no resume (it drains the answer at
+    # its next turn boundary); a scheduled routine has its own next run.
+    resumed = await _resume_terminal_conversation(request, match, routine_dir)
+    return {"ok": True, "routine": match["routine"], "mode": match["mode"],
+            **({"resumed": True} if resumed else {})}
 
 
 def _announce_answer(request: Request, qid: str, routine: str) -> None:
@@ -198,3 +205,25 @@ def _announce_answer(request: Request, qid: str, routine: str) -> None:
     bus = getattr(request.app.state, "bus", None)
     if bus is not None:
         bus.publish({"event": "question_answered", "qid": qid, "routine": routine})
+
+
+async def _resume_terminal_conversation(request: Request, match: dict, routine_dir) -> bool:
+    """Resume a FINISHED conversation so a just-filed answer is actually consumed (F39).
+    No-op for a scheduled routine (it has its own next run), for a LIVE conversation (the
+    answer drains at the next turn boundary), or when the run cannot be resumed."""
+    if not match.get("conversation"):
+        return False
+    from ..config import load_routine
+    from .sse import TERMINAL_STATES
+
+    runner = getattr(request.app.state, "runner", None)
+    if runner is None or runner.is_active(match["routine"]):
+        return False
+    cfg, _ = load_routine(routine_dir)
+    if cfg is None:
+        return False
+    runs = registry.run_index(routine_dir, cfg.slug)
+    last = runs[0] if runs else None
+    if not last or last.state not in TERMINAL_STATES:
+        return False
+    return bool(await runner.resume(cfg, last.ts, reason="converse"))

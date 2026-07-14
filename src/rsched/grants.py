@@ -168,6 +168,36 @@ def capabilities_for(active: list[str], lib: dict[str, dict],
             "confirm": caps.get("confirm") or "always", "runs": runs}
 
 
+def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> dict:
+    """Bind the two layers so the permission is the switch and the capability is only the
+    means of asking for it (see the module docstring's two-layer model): a gated action or
+    reserved util survives ONLY when some HELD conduct permission's `requires:` names it,
+    and run access falls to `none` unless a held doc grants it. The policy DIALS that ride
+    a capability — write_util's `confirm` level and the run-history depth — are preserved:
+    they are user policy, meaningful only while their backing permission is held.
+
+    This is the complement of `capabilities_for`'s raise: apply raise THEN floor and the
+    mapping becomes exactly the union of the active docs' requires (actions/utils) plus the
+    user's chosen depth/approval policy — no orphan capability can contradict the held
+    permissions. Enforcement still reads capabilities alone (fail-closed); this keeps the
+    saved mapping from ever expressing a capability its permissions did not ask for."""
+    caps = {**EMPTY_CAPABILITIES, **(caps or {})}
+    req_actions: set[str] = set()
+    req_utils: set[str] = set()
+    grants_runs = False
+    for slug in active:
+        req = lib.get(slug) or {}
+        req_actions.update(a for a in req.get("actions") or [] if a in GATED_KINDS)
+        req_utils.update(req.get("utils") or [])
+        if req.get("runs"):
+            grants_runs = True
+    actions = [a for a in caps.get("actions") or [] if a in req_actions]
+    utils = [u for u in caps.get("utils") or [] if u in req_utils]
+    runs = (caps.get("runs") or "none") if grants_runs else "none"
+    return {"actions": actions, "utils": utils,
+            "confirm": caps.get("confirm") or "always", "runs": runs}
+
+
 def unsatisfied_requires(active: list[str], capabilities: dict,
                          lib: dict[str, dict]) -> dict[str, list[str]]:
     """doc slug → the capabilities its requires: names that the mapping does NOT cover —

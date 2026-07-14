@@ -57,6 +57,15 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
     (r.utils || []).forEach((u) => caps.utils.add(u));
     if (r.runs && RUNS_RANK[caps.runs] < RUNS_RANK[r.runs]) caps.runs = r.runs;
   };
+  // the inverse of the deactivation cascade (D8): a capability is only ever the MEANS of a
+  // held permission, so enabling one holds the permission(s) that grant it. The two layers
+  // can then never contradict — and the server floors to the same invariant on save, so a
+  // capability the panel shows on is always backed by a held permission.
+  const holdCovering = (test) => {
+    for (const p of docs) {
+      if (!p.routine_only && test(needs(p))) { held.add(p.slug); raiseFor(needs(p)); }
+    }
+  };
 
   const docsCol = el("div", {});
   const capsCol = el("div", {});
@@ -105,7 +114,8 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
           el("option", { value: v, selected: (caps.actions.has("write_util") ? caps.confirm : "off") === v ? "" : null }, label)));
         sel.onchange = () => {
           if (sel.value === "off") { caps.actions.delete("write_util"); dropUnsatisfied(); }
-          else { caps.actions.add("write_util"); caps.confirm = sel.value; }
+          else { caps.actions.add("write_util"); caps.confirm = sel.value;
+                 holdCovering((r) => (r.actions || []).includes("write_util")); }
           render();
         };
         capsCol.append(capRow(sel, "write_util — author global utils",
@@ -114,8 +124,8 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
       } else {
         const box = el("input", { type: "checkbox", checked: caps.actions.has(a) ? "" : null });
         box.onchange = () => {
-          box.checked ? caps.actions.add(a) : caps.actions.delete(a);
-          if (!box.checked) dropUnsatisfied();
+          if (box.checked) { caps.actions.add(a); holdCovering((r) => (r.actions || []).includes(a)); }
+          else { caps.actions.delete(a); dropUnsatisfied(); }
           render();
         };
         capsCol.append(capRow(box, `${a} — action`,
@@ -126,8 +136,8 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
     for (const u of vocab.utils || []) {
       const box = el("input", { type: "checkbox", checked: caps.utils.has(u) ? "" : null });
       box.onchange = () => {
-        box.checked ? caps.utils.add(u) : caps.utils.delete(u);
-        if (!box.checked) dropUnsatisfied();
+        if (box.checked) { caps.utils.add(u); holdCovering((r) => (r.utils || []).includes(u)); }
+        else { caps.utils.delete(u); dropUnsatisfied(); }
         render();
       };
       capsCol.append(capRow(box, `util ${u} — reserved channel`, "",
@@ -138,6 +148,7 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
         el("option", { value: v, selected: caps.runs === v ? "" : null }, label)));
     runsSel.onchange = () => {
       caps.runs = runsSel.value;
+      if (caps.runs !== "none") holdCovering((r) => !!r.runs);
       dropUnsatisfied();
       render();
     };

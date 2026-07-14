@@ -249,7 +249,8 @@ def resolve_permission_layers(server, body: PermissionsBody, current: dict) -> t
     are on' holds regardless of what the client sent. Deactivation cascades live in the
     UI (dropping a capability there also unticks the docs requiring it)."""
     from .. import library_docs
-    from ..grants import capabilities_for, normalize_capabilities, read_library_requires
+    from ..grants import (capabilities_for, floor_capabilities, normalize_capabilities,
+                          read_library_requires)
 
     available = set(library_docs.slugs(server.permissions_home))
     active = [p for p in body.active if p in available]
@@ -257,7 +258,13 @@ def resolve_permission_layers(server, body: PermissionsBody, current: dict) -> t
         body.capabilities if body.capabilities is not None else current)
     if body.capabilities is not None and problems:
         raise HTTPException(422, "; ".join(problems))
-    caps = capabilities_for(active, read_library_requires(server.permissions_home), base)
+    lib = read_library_requires(server.permissions_home)
+    # Bind the two layers (D8): RAISE the mapping to cover every held doc's requires, then
+    # FLOOR it back to them — a gated action / reserved util / run access survives only as
+    # the means of a HELD permission. The permission is the switch; the confirm level and
+    # run depth stay as user policy under it. So the saved mapping can never contradict the
+    # held permissions (a write_util capability with util-authoring off, etc.).
+    caps = floor_capabilities(active, lib, capabilities_for(active, lib, base))
     return active, caps
 
 

@@ -7,8 +7,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from rsched.grants import (CONFIRM_LEVELS, EMPTY_CAPABILITIES, GrantPolicy,
-                           capabilities_for, load_policy, normalize_capabilities,
-                           read_library_requires, unsatisfied_requires)
+                           capabilities_for, floor_capabilities, load_policy,
+                           normalize_capabilities, read_library_requires,
+                           unsatisfied_requires)
 
 
 def _lib(tmp_path: Path, permissions: dict[str, str]) -> Path:
@@ -126,6 +127,29 @@ def test_capabilities_for_raises_the_base_to_cover_active_docs(tmp_path):
     assert caps2["runs"] == "all" and caps2["confirm"] == "never"
     assert caps2["actions"] == ["memory_read"]
     assert capabilities_for([], lib) == EMPTY_CAPABILITIES
+
+
+def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_path):
+    """D8: a gated action / reserved util / run access survives only as the MEANS of a HELD
+    permission; the confirm level and run depth remain user policy under it. raise+floor
+    together == exactly the union of the held docs' requires (plus those policy dials)."""
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION,
+                           "run-history": RUN_HISTORY})
+    lib = read_library_requires(home)
+    orphan = {"actions": ["write_util"], "utils": ["discord"], "confirm": "never", "runs": "all"}
+    # nothing held → every gated capability is floored away (confirm dial preserved)
+    assert floor_capabilities([], lib, orphan) == {
+        "actions": [], "utils": [], "confirm": "never", "runs": "none"}
+    # util-authoring held → write_util survives (with its policy); discord + runs still floored
+    assert floor_capabilities(["util-authoring"], lib, orphan) == {
+        "actions": ["write_util"], "utils": [], "confirm": "never", "runs": "none"}
+    # run-history held → run DEPTH (a user dial) is kept above none; actions/utils floored
+    kept = floor_capabilities(["run-history"], lib, orphan)
+    assert kept["runs"] == "all" and kept["actions"] == [] and kept["utils"] == []
+    # raise THEN floor == exactly the held docs' requires + policy dials, no contradiction
+    active = ["util-authoring", "communication", "run-history"]
+    assert floor_capabilities(active, lib, capabilities_for(active, lib)) == {
+        "actions": ["write_util"], "utils": ["discord"], "confirm": "always", "runs": "last"}
 
 
 def test_unsatisfied_requires_names_the_missing_capabilities(tmp_path):

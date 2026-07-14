@@ -225,6 +225,47 @@ def test_settings_editable_while_active(client):
     assert r.status_code == 200 and r.json()["active"] == ["memory"]
 
 
+def test_capabilities_floored_to_held_permissions(client):
+    """D8: a gated capability is only the MEANS of a held permission. Asking for write_util
+    with no permission held floors it away; holding util-authoring grants it (and the
+    confirm level — user policy — is preserved)."""
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    r = c.put(f"/api/conversations/{slug}/permissions",
+              json={"active": [], "capabilities": {"actions": ["write_util"], "confirm": "never"}})
+    assert r.status_code == 200, r.text
+    assert r.json()["capabilities"]["actions"] == []          # orphan capability floored away
+    r = c.put(f"/api/conversations/{slug}/permissions",
+              json={"active": ["util-authoring"],
+                    "capabilities": {"actions": [], "confirm": "creations"}})
+    assert r.status_code == 200, r.text
+    caps = r.json()["capabilities"]
+    assert "write_util" in caps["actions"] and caps["confirm"] == "creations"
+
+
+def test_answering_a_finished_conversation_resumes_it(client):
+    """F39: a conversation is a one-shot run with no scheduled next run — answering a
+    deferred decision on a FINISHED conversation must resume it in place so the queued
+    answer is actually consumed (else it sits 'answered · queued' forever)."""
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    conv_dir = server.conversations_home / slug
+    ts = "20260712-120000"
+    # the single run has finished (terminal) and left a deferred pending decision
+    atomic_write_json(conv_dir / "runs" / ts / "status.json",
+                      {"run_id": f"{slug}:{ts}", "state": "finished", "turn": 3})
+    qid = "q-decide"
+    atomic_write_json(conv_dir / "questions" / "pending" / f"{qid}.json",
+                      {"qid": qid, "question": "Which way?", "mode": "deferred", "asked": ts})
+    qs = c.get("/api/questions").json()
+    assert any(q["qid"] == qid and q.get("conversation") for q in qs)
+    r = c.post(f"/api/questions/{qid}/answer", json={"text": "left"})
+    assert r.status_code == 200, r.text
+    assert r.json().get("resumed") is True
+    assert ("resume", slug) in c.app.state.runner.calls        # the finished run was woken
+    assert (conv_dir / "inbox" / f"answer-{qid}.json").exists()
+
+
 def test_conversation_questions_reach_decisions(client):
     c, server = client
     slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]

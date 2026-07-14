@@ -1104,26 +1104,39 @@ def test_audit_decision_answer_survives_inbox_consumption(client):
 
 
 def test_put_permissions_cascades_capabilities(client):
-    """The two-layer PUT: activating a doc raises the capabilities to cover its requires
-    (server-side, whatever the client sent); the mapping round-trips into routine.yaml."""
+    """The two-layer PUT: activating a doc RAISES capabilities to cover its requires AND
+    FLOORS them back to the held docs (D8) — a gated action survives only as the means of a
+    held permission; the confirm level (user policy) is preserved. Round-trips into
+    routine.yaml."""
     c, tmp = client
     perms_home = tmp / "library" / "permissions"
     perms_home.mkdir(parents=True, exist_ok=True)
     (perms_home / "communication.md").write_text(
         "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
         "# permission: communication — discord\nbody\n", encoding="utf-8")
+    (perms_home / "memory.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  actions: [memory_read, memory_write]\n---\n"
+        "# permission: memory — notebook\nbody\n", encoding="utf-8")
+    # ask for memory_read WITHOUT holding the memory permission → floored away (D8)
     r = c.put("/api/routines/apir/permissions",
               json={"active": ["communication", "ghost"],
                     "capabilities": {"actions": ["memory_read"], "confirm": "creations"}})
     assert r.status_code == 200
     body = r.json()
     assert body["active"] == ["communication"]           # unknown doc slugs dropped
-    assert body["capabilities"]["utils"] == ["discord"]  # activation cascade
-    assert body["capabilities"]["actions"] == ["memory_read"]
-    assert body["capabilities"]["confirm"] == "creations"
+    assert body["capabilities"]["utils"] == ["discord"]  # activation cascade (raise)
+    assert body["capabilities"]["actions"] == []         # orphan action floored (no memory perm)
+    assert body["capabilities"]["confirm"] == "creations"  # user policy dial preserved
     raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
     assert raw["permissions"] == ["communication"]
     assert raw["capabilities"] == body["capabilities"]
+    # holding the memory permission grants its actions (the means of that permission)
+    r2 = c.put("/api/routines/apir/permissions",
+               json={"active": ["communication", "memory"],
+                     "capabilities": {"confirm": "creations"}})
+    assert r2.status_code == 200
+    caps2 = r2.json()["capabilities"]
+    assert set(caps2["actions"]) == {"memory_read", "memory_write"} and caps2["utils"] == ["discord"]
     # junk capabilities from the client are a 422, not a silent drop
     bad = c.put("/api/routines/apir/permissions",
                 json={"active": [], "capabilities": {"actions": "write_util"}})

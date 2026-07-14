@@ -1,0 +1,6 @@
+{
+  "ts": "2026-07-14T20:05:00+00:00",
+  "commit": "56d620dbe34024e6a7097afe50daa9662543f38a",
+  "summary": "Six user-reported UX/budget fixes: F42 max_turns honors -1=unlimited (symmetric with time/tokens/cost; guarded budget_violation/warning/child_budgets/status/composer); F43 engine+statemap accept 'state' key in phase.json so the live state diagram tracks recipes (e.g. self-audit) that use it; F36 conversation permission edits no longer 409 during an active reply (apply next reply, like budgets); F37 audit note-for-next-run draft cleared BEFORE reload so it doesn't refill; F41 conversation composer gains a live '✕ stop' (abort) button; F38 decision/question answer fields are textareas with Enter=submit/Shift+Enter=newline. +3 tests.",
+  "run_id": "self-audit:20260714-194518"
+}
