@@ -6,7 +6,7 @@
 import { api } from "/static/api.js";
 import { codeEditor } from "/static/components/code.js";
 import { replaceHash } from "/static/router.js";
-import { chip, el, emptyState, skeleton, tagChip, toast, when } from "/static/util.js";
+import { chip, el, emptyState, requiresSummary, skeleton, tagChip, toast, when } from "/static/util.js";
 
 export async function render(view, sub, query = {}) {
   view.append(el("div", { class: "page-head" },
@@ -56,9 +56,15 @@ export async function render(view, sub, query = {}) {
     section("Traits", "reusable practices — adapted into each new routine at creation, then owned by the routine (this is only the template)",
       data.traits.filter((f) => matches(f.tags)).map((f) =>
         item(f.slug, "", f.problems, f.tags, () => openDoc("traits", f.slug), f.summary)));
-    section("Permissions", "conduct docs — held per routine via its Permissions panel; the requires: frontmatter names the capabilities each doc's instructions presume (activating the doc switches them on)",
-      data.permissions.filter((f) => matches(f.tags)).map((f) =>
-        item(f.slug, "", f.problems, f.tags, () => openDoc("permissions", f.slug), f.summary)));
+    section("Permissions", "conduct docs — held per routine via its Permissions panel; the requires: frontmatter names the capabilities each doc's instructions presume (activating the doc switches them on; open a doc to edit the mapping)",
+      data.permissions.filter((f) => matches(f.tags)).map((f) => {
+        const req = requiresSummary(f.requires);
+        const summary = req
+          ? el("span", {}, f.summary || "",
+              el("span", { style: "color:var(--warn)" }, ` ▸ ${req}`))
+          : f.summary;
+        return item(f.slug, "", f.problems, f.tags, () => openDoc("permissions", f.slug), summary);
+      }));
     section("Global utils", "the tools routines run (created + revised on demand, selftest-gated)",
       data.utils.filter((u) => matches(u.tags)).map((u) =>
         item(u.name, "", [], u.tags, () => openUtil(u.name), u.summary)));
