@@ -119,10 +119,14 @@ def build_cmd(cli: str, model: str, *, system: str | None, schema_str: str | Non
            "--tools", "",                 # no built-in tools → no agentic loop
            "--disable-slash-commands",
            "--strict-mcp-config",         # with no --mcp-config: no MCP servers
-           "--setting-sources", "",       # ignore user/project settings
-           "--output-format", "json"]
-    if input_stream_json:                 # image turns: base64 blocks ride an NDJSON stdin
-        cmd += ["--input-format", "stream-json"]
+           "--setting-sources", ""]       # ignore user/project settings
+    if input_stream_json:
+        # Image turns: base64 blocks ride an NDJSON stdin. The CLI requires the OUTPUT format
+        # to match (and --verbose) when input is stream-json; the reply is then an event
+        # stream whose final `result` event carries the same envelope parse_result reads.
+        cmd += ["--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]
+    else:
+        cmd += ["--output-format", "json"]
     if resume:
         cmd += ["--resume", resume]       # continue the per-run CLI session (delta turns)
     elif session_id:
@@ -153,10 +157,31 @@ def render_prompt(rest: list[Message]) -> str:
     return "\n".join(lines)
 
 
-def parse_result(stdout_text: str, want_json: bool) -> tuple[str, dict | None, dict]:
-    """CLI --output-format json envelope → (text, parsed, usage)."""
+def _result_event(stdout_text: str) -> dict:
+    """The terminal `{"type":"result", …}` line of a `--output-format stream-json` stream —
+    same fields as the `--output-format json` envelope. Non-JSON/other-type lines are skipped."""
+    obj = None
+    for line in stdout_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(ev, dict) and ev.get("type") == "result":
+            obj = ev
+    if obj is None:
+        raise EndpointError(f"claude-cli: no result event in stream-json output: {stdout_text[:300]}")
+    return obj
+
+
+def parse_result(stdout_text: str, want_json: bool,
+                 stream_out: bool = False) -> tuple[str, dict | None, dict]:
+    """CLI --output-format json envelope (or the final `result` event of a stream-json
+    output stream, used for image turns) → (text, parsed, usage)."""
     try:
-        obj = json.loads(stdout_text)
+        obj = _result_event(stdout_text) if stream_out else json.loads(stdout_text)
     except json.JSONDecodeError as exc:
         raise EndpointError(f"claude-cli: unparseable CLI output: {stdout_text[:300]}") from exc
     if obj.get("is_error"):
@@ -335,7 +360,7 @@ class ClaudeCliEndpoint:
                 retryable=True,
             )
         try:
-            text, parsed, usage = parse_result(r.stdout, want_json=want_json)
+            text, parsed, usage = parse_result(r.stdout, want_json=want_json, stream_out=stream)
         except EndpointError:
             if stream:
                 self._media_capable = False

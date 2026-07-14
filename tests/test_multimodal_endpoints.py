@@ -137,12 +137,30 @@ def test_claude_cli_stream_json_stdin(tmp_path):
         "type": "base64", "media_type": "image/png", "data": base64.b64encode(b"IMG").decode()}}
 
 
-def test_claude_cli_build_cmd_stream_json_flag():
+def test_claude_cli_build_cmd_stream_json_pairs_output_and_verbose():
+    # the CLI rejects --input-format stream-json unless --output-format matches (+ --verbose)
     on = claude_cli.build_cmd("claude", "opus", system=None, schema_str=None, effort=None,
                               input_stream_json=True)
-    assert "--input-format" in on and "stream-json" in on
+    assert "--input-format" in on and "--verbose" in on and on.count("stream-json") == 2
+    assert on[on.index("--output-format") + 1] == "stream-json"
     off = claude_cli.build_cmd("claude", "opus", system=None, schema_str=None, effort=None)
-    assert "--input-format" not in off
+    assert "--input-format" not in off and "--verbose" not in off
+    assert off[off.index("--output-format") + 1] == "json"
+
+
+def test_claude_cli_parse_stream_json_output():
+    stream = "\n".join([
+        json.dumps({"type": "system", "subtype": "init"}),
+        json.dumps({"type": "assistant", "message": {"content": []}}),
+        json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                    "result": '{"say": "hi", "kind": "finish"}',
+                    "structured_output": {"say": "hi", "kind": "finish"},
+                    "usage": {"input_tokens": 3, "output_tokens": 2}}),
+    ])
+    text, parsed, usage = claude_cli.parse_result(stream, want_json=True, stream_out=True)
+    assert parsed == {"say": "hi", "kind": "finish"} and usage["in"] == 3 and usage["out"] == 2
+    with pytest.raises(EndpointError):   # no result event in the stream → clean error
+        claude_cli.parse_result(json.dumps({"type": "system"}), want_json=True, stream_out=True)
 
 
 def test_claude_cli_encode_gates_on_probe(tmp_path):
