@@ -100,13 +100,15 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.state.scheduler = scheduler
 
     from . import (api_audit, api_conversations, api_push, api_questions, api_routines,
-                   api_runs, api_stats, api_traces, api_wizard, api_workflows, settings)
+                   api_runs, api_schedule, api_stats, api_traces, api_wizard, api_workflows,
+                   settings)
 
     deps = [Depends(require_auth)]
     app.include_router(api_push.router, prefix="/api", dependencies=deps)
     app.include_router(api_routines.router, prefix="/api", dependencies=deps)
     app.include_router(api_conversations.router, prefix="/api", dependencies=deps)
     app.include_router(api_runs.router, prefix="/api", dependencies=deps)
+    app.include_router(api_schedule.router, prefix="/api", dependencies=deps)
     app.include_router(api_stats.router, prefix="/api", dependencies=deps)
     app.include_router(api_questions.router, prefix="/api", dependencies=deps)
     app.include_router(api_audit.router, prefix="/api", dependencies=deps)

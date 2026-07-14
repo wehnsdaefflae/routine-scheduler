@@ -4,12 +4,14 @@
 // free text filter; every stat sorts; a table view sits one toggle away.
 
 import { api } from "/static/api.js";
+import { weekGrid } from "/static/components/weekgrid.js";
 import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, fmtCost, fmtDur, skeleton, storage, tagChip, toast, when } from "/static/util.js";
 
 const FILTER_KEY = "rsched_dash_tags";
 const VIEW_KEY = "rsched_dash_view";
 const SORT_KEY = "rsched_dash_sort";
+const WEEK_KEY = "rsched_dash_week";
 const RUNNING = new Set(["running", "starting", "queued"]);
 
 // ---- sort keys: [label, value-fn, descending?] -------------------------------------------------
@@ -53,12 +55,17 @@ export async function render(view) {
         el("div", { class: "kicker" }, "console / routines"),
         el("h1", {}, "Routines"))));
   const banner = el("div", {});
+  const week = weekGrid();
+  const weekPanel = el("details", { class: "panel weekpanel",
+    ...(storage.get(WEEK_KEY) !== "closed" ? { open: true } : {}) },
+    el("summary", {}, "this week"), week.node);
+  weekPanel.addEventListener("toggle", () => storage.set(WEEK_KEY, weekPanel.open ? "open" : "closed"));
   const filterBar = el("div", { class: "filterbar" });
   const body = el("div", { class: "mt" });
-  view.append(banner, filterBar, body);
+  view.append(banner, weekPanel, filterBar, body);
   body.append(skeleton(), skeleton(), skeleton());
 
-  let cards = [], llmReady = true;
+  let cards = [], llmReady = true, firesBySlug = new Map();
   const active = new Set(JSON.parse(storage.get(FILTER_KEY) || "[]"));
   const states = new Set();
   let viewMode = storage.get(VIEW_KEY) || "cards";
@@ -129,6 +136,8 @@ export async function render(view) {
 
   function renderBody() {
     const shown = ordered(cards.filter(visible));
+    week.update(cards.filter(visible), firesBySlug);
+    weekPanel.hidden = !cards.length;
     body.replaceChildren();
     if (!cards.length) {
       body.append(emptyState("◌", "No routines yet",
@@ -150,16 +159,18 @@ export async function render(view) {
   }
 
   async function load() {
-    let routines, status;
+    let routines, status, sched;
     try {
-      [routines, status] = await Promise.all([
+      [routines, status, sched] = await Promise.all([
         api("/api/routines"), api("/api/status").catch(() => ({})),
+        api("/api/schedule/week").catch(() => null),
       ]);
     } catch (err) {
       body.replaceChildren(emptyState("✕", "Couldn't reach the daemon", err.message));
       return;
     }
     cards = routines;
+    firesBySlug = new Map((sched?.routines || []).map((r) => [r.slug, r.fires.map((t) => +new Date(t))]));
     llmReady = status.llm_ready !== false;
     banner.replaceChildren();
     if (!llmReady) banner.append(el("div", { class: "panel warn", style: "margin:12px 0" },
