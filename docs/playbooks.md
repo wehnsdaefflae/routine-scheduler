@@ -136,6 +136,7 @@ instance automatically at the next daemon restart.
 
 ## See also
 
+- **Conversations** — how interactive sessions work; playbooks seed, and are saved from, them.
 - **Traits & permissions** — the other library docs, and how a conversation's conduct and
   capability are set.
 - **Getting started** — the pieces around routines and conversations.

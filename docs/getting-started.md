@@ -6,7 +6,8 @@ the system turns it into a self-contained agent recipe, runs it on a cron schedu
 you everything it does, and asks you only for the decisions that are genuinely yours.
 
 This page is the tour: the concepts, then the step-by-step from an empty install to a
-running routine. The **Examples** guide walks four complete, realistic setups.
+running routine. The **Examples** guide walks four complete, realistic setups; for
+interactive, do-it-now work driven by you rather than a schedule, see **Conversations**.
 
 ## What a routine is
 
@@ -118,6 +119,7 @@ session to lose.
 ## Where to go next
 
 - **Examples** — four complete routine setups, from draft instruction to daily operation.
+- **Conversations** — the interactive counterpart to routines: work with an agent turn by turn.
 - **Traits & permissions** — how conduct and capability are split, and why.
 - **Playbooks** — save a conversation as a reusable one-shot brief, and reuse it to seed new ones.
 - **Prompt anatomy** — exactly what the orchestrator model sees, message by message.
