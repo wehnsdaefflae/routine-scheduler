@@ -13,6 +13,7 @@ import { forgetField } from "/static/formpersist.js";
 import { createChat } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createStateGraph } from "/static/components/stategraph.js";
+import { permissionsPanel } from "/static/components/permissions.js";
 import { busy, chip, el, emptyState, relTime, storage, tagChip, toast } from "/static/util.js";
 
 const TERMINAL = new Set(["finished", "failed", "aborted"]);
@@ -490,20 +491,16 @@ export async function render(view, slug, _query = {}) {
     capBody.append(el("div", { class: "row", style: "gap:12px;flex-wrap:wrap;align-items:flex-end" },
       budgetField("turns / reply", turnsIn), budgetField("minutes / reply", minsIn),
       budgetField("tokens / reply", tokIn), saveBudgets));
-    const held = new Set((detail.permissions || []).filter((p) => p.active).map((p) => p.slug));
-    for (const p of detail.permissions || []) {
-      const cb = el("input", { type: "checkbox", checked: p.active || null,
-        disabled: p.routine_only || null });
-      cb.onchange = async () => {
-        p.active ? held.delete(p.slug) : held.add(p.slug);
-        p.active = !p.active;
-        try { await api(`/api/conversations/${slug}/permissions`, { method: "PUT", body: { active: [...held] } }); }
-        catch (err) { toast(err.message, 4000, { error: true }); cb.checked = !cb.checked; }
-      };
-      capBody.append(el("label", { class: `row${p.routine_only ? " faint" : ""}`,
-        style: "gap:8px", title: p.routine_only ? "only meaningful for scheduled routines" : p.summary },
-        cb, el("span", {}, p.slug, p.routine_only ? " (routines only)" : "")));
-    }
+    capBody.append(permissionsPanel(detail.permissions, detail.capabilities, {
+      disableRuns: "a conversation is one continuous run — previous-run depth is routine-only",
+      saveLabel: "save permissions",
+      onSave: async (payload) => {
+        try {
+          await api(`/api/conversations/${slug}/permissions`, { method: "PUT", body: payload });
+          toast("permissions saved — they apply from the next reply");
+        } catch (err) { toast(err.message, 4000, { error: true }); }
+      },
+    }));
     if (detail.traits?.length) {
       capBody.append(el("div", { class: "faint small mt" },
         "traits (its own practice files): ", detail.traits.join(", ")));

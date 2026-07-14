@@ -110,19 +110,12 @@ export function chip(text, cls = "") {
   return el("span", { class: `chip ${cls}` }, text);
 }
 
-// A permission's machine-enforced grants (from the LIBRARY copy) as one human line, e.g.
-// "grants write_util (every change needs your approval) · util: discord". Empty when the
-// doc grants nothing.
-export function grantsSummary(g) {
-  const caps = [...(g?.actions || []), ...(g?.utils || []).map((u) => `util: ${u}`)];
-  if (g?.runs) caps.push(g.runs === "last" ? "read the previous run" : "read all previous runs");
-  if (!caps.length) return "";
-  const confirm = (g.actions || []).includes("write_util")
-    ? { always: " (every util change needs your approval)",
-        creations: " (new utils need your approval; revisions are auto-approved)",
-        never: " (no approval needed)" }[g.confirm] || ""
-    : "";
-  return `grants ${caps.join(" · ")}${confirm}`;
+// The capabilities a permission doc's instructions presume (its `requires:`) as one human
+// line, e.g. "needs write_util · util discord". Empty when the doc requires nothing.
+export function requiresSummary(r) {
+  const caps = [...(r?.actions || []), ...(r?.utils || []).map((u) => `util ${u}`)];
+  if (r?.runs) caps.push(r.runs === "last" ? "previous runs (last)" : "previous runs (all)");
+  return caps.length ? `needs ${caps.join(" · ")}` : "";
 }
 
 export function tagChip(text, { onClick, onRemove, active } = {}) {

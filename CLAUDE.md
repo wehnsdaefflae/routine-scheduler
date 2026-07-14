@@ -38,17 +38,18 @@ repeat until `finish`.
   `normalize_action` + `validate_action` (`engine/actions.py`) repair grammar debris from weak/constrained
   models and return precise per-kind errors. `actions.py` is the single source of truth for what a turn
   may do — adapters, UI, and the CLI event renderer all key off it. A workflow's `tools:` allowlist AND
-  the routine's permission **grants** (`grants.py`) are enforced there too: allowed kinds = workflow tools
-  ∩ (base ∪ held grants), plus path gates (runs/ needs run-history; a run NEVER writes its own
-  main.md / steps/ / traits/ / instruction.md / routine.yaml — not a permission but a fixed rule,
-  unlocked only when a user-granted fs_write_root covers the routine dir, the routine-improver's
-  case; executor.py backstops absolute paths and scopes `runs: last`).
-  A disallowed/ungranted call is corrected inside the schema-retry cycle with an error naming the
-  granting permission, and never becomes a turn.
+  the routine's **capabilities** (`grants.py`) are enforced there too: allowed kinds = workflow tools
+  ∩ (base ∪ enabled capabilities), plus path gates (runs/ needs the previous-runs depth; a run NEVER
+  writes its own main.md / steps/ / traits/ / instruction.md / routine.yaml — not a capability but a
+  fixed rule, unlocked only when a user-granted fs_write_root covers the routine dir, the
+  routine-improver's case; executor.py backstops absolute paths and scopes `runs: last`).
+  A disallowed/switched-off call is corrected inside the schema-retry cycle with an error naming the
+  covering permission, and never becomes a turn.
 - **The system prompt is composed once at boot** (`engine/composer.py`): harness contract → action schema
   + example → workflow body (the routine's own `main.md`, ending in a `## Standing practices` tail that
   references `traits/*.md` — practice prose is NEVER inlined) → instruction → **capabilities** (model +
-  context window, the action kinds usable this run, held permissions + their short capability notes,
+  context window, the action kinds usable this run, enabled capabilities + held permissions' short
+  conduct notes,
   spawnable workflow patterns, the util catalog at name+summary altitude — ONE util's usage on demand via
   `util name=list args=["<name>"]`) → **state digest** (phase, `state/`, step + trait modules, last result,
   LEDGER tail, open/answered questions, inbox messages). Effect actions (`util`/`read_file`/`write_file`/
@@ -130,10 +131,12 @@ concept. `EndpointRegistry.for_model(kind, routine.models)` / `.for_system()` re
 A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is NEVER read at run time:
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (main / subroutine / tool_call),
-  `permissions:` (held capability grants — user-changeable only, all surfaced on the routine page),
+  `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: {actions, utils,
+  confirm, runs} — both user-changeable only, side by side on the routine page with cascades between
+  them),
   `budgets:` (max_turns / wall_clock_min / total_tokens (-1 = unlimited, the default) / subruns /
   subrun_depth / ask_timeout_min — all editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
-  budgets/fs-roots/schedules are resources, never grants; `improve: false` opts the routine
+  budgets/fs-roots/schedules are resources, never capabilities; `improve: false` opts the routine
   out of the routine-improver's passes (default: included).
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
   routes to `steps/<name>.md` modules, read on demand, and ends with a Standing practices tail
@@ -180,8 +183,8 @@ chat message; the next user message resumes the SAME run in place (fresh budget 
   `components/artifacts.js` with `base: "routines"`), with the state-graph card on top.
   UI: `static/views/conversations.js` + `components/chat.js` (work folded per reply,
   `[new-topic]` first-line marker → warn + one-click fork) + `components/artifacts.js`.
-- Defaults: routine default permissions, shell OFF (one-click grant; `run-history*` greyed —
-  routine-only); traits = ask-policy/global-utils/web-research/ledger-discipline/**git-checkpoint**
+- Defaults: routine default permissions+capabilities, shell OFF (one-click grant; run-history +
+  the previous-runs depth greyed — routine-only); traits = ask-policy/global-utils/web-research/ledger-discipline/**git-checkpoint**
   (checkpoint commits in external project repos — the conversation dir itself is unversioned).
   Conversations feed workflow-usage + health events; they are EXCLUDED from the dashboard,
   scheduler, and instance-export. `bootstrap.sync_seed_library_docs` (every boot) lands new seed
@@ -191,8 +194,8 @@ chat message; the next user message resumes the SAME run in place (fresh budget 
 
 ONE git-backed library repo (`libraries_home`, default `~/.local/share/routine-scheduler-libraries`),
 seedable from the repo and syncable to a remote, holding **workflows/** (control-flow patterns),
-**traits/** (reusable practice prose, adapted per routine at creation), **permissions/** (capability
-docs whose `grants:` frontmatter the engine enforces), and **utils/** (the ONLY way routines run
+**traits/** (reusable practice prose, adapted per routine at creation), **permissions/** (conduct
+docs whose `requires:` frontmatter names the capabilities they presume), and **utils/** (the ONLY way routines run
 code, with the `gu` dispatcher at the root). Repo seeds: `library-seed/` (workflows + traits +
 permissions),
 `util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `routine-improver`,
@@ -218,7 +221,7 @@ first boot; `deploy/install.sh` for host installs.
   `system_model`. The **new-routine wizard** runs `clarify-instruction`, which now SUGGESTS a pattern (or
   asks to generate one) and MARRIES the task to it — asking questions that overlay the task on the pattern's
   control flow + parameters (candidates written to the session's `state/candidates.md`).
-- **Traits** (`library-seed/traits/`, `# trait:` heading, NO grants — lint-enforced): reusable practice
+- **Traits** (`library-seed/traits/`, `# trait:` heading, NO requires — lint-enforced): reusable practice
   prose. Selected at creation (the wizard preselects via `suggest_traits_permissions` from the refined
   instruction + chosen pattern), ADAPTED to the task by `adapt.decompose` (schema carries a `traits`
   array), written to `<routine>/traits/`, referenced from main.md's Standing practices tail
@@ -227,26 +230,34 @@ first boot; `deploy/install.sh` for host installs.
   improvement passes** `improve-bugfix / -research / -features / -ui / -efficiency` (each infers the
   routine's intention from the run just completed and acts in its lens, asking a deferred question when
   unsure). `DEFAULT_TRAITS` (config) is the no-LLM fallback selection.
-- **Permissions** (`library-seed/permissions/`, `# permission:` heading + machine-read `grants:` —
-  {actions, utils, confirm, runs}): the routine's engine-enforced capability surface,
-  held via `routine.yaml` `permissions:`, user-changeable ONLY (`grants.py` reads the LIBRARY copy;
-  nothing under a routine dir is consulted, so routines can't self-grant). The set: `util-authoring`
-  (confirm: true, default), `util-authoring-autonomous` (revisions-only), `util-authoring-full-auto`
-  (false), `memory` (memory_read/memory_write — indexed ≤100-line notes in `.memory/`; INDEX.md
-  engine-maintained, surfaced in the state digest; default),  `communication` (reserves `discord`; also turns on engine-side Discord mirroring of
-  blocking decisions), `run-history` / `run-history-full` (read the last / all previous runs under
-  runs/), `shell` (reserves the `shell` util — the escape hatch). Permission bodies are SHORT (≤14
-  lines reach the prompt's CAPABILITIES section when held). Any future permission-ish lever becomes a
-  `grants:` key here, not a new yaml key. See docs/traits-permissions.md. `DEFAULT_PERMISSIONS`
-  (config) is the source of truth; defaults added after routines exist reach them once via
-  `bootstrap.adopt_permissions` at daemon boot; `bootstrap.migrate_fragments_split` converts pre-split
-  instances (fragments/ dirs + `fragments:` keys) at boot.
+- **Permissions** (`library-seed/permissions/`, `# permission:` heading + machine-read `requires:` —
+  {actions, utils, runs}, no confirm): CONDUCT docs of the two-layer permission set. The routine's
+  enforced surface is its own routine.yaml `capabilities:` ({actions, utils, confirm, runs} —
+  grants.py builds the run policy from it alone, so a doc-without-capability config fails closed);
+  a doc's `requires:` names what its instructions presume and drives the UI cascades (activating a
+  doc switches its requirements on; switching a capability off deactivates the docs requiring it —
+  the server re-applies the activation cascade on save). Both layers user-changeable ONLY; routines
+  can't self-grant. The doc set: `util-authoring` (requires write_util — the approval level
+  always/creations/never is a CAPABILITY setting, default), `memory` (memory_read/memory_write —
+  indexed ≤100-line notes in `.memory/`; INDEX.md engine-maintained, surfaced in the state digest;
+  default), `communication` (requires `discord`; the enabled capability also turns on engine-side
+  Discord mirroring of blocking decisions), `run-history` (previous-run reads; depth last/all is the
+  capability), `shell` (requires the `shell` util — the escape hatch). Reservable utils =
+  the union of all docs' `requires.utils` (library-defined); gateable kinds = GATED_KINDS
+  (engine-defined). Permission bodies are SHORT (≤14 lines reach the prompt's CAPABILITIES section
+  when held); the Library tab's permission editor has a prefilled, authoritative `requires:` panel.
+  Any future permission-ish lever becomes a capability + a `requires:` entry, not a new yaml key.
+  See docs/traits-permissions.md. `DEFAULT_PERMISSIONS`/`DEFAULT_CAPABILITIES` (config) are the
+  source of truth; defaults added after routines exist reach them once via
+  `bootstrap.adopt_permissions` at daemon boot; `bootstrap.migrate_fragments_split` converts
+  pre-split instances and `bootstrap.migrate_capability_split` expands pre-capability ones
+  (grants: docs + doc-only permissions lists) at boot.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`,
   `calls:`, `tags:`, `secrets: NAME,…` — the docstring is the ONLY machine-read surface; comment-form
   declarations above it are invisible), and a `--selftest` the engine runs before saving. `write_util`
   is gated twice: `utils_lib.header_problems` rejects a missing `tags:` line or a credential env var
   the code reads but `secrets:` doesn't declare (the Settings page can only prompt for declared
-  secrets), then the selftest; approval rides the held util-authoring permission's `confirm:` grant.
+  secrets), then the selftest; approval rides the routine's write_util `confirm:` capability level.
   Discover with the `util` action `name: list`.
 - **Secrets** are one central, write-only KEY→VALUE store injected into every util, endpoint, and the
   subscription at run time; utils declare which vars they need and the UI flags unset ones.

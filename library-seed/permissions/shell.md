@@ -1,6 +1,6 @@
 ---
 tags: [tool-use, shell, escape-hatch]
-grants:
+requires:
   utils: [shell]
 ---
 # permission: shell — run arbitrary shell commands (escape hatch)

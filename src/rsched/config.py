@@ -29,15 +29,20 @@ DEFAULT_BUDGETS = {
     "max_subrun_depth": 2,
     "ask_timeout_min": 5,
 }
-# PERMISSIONS a new routine holds when its routine.yaml names no explicit `permissions:`
-# list. Permissions are engine-enforced capabilities (see grants.py), user-changeable only:
-# `util-authoring` lets a routine write utils with user approval, `memory` unlocks the
-# .memory/ notebook. `communication` (discord), `run-history` (previous runs) and `shell`
-# stay opt-in. There is NO self-modification permission: a run never edits its own recipe
-# or routine.yaml — the routine-improver meta routine refines recipes centrally (its
-# fs_write_roots covering the homes is the one engine-recognized unlock). Defaults added
-# here AFTER routines exist reach them via bootstrap.ADOPT_PERMISSIONS (one-time, at boot).
+# The two-layer permission defaults a new routine gets when routine.yaml is silent.
+# PERMISSIONS are conduct docs (library prose reaching the prompt when held);
+# CAPABILITIES are the atomic machine-enforced surface (see grants.py) — gated action
+# kinds, reserved utils, the write_util approval level, previous-run read depth. The two
+# stay consistent via the web layer's cascades: activating a doc switches on what its
+# `requires:` names; switching a capability off deactivates the docs requiring it.
+# `communication` (discord), `run-history` depth and `shell` stay opt-in. There is NO
+# self-modification permission: a run never edits its own recipe or routine.yaml — the
+# routine-improver meta routine refines recipes centrally (its fs_write_roots covering
+# the homes is the one engine-recognized unlock). Defaults added here AFTER routines
+# exist reach them via bootstrap.ADOPT_PERMISSIONS (one-time, at boot).
 DEFAULT_PERMISSIONS = ["util-authoring", "memory"]
+DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write"],
+                        "utils": [], "confirm": "always", "runs": "none"}
 # TRAITS a new routine gets when creation picks none explicitly (the wizard normally
 # preselects per task): reusable practice prose, adapted into the routine's own traits/
 # at creation and referenced from the end of its main.md. Not toggleable afterwards —
@@ -239,11 +244,14 @@ class RoutineConfig(_Config):
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
     models: dict[str, ModelRef] = Field(default_factory=dict)  # main/subroutine/tool_call
     budgets: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_BUDGETS))
-    # Permissions are the routine's engine-enforced capabilities (grants machine-read from
-    # the LIBRARY copies — see grants.py). User-changeable only; an explicit list wins,
-    # otherwise a new routine holds the default set. Traits (practice prose) leave no yaml
-    # trace — they live as the routine's own files under traits/.
+    # The two permission layers (user-changeable only; explicit values win, otherwise a
+    # new routine holds the defaults). `permissions` names the held CONDUCT docs (library
+    # prose in the prompt); `capabilities` is the engine-enforced surface grants.py
+    # loads the run policy from — {actions, utils, confirm, runs}. Traits (practice
+    # prose) leave no yaml trace — they live as the routine's own files under traits/.
     permissions: list[str] = Field(default_factory=lambda: list(DEFAULT_PERMISSIONS))
+    capabilities: dict = Field(default_factory=lambda: {
+        k: list(v) if isinstance(v, list) else v for k, v in DEFAULT_CAPABILITIES.items()})
     fs_read_roots: list[HomePath] = Field(default_factory=list)
     fs_write_roots: list[HomePath] = Field(default_factory=list)
     keep_runs: int = Field(30, validation_alias=AliasPath("retention", "keep_runs"))
@@ -298,6 +306,12 @@ class RoutineConfig(_Config):
     def _default_unless_list(cls, v: object) -> object:
         return [str(f) for f in v] if isinstance(v, list) else list(DEFAULT_PERMISSIONS)
 
+    @field_validator("capabilities", mode="before")
+    @classmethod
+    def _default_unless_mapping(cls, v: object) -> object:
+        # an explicit mapping wins ({} = everything gated off); anything else → defaults
+        return v if isinstance(v, dict) else cls.model_fields["capabilities"].default_factory()
+
 
 def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     """Parse <dir>/routine.yaml. Returns (config, problems); config is None only when the
@@ -332,6 +346,10 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     for key in [k for k in cfg.budgets if k not in DEFAULT_BUDGETS]:
         problems.append(f"budgets.{key}: unknown budget")
         del cfg.budgets[key]
+    from .grants import normalize_capabilities  # function-level: grants imports engine.actions
+
+    cfg.capabilities, cap_problems = normalize_capabilities(cfg.capabilities)
+    problems += cap_problems
 
     # A routine is self-contained: its recipe is materialized into main.md at generation, and the
     # workflow.library_slug is kept only as "generated-from" provenance.

@@ -153,6 +153,12 @@ def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
                 # no explicit list = the routine follows DEFAULT_PERMISSIONS (slug included)
                 continue
             raw["permissions"] = [*perms, slug]
+            # the activation cascade: switching the doc on switches on what it requires
+            if isinstance(raw.get("capabilities"), dict):
+                from .grants import read_library_requires
+
+                _merge_caps(raw["capabilities"],
+                            read_library_requires(permissions_home).get(slug) or {})
             (rdir / "routine.yaml").write_text(
                 yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
             _git(rdir, "add", "-A")
@@ -540,6 +546,127 @@ def retire_self_modification(routines_home: Path, conversations_home: Path,
             touched += 1
     if touched:
         log.warning("self-modification stripped from %d routine(s)/conversation(s)", touched)
+    return touched
+
+
+# The 2026-07 two-layer split: permission docs stopped GRANTING — their `grants:` became
+# `requires:` (the capabilities their instructions presume) and the capabilities
+# themselves moved into each routine.yaml as a user-set `capabilities:` mapping. The
+# three util-authoring variants collapsed into ONE doc (the approval level is a
+# capability now), run-history-full into run-history (the depth is a capability).
+# Old doc slug → (collapsed doc slug, the capabilities holding it used to grant).
+_LEGACY_CAPABILITY_MAP = {
+    "util-authoring": ("util-authoring", {"actions": ["write_util"], "confirm": "always"}),
+    "util-authoring-autonomous": ("util-authoring",
+                                  {"actions": ["write_util"], "confirm": "creations"}),
+    "util-authoring-full-auto": ("util-authoring",
+                                 {"actions": ["write_util"], "confirm": "never"}),
+    "memory": ("memory", {"actions": ["memory_read", "memory_write"]}),
+    "communication": ("communication", {"utils": ["discord"]}),
+    "shell": ("shell", {"utils": ["shell"]}),
+    "run-history": ("run-history", {"runs": "last"}),
+    "run-history-full": ("run-history", {"runs": "all"}),
+}
+_RETIRED_PERMISSION_DOCS = ("util-authoring-autonomous", "util-authoring-full-auto",
+                            "run-history-full")
+_REWRITTEN_SEED_DOCS = ("util-authoring", "run-history", "memory", "communication", "shell")
+_CONFIRM_RANK = {"always": 0, "creations": 1, "never": 2}
+_RUNS_RANK = {"none": 0, "last": 1, "all": 2}
+
+
+def _merge_caps(caps: dict, extra: dict) -> None:
+    """Union `extra` into `caps` in place — additive: most permissive confirm/runs wins."""
+    for key in ("actions", "utils"):
+        caps.setdefault(key, [])
+        caps[key] += [v for v in extra.get(key) or [] if v not in caps[key]]
+    if _RUNS_RANK.get(extra.get("runs") or "none", 0) > _RUNS_RANK.get(caps.get("runs") or "none", 0):
+        caps["runs"] = extra["runs"]
+    if _CONFIRM_RANK.get(extra.get("confirm") or "always", 0) \
+            > _CONFIRM_RANK.get(caps.get("confirm") or "always", 0):
+        caps["confirm"] = extra["confirm"]
+
+
+def migrate_capability_split(routines_home: Path, conversations_home: Path,
+                             permissions_home: Path) -> int:
+    """One-time migration to the two-layer permission set. Library: retired doc variants
+    are deleted, the known seed docs are replaced by the current repo seeds (the split
+    rewrote them), unknown user docs get `grants:` mechanically renamed to `requires:`
+    (the confirm level is dropped — it is per-routine user policy now). Routines and
+    conversations: an explicit `permissions:` list is collapsed to the surviving doc
+    slugs and expanded into a `capabilities:` mapping preserving what the old grants
+    unlocked. Naturally idempotent: triggers on `grants:` frontmatter / a yaml with
+    `permissions:` but no `capabilities:`. Returns touched routines."""
+    import frontmatter as fm
+
+    root = repo_root()
+    lib_changed = False
+    if permissions_home.is_dir():
+        for slug in _RETIRED_PERMISSION_DOCS:
+            f = permissions_home / f"{slug}.md"
+            if f.exists():
+                f.unlink()
+                lib_changed = True
+        for f in sorted(permissions_home.glob("*.md")):
+            try:
+                post = fm.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 — a broken doc is the linter's business
+                continue
+            if "grants" not in post.metadata:
+                continue
+            seed = root / "library-seed" / "permissions" / f.name
+            if f.stem in _REWRITTEN_SEED_DOCS and seed.exists():
+                shutil.copy(seed, f)
+            else:
+                req = dict(post.metadata.pop("grants") or {})
+                req.pop("confirm", None)
+                if req:
+                    post.metadata["requires"] = req
+                f.write_text(fm.dumps(post, sort_keys=False) + "\n", encoding="utf-8")
+            lib_changed = True
+    if lib_changed:
+        _git(permissions_home.parent, "add", "-A")
+        _git(permissions_home.parent, "commit", "-qm",
+             "migrate: permissions split into conduct docs (requires:) + capabilities")
+        log.warning("library migrated: permission grants: → requires: (capabilities are "
+                    "per-routine config now)")
+
+    from .grants import EMPTY_CAPABILITIES, read_library_requires
+    lib_requires = read_library_requires(permissions_home)
+    touched = 0
+    for home in (routines_home, conversations_home):
+        if not home or not Path(home).is_dir():
+            continue
+        for rdir in sorted(Path(home).iterdir()):
+            cfg_path = rdir / "routine.yaml"
+            if rdir.name.startswith(".") or not cfg_path.is_file():
+                continue
+            try:
+                raw = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            except yaml.YAMLError:
+                continue
+            if "capabilities" in raw or "permissions" not in raw:
+                continue   # migrated already / follows the defaults for both layers
+            old = raw.get("permissions") or []
+            docs: list[str] = []
+            caps = {**EMPTY_CAPABILITIES, "actions": [], "utils": []}
+            for slug in old:
+                if slug in _LEGACY_CAPABILITY_MAP:
+                    doc, extra = _LEGACY_CAPABILITY_MAP[slug]
+                else:
+                    doc, extra = slug, lib_requires.get(slug) or {}
+                if doc not in docs:
+                    docs.append(doc)
+                _merge_caps(caps, extra)
+            raw["permissions"] = docs
+            raw["capabilities"] = caps
+            cfg_path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True),
+                                encoding="utf-8")
+            _git(rdir, "add", "-A")   # no-op for conversations (never git-versioned)
+            _git(rdir, "commit", "-qm", "migrate: permissions split into conduct + capabilities")
+            touched += 1
+    if touched:
+        log.warning("expanded permissions into capabilities in %d routine(s)/conversation(s)",
+                    touched)
     return touched
 
 

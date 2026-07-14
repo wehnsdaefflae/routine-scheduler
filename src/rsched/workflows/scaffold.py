@@ -87,6 +87,11 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     available_perms = set(library_docs.slugs(server.permissions_home))
     active_perms = permissions if permissions is not None else list(DEFAULT_PERMISSIONS)
     active_perms = [p for p in active_perms if p in available_perms]
+    # the activation cascade: the capabilities the chosen conduct docs require, switched
+    # on from the start (the user tunes both layers on the routine page afterwards)
+    from ..grants import capabilities_for, read_library_requires
+
+    capabilities = capabilities_for(active_perms, read_library_requires(server.permissions_home))
     commit = library.head_commit(server.library_home)
 
     from .adapt import decompose, dump_markdown
@@ -143,6 +148,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
         "workflow": {"library_slug": workflow_slug, "library_commit": commit},
         **({"models": models} if models else {}),
         "permissions": active_perms,
+        "capabilities": capabilities,
         "budgets": {**DEFAULT_BUDGETS, **(budgets or {})},
         "retention": {"keep_runs": 30},
     }

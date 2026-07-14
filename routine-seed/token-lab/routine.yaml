@@ -14,7 +14,15 @@ schedule:
 permissions:
 - memory
 - util-authoring
-- run-history-full
+- run-history
+capabilities:
+  actions:
+  - write_util
+  - memory_read
+  - memory_write
+  utils: []
+  confirm: always
+  runs: all
 budgets:
   max_turns: 70
   max_wall_clock_min: 45

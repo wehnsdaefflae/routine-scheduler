@@ -148,19 +148,19 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
                              f"Its suggested traits: {wf.get('includes') or '(none)'}")
     t_list = "\n".join(f"- {d['slug']}: {d['summary']}" for d in traits)
     p_list = "\n".join(f"- {d['slug']}: {d['summary']}"
-                       + (f" [grants: {d['grants']}]" if d.get("grants") else "")
+                       + (f" [requires: {d['requires']}]" if d.get("requires") else "")
                        for d in perms)
     prompt = (
         "A new recurring LLM-agent routine is being created. Pick its TRAITS (reusable practice "
         "modules, adapted into the routine's own instructions at creation) and PERMISSIONS "
-        "(engine-enforced capabilities the user grants it) from the catalogs below.\n\n"
+        "(conduct docs whose required capabilities the engine then enforces) from the catalogs "
+        "below.\n\n"
         f"INSTRUCTION:\n{instruction}\n{workflow_note}\n\n"
         f"TRAITS:\n{t_list}\n\nPERMISSIONS:\n{p_list}\n\n"
         "Guidance: include ask-policy and ledger-discipline for almost everything. "
-        "Grant permissions conservatively: only what the task clearly needs (e.g. communication "
+        "Pick permissions conservatively: only what the task clearly needs (e.g. communication "
         "only if it must reach the user outside the web UI; run-history only if runs build on "
-        "each other's details beyond the last summary; shell almost never). At most ONE "
-        "util-authoring variant.\n\n"
+        "each other's details beyond the last summary; shell almost never).\n\n"
         "Reply with ONLY one JSON object matching this schema (no prose):\n"
         + json.dumps(TRAITS_PERMS_SCHEMA)
     )

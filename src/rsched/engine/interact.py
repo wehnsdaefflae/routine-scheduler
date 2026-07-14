@@ -1,5 +1,5 @@
 """Action handlers that converse with the user: ask_user (blocking/deferred questions)
-and write_util, whose approval gate derives from the routine's permission grants.
+and write_util, whose approval gate is the routine's write_util capability level.
 
 EVERY kind of required user feedback funnels into the same decision record
 (inbox.file_question): plain asks and util approvals, deferred and blocking. A blocking
@@ -120,8 +120,8 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:
     home = ctx.server.utils_home
     utils_lib.ensure_library(home, remote=ctx.server.libraries_remote)
     creating = not utils_lib.exists(home, name)
-    # Approval policy comes from the permission grants (util-authoring: every change;
-    # util-authoring-autonomous: creations only). No grants on the ctx = confirm everything.
+    # Approval policy is the routine's write_util capability level (always: every change;
+    # creations: new utils only; never). No grants on the ctx = confirm everything.
     if ctx.grants is None or ctx.grants.needs_confirm(creating):
         verb = "create" if creating else "revise"
         ask = handle_ask(loop, {

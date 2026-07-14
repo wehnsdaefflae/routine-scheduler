@@ -269,9 +269,9 @@ class SubrunManager:
 def _sub_routine(routine, sub_dir, ref):
     """A child sub-routine config: its OWN dir (so main.md + read_file/write_file resolve under
     sub_dir), the parent's fs roots inherited, the parent's SUBROUTINE model as the child's MAIN
-    model (subroutine/tool_call inherited so the child can spawn/llm too), permissions off
-    (a sub-routine holds no grants: it reports through its finish summary and keeps no
-    LEDGER/audit)."""
+    model (subroutine/tool_call inherited so the child can spawn/llm too), permissions and
+    capabilities off (a sub-routine holds nothing gated: it reports through its finish
+    summary and keeps no LEDGER/audit)."""
     import copy
 
     r = copy.copy(routine)
@@ -279,4 +279,5 @@ def _sub_routine(routine, sub_dir, ref):
     r.models = dict(routine.models)
     r.models["main"] = ref
     r.permissions = []
+    r.capabilities = {}
     return r

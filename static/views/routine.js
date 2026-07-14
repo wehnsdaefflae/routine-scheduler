@@ -5,7 +5,8 @@ import { api } from "/static/api.js";
 import { mdInline } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
-import { chip, el, emptyState, fmtDur, fmtTokens, grantsSummary, skeleton, tagChip, toast, when } from "/static/util.js";
+import { permissionsPanel } from "/static/components/permissions.js";
+import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, tagChip, toast, when } from "/static/util.js";
 import { forgetField } from "/static/formpersist.js";
 
 export async function render(view, slug, query = {}) {
@@ -132,33 +133,19 @@ export async function render(view, slug, query = {}) {
       el("button", { class: "btn small",
         onclick: () => editFile("main.md", "main.md — the routine's workflow") }, "edit main.md")));
 
-  // -- permissions (user-only toggles; enforced by the engine per action) ----------
-  const boxes = {};
-  const permRows = (d.permissions || []).map((p) => {
-    const box = el("input", { type: "checkbox", checked: p.active ? "" : null });
-    boxes[p.slug] = box;
-    const grants = grantsSummary(p.grants);
-    return el("label", { class: "toggle-row" }, box,
-      el("div", {},
-        el("div", { class: "t-title" }, p.slug),
-        el("div", { class: "muted prose small" }, p.summary || ""),
-        grants ? el("div", { class: "small", style: "color:var(--warn)" }, `▸ ${grants}`) : null));
-  });
-  view.append(el("h2", {}, "Permissions"),
+  // -- permissions: conduct docs + machine-enforced capabilities (user-only) --------
+  view.append(el("h2", {}, "Permissions & capabilities"),
     el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:8px" },
+      el("div", { class: "muted small", style: "margin-bottom:10px" },
         "what this routine is ALLOWED to do — enforced by the engine on every action. Only you can ",
-        "change these; the routine can never grant itself anything. Takes effect at the next run."),
-      permRows.length ? permRows : el("div", { class: "muted" }, "no permissions in the library"),
-      el("div", { class: "row mt" }, el("button", {
-        class: "btn primary",
-        onclick: async () => {
-          const active = Object.entries(boxes).filter(([, b]) => b.checked).map(([s]) => s);
-          try { await api(`/api/routines/${slug}/permissions`, { method: "PUT", body: { active } });
+        "change either column; the routine can never grant itself anything. Takes effect at the next run."),
+      permissionsPanel(d.permissions, d.capabilities, {
+        onSave: async (payload) => {
+          try { await api(`/api/routines/${slug}/permissions`, { method: "PUT", body: payload });
             toast("permissions saved"); setTimeout(() => location.reload(), 400); }
           catch (err) { toast(err.message, 4000, { error: true }); }
         },
-      }, "save permissions"))));
+      })));
 
   // -- budgets (per-run ceilings — every invisible limit, surfaced) -----------------
   const BUDGET_FIELDS = [

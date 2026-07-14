@@ -4,10 +4,12 @@
   ADAPTED to the routine and copied into `<routine>/traits/`; from then on they are the
   routine's own files (the routine may refine them; the user edits them like any routine
   file). The library copy is only the template.
-- **permissions** (`<library>/permissions/`): engine-enforced capabilities. Activation lives
-  in routine.yaml `permissions:` (user-only); the frontmatter `grants:` of the LIBRARY copy
-  is machine-read at run start (see grants.py). Bodies are short capability notes shown in
-  the UI and appended to the prompt's CAPABILITIES section when active.
+- **permissions** (`<library>/permissions/`): conduct docs of the two-layer permission set.
+  Activation lives in routine.yaml `permissions:` (user-only); the frontmatter `requires:`
+  of the LIBRARY copy declares which capabilities the doc's instructions presume (see
+  grants.py — enforcement reads the routine's own `capabilities:`). Bodies are short
+  capability notes shown in the UI and appended to the prompt's CAPABILITIES section when
+  active.
 
 Both are one markdown file per doc with a `# trait: <name> — <summary>` /
 `# permission: <name> — <summary>` heading line.
@@ -53,7 +55,7 @@ def _git(home: Path, *args: str) -> subprocess.CompletedProcess:
 
 
 def list_docs(home: Path) -> list[dict]:
-    from .grants import normalize_grants
+    from .grants import normalize_capabilities
 
     if not home.is_dir():
         return []
@@ -66,8 +68,9 @@ def list_docs(home: Path) -> list[dict]:
                     "summary": (m.group("summary").strip() if m else ""),
                     "title": _title(path.stem, m),
                     "tags": meta.get("tags") or [],
-                    # machine-read capability side (authoritative only for the permissions dir)
-                    "grants": normalize_grants(meta.get("grants"))[0]})
+                    # the capabilities this doc's instructions presume (permissions dir only)
+                    "requires": normalize_capabilities(meta.get("requires"), label="requires",
+                                                       requires=True)[0]})
     return out
 
 

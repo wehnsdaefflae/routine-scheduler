@@ -27,6 +27,7 @@ from ..config import MODEL_KINDS, load_routine
 from ..daemon import registry
 from ..ids import now_iso, run_ts
 from ..paths import atomic_write_json, resolve_rel
+from .api_routines import PermissionsBody, resolve_permission_layers
 from .sse import TERMINAL_STATES
 
 router = APIRouter(tags=["conversations"])
@@ -175,12 +176,19 @@ def detail(request: Request, slug: str) -> dict:
 
     info = _info(request, slug)
     server = request.app.state.server
+    from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
+
     all_perms = library_docs.list_docs(server.permissions_home)
     held = set(info.cfg.permissions)
     permissions = [{"slug": p["slug"], "summary": p["summary"], "title": p["title"],
-                    "grants": p["grants"], "active": p["slug"] in held,
+                    "requires": p["requires"], "active": p["slug"] in held,
                     "routine_only": p["slug"] in conv_mod.ROUTINE_ONLY_PERMISSIONS}
                    for p in all_perms]
+    own_caps = info.cfg.capabilities or {}
+    reservable = sorted({u for p in all_perms for u in (p["requires"].get("utils") or [])}
+                        | set(own_caps.get("utils") or []))
+    capabilities = {"active": {**EMPTY_CAPABILITIES, **own_caps},
+                    "vocabulary": {"actions": list(GATED_KINDS), "utils": reservable}}
     traits_dir = info.cfg.dir / "traits"
     traits = sorted(p.stem for p in traits_dir.glob("*.md")) if traits_dir.is_dir() else []
     sm = server.system_model
@@ -195,6 +203,7 @@ def detail(request: Request, slug: str) -> dict:
         "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None,
         "endpoints": list(server.endpoints.keys()),
         "permissions": permissions,
+        "capabilities": capabilities,
         "traits": traits,
         "budgets": info.cfg.budgets,
         "runs": [{"run_id": r.run_id, "ts": r.ts, "state": r.state} for r in info.runs],
@@ -241,23 +250,18 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
     return {"ok": True, "updated": list(updates)}
 
 
-class PermissionsBody(BaseModel):
-    active: list[str]
-
-
 @router.put("/conversations/{slug}/permissions")
 def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
-    from .. import library_docs
-
     info = _info(request, slug)
     _guard_not_active(request, info)
-    available = set(library_docs.slugs(request.app.state.server.permissions_home))
-    active = [p for p in body.active if p in available]
+    active, caps = resolve_permission_layers(request.app.state.server, body,
+                                             info.cfg.capabilities or {})
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     raw["permissions"] = active
+    raw["capabilities"] = caps
     path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    return {"ok": True, "active": active}
+    return {"ok": True, "active": active, "capabilities": caps}
 
 
 @router.delete("/conversations/{slug}")

@@ -29,12 +29,12 @@ Eight sections, in this order:
 
 | # | Section | Source | What the model learns |
 |---|---|---|---|
-| 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a TERSE `say` (one short sentence — words are spent on decisions and surprises, not routine steps), "the run starts NOW", steps-on-demand, working dir + extra fs roots, **no shell**, grant-aware `write_util` and memory-action glosses, the traits-vs-permissions prose ownership rule, the concrete budgets, a prose gloss of every action kind (including `read_file` batching via `paths` and in-place `edit_file` instead of whole-file rewrites), the injection warning. |
+| 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a TERSE `say` (one short sentence — words are spent on decisions and surprises, not routine steps), "the run starts NOW", steps-on-demand, working dir + extra fs roots, **no shell**, capability-aware `write_util` and memory-action glosses, the traits-vs-capabilities prose ownership rule, the concrete budgets, a prose gloss of every action kind (including `read_file` batching via `paths` and in-place `edit_file` instead of whole-file rewrites), the injection warning. |
 | 2 | `# ACTION SCHEMA (your every reply matches this)` | `ACTION_SCHEMA` | The exact reply grammar; field descriptions double as micro-docs (`say`/`question`/`summary` say that simple Markdown renders in the UI; `say` demands ONE short sentence; `summary` demands a DETAILED 8-20 lines). |
 | 3 | `# EXAMPLE of a valid reply` | `example_action()` | One few-shot example (`read_file steps/scan.md`) that models on-demand step reading and a terse `say` — deliberately NOT `util name=list`: the catalog already sits in CAPABILITIES, so opening a run by re-listing it just re-buys known information. |
 | 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow; step detail stays in `steps/*.md`, practice detail in `traits/*.md` — both read on demand. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
 | 5 | `# INSTRUCTION (what this routine is for)` | `instruction.md` verbatim | The task: goal, deliverable, constraints, completion criteria. |
-| 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ grants — ungranted gated kinds like `memory_*`/`write_util` simply don't appear), the held permissions + what they unlock, each held permission's short capability note (the library doc's body, capped), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary, reserved utils flagged). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
+| 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ capabilities — switched-off gated kinds like `memory_*`/`write_util` simply don't appear), the enabled capabilities + the held conduct permissions, each held permission's short capability note (the library doc's body, capped), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary, reserved utils flagged). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
 | 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the `state/` file list, `steps/` module names, the `traits/` practice-module names, the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), open deferred questions, answers that arrived since the last run. |
 | 8 | `# MESSAGES FROM THE USER (consume now)` | inbox drain at boot | Only present if messages were waiting — and only on a FRESH run: a resume delivers waiting messages as trailing `USER MESSAGE` injections instead (§2). |
 
@@ -45,7 +45,7 @@ whatever is not in the prompt is reachable by an action (`util name=list`,
 
 **Subrun variant** (spawned children): same composer, but the workflow is the library
 pattern materialized under `runs/<ts>/sub/<n>/`, the instruction is the parent's `prompt`
-verbatim, permissions are off (no grants — so no `write_util`, no `memory_*`, no reserved
+verbatim, permissions and capabilities are off (so no `write_util`, no `memory_*`, no reserved
 utils, no traits of their own), and section 7 collapses to `(subrun — no routine state
 digest; everything you need is in the instruction)`.
 
@@ -117,7 +117,7 @@ Observations are truncated head+tail at 8k chars.
 2. **Budget warning**: `[BUDGET: … — wind down DELIBERATELY now: record what matters (LEDGER, state files), then finish with an authored summary. …]`
 3. **History note** (right after a compaction, then every 10th turn — NOT every turn): `[history: earlier turns are archived under runs/<ts>/history/INDEX.md — read_file the index and the relevant files before relying on memory.]`
 
-The **util reminder** — `[tools: the CAPABILITIES catalog lists the global utils; run `util name=list args=["<name>"]` for one util's exact usage; if none fits, …]` (the tail varies with the util-authoring permission) — is ONE-SHOT: appended to the kickoff (or the resume ENGINE NOTE), never to observations. An identical tail on every turn was rent re-read for the rest of the run; a failed util call carries its own `[hint]` repair route anyway.
+The **util reminder** — `[tools: the CAPABILITIES catalog lists the global utils; run `util name=list args=["<name>"]` for one util's exact usage; if none fits, …]` (the tail varies with the write_util capability) — is ONE-SHOT: appended to the kickoff (or the resume ENGINE NOTE), never to observations. An identical tail on every turn was rent re-read for the rest of the run; a failed util call carries its own `[hint]` repair route anyway.
 
 ### 3c · Between-turn feed messages (separate user messages)
 
@@ -138,7 +138,7 @@ Reply again with ONLY one JSON object matching the action schema — no prose ou
 ```
 
 Up to 3 attempts; the last drops the provider-side schema constraint. Disallowed kinds and
-ungranted capabilities (`write_util`, `memory_*`, reserved utils, previous-run reads) and
+switched-off capabilities (`write_util`, `memory_*`, reserved utils, previous-run reads) and
 own-recipe/config writes (never permitted — the routine-improver's beat) are corrected the
 same way — the error names the way out.
 
@@ -217,7 +217,7 @@ Working directory: /home/user/routines/job-radar. All relative paths resolve the
 
 You have NO shell. The ONLY way to run code is a global util (the `util` action). If no util does what you need, WRITE one (the `write_util` action) and then call it — utils are reusable, selftested, and shared across all routines. You never run git yourself: the engine commits your working directory automatically at run end.
 
-Ownership of prose: instruction.md holds ONLY the task — goal, deliverable, constraints, completion criteria. Cross-cutting conduct (when to ask the user, after-run improvement passes, util and research discipline) lives in this routine's PRACTICE MODULES under traits/ — your own adapted copies, referenced at the end of the workflow below; read the relevant one before the situation it governs. Your own recipe and config (main.md, steps/, traits/, instruction.md, routine.yaml) are READ-ONLY to you: the routine-improver meta routine refines recipes, the user owns config — file a deferred ask_user for changes you believe are needed. What you are ALLOWED to do (util authoring, reserved channels, memory, previous runs) is a separate matter: PERMISSIONS, set only by the user and enforced by the engine on every action — see CAPABILITIES below; never restate permission-dependent conduct inside instruction.md.
+Ownership of prose: instruction.md holds ONLY the task — goal, deliverable, constraints, completion criteria. Cross-cutting conduct (when to ask the user, after-run improvement passes, util and research discipline) lives in this routine's PRACTICE MODULES under traits/ — your own adapted copies, referenced at the end of the workflow below; read the relevant one before the situation it governs. Your own recipe and config (main.md, steps/, traits/, instruction.md, routine.yaml) are READ-ONLY to you: the routine-improver meta routine refines recipes, the user owns config — file a deferred ask_user for changes you believe are needed. What you are ALLOWED to do (util authoring, reserved channels, memory, previous runs) is a separate matter: CAPABILITIES, set only by the user and enforced by the engine on every action — the held permissions' notes below state the conduct for each; never restate capability-dependent conduct inside instruction.md.
 
 Budgets for this run: 60 turns, 45 minutes, unlimited total tokens, at most 8 subruns (depth ≤ 2). Spend them on the workflow's priorities and `finish` DELIBERATELY before they expire — a finish you wrote beats a forced one.
 
@@ -454,9 +454,9 @@ Model: openrouter/qwen/qwen3-235b-a22b — context window ≈ 200,000 chars; the
 
 Action kinds usable this run: util, write_util, read_file, write_file, memory_read, memory_write, llm, spawn, subruns, kill, wait, ask_user, finish. Anything else is rejected by the engine before it becomes a turn.
 
-Permissions held (user-set, engine-enforced): util-authoring, memory — unlocking: write_util (every create/revise needs the user's approval).
+Capabilities enabled (user-set, engine-enforced): write_util (every create/revise needs the user's approval). Held permissions (conduct notes below): util-authoring, memory.
 
-# permission: util authoring — create and revise global utils, user-approved
+# permission: util authoring — create and revise global utils
 
 Unlocks the `write_util` action: when no existing util fits, write one; when a util is
 broken, repair it (read its source first: `util` name `show`, args `["<name>"]`). Every

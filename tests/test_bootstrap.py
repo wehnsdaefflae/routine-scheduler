@@ -364,3 +364,64 @@ def test_adopt_seed_routine_installs_once_and_respects_archive(tmp_path):
 
     # unknown seed slug → no-op
     assert adopt_seed_routine(routines, "no-such-seed") is False
+
+
+def test_migrate_capability_split(tmp_path):
+    """The two-layer split: library docs lose `grants:` (retired variants deleted, seed
+    docs replaced, user docs mechanically renamed to requires: minus confirm) and every
+    yaml with an explicit permissions list gains the equivalent capabilities mapping,
+    collapsed to the surviving doc slugs. Idempotent: a second run touches nothing."""
+    from rsched.bootstrap import migrate_capability_split
+
+    routines = tmp_path / "routines"
+    convs = tmp_path / "conversations"
+    perms_home = tmp_path / "library" / "permissions"
+    perms_home.mkdir(parents=True)
+    (perms_home / "util-authoring.md").write_text(
+        "---\ngrants:\n  actions: [write_util]\n  confirm: true\n---\n"
+        "# permission: util authoring — old seed\nbody\n")
+    (perms_home / "util-authoring-full-auto.md").write_text(
+        "---\ngrants:\n  actions: [write_util]\n  confirm: false\n---\n"
+        "# permission: util authoring (full auto) — old variant\nbody\n")
+    (perms_home / "run-history-full.md").write_text(
+        "---\ngrants:\n  runs: all\n---\n# permission: run history (full) — old\nbody\n")
+    (perms_home / "zulip-channel.md").write_text(
+        "---\ntags: [a, b, c]\ngrants:\n  utils: [zulip]\n  confirm: true\n---\n"
+        "# permission: zulip-channel — a user-authored doc\nbody\nmore\n")
+
+    worker = routines / "worker"
+    worker.mkdir(parents=True)
+    (worker / "routine.yaml").write_text(yaml.safe_dump(
+        {"slug": "worker",
+         "permissions": ["util-authoring-full-auto", "run-history-full", "zulip-channel"]}))
+    silent = routines / "silent"          # no explicit list → follows the defaults, untouched
+    silent.mkdir(parents=True)
+    (silent / "routine.yaml").write_text(yaml.safe_dump({"slug": "silent"}))
+    conv = convs / "c-1"
+    conv.mkdir(parents=True)
+    (conv / "routine.yaml").write_text(yaml.safe_dump(
+        {"slug": "c-1", "kind": "conversation", "permissions": ["communication"]}))
+    (perms_home / "communication.md").write_text(
+        "---\ngrants:\n  utils: [discord]\n---\n# permission: communication — old seed\nbody\n")
+
+    assert migrate_capability_split(routines, convs, perms_home) == 2
+
+    # library: retired variants gone, seed docs now carry requires:, user doc renamed
+    assert not (perms_home / "util-authoring-full-auto.md").exists()
+    assert not (perms_home / "run-history-full.md").exists()
+    ua = (perms_home / "util-authoring.md").read_text()
+    assert "requires:" in ua and "grants:" not in ua
+    zulip = (perms_home / "zulip-channel.md").read_text()
+    assert "requires:" in zulip and "grants:" not in zulip and "confirm" not in zulip
+
+    raw = yaml.safe_load((worker / "routine.yaml").read_text())
+    assert raw["permissions"] == ["util-authoring", "run-history", "zulip-channel"]
+    caps = raw["capabilities"]
+    assert caps["actions"] == ["write_util"] and caps["confirm"] == "never"
+    assert caps["runs"] == "all" and caps["utils"] == ["zulip"]
+
+    craw = yaml.safe_load((conv / "routine.yaml").read_text())
+    assert craw["capabilities"]["utils"] == ["discord"]
+    assert "capabilities" not in yaml.safe_load((silent / "routine.yaml").read_text())
+
+    assert migrate_capability_split(routines, convs, perms_home) == 0   # idempotent

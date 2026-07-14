@@ -1,6 +1,6 @@
 ---
 tags: [self-management, record-keeping, memory]
-grants:
+requires:
   actions: [memory_read, memory_write]
 ---
 # permission: memory — the routine's notebook of surprises

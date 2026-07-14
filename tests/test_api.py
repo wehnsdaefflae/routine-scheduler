@@ -86,7 +86,8 @@ def test_routine_cards_and_detail(client):
     assert "Test instruction" in detail["instruction"]
     assert detail["workflow_ref"]["slug"] == "test-flow"   # workflow is REFERENCED, not a routine file
     assert isinstance(detail["permissions"], list)   # hermetic test library → may be empty
-    assert all("grants" in p and "active" in p for p in detail["permissions"])
+    assert all("requires" in p and "active" in p for p in detail["permissions"])
+    assert set(detail["capabilities"]["active"]) == {"actions", "utils", "confirm", "runs"}
     assert detail["runs"][0]["state"] == "finished"
     assert c.get("/api/routines/nope").status_code == 404
 
@@ -1022,3 +1023,54 @@ def test_audit_decision_answer_survives_inbox_consumption(client):
         "decisions": [{"id": "D2", "title": "Pick a path (round 2)", "detail": "new context",
                        "status": "open", "options": ["A", "B"]}]})
     assert [q["qid"] for q in c.get("/api/questions").json() if q.get("meta")] == ["audit:D2"]
+
+
+def test_put_permissions_cascades_capabilities(client):
+    """The two-layer PUT: activating a doc raises the capabilities to cover its requires
+    (server-side, whatever the client sent); the mapping round-trips into routine.yaml."""
+    c, tmp = client
+    perms_home = tmp / "library" / "permissions"
+    perms_home.mkdir(parents=True, exist_ok=True)
+    (perms_home / "communication.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
+        "# permission: communication — discord\nbody\n", encoding="utf-8")
+    r = c.put("/api/routines/apir/permissions",
+              json={"active": ["communication", "ghost"],
+                    "capabilities": {"actions": ["memory_read"], "confirm": "creations"}})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["active"] == ["communication"]           # unknown doc slugs dropped
+    assert body["capabilities"]["utils"] == ["discord"]  # activation cascade
+    assert body["capabilities"]["actions"] == ["memory_read"]
+    assert body["capabilities"]["confirm"] == "creations"
+    raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
+    assert raw["permissions"] == ["communication"]
+    assert raw["capabilities"] == body["capabilities"]
+    # junk capabilities from the client are a 422, not a silent drop
+    bad = c.put("/api/routines/apir/permissions",
+                json={"active": [], "capabilities": {"actions": "write_util"}})
+    assert bad.status_code == 422
+
+
+def test_library_permission_doc_requires_roundtrip(client):
+    """The Library editor's structured requires: panel — GET returns the parsed mapping
+    for prefill; PUT with a `requires` object merges it into the frontmatter server-side
+    (authoritative for that key) and the linter still gates the result."""
+    c, tmp = client
+    perms_home = tmp / "library" / "permissions"
+    perms_home.mkdir(parents=True, exist_ok=True)
+    (perms_home / "communication.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
+        "# permission: communication — discord\nbody\nmore lines here\n", encoding="utf-8")
+    d = c.get("/api/library/permissions/communication").json()
+    assert d["requires"] == {"utils": ["discord"]}
+    r = c.put("/api/library/permissions/communication",
+              json={"content": d["content"], "requires": {"utils": ["discord", "zulip"]}})
+    assert r.status_code == 200
+    d2 = c.get("/api/library/permissions/communication").json()
+    assert d2["requires"] == {"utils": ["discord", "zulip"]}
+    assert "# permission: communication" in d2["content"]   # body untouched
+    # a requires panel demanding a confirm level is rejected (it is user policy)
+    bad = c.put("/api/library/permissions/communication",
+                json={"content": d2["content"], "requires": {"confirm": "never"}})
+    assert bad.status_code == 422

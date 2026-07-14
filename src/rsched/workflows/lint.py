@@ -2,8 +2,8 @@
 
 Library workflows (Python patterns): META completeness, slug↔filename, resolvable includes,
 a main() entry, PHASES/COMPLETION. Materialized copies: provenance + no unresolved
-placeholders. Traits: titled practice prose, no grants. Permissions: titled, with a
-well-formed `grants:` key (the machine-enforced capability side — see grants.py).
+placeholders. Traits: titled practice prose, no capabilities. Permissions: titled, with a
+well-formed `requires:` key (the capabilities their instructions presume — see grants.py).
 """
 
 from __future__ import annotations
@@ -60,9 +60,9 @@ def lint_workflow_py(source: str, *, filename: str, trait_slugs: list[str]) -> l
 
 
 def lint_trait_text(raw: str, *, filename: str) -> list[str]:
-    """A trait is pure practice prose: titled, tagged, non-trivial — and NEVER grants
-    anything (grants belong to permissions; a trait carrying one would silently do nothing,
-    which is worse than an error)."""
+    """A trait is pure practice prose: titled, tagged, non-trivial — and NEVER carries
+    capabilities (requires belongs to permissions; a trait carrying one would silently do
+    nothing, which is worse than an error)."""
     problems = []
     try:
         meta, body = frontmatter.parse(raw)
@@ -70,9 +70,9 @@ def lint_trait_text(raw: str, *, filename: str) -> list[str]:
         return [f"{filename}: invalid YAML frontmatter: {exc}"]
     if not body.strip().startswith("# trait:"):
         problems.append(f"{filename}: body must start with '# trait: <name> — <summary>' (after any frontmatter)")
-    if "grants" in meta:
-        problems.append(f"{filename}: traits must not carry grants — move the capability to a "
-                        "permission doc under permissions/")
+    if "grants" in meta or "requires" in meta:
+        problems.append(f"{filename}: traits must not carry grants/requires — move the "
+                        "capability to a permission doc under permissions/")
     tags = meta.get("tags")
     if "tags" in meta and not isinstance(tags, list):
         problems.append(f"{filename}: tags must be a list")
@@ -84,9 +84,10 @@ def lint_trait_text(raw: str, *, filename: str) -> list[str]:
 
 
 def lint_permission_text(raw: str, *, filename: str) -> list[str]:
-    """A permission is a capability doc: titled, with a well-formed `grants:` key and a
-    SHORT body (it doubles as the prompt's capability note when held)."""
-    from ..grants import normalize_grants
+    """A permission is a conduct doc: titled, with a well-formed `requires:` key naming
+    the capabilities its instructions presume, and a SHORT body (it doubles as the
+    prompt's capability note when held)."""
+    from ..grants import normalize_capabilities
 
     problems = []
     try:
@@ -95,13 +96,19 @@ def lint_permission_text(raw: str, *, filename: str) -> list[str]:
         return [f"{filename}: invalid YAML frontmatter: {exc}"]
     if not body.strip().startswith("# permission:"):
         problems.append(f"{filename}: body must start with '# permission: <name> — <summary>' (after any frontmatter)")
-    if "grants" not in meta:
-        problems.append(f"{filename}: a permission must carry a grants: key (else it grants nothing)")
+    if "grants" in meta:
+        problems.append(f"{filename}: grants: was renamed — permissions declare requires: "
+                        "(the capabilities their instructions presume); the capabilities "
+                        "themselves are per-routine config now")
+    if "requires" not in meta:
+        problems.append(f"{filename}: a permission must carry a requires: key naming the "
+                        "capabilities its instructions presume (pure prose belongs in a trait)")
     else:
-        grants, grant_problems = normalize_grants(meta["grants"])
-        problems += [f"{filename}: {p}" for p in grant_problems]
-        if "grants" in meta and not grants and not grant_problems:
-            problems.append(f"{filename}: grants: is empty")
+        req, req_problems = normalize_capabilities(meta["requires"], label="requires",
+                                                   requires=True)
+        problems += [f"{filename}: {p}" for p in req_problems]
+        if not req and not req_problems:
+            problems.append(f"{filename}: requires: is empty")
     return problems
 
 

@@ -98,11 +98,19 @@ def routine_detail(request: Request, slug: str) -> dict:
         subdir = d / sub
         files[sub] = ([p.name for p in sorted(subdir.iterdir()) if p.is_file() and p.suffix == ".md"]
                       if subdir.is_dir() else [])
-    # all library permissions → toggle list; held ones are this routine's
+    # the two permission layers: all library conduct docs → toggle list (held ones are
+    # this routine's), plus the machine-enforced capabilities mapping + its vocabulary
+    from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
+
     all_perms = library_docs.list_docs(server.permissions_home)
     held = set(info.cfg.permissions)
     permissions = [{"slug": p["slug"], "summary": p["summary"], "title": p["title"],
-                    "grants": p["grants"], "active": p["slug"] in held} for p in all_perms]
+                    "requires": p["requires"], "active": p["slug"] in held} for p in all_perms]
+    own_caps = info.cfg.capabilities or {}
+    reservable = sorted({u for p in all_perms for u in (p["requires"].get("utils") or [])}
+                        | set(own_caps.get("utils") or []))
+    capabilities = {"active": {**EMPTY_CAPABILITIES, **own_caps},
+                    "vocabulary": {"actions": list(GATED_KINDS), "utils": reservable}}
     sm = server.system_model
     return {
         **_card(request, info),
@@ -122,6 +130,7 @@ def routine_detail(request: Request, slug: str) -> dict:
         "endpoints": list(server.endpoints.keys()),
         "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None,
         "permissions": permissions,
+        "capabilities": capabilities,
         "instruction": (d / "instruction.md").read_text(encoding="utf-8")
         if (d / "instruction.md").exists() else "",
         "ledger_tail": ledger_tail,
@@ -219,28 +228,46 @@ def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict
 
 class PermissionsBody(BaseModel):
     active: list[str]
+    capabilities: dict | None = None   # omitted → keep the routine's current mapping as base
+
+
+def resolve_permission_layers(server, body: PermissionsBody, current: dict) -> tuple[list, dict]:
+    """Validate + cascade one permissions update (shared with conversations): unknown doc
+    slugs are dropped, the capabilities mapping is normalized (422 on junk), then RAISED
+    until every active doc's requires are covered — so the invariant 'held docs' needs
+    are on' holds regardless of what the client sent. Deactivation cascades live in the
+    UI (dropping a capability there also unticks the docs requiring it)."""
+    from .. import library_docs
+    from ..grants import capabilities_for, normalize_capabilities, read_library_requires
+
+    available = set(library_docs.slugs(server.permissions_home))
+    active = [p for p in body.active if p in available]
+    base, problems = normalize_capabilities(
+        body.capabilities if body.capabilities is not None else current)
+    if body.capabilities is not None and problems:
+        raise HTTPException(422, "; ".join(problems))
+    caps = capabilities_for(active, read_library_requires(server.permissions_home), base)
+    return active, caps
 
 
 @router.put("/routines/{slug}/permissions")
 def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
-    """Set the routine's held permissions (user-only; a routine can never change its own).
-    Pure routine.yaml config — grants are machine-read from the LIBRARY permission docs at
-    run start, so activation takes effect at the next run. Traits are NOT toggleable here:
-    they became the routine's own files at creation."""
-    from .. import library_docs
-
+    """Set both permission layers (user-only; a routine can never change its own): the
+    held conduct docs AND the capabilities mapping. Pure routine.yaml config, read at run
+    start, so changes take effect at the next run. Traits are NOT toggleable here: they
+    became the routine's own files at creation."""
     info = _info(request, slug)
     _guard_not_active(request, info)
     server = _state(request).server
-    available = set(library_docs.slugs(server.permissions_home))
-    active = [p for p in body.active if p in available]
+    active, caps = resolve_permission_layers(server, body, info.cfg.capabilities or {})
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     raw["permissions"] = active
+    raw["capabilities"] = caps
     raw.pop("fragments", None)   # pre-split key, retired
     path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    _git_commit(info.cfg.dir, f"permissions: {', '.join(active)}")
-    return {"ok": True, "active": active}
+    _git_commit(info.cfg.dir, f"permissions: {', '.join(active) or '(none)'}")
+    return {"ok": True, "active": active, "capabilities": caps}
 
 
 class RoutinePatch(BaseModel):

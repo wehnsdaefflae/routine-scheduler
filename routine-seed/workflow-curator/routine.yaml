@@ -16,6 +16,12 @@ workflow:
   library_commit: eab87b5
 permissions:
 - util-authoring
+capabilities:
+  actions:
+  - write_util
+  utils: []
+  confirm: always
+  runs: none
 budgets:
   max_turns: 60
   max_wall_clock_min: 45

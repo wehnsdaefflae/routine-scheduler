@@ -14,26 +14,45 @@ from rsched.paths import atomic_write_json, read_json
 TS = "20260708-070000"
 
 
-def _grant_permission(server: ServerConfig, slug: str, grants_yaml: str) -> None:
-    """Drop a LIBRARY permission carrying a grants: block — the only place grants are read."""
+def _library_permission(server: ServerConfig, slug: str, requires_yaml: str) -> None:
+    """Drop a LIBRARY permission carrying a requires: block — the reserved-util vocabulary
+    and the doc denials name; enforcement reads the routine's own capabilities."""
     server.permissions_home.mkdir(parents=True, exist_ok=True)
     (server.permissions_home / f"{slug}.md").write_text(
-        f"---\ntags: [a, b, c]\n{grants_yaml}\n---\n# permission: {slug} — test grant\nbody\n",
+        f"---\ntags: [a, b, c]\n{requires_yaml}\n---\n# permission: {slug} — test doc\nbody\n",
         encoding="utf-8")
+
+
+def _set_capabilities(routine_dir, **updates) -> None:
+    """Merge capability keys into the routine.yaml `capabilities:` mapping."""
+    import yaml as _yaml
+
+    path = routine_dir / "routine.yaml"
+    raw = _yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    caps = raw.get("capabilities") or {}
+    caps.update(updates)
+    raw["capabilities"] = caps
+    path.write_text(_yaml.safe_dump(raw), encoding="utf-8")
 
 
 def _server(routine_dir, *, util_authoring: str | None = "false") -> ServerConfig:
     s = ServerConfig()
-    # hermetic: the library holds only what a test grants (no utils) → sub-workflows use the
-    # builtin fallback body; util actions on a missing name return a "missing" observation.
-    # write_util rides the util-authoring grant (held by default via DEFAULT_PERMISSIONS):
-    # confirm defaults to false here so write_util tests don't block on approval; pass
-    # util_authoring=None to leave write_util ungranted entirely.
+    # hermetic: the library holds only what a test declares (no utils) → sub-workflows use
+    # the builtin fallback body; util actions on a missing name return a "missing"
+    # observation. write_util rides the routine's CAPABILITIES: confirm defaults to "never"
+    # here (the legacy "false") so write_util tests don't block on approval; pass
+    # util_authoring=None to switch write_util off entirely.
     s.routines_home = routine_dir.parent          # hermetic: .control logs land in tmp
     s.libraries_home = routine_dir.parent.parent / "test-library"
+    caps_actions = ["memory_read", "memory_write"]
     if util_authoring is not None:
-        _grant_permission(s, "util-authoring",
-                          f"grants:\n  actions: [write_util]\n  confirm: {util_authoring}")
+        _library_permission(s, "util-authoring", "requires:\n  actions: [write_util]")
+        confirm = {"true": "always", "false": "never",
+                   "revisions-only": "creations"}.get(util_authoring, util_authoring)
+        caps_actions = ["write_util", *caps_actions]
+        _set_capabilities(routine_dir, actions=caps_actions, confirm=confirm)
+    else:
+        _set_capabilities(routine_dir, actions=caps_actions)
     return s
 
 
@@ -384,8 +403,9 @@ def test_write_util_confirmation_declined(make_routine, scripted, monkeypatch):
 
 
 def test_write_util_denied_without_grant(make_routine, scripted):
-    """No held permission grants write_util → the call is rejected inside the schema-retry
-    cycle (naming the granting permission), never becomes a turn, and the run continues."""
+    """write_util switched off in the capabilities → the call is rejected inside the
+    schema-retry cycle (naming the covering permission), never becomes a turn, and the
+    run continues."""
     d = make_routine(slug="ungranted")
     ep = scripted([
         {"say": "Try to write a util.", "kind": "write_util", "name": "sneaky", "content": "# x"},
@@ -400,7 +420,7 @@ def test_write_util_denied_without_grant(make_routine, scripted):
     assert "util-authoring" in errs[0]["payload"]["message"]
     obs_kinds = [e["payload"]["kind"] for e in events if e["type"] == "observation"]
     assert "write_util" not in obs_kinds
-    assert "not granted" in ep.calls[1]["messages"][-1]["content"]   # the model was told why
+    assert "switched OFF" in ep.calls[1]["messages"][-1]["content"]   # the model was told why
 
 
 def test_write_util_autonomous_revisions(make_routine, scripted, monkeypatch):
@@ -427,13 +447,13 @@ def test_write_util_autonomous_revisions(make_routine, scripted, monkeypatch):
 
 
 def test_gated_util_requires_its_permission(make_routine, scripted):
-    """A util named in a library permission's utils: grant is reserved — rejected while the
-    permission is not held, dispatched normally once the routine holds it."""
+    """A util named in a library permission's requires: is reserved — rejected while the
+    capability is off, dispatched normally once the routine has it switched on."""
     import yaml as _yaml
 
     d = make_routine(slug="gated")
     server = _server(d)
-    _grant_permission(server, "communication", "grants:\n  utils: [discord]")
+    _library_permission(server, "communication", "requires:\n  utils: [discord]")
     ep = scripted([
         util("discord", ["send", "hi"]),          # communication not active → denied
         probe(),
@@ -447,13 +467,14 @@ def test_gated_util_requires_its_permission(make_routine, scripted):
     assert not any(e["type"] == "observation" and e["payload"].get("name") == "discord"
                    for e in events)
 
-    # with the permission HELD the same call passes the gate and reaches the executor
+    # with the capability ENABLED the same call passes the gate and reaches the executor
     d2 = make_routine(slug="gated2")
     cfg = _yaml.safe_load((d2 / "routine.yaml").read_text())
     cfg["permissions"] = ["communication"]
     (d2 / "routine.yaml").write_text(_yaml.safe_dump(cfg))
     server2 = _server(d2)
-    _grant_permission(server2, "communication", "grants:\n  utils: [discord]")
+    _library_permission(server2, "communication", "requires:\n  utils: [discord]")
+    _set_capabilities(d2, utils=["discord"])
     scripted([util("discord", ["send", "hi"]), finish()])
     status2, run_dir2 = run_routine(d2, server2, run_ts=TS)
     events2, _ = read_events(run_dir2 / "transcript.jsonl")
@@ -994,8 +1015,8 @@ def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):
 
 
 def test_previous_runs_ride_the_run_history_permission(make_routine, scripted):
-    """read_file into an earlier run needs run-history; the live run's own tree stays
-    readable (the engine points there after compaction)."""
+    """read_file into an earlier run needs the previous-runs capability; the live run's
+    own tree stays readable (the engine points there after compaction)."""
     import yaml as _yaml
 
     from rsched.engine.transcript import read_events as _read
@@ -1025,8 +1046,9 @@ def test_previous_runs_ride_the_run_history_permission(make_routine, scripted):
     (d2 / "routine.yaml").write_text(_yaml.safe_dump(cfg2))
     server2 = _server(d2)
     (server2.permissions_home / "run-history.md").write_text(
-        "---\ntags: [a, b, c]\ngrants:\n  runs: last\n---\n"
+        "---\ntags: [a, b, c]\nrequires:\n  runs: last\n---\n"
         "# permission: run-history — read the previous run\nbody\n")
+    _set_capabilities(d2, runs="last")
     scripted([{"say": "Peek.", "kind": "read_file", "path": "runs/20260101-000000/result.md"},
               finish()])
     status2, run_dir2 = run_routine(d2, server2, run_ts=TS)

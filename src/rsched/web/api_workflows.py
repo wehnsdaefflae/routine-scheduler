@@ -81,12 +81,27 @@ def library_doc_detail(request: Request, kind: str, slug: str) -> dict:
     content = library_docs.read_doc(home, slug)
     if content is None:
         raise HTTPException(404, f"no {kind[:-1]} {slug!r}")
-    return {"slug": slug, "content": content,
-            "log": library_docs.git_log(home, f"{slug}.md")}
+    out = {"slug": slug, "content": content,
+           "log": library_docs.git_log(home, f"{slug}.md")}
+    if kind == "permissions":
+        # parsed requires: prefills the structured editor panel (see PUT below)
+        from ..grants import normalize_capabilities
+        import frontmatter as fm
+
+        try:
+            meta = fm.loads(content).metadata
+        except Exception:  # noqa: BLE001 — broken frontmatter reads as none (linted on save)
+            meta = {}
+        out["requires"] = normalize_capabilities(meta.get("requires"), label="requires",
+                                                 requires=True)[0]
+    return out
 
 
 class DocBody(BaseModel):
     content: str
+    # permissions only: the structured requires panel's value — merged into the doc's
+    # frontmatter server-side, so the client never assembles YAML
+    requires: dict | None = None
 
 
 @router.put("/library/{kind}/{slug}")
@@ -96,11 +111,26 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
     if kind == "utils":
         return put_util(request, slug, UtilBody(content=body.content))
     home = _docs_home(request, kind)
+    content = body.content
+    if kind == "permissions" and body.requires is not None:
+        import frontmatter as fm
+
+        from ..grants import normalize_capabilities
+
+        req, problems = normalize_capabilities(body.requires, label="requires", requires=True)
+        if problems:
+            raise HTTPException(422, "; ".join(problems))
+        try:
+            post = fm.loads(content)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(422, f"invalid frontmatter: {exc}") from exc
+        post.metadata["requires"] = req
+        content = fm.dumps(post, sort_keys=False)
     linter = lint_trait_text if kind == "traits" else lint_permission_text
-    problems = linter(body.content, filename=f"{slug}.md")
+    problems = linter(content, filename=f"{slug}.md")
     if problems:
         raise HTTPException(422, "; ".join(problems))
-    library_docs.write_doc(home, slug, body.content.rstrip() + "\n")
+    library_docs.write_doc(home, slug, content.rstrip() + "\n")
     library_docs.git_commit(home, f"edit {kind[:-1]} {slug} via web")
     return {"ok": True}
 

@@ -56,7 +56,7 @@ export async function render(view, sub, query = {}) {
     section("Traits", "reusable practices — adapted into each new routine at creation, then owned by the routine (this is only the template)",
       data.traits.filter((f) => matches(f.tags)).map((f) =>
         item(f.slug, "", f.problems, f.tags, () => openDoc("traits", f.slug), f.summary)));
-    section("Permissions", "engine-enforced capabilities — held per routine via its Permissions panel; the grants: frontmatter here is the machine-read authority",
+    section("Permissions", "conduct docs — held per routine via its Permissions panel; the requires: frontmatter names the capabilities each doc's instructions presume (activating the doc switches them on)",
       data.permissions.filter((f) => matches(f.tags)).map((f) =>
         item(f.slug, "", f.problems, f.tags, () => openDoc("permissions", f.slug), f.summary)));
     section("Global utils", "the tools routines run (created + revised on demand, selftest-gated)",
@@ -98,8 +98,48 @@ export async function render(view, sub, query = {}) {
   async function openDoc(kind, slug) {
     openSub = `${kind.slice(0, -1)}/${slug}`; updateURL();
     const d = await api(`/api/library/${kind}/${slug}`);
+    // permissions get a structured, prefilled requires: panel — it is authoritative for
+    // that key on save (the server merges it into the frontmatter); prose stays in the editor
+    const requires = kind === "permissions" ? requiresPanel(d.requires || {}) : null;
     showEditor(`${kind.slice(0, -1)}: ${slug}`, d.content, d.log, async (content) =>
-      api(`/api/library/${kind}/${slug}`, { method: "PUT", body: { content } }));
+      api(`/api/library/${kind}/${slug}`, { method: "PUT",
+        body: { content, ...(requires ? { requires: requires.value() } : {}) } }),
+      undefined, undefined, requires?.node);
+  }
+
+  // The capabilities a permission doc's instructions presume. Prefilled from the doc's
+  // frontmatter; edits here win over hand-edited requires: text in the editor below.
+  function requiresPanel(req) {
+    const actions = new Set(req.actions || []);
+    const utils = new Set(req.utils || []);
+    const GATED = ["write_util", "memory_read", "memory_write"];
+    const actionBoxes = GATED.map((a) => {
+      const cb = el("input", { type: "checkbox", checked: actions.has(a) ? "" : null });
+      cb.onchange = () => cb.checked ? actions.add(a) : actions.delete(a);
+      return el("label", { class: "row", style: "gap:5px" }, cb, a);
+    });
+    const utilNames = [...new Set([...(data.utils || []).map((u) => u.name), ...utils])].sort();
+    const utilBoxes = utilNames.map((u) => {
+      const cb = el("input", { type: "checkbox", checked: utils.has(u) ? "" : null });
+      cb.onchange = () => cb.checked ? utils.add(u) : utils.delete(u);
+      return el("label", { class: "row", style: "gap:5px" }, cb, u);
+    });
+    const runsSel = el("select", {}, ...[["", "(none)"], ["last", "last run"], ["all", "all runs"]]
+      .map(([v, label]) => el("option", { value: v, selected: (req.runs || "") === v ? "" : null }, label)));
+    const node = el("div", { class: "panel", style: "margin-bottom:10px" },
+      el("div", { class: "lbl" }, "requires — the capabilities this doc's instructions presume"),
+      el("div", { class: "muted small", style: "margin:4px 0 8px" },
+        "activating the permission on a routine switches these on; switching one off there ",
+        "deactivates the permission. This panel is authoritative for the requires: key on save."),
+      el("div", { class: "row", style: "gap:16px;flex-wrap:wrap;align-items:flex-start" },
+        el("div", {}, el("div", { class: "muted small" }, "gated actions"), ...actionBoxes),
+        el("div", {}, el("div", { class: "muted small" }, "reserved utils"),
+          el("div", { style: "max-height:130px;overflow:auto" }, ...utilBoxes)),
+        el("div", {}, el("div", { class: "muted small" }, "previous runs"), runsSel)));
+    return { node, value: () => ({
+      ...(actions.size ? { actions: [...actions] } : {}),
+      ...(utils.size ? { utils: [...utils] } : {}),
+      ...(runsSel.value ? { runs: runsSel.value } : {}) }) };
   }
   async function openUtil(name) {
     openSub = `util/${name}`; updateURL();
@@ -108,8 +148,9 @@ export async function render(view, sub, query = {}) {
       api(`/api/library/utils/${name}`, { method: "PUT", body: { content } }), "python");
   }
 
-  // workflows + utils are Python → highlighted editor; traits/permissions are markdown → plain
-  function showEditor(label, content, log, save, lang, del) {
+  // workflows + utils are Python → highlighted editor; traits/permissions are markdown → plain.
+  // `extra` renders above the editor (the permissions requires: panel).
+  function showEditor(label, content, log, save, lang, del, extra) {
     editor.replaceChildren();
     const ed = codeEditor(content, { lang, minHeight: 360 });
     const errBox = el("div", {});
@@ -137,6 +178,7 @@ export async function render(view, sub, query = {}) {
       finally { btn.disabled = false; }
     };
     editor.append(el("h2", {}, label),
+      extra || "",
       el("div", { class: "panel" }, ed.node,
         el("div", { class: "row mt" }, btn, delBtn),
         errBox,

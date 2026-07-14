@@ -16,7 +16,14 @@ workflow:
   library_commit: d18b822
 permissions:
 - communication
-- util-authoring-autonomous
+- util-authoring
+capabilities:
+  actions:
+  - write_util
+  utils:
+  - discord
+  confirm: creations
+  runs: none
 budgets:
   max_turns: 60
   max_wall_clock_min: 45

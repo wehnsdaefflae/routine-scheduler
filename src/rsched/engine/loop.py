@@ -73,16 +73,18 @@ class EngineLoop:
         self.final_summary = ""
         self.executed_actions = 0  # actions that produced an observation this run
         # Gated capabilities (write_util, reserved utils, runs/ access) come from the
-        # routine's PERMISSIONS, whose grants are read from the LIBRARY copies only — a
-        # routine cannot self-grant by editing anything it owns (its own routine.yaml is
-        # write-protected like the recipe). Own recipe/config writes unlock ONLY when a
-        # user-granted fs_write_root covers the routine dir — the routine-improver's case.
-        # Enforced per turn by validate_action.
+        # routine's CAPABILITIES mapping — user-set config a routine cannot self-grant
+        # (its own routine.yaml is write-protected like the recipe); the library docs'
+        # requires: contribute only the reserved-util vocabulary and denial wording.
+        # Own recipe/config writes unlock ONLY when a user-granted fs_write_root covers
+        # the routine dir — the routine-improver's case. Enforced per turn by
+        # validate_action.
         from ..paths import within
         unlocked = any(within(root, ctx.routine.dir)
                        for root in ctx.routine.fs_write_roots or [])
         self.grants = ctx.grants = load_policy(ctx.server.permissions_home,
                                                ctx.routine.permissions,
+                                               ctx.routine.capabilities,
                                                current_run_ts=ctx.run_ts,
                                                recipe_unlocked=unlocked)
         self.util_reminder = self._build_util_reminder()
@@ -123,8 +125,8 @@ class EngineLoop:
                       + (" (needs the user's approval first)"
                          if self.grants.needs_confirm(creating=True) else ""))
         else:
-            create = ("note the gap with a deferred ask_user — creating/revising utils "
-                      "needs a util-authoring permission this routine does not hold")
+            create = ("note the gap with a deferred ask_user — the write_util capability "
+                      "is switched off for this routine")
         return ("\n[tools: the CAPABILITIES catalog lists the global utils; run `util "
                 f"name=list args=[\"<name>\"]` for one util's exact usage; if none fits, {create}.]")
 

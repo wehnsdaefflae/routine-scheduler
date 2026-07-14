@@ -5,7 +5,7 @@
 import { api } from "/static/api.js";
 import { navigate } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
-import { busy, el, grantsSummary, toast } from "/static/util.js";
+import { busy, el, requiresSummary, toast } from "/static/util.js";
 
 // ---- stage: building (the routine is scaffolding in the background) -------------------------
 export function stageBuilding(ctx, wid, snap) {
@@ -104,11 +104,11 @@ export async function stageSuggest(ctx, wid) {
   const pickerRow = (boxes, doc, preset) => {
     const cb = el("input", { type: "checkbox", checked: preset.has(doc.slug) ? "" : null });
     boxes[doc.slug] = cb;
-    const grants = grantsSummary(doc.grants);
+    const req = requiresSummary(doc.requires);
     return el("label", { class: "row", style: "gap:6px;font-size:12px;margin:2px 0;align-items:baseline" },
       cb, el("strong", { style: "min-width:170px" }, doc.slug),
       el("span", { class: "muted prose" }, doc.summary || "",
-        grants ? el("span", { style: "color:var(--warn)" }, ` ▸ ${grants}`) : ""));
+        req ? el("span", { style: "color:var(--warn)" }, ` ▸ ${req}`) : ""));
   };
   const presetTraits = new Set(data.suggested_traits || lib.default_traits || []);
   const presetPerms = new Set(data.suggested_permissions || lib.default_permissions || []);
@@ -121,8 +121,9 @@ export async function stageSuggest(ctx, wid) {
     el("h2", {}, "Permissions"),
     el("div", { class: "panel" },
       el("div", { class: "muted small", style: "margin-bottom:6px" },
-        "what the routine is ALLOWED to do — enforced by the engine on every action. Preselected ",
-        "conservatively for this task; changeable any time on the routine page (only by you)."),
+        "conduct docs — each switches on the capabilities it needs (engine-enforced on every ",
+        "action). Preselected conservatively for this task; both layers are tunable any time ",
+        "on the routine page (only by you)."),
       ...(lib.permissions || []).map((p) => pickerRow(permBoxes, p, presetPerms))));
 
   const BUDGET_FIELDS = [

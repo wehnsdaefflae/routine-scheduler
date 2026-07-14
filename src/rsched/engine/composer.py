@@ -32,8 +32,8 @@ def harness_contract(ctx: RunContext) -> str:
     if r.fs_read_roots or r.fs_write_roots:
         extra = (f"\nAdditional readable roots: {[str(p) for p in r.fs_read_roots]}; "
                  f"writable roots: {[str(p) for p in r.fs_write_roots]}.")
-    # write_util is a permission-granted capability (util-authoring and its variants); the
-    # confirm level rides the same grant. ctx.grants None (direct construction) = ungated.
+    # write_util is a user-set capability; the confirm level is its approval policy.
+    # ctx.grants None (direct construction) = ungated.
     g = ctx.grants
     if g is None or g.allows_kind("write_util"):
         authoring = ("If no util does what you need, WRITE one (the `write_util` action) "
@@ -47,12 +47,12 @@ def harness_contract(ctx: RunContext) -> str:
                          "auto-approved once its selftest passes.",
         }.get(g.confirm if g else "never", "")
     else:
-        authoring = ("Creating or revising utils is NOT among this routine's permissions "
-                     "(no util-authoring permission) — the engine rejects write_util. Work "
-                     "with the existing utils; if a needed one is missing or broken, file a "
+        authoring = ("Creating or revising utils is switched OFF in this routine's "
+                     "capabilities — the engine rejects write_util. Work with the "
+                     "existing utils; if a needed one is missing or broken, file a "
                      "deferred ask_user naming it.")
-        util_confirm = (" NOT among this routine's permissions — the engine rejects it; "
-                        "file a deferred ask_user instead.")
+        util_confirm = (" switched OFF in this routine's capabilities — the engine "
+                        "rejects it; file a deferred ask_user instead.")
     memory_line = ""
     if g is None or g.allows_kind("memory_write"):
         memory_line = ("""
@@ -92,9 +92,9 @@ relevant one before the situation it governs. Your own recipe and config (main.m
 traits/, instruction.md, routine.yaml) are READ-ONLY to you: the routine-improver meta \
 routine refines recipes, the user owns config — file a deferred ask_user for changes you \
 believe are needed. What you are ALLOWED to do (util authoring, reserved channels, memory, \
-previous runs) is a separate matter: PERMISSIONS, set only by the user and enforced by the \
-engine on every action — see CAPABILITIES below; never restate permission-dependent \
-conduct inside instruction.md.
+previous runs) is a separate matter: CAPABILITIES, set only by the user and enforced by the \
+engine on every action — the held permissions' notes below state the conduct for each; \
+never restate capability-dependent conduct inside instruction.md.
 
 Budgets for this run: {b.max_turns} turns, {b.max_wall_clock_min} minutes, \
 {b.max_total_tokens if b.max_total_tokens >= 0 else "unlimited"} total tokens, at most \
@@ -204,23 +204,23 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
     parts.append("Action kinds usable this run: " + ", ".join(kinds) + ". Anything else is "
                  "rejected by the engine before it becomes a turn.")
     if g is not None:
-        grant_bits = []
+        cap_bits = []
         if g.allows_kind("write_util"):
-            grant_bits.append({
+            cap_bits.append({
                 "always": "write_util (every create/revise needs the user's approval)",
                 "creations": "write_util (NEW utils need approval; revisions are autonomous "
                              "once the selftest passes)",
                 "never": "write_util (autonomous, selftest-gated)",
             }[g.confirm])
-        grant_bits += [f"reserved util {u!r}" for u in sorted(g.utils)]
+        cap_bits += [f"reserved util {u!r}" for u in sorted(g.utils)]
         if g.run_history != "none":
-            grant_bits.append("read previous runs under runs/ "
-                              + ("(the last run only)" if g.run_history == "last"
-                                 else "(all of them)"))
-        parts.append("Permissions held (user-set, engine-enforced): "
-                     + (", ".join(g.active) if g.active else "(none)")
-                     + (" — unlocking: " + "; ".join(grant_bits) if grant_bits
-                        else " (no capability grants)") + ".")
+            cap_bits.append("read previous runs under runs/ "
+                            + ("(the last run only)" if g.run_history == "last"
+                               else "(all of them)"))
+        parts.append("Capabilities enabled (user-set, engine-enforced): "
+                     + ("; ".join(cap_bits) if cap_bits else "(none beyond the base kinds)")
+                     + ". Held permissions (conduct notes below): "
+                     + (", ".join(g.active) if g.active else "(none)") + ".")
         notes = _permission_notes(ctx, g)
         if notes:
             parts.append(notes)

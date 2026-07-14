@@ -1,6 +1,6 @@
 ---
 tags: [communication, policy, notification]
-grants:
+requires:
   utils: [discord]
 ---
 # permission: communication — Discord as a second decision surface

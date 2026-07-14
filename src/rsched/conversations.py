@@ -116,6 +116,9 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
     available_perms = set(library_docs.slugs(server.permissions_home))
     active_perms = [p for p in (permissions if permissions is not None
                                 else CONVERSATION_PERMISSIONS) if p in available_perms]
+    from .grants import capabilities_for, read_library_requires
+
+    capabilities = capabilities_for(active_perms, read_library_requires(server.permissions_home))
     cfg = {
         "name": fallback_title(first_message),
         "slug": slug,
@@ -126,6 +129,7 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
         "workflow": {"library_slug": CONVERSE_WORKFLOW, "library_commit": commit},
         **({"models": models} if models else {}),
         "permissions": active_perms,
+        "capabilities": capabilities,
         "budgets": dict(CONVERSATION_BUDGETS),
         "retention": {"keep_runs": 1000},   # one continuous run — retention never prunes it
     }

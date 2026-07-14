@@ -201,16 +201,17 @@ def test_mirror_reply_resolves_the_blocking_ask(make_routine, scripted, monkeypa
     monkeypatch.setattr(decisions.utils_lib, "run_util", fake.run_util)
     monkeypatch.setattr(decisions.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
-    # the routine holds communication (grants live in the test library)
+    # the routine has the discord capability switched on (the doc covers the conduct)
     d = make_routine(slug="viaphone", budgets={"ask_timeout_min": 1})
     server = _server(d)
     server.permissions_home.mkdir(parents=True, exist_ok=True)
     (server.permissions_home / "communication.md").write_text(
-        "---\ntags: [a, b, c]\ngrants:\n  utils: [discord]\n---\n"
+        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
         "# permission: communication — discord\nbody\n", encoding="utf-8")
     import yaml as _yaml
     cfg = _yaml.safe_load((d / "routine.yaml").read_text())
     cfg["permissions"] = ["communication"]
+    cfg["capabilities"] = {"utils": ["discord"]}
     (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
     scripted([
         {"say": "q", "kind": "ask_user", "question": "Go?", "mode": "blocking"},

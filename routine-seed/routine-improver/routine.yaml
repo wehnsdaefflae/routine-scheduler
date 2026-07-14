@@ -1,8 +1,7 @@
 name: Routine improver
 description: Sweeps every routine and conversation that hasn't opted out (including
-  itself) and improves
-  it through the five lenses — bugfix, research, features, UI, efficiency — plus a
-  fresh-eyes de-clutter pass.
+  itself) and improves it through the five lenses — bugfix, research, features, UI,
+  efficiency — plus a fresh-eyes de-clutter pass.
 tags:
 - meta
 - maintenance
@@ -19,6 +18,14 @@ workflow:
 permissions:
 - util-authoring
 - memory
+capabilities:
+  actions:
+  - write_util
+  - memory_read
+  - memory_write
+  utils: []
+  confirm: always
+  runs: none
 budgets:
   max_turns: 70
   max_wall_clock_min: 60

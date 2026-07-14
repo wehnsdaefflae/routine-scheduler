@@ -50,8 +50,9 @@ class RunContext:
     depth: int = 0
     parent_run_id: str | None = None
     sub_counter: list[int] = field(default_factory=lambda: [0])  # shared across the whole tree
-    # The run's grant policy (grants.GrantPolicy), set by EngineLoop from the LIBRARY
-    # permissions + the routine's held set. None (direct construction) = unrestricted.
+    # The run's grant policy (grants.GrantPolicy), set by EngineLoop from the routine's
+    # capabilities mapping (+ the library's requires: index for denial wording).
+    # None (direct construction) = unrestricted.
     grants: object | None = None
 
     turn: int = 0

@@ -1,12 +1,14 @@
-"""Permission grants: schema normalization, library-only authority, policy derivation,
+"""The two-layer permission set: capabilities normalization, the requires: library index,
+activation/deactivation cascades, policy derivation from the routine's OWN capabilities,
 and the per-kind denial messages validate_action surfaces."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from rsched.grants import (CONFIRM_LEVELS, GrantPolicy, load_policy, normalize_grants,
-                           read_library_grants)
+from rsched.grants import (CONFIRM_LEVELS, EMPTY_CAPABILITIES, GrantPolicy,
+                           capabilities_for, load_policy, normalize_capabilities,
+                           read_library_requires, unsatisfied_requires)
 
 
 def _lib(tmp_path: Path, permissions: dict[str, str]) -> Path:
@@ -19,27 +21,16 @@ def _lib(tmp_path: Path, permissions: dict[str, str]) -> Path:
 
 AUTHORING = """---
 tags: [tool-use, utils, authoring]
-grants:
+requires:
   actions: [write_util]
-  confirm: true
 ---
 # permission: util authoring — create and revise utils
 body
 """
 
-AUTONOMOUS = """---
-tags: [tool-use, utils, authoring]
-grants:
-  actions: [write_util]
-  confirm: revisions-only
----
-# permission: util authoring autonomous — revisions without approval
-body
-"""
-
 COMMUNICATION = """---
 tags: [communication, policy, notification]
-grants:
+requires:
   utils: [discord]
 ---
 # permission: communication — Discord as a second decision surface
@@ -48,111 +39,135 @@ body
 
 RUN_HISTORY = """---
 tags: [history, record-keeping, self-management]
-grants:
+requires:
   runs: last
 ---
-# permission: run history — read the previous run
-body
-"""
-
-RUN_HISTORY_FULL = """---
-tags: [history, record-keeping, self-management]
-grants:
-  runs: all
----
-# permission: run history full — read all previous runs
-body
-"""
-
-SELF_MOD = """---
-tags: [self-management, improvement, recipe]
-grants:
-  self_modify: true
----
-# permission: self-modification — refine own recipe
+# permission: run history — read previous runs
 body
 """
 
 
-# ------------------------------------------------------------------ normalize_grants
+# ------------------------------------------------------------- normalize_capabilities
 
 
-def test_normalize_grants_accepts_the_schema():
-    g, problems = normalize_grants({"actions": ["util", "write_util"],
-                                    "utils": ["discord"], "confirm": True})
+def test_normalize_capabilities_accepts_the_schema():
+    c, problems = normalize_capabilities({"actions": ["util", "write_util"],
+                                          "utils": ["discord"], "confirm": "always"})
     assert problems == []
-    assert g == {"actions": ["util", "write_util"], "utils": ["discord"], "confirm": "always"}
-    assert normalize_grants({"confirm": "revisions-only"})[0] == {"confirm": "creations"}
-    assert normalize_grants({"confirm": False})[0] == {"confirm": "never"}
-    assert normalize_grants({"runs": "last"})[0] == {"runs": "last"}
-    assert normalize_grants({"runs": "all"})[0] == {"runs": "all"}
-    assert normalize_grants(None) == ({}, [])
+    assert c == {"actions": ["util", "write_util"], "utils": ["discord"], "confirm": "always"}
+    # the legacy grants vocabulary still maps
+    assert normalize_capabilities({"confirm": True})[0] == {"confirm": "always"}
+    assert normalize_capabilities({"confirm": "revisions-only"})[0] == {"confirm": "creations"}
+    assert normalize_capabilities({"confirm": False})[0] == {"confirm": "never"}
+    assert normalize_capabilities({"confirm": "creations"})[0] == {"confirm": "creations"}
+    assert normalize_capabilities({"runs": "none"})[0] == {"runs": "none"}
+    assert normalize_capabilities({"runs": "all"})[0] == {"runs": "all"}
+    assert normalize_capabilities(None) == ({}, [])
 
 
-def test_normalize_grants_reports_and_drops_invalid_parts():
-    g, problems = normalize_grants({"actions": ["util", "dance"], "utils": ["Not A Slug"],
-                                    "confirm": "sometimes", "shell": True,
-                                    "runs": "some", "self_modify": True})
+def test_normalize_capabilities_reports_and_drops_invalid_parts():
+    c, problems = normalize_capabilities({"actions": ["util", "dance"], "utils": ["Not A Slug"],
+                                          "confirm": "sometimes", "shell": True,
+                                          "runs": "some", "self_modify": True})
     text = " | ".join(problems)
     assert "'dance' is not an action kind" in text
     assert "'Not A Slug' is not a kebab-case util name" in text
-    assert "confirm must be true, false or revisions-only" in text
-    assert "grants.shell: unknown key" in text
-    assert "runs must be last or all" in text
-    assert "grants.self_modify: unknown key" in text   # the grant is retired
-    assert g == {"actions": ["util"], "utils": []}      # invalid entries dropped, valid kept
-    assert normalize_grants("write_util")[1]            # non-mapping → problem
-    bad_list, problems2 = normalize_grants({"actions": "util"})
+    assert "confirm must be always, creations or never" in text
+    assert "capabilities.shell: unknown key" in text
+    assert "runs must be none or last or all" in text
+    assert "capabilities.self_modify: unknown key" in text
+    assert c == {"actions": ["util"], "utils": []}      # invalid entries dropped, valid kept
+    assert normalize_capabilities("write_util")[1]      # non-mapping → problem
+    bad_list, problems2 = normalize_capabilities({"actions": "util"})
     assert bad_list == {} and any("must be a list" in p for p in problems2)
 
 
-# ------------------------------------------------------------------ library authority
+def test_requires_mode_rejects_confirm_and_runs_none():
+    """A doc may not demand an approval level (user policy) nor 'runs: none' (that is
+    the absence of a requirement)."""
+    req, problems = normalize_capabilities({"actions": ["write_util"], "confirm": True},
+                                           label="requires", requires=True)
+    assert req == {"actions": ["write_util"]}
+    assert any("requires.confirm: unknown key" in p for p in problems)
+    _, p2 = normalize_capabilities({"runs": "none"}, label="requires", requires=True)
+    assert any("runs must be last or all" in p for p in p2)
 
 
-def test_grants_read_from_library_only(tmp_path):
+# ------------------------------------------------------------------ library requires
+
+
+def test_requires_read_from_library_only(tmp_path):
     home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION,
-                           "plain": "# permission: plain — no grants\nbody\n"})
-    lib = read_library_grants(home)
-    assert set(lib) == {"util-authoring", "communication"}   # grant-less docs omitted
-    assert lib["util-authoring"]["confirm"] == "always"
-
-    # nothing under a routine dir is ever consulted: holding an unrelated permission
-    # changes nothing about write_util
-    policy = load_policy(home, ["communication"])
-    assert not policy.allows_kind("write_util")
-    assert read_library_grants(tmp_path / "nowhere") == {}   # missing library → no grants
+                           "plain": "# permission: plain — no requires\nbody\n"})
+    lib = read_library_requires(home)
+    assert set(lib) == {"util-authoring", "communication"}   # requires-less docs omitted
+    assert lib["util-authoring"] == {"actions": ["write_util"]}
+    assert read_library_requires(tmp_path / "nowhere") == {}   # missing library → none
 
 
-def test_broken_frontmatter_degrades_to_no_grants(tmp_path):
-    home = _lib(tmp_path, {"broken": "---\ngrants: [not: closed\n---\n# permission: broken — x\n"})
-    assert read_library_grants(home) == {}
+def test_broken_frontmatter_degrades_to_no_requires(tmp_path):
+    home = _lib(tmp_path, {"broken": "---\nrequires: [not: closed\n---\n# permission: broken — x\n"})
+    assert read_library_requires(home) == {}
+
+
+# ------------------------------------------------------------------------- cascades
+
+
+def test_capabilities_for_raises_the_base_to_cover_active_docs(tmp_path):
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION,
+                           "run-history": RUN_HISTORY})
+    lib = read_library_requires(home)
+    caps = capabilities_for(["util-authoring", "communication", "run-history"], lib)
+    assert caps == {"actions": ["write_util"], "utils": ["discord"],
+                    "confirm": "always", "runs": "last"}
+    # base values survive and only rise: runs stays at the deeper level, confirm untouched
+    base = {"actions": ["memory_read"], "utils": [], "confirm": "never", "runs": "all"}
+    caps2 = capabilities_for(["run-history"], lib, base)
+    assert caps2["runs"] == "all" and caps2["confirm"] == "never"
+    assert caps2["actions"] == ["memory_read"]
+    assert capabilities_for([], lib) == EMPTY_CAPABILITIES
+
+
+def test_unsatisfied_requires_names_the_missing_capabilities(tmp_path):
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION,
+                           "run-history": RUN_HISTORY})
+    lib = read_library_requires(home)
+    missing = unsatisfied_requires(["util-authoring", "communication", "run-history"],
+                                   {"actions": ["write_util"]}, lib)
+    assert missing == {"communication": ["util:discord"], "run-history": ["runs:last"]}
+    full = capabilities_for(["util-authoring", "communication", "run-history"], lib)
+    assert unsatisfied_requires(["util-authoring", "communication", "run-history"],
+                                full, lib) == {}
 
 
 # ------------------------------------------------------------------ policy derivation
 
 
-def test_policy_unions_active_grants_and_indexes_the_library(tmp_path):
+def test_policy_enforces_capabilities_not_docs(tmp_path):
+    """Holding a conduct doc unlocks NOTHING by itself — enforcement reads the routine's
+    capabilities mapping alone, so a doc-without-capability misconfiguration fails closed."""
     home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION})
-    policy = load_policy(home, ["util-authoring", "communication", "ghost"])
-    assert policy.allows_kind("write_util") and policy.allows_kind("util")
-    assert "discord" in policy.utils
-    assert policy.deny({"kind": "util", "name": "discord"}) is None
-    assert policy.confirm == "always"
+    docs_only = load_policy(home, ["util-authoring", "communication"], {})
+    assert not docs_only.allows_kind("write_util")
+    assert "discord" not in docs_only.utils
+    assert docs_only.active == ("util-authoring", "communication")   # prose still rides along
 
-    inactive = load_policy(home, ["run-history"])
-    assert not inactive.allows_kind("write_util")
-    assert inactive.gated_utils == {"discord": ("communication",)}   # library-wide index survives
-    assert inactive.kind_sources == {"write_util": ("util-authoring",)}
+    caps_only = load_policy(home, [], {"actions": ["write_util"], "utils": ["discord"],
+                                       "confirm": "creations", "runs": "all"})
+    assert caps_only.allows_kind("write_util") and caps_only.allows_kind("util")
+    assert "discord" in caps_only.utils
+    assert caps_only.confirm == "creations" and caps_only.run_history == "all"
+    assert caps_only.deny({"kind": "util", "name": "discord"}) is None
+    # the library-wide index survives for denial wording regardless of what is enabled
+    assert caps_only.gated_utils == {"discord": ("communication",)}
+    assert caps_only.kind_sources == {"write_util": ("util-authoring",)}
 
 
-def test_confirm_most_permissive_active_grant_wins(tmp_path):
-    home = _lib(tmp_path, {"util-authoring": AUTHORING, "auto": AUTONOMOUS})
-    assert load_policy(home, ["util-authoring"]).confirm == "always"
-    assert load_policy(home, ["auto"]).confirm == "creations"
-    assert load_policy(home, ["util-authoring", "auto"]).confirm == "creations"
-    assert load_policy(home, []).confirm == "always"                 # moot without the grant
-    for level in CONFIRM_LEVELS:
-        assert level in ("always", "creations", "never")
+def test_policy_ignores_ungated_kinds_in_capabilities(tmp_path):
+    home = _lib(tmp_path, {})
+    policy = load_policy(home, [], {"actions": ["util", "read_file", "memory_read"]})
+    assert policy.actions == frozenset({"memory_read"})   # base kinds are never gated
+    assert policy.allows_kind("util") and policy.allows_kind("read_file")
 
 
 def test_needs_confirm_semantics():
@@ -162,21 +177,16 @@ def test_needs_confirm_semantics():
     assert always.needs_confirm(creating=True) and always.needs_confirm(creating=False)
     assert creations.needs_confirm(creating=True) and not creations.needs_confirm(creating=False)
     assert not never.needs_confirm(creating=True) and not never.needs_confirm(creating=False)
-
-
-def test_run_history_most_permissive_wins(tmp_path):
-    home = _lib(tmp_path, {"run-history": RUN_HISTORY, "run-history-full": RUN_HISTORY_FULL})
-    assert load_policy(home, []).run_history == "none"
-    assert load_policy(home, ["run-history"]).run_history == "last"
-    assert load_policy(home, ["run-history", "run-history-full"]).run_history == "all"
+    for level in CONFIRM_LEVELS:
+        assert level in ("always", "creations", "never")
 
 
 # ------------------------------------------------------------------ denial messages
 
 
-def test_deny_names_the_granting_permission(tmp_path):
+def test_deny_names_the_covering_permission(tmp_path):
     home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION})
-    policy = load_policy(home, ["run-history"])
+    policy = load_policy(home, [], {})
     denial = policy.deny({"kind": "write_util", "name": "x", "content": "y"})
     assert denial and "util-authoring" in denial and "ask_user" in denial
     denial_util = policy.deny({"kind": "util", "name": "discord", "args": ["send", "hi"]})
@@ -215,7 +225,7 @@ def test_deny_gates_edit_file_like_write_file():
 
 
 def test_deny_blocks_own_recipe_and_config_writes():
-    """Own recipe + routine.yaml writes are a FIXED rule, not a permission: denied for
+    """Own recipe + routine.yaml writes are a FIXED rule, not a capability: denied for
     everyone, unlocked only via recipe_unlocked (a user fs_write_root covering the dir)."""
     none = GrantPolicy()
     for path in ("main.md", "steps/collect.md", "traits/ask-policy.md", "instruction.md",
@@ -231,8 +241,8 @@ def test_deny_blocks_own_recipe_and_config_writes():
     assert unlocked.deny({"kind": "write_file", "path": "routine.yaml", "content": "x"}) is None
 
 
-def test_validate_action_carries_grant_denials():
-    """The grants check rides the same retry cycle as the workflow allowlist; finish is
+def test_validate_action_carries_capability_denials():
+    """The capability check rides the same retry cycle as the workflow allowlist; finish is
     always permitted and grants=None means unrestricted."""
     from rsched.engine.actions import validate_action
 
@@ -252,30 +262,34 @@ def test_validate_action_carries_grant_denials():
     assert len(problems3) == 1 and "not available" in problems3[0]
 
 
-def test_lint_flags_bad_grants():
+def test_lint_flags_bad_requires():
     from rsched.workflows.lint import lint_permission_text, lint_trait_text
 
-    bad = ("---\ntags: [a, b, c]\ngrants:\n  actions: [dance]\n  confirm: maybe\n---\n"
+    bad = ("---\ntags: [a, b, c]\nrequires:\n  actions: [dance]\n  runs: maybe\n---\n"
            "# permission: x — y\n\nlong enough body\nmore\n")
     problems = lint_permission_text(bad, filename="x.md")
     text = " | ".join(problems)
-    assert "not an action kind" in text and "confirm must be" in text
-    good = ("---\ntags: [a, b, c]\ngrants:\n  actions: [write_util]\n  confirm: true\n---\n"
+    assert "not an action kind" in text and "runs must be" in text
+    good = ("---\ntags: [a, b, c]\nrequires:\n  actions: [write_util]\n---\n"
             "# permission: x — y\n\nlong enough body\nmore\n")
     assert lint_permission_text(good, filename="x.md") == []
-    # a permission without grants is an error; a trait WITH grants is an error
-    no_grants = "---\ntags: [a, b, c]\n---\n# permission: x — y\n\nbody\nmore\nlines\n"
-    assert any("grants" in p for p in lint_permission_text(no_grants, filename="x.md"))
-    trait_with_grants = ("---\ntags: [a, b, c]\ngrants:\n  utils: [discord]\n---\n"
-                         "# trait: x — y\n\nbody\nmore\nlines\n")
-    assert any("must not carry grants" in p
-               for p in lint_trait_text(trait_with_grants, filename="x.md"))
+    # a permission without requires is an error; the legacy grants: key is called out;
+    # a trait WITH either key is an error
+    no_req = "---\ntags: [a, b, c]\n---\n# permission: x — y\n\nbody\nmore\nlines\n"
+    assert any("requires" in p for p in lint_permission_text(no_req, filename="x.md"))
+    legacy = ("---\ntags: [a, b, c]\ngrants:\n  actions: [write_util]\n---\n"
+              "# permission: x — y\n\nbody\nmore\nlines\n")
+    assert any("renamed" in p for p in lint_permission_text(legacy, filename="x.md"))
+    trait_with_req = ("---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
+                      "# trait: x — y\n\nbody\nmore\nlines\n")
+    assert any("must not carry" in p
+               for p in lint_trait_text(trait_with_req, filename="x.md"))
 
 
 def test_memory_kinds_are_gated_and_denials_name_the_permission():
     none = GrantPolicy()
     denial = none.deny({"kind": "memory_write", "name": "x"})
-    assert denial and "memory" in denial            # names the canonical granting permission
+    assert denial and "memory" in denial            # names the canonical covering doc
     assert none.deny({"kind": "memory_read", "name": "x"})
     granted = GrantPolicy(actions=frozenset({"memory_read", "memory_write"}))
     assert granted.deny({"kind": "memory_write", "name": "x"}) is None

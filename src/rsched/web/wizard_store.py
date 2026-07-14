@@ -135,7 +135,8 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
         "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
         "workflow": {"library_slug": "clarify-instruction", "library_commit": commit},
         "budgets": WIZARD_BUDGETS,
-        "permissions": [],   # the clarify session holds no grants; its tools allowlist narrows further
+        "permissions": [], "capabilities": {},   # the clarify session holds nothing gated;
+        # its tools allowlist narrows further
     }, sort_keys=False), encoding="utf-8")
     # Persist the session's meta so it survives a daemon/container restart: /api/wizard can
     # list it without depending on the client or in-memory state.

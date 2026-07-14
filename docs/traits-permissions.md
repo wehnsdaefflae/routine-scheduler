@@ -1,38 +1,62 @@
-# Traits & permissions
+# Traits, permissions & capabilities
 
-A routine's cross-cutting behavior is split into two sets with deliberately different
+A routine's cross-cutting behavior is split into sets with deliberately different
 ownership:
 
-- **Traits** — reusable *practice prose* (when to ask the user, research discipline, the
-  after-run improvement passes). Selected at creation, **adapted to the routine's task**,
-  and copied into the routine's own `traits/` directory. From that moment they are the
-  routine's files: referenced from the end of its `main.md` (the *Standing practices*
-  section), read on demand during runs, and refined by the routine itself as it learns.
-  There is no toggle afterwards — changing a practice means editing the routine's files,
-  like any other part of its recipe.
-- **Permissions** — engine-enforced *capabilities* (writing utils, the Discord channel,
-  the `.memory/` notebook, reading previous runs, rewriting its own recipe, the shell
-  escape hatch). Held via `routine.yaml`'s `permissions:` list, changed **only by you**
-  (the routine page's Permissions panel; the web layer blocks edits while a run is
-  active), and enforced when every single action is interpreted. A routine can never
-  grant itself anything.
+- **Traits** — reusable *practice prose* (when to ask the user, research discipline).
+  Selected at creation, **adapted to the routine's task**, and copied into the routine's
+  own `traits/` directory. From that moment they are the routine's files: referenced from
+  the end of its `main.md` (the *Standing practices* section), read on demand during
+  runs, and refined by the routine itself as it learns. There is no toggle afterwards —
+  changing a practice means editing the routine's files, like any other part of its recipe.
+- **Capabilities** — the atomic, engine-enforced surface: gated action kinds
+  (`write_util`, `memory_read`, `memory_write`), reserved utils (`discord`, `shell`), the
+  write_util approval level, and the previous-run read depth. Held via `routine.yaml`'s
+  `capabilities:` mapping, changed **only by you** (the routine page's panel; the web
+  layer blocks edits while a run is active), and enforced when every single action is
+  interpreted. A routine can never grant itself anything.
+- **Permissions** — *conduct docs*: library prose stating HOW to use a capability well.
+  Held via `routine.yaml`'s `permissions:` list; a held doc's short body reaches the
+  prompt's CAPABILITIES section. A permission's frontmatter `requires:` names the
+  capabilities its instructions presume — it grants nothing itself.
 
-One sentence each: **traits shape how a routine works; permissions bound what it may do.**
+One sentence each: **traits shape how a routine works; capabilities bound what it may
+do; permissions instruct it in what it may do.**
+
+## The two permission layers and their cascade
+
+Activating a permission switches on the capabilities its `requires:` names. Switching a
+capability off deactivates every permission that requires it. Both cascades live in the
+UI (the routine page shows the two layers side by side, each capability badged with the
+docs requiring it); the server re-applies the activation cascade on save, so the
+invariant — *a held doc's requirements are always on* — holds regardless of the client.
+A capability may also be enabled bare, without any conduct doc: that is your call to
+make, fully visible in the panel.
+
+Enforcement reads **capabilities only** (`grants.py` builds the run policy from the
+routine's own mapping); a doc-without-capability misconfiguration therefore fails
+closed. Which utils are reservable at all is library-defined (the union of every doc's
+`requires.utils`); which action kinds are gateable is engine-defined (`GATED_KINDS`) — a
+library edit can reserve a new util, but can never retract a base action kind from every
+routine.
 
 ## Why the split
 
 Practice prose wants to *live with the routine*: adapted to the task at creation, then
-improved by the improvement passes as the routine discovers what works. Permissions want
-the opposite: they must be tamper-proof against the very self-modification the traits
-encourage. Fusing both into one mechanism (the old "fragments") meant the permission
-surface was tangled with editable prose. Now the prose is fully self-owned and the
-enforcement is fully user-owned.
+improved as the routine discovers what works. Enforcement wants the opposite: it must be
+tamper-proof against the very self-modification the traits encourage. And conduct prose
+for a capability wants to be *toggleable with it* without conflating the two: the old
+model (permission docs whose `grants:` both unlocked and instructed) meant you could
+never enable a capability without one specific prose bundle, and every policy variant
+needed its own doc (three util-authoring docs existed only to carry three approval
+levels). Now the prose is a doc, the switch is config, and the approval level is a
+per-routine setting.
 
 ## Traits
 
 Library templates live in `<libraries_home>/traits/*.md` — a heading line
-`# trait: <name> — <summary>`, `tags:` frontmatter, **no grants** (a trait carrying one
-is a lint error). The shipped set:
+`# trait: <name> — <summary>`, `tags:` frontmatter, **no requires** (a trait carrying
+one is a lint error). The shipped set:
 
 | trait | what it teaches |
 |---|---|
@@ -55,74 +79,91 @@ governs"). The prompt never inlines them — the state digest lists the files an
 reads what it needs, which keeps every turn's prompt lean.
 
 Trait files (like the whole recipe and routine.yaml) are read-only to the owning run —
-not a permission but a fixed engine rule. The one unlock is a user-granted fs_write_root
+not a capability but a fixed engine rule. The one unlock is a user-granted fs_write_root
 covering the routine's dir, which is exactly how the routine-improver meta routine
 refines every recipe centrally (conversations included).
 
-## Permissions
+## Capabilities
+
+`routine.yaml`:
+
+```yaml
+capabilities:
+  actions: [write_util, memory_read, memory_write]  # gated action kinds switched on
+  utils: [discord]              # reserved utils switched on
+  confirm: always               # write_util approval: always | creations | never
+  runs: none                    # previous-run read depth: none | last | all
+```
+
+A new routine's default: `write_util` (confirm `always`) + the memory pair, no reserved
+utils, no run history — matching the default permission set below.
+
+## Permissions (conduct docs)
 
 Library docs live in `<libraries_home>/permissions/*.md` — a heading line
-`# permission: <name> — <summary>` plus a machine-read `grants:` frontmatter key. The
-LIBRARY copy is the only authority: routines keep no local copies, and nothing under a
-routine directory is ever consulted for grants.
+`# permission: <name> — <summary>` plus a machine-read `requires:` frontmatter key. The
+LIBRARY copy is the only authority for `requires:`; routines keep no local copies. The
+`requires:` panel on the Library tab's permission editor is prefilled from the
+frontmatter and authoritative for that key on save.
 
 ```yaml
 ---
 tags: [tool-use, utils, authoring]
-grants:
-  actions: [write_util]        # gated action kinds this permission unlocks
-  utils: [discord]             # utils reserved for holders of this permission
-  confirm: true                # write_util approval: true | false | revisions-only
-  runs: last                   # previous-run read access: last | all
+requires:
+  actions: [write_util]        # gated action kinds these instructions presume
+  utils: [discord]             # reserved utils these instructions presume
+  runs: last                   # minimum previous-run depth presumed: last | all
 ---
 # permission: <name> — <summary>
 <a SHORT body: shown in the UI, and appended to the prompt's CAPABILITIES section when held>
 ```
 
+(No `confirm` in `requires:` — the approval level is your policy, never a doc's demand.)
+
 The shipped set:
 
-| permission | grants | default |
+| permission | requires | default |
 |---|---|---|
-| `util-authoring` | `write_util`, every change user-approved | ✅ held by new routines |
-| `util-authoring-autonomous` | `write_util`, revisions auto-approved after selftest, creations ask | opt-in |
-| `util-authoring-full-auto` | `write_util`, fully autonomous (selftest-gated, committed) | opt-in |
+| `util-authoring` | `write_util` (the approval level is the capability's setting) | ✅ held by new routines |
 | `memory` | `memory_read` / `memory_write` — the `.memory/` notebook | ✅ |
 | `communication` | the reserved `discord` util — a second decision surface | opt-in |
-| `run-history` | read the LAST previous run under `runs/` | opt-in |
-| `run-history-full` | read ALL previous runs | opt-in |
+| `run-history` | previous-run reads (the depth — last / all — is the capability's setting) | opt-in |
 | `shell` | the reserved `shell` util — arbitrary host commands | opt-in |
 
 ### What enforcement looks like
 
-A run's allowed action kinds are **workflow `tools:` ∩ (base ∪ union of held grants)**
-(`finish` always allowed). Gated calls — `write_util` without util-authoring, a reserved
-util, a `read_file` into `runs/` without run-history, and any `write_file` into the run's
+A run's allowed action kinds are **workflow `tools:` ∩ (base ∪ enabled capabilities)**
+(`finish` always allowed). Gated calls — `write_util` switched off, a reserved
+util, a `read_file` into `runs/` beyond the enabled depth, and any `write_file` into the run's
 OWN `main.md` / `steps/` / `traits/` / `instruction.md` / `routine.yaml` (a fixed rule,
-not a permission — unlocked only when a user-granted fs_write_root covers the routine
+not a capability — unlocked only when a user-granted fs_write_root covers the routine
 dir, the routine-improver's case) — are rejected inside the schema-retry cycle by
-`validate_action`, with an error naming the way out (a permission the user could grant,
-or a deferred `ask_user`). A rejected call never becomes a turn. The current run's own `runs/<ts>/` tree
+`validate_action`, with an error naming the way out (the covering permission the user
+could activate, or a deferred `ask_user`). A rejected call never becomes a turn. The current run's own `runs/<ts>/` tree
 (status, archived history) stays readable regardless — the engine itself points the model
 there after compaction. `runs/` is never writable.
 
-The model sees its permissions in the prompt's machine-facing **CAPABILITIES** section —
-the held slugs, what they unlock, and each one's short capability note. Permission prose
-never appears in the natural-language part of the prompt; that is what traits are for.
+The model sees its surface in the prompt's machine-facing **CAPABILITIES** section —
+the enabled capabilities, the held permission slugs, and each held permission's short
+conduct note. Permission prose never appears in the natural-language part of the prompt;
+that is what traits are for.
 
-Sub-workflows (`spawn`) run with permissions off: no grants, no reserved utils, no recipe
-writes, no traits of their own.
+Sub-workflows (`spawn`) run with permissions and capabilities off: no gated kinds, no
+reserved utils, no recipe writes, no traits of their own.
 
-Budgets, `fs_read_roots` / `fs_write_roots` and schedules are resources, not permissions —
+Budgets, `fs_read_roots` / `fs_write_roots` and schedules are resources, not capabilities —
 they stay plain `routine.yaml` config.
 
 ## Working with them
 
-- **See** a routine's capabilities: the routine page's Permissions panel (each entry shows
-  its `▸ grants …` line); its practices: the *Practice modules (traits)* file list.
-- **Change** capabilities: toggle permissions on the routine page (takes effect next run).
-  Change practices: edit the routine's `traits/*.md` files — or let its improve passes do it.
-- **Create** a new granted capability: add a permission doc (Library tab → Permissions) with
-  a `grants:` block. To reserve a util for a subset of routines, name it in a permission's
-  `utils:` list — every routine without that permission loses access at its next run.
-- Any future permission-ish lever becomes a `grants:` key on a permission doc, not a new
-  yaml key.
+- **See** a routine's surface: the routine page's *Permissions & capabilities* panel —
+  conduct docs left (each with its `▸ needs …` line), capabilities right (each badged
+  with the held docs requiring it). Its practices: the *Practice modules (traits)* file list.
+- **Change** either layer there (takes effect next run; the cascades keep them
+  consistent). Change practices: edit the routine's `traits/*.md` files — or let the
+  routine-improver do it.
+- **Create** a new conduct doc: Library tab → Permissions — the `requires:` panel is
+  editable and prefilled. To reserve a util for a subset of routines, name it in a doc's
+  `requires.utils` — it becomes a capability every routine must have switched on to call.
+- Any future permission-ish lever becomes a capability (a `capabilities:` key +
+  a `requires:` entry on the covering doc), not a new yaml key.

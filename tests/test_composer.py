@@ -40,9 +40,9 @@ def test_harness_contract_reflects_grants(make_routine, tmp_path):
     from rsched.grants import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="granted")
-    ctx.grants = GrantPolicy()                       # nothing granted
+    ctx.grants = GrantPolicy()                       # write_util switched off
     text = harness_contract(ctx)
-    assert "NOT among this routine's permissions" in text and "util-authoring" in text
+    assert "switched OFF in this routine's capabilities" in text
     ctx.grants = GrantPolicy(actions=frozenset(["write_util"]), confirm="creations")
     text2 = harness_contract(ctx)
     assert "auto-approved once its selftest passes" in text2
@@ -158,7 +158,8 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     assert "discord — phone channel.  [reserved — not granted to this routine]" in text
     kinds_line = next(l for l in text.splitlines() if l.startswith("Action kinds"))
     assert "util" in kinds_line and "write_util" not in kinds_line   # authoring not granted
-    assert "Permissions held (user-set, engine-enforced): run-history" in text
+    assert "Capabilities enabled (user-set, engine-enforced):" in text
+    assert "Held permissions (conduct notes below): run-history" in text
     # a tools-restricted run (the wizard's clarify session) still SEES the catalog
     text2 = capabilities_digest(ctx, allowed_kinds={"ask_user", "read_file",
                                                     "write_file", "finish"})
