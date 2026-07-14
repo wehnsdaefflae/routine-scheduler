@@ -200,6 +200,23 @@ export async function render(view, slug, _query = {}) {
       placeholder: "What should the agent do? The first message becomes the conversation's task…" });
     const prefill = sessionStorage.getItem(PREFILL_KEY);
     if (prefill) { text.value = prefill; sessionStorage.removeItem(PREFILL_KEY); }
+    // Playbook picker (the use-instruction analog): a picked playbook's brief seeds the
+    // conversation; the first-message box then just SPECIALIZES it, and may be left empty.
+    const pbSel = el("select", { "data-nopersist": "" },
+      el("option", { value: "" }, "no playbook · start fresh"));
+    const pbHint = el("div", { class: "faint small" });
+    let pbList = [];
+    api("/api/playbooks").then((r) => {
+      pbList = r.playbooks || [];
+      pbList.forEach((p) => pbSel.append(el("option", { value: p.slug }, p.title || p.slug)));
+    }).catch(() => { /* library unreachable — picker stays empty, plain conversation still works */ });
+    pbSel.onchange = () => {
+      const p = pbList.find((x) => x.slug === pbSel.value);
+      pbHint.textContent = p ? `▸ ${p.when || ""}${p.axis ? `  ·  varies: ${p.axis}` : ""}` : "";
+      text.placeholder = pbSel.value
+        ? "Optional — anything specific for this run? The playbook is the brief…"
+        : "What should the agent do? The first message becomes the conversation's task…";
+    };
     const workdir = el("input", { type: "text", placeholder: "~/path/to/project (optional)" });
     // Pre-start model picker: the create endpoint already accepts endpoint+model — this
     // just surfaces it, so a conversation can start on the right model instead of
@@ -219,12 +236,13 @@ export async function render(view, slug, _query = {}) {
     wirePaste(text);
     const send = el("button", { class: "btn primary" }, "start conversation");
     send.onclick = async () => {
-      if (!text.value.trim()) { toast("write the first message"); return; }
+      if (!text.value.trim() && !pbSel.value) { toast("write the first message or pick a playbook"); return; }
       if (epSel.value && !modelIn.value.trim()) { toast("enter a model id for the picked endpoint"); return; }
       send.disabled = true;
       try {
         const fd = new FormData();
         fd.append("text", text.value);
+        if (pbSel.value) fd.append("playbook", pbSel.value);
         if (epSel.value) { fd.append("endpoint", epSel.value); fd.append("model", modelIn.value.trim()); }
         if (workdir.value.trim()) fd.append("workdir", workdir.value.trim());
         if (shellChk.checked) fd.append("shell", "1");
@@ -241,6 +259,9 @@ export async function render(view, slug, _query = {}) {
         el("h1", {}, "New conversation"))),
       el("div", { class: "panel conv-new" },
         text,
+        el("div", { class: "row mt", style: "gap:8px;align-items:center;flex-wrap:wrap" },
+          el("span", { class: "faint small" }, "playbook"), pbSel),
+        pbHint,
         el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, send),
         el("div", { class: "row mt", style: "gap:8px;align-items:center" },
           el("span", { class: "faint small" }, "model"), epSel, modelIn),
@@ -345,8 +366,37 @@ export async function render(view, slug, _query = {}) {
       const { picker, files, clearFiles, wirePaste } = filePicker();
       wirePaste(input);
       const send = el("button", { class: "btn primary" }, "send");
+      // Save this conversation as a reusable playbook (the save-instruction analog); when it was
+      // itself seeded from a playbook, also offer to fold these deltas back into that playbook.
+      const savePb = el("button", { class: "btn small ghost",
+        title: "distil this conversation into a reusable playbook" }, "＋ save as playbook");
+      savePb.onclick = async () => {
+        savePb.disabled = true;
+        toast("distilling a playbook — a few seconds…");
+        try {
+          const r = await api(`/api/conversations/${slug}/playbook`, { method: "POST" });
+          toast(`saved playbook “${r.slug}”${r.axis ? `  ·  varies: ${r.axis}` : ""}`, 6000);
+        } catch (err) { toast(err.message, 6000, { error: true }); }
+        savePb.disabled = false;
+      };
+      const pbRow = el("div", { class: "row", style: "gap:8px;margin-top:6px;flex-wrap:wrap" }, savePb);
+      if (detail.playbook) {
+        const updPb = el("button", { class: "btn small ghost",
+          title: `revise the “${detail.playbook}” playbook from this conversation` },
+          `⟳ update playbook: ${detail.playbook}`);
+        updPb.onclick = async () => {
+          updPb.disabled = true;
+          toast("revising the playbook…");
+          try {
+            const r = await api(`/api/conversations/${slug}/playbook`, { method: "PUT" });
+            toast(`updated playbook “${r.slug}”`, 6000);
+          } catch (err) { toast(err.message, 6000, { error: true }); }
+          updPb.disabled = false;
+        };
+        pbRow.append(updPb);
+      }
       const node = el("div", { class: "conv-composer" }, input,
-        el("div", { class: "row", style: "gap:8px" }, picker, send));
+        el("div", { class: "row", style: "gap:8px" }, picker, send), pbRow);
       const submit = async () => {
         if (!input.value.trim()) return;
         send.disabled = true;

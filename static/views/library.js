@@ -23,8 +23,9 @@ export async function render(view, sub, query = {}) {
   let data;
   try { data = await api("/api/library"); }
   catch (err) { sections.replaceChildren(emptyState("✕", "Couldn't load the library", err.message)); return; }
+  data.playbooks = data.playbooks || [];
   countLine.textContent =
-    `workflows ${data.workflows.length} · traits ${data.traits.length} · permissions ${data.permissions.length} · utils ${data.utils.length}`;
+    `workflows ${data.workflows.length} · traits ${data.traits.length} · permissions ${data.permissions.length} · playbooks ${data.playbooks.length} · utils ${data.utils.length}`;
 
   // Both the tag filter and the open editor are kept in the URL (#/library/<kind>/<slug>?tags=…)
   // so the view is shareable and restores on reload — without tearing itself down on each change.
@@ -35,7 +36,8 @@ export async function render(view, sub, query = {}) {
   const matches = (tags) => !active.size || (tags || []).some((t) => active.has(t));
 
   function renderFilterBar() {
-    const all = [...new Set([...data.workflows, ...data.traits, ...data.permissions, ...data.utils]
+    const all = [...new Set([...data.workflows, ...data.traits, ...data.permissions,
+      ...data.playbooks, ...data.utils]
       .flatMap((x) => x.tags || []))].sort((a, b) => (a === "meta" ? -1 : b === "meta" ? 1 : a.localeCompare(b)));
     filterBar.replaceChildren();
     if (!all.length) return;
@@ -65,6 +67,9 @@ export async function render(view, sub, query = {}) {
           : f.summary;
         return item(f.slug, f.problems, f.tags, () => openDoc("permissions", f.slug), summary);
       }));
+    section("Playbooks", "one-shot recipes — saved from a conversation (Save as playbook) and reused to seed a new one; MAIN.md is the always-loaded brief",
+      data.playbooks.filter((p) => matches(p.tags)).map((p) =>
+        item(p.title || p.slug, p.problems, p.tags, () => openPlaybook(p.slug), p.summary)));
     section("Global utils", "the tools routines run (created + revised on demand, selftest-gated)",
       data.utils.filter((u) => matches(u.tags)).map((u) =>
         item(u.name, [], u.tags, () => openUtil(u.name), u.summary)));
@@ -153,6 +158,24 @@ export async function render(view, sub, query = {}) {
       api(`/api/library/utils/${name}`, { method: "PUT", body: { content } }), "python");
   }
 
+  // A playbook is a subfolder (MAIN.md + optional detail files) — the editor edits MAIN.md; its
+  // detail files are managed by the Update-playbook distillation, listed here for reference.
+  async function openPlaybook(slug) {
+    openSub = `playbook/${slug}`; updateURL();
+    const d = await api(`/api/playbooks/${slug}`);
+    const extra = d.details?.length
+      ? el("div", { class: "muted small", style: "margin-bottom:8px" },
+          `on-demand detail files: ${d.details.join(", ")}`)
+      : null;
+    showEditor(`playbook: ${slug} (MAIN.md)`, d.content, d.log, async (content) =>
+      api(`/api/playbooks/${slug}`, { method: "PUT", body: { content } }), undefined,
+      async () => {
+        if (!confirm(`Delete playbook "${slug}"? It is git-versioned — recoverable from history.`)) return false;
+        await api(`/api/playbooks/${slug}`, { method: "DELETE" });
+        return true;
+      }, extra);
+  }
+
   // workflows + utils are Python → highlighted editor; traits/permissions are markdown → plain.
   // `extra` renders above the editor (the permissions requires: panel).
   function showEditor(label, content, log, save, lang, del, extra) {
@@ -206,6 +229,7 @@ export async function render(view, sub, query = {}) {
     const opener = { workflow: openWorkflow,
                      trait: (id) => openDoc("traits", id),
                      permission: (id) => openDoc("permissions", id),
+                     playbook: openPlaybook,
                      util: openUtil }[kind];
     if (opener && id) opener(id).catch((e) => toast(e.message, 4000, { error: true }));
   }

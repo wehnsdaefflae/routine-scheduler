@@ -105,14 +105,14 @@ def list_conversations(request: Request) -> list[dict]:
 
 
 @router.post("/conversations")
-async def create_conversation(request: Request, text: str = Form(...),
+async def create_conversation(request: Request, text: str = Form(""),
                               workdir: str = Form(""), endpoint: str = Form(""),
                               model: str = Form(""), effort: str = Form(""),
-                              shell: str = Form(""),
+                              shell: str = Form(""), playbook: str = Form(""),
                               files: list[UploadFile] = File(default=[])) -> dict:
     server = request.app.state.server
-    if not text.strip():
-        raise HTTPException(400, "empty message")
+    if not text.strip() and not playbook.strip():
+        raise HTTPException(400, "empty message — write the first message or pick a playbook")
     permissions = (conv_mod.CONVERSATION_PERMISSIONS + ["shell"]) if shell.strip() else None
     models = None
     if endpoint or model:
@@ -127,7 +127,8 @@ async def create_conversation(request: Request, text: str = Form(...),
     try:
         conv_dir = conv_mod.create_conversation(server, slug=slug, first_message=text,
                                                 workdir=workdir, models=models,
-                                                permissions=permissions)
+                                                permissions=permissions,
+                                                playbook_slug=playbook.strip())
     except FileNotFoundError as exc:
         raise HTTPException(500, f"the library has no '{conv_mod.CONVERSE_WORKFLOW}' workflow "
                                  f"— restart the daemon to seed it ({exc})") from exc
@@ -201,6 +202,7 @@ def detail(request: Request, slug: str) -> dict:
         "instruction": (info.cfg.dir / "instruction.md").read_text(encoding="utf-8")
         if (info.cfg.dir / "instruction.md").exists() else "",
         "workdir": str(info.cfg.fs_write_roots[0]) if info.cfg.fs_write_roots else "",
+        "playbook": info.cfg.playbook_slug or None,   # bound source playbook → Update-playbook button
         "models": {k: ({"endpoint": r.endpoint, "model": r.model, "effort": r.effort}
                        if (r := info.cfg.models.get(k)) else None) for k in MODEL_KINDS},
         "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None,
@@ -274,6 +276,57 @@ def delete_conversation(request: Request, slug: str) -> dict:
     _guard_not_active(request, info)
     shutil.rmtree(info.cfg.dir)
     return {"ok": True}
+
+
+@router.post("/conversations/{slug}/playbook")
+def save_playbook(request: Request, slug: str) -> dict:
+    """Distil this conversation (its intent + the procedure that satisfied it) into a NEW library
+    playbook via the system model, committed to the library. Always creates a new playbook (slug
+    suffixed on collision) — use PUT to refine the one a conversation was seeded from. A sync def:
+    FastAPI runs it in a worker thread, so the blocking inference never stalls the event loop."""
+    from .. import playbook_distill, playbooks
+    from ..workflows import library
+
+    info = _info(request, slug)
+    server = request.app.state.server
+    home = server.library_home
+    try:
+        pb = playbook_distill.distill_playbook(server, info.cfg.dir)
+    except Exception as exc:  # noqa: BLE001 — no endpoint / bad output → a clean 502
+        raise HTTPException(502, f"could not distil a playbook: {exc}") from exc
+    pb["slug"] = playbooks.unique_slug(home, pb["slug"])
+    main_text, details = playbook_distill.materialize(pb)
+    playbooks.write_playbook(home, pb["slug"], main=main_text, details=details)
+    library.git_commit(home, f"save playbook {pb['slug']} (from conversation {slug})")
+    return {"ok": True, "slug": pb["slug"], "title": pb["title"], "when": pb["when"],
+            "axis": pb["axis"]}
+
+
+@router.put("/conversations/{slug}/playbook")
+def update_playbook(request: Request, slug: str) -> dict:
+    """Revise the playbook this conversation was SEEDED from, folding in the deltas the user made
+    by adjusting/intervening in the conversation (committed). 400 if the conversation has no bound
+    playbook; 404 if that playbook was since deleted (Save a new one instead)."""
+    from .. import playbook_distill, playbooks
+    from ..workflows import library
+
+    info = _info(request, slug)
+    server = request.app.state.server
+    home = server.library_home
+    bound = info.cfg.playbook_slug
+    if not bound:
+        raise HTTPException(400, "this conversation was not created from a playbook")
+    existing = playbooks.read_playbook(home, bound)
+    if existing is None:
+        raise HTTPException(404, f"playbook {bound!r} no longer exists — use Save as playbook instead")
+    try:
+        pb = playbook_distill.revise_playbook(server, info.cfg.dir, existing["content"], bound)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"could not revise the playbook: {exc}") from exc
+    main_text, details = playbook_distill.materialize(pb)
+    playbooks.write_playbook(home, bound, main=main_text, details=details)
+    library.git_commit(home, f"update playbook {bound} (from conversation {slug})")
+    return {"ok": True, "slug": bound, "title": pb["title"], "axis": pb["axis"]}
 
 
 @router.get("/conversations/{slug}/stategraph")

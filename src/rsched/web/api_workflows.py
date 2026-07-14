@@ -40,8 +40,8 @@ def list_workflows(request: Request) -> dict:
 
 @router.get("/library")
 def library_overview(request: Request) -> dict:
-    """Everything under the Library tab: workflows, traits, permissions, and global utils."""
-    from .. import library_docs, utils_lib
+    """Everything under the Library tab: workflows, traits, permissions, playbooks, global utils."""
+    from .. import library_docs, playbooks, utils_lib
     from ..config import DEFAULT_BUDGETS, DEFAULT_PERMISSIONS, DEFAULT_TRAITS
 
     home = _home(request)
@@ -54,6 +54,8 @@ def library_overview(request: Request) -> dict:
                    for t in library_docs.list_docs(server.traits_home)],
         "permissions": [{**p, "problems": lint.get(f"permissions/{p['slug']}.md", [])}
                         for p in library_docs.list_docs(server.permissions_home)],
+        "playbooks": [{**p, "problems": lint.get(f"playbooks/{p['slug']}/MAIN.md", [])}
+                      for p in playbooks.list_playbooks(home)],
         "utils": utils_lib.list_utils(server.utils_home),
         "default_traits": list(DEFAULT_TRAITS),
         "default_permissions": list(DEFAULT_PERMISSIONS),

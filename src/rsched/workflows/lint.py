@@ -110,6 +110,30 @@ def lint_permission_text(raw: str, *, filename: str) -> list[str]:
     return problems
 
 
+def lint_playbook_text(raw: str, *, filename: str = "MAIN.md") -> list[str]:
+    """A playbook's MAIN.md: front matter (slug/title/one-line when/tags/axis) + an imperative
+    '## Instructions' body. It is a reusable conversation brief, not a control-flow pattern."""
+    problems = []
+    try:
+        meta, body = frontmatter.parse(raw)
+    except yaml.YAMLError as exc:
+        return [f"{filename}: invalid YAML frontmatter: {exc}"]
+    for key in ("slug", "title", "when", "axis"):
+        if not str(meta.get(key) or "").strip():
+            problems.append(f"{filename}: front matter missing {key!r}")
+    slug = str(meta.get("slug") or "")
+    if slug and not is_slug(slug):
+        problems.append(f"{filename}: slug {slug!r} is not kebab-case")
+    if "\n" in str(meta.get("when") or "").strip():
+        problems.append(f"{filename}: 'when' must be a single line (the catalog entry)")
+    tags = meta.get("tags")
+    if not isinstance(tags, list) or not [t for t in tags if str(t).strip()]:
+        problems.append(f"{filename}: needs at least one tag")
+    if "## Instructions" not in body:
+        problems.append(f"{filename}: body must have an '## Instructions' section")
+    return problems
+
+
 def lint_materialized_text(raw: str, *, filename: str = "main.md") -> list[str]:
     problems = []
     try:
@@ -149,4 +173,12 @@ def lint_all(home: Path) -> dict[str, list[str]]:
         for path in sorted(pdir.glob("*.md")):
             results[f"permissions/{path.name}"] = lint_permission_text(
                 path.read_text(encoding="utf-8"), filename=path.name)
+    from .. import playbooks
+    pbdir = playbooks.playbooks_dir(home)
+    if pbdir.is_dir():
+        for sub in sorted(p for p in pbdir.iterdir() if p.is_dir()):
+            main = sub / playbooks.MAIN
+            if main.is_file():
+                results[f"playbooks/{sub.name}/MAIN.md"] = lint_playbook_text(
+                    main.read_text(encoding="utf-8"), filename=f"{sub.name}/MAIN.md")
     return results

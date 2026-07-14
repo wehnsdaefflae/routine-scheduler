@@ -74,14 +74,39 @@ def attachment_note(paths: list[str]) -> str:
             f"described by the vision util); spreadsheets via a fitting util]\n{lines}")
 
 
+def _seed_instruction(pb: dict | None, first_message: str, conv_dir: Path) -> str:
+    """instruction.md for a conversation. Without a playbook it IS the first message. With one, the
+    playbook's brief (MAIN.md body) leads as the working brief and the first message SPECIALIZES it;
+    on-demand detail files are copied into `<conv>/playbook/` so the run can read them with
+    read_file (the use-instruction analog: MAIN always loaded, details pulled in on demand)."""
+    if not pb:
+        return first_message.rstrip()
+    parts = [pb["body"].strip()]
+    if pb["details"]:
+        (conv_dir / "playbook").mkdir(exist_ok=True)
+        for name, body in pb["details"].items():
+            (conv_dir / "playbook" / name).write_text(body, encoding="utf-8")
+        parts.append("Detail files referenced above live under `playbook/` — read e.g. "
+                     f"`playbook/{sorted(pb['details'])[0]}` with read_file when a step needs it.")
+    req = first_message.strip()
+    parts.append("---\n## This conversation's specific request\n"
+                 + (req or "(none given — follow the playbook above; ask me for any parameters it "
+                    "needs before doing work)"))
+    return "\n\n".join(parts)
+
+
 def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
                         workdir: str = "", models: dict[str, dict] | None = None,
-                        permissions: list[str] | None = None) -> Path:
+                        permissions: list[str] | None = None, playbook_slug: str = "") -> Path:
     """Create <conversations_home>/<slug> ready to run: materialized converse main.md with
     a Standing-practices tail, verbatim trait copies, instruction.md = the first message,
     and a schedule-less routine.yaml marked `kind: conversation`. NO git init — a
-    conversation is deliberately unversioned (the engine's autocommit no-ops without .git)."""
-    from . import library_docs
+    conversation is deliberately unversioned (the engine's autocommit no-ops without .git).
+
+    A `playbook_slug` seeds instruction.md from that library playbook's brief (the first message
+    specializes it) and records a `playbook: {slug, commit}` binding — the Update-playbook button
+    later revises that source playbook from this conversation's deltas."""
+    from . import library_docs, playbooks
     from .workflows.adapt import dump_markdown
     from .workflows.library import head_commit, read_workflow
     from .workflows.pyworkflow import render_markdown
@@ -91,6 +116,9 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
     if conv_dir.exists():
         raise ValueError(f"conversation dir {conv_dir} already exists")
     meta, _, raw = read_workflow(server.library_home, CONVERSE_WORKFLOW)
+    pb = playbooks.read_playbook(server.library_home, playbook_slug) if playbook_slug else None
+    title = fallback_title(first_message if first_message.strip()
+                           else (str(pb["meta"].get("title")) if pb else "conversation"))
 
     for sub in ("state", "inbox", "traits", "attachments", "artifacts"):
         (conv_dir / sub).mkdir(parents=True)
@@ -107,13 +135,14 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
         m = library_docs.DOC_RE.search(body)
         trait_summaries[t] = m.group("summary").strip() if m else ""
     commit = head_commit(server.library_home)
-    main_meta = {"name": fallback_title(first_message), "slug": slug,
+    main_meta = {"name": title, "slug": slug,
                  "materialized_from": {"slug": CONVERSE_WORKFLOW, "commit": commit,
                                        "version": meta.get("version", 0)},
                  **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {})}
     body = _with_practices_tail(render_markdown(raw, meta), trait_summaries)
     (conv_dir / "main.md").write_text(dump_markdown(main_meta, body), encoding="utf-8")
-    (conv_dir / "instruction.md").write_text(first_message.rstrip() + "\n", encoding="utf-8")
+    (conv_dir / "instruction.md").write_text(
+        _seed_instruction(pb, first_message, conv_dir) + "\n", encoding="utf-8")
     (conv_dir / "LEDGER.md").write_text(_LEDGER_SEED, encoding="utf-8")
 
     available_perms = set(library_docs.slugs(server.permissions_home))
@@ -123,13 +152,14 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
 
     capabilities = capabilities_for(active_perms, read_library_requires(server.permissions_home))
     cfg = {
-        "name": fallback_title(first_message),
+        "name": title,
         "slug": slug,
         "kind": "conversation",
-        "description": fallback_title(first_message),
+        "description": title,
         "enabled": True,
         "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
         "workflow": {"library_slug": CONVERSE_WORKFLOW, "library_commit": commit},
+        **({"playbook": {"slug": playbook_slug, "commit": commit}} if pb else {}),
         **({"models": models} if models else {}),
         "permissions": active_perms,
         "capabilities": capabilities,

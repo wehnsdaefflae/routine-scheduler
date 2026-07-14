@@ -205,6 +205,9 @@ def seed_libraries(home: Path) -> None:
         if (root / "library-seed" / kind).is_dir():
             for f in sorted((root / "library-seed" / kind).glob("*.md")):
                 shutil.copy(f, home / kind / f.name)
+    # playbooks are subfolders (MAIN.md + detail files), so copy the whole tree
+    if (root / "library-seed" / "playbooks").is_dir():
+        shutil.copytree(root / "library-seed" / "playbooks", home / "playbooks", dirs_exist_ok=True)
     (home / "utils").mkdir(exist_ok=True)
     if (root / "util-seed" / "utils").is_dir():
         shutil.copytree(root / "util-seed" / "utils", home / "utils", dirs_exist_ok=True)
@@ -235,6 +238,15 @@ def sync_seed_library_docs(libraries_home: Path) -> int:
             if not (dest / f.name).exists():
                 shutil.copy(f, dest / f.name)
                 installed.append(f"{kind}/{f.name}")
+    # playbooks are subfolders (MAIN.md + detail files), not flat files — copy whole
+    # subfolders missing from the live library (mirrors sync_seed_utils).
+    pb_src, pb_dest = root / "playbooks", libraries_home / "playbooks"
+    if pb_src.is_dir() and libraries_home.is_dir():
+        pb_dest.mkdir(exist_ok=True)
+        for d in sorted(p for p in pb_src.iterdir() if p.is_dir()):
+            if not (pb_dest / d.name).exists():
+                shutil.copytree(d, pb_dest / d.name)
+                installed.append(f"playbooks/{d.name}")
     if installed:
         log.warning("seed-sync: installed new library doc(s): %s", ", ".join(installed))
         _git(libraries_home, "add", "-A")

@@ -186,6 +186,11 @@ class ServerConfig(_Config):
         """The library repo root — utils live in its utils/ subdir (with `gu` at the root)."""
         return self.libraries_home
 
+    @property
+    def playbooks_home(self) -> Path:
+        """The library repo's playbooks/ subdir (reusable conversation briefs — see playbooks.py)."""
+        return self.libraries_home / "playbooks"
+
 
 def _pop(data: dict, loc: tuple) -> None:
     """Remove the value at a (possibly nested) error location from the raw input."""
@@ -254,6 +259,10 @@ class RoutineConfig(_Config):
     workflow_slug: BlankableStr = Field("", validation_alias=AliasPath("workflow", "library_slug"))
     workflow_commit: BlankableStr = Field(
         "", validation_alias=AliasPath("workflow", "library_commit"))
+    # Conversations only: the library playbook this conversation was seeded from (the
+    # `playbook: {slug, commit}` binding). Empty = a fresh conversation. Drives the
+    # Update-playbook button; a Save-as-playbook always creates a new one regardless.
+    playbook_slug: BlankableStr = Field("", validation_alias=AliasPath("playbook", "slug"))
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
     models: dict[str, ModelRef] = Field(default_factory=dict)  # main/subroutine/tool_call
     budgets: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_BUDGETS))
