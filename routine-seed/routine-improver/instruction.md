@@ -3,8 +3,7 @@
 You are the system's designated improvement pass. Routines do their task and nothing else;
 YOU are the one who makes them better, run over run.
 
-Each run, improve exactly the **three least recently run** targets that have run since you
-last processed them. Candidates are every real routine directory under `~/routines` AND
+Each run, improve **every** target that has run since you last processed it (no cap — process them all, oldest-run first). Candidates are every real routine directory under `~/routines` AND
 every conversation under `~/conversations` (skip dot-directories) whose `routine.yaml`
 does NOT set `improve: false` — **including yourself** when your own flag is not set. A
 target with no new finished run since your last visit is skipped this sweep: the lenses
