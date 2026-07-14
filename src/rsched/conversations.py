@@ -38,7 +38,7 @@ CONVERSATION_PERMISSIONS = list(DEFAULT_PERMISSIONS)
 CONVERSATION_BUDGETS = {**DEFAULT_BUDGETS, "max_turns": 10, "max_wall_clock_min": 30,
                         "max_subruns": 4}
 # Permissions that only make sense for scheduled routines — the UI greys them out.
-ROUTINE_ONLY_PERMISSIONS = ["run-history", "run-history-full"]
+ROUTINE_ONLY_PERMISSIONS = ["run-history"]
 
 _LEDGER_SEED = "# LEDGER — conversation\n\n### seed — conversation created\n"
 

@@ -114,7 +114,7 @@ def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
         return None
     if g.run_history == "none":
         return ("reading previous runs is not among this routine's permissions "
-                "(run-history / run-history-full unlock it)")
+                "(the run-history permission unlocks it; depth last/all is a capability)")
     if g.run_history == "last":
         prior = sorted(d.name for d in runs_dir.iterdir()
                        if d.is_dir() and d.name != ctx.root_run_dir.name)
@@ -122,7 +122,7 @@ def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
         if not rel.parts or rel.parts[0] != last:
             return (f"this routine's run-history permission covers only the LAST previous "
                     f"run ({'runs/' + last if last else 'none exists yet'}); "
-                    f"run-history-full would cover all of them")
+                    f"raising its run-history depth to 'all' would cover all of them")
     return None
 
 

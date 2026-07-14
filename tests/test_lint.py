@@ -68,8 +68,7 @@ def test_python_workflow_parse_and_lint():
     meta = parse_py(src)                                  # parsed statically — never executed
     assert meta["slug"] == "general-task" and meta["has_main"] and meta["format"] == "py"
     assert meta["phases"] == ["bootstrap", "steady", "wrap-up"] and meta["completion"]
-    traits = ["ask-policy", "global-utils", "web-research", "ledger-discipline",
-              "improve-bugfix", "improve-research", "improve-features", "improve-ui", "improve-efficiency"]
+    traits = ["ask-policy", "global-utils", "web-research", "ledger-discipline"]
     assert lint_workflow_py(src, filename="general-task.py", trait_slugs=traits) == []
     # defects: no META / no run()
     probs = lint_workflow_py("x = 1\n", filename="paperbot.py", trait_slugs=[])

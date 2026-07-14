@@ -1,9 +1,9 @@
-"""UI interaction traces — evidence for the self-audit's improve-ui lens.
+"""UI interaction traces — evidence for the improve-ui improvement lens.
 
 The frontend batches lightweight events (view navigations, control clicks by label,
 error toasts, stream reconnects) to POST /api/ui-trace; they land as daily JSONL under
-routines_home/.ui-traces/ (a dot-dir the registry scan ignores), where the self-audit
-routine reads them when its improve-ui fragment is active. Values are truncated here so
+routines_home/.ui-traces/ (a dot-dir the registry scan ignores), where the routine-improver's
+improve-ui lens (and the self-audit's evidence pass) read them. Values are truncated here so
 no free-text user content grows unbounded; files beyond the retention window are pruned
 on write.
 """

@@ -101,7 +101,7 @@ def test_create_conversation_disk_shape(server):
     assert "materialized_from" in main and "converse" in main
     assert "## Standing practices" in main and "traits/git-checkpoint.md" in main
     assert (d / "traits" / "git-checkpoint.md").exists()
-    assert not (d / "traits" / "improve-bugfix.md").exists()   # improve passes are routine-only
+    assert not (d / "traits" / "improve-bugfix.md").exists()   # improve-* are routine-improver lenses, not materialized traits
     assert (d / "instruction.md").read_text().startswith("Fix the flaky test")
     assert (d / "artifacts").is_dir() and (d / "attachments").is_dir()
     assert cfg.name == conv_mod.fallback_title("Fix the flaky test")
