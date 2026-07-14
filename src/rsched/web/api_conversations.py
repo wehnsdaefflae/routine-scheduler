@@ -257,8 +257,10 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
 
 @router.put("/conversations/{slug}/permissions")
 def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
+    # No active-reply guard: like the budget PATCH above, a conversation reads routine.yaml
+    # only at each reply's boot, so a permission/capability edit simply lands on the NEXT
+    # reply — blocking on a live reply would only add friction (the user can retune anytime).
     info = _info(request, slug)
-    _guard_not_active(request, info)
     active, caps = resolve_permission_layers(request.app.state.server, body,
                                              info.cfg.capabilities or {})
     path = info.cfg.dir / "routine.yaml"

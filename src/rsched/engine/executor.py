@@ -274,8 +274,9 @@ def _track_phase(ctx: RunContext, path) -> None:
         return
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(data, dict) and data.get("phase"):
-            ctx.phase = str(data["phase"])
+        # recipes name the field "phase" (canonical) or "state" — accept either
+        if isinstance(data, dict) and (data.get("phase") or data.get("state")):
+            ctx.phase = str(data.get("phase") or data.get("state"))
     except (OSError, ValueError):
         pass  # a malformed phase file never fails the write that produced it
 

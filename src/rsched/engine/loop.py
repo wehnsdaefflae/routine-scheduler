@@ -249,8 +249,8 @@ class EngineLoop:
             msgs = []
             digest = "(subrun — no routine state digest; everything you need is in the instruction)"
         phase = read_json(ctx.routine.dir / "state" / "phase.json")
-        if isinstance(phase, dict) and phase.get("phase"):
-            ctx.phase = str(phase["phase"])
+        if isinstance(phase, dict) and (phase.get("phase") or phase.get("state")):
+            ctx.phase = str(phase.get("phase") or phase.get("state"))
         resuming = self.resume and ctx.depth == 0
         system = build_system_prompt(ctx, self.workflow_body, self.instruction, digest,
                                      [] if resuming else [m["text"] for m in msgs],

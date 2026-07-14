@@ -213,6 +213,18 @@ def test_delete_guarded_while_active(client):
     assert (server.conversations_home / slug).exists()
 
 
+def test_settings_editable_while_active(client):
+    """Budgets AND permissions retune at any time on a live conversation — each reply reads
+    routine.yaml at its own boot, so the edit simply lands on the NEXT reply (no 409)."""
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    # fake fire leaves the run 'running' → the conversation counts as active
+    assert c.patch(f"/api/conversations/{slug}",
+                   json={"budgets": {"max_turns": -1}}).status_code == 200
+    r = c.put(f"/api/conversations/{slug}/permissions", json={"active": ["memory"]})
+    assert r.status_code == 200 and r.json()["active"] == ["memory"]
+
+
 def test_conversation_questions_reach_decisions(client):
     c, server = client
     slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]

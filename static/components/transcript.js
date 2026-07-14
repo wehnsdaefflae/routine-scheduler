@@ -43,8 +43,8 @@ export function createTranscript(container, opts = {}) {
     // the Decisions page. Blocking ones stay with the run view's panel (it handles dialog).
     if (!opts.answer || !p.qid || p.mode !== "deferred") return el("div", { class: "ev question" }, head);
     // data-persist keyed by qid: this question's draft is its own — never another's.
-    const input = el("input", { type: "text", placeholder: "answer here — or on the Decisions page…",
-                                "data-persist": `answer-${p.qid}`, style: "flex:1" });
+    const input = el("textarea", { rows: 1, placeholder: "answer here — or on the Decisions page… (Shift+Enter for a new line)",
+                                "data-persist": `answer-${p.qid}`, style: "flex:1;resize:vertical" });
     const send = el("button", { class: "btn small primary" }, "answer");
     const controls = el("div", { class: "row mt", style: "gap:6px" },
       p.options?.length ? p.options.map((o) =>
@@ -60,7 +60,7 @@ export function createTranscript(container, opts = {}) {
       } catch (err) { send.disabled = false; toast(err.message, 4000, { error: true }); }
     };
     send.onclick = submit;
-    input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } };
+    input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } };
     qforms.set(p.qid, { controls, created: Date.now() });
     return el("div", { class: "ev question" }, el("div", {}, head), controls);
   }

@@ -89,8 +89,8 @@ export function createChat(container, opts = {}) {
       p.default ? el("div", { class: "faint small" }, `↪ without an answer: ${p.default}`) : null);
     if (!opts.answer || !p.qid) return head;
     // data-persist keyed by qid: this question's draft is its own — never another's.
-    const input = el("input", { type: "text", placeholder: "answer…",
-      "data-persist": `answer-${p.qid}`, style: "flex:1" });
+    const input = el("textarea", { rows: 1, placeholder: "answer… (Shift+Enter for a new line)",
+      "data-persist": `answer-${p.qid}`, style: "flex:1;resize:vertical" });
     const send = el("button", { class: "btn small primary" }, "answer");
     const row = el("div", { class: "row mt", style: "gap:6px" },
       (p.options || []).map((o) => el("button", { class: "btn small",
@@ -106,7 +106,7 @@ export function createChat(container, opts = {}) {
       } catch (err) { send.disabled = false; }
     };
     send.onclick = submit;
-    input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } };
+    input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } };
     return el("div", {}, head, row);
   }
 

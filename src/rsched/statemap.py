@@ -70,7 +70,8 @@ def current_phase(routine_dir: Path) -> str:
         data = json.loads((routine_dir / "state" / "phase.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return ""
-    return str(data.get("phase") or "") if isinstance(data, dict) else ""
+    # recipes name the current-phase field "phase" (canonical) or "state" — accept either
+    return str(data.get("phase") or data.get("state") or "") if isinstance(data, dict) else ""
 
 
 def state_graph(routine_dir: Path) -> dict:

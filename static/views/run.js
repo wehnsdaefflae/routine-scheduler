@@ -218,8 +218,8 @@ export async function render(view, runId, query = {}) {
     questionBox.replaceChildren();
     if (!q) return;
     // data-persist keyed by qid: this question's draft is its own — never another's.
-    const input = el("input", { type: "text", placeholder: "your answer…",
-      "data-persist": `answer-${q.qid}`, style: "flex:1" });
+    const input = el("textarea", { rows: 1, placeholder: "your answer… (Shift+Enter for a new line)",
+      "data-persist": `answer-${q.qid}`, style: "flex:1;resize:vertical" });
     const send = el("button", { class: "btn primary" }, "answer");
     const discuss = el("button", { class: "btn",
       title: "send as a follow-up question / thought — the model replies and the question stays open" },
@@ -248,7 +248,7 @@ export async function render(view, runId, query = {}) {
     };
     send.onclick = () => submit(false);
     discuss.onclick = () => submit(true);
-    input.onkeydown = (e) => { if (e.key === "Enter") submit(false); };
+    input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(false); } };
     questionBox.append(box);
   }
 

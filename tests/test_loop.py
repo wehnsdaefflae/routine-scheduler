@@ -1161,6 +1161,32 @@ def test_unlimited_time_and_cost_budgets_honor_minus_one():
     assert "of budget left" in (ctx.budget_warning() or "")
 
 
+def test_unlimited_turn_budget_honors_minus_one():
+    """max_turns = -1 means unlimited (a manual stop / abort is the backstop): no violation
+    or warning however many turns pass, a child inherits unlimited turns (not 1), and a
+    finite max_turns still trips exactly as before."""
+    import time as _t
+    from rsched.engine.run_context import Budgets, RunContext
+
+    ctx = RunContext.__new__(RunContext)
+    ctx.budgets = Budgets(max_turns=-1, max_wall_clock_min=-1, max_total_tokens=-1,
+                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
+    ctx.usage = {"in": 0, "out": 0, "cost": 0.0}
+    ctx.turn = 10_000
+    ctx.budget_base_turn = 0
+    ctx._started_mono = _t.monotonic()
+    ctx._suspended_s = 0.0
+    assert ctx.budget_violation() is None          # unlimited turns never trips
+    assert ctx.budget_warning() is None
+    assert ctx.child_budgets().max_turns == -1      # unlimited stays unlimited (not 1)
+
+    # a finite turn budget still trips once reached
+    ctx.budgets = Budgets(max_turns=10, max_wall_clock_min=-1, max_total_tokens=-1,
+                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
+    ctx.turn = 10
+    assert "turn budget exhausted" in ctx.budget_violation()
+
+
 def test_usage_accounting_cache_keys_and_resume_base():
     """add_usage folds cache traffic in (kept out of "in" so token budgets keep meaning);
     usage_total() adds earlier legs' spend — budgets stay on the fresh window."""

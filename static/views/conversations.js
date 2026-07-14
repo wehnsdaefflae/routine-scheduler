@@ -395,8 +395,19 @@ export async function render(view, slug, _query = {}) {
         };
         pbRow.append(updPb);
       }
+      // Manual stop for a live reply — the run has no automatic backstop when its budgets
+      // are set to -1 (unlimited), so the user must be able to end it at any time. Aborts at
+      // the next turn boundary (the reply finishes as `aborted`, transcript + LEDGER intact).
+      const stopBtn = el("button", { class: "btn small danger",
+        title: "stop this reply now — it aborts at the next turn boundary" }, "✕ stop");
+      stopBtn.hidden = true;
+      stopBtn.onclick = async () => {
+        stopBtn.disabled = true;
+        try { await api(`/api/runs/${detail.run_id}/abort`, { method: "POST" }); toast("stopping the reply…"); }
+        catch (err) { toast(err.message, 4000, { error: true }); stopBtn.disabled = false; }
+      };
       const node = el("div", { class: "conv-composer" }, input,
-        el("div", { class: "row", style: "gap:8px" }, picker, send), pbRow);
+        el("div", { class: "row", style: "gap:8px" }, picker, send, stopBtn), pbRow);
       const submit = async () => {
         if (!input.value.trim()) return;
         send.disabled = true;
@@ -417,7 +428,7 @@ export async function render(view, slug, _query = {}) {
       input.onkeydown = (e) => {
         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
       };
-      return { node, setLive: () => {} };
+      return { node, setLive: (live) => { stopBtn.hidden = !live; if (live) stopBtn.disabled = false; } };
     }
   }
 
@@ -425,8 +436,8 @@ export async function render(view, slug, _query = {}) {
     box.replaceChildren();
     if (!q) return;
     // data-persist keyed by qid: this question's draft is its own — never another's.
-    const input = el("input", { type: "text", placeholder: "your answer…",
-      "data-persist": `answer-${q.qid}`, style: "flex:1" });
+    const input = el("textarea", { rows: 1, placeholder: "your answer… (Shift+Enter for a new line)",
+      "data-persist": `answer-${q.qid}`, style: "flex:1;resize:vertical" });
     const send = el("button", { class: "btn primary" }, "answer");
     const submit = async () => {
       if (!input.value.trim()) return;
@@ -438,7 +449,7 @@ export async function render(view, slug, _query = {}) {
       } catch (err) { toast(err.message, 4000, { error: true }); }
     };
     send.onclick = submit;
-    input.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+    input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } };
     box.append(el("div", { class: "panel warn mt" },
       el("div", { class: "prose" }, "❓ ", q.question || ""),
       q.default ? el("div", { class: "faint small mt" }, `↪ without an answer: ${q.default}`) : null,

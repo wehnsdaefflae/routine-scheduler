@@ -166,10 +166,14 @@ export async function render(view) {
     discard.onclick = () => { box.value = ""; forgetField(box); };
     const send = el("button", { class: "btn primary mt" }, "send to the next run");
     send.onclick = async () => {
-      if (!box.value.trim()) return;
+      const text = box.value;
+      if (!text.trim()) return;
       send.disabled = true;
-      try { await submit({ kind: "general", text: box.value }, "prompt sent"); box.value = ""; forgetField(box); }
-      catch (err) { toast(err.message, 4000, { error: true }); }
+      // Clear the draft BEFORE submit()'s reload re-mounts the box — otherwise formpersist
+      // refills the fresh (empty) box from the not-yet-forgotten draft and it looks unsent.
+      box.value = ""; forgetField(box);
+      try { await submit({ kind: "general", text }, "prompt sent"); }
+      catch (err) { box.value = text; toast(err.message, 4000, { error: true }); }
       finally { send.disabled = false; }
     };
     // Fires self-audit immediately; an unsent note is delivered first so it isn't lost —
@@ -177,11 +181,12 @@ export async function render(view) {
     const runNow = el("button", { class: "btn mt" }, "▶ run self-audit now");
     runNow.onclick = async () => {
       runNow.disabled = send.disabled = true;
+      const text = box.value;
       try {
-        if (box.value.trim()) {
-          await submit({ kind: "general", text: box.value }, "prompt sent");
+        if (text.trim()) {
           box.value = "";
-          forgetField(box);   // sent — the draft must not refill
+          forgetField(box);   // clear BEFORE submit()'s reload re-mounts the box (else it refills)
+          await submit({ kind: "general", text }, "prompt sent");
         }
         const r = await api(`/api/routines/${routineSlug}/run`, { method: "POST" });
         toast("self-audit started");

@@ -65,5 +65,16 @@ def test_state_graph_reads_current_phase_and_steps_fallback(tmp_path):
     assert statemap.state_graph(d)["current"] == ""
 
 
+def test_state_graph_accepts_state_key(tmp_path):
+    """Recipes that name the current-phase field 'state' (e.g. self-audit) still light up
+    the live diagram — statemap accepts 'phase' OR 'state'."""
+    d = tmp_path / "r"
+    (d / "state").mkdir(parents=True)
+    (d / "main.md").write_text(
+        "## Run flow\n1. **gather** — collect.\n2. **write** — emit.", encoding="utf-8")
+    (d / "state" / "phase.json").write_text(json.dumps({"state": "write"}), encoding="utf-8")
+    assert statemap.state_graph(d)["current"] == "write"
+
+
 def test_norm_matches_loosely():
     assert statemap.norm("Gather Evidence") == statemap.norm("gather-evidence")
