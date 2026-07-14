@@ -64,6 +64,11 @@ one is a lint error). The shipped set:
 | `global-utils` | util discovery (`util name=list`), composing utils, never silently working around a broken one |
 | `web-research` | verify external facts by searching instead of recalling; provenance discipline |
 | `ledger-discipline` | the append-only LEDGER entry every run writes, and its rotation |
+| `git-checkpoint` | undo points for external project repos (and conversation dirs) the run edits — a checkpoint commit before risky edits and one after, named in the reply; never pushes unless asked |
+
+The first four are the routine `DEFAULT_TRAITS`. `git-checkpoint` is **not** a routine default —
+the wizard preselects it for repo-editing tasks, and it is a standing default for **conversations**
+(see the Conversations guide).
 
 Improvement passes are deliberately NOT traits anymore: the bundled **routine-improver**
 meta routine sweeps every routine that doesn't set `improve: false` in its

@@ -59,7 +59,8 @@ system_model:
   `http://127.0.0.1:11434/v1`. Self-hosted vLLM: `http://host:8000/v1`.
 - `api_key` / `key_var` / `key_env_file` — credential lookup order: inline `api_key`
   first, then `key_var` in the Secrets store, then `key_var` inside `key_env_file`
-  (a `~/.credentials/*.env` style file).
+  (a `~/.credentials/*.env` style file). `key_var` defaults to `ANTHROPIC_API_KEY` — set it
+  explicitly (e.g. `OPENROUTER_API_KEY`) for an `openai` endpoint.
 - `schema_mode` — how the endpoint enforces the one-JSON-action-per-turn contract:
   - `json_schema` (default): strict `response_format` — OpenRouter, OpenAI, Ollama ≥ 0.5.
     Providers that reject it get one degraded retry without it, so it is safe to leave on.
@@ -68,9 +69,22 @@ system_model:
     small local models that otherwise drift off-schema.
   - `none`: nothing requested; the code-level validate-and-retry loop does all the work.
 - `context_chars` — the prompt size (in characters, ≈ 4 × tokens) at which the engine
-  compacts run history to disk. Set it to roughly 4 × the model's context window in
-  tokens, and lower it if a provider serves the model with a reduced window.
-- `temperature` — optional; forwarded verbatim when set.
+  compacts run history to disk. **Default `100_000`** (≈25k tokens — deliberately small).
+  Set it to roughly 4 × the model's context window in tokens, and lower it if a provider
+  serves the model with a reduced window.
+- `temperature` — optional; forwarded verbatim when set (`openai` kind only — silently
+  ignored by `anthropic` / `claude-cli`).
+- `multimodal` — whether the endpoint takes image/PDF input natively. Default is **by
+  kind**: on for `anthropic` (images + PDFs) and `claude-cli` (images), off for `openai`
+  (most OpenAI-compatible models are text-only). When off, images and PDFs a routine views
+  route to the `vision` util instead — so vision still works, just indirectly. The endpoint
+  card has a toggle; turn it on for an `openai` vision model.
+- `effort` — a reasoning-effort hint that rides the *model assignment*, not the endpoint:
+  `low | medium | high | xhigh | max`, set on the system model or a routine's model roles.
+  Each kind maps it to its own reasoning knob (`openai` collapses `xhigh` / `max` → `high`);
+  lower it if a reasoning model spends its whole output budget thinking instead of answering.
+- `credentials_env` — `claude-cli` only: the file the OAuth token is read from when it isn't
+  in Secrets (default `~/.credentials/claude-code-oauth.env`).
 - `extra_body` — merged into every request body (`openai` kind only). This is where
   aggregator routing lives, e.g. OpenRouter provider pinning:
 
@@ -81,6 +95,15 @@ system_model:
       allow_fallbacks: true
       ignore: [SomeProvider]   # e.g. providers whose constrained decoding corrupts output
   ```
+
+### Prompt caching (automatic — no config)
+
+Every adapter uses prompt caching, and it needs no setup. Cache traffic is reported separately in
+usage — `cached_in` (the ~0.1× re-reads) and `cache_write` — and kept out of the `in` count, so
+token budgets keep their meaning. It matters most for the two kinds that cost real money:
+**anthropic** sets cache breakpoints every turn, so the growing prefix re-reads at ~0.1×; and
+**claude-cli** keeps one CLI session per run and sends only the new turn each time, so prior turns
+serve from cache instead of re-charging the whole transcript against your subscription quota.
 
 ## Provider recipes
 

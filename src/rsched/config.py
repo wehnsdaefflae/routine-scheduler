@@ -149,7 +149,7 @@ class ServerConfig(_Config):
     # Conversations (interactive, Claude-Code-like sessions) are routine-shaped dirs under
     # their OWN home: schedule-less, un-versioned, one continuous run continued in place.
     conversations_home: HomePath = Field(default_factory=lambda: expand("~/conversations"))
-    # ONE git repo holding workflows/, fragments/, utils/ (+ gu, README) — the library.
+    # ONE git repo holding workflows/, traits/, permissions/, playbooks/, utils/ (+ gu, README) — the library.
     libraries_home: HomePath = Field(
         default_factory=lambda: expand("~/.local/share/routine-scheduler-libraries"))
     libraries_remote: BlankableStr = ""  # clone-from / sync-to for the library repo

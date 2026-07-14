@@ -233,10 +233,12 @@ first boot; `deploy/install.sh` for host installs.
   instruction + chosen pattern), ADAPTED to the task by `adapt.decompose` (schema carries a `traits`
   array), written to `<routine>/traits/`, referenced from main.md's Standing practices tail
   (`scaffold._with_practices_tail` guarantees it) — the routine's own files from then on, never toggled.
-  The set: `ask-policy / global-utils / web-research / ledger-discipline` + the five **after-run
-  improvement passes** `improve-bugfix / -research / -features / -ui / -efficiency` (each infers the
-  routine's intention from the run just completed and acts in its lens, asking a deferred question when
-  unsure). `DEFAULT_TRAITS` (config) is the no-LLM fallback selection.
+  The routine defaults (`DEFAULT_TRAITS`): `ask-policy / global-utils / web-research / ledger-discipline`;
+  plus `git-checkpoint` (external-repo undo points — a conversations default, wizard-preselected for
+  repo-editing routines, NOT a routine default). The five **after-run improvement passes** (bugfix /
+  research / features / UI / efficiency) are NOT traits — the **routine-improver** meta routine owns
+  them and sweeps every routine (honoring `improve: false`). `DEFAULT_TRAITS` (config) is the no-LLM
+  fallback selection.
 - **Permissions** (`library-seed/permissions/`, `# permission:` heading + machine-read `requires:` —
   {actions, utils, runs}, no confirm): CONDUCT docs of the two-layer permission set. The routine's
   enforced surface is its own routine.yaml `capabilities:` ({actions, utils, confirm, runs} —

@@ -17,9 +17,9 @@ One routine = one directory under `~/routines/<slug>`, holding:
 |---|---|---|
 | **Instruction** | `instruction.md` | The TASK — goal, deliverable, constraints, done-criteria. Nothing else: no schedule, no conduct rules. |
 | **Workflow** | `main.md` + `steps/*.md` | The control flow the agent follows, generated from a library *pattern* applied to your instruction. `main.md` is a small state machine; step detail lives in modules read on demand. |
-| **Traits** | `traits/*.md` | Reusable practices (when to ask you, research discipline, the after-run improvement passes), **adapted to the task at creation**. The routine's own files from then on — it refines them as it learns. |
-| **Permissions** | `routine.yaml` | What the routine is ALLOWED to do — writing utils, Discord, memory, reading previous runs, rewriting its own recipe, shell. Engine-enforced on every action; only you change them. |
-| **Budgets** | `routine.yaml` | Hard per-run ceilings: turns, minutes, tokens, sub-workflows, and how long a blocking question waits for you. |
+| **Traits** | `traits/*.md` | Reusable practices (when to ask you, research discipline, LEDGER hygiene, git-checkpointing a project repo), **adapted to the task at creation**. The routine's own files from then on — refined over time by the routine-improver meta routine, never self-edited mid-run. |
+| **Permissions** | `routine.yaml` | What the routine is ALLOWED to do — writing utils, Discord, memory, reading previous runs, shell. Engine-enforced on every action; only you change them (a run can never grant itself anything, nor edit its own recipe). |
+| **Budgets** | `routine.yaml` | Hard per-run ceilings: turns, minutes, tokens (unlimited by default — turns and wall-clock are the effective bound), sub-workflows and their depth, and how long a blocking question waits for you. |
 | **State & memory** | `state/`, `LEDGER.md`, `.memory/` | What carries between runs: working files, the append-only change journal, and the notebook of hard-won surprises. |
 | **Runs** | `runs/<ts>/` | Every run's full transcript, status, and result — the conversation is the audit trail. |
 
@@ -40,14 +40,17 @@ Two design rules explain most of the system's shape:
 - **Endpoints** (Settings) are model *transports*: OpenAI-compatible APIs (OpenRouter,
   vLLM, Ollama), the Anthropic API, or your Claude subscription via the Claude Code CLI.
   Each routine picks its own three models — the main loop, spawned sub-workflows, and the
-  `llm` tool-call action — or falls back to the one **system model**.
+  `llm` tool-call action — or falls back to the one **system model**. Endpoints can be
+  **multimodal**: a routine views images and PDFs natively on the Anthropic API and the
+  Claude subscription (and any endpoint you flip the toggle on for), otherwise through the
+  `vision` util.
 - **The library** (Library tab) is one git repo holding the shared building blocks:
   workflow **patterns**, **traits**, **permissions**, **utils**, and **playbooks** (reusable
   one-shot briefs for Conversations). Routines are built FROM it but never depend on it at
   run time.
 - **Decisions** (Decisions tab) is the one inbox for everything routines need from you:
   blocking questions (a run is waiting), deferred ones (the next run picks the answer up),
-  util approvals, and self-audit findings. A blocking question waits up to the routine's
+  util approvals, and self-audit decisions. A blocking question waits up to the routine's
   configured timeout, then the run **continues on the default the model stated** — the
   question stays open for a future run. Routines with the *communication* permission
   mirror blocking questions to Discord; answer on whichever surface is closer, and the

@@ -50,7 +50,7 @@ out only after your explicit go.
 |---|---|---|
 | workflow | `general-task` | scan → score → draft → gate is ordinary tool work |
 | traits | ask-policy, global-utils, web-research, ledger-discipline | the routine-improver meta routine handles improvement passes for every routine |
-| permissions | **util-authoring-autonomous**, memory, **communication** | scrapers break at 6 a.m. — autonomous *revisions* fix them without waking you (new utils still ask); communication mirrors the send-gate to Discord |
+| permissions + capabilities | **util-authoring** — approval *new utils only*, memory, **communication** | scrapers break at 6 a.m. — the `creations` approval level auto-applies *revisions* without waking you (new utils still ask); communication mirrors the send-gate to Discord |
 | budgets | 60 turns · 45 min · defaults; **ask_timeout_min 240** | a send-gate that waits longer than half a day is stale anyway |
 | schedule | weekdays 06:30 | the shortlist is ready with your coffee |
 
@@ -103,7 +103,7 @@ submitted only after your sign-off.
 |---|---|---|
 | workflow | `general-task` (or generate a pipeline pattern once the library has traffic) | |
 | traits | ask-policy, global-utils, web-research, ledger-discipline | source tuning and pipeline growth come from the routine-improver's research/features lenses |
-| permissions | util-authoring, memory, **run-history-full**, communication | **full run history** is the point: "did we already see this program in March?", "what did the run that submitted X actually do?" — longitudinal questions the LEDGER alone can't answer |
+| permissions + capabilities | util-authoring, memory, **run-history** — depth *all*, communication | **full run history** is the point: "did we already see this program in March?", "what did the run that submitted X actually do?" — longitudinal questions the LEDGER alone can't answer |
 | budgets | **80 turns · 60 min** · ask_timeout_min 480 | a weekly run may verify dozens of pages; give it room |
 | schedule | Mondays 07:00 | deadlines are usually weekday-anchored |
 
@@ -120,8 +120,8 @@ submitted only after your sign-off.
    attachments via `xlsx-pdf` / `pdf-stamp` where forms are involved) → pangram pass →
    **sign-off gate** (blocking, default `hold`, mirrored to Discord) → submit → monitor
    the inbox for the funder's reply.
-5. Cross-run statistics from `run-history-full`: submissions per month, tier→outcome
-   rates — into `state/stats.md`. LEDGER, finish.
+5. Cross-run statistics from the full run history (`run-history` at depth `all`): submissions
+   per month, tier→outcome rates — into `state/stats.md`. LEDGER, finish.
 
 **Where you come in:** tier-A programs arrive as deferred "apply?" questions; each
 submission is one blocking sign-off. Expect ~10 quiet minutes a week.
@@ -236,8 +236,8 @@ re-proposing what you already declined.
   *rejections* (in LEDGER/state) so nothing is re-proposed. Cheap and transformative.
 - **Sub-workflows per source, not one mega-loop.** Parallel children with disjoint outputs
   (Freelance radar step 2) keep the main conversation short and the failures isolated.
-- **Repair, don't route around.** A broken util fixed under `util-authoring-autonomous`
-  is fixed for every routine. A silent workaround breaks everyone tomorrow.
+- **Repair, don't route around.** A broken util fixed under `util-authoring` (revisions
+  auto-approved) is fixed for every routine. A silent workaround breaks everyone tomorrow.
 - **Give history only where history is the point.** Only Grants radar carries
-  `run-history-full`; the others get by on the last summary + LEDGER — smaller prompts,
-  fewer places to wander.
+  `run-history` at full depth (`all`); the others get by on the last summary + LEDGER —
+  smaller prompts, fewer places to wander.
