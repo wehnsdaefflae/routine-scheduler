@@ -23,11 +23,12 @@ class Budgets:
     at every turn boundary; children get half the parent's remainder."""
 
     max_turns: int
-    max_wall_clock_min: int
-    max_total_tokens: int    # -1 = unlimited (the default): turns + wall clock bound the run
+    max_wall_clock_min: int   # -1 = unlimited: lifts the wall-clock ceiling (turns still bound)
+    max_total_tokens: int     # -1 = unlimited (the default): turns + wall clock bound the run
     max_subruns: int
     max_subrun_depth: int
     ask_timeout_min: int
+    max_cost: int = -1        # -1 = unlimited: whole-dollar ceiling on real provider $ spend
 
     @classmethod
     def from_config(cls, budgets: dict) -> "Budgets":
@@ -125,10 +126,12 @@ class RunContext:
         b = self.budgets
         if self.turn - self.budget_base_turn >= b.max_turns:
             return f"turn budget exhausted ({b.max_turns})"
-        if self.elapsed_s() > b.max_wall_clock_min * 60:
+        if b.max_wall_clock_min >= 0 and self.elapsed_s() > b.max_wall_clock_min * 60:
             return f"wall-clock budget exhausted ({b.max_wall_clock_min} min)"
         if b.max_total_tokens >= 0 and self.usage["in"] + self.usage["out"] >= b.max_total_tokens:
             return f"token budget exhausted ({b.max_total_tokens})"
+        if b.max_cost >= 0 and self.usage.get("cost", 0.0) >= b.max_cost:
+            return f"cost budget exhausted (${b.max_cost})"
         return None
 
     def budget_warning(self) -> str | None:
@@ -137,11 +140,13 @@ class RunContext:
         b = self.budgets
         if self.turn - self.budget_base_turn >= 0.85 * b.max_turns:
             return f"~{b.max_turns - (self.turn - self.budget_base_turn)} turns left"
-        if self.elapsed_s() > 0.85 * b.max_wall_clock_min * 60:
+        if b.max_wall_clock_min >= 0 and self.elapsed_s() > 0.85 * b.max_wall_clock_min * 60:
             return f"~{max(0, int(b.max_wall_clock_min - self.elapsed_s() / 60))} minutes left"
         spent = self.usage["in"] + self.usage["out"]
         if b.max_total_tokens >= 0 and spent >= 0.85 * b.max_total_tokens:
             return f"~{b.max_total_tokens - spent} tokens left"
+        if b.max_cost >= 0 and self.usage.get("cost", 0.0) >= 0.85 * b.max_cost:
+            return f"~${max(0, round(b.max_cost - self.usage.get('cost', 0.0), 2))} of budget left"
         return None
 
     def tokens_remaining(self) -> int | None:
@@ -151,16 +156,19 @@ class RunContext:
         return max(0, self.budgets.max_total_tokens - self.usage["in"] - self.usage["out"])
 
     def child_budgets(self) -> Budgets:
-        """Remaining budgets ÷ 2 for a subrun (an unlimited token budget stays unlimited)."""
+        """Remaining budgets ÷ 2 for a subrun (an unlimited time/token/cost budget stays unlimited)."""
         b = self.budgets
         return Budgets(
             max_turns=max(1, (b.max_turns - self.turn) // 2),
-            max_wall_clock_min=max(1, int((b.max_wall_clock_min - self.elapsed_s() / 60) // 2)),
+            max_wall_clock_min=(-1 if b.max_wall_clock_min < 0 else
+                                max(1, int((b.max_wall_clock_min - self.elapsed_s() / 60) // 2))),
             max_total_tokens=(-1 if b.max_total_tokens < 0 else
                               max(1000, (b.max_total_tokens - self.usage["in"] - self.usage["out"]) // 2)),
             max_subruns=b.max_subruns,
             max_subrun_depth=b.max_subrun_depth,
             ask_timeout_min=b.ask_timeout_min,
+            max_cost=(-1 if b.max_cost < 0 else
+                      max(1, (b.max_cost - int(self.usage.get("cost", 0.0))) // 2)),
         )
 
     def write_status(self, state: str | None = None, question: dict | None = "\0") -> None:
@@ -190,6 +198,7 @@ class RunContext:
             "schema_forcefails": self.schema_forcefails,
             "budgets": {
                 "turns_left": max(0, b.max_turns - (self.turn - self.budget_base_turn)),
-                "wall_clock_left_s": max(0, int(b.max_wall_clock_min * 60 - self.elapsed_s())),
+                "wall_clock_left_s": (None if b.max_wall_clock_min < 0 else
+                                      max(0, int(b.max_wall_clock_min * 60 - self.elapsed_s()))),
             },
         })

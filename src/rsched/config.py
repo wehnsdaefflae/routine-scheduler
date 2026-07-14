@@ -21,10 +21,14 @@ from .paths import config_file, expand
 DEFAULT_BUDGETS = {
     "max_turns": 60,
     "max_wall_clock_min": 45,
-    # -1 = unlimited (the default): turns + wall clock bound a run; every finite cap we
-    # tried (500k, then 1.5M) eventually cut off legitimate work. Set a positive number
-    # to bound spend on a specific routine.
+    # -1 = unlimited: for max_total_tokens this is the default (every finite cap we tried,
+    # 500k then 1.5M, eventually cut off legitimate work). max_wall_clock_min and max_cost
+    # also honor -1 = unlimited, so an operator can lift the time, token, and dollar ceilings
+    # independently and let max_turns be the sole backstop. Set a positive number to bound
+    # spend on a specific routine. max_cost is a whole-dollar ceiling on real provider spend
+    # (usage["cost"], reported today only by metered endpoints like OpenRouter); -1 = no cap.
     "max_total_tokens": -1,
+    "max_cost": -1,
     "max_subruns": 8,
     "max_subrun_depth": 2,
     "ask_timeout_min": 5,

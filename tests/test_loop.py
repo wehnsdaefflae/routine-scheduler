@@ -1124,6 +1124,43 @@ def test_unlimited_token_budget_never_trips():
     assert ctx.tokens_remaining() == 0
 
 
+def test_unlimited_time_and_cost_budgets_honor_minus_one():
+    """max_wall_clock_min = -1 and max_cost = -1 mean unlimited (mirroring max_total_tokens):
+    no violation/warning however far past a finite ceiling, children inherit unlimited, and
+    finite time/cost caps still trip exactly as before."""
+    import time as _t
+    from rsched.engine.run_context import Budgets, RunContext
+
+    ctx = RunContext.__new__(RunContext)
+    ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=-1, max_total_tokens=-1,
+                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
+    ctx.usage = {"in": 0, "out": 0, "cost": 999.0}
+    ctx.turn = 1
+    ctx.budget_base_turn = 0
+    ctx._started_mono = _t.monotonic() - 10_000    # ~2.7h elapsed
+    ctx._suspended_s = 0.0
+    # unlimited time + cost: nothing trips despite huge elapsed and $999 spend
+    assert ctx.budget_violation() is None
+    assert ctx.budget_warning() is None
+    child = ctx.child_budgets()
+    assert child.max_wall_clock_min == -1          # unlimited stays unlimited (not 1 min)
+    assert child.max_cost == -1
+
+    # a finite wall-clock still trips once exceeded
+    ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=60, max_total_tokens=-1,
+                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
+    assert "wall-clock budget exhausted" in ctx.budget_violation()
+
+    # a finite cost cap still trips once real $ spend reaches it
+    ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=-1, max_total_tokens=-1,
+                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=5)
+    ctx._started_mono = _t.monotonic()             # reset elapsed so only cost can trip
+    assert "cost budget exhausted" in ctx.budget_violation()
+    ctx.usage = {"in": 0, "out": 0, "cost": 4.5}   # under the cap but past 85%
+    assert ctx.budget_violation() is None
+    assert "of budget left" in (ctx.budget_warning() or "")
+
+
 def test_usage_accounting_cache_keys_and_resume_base():
     """add_usage folds cache traffic in (kept out of "in" so token budgets keep meaning);
     usage_total() adds earlier legs' spend — budgets stay on the fresh window."""

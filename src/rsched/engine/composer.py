@@ -109,8 +109,10 @@ believe are needed. What you are ALLOWED to do (util authoring, reserved channel
 previous runs) is a separate matter: CAPABILITIES, set only by the user and enforced by the \
 engine on every action — the held permissions' notes below state the conduct for each.
 
-Budgets for this run: {b.max_turns} turns, {b.max_wall_clock_min} minutes, \
-{b.max_total_tokens if b.max_total_tokens >= 0 else "unlimited"} total tokens, at most \
+Budgets for this run: {b.max_turns} turns, \
+{b.max_wall_clock_min if b.max_wall_clock_min >= 0 else "unlimited"} minutes, \
+{b.max_total_tokens if b.max_total_tokens >= 0 else "unlimited"} total tokens, \
+{f"a ${b.max_cost} cost cap, " if b.max_cost >= 0 else ""}at most \
 {b.max_subruns} subruns (depth ≤ {b.max_subrun_depth}). Spend them on the \
 workflow's priorities and `finish` DELIBERATELY before they expire — a finish you wrote beats a \
 forced one.

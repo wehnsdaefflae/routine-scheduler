@@ -522,11 +522,11 @@ export async function render(view, slug, _query = {}) {
         `⚙ capabilities & budgets${detail.workdir ? ` · project: ${detail.workdir}` : ""}`));
     const capBody = el("div", { class: "conv-opts" });
     const b = detail.budgets || {};
-    const numIn = (v) => el("input", { type: "number", min: "1", value: v,
+    const numIn = (v, min = "1") => el("input", { type: "number", min, value: v,
       style: "width:90px;font-size:11.5px;padding:3px 6px" });
     const turnsIn = numIn(b.max_turns ?? 10);
-    const minsIn = numIn(b.max_wall_clock_min ?? 30);
-    const tokIn = numIn(b.max_total_tokens ?? 400000);
+    const minsIn = numIn(b.max_wall_clock_min ?? 30, "-1");    // -1 = unlimited time
+    const tokIn = numIn(b.max_total_tokens ?? 400000, "-1");   // -1 = unlimited tokens
     const saveBudgets = el("button", { class: "btn small" }, "save budgets");
     saveBudgets.onclick = async () => {
       try {
@@ -539,8 +539,8 @@ export async function render(view, slug, _query = {}) {
     const budgetField = (label, input) => el("label", { style: "flex-direction:column" },
       el("span", { class: "faint" }, label), input);
     capBody.append(el("div", { class: "row", style: "gap:12px;flex-wrap:wrap;align-items:flex-end" },
-      budgetField("turns / reply", turnsIn), budgetField("minutes / reply", minsIn),
-      budgetField("tokens / reply", tokIn), saveBudgets));
+      budgetField("turns / reply", turnsIn), budgetField("minutes / reply (-1=∞)", minsIn),
+      budgetField("tokens / reply (-1=∞)", tokIn), saveBudgets));
     capBody.append(permissionsPanel(detail.permissions, detail.capabilities, {
       disableRuns: "a conversation is one continuous run — previous-run depth is routine-only",
       saveLabel: "save permissions",

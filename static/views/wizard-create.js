@@ -126,10 +126,12 @@ export async function stageSuggest(ctx, wid) {
         "on the routine page (only by you)."),
       ...(lib.permissions || []).map((p) => pickerRow(permBoxes, p, presetPerms))));
 
+  const UNLIMITED_BUDGETS = ["max_total_tokens", "max_wall_clock_min", "max_cost"];  // -1 = unlimited
   const BUDGET_FIELDS = [
     ["max_turns", "turns per run"],
-    ["max_wall_clock_min", "minutes per run"],
-    ["max_total_tokens", "tokens per run"],
+    ["max_wall_clock_min", "minutes per run (-1 = unlimited)"],
+    ["max_total_tokens", "tokens per run (-1 = unlimited)"],
+    ["max_cost", "cost cap $ per run (-1 = unlimited)"],
     ["max_subruns", "sub-workflows per run"],
     ["max_subrun_depth", "sub-workflow depth"],
     ["ask_timeout_min", "blocking-question timeout (min)"],
@@ -143,7 +145,7 @@ export async function stageSuggest(ctx, wid) {
       el("div", { class: "row", style: "flex-wrap:wrap;gap:10px" },
         ...BUDGET_FIELDS.map(([key, label]) => {
           const input = el("input", { type: "number", style: "width:110px",
-            min: key === "max_total_tokens" ? "-1" : "1",   // -1 = unlimited tokens
+            min: UNLIMITED_BUDGETS.includes(key) ? "-1" : "1",   // -1 = unlimited (tokens/time/cost)
             value: String((lib.default_budgets || {})[key] ?? "") });
           budgetInputs[key] = input;
           return el("label", { class: "field", style: "min-width:170px" },
@@ -170,7 +172,7 @@ export async function stageSuggest(ctx, wid) {
       const budgets = {};
       for (const [key, input] of Object.entries(budgetInputs)) {
         const v = parseInt(input.value, 10);
-        if (Number.isFinite(v) && (v >= 1 || (key === "max_total_tokens" && v === -1)))
+        if (Number.isFinite(v) && (v >= 1 || (UNLIMITED_BUDGETS.includes(key) && v === -1)))
           budgets[key] = v;
       }
       const r = await api(`/api/wizard/${encodeURIComponent(wid)}/finalize`, { method: "POST", body: {
