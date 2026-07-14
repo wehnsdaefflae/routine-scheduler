@@ -235,6 +235,7 @@ export async function render(view, slug, query = {}) {
   // e.g. by the routine-improver, leaving the seed stale).
   const seed = d.seed || { tracked: false, instruction: false, steps: false };
   const canRecompile = !!d.recompilable;
+  let recompileCleanup = null;   // stops the in-flight recompile poll + bus listener on teardown
   const recompileStatus = el("span", { class: "muted small", style: "margin-left:8px" });
   const recompileBtn = el("button", {
     class: "btn primary", disabled: !canRecompile || !llmReady,
@@ -242,7 +243,7 @@ export async function render(view, slug, query = {}) {
       : !canRecompile ? "its origin workflow isn't in this library — nothing to recompile from"
         : !llmReady ? "connect an LLM endpoint in Settings first" : "",
   }, "⟳ recompile into steps");
-  recompileBtn.onclick = () => startRecompile(recompileBtn, recompileStatus);
+  recompileBtn.onclick = startRecompile;
 
   const driftNotes = el("div", {});
   if (seed.instruction) {
@@ -272,25 +273,24 @@ export async function render(view, slug, query = {}) {
   view.append(docEditor("Seed instruction (the task)", d.instruction, async (content) => {
     await api(`/api/routines/${slug}/instruction`, { method: "PUT", body: { content } });
   }));
+  // A recompile runs on the SERVER (background) — leaving the page never aborts it. If one is
+  // already in flight when the page loads (started here, then navigated away and back), resume the
+  // progress indicator instead of showing an idle button.
+  api(`/api/routines/${slug}/recompile`).then((r) => {
+    if (r?.state === "building") { recompileBtn.disabled = true; watchRecompile(); }
+  }).catch(() => {});
 
-  async function startRecompile(btn, statusEl) {
-    const warn = seed.steps
-      ? "The step modules have changed since they were compiled from this seed — recompiling "
-        + "regenerates them from the current seed and OVERWRITES those changes (including any by "
-        + "the routine-improver).\n\nContinue?"
-      : "Recompiling regenerates main.md and the step modules from the current seed instruction, "
-        + "replacing the current steps.\n\nContinue?";
-    if (!confirm(warn)) return;
-    btn.disabled = true;
-    try { await api(`/api/routines/${slug}/recompile`, { method: "POST" }); }
-    catch (err) { toast(err.message, 5000, { error: true }); btn.disabled = false; return; }
-    statusEl.replaceChildren(busy("recompiling — decomposing the workflow into steps (a minute or two)…"));
+  function watchRecompile() {
+    // Poll + live bus hand-off until the background recompile finishes. The stop fn is parked in
+    // recompileCleanup so render's teardown (navigation) ends the WATCH — never the server run.
+    recompileCleanup?.();
+    recompileStatus.replaceChildren(busy("recompiling — decomposing the workflow into steps (a minute or two)…"));
     let done = false;
+    const stop = () => { window.removeEventListener("rsched-bus", onBus); clearInterval(poll); recompileCleanup = null; };
     const finish = (ok, msg) => {
-      if (done) return; done = true;
-      window.removeEventListener("rsched-bus", onBus); clearInterval(poll);
+      if (done) return; done = true; stop();
       if (ok) { toast("recompiled from the seed"); location.reload(); }
-      else { toast(msg || "recompile failed", 7000, { error: true }); btn.disabled = false; statusEl.replaceChildren(); }
+      else { toast(msg || "recompile failed", 7000, { error: true }); recompileBtn.disabled = false; recompileStatus.replaceChildren(); }
     };
     const onBus = (e) => {
       const ev = e.detail || {}; if (ev.slug !== slug) return;
@@ -299,7 +299,7 @@ export async function render(view, slug, query = {}) {
     };
     window.addEventListener("rsched-bus", onBus);   // instant hand-off when the recompile finishes
     const started = Date.now();
-    const poll = setInterval(async () => {          // robust fallback (survives a missed event / reload)
+    const poll = setInterval(async () => {          // robust fallback (survives a missed event)
       if (done) return;
       let s;
       try { s = await api(`/api/routines/${slug}/recompile`); } catch { return; }
@@ -307,6 +307,21 @@ export async function render(view, slug, query = {}) {
       else if (s.state === "error" || s.state === "stale") finish(false, s.error);
       else if (Date.now() - started > 300000) finish(false, "the recompile is taking unusually long — it may be stuck");
     }, 3000);
+    recompileCleanup = () => { if (!done) stop(); };   // stop watching; the server recompile runs on
+  }
+
+  async function startRecompile() {
+    const warn = seed.steps
+      ? "The step modules have changed since they were compiled from this seed — recompiling "
+        + "regenerates them from the current seed and OVERWRITES those changes (including any by "
+        + "the routine-improver).\n\nContinue?"
+      : "Recompiling regenerates main.md and the step modules from the current seed instruction, "
+        + "replacing the current steps.\n\nContinue?";
+    if (!confirm(warn)) return;
+    recompileBtn.disabled = true;
+    try { await api(`/api/routines/${slug}/recompile`, { method: "POST" }); }
+    catch (err) { toast(err.message, 5000, { error: true }); recompileBtn.disabled = false; return; }
+    watchRecompile();
   }
 
   const stepFiles = (d.files?.steps) || [];
@@ -401,4 +416,8 @@ export async function render(view, slug, query = {}) {
         el("thead", {}, el("tr", {}, ["when", "state", "turns", "duration", "tokens", "summary"].map((h) => el("th", {}, h)))),
         el("tbody", {}, rows.length ? rows
           : el("tr", {}, el("td", { class: "muted", colspan: 6 }, "no runs yet — fire one with ▶ run now")))))));
+
+  // Teardown (called by the router on navigation): stop watching an in-flight recompile. The
+  // recompile itself keeps running on the server — leaving the page never aborts it.
+  return () => { recompileCleanup?.(); };
 }
