@@ -10,3 +10,9 @@
   "summary": "Follow-up user work order (fix F39 + D8). F39: POST /api/questions/{qid}/answer is now async and, after filing the answer, resumes a FINISHED conversation in place (runner.resume, as message() does) so the engine's collect_deferred_answers actually consumes the answer — a live reply/scheduled routine is untouched. D8 (user framing: 'one is the permission, the other the means of asking for it'): added grants.floor_capabilities and applied raise+floor in resolve_permission_layers so a gated action / reserved util / run access survives ONLY as the means of a HELD conduct permission (confirm level + run depth kept as user policy); permissions.js gains the inverse cascade (enabling a capability holds its covering permission) so the panel can't express a contradiction. +3 tests, updated 1 (the cascade test now asserts the floor). pytest 480 passed / 3 skipped, rsched-lint green.",
   "run_id": "self-audit:20260714-194518"
 }
+{
+  "ts": "2026-07-14T20:40:00+00:00",
+  "commit": "ebdda2363497be7e4fbaa4af3df5e59d2349c7aa",
+  "summary": "Versioning hygiene (user work order). Bumped __version__ 0.15.0 -> 0.16.0 for the changes shipped since 0.15.0 (Mark's max_cost/wall-clock commit 4bf63bd5bd + this run's 56d620dbe3 and c6ca03ffa8) that had landed without a version bump. Added a comprehensive root CHANGELOG.md (Keep a Changelog + SemVer): detailed sections for 0.16.0 and the tagged releases 0.15.0/0.14.1/0.14.0/0.13.1, plus a thematic reconstruction of pre-0.13.1 development from git history. The version comment already mandated 'bump the minor on every user-facing revision' — the gate that was being skipped. pytest 480 passed / 3 skipped (status test reads __version__ dynamically); rsched-lint green.",
+  "run_id": "self-audit:20260714-194518"
+}

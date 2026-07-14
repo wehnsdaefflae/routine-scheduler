@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "run_id": "self-audit:20260714-194518",
-  "generated": "2026-07-14T20:20:00+00:00",
+  "generated": "2026-07-14T20:40:00+00:00",
   "since": {
     "commit": "56d620dbe3",
     "window": "Follow-up work order on the same run: fix F39 + D8. Committed c6ca03ffa8 on top of this run's earlier 56d620dbe3; pytest 480 passed / 3 skipped (+3 tests, 1 updated); rsched-lint green; journal still unavailable."
@@ -84,6 +84,18 @@
         "src/rsched/web/api_questions.py answer() + _resume_terminal_conversation",
         "src/rsched/engine/inbox.py collect_deferred_answers (drains answer-*.json at run start)",
         "commit c6ca03ffa8; pytest 480 passed"
+      ]
+    },
+    {
+      "id": "F44",
+      "severity": "systemic",
+      "title": "Version never bumped on code changes; no root CHANGELOG.md — FIXED this run (user report)",
+      "detail": "User report: 'why don't you increment the version number when you change the code? also we need a comprehensive CHANGELOG.md in project root.' Root cause: __version__ in src/rsched/__init__.py is the single source of truth and its own comment mandates 'bump the minor on every user-facing revision', but the last three code-shipping commits landed without a bump — Mark's 4bf63bd5bd (max_cost/wall-clock) and this run's 56d620dbe3 and c6ca03ffa8 — leaving 0.15.0 stale, and no human-readable changelog existed (only the audit's machine-oriented audit/changelog.jsonl). The version-in-subject convention only began at 0.13.1 (0.13.1/0.14.0/0.14.1/0.15.0 across 2026-07-14); earlier development was unversioned. FIX (commit ebdda2363497): bumped __version__ 0.15.0 -> 0.16.0 covering the unreleased changes, and added a comprehensive root CHANGELOG.md (Keep a Changelog + SemVer) with detailed 0.16.0 + tagged-release sections and a thematic reconstruction of pre-0.13.1 history. FOLLOW-UP (recipe, owner/improver scope): self-audit's act-apply-fixes step should require, on every scheduler commit that ships a user-facing change, a __version__ bump + a CHANGELOG.md entry as part of the same test-gated commit — filed as a deferred ask_user this run since steps/ is read-only to the run.",
+      "evidence": [
+        "user follow-up note (versioning + CHANGELOG request)",
+        "src/rsched/__init__.py __version__ + its 'bump the minor' comment",
+        "git log: version tags in subjects only from 0.13.1 onward; 3 unbumped commits since 0.15.0",
+        "commit ebdda2363497; CHANGELOG.md added; pytest 480 passed / 3 skipped"
       ]
     },
     {
