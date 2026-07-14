@@ -118,6 +118,7 @@ def test_openai_schema_mode_degradation(monkeypatch):
 
 
 def test_openai_key_from_env_file(monkeypatch, tmp_path):
+    monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {})   # hermetic: ignore the machine's real secrets store
     keyfile = tmp_path / "openrouter.env"
     keyfile.write_text("# key\nOPENROUTER_API_KEY='sk-or-test'\n")
     ep = OpenAICompatEndpoint(EndpointConfig(
