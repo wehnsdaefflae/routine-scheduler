@@ -6,8 +6,10 @@ endpoint's configured mode:
   json_schema  → {"type":"json_schema","json_schema":{name,schema,strict}} (OpenRouter, Ollama ≥0.5, OpenAI)
   json_object  → {"type":"json_object"} (guard validates)
   none         → nothing requested; the code-level validator + retry loop does all the work
-A provider/model that rejects the requested response_format (HTTP 400) is retried once
-without it — the schema guard downstream still validates every reply.
+A provider/model that rejects the requested response_format is retried once without it —
+whether it says so with an HTTP 400 naming the field, or hides a schema-incapable backend
+behind a generic 503 (some NanoGPT community backends). The schema guard downstream still
+validates every reply.
 """
 
 from __future__ import annotations
@@ -142,6 +144,17 @@ class OpenAICompatEndpoint:
                     degraded.pop("reasoning")
                 if degraded.keys() != body.keys():
                     resp = self._post(degraded, headers, timeout)
+            elif resp.status_code == 503 and "response_format" in body:
+                # A backend that can't do schema-constrained decoding may reject
+                # `response_format` with a 503 whose body never names the field —
+                # indistinguishable by content from a real outage (NanoGPT's community model
+                # backends do exactly this). Try ONCE without it; adopt the retry only if it
+                # clears. A genuine outage still 503s and falls through to _parse's retryable
+                # 5xx path, so with_retries backs off exactly as before.
+                alt = self._post({k: v for k, v in body.items() if k != "response_format"},
+                                 headers, timeout)
+                if alt.status_code == 200:
+                    resp = alt
             return self._parse(resp)
 
         return with_retries(call)

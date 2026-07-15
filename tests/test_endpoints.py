@@ -157,6 +157,45 @@ def test_openai_response_format_degradation_on_400(monkeypatch):
     assert c.text == '{"ok":1}'
 
 
+def test_openai_response_format_degradation_on_503(monkeypatch):
+    """A backend that can't do schema-constrained decoding may reject `response_format`
+    with a 503 whose body never names the field (NanoGPT community models). The adapter
+    speculatively retries once without it and adopts the result when that clears."""
+    bodies = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        bodies.append(json)
+        if "response_format" in json:
+            return FakeResponse(status_code=503,
+                                text='{"error":{"message":"Service temporarily unavailable.",'
+                                     '"type":"service_unavailable"}}')
+        return FakeResponse(payload={"choices": [{"message": {"content": '{"ok":1}'}}],
+                                     "usage": {"prompt_tokens": 1, "completion_tokens": 1}})
+
+    monkeypatch.setattr(oai_mod.httpx, "post", fake_post)
+    c = _oai().complete(MESSAGES, model="m", schema={"type": "object"})
+    assert len(bodies) == 2 and "response_format" not in bodies[1]
+    assert c.text == '{"ok":1}'
+
+
+def test_openai_persistent_503_still_retryable(monkeypatch):
+    """A genuine outage (503 even without response_format) must not be masked by the
+    speculative degrade: it still surfaces retryable, after probing once without the schema
+    on each of the three attempts."""
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    calls = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls.append(json)
+        return FakeResponse(status_code=503, text="service_unavailable")
+
+    monkeypatch.setattr(oai_mod.httpx, "post", fake_post)
+    with pytest.raises(EndpointError) as exc:
+        _oai().complete(MESSAGES, model="m", schema={"type": "object"})
+    assert exc.value.retryable
+    assert len(calls) == 6           # 3 attempts × (with response_format, then without)
+
+
 def test_openai_reasoning_fallback_on_empty_content(monkeypatch):
     monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
         "choices": [{"message": {"content": "",

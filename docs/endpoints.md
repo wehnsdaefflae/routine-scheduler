@@ -65,7 +65,8 @@ system_model:
   explicitly (e.g. `OPENROUTER_API_KEY`) for an `openai` endpoint.
 - `schema_mode` — how the endpoint enforces the one-JSON-action-per-turn contract:
   - `json_schema` (default): strict `response_format` — OpenRouter, OpenAI, Ollama ≥ 0.5.
-    Providers that reject it get one degraded retry without it, so it is safe to leave on.
+    Providers that reject it — with a 400, or a generic 503 that hides a schema-incapable
+    backend — get one degraded retry without it, so it is safe to leave on.
   - `json_object`: weaker "any JSON" mode; the scheduler's validator does the rest.
   - `ollama_native`: Ollama's own `format` field — REAL constrained decoding; best for
     small local models that otherwise drift off-schema.
@@ -164,6 +165,11 @@ any other — abliterated models are ordinary models to the scheduler.
 
 **Nano-GPT** (`kind: openai`) is the turnkey cloud path today: it serves abliterated models
 directly (e.g. `huihui-ai/DeepSeek-R1-Distill-Llama-70B-abliterated`), so no self-hosting.
+Use **`schema_mode: json_object`**, not `json_schema`: these run on community GPU backends
+that can't do strict schema-constrained decoding and reject a `json_schema` `response_format`
+with a generic `503 service_unavailable` (which looks like an outage, not a schema problem).
+The adapter self-heals a stray 503 by retrying once without the schema, but `json_object`
+avoids that wasted probe every turn.
 
 ```yaml
 endpoints:
@@ -171,7 +177,7 @@ endpoints:
     kind: openai
     base_url: https://nano-gpt.com/api/v1
     key_var: NANO_GPT_API_KEY     # value goes in Settings → Secrets
-    schema_mode: json_schema
+    schema_mode: json_object
     context_chars: 400000
 ```
 
@@ -209,6 +215,10 @@ instead, with `referred: true` on the observation.
 - **schema VIOLATED** on test → the model can't hold the JSON contract in that mode. Try
   `ollama_native` (Ollama), `json_object`, or a stronger model. Weak models + `none`
   still work — the engine repairs and retries — but burn turns.
+- **✗ 503 service_unavailable** on test, yet the model *is* in the provider's model list →
+  its backend can't honor the requested `response_format`. Set `schema_mode: json_object`
+  (common for NanoGPT abliterated/community models). The adapter also retries once without
+  the schema on such a 503, but `json_object` avoids that extra probe every turn.
 - **Truncated / empty answers from reasoning models** → the model spent its output budget
   thinking. The engine already maps effort to the provider's reasoning knob; pick a lower
   effort for that model role, or a non-reasoning model.
