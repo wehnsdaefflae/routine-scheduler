@@ -34,3 +34,9 @@
   "summary": "Dual conversation budgets: per-reply max_turns + cumulative max_total_turns (whole conversation), both settable in the New conversation view; new max_total_turns budget enforced in budget_violation/warning against cumulative ctx.turn. AUDIT note 2.",
   "run_id": "self-audit:20260715-030003"
 }
+{
+  "ts": "2026-07-15T03:55:00+00:00",
+  "commit": "42f559133d41af1e9701f344230b5f5a7248e001",
+  "summary": "Run timestamps normalized to UTC end-to-end: ids.run_ts always UTC, registry.parse_run_ts reads run-ts as UTC (fixes possible spurious run_once catchup on UTC host), frontend toDate parses run-ts as UTC and renders in viewer-local — fixes the ~2h UI clock skew. AUDIT note 3.",
+  "run_id": "self-audit:20260715-030003"
+}

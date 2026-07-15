@@ -1,158 +1,83 @@
 {
   "schema": 1,
-  "run_id": "self-audit:20260714-194518",
-  "generated": "2026-07-14T20:52:00+00:00",
+  "run_id": "self-audit:20260715-030003",
+  "generated": "2026-07-15T04:00:00+00:00",
   "since": {
-    "commit": "56d620dbe3",
-    "window": "Follow-up work order on the same run: fix F39 + D8. Committed c6ca03ffa8 on top of this run's earlier 56d620dbe3; pytest 480 passed / 3 skipped (+3 tests, 1 updated); rsched-lint green; journal still unavailable."
+    "commit": "2dd01bc8",
+    "window": "0 new scheduler commits at run start (HEAD == anchor 2dd01bc8); driven by 3 user [AUDIT note]s about the Conversations feature. 3 commits landed this run. pytest 486 passed / 3 skipped; rsched-lint green; journal util available (server tz = UTC)."
   },
-  "summary": "User-driven run + follow-up: 8 [AUDIT notes]. SIX fixed in commit 56d620dbe3 (F42 turns -1=unlimited, F43 live-diagram phase-key tolerance, F36 change conversation settings during a reply, F37 note-field reset, F41 conversation stop button, F38 multiline answers). Then a follow-up order fixed the last two in commit c6ca03ffa8: F39 (answering a decision on a FINISHED conversation now resumes it so the answer is consumed) and D8 (gated capabilities are now BOUND to held permissions — a capability exists only as the means of a held permission; confirm level + run depth stay user policy). All decisions settled; nothing open. Restart requested (code committed twice this run). FOLLOW-UP (user order 'remove the orphans and implement the rest'): applied both filed recipe recommendations — q-152 (routine-improver/steps/study-target.md now reads each target's audit report + settled/answered decisions + open deferred questions and scans the full LEDGER for recipe-change work orders, committed in that repo) and q-144 (self-audit/steps/act-apply-fixes.md now requires a __version__ bump + CHANGELOG.md entry + (x.y.z) subject tag on every user-facing scheduler commit); removed 2 orphaned decision artifacts; recorded 2 new engine findings F45+F46.",
+  "summary": "Feature/bugfix run: acted on all three reviewer [AUDIT note]s about conversations, each a separate test-gated commit. (1) F47 conversation state diagram now lights the live reply-cycle state (0.17.0, aa6c6fe138). (2) F48 dual conversation budgets — per-reply turns + a new cumulative max_total_turns cap, both settable in the New conversation view (0.18.0, c46339c2fb). (3) F49 run timestamps normalized to UTC end-to-end, fixing the ~2h UI clock skew and a latent catchup double-fire (0.19.0, 42f559133d). Suite green throughout; restart requested. Carried open: F45/F46 (deferred-answer/subrun-question drainage) and F50 (elapsed_s tz fallback) remain unfixed candidates.",
   "findings": [
     {
-      "id": "F42",
-      "severity": "problem",
-      "title": "Turn budget ignored -1=unlimited (set -1, still stopped at 10) — FIXED this run",
-      "detail": "User report: set a conversation's turn limit to -1 but the run stopped with 'turn budget exhausted (10)'. Root cause: F33 made time+tokens+cost honor -1=unlimited but DELIBERATELY kept max_turns finite, while the UI budget editor accepts -1 for turns; with max_turns=-1, budget_violation's 'turn-base >= -1' is always true. FIX (run_context.py): guarded the turn checks with 'max_turns >= 0' in budget_violation/budget_warning; child_budgets inherits -1; status.json turns_left=None; composer prose shows 'unlimited'. Safety reversal under the user's explicit repeated order; the F41 stop button is the backstop. Test test_unlimited_turn_budget_honors_minus_one. Commit 56d620dbe3.",
-      "evidence": [
-        "user [AUDIT note] 7+6",
-        "src/rsched/engine/run_context.py budget_violation/budget_warning/child_budgets/write_status",
-        "commit 56d620dbe3; pytest green"
-      ]
-    },
-    {
-      "id": "F43",
-      "severity": "problem",
-      "title": "Live state diagram never updates during an audit run — FIXED this run",
-      "detail": "User report: running an audit, its state diagram does not update. Root cause: the engine mirrors phase from state/phase.json under key 'phase' but the self-audit recipe writes {'state': ...}, so ctx.phase stayed empty. Recipe is read-only to this run → scheduler-side tolerance: executor/loop/statemap now accept 'phase' OR 'state'. Test test_state_graph_accepts_state_key. Follow-up (improver scope): migrate self-audit steps to canonical 'phase'. Commit 56d620dbe3.",
-      "evidence": [
-        "user [AUDIT note] 8",
-        "src/rsched/engine/executor.py _track_phase, loop.py:252, statemap.py current_phase",
-        "commit 56d620dbe3"
-      ]
-    },
-    {
-      "id": "F36",
-      "severity": "problem",
-      "title": "Could not change a conversation's settings during an active reply — FIXED this run",
-      "detail": "User report: changing a running conversation's settings said 'has an active reply — try again after it'. The budget PATCH was already unguarded; the sibling permissions PUT still called _guard_not_active (the shared panel saves both). FIX (api_conversations.py): dropped the guard from the conversation permissions PUT so all settings retune anytime and land on the next reply; delete keeps its guard. Test test_settings_editable_while_active. Commit 56d620dbe3.",
-      "evidence": [
-        "user [AUDIT note] 1",
-        "src/rsched/web/api_conversations.py set_permissions",
-        "commit 56d620dbe3"
-      ]
-    },
-    {
-      "id": "F37",
-      "severity": "problem",
-      "title": "'Note for the next run' field did not reset after send — FIXED this run",
-      "detail": "User report: the note input does not reset on send. Root cause (audit.js): the box was cleared + forgetField'd AFTER submit()'s reload re-mounted a fresh empty box, which formpersist then refilled from the still-present draft. FIX: clear + forgetField BEFORE submit(); restore text on error. Same reorder in the run-now handler. Commit 56d620dbe3.",
-      "evidence": [
-        "user [AUDIT note] 2",
-        "static/views/audit.js generalSection",
-        "commit 56d620dbe3"
-      ]
-    },
-    {
-      "id": "F41",
+      "id": "F47",
       "severity": "improvement",
-      "title": "No manual stop button for a live conversation reply — FIXED this run",
-      "detail": "User report: with -1 (infinite) budgets, need a manual stop button. The run view had ⏸/✕ but the conversations view had neither. FIX (conversations.js): the conversation composer gains a live '✕ stop' button (POSTs the existing /api/runs/{id}/abort) shown while the reply is live. This is the backstop that makes F42's unlimited turns acceptable. Commit 56d620dbe3.",
+      "title": "Conversation state diagram never showed the current state — FIXED this run",
+      "detail": "The Conversations tab's 'state' rail rendered the generic routine state graph, which parses the converse workflow's single 'conversation' phase and lights the node named by state/phase.json — but a conversation is free-form and never writes phase.json, so no node ever highlighted (AUDIT note 1). Fixed: /api/conversations/{slug}/stategraph now returns a two-node reply-cycle graph (working <-> waiting for you) with the current node derived from the live run state (conversations.conversation_phase), and views/conversations.js re-lights it from setState on every SSE state event (was feeding the always-empty s.phase). Committed aa6c6fe138 (0.17.0) with endpoint + mapping tests.",
       "evidence": [
-        "user [AUDIT note] 6",
-        "src/rsched/web/api_runs.py:202 abort endpoint",
-        "commit 56d620dbe3"
+        "src/rsched/conversations.py CONVERSATION_STATES + conversation_phase()",
+        "src/rsched/web/api_conversations.py stategraph endpoint",
+        "static/views/conversations.js setState()/onState",
+        "tests/test_conversations.py test_conversation_stategraph_reflects_run_state"
       ]
     },
     {
-      "id": "F38",
+      "id": "F48",
       "severity": "improvement",
-      "title": "Could not enter newlines in answer fields (Enter always submitted) — FIXED this run",
-      "detail": "User report: want newlines in multi-line inputs without submitting. The inline decision/question ANSWER fields were single-line <input>. FIX: converted the answer fields in transcript.js, chat.js, conversations.js, run.js to <textarea rows=1> with Enter=submit / Shift+Enter=newline. CSS not browser-verified (low risk). Commit 56d620dbe3.",
+      "title": "Conversations lacked a whole-conversation budget separate from per-reply turns — FIXED this run",
+      "detail": "Conversation budgets were per-reply only (max_turns resets each reply; usage_base carries only for reporting, not enforcement). Added max_total_turns to DEFAULT_BUDGETS (-1=unlimited), enforced in budget_violation/budget_warning against the cumulative ctx.turn (restored across resume windows at loop.py:264), so a conversation can be capped as a whole while each reply keeps its own small window. Both budgets are now settable in the 'New conversation' view and POST /api/conversations accepts max_turns/max_total_turns form fields (AUDIT note 2). Committed c46339c2fb (0.18.0) with engine + endpoint tests.",
       "evidence": [
-        "user [AUDIT note] 3",
-        "static/components/{transcript,chat}.js + static/views/{conversations,run}.js",
-        "commit 56d620dbe3"
+        "src/rsched/config.py DEFAULT_BUDGETS max_total_turns",
+        "src/rsched/engine/run_context.py Budgets.max_total_turns + budget_violation/warning",
+        "src/rsched/web/api_conversations.py create_conversation form fields",
+        "static/views/conversations.js budget row",
+        "tests/test_loop.py test_conversation_total_turn_budget_caps_the_whole_conversation"
       ]
     },
     {
-      "id": "F39",
+      "id": "F49",
       "severity": "problem",
-      "title": "Answering a decision on a FINISHED conversation never resumed it — FIXED this run",
-      "detail": "User report: answered a decision in a conversation that had finished, but the Decisions representation never updated. Root cause: POST /api/questions/{qid}/answer filed inbox/answer-{qid}.json but, for a CONVERSATION (a one-shot run with no scheduled next run), nothing resumed it, so the queued answer was never drained. FIX (api_questions.py, commit c6ca03ffa8): the answer endpoint is now async; after filing the answer it calls _resume_terminal_conversation — when the matched question belongs to a conversation whose last run is terminal (and not currently active), it runner.resume(cfg, last.ts, reason='converse') exactly as api_conversations.message() does, so the engine's collect_deferred_answers drains the answer at run start. A live reply (drains at the next turn boundary) and a scheduled routine (has its own next run) are untouched. The response now carries resumed:true when it woke the conversation. Test test_answering_a_finished_conversation_resumes_it.",
+      "title": "Run timestamps skewed ~2h (UTC server vs Berlin viewer) — FIXED this run",
+      "detail": "Server runs in UTC (shell: date = UTC +0000, TZ unset); routines/viewer are Europe/Berlin. run_ts() emitted server-local (UTC here) but a bare YYYYMMDD-HHMMSS carries no offset, and consumers disagreed: registry.parse_run_ts stamped the ROUTINE tz (Berlin) and the UI's toDate parsed BROWSER-local — a ~2h skew (AUDIT note 3), and parse_run_ts's mis-stamp could make missed_fire spuriously re-fire a catchup:run_once routine on a UTC host. Fixed to UTC end-to-end: ids.run_ts always UTC, registry.parse_run_ts reads run-ts as UTC, static/util.js toDate parses run-ts as UTC then renders in the VIEWER's local time. Committed 42f559133d (0.19.0) with tests. Residual: F50.",
       "evidence": [
-        "user [AUDIT note] 4",
-        "src/rsched/web/api_questions.py answer() + _resume_terminal_conversation",
-        "src/rsched/engine/inbox.py collect_deferred_answers (drains answer-*.json at run start)",
-        "commit c6ca03ffa8; pytest 480 passed"
+        "shell: date '+%Z %z' = UTC +0000; TZ unset",
+        "src/rsched/ids.py run_ts (UTC)",
+        "src/rsched/daemon/registry.py parse_run_ts (UTC)",
+        "static/util.js toDate (Date.UTC)",
+        "tests/test_registry.py test_run_ts_is_always_utc / test_parse_run_ts_reads_utc_regardless_of_tz"
       ]
     },
     {
-      "id": "F44",
-      "severity": "systemic",
-      "title": "Version never bumped on code changes; no root CHANGELOG.md — FIXED this run (user report)",
-      "detail": "User report: 'why don't you increment the version number when you change the code? also we need a comprehensive CHANGELOG.md in project root.' Root cause: __version__ in src/rsched/__init__.py is the single source of truth and its own comment mandates 'bump the minor on every user-facing revision', but the last three code-shipping commits landed without a bump — Mark's 4bf63bd5bd (max_cost/wall-clock) and this run's 56d620dbe3 and c6ca03ffa8 — leaving 0.15.0 stale, and no human-readable changelog existed (only the audit's machine-oriented audit/changelog.jsonl). The version-in-subject convention only began at 0.13.1 (0.13.1/0.14.0/0.14.1/0.15.0 across 2026-07-14); earlier development was unversioned. FIX (commit ebdda2363497): bumped __version__ 0.15.0 -> 0.16.0 covering the unreleased changes, and added a comprehensive root CHANGELOG.md (Keep a Changelog + SemVer) with detailed 0.16.0 + tagged-release sections and a thematic reconstruction of pre-0.13.1 history. FOLLOW-UP (recipe, owner/improver scope): self-audit's act-apply-fixes step should require, on every scheduler commit that ships a user-facing change, a __version__ bump + a CHANGELOG.md entry as part of the same test-gated commit — filed as a deferred ask_user this run since steps/ is read-only to the run.",
+      "id": "F50",
+      "severity": "info",
+      "title": "elapsed_s fallback in registry.read_run still treats stamps as naive",
+      "detail": "registry.read_run's pre-elapsed_s fallback (used only for old runs lacking status.elapsed_s) computes elapsed from strptime(started) [now UTC] minus fromisoformat(updated).replace(tzinfo=None). Correct on a UTC host (both naive UTC), but on a non-UTC host the UTC run-ts vs server-local updated would skew this rarely-hit fallback. Left unfixed this run to keep the F49 diff minimal; make both stamps UTC-aware in a follow-up.",
       "evidence": [
-        "user follow-up note (versioning + CHANGELOG request)",
-        "src/rsched/__init__.py __version__ + its 'bump the minor' comment",
-        "git log: version tags in subjects only from 0.13.1 onward; 3 unbumped commits since 0.15.0",
-        "commit ebdda2363497; CHANGELOG.md added; pytest 480 passed / 3 skipped"
+        "src/rsched/daemon/registry.py:84 read_run elapsed_s fallback"
       ]
     },
     {
       "id": "F45",
       "severity": "systemic",
-      "title": "Orphaned inbox answers accumulate forever — no engine cleanup",
-      "detail": "Found while answering a user question about stale decisions: engine.inbox.collect_deferred_answers deliberately LEAVES an answer file whose qid has no matching questions/pending record ('belongs to someone else'), so a stray answer-<qid>.json can sit in a routine's inbox indefinitely. Concrete case: self-audit/inbox/answer-q-20260711-082732-35.json ('Both A and B', 07-11) had no matching pending question and survived 3+ runs; removed by hand this follow-up. Fix candidate (next run, with tests): when an answer has no pending match AND no live blocking question expecting it, move it to consumed/ (or a dead-letter) after a grace period instead of leaving it forever.",
+      "title": "collect_deferred_answers leaves unmatched inbox answers forever (carried, open)",
+      "detail": "Carried from prior run. Unmatched deferred-answer inbox files are never cleaned up or dead-lettered; two such orphans were manually removed in the 07-14 run. Candidate scheduler fix with tests: expire/dead-letter answers with no matching pending question. Not acted this run (the three AUDIT notes took priority).",
       "evidence": [
-        "src/rsched/engine/inbox.py collect_deferred_answers (unmatched answer left in place)",
-        "removed self-audit/inbox/answer-q-20260711-082732-35.json by hand this follow-up"
+        "prior run 20260714-194518 LEDGER (two orphan answer files removed)"
       ]
     },
     {
       "id": "F46",
       "severity": "problem",
-      "title": "Sub-run-filed deferred questions are never surfaced or drained",
-      "detail": "A deferred ask_user filed by a SUB-workflow writes to runs/<ts>/sub/<n>/questions/pending/<qid>.json inside a finished run's subrun tree. api_questions._all_questions scans only a routine's top-level questions/pending plus live status.json, and a finished subrun has no 'next run' to drain it — so the question is invisible and permanent. Concrete case: self-audit/runs/20260713-061959/sub/2/questions/pending/q-...-31.json (grant self-audit the shell permission) sat unseen; removed by hand this follow-up (self-audit now holds shell, so it was moot). Fix candidate (next run, with tests): surface subrun-filed pending questions on the Decisions page, or re-file a child's unresolved deferred questions to the parent routine's pending dir at subrun exit.",
+      "title": "subrun-filed deferred questions in runs/<ts>/sub/<n>/questions/pending are never surfaced/drained (carried, open)",
+      "detail": "Carried from prior run. A finished subrun has no next run, so a deferred question it filed under runs/<ts>/sub/<n>/questions/pending/ is neither shown on the Decisions page nor drained. Candidate fix: surface subrun pending questions at the parent/root level. Not acted this run.",
       "evidence": [
-        "src/rsched/web/api_questions.py _all_questions (scans only top-level questions/pending)",
-        "found self-audit/runs/20260713-061959/sub/2/questions/pending/q-20260713-061959-31.json — never surfaced",
-        "removed by hand this follow-up"
-      ]
-    },
-    {
-      "id": "F35",
-      "severity": "info",
-      "title": "Reconnect bursts on the run-events SSE — benign-by-design (watch)",
-      "detail": "Carried. Offset-based resume + sse-starlette keepalive = zero event loss; irregular intervals point to operator network transience. Revisit only on a fixed-interval reconnect signature or actual event loss.",
-      "evidence": [
-        "prior-run .ui-traces analysis",
-        "src/rsched/web/sse.py run_stream"
-      ]
-    },
-    {
-      "id": "F34",
-      "severity": "info",
-      "title": "routine-improver hit turns_left 0 — budget-pressure watch",
-      "detail": "Carried. No fresh routine-improver run reviewed this window. Watch for repeated turn-ceiling hits; consider raising its max_turns or a cost cap.",
-      "evidence": [
-        "prior-run review"
-      ]
-    },
-    {
-      "id": "F25",
-      "severity": "info",
-      "title": "Files over the ~350-line one-responsibility budget — watch (improver scope)",
-      "detail": "Carried. conversations.js keeps growing (now ~645 with the F41 stop button + F38 textareas). Structural splits are routine-improver/lens-gated (settled D5), not applied ad-hoc here.",
-      "evidence": [
-        "prior-run wc -l sweep",
-        "this run's edits to conversations.js"
+        "prior run 20260714-194518 LEDGER (orphan subrun pending question removed)"
       ]
     },
     {
       "id": "F15",
       "severity": "info",
-      "title": "Test-fixture hermetic-home isolation gap — carried, benign",
-      "detail": "Unchanged. _hermetic_home patches config.expand but not paths.expand/RSCHED_CONFIG; benign because tests dodge it with inline keys / load_secrets monkeypatches.",
+      "title": "Test-fixture hermetic-home isolation gap (carried, benign)",
+      "detail": "Unchanged. conftest _hermetic_home patches rsched.config.expand but not paths.expand/RSCHED_CONFIG; benign today because tests dodge it with inline keys/monkeypatches. Close in the fixture if more tests trip on it.",
       "evidence": [
         "tests/conftest.py _hermetic_home"
       ]
@@ -160,8 +85,8 @@
     {
       "id": "F10",
       "severity": "info",
-      "title": "status.json elapsed_s resets on resume — cosmetic, still open",
-      "detail": "Carried. Mildly skews the Stats compute-time total on resumed runs. Low value; not acted.",
+      "title": "status.json elapsed_s resets on resume (carried, cosmetic)",
+      "detail": "Carried. Mildly skews the Stats tab compute-time total on resumed runs (relevant to conversations, which resume per reply). Low value; candidate for a future improve-bugfix lens.",
       "evidence": [
         "prior-run evidence"
       ]
@@ -169,59 +94,12 @@
     {
       "id": "F9",
       "severity": "info",
-      "title": "newsletter-digest references a missing step file — routine-owned",
-      "detail": "Carried. Recipe defect outside this audit's writable root — routine-improver territory. No new occurrence.",
+      "title": "newsletter-digest references a missing step file (carried, routine-owned)",
+      "detail": "Carried. newsletter-digest recipe references steps/update-last-processed.md which does not exist; outside this audit's writable root (routine-improver territory). Report-only.",
       "evidence": [
-        "prior .ui-traces error event"
+        "prior .ui-traces error toast"
       ]
     }
   ],
-  "decisions": [
-    {
-      "id": "D8",
-      "title": "Permissions vs capabilities: two overlapping controls for the same gated action — SETTLED this run",
-      "detail": "SETTLED by the user's follow-up order: 'consider one as the permission and the other as the means of asking for it.' Applied that framing — the conduct permission (e.g. util-authoring) is THE switch; the capability (write_util action) is only the means of asking for it. Implemented grants.floor_capabilities and applied raise+floor in resolve_permission_layers (shared by routines + conversations): a gated action / reserved util / run access survives only when a HELD permission's requires names it; the confirm level and run depth remain user policy under it. So capabilities.actions can no longer hold write_util with util-authoring off. permissions.js gains the inverse cascade (enabling a capability holds its covering permission) so the panel state matches the server floor and can't express a contradiction. Enforcement still reads capabilities alone (fail-closed); the binding governs what the save path can produce. Commit c6ca03ffa8; tests test_floor_capabilities_binds_gated_capabilities_to_held_permissions, test_capabilities_floored_to_held_permissions, and the updated test_put_permissions_cascades_capabilities.",
-      "options": [
-        "A: bind capabilities to permissions — a gated capability survives only as the means of a held permission (CHOSEN + applied)",
-        "B: UI-only derivation",
-        "C: validation warning",
-        "leave as-is"
-      ],
-      "status": "settled"
-    },
-    {
-      "id": "D5",
-      "title": "Split the >350-line files / activate an improve-* lens?",
-      "detail": "SETTLED/SUPERSEDED: structural splits are routine-improver/lens gated, not applied ad-hoc by self-audit. Oversized files stay on the F25 watch-list.",
-      "options": [
-        "A: authorize splits (superseded)",
-        "B: activate an improve-* lens (superseded)",
-        "leave as-is"
-      ],
-      "status": "settled"
-    },
-    {
-      "id": "D6",
-      "title": "Conversation token budget: reset per reply or keep cumulative?",
-      "detail": "SETTLED: token -1=unlimited is the default; F33 extended -1=unlimited to time+cost; F42 extended it to turns.",
-      "options": [
-        "A: reset per reply",
-        "B: keep cumulative, raise default + fix wording",
-        "leave as-is"
-      ],
-      "status": "settled"
-    },
-    {
-      "id": "D7",
-      "title": "How to incentivize util use, generalization, and bottom-up workflow consolidation?",
-      "detail": "SETTLED: delivered by the routine-improver meta routine + util-doc standard.",
-      "options": [
-        "A: library-trait utilization pass",
-        "B: util-usage telemetry",
-        "C: both",
-        "leave as-is"
-      ],
-      "status": "settled"
-    }
-  ]
+  "decisions": []
 }
