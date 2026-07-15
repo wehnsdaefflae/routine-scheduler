@@ -15,7 +15,7 @@ and revise a document, clean a dataset, research something — rather than tend 
 |---|---|---|
 | Trigger | You, message by message | A cron schedule |
 | Lifetime | One continuous session, resumed in place each reply | One run per fire, state carried in files |
-| Instruction | Your first message (optionally seeded by a playbook) | A compiled instruction + workflow |
+| Instruction | Your first message (optionally seeded by a playbook) | A workflow, decomposed from your instruction at creation |
 | Versioned? | **No** — the directory is not a git repo; delete means gone | Yes — the engine commits each run |
 | Budget | Per **reply** (≈10 turns), fresh each message | Per **run** |
 | Where | Conversations tab (`~/conversations/<slug>`) | Dashboard (`~/routines/<slug>`) |

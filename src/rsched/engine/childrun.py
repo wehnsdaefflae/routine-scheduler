@@ -4,7 +4,7 @@ EngineLoop, shared by BOTH schedulers: parallel `spawn` (a subroutine) and seque
 pattern — differing only in how the parent schedules it and how its budget is sliced.
 
 Each child is a REAL routine on disk under `runs/<ts>/sub/<n>/` while it runs (its own main.md +
-steps/ + instruction), so its module reads resolve under its own dir and it can itself
+stages/ + instruction), so its module reads resolve under its own dir and it can itself
 decompose (the tree is recursive; `sub_counter` is shared tree-wide so every node's `n` is
 unique). Lifecycle (start/monitor/announce/kill) stays in `SubrunManager` (subruns.py), which
 owns the exit-event machinery; this module only builds a child, not its thread.

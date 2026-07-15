@@ -298,19 +298,19 @@ def test_scaffold_creates_valid_routine(tmp_path):
                  workflow_slug="general-task")
 
 
-def test_scaffold_writes_step_modules(tmp_path):
+def test_scaffold_writes_stage_modules(tmp_path):
     server = ServerConfig()
     server.routines_home = tmp_path / "routines"
     server.routines_home.mkdir()
     server.libraries_home = SEED
-    # the wizard passes extra step modules; they land in the routine's steps/ (the LLM-decomposed
-    # modules would too, but there's no generator endpoint in this test)
+    # the wizard passes extra stage modules; they land in the routine's stages/ (the LLM-decomposed
+    # stages would too, but there's no generator endpoint in this test)
     d = scaffold(server, slug="split-routine", name="Split",
-                 instruction="# Entry\n\nSteps in steps/.", workflow_slug="general-task",
-                 steps={"discover": "# Discover step\n\nHow to discover.",
-                        "compose.md": "# Compose step\n\nHow to compose."})
-    assert (d / "steps" / "discover.md").read_text().startswith("# Discover step")
-    assert (d / "steps" / "compose.md").read_text().startswith("# Compose step")
+                 instruction="# Entry\n\nStages in stages/.", workflow_slug="general-task",
+                 stages={"discover": "# Discover stage\n\nHow to discover.",
+                         "compose.md": "# Compose stage\n\nHow to compose."})
+    assert (d / "stages" / "discover.md").read_text().startswith("# Discover stage")
+    assert (d / "stages" / "compose.md").read_text().startswith("# Compose stage")
 
 
 def test_dump_markdown_roundtrips_through_engine_parse():
@@ -322,7 +322,7 @@ def test_dump_markdown_roundtrips_through_engine_parse():
 
     meta = {"name": "N", "slug": "s",
             "materialized_from": {"slug": "wf", "commit": "abc123", "version": 3},
-            "adapted": "2026-07-10", "modules": ["a-step", "b-step"],
+            "adapted": "2026-07-10", "stages": ["a-step", "b-step"],
             "tools": ["ask_user", "finish"]}
     body = "## Run flow\n1. x\n\n---\n\n## Completion criteria\n- done\n"
     text = dump_markdown(meta, body)

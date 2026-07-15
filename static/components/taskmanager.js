@@ -37,7 +37,7 @@ export function initTaskManager() {
       processes.set(ev.id, { id: ev.id, kind: ev.kind, label: ev.label, run_id: ev.run_id,
         closed: false });
       if (ev.kind === "run") expanded.delete(ev.id);   // runs collapse by default (many turns)
-      else expanded.add(ev.id);                        // wizard/recompile: show children by default
+      else expanded.add(ev.id);                        // wizard: show children by default
     } else if (ev.phase === "closed") {
       const p = processes.get(ev.id);
       if (p) { p.closed = true; if (ev.error) p.error = ev.error; }

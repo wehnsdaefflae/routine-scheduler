@@ -12,4 +12,4 @@ A committed workflow is immediately in circulation — there is no approval or p
 If no missing shape: skip.
 
 ## Next
-Write `cursor.drafts`, set `step: "record"`. Read `steps/record.md`.
+Write `cursor.drafts`, set `step: "record"`. Read `stages/record.md`.

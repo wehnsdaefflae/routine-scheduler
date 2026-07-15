@@ -2,7 +2,7 @@
 
 Records from in-process web calls (via `DaemonSink`) and from tailed engine subprocesses (via
 `daemon.llm_tailer`) both funnel through `ingest()`, which updates live state AND publishes an
-`llm_task` bus event. Frontend-initiated multi-call work (routine creation, a recompile) is an
+`llm_task` bus event. Frontend-initiated multi-call work (routine creation) is an
 `llm_process` — a parent that holds its calls as children and is removed only once it is closed
 and all its children are terminal. The overlay mirrors this live and reconciles against
 `snapshot()`.

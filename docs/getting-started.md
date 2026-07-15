@@ -15,8 +15,8 @@ One routine = one directory under `~/routines/<slug>`, holding:
 
 | piece | file(s) | what it is |
 |---|---|---|
-| **Instruction** | `instruction.md` | The TASK — goal, deliverable, constraints, done-criteria. Nothing else: no schedule, no conduct rules. |
-| **Workflow** | `main.md` + `steps/*.md` | The control flow the agent follows, generated from a library *pattern* applied to your instruction. `main.md` is a small state machine; step detail lives in modules read on demand. |
+| **Instruction** | *(consumed at creation)* | The TASK — goal, deliverable, constraints, done-criteria — you describe once. It seeds the workflow below and isn't kept as a separate file; no schedule or conduct rules live here. |
+| **Workflow** | `main.md` + `stages/*.md` | The control flow the agent follows, generated from a library *pattern* applied to your instruction — and the routine's sole source of truth once created. `main.md` is a small state machine; each stage's detail lives in a module read on demand. |
 | **Traits** | `traits/*.md` | Reusable practices (when to ask you, research discipline, LEDGER hygiene, git-checkpointing a project repo), **adapted to the task at creation**. The routine's own files from then on — refined over time by the routine-improver meta routine, never self-edited mid-run. |
 | **Permissions** | `routine.yaml` | What the routine is ALLOWED to do — writing utils, Discord, memory, reading previous runs, shell. Engine-enforced on every action; only you change them (a run can never grant itself anything, nor edit its own recipe). |
 | **Budgets** | `routine.yaml` | Hard per-run ceilings: turns, minutes, tokens (unlimited by default — turns and wall-clock are the effective bound), sub-workflows and their depth, and how long a blocking question waits for you. |
@@ -88,8 +88,10 @@ editable before anything is created:
 - slug, name, tags, and the **schedule** (or manual-only).
 
 **5 · Create.** The system decomposes the pattern against your instruction into the
-routine's own `main.md` + `steps/`, adapts each selected trait into `traits/`, writes the
-config, and git-inits the directory. Optionally the first run fires immediately.
+routine's own `main.md` + `stages/`, adapts each selected trait into `traits/`, writes the
+config, and git-inits the directory. The instruction was only the compile seed — from here
+on the stage modules are the routine's recipe, edited directly. Optionally the first run
+fires immediately.
 
 **6 · Watch a run.** The dashboard card pulses while it runs; *watch live* streams the
 conversation — every model action, every observation, in order. You can pause, abort,
@@ -99,9 +101,10 @@ inject a message mid-run, or switch the model mid-flight.
 shows it. Blocking questions pause their run and show when the run will continue without
 you; deferred ones feed the next run. Everything is answerable inline.
 
-**8 · Tune.** On the routine's page: schedule, permissions, budgets, models, the
-instruction, every step and trait file, the LEDGER, all runs with their cost/turns/tokens/
-duration. The overview sorts and filters on those run stats — card grid or detail table.
+**8 · Tune.** On the routine's page: schedule, permissions, budgets, models, the **Recipe**
+file-tree (its `main.md`, every stage and trait file), the LEDGER, all runs with their
+cost/turns/tokens/duration. The overview sorts and filters on those run stats — card grid or
+detail table.
 
 ## What routines are good at
 

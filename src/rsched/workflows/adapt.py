@@ -1,9 +1,9 @@
 """Turn a single-file library workflow into a routine.
 
 - `materialize`: the un-decomposed baseline — the whole workflow, rendered to markdown, becomes
-  the routine's main.md (provenance stamped). Used for sub-routines and as a fallback.
+  the routine's main.md. Used for sub-routines and as a fallback.
 - `decompose`: the generator LLM applies the workflow to the initial instruction and splits it
-  into the routine's entry (main.md) + one markdown MODULE per step/state of the workflow. This is
+  into the routine's entry (main.md) + one markdown STAGE per step/state of the workflow. This is
   what makes a user-created routine a set of modular files. Falls back to `materialize` on failure.
 """
 
@@ -54,7 +54,7 @@ def _routine_frontmatter(meta: dict, slug: str, provenance: dict, adapted: str) 
 
 
 def materialize(home: Path, slug: str, *, today: str | None = None) -> tuple[str, dict]:
-    """Single-file workflow → the routine's main.md content (whole workflow, provenance stamped).
+    """Single-file workflow → the routine's main.md content (whole workflow rendered to markdown).
     The Python pattern is rendered to markdown — the orchestrator acts it out."""
     from .pyworkflow import render_markdown
 
@@ -67,14 +67,14 @@ def materialize(home: Path, slug: str, *, today: str | None = None) -> tuple[str
 
 DECOMPOSE_SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["main", "modules"],
+    "required": ["main", "stages"],
     "properties": {
         "main": {"type": "string",
-                 "description": "main.md body: the entry state-machine that routes into the modules"},
-        "modules": {"type": "array", "items": {
+                 "description": "main.md body: the entry state-machine that routes into the stages"},
+        "stages": {"type": "array", "items": {
             "type": "object", "additionalProperties": False, "required": ["name", "body"],
-            "properties": {"name": {"type": "string", "description": "kebab-case module/state name"},
-                           "body": {"type": "string", "description": "the module's markdown body"}}}},
+            "properties": {"name": {"type": "string", "description": "kebab-case stage/state name"},
+                           "body": {"type": "string", "description": "the stage's markdown body"}}}},
         "traits": {"type": "array", "items": {
             "type": "object", "additionalProperties": False, "required": ["slug", "body"],
             "properties": {"slug": {"type": "string",
@@ -99,21 +99,27 @@ INSTRUCTION (the task this routine runs):
 Translate the workflow's control flow, tailored to the instruction, into markdown files a fresh
 agent will follow one action per turn:
 - "main": the routine's ENTRY (main.md body). A state machine — it tells the run to read
-  `state/phase.json`, then read + follow the current step's module with read_file. It names each
-  module as `steps/<name>.md` and keeps `## Run flow` and `## Completion criteria` sections.
-- "modules": one entry per step/state of the workflow (kebab-case `name` + markdown `body`),
-  concrete and specific to THIS task. main.md must reference every module you create by its name.
+  `state/phase.json`, then read + follow the current stage's module with read_file, and to RECORD
+  progress by writing the current stage's name into `state/phase.json` (write_file
+  {{"phase": "<stage-name>"}}) as it advances from stage to stage. It keeps a `## Run flow` section
+  and a `## Completion criteria` section. `## Run flow` is a NUMBERED list; every item LEADS with a
+  **bold** stage name that is SPECIFIC to this task (never a generic workflow or function name) and
+  MATCHES a stage filename exactly — these bold names are the live progress diagram the user watches,
+  so make them read as this task's real steps. It names each stage file as `stages/<name>.md`.
+- "stages": one entry per step/state of the workflow (kebab-case `name` + markdown `body`), concrete
+  and specific to THIS task. main.md must reference every stage you create by its name, and its
+  `## Run flow` must list them in order with matching bold names.
 
 Turn each of the pattern's steps (the `main()` control flow and the functions it calls) into
 concrete prose for THIS task — never leave Python in the output.
 
-SELF-CONTAINED — the running agent will NOT be given this instruction; it acts ONLY from main.md
-and the step modules. So INLINE every concrete detail the task needs directly into them: exact
-values, thresholds, names, formats, category lists, file paths, URLs, output shapes, completion
-criteria. Never write "as the instruction says", "per instruction.md", or otherwise defer to the
-instruction — the instruction is the SEED you are compiling from, not a document the run can read.
+SELF-CONTAINED — the running agent acts ONLY from main.md and the stage modules; the INSTRUCTION
+above will NOT exist at run time. So INLINE every concrete detail the task needs directly into them:
+exact values, thresholds, names, formats, category lists, file paths, URLs, output shapes, completion
+criteria. Never write "as the instruction says" or otherwise defer to the instruction — it is the
+SEED you are compiling from, not a document the run can read.
 
-Return ONLY the JSON object {{main, modules}}."""
+Return ONLY the JSON object {{main, stages}}."""
 
 _TRAITS_NOTE = """
 
@@ -128,15 +134,15 @@ about as long as the original or shorter.
 
 End "main" with a `## Standing practices` section: one line per trait —
 `- traits/<slug>.md — <when to read it during a run>`. Do NOT copy trait
-text into main or the modules — reference the files."""
+text into main or the stages — reference the files."""
 
 
 def decompose(server, slug: str, instruction: str, *, params: dict | None = None,
               traits: list[str] | None = None) -> dict:
     """Generator LLM: apply a single-file workflow to `instruction` and split it into the routine's
-    main.md body + step/state modules, ADAPTING the selected traits to the task along the way.
-    Returns {'main': <body>, 'modules': {name: body}, 'traits': {slug: adapted body}}. Degrades to
-    the whole workflow rendered as main.md (no modules, no adapted traits — the caller copies
+    main.md body + stage/state modules, ADAPTING the selected traits to the task along the way.
+    Returns {'main': <body>, 'stages': {name: body}, 'traits': {slug: adapted body}}. Degrades to
+    the whole workflow rendered as main.md (no stages, no adapted traits — the caller copies
     library traits verbatim) on any failure, so generation without a usable endpoint still yields
     a valid, self-contained markdown routine."""
     from .. import library_docs
@@ -164,8 +170,8 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
                                  temperature=ref.temperature, timeout=180,
                                  purpose=f"Decompose workflow → {slug}", kind="decompose")
         data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
-        modules = {m["name"]: m["body"] for m in (data.get("modules") or [])
-                   if is_slug(str(m.get("name", ""))) and str(m.get("body", "")).strip()}
+        stages = {m["name"]: m["body"] for m in (data.get("stages") or [])
+                  if is_slug(str(m.get("name", ""))) and str(m.get("body", "")).strip()}
         main = str(data.get("main") or "").strip()
         if not main:
             raise ValueError("empty main")
@@ -173,8 +179,8 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
                    if t.get("slug") in trait_bodies and str(t.get("body", "")).strip()}
         if traits is not None:
             main = strip_inactive_improve(main, traits)
-            modules = {k: strip_inactive_improve(v, traits) for k, v in modules.items()}
-        return {"main": main, "modules": modules, "traits": adapted}
+            stages = {k: strip_inactive_improve(v, traits) for k, v in stages.items()}
+        return {"main": main, "stages": stages, "traits": adapted}
     except Exception:
         from .pyworkflow import render_markdown
-        return {"main": render_markdown(raw, meta), "modules": {}, "traits": {}}
+        return {"main": render_markdown(raw, meta), "stages": {}, "traits": {}}

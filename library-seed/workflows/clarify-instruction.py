@@ -88,13 +88,13 @@ def write_result():
          "params": {"<PARAM_NAME>": "<value fixed with the user>", ...},  # the pattern's parameters
          "suggested_slug": "<kebab-case>", "suggested_name": "<short human name>",
          "description": "<one sentence, ≤120 chars, what this routine does — shown in the UI>",
-         "steps": {"<step>.md": "<detail>", ...},                        # omit or {} unless it splits
+         "stages": {"<stage>.md": "<detail>", ...},                      # omit or {} unless it splits
          "notes": "<anything the creator should know>"}
 
     Everything above (refined_instruction, workflow_choice, params, …) goes INSIDE the `content`
     string — NEVER as top-level fields of the action. This is not a `finish`; the action has no
     `status`/`summary`/`workflow` fields. The refined_instruction must make sense to a fresh agent
-    with no memory of this conversation; split into steps/<step>.md files only for genuinely
+    with no memory of this conversation; split into stages/<stage>.md files only for genuinely
     separable multi-step tasks.
 
     OWNERSHIP RULE — the instruction is the TASK, nothing else. Cross-cutting conduct is owned

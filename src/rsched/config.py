@@ -432,6 +432,4 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     # workflow.library_slug is kept only as "generated-from" provenance.
     if not (routine_dir / "main.md").exists():
         problems.append("no main.md — the routine's recipe was not materialized in")
-    if not (routine_dir / "instruction.md").exists():
-        problems.append("instruction.md missing")
     return cfg, problems

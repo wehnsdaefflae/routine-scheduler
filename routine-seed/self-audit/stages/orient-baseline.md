@@ -19,4 +19,4 @@ Establish the "since last audit" anchor and let the reviewer steer this run.
    and reviewer comments attach to the right item.
 
 ## Next
-Write `state/phase.json` = `{"state": "gather-evidence"}` and read `steps/gather-evidence.md`.
+Write `state/phase.json` = `{"state": "gather-evidence"}` and read `stages/gather-evidence.md`.

@@ -6,7 +6,7 @@ Based on the target's inferred intention, hunt for **bugs**:
   disagree between two places, stale-but-valid claims, numbers that don't reconcile — a
   "functional but bad" output is a bug, not a nitpick.
 - **Broken instructions.** Contradictions, stale guidance, or friction in the target's
-  `main.md`, a `steps/` module, or a state convention. An instruction that produced a
+  `main.md`, a `stages/` module, or a state convention. An instruction that produced a
   *wrong* action in a transcript is a defect; one that changed no action is dead weight
   (leave that for fresh-eyes).
 - **Fix the class, not the instance.** If one instruction rotted, find siblings of the same

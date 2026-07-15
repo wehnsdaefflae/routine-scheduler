@@ -65,20 +65,17 @@ memory_read(name) returns one. The state digest shows the INDEX at run start —
 before re-discovering anything; revise notes that turned out wrong instead of appending \
 contradictions. read_file / write_file are rejected on .memory/ paths.""")
     # Where the task lives differs by kind. A top-level routine's task is BAKED INTO its recipe
-    # (main.md + steps/), self-contained and authoritative; instruction.md is only the seed it was
-    # compiled from and may lag — not a runtime source of truth. A subrun's task is the INSTRUCTION
-    # section (its parent's self-contained brief).
+    # (main.md + stages/), self-contained and authoritative — the sole source of truth. A subrun's
+    # task is the INSTRUCTION section (its parent's self-contained brief).
     if ctx.depth > 0:
         ownership = ("Ownership of prose: your task is the INSTRUCTION section below — a "
                      "self-contained brief written by your parent; everything you need to do, and "
                      "why, is there. ")
     else:
         ownership = ("Ownership of prose: your recipe is self-contained — the WORKFLOW below (its "
-                     "main.md entry and the steps/<name>.md modules it routes to) fully defines "
-                     "your task: goal, deliverable, constraints, completion criteria. The "
-                     "instruction.md file in your working dir is only the SEED this recipe was "
-                     "compiled from; it can lag behind the steps, so treat the workflow and its "
-                     "steps as the source of truth and do NOT read instruction.md as the task. ")
+                     "main.md entry and the stages/<name>.md modules it routes to) fully defines "
+                     "your task: goal, deliverable, constraints, completion criteria. It is the "
+                     "single source of truth for what to do. ")
     return f"""You are the orchestrator of the routine "{r.name}" ({r.slug}), run {ctx.run_id}\
 {f" (schedule: {r.cron})" if r.cron else ""}. This conversation IS the run: every turn you reply with \
 EXACTLY one JSON object matching the action schema below — no prose outside the JSON. The "say" \
@@ -90,8 +87,8 @@ conversation, one per turn, each answered by an observation before your next rep
 summarize results that no observation here has shown; finishing with claims of unperformed work is \
 the single worst failure this system knows. The engine rejects a finish(ok) before any action ran.
 
-The workflow below is your single entry point. Detailed, step-specific instructions may live in \
-separate `steps/<name>.md` files (the state digest lists them) — read the one for the step you \
+The workflow below is your single entry point. Detailed, stage-specific instructions may live in \
+separate `stages/<name>.md` files (the state digest lists them) — read the one for the stage you \
 are on with read_file, ON DEMAND, instead of loading them all up front. Keep your context lean.
 
 Working directory: {r.dir}. All relative paths resolve there.{extra}
@@ -102,10 +99,10 @@ You never run git yourself: the engine commits your working directory automatica
 {ownership}Cross-cutting conduct (when to ask the user, after-run improvement \
 passes, util and research discipline) lives in this routine's PRACTICE MODULES under \
 traits/ — your own adapted copies, referenced at the end of the workflow below; read the \
-relevant one before the situation it governs. Your own recipe and config (main.md, steps/, \
-traits/, instruction.md, routine.yaml) are READ-ONLY to you: the routine-improver meta \
-routine refines recipes, the user owns config — file a deferred ask_user for changes you \
-believe are needed. What you are ALLOWED to do (util authoring, reserved channels, memory, \
+relevant one before the situation it governs. Your own recipe (main.md, stages/, traits/) is \
+READ-ONLY to you — the routine-improver meta routine refines recipes; routine.yaml config is \
+the user's — file a deferred ask_user for changes you believe are needed. What you are ALLOWED \
+to do (util authoring, reserved channels, memory, \
 previous runs) is a separate matter: CAPABILITIES, set only by the user and enforced by the \
 engine on every action — the held permissions' notes below state the conduct for each.
 
@@ -315,11 +312,11 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         parts.append("Background tasks you launched (detached; each reports its result back HERE "
                      "as a message when it finishes — relay any newly-finished result to the user, "
                      "and answer 'how's it going?' from this list):\n" + blines)
-    steps_dir = routine_dir / "steps"
-    if steps_dir.is_dir():
-        names = [p.name for p in sorted(steps_dir.iterdir()) if p.is_file() and p.suffix == ".md"]
+    stages_dir = routine_dir / "stages"
+    if stages_dir.is_dir():
+        names = [p.name for p in sorted(stages_dir.iterdir()) if p.is_file() and p.suffix == ".md"]
         if names:
-            parts.append("steps/ step modules (read the relevant one on demand with read_file): "
+            parts.append("stages/ stage modules (read the relevant one on demand with read_file): "
                          + ", ".join(names))
     traits_dir = routine_dir / "traits"
     if traits_dir.is_dir():
@@ -375,10 +372,9 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
         "# EXAMPLE of a valid reply\n" + json.dumps(example_action(), indent=1),
         "# WORKFLOW (the control flow you follow)\n" + workflow_body.strip(),
     ]
-    # The instruction is only the SEED a top-level routine's recipe was compiled from — NOT a
-    # runtime doc: main.md + steps/ are self-contained and authoritative, and the seed can lag
-    # them (edited without recompiling, or the steps improved past it). A SUBRUN has no decomposed
-    # steps — its instruction IS the parent's self-contained brief, so it stays in the prompt.
+    # A top-level routine's task is its self-contained recipe (main.md + stages/), so no instruction
+    # is placed in the prompt — the seed isn't even persisted. A SUBRUN has no decomposed stages —
+    # its instruction IS the parent's self-contained brief, so it stays in the prompt.
     if ctx.depth > 0:
         sections.append("# INSTRUCTION (your assigned task)\n" + instruction.strip())
     sections.append("# CAPABILITIES (what this run can actually use)\n"

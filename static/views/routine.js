@@ -1,12 +1,13 @@
-// Routine detail: schedule, permissions (user-only toggles), budgets, workflow reference,
-// editable instruction / steps / trait files, models, state, runs.
+// Routine detail: schedule, permissions (user-only toggles), budgets, models, origin, and the
+// navigable recipe (main.md + stage modules + trait modules), then state & runs.
 
 import { api } from "/static/api.js";
-import { mdInline } from "/static/md.js";
+import { md, mdInline } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { permissionsPanel } from "/static/components/permissions.js";
-import { busy, chip, el, emptyState, fmtDur, fmtTokens, skeleton, tagChip, toast, when } from "/static/util.js";
+import { recipeNav } from "/static/components/recipenav.js";
+import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, tagChip, toast, when } from "/static/util.js";
 import { forgetField } from "/static/formpersist.js";
 
 export async function render(view, slug, query = {}) {
@@ -116,23 +117,6 @@ export async function render(view, slug, query = {}) {
       }, "save schedule")),
       d.next_fire ? el("div", { class: "muted mt small" }, "next run · ", when(d.next_fire)) : null));
 
-  // -- workflow = the routine's OWN main.md (self-contained; generated from a recipe) ----------
-  // Provenance honesty: "hand-authored" when there is no origin pattern, and an explicit
-  // note when the claimed origin is no longer (or never was) in this instance's library.
-  const wf = d.workflow_ref || {};
-  view.append(el("h2", {}, "Workflow (main.md)"),
-    el("div", { class: "panel row spread" },
-      el("div", {},
-        el("span", { class: "ref-tag" }, wf.slug || "hand-authored"),
-        el("span", { class: "muted small", style: "margin-left:10px" },
-          wf.slug
-            ? (wf.in_library
-               ? "the recipe this routine was born from — main.md is the routine's OWN now, editable below"
-               : "its origin pattern is not in this library (anymore) — main.md is the routine's OWN, editable below")
-            : "written directly, not generated from a library pattern — main.md is the routine's OWN, editable below")),
-      el("button", { class: "btn small",
-        onclick: () => editFile("main.md", "main.md — the routine's workflow") }, "edit main.md")));
-
   // -- permissions: conduct docs + machine-enforced capabilities (user-only) --------
   view.append(el("h2", {}, "Permissions & capabilities"),
     el("div", { class: "panel" },
@@ -227,155 +211,98 @@ export async function render(view, slug, query = {}) {
           catch (err) { toast(err.message, 4000, { error: true }); }
         } }, "save models"))));
 
-  // -- seed (the instruction) → compiled step modules --------------------------
-  // The instruction is the SEED: the workflow is compiled against it into main.md + the step
-  // modules. Editing the seed does NOT recompile on its own; the drift notes surface the two ways
-  // seed and steps fall out of sync (seed edited without recompiling ↔ steps changed under it,
-  // e.g. by the routine-improver, leaving the seed stale).
-  const seed = d.seed || { tracked: false, instruction: false, steps: false };
-  const canRecompile = !!d.recompilable;
-  let recompileCleanup = null;   // stops the in-flight recompile poll + bus listener on teardown
-  const recompileStatus = el("span", { class: "muted small", style: "margin-left:8px" });
-  const recompileBtn = el("button", {
-    class: "btn primary", disabled: !canRecompile || !llmReady,
-    title: !wf.slug ? "hand-authored — no source workflow to recompile from"
-      : !canRecompile ? "its origin workflow isn't in this library — nothing to recompile from"
-        : !llmReady ? "connect an LLM endpoint in Settings first" : "",
-  }, "⟳ recompile into steps");
-  recompileBtn.onclick = startRecompile;
-
-  const driftNotes = el("div", {});
-  if (seed.instruction) {
-    driftNotes.append(el("div", { class: "panel warn", style: "margin-bottom:8px" },
-      "⟳ The seed has changed since the steps were last compiled — the next run still follows the ",
-      el("strong", {}, "old"), " step modules. Recompile to regenerate them from the seed."));
-  }
-  if (seed.steps) {
-    driftNotes.append(el("div", { class: "panel warn", style: "margin-bottom:8px" },
-      "✎ The step modules have changed since they were compiled from this seed (hand edits, or the ",
-      "routine-improver). The seed no longer describes what the routine actually does — ",
-      el("strong", {}, "recompiling will overwrite those step edits.")));
-  }
-  if (!seed.tracked) {
-    driftNotes.append(el("div", { class: "muted small", style: "margin-bottom:8px" },
-      "no compile baseline yet — recompile once to start tracking seed ↔ steps drift."));
-  }
-
-  view.append(el("h2", {}, "Seed"));
-  view.append(el("div", { class: "panel" },
-    el("div", { class: "muted small", style: "margin-bottom:8px" },
-      "the task in plain language — the ", el("strong", {}, "seed"), " the workflow (",
+  // -- origin: the library pattern this routine was generated from (provenance only) ----------
+  const wf = d.workflow_ref || {};
+  view.append(el("h2", {}, "Origin"),
+    el("div", { class: "panel" },
       el("span", { class: "ref-tag" }, wf.slug || "hand-authored"),
-      ") is compiled from into the step modules below. Editing it does not recompile automatically."),
-    driftNotes,
-    el("div", { class: "row" }, recompileBtn, recompileStatus)));
-  view.append(docEditor("Seed instruction (the task)", d.instruction, async (content) => {
-    await api(`/api/routines/${slug}/instruction`, { method: "PUT", body: { content } });
-  }));
-  // A recompile runs on the SERVER (background) — leaving the page never aborts it. If one is
-  // already in flight when the page loads (started here, then navigated away and back), resume the
-  // progress indicator instead of showing an idle button.
-  api(`/api/routines/${slug}/recompile`).then((r) => {
-    if (r?.state === "building") { recompileBtn.disabled = true; watchRecompile(); }
-  }).catch(() => {});
+      el("span", { class: "muted small", style: "margin-left:10px" },
+        wf.slug
+          ? (wf.in_library
+             ? "the library pattern this routine was generated from — its recipe is the routine's OWN now (edit it in the Recipe section below)"
+             : "its origin pattern is no longer in this library — the recipe is the routine's OWN (edit it in the Recipe section below)")
+          : "written directly, not generated from a library pattern")));
 
-  function watchRecompile() {
-    // Poll + live bus hand-off until the background recompile finishes. The stop fn is parked in
-    // recompileCleanup so render's teardown (navigation) ends the WATCH — never the server run.
-    recompileCleanup?.();
-    recompileStatus.replaceChildren(busy("recompiling — decomposing the workflow into steps (a minute or two)…"));
-    let done = false;
-    const stop = () => { window.removeEventListener("rsched-bus", onBus); clearInterval(poll); recompileCleanup = null; };
-    const finish = (ok, msg) => {
-      if (done) return; done = true; stop();
-      if (ok) { toast("recompiled from the seed"); location.reload(); }
-      else { toast(msg || "recompile failed", 7000, { error: true }); recompileBtn.disabled = false; recompileStatus.replaceChildren(); }
-    };
-    const onBus = (e) => {
-      const ev = e.detail || {}; if (ev.slug !== slug) return;
-      if (ev.event === "routine_recompiled") finish(true);
-      else if (ev.event === "routine_recompile_failed") finish(false, ev.error);
-    };
-    window.addEventListener("rsched-bus", onBus);   // instant hand-off when the recompile finishes
-    const started = Date.now();
-    const poll = setInterval(async () => {          // robust fallback (survives a missed event)
-      if (done) return;
-      let s;
-      try { s = await api(`/api/routines/${slug}/recompile`); } catch { return; }
-      if (s.state === "done") finish(true);
-      else if (s.state === "error" || s.state === "stale") finish(false, s.error);
-      else if (Date.now() - started > 300000) finish(false, "the recompile is taking unusually long — it may be stuck");
-    }, 3000);
-    recompileCleanup = () => { if (!done) stop(); };   // stop watching; the server recompile runs on
+  // -- recipe: the routine's OWN workflow files (main.md + stage modules + practice traits) -----
+  // A navigable tree that mirrors the markdown files; edits go through the generic /file endpoint.
+  // A run never edits its own recipe or config — the routine-improver refines recipes, the user
+  // owns config (above) — so this editor is the human's lever on the recipe.
+  view.append(el("h2", {}, "Recipe"));
+  const navCol = el("div", { class: "recipe-navcol" }, skeleton(["80%", "60%", "70%"]));
+  const editorCol = el("div", { class: "recipe-editorcol" },
+    el("div", { class: "muted small" }, "pick a file on the left to view or edit it"));
+  view.append(el("div", { class: "panel" },
+    el("div", { class: "muted small", style: "margin-bottom:10px" },
+      "the routine's OWN workflow — ", el("strong", {}, "main.md"), " routes through the ",
+      el("strong", {}, "stage"), " modules (in run-flow order); ", el("strong", {}, "traits"),
+      " are its adapted practices. Edit freely; the routine-improver may also refine these."),
+    el("div", { class: "recipe-wrap" }, navCol, editorCol)));
+
+  let recipeTree = null;
+  let currentFile = query.file || "";
+  function renderNav() {
+    if (recipeTree) navCol.replaceChildren(recipeNav(recipeTree, openFile, currentFile));
   }
-
-  async function startRecompile() {
-    const warn = seed.steps
-      ? "The step modules have changed since they were compiled from this seed — recompiling "
-        + "regenerates them from the current seed and OVERWRITES those changes (including any by "
-        + "the routine-improver).\n\nContinue?"
-      : "Recompiling regenerates main.md and the step modules from the current seed instruction, "
-        + "replacing the current steps.\n\nContinue?";
-    if (!confirm(warn)) return;
-    recompileBtn.disabled = true;
-    try { await api(`/api/routines/${slug}/recompile`, { method: "POST" }); }
-    catch (err) { toast(err.message, 5000, { error: true }); recompileBtn.disabled = false; return; }
-    watchRecompile();
+  async function refreshTree() {
+    try { recipeTree = await api(`/api/routines/${slug}/recipe`); renderNav(); } catch { /* keep last */ }
   }
-
-  const stepFiles = (d.files?.steps) || [];
-  view.append(el("h2", {}, "Step modules"),
-    el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:8px" },
-        "compiled from the seed above — edit freely; the routine-improver may also refine these. ",
-        "Changes here make the seed drift, and a recompile would overwrite them."),
-      stepFiles.length
-        ? el("div", { class: "row" }, stepFiles.map((n) =>
-            el("button", { class: "btn small", onclick: () => editFile(`steps/${n}`, n) }, n)))
-        : el("div", { class: "muted" }, "none — this recipe keeps its whole flow in main.md")));
-
-  // -- traits: the routine's own practice modules (adapted in at creation) ----------
-  const traitFiles = (d.files?.traits) || [];
-  view.append(el("h2", {}, "Practice modules (traits)"),
-    el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:8px" },
-        "reusable practices adapted into this routine at creation — its OWN files now, referenced ",
-        "from main.md and refined by the routine itself over time. Not toggles: change them like ",
-        "any other routine file."),
-      traitFiles.length
-        ? el("div", { class: "row" }, traitFiles.map((n) =>
-            el("button", { class: "btn small", onclick: () => editFile(`traits/${n}`, n) }, n)))
-        : el("div", { class: "muted" }, "none adopted at creation")));
-
-  const fileEditor = el("div", {});
-  view.append(fileEditor);
-
-  // The open file-editor is addressable as #/routine/<slug>?file=<path>, so a reload / shared link
-  // reopens the exact file. `silent` skips the URL write + scroll when we're restoring from the URL.
-  async function editFile(path, label, silent = false) {
+  async function openFile(path, heading, silent = false) {
+    currentFile = path;
+    renderNav();
     let data;
     try { data = await api(`/api/routines/${slug}/file?path=${encodeURIComponent(path)}`); }
     catch (err) { toast(err.message, 4000, { error: true }); return; }
-    fileEditor.replaceChildren();
-    const node = docEditor(label || path, data.content, async (content) => {
-      await api(`/api/routines/${slug}/file`, { method: "PUT", body: { path, content } });
-    });
-    fileEditor.append(node);
-    if (!silent) { setQuery({ file: path }); node.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    editorCol.replaceChildren(fileEditorPane(path, data.content, heading));
+    if (!silent) { setQuery({ file: path }); editorCol.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+  }
+  api(`/api/routines/${slug}/recipe`).then((t) => {
+    recipeTree = t; renderNav();
+    if (currentFile) openFile(currentFile, null, true);   // restore an open file from the URL
+  }).catch((err) => navCol.replaceChildren(el("div", { class: "muted" }, `couldn't load recipe: ${err.message}`)));
+
+  // One file's editor: an edit/preview toggle (rendered markdown via md()), save + commit through
+  // /file, and — when opened via a heading in the tree — a scroll to that heading.
+  function fileEditorPane(path, content, heading) {
+    const ta = el("textarea", { class: "code recipe-ta" }, content || "");
+    const preview = el("div", { class: "prose recipe-preview", style: "display:none" });
+    const editBtn = el("button", { class: "btn small primary" }, "edit");
+    const prevBtn = el("button", { class: "btn small" }, "preview");
+    const setMode = (previewing) => {
+      if (previewing) preview.replaceChildren(md(ta.value));
+      preview.style.display = previewing ? "" : "none";
+      ta.style.display = previewing ? "none" : "";
+      editBtn.classList.toggle("primary", !previewing);
+      prevBtn.classList.toggle("primary", previewing);
+    };
+    editBtn.onclick = () => setMode(false);
+    prevBtn.onclick = () => setMode(true);
+    const saveBtn = el("button", { class: "btn primary" }, "save");
+    saveBtn.onclick = async () => {
+      try {
+        await api(`/api/routines/${slug}/file`, { method: "PUT", body: { path, content: ta.value } });
+        toast(`${path} saved`); refreshTree();   // headings may have changed
+      } catch (err) { toast(err.message, 5000, { error: true }); }
+    };
+    if (heading) requestAnimationFrame(() => scrollToHeading(ta, heading));
+    return el("div", {},
+      el("div", { class: "row spread", style: "margin-bottom:8px" },
+        el("span", { class: "ref-tag" }, path),
+        el("div", { class: "row" }, editBtn, prevBtn)),
+      ta, preview,
+      el("div", { class: "row mt" }, saveBtn));
   }
 
-  if (query.file) editFile(query.file, query.file, true);   // restore an open editor from the URL
-
-  function docEditor(label, content, save) {
-    const ta = el("textarea", { class: "code" }, content || "");
-    const btn = el("button", { class: "btn primary" }, "save");
-    btn.onclick = async () => {
-      try { await save(ta.value); toast(`${label} saved`); }
-      catch (err) { toast(err.message, 5000, { error: true }); }
-    };
-    return el("div", { class: "panel mt" },
-      el("div", { class: "muted small", style: "margin-bottom:8px" }, label),
-      ta, el("div", { class: "row mt" }, btn));
+  function scrollToHeading(ta, heading) {
+    const lines = ta.value.split("\n");
+    const needle = heading.trim();
+    const idx = lines.findIndex((l) => /^#{1,4}\s/.test(l)
+      && l.replace(/^#{1,4}\s+/, "").replace(/`/g, "").trim() === needle);
+    if (idx < 0) return;
+    const offset = lines.slice(0, idx).reduce((n, l) => n + l.length + 1, 0);
+    ta.focus();
+    ta.setSelectionRange(offset, offset);
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 18;
+    ta.scrollTop = Math.max(0, (idx - 1) * lh);
   }
 
   // -- questions ------------------------------------------------------------------
@@ -415,8 +342,4 @@ export async function render(view, slug, query = {}) {
         el("thead", {}, el("tr", {}, ["when", "state", "turns", "duration", "tokens", "summary"].map((h) => el("th", {}, h)))),
         el("tbody", {}, rows.length ? rows
           : el("tr", {}, el("td", { class: "muted", colspan: 6 }, "no runs yet — fire one with ▶ run now")))))));
-
-  // Teardown (called by the router on navigation): stop watching an in-flight recompile. The
-  // recompile itself keeps running on the server — leaving the page never aborts it.
-  return () => { recompileCleanup?.(); };
 }

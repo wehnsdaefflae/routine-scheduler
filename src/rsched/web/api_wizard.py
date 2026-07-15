@@ -278,7 +278,7 @@ async def _build_routine(app_state, wid: str, d: Path, body: "FinalizeBody", res
     status_path = d / "state" / "finalize.json"
     try:
         cron = schedule.friendly_to_cron(body.friendly or {"frequency": "manual"})
-        steps = result.get("steps") if isinstance(result.get("steps"), dict) else None
+        stages = result.get("stages") if isinstance(result.get("stages"), dict) else None
         description = body.description.strip() or str(result.get("description") or "").strip()
         params = body.params or (result.get("params") if isinstance(result.get("params"), dict) else {})
         with process_scope(_wizard_pid(wid)):   # the decompose LLM call attaches to the create process
@@ -286,7 +286,7 @@ async def _build_routine(app_state, wid: str, d: Path, body: "FinalizeBody", res
                 scaffold, server, slug=body.slug, name=body.name,
                 instruction=body.instruction.strip() or result["refined_instruction"],
                 workflow_slug=body.workflow_slug, cron=cron,
-                tz=schedule.server_tz(), params=params, steps=steps, description=description,
+                tz=schedule.server_tz(), params=params, stages=stages, description=description,
                 models=body.models, tags=normalize_tags(body.tags) or None,
                 traits=body.traits, permissions=body.permissions, budgets=body.budgets)
     except Exception as exc:   # scaffold/decompose failure — the session stays so the user can retry

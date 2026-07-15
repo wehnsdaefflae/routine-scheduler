@@ -1,5 +1,5 @@
 """Create a routine directory: workflow REFERENCE (edited in the library), adapted trait
-copies, steps/ modules, instruction; its own git repo with the auto-push hook."""
+copies, stages/ modules; its own git repo with the auto-push hook."""
 
 from __future__ import annotations
 
@@ -53,14 +53,16 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
              permissions: list[str] | None = None,
              fs_read_roots: list[str] | None = None,
              fs_write_roots: list[str] | None = None,
-             steps: dict[str, str] | None = None, enabled: bool = True,
+             stages: dict[str, str] | None = None, enabled: bool = True,
              tags: list[str] | None = None) -> Path:
     """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
     the routine gets ADAPTED trait copies under traits/ (referenced from main.md's Standing
-    practices tail — the routine's own files from then on) + steps/ modules + instruction.
-    `permissions` (engine-enforced, user-changeable) go into routine.yaml. A one-line
-    `description` (for the UI) is always written, falling back to the name; `models` maps a role
-    to a catalog model NAME (else the role falls back to the server system_model)."""
+    practices tail — the routine's own files from then on) + stages/ modules. The clarified
+    `instruction` is the compile SEED: it is decomposed into the stages and NOT persisted (the
+    stages are the routine's sole source of truth from here on). `permissions` (engine-enforced,
+    user-changeable) go into routine.yaml. A one-line `description` (for the UI) is always
+    written, falling back to the name; `models` maps a role to a catalog model NAME (else the
+    role falls back to the server system_model)."""
     from .. import library_docs
     from ..config import DEFAULT_TRAITS
     from . import library
@@ -90,20 +92,20 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     capabilities = capabilities_for(active_perms, read_library_requires(server.permissions_home))
     commit = library.head_commit(server.library_home)
 
-    from . import provenance
     from .adapt import decompose, dump_markdown
 
-    for sub in ("state", "steps", "inbox", "traits"):
+    for sub in ("state", "stages", "inbox", "traits"):
         (routine_dir / sub).mkdir(parents=True)
     # DECOMPOSE the single-file workflow (applied to the instruction) into the routine's OWN main.md
-    # (entry state machine) + one markdown module per step/state, adapting the selected traits along
-    # the way. Self-contained: the library is never read at run time. Degrades to the whole workflow
-    # as main.md + verbatim trait copies if no endpoint is available.
+    # (entry state machine) + one markdown stage per step/state, adapting the selected traits along
+    # the way. Self-contained: the library is never read at run time, and the instruction is consumed
+    # here (not persisted). Degrades to the whole workflow as main.md + verbatim trait copies if no
+    # endpoint is available.
     result = decompose(server, workflow_slug, instruction, params=params, traits=active_traits)
     main_meta = {
         "name": name, "slug": slug,
         "materialized_from": {"slug": workflow_slug, "commit": commit, "version": meta.get("version", 0)},
-        "modules": sorted(result["modules"]),
+        "stages": sorted(result["stages"]),
         # the workflow's `tools:` allowlist rides along — the engine enforces it per turn
         **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {}),
         **({"tags": list(tags)} if tags else {}),
@@ -121,19 +123,15 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
         (routine_dir / "traits" / f"{slug_t}.md").write_text(body.rstrip() + "\n", encoding="utf-8")
         m = library_docs.DOC_RE.search(body)
         trait_summaries[slug_t] = m.group("summary").strip() if m else ""
-    for mod_name, mod_body in result["modules"].items():
-        (routine_dir / "steps" / f"{mod_name}.md").write_text(mod_body.rstrip() + "\n", encoding="utf-8")
-    # extra purpose-specific step modules from the wizard also land in steps/
-    for fname, fcontent in (steps or {}).items():
+    for stage_name, stage_body in result["stages"].items():
+        (routine_dir / "stages" / f"{stage_name}.md").write_text(stage_body.rstrip() + "\n", encoding="utf-8")
+    # extra purpose-specific stage modules from the wizard also land in stages/
+    for fname, fcontent in (stages or {}).items():
         safe = fname if fname.endswith(".md") else f"{fname}.md"
-        (routine_dir / "steps" / Path(safe).name).write_text(fcontent, encoding="utf-8")
-    (routine_dir / "instruction.md").write_text(instruction.rstrip() + "\n", encoding="utf-8")
-    # main.md last: stamp the seed ↔ steps provenance baseline over the now-complete steps/
+        (routine_dir / "stages" / Path(safe).name).write_text(fcontent, encoding="utf-8")
+    # main.md last, over the now-complete stages/ — the stages are the sole source of truth
     main_body = _with_practices_tail(result["main"], trait_summaries)
-    (routine_dir / "main.md").write_text(
-        dump_markdown(provenance.stamp(main_meta, routine_dir=routine_dir,
-                                       main_body=main_body, instruction=instruction), main_body),
-        encoding="utf-8")
+    (routine_dir / "main.md").write_text(dump_markdown(main_meta, main_body), encoding="utf-8")
     (routine_dir / "LEDGER.md").write_text(
         f"# LEDGER — {name}\n\n### seed — scaffolded from workflow '{workflow_slug}' @ {commit}\n",
         encoding="utf-8")

@@ -5,7 +5,7 @@ materialized_from:
   slug: self-audit-code
   commit: 4567d70
   version: 3
-modules:
+stages:
 - act-apply-fixes
 - analyse-findings
 - gather-evidence
@@ -32,6 +32,10 @@ You are one run of the **steady** self-audit loop. Each run is the same incremen
 baseline → evidence → findings → act (test-gated) → report → restart-if-changed. The anchor in
 `state/audit.json` makes it incremental.
 
+Your remit is the scheduler **code** and daemon **behaviour** — not individual routines' recipes.
+Improving a routine's own recipe is the routine-improver meta routine's job; a finding about a
+specific routine becomes a report entry or a decision naming it, never a fix you apply here.
+
 Fixed paths for this routine:
 - **Scheduler repo** (edit + test + commit here): `/home/mark/git-repos/routine-scheduler`
 - **Routines home** (read transcripts; restart sentinel in its `.control/`): `/home/mark/routines`
@@ -40,19 +44,19 @@ Fixed paths for this routine:
 
 ## How to run this state machine
 1. `read_file state/phase.json` → `{state, ...}`. If missing/first run, start at `orient-baseline`.
-2. `read_file` the module for the current state (`steps/<state>.md`) and follow it exactly.
+2. `read_file` the module for the current state (`stages/<state>.md`) and follow it exactly.
 3. Each module ends by telling you the next state — write it to `state/phase.json` and continue
    until `record-close` finishes the run.
 
 States, in order:
-- `orient-baseline` → `steps/orient-baseline.md`
-- `gather-evidence` → `steps/gather-evidence.md`
-- `analyse-findings` → `steps/analyse-findings.md`
-- `separate-decisions` → `steps/separate-decisions.md`
-- `act-apply-fixes` → `steps/act-apply-fixes.md`
-- `write-report` → `steps/write-report.md`
-- `request-restart` → `steps/request-restart.md`
-- `record-close` → `steps/record-close.md`
+- `orient-baseline` → `stages/orient-baseline.md`
+- `gather-evidence` → `stages/gather-evidence.md`
+- `analyse-findings` → `stages/analyse-findings.md`
+- `separate-decisions` → `stages/separate-decisions.md`
+- `act-apply-fixes` → `stages/act-apply-fixes.md`
+- `write-report` → `stages/write-report.md`
+- `request-restart` → `stages/request-restart.md`
+- `record-close` → `stages/record-close.md`
 
 ## Run flow
 1. **orient-baseline** — read `state/audit.json` anchor; read reviewer feedback in the digest FIRST.

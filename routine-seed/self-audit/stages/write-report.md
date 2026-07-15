@@ -28,4 +28,4 @@ Rewrite the report the Audit tab reads: `audit/report.json`. Exactly this shape:
    decisions (mid-run clarifications).
 
 ## Next
-Write `state/phase.json` = `{"state": "request-restart"}` and read `steps/request-restart.md`.
+Write `state/phase.json` = `{"state": "request-restart"}` and read `stages/request-restart.md`.

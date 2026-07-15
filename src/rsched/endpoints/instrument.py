@@ -28,7 +28,7 @@ from ..ids import now_iso
 from .base import DEFAULT_TIMEOUT, ChatEndpoint, Completion, Message
 
 # --- parent-process context --------------------------------------------------
-# A frontend-initiated process (routine creation, a recompile) sets this so the complete()
+# A frontend-initiated process (routine creation) sets this so the complete()
 # calls it triggers attach as children. It propagates across asyncio.to_thread (the context
 # is copied into the worker thread), so a request handler sets it once and the deep workflow
 # call picks it up without an id plumbed through every function.

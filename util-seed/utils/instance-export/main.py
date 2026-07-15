@@ -10,9 +10,9 @@ tags: sync, backup, meta
 
 Everything the instance acquires syncs to ONE repo — this util stages the instance-owned part
 into that repo's working tree (DEST, normally ~/.local/share/routine-scheduler-libraries, which
-already holds workflows/, fragments/, utils/): (a) every routine under --routines-home (default
-~/routines) into DEST/routines/<slug>/, minus transient run state (runs/, .git/, inbox/,
-questions/, status.json — routine.yaml, instruction.md, main.md, steps/, fragments/, state/,
+already holds workflows/, traits/, permissions/, playbooks/, utils/): (a) every routine under
+--routines-home (default ~/routines) into DEST/routines/<slug>/, minus transient run state (runs/,
+.git/, inbox/, questions/, status.json — routine.yaml, main.md, stages/, traits/, state/,
 LEDGER.md all stay); (b) the server config (default ~/.config/routine-scheduler/config.yaml)
 into DEST/config/config.yaml with every `token` and `api_key` value replaced by REDACTED —
 parsed as YAML, never regexed. Idempotent and rsync-like: files gone from the source are deleted
@@ -121,8 +121,8 @@ def run(dest: str, routines_home: str, config: str) -> dict:
 def selftest() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp) / "routines"
-        keep = ["routine.yaml", "instruction.md", "main.md", "LEDGER.md",
-                "steps/one.md", "fragments/f.md", "state/phase.json"]
+        keep = ["routine.yaml", "main.md", "LEDGER.md",
+                "stages/one.md", "traits/t.md", "state/phase.json"]
         drop = ["status.json", "runs/2026-01-01T00-00-00/transcript.jsonl",
                 "inbox/msg.json", "questions/pending/q.json", ".git/HEAD"]
         for rel in keep + drop:
@@ -150,9 +150,9 @@ def selftest() -> int:
         assert out_cfg["endpoints"]["local"]["api_key"] == ""         # empty stays empty
         assert out_cfg["bind"] == "127.0.0.1" and result["config"]["redacted_values"] == 2
         # idempotence + rsync-like pruning: delete at the source → gone from the mirror
-        (home / "demo" / "steps" / "one.md").unlink()
+        (home / "demo" / "stages" / "one.md").unlink()
         second = run(str(dest), str(home), str(cfg))
-        assert not (dest / "routines" / "demo" / "steps").exists()
+        assert not (dest / "routines" / "demo" / "stages").exists()
         demo = second["routines"]["exported"][0]
         assert demo["copied"] == 0 and second["routines"]["removed"] == 1, second["routines"]
     print("selftest: ok", file=sys.stderr)

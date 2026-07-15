@@ -3,7 +3,7 @@ main.md, wire the transcript, and drive one EngineLoop to completion.
 
 The daemon (via `rsched engine-run`) and `rsched run-once` enter here. A routine is
 self-contained at run time — nothing is read from the workflow library; the recipe was
-decomposed into the routine's own main.md + steps/ at creation (or here, on first run,
+decomposed into the routine's own main.md + stages/ at creation (or here, on first run,
 for routines created as workflow + instruction only).
 """
 
@@ -32,7 +32,7 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
     raw pattern. Degrades to the whole workflow rendered as main.md if no endpoint is available."""
     if (routine_dir / "main.md").exists() or not cfg.workflow_slug:
         return
-    from ..workflows import library, provenance
+    from ..workflows import library
     from ..workflows.adapt import decompose, dump_markdown
 
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8") \
@@ -48,16 +48,14 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
                  "materialized_from": {"slug": cfg.workflow_slug,
                                        "commit": library.head_commit(server.library_home),
                                        "version": meta.get("version", 0)},
-                 "modules": sorted(result["modules"])}
+                 "stages": sorted(result["stages"])}
     if meta.get("tools") is not None:
         main_meta["tools"] = meta["tools"]
-    (routine_dir / "steps").mkdir(exist_ok=True)
-    for mod_name, mod_body in result["modules"].items():
-        (routine_dir / "steps" / f"{mod_name}.md").write_text(mod_body.rstrip() + "\n", encoding="utf-8")
+    (routine_dir / "stages").mkdir(exist_ok=True)
+    for stage_name, stage_body in result["stages"].items():
+        (routine_dir / "stages" / f"{stage_name}.md").write_text(stage_body.rstrip() + "\n", encoding="utf-8")
     (routine_dir / "main.md").write_text(
-        dump_markdown(provenance.stamp(main_meta, routine_dir=routine_dir,
-                                       main_body=result["main"], instruction=instruction),
-                      result["main"]), encoding="utf-8")
+        dump_markdown(main_meta, result["main"]), encoding="utf-8")
 
 
 def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:
@@ -65,7 +63,7 @@ def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:
     Returns (main_body, provenance, allowed_tools).
 
     A routine is self-contained: nothing is read from the workflow library at run time. The model
-    reads the step modules under steps/ and the practice modules under traits/ on demand via
+    reads the stage modules under stages/ and the practice modules under traits/ on demand via
     read_file (main.md routes to them)."""
     main = routine_dir / "main.md"
     if not main.exists():
@@ -112,7 +110,11 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     if not resume_from:
         _ensure_decomposed(routine_dir, cfg, server)   # workflow + instruction → main.md, if not yet
     body, prov, allowed_tools = load_workflow(routine_dir, cfg)
-    instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8")
+    # instruction.md is only a transient compile seed (real routines don't persist it; the wizard's
+    # throwaway clarify dir does). A top-level run never puts it in the prompt — main.md + stages/
+    # are self-contained — so a missing seed is normal.
+    instruction = ((routine_dir / "instruction.md").read_text(encoding="utf-8")
+                   if (routine_dir / "instruction.md").exists() else "")
     if not resume_from:            # a resumed run keeps the original header (transcript is append-only)
         transcript.header(run_id=ctx.run_id, routine=cfg.slug, workflow=prov,
                           orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model})

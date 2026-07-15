@@ -253,6 +253,11 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
         return None
     if resolved.is_relative_to(ctx.routine.dir / "runs"):
         return "runs/ is engine-owned and read-only for the run"
+    # routine.yaml is config — never writable by ANY run (even the improver, even when the
+    # recipe is unlocked): config is the user's, changed via the UI or a deferred ask_user.
+    if resolved.name == "routine.yaml":
+        return ("routine.yaml is config (permissions, capabilities, budgets, roots) — no run "
+                "edits it, not even the routine-improver; file a deferred ask_user instead")
     if not getattr(g, "recipe_unlocked", False):
         from ..grants import RECIPE_PREFIXES
 
@@ -262,9 +267,8 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
             return None
         rel_s = str(rel)
         if any(rel_s == p.rstrip("/") or rel_s.startswith(p) for p in RECIPE_PREFIXES):
-            return ("a run never edits its own recipe or config (main.md / steps/ / traits/ "
-                    "/ instruction.md / routine.yaml) — the routine-improver refines recipes, "
-                    "the user owns config; file a deferred ask_user instead")
+            return ("a run never edits its own recipe (main.md / stages/ / traits/) — the "
+                    "routine-improver refines recipes; file a deferred ask_user instead")
     return None
 
 
@@ -276,9 +280,9 @@ def _track_phase(ctx: RunContext, path) -> None:
         return
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        # recipes name the field "phase" (canonical) or "state" — accept either
-        if isinstance(data, dict) and (data.get("phase") or data.get("state")):
-            ctx.phase = str(data.get("phase") or data.get("state"))
+        # recipes name the field "phase" (canonical), "state", or "step" — accept any
+        if isinstance(data, dict) and (data.get("phase") or data.get("state") or data.get("step")):
+            ctx.phase = str(data.get("phase") or data.get("state") or data.get("step"))
     except (OSError, ValueError):
         pass  # a malformed phase file never fails the write that produced it
 

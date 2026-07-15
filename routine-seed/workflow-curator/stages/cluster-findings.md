@@ -13,4 +13,4 @@ For each workflow-defect cluster, judge the size:
 - **big** (restructuring, phase-model change, retirement) → route to `apply-big-changes`.
 
 ## Next
-Write `cursor.clusters = {small: [...], big: [...], routine_local: [...], missing_shape: <bool>}` into `state/phase.json`, set `step: "apply-small-edits"`. Read `steps/apply-small-edits.md`.
+Write `cursor.clusters = {small: [...], big: [...], routine_local: [...], missing_shape: <bool>}` into `state/phase.json`, set `step: "apply-small-edits"`. Read `stages/apply-small-edits.md`.

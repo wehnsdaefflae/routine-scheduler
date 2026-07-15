@@ -46,7 +46,7 @@ class _FakeEndpoint:
         self.prompts.append(messages[0]["content"])
         return Completion(text="", parsed={
             "main": "entry state machine\n\n### improve-ui — leaked\nshould be stripped\n",
-            "modules": [{"name": "improve", "body": DOC}],
+            "stages": [{"name": "improve", "body": DOC}],
             "traits": [{"slug": "web-research",
                         "body": "# trait: web research — adapted to this task\nadapted body\n"},
                        {"slug": "not-selected", "body": "must be dropped"}]})
@@ -70,8 +70,8 @@ def test_decompose_adapts_traits_and_strips_leaks(monkeypatch, tmp_path):
                                 "# trait: web research — adapted to this task\nadapted body"}
     # …and any improve-* section a legacy pattern leaked is stripped (none selected here)
     assert "improve-ui" not in result["main"]
-    assert "improve-ui" not in result["modules"]["improve"]
-    assert "improve-bugfix" not in result["modules"]["improve"]
+    assert "improve-ui" not in result["stages"]["improve"]
+    assert "improve-bugfix" not in result["stages"]["improve"]
 
 
 def test_decompose_fallback_returns_no_adapted_traits(tmp_path):
@@ -81,5 +81,5 @@ def test_decompose_fallback_returns_no_adapted_traits(tmp_path):
     server.libraries_home = SEED
     result = decompose(server, "general-task", "some task", traits=["ask-policy"])
     assert result["traits"] == {}
-    assert result["modules"] == {}
+    assert result["stages"] == {}
     assert result["main"].strip()

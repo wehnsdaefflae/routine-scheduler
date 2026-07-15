@@ -37,4 +37,4 @@ Collect the raw signal. Touch nothing; keep your own context small by spawning p
   These feed the interface-quality lens in analyse-findings.
 
 ## Next
-Write `state/phase.json` = `{"state": "analyse-findings"}` and read `steps/analyse-findings.md`.
+Write `state/phase.json` = `{"state": "analyse-findings"}` and read `stages/analyse-findings.md`.

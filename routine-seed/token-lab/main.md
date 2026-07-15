@@ -1,7 +1,7 @@
 ---
 name: Token lab
 slug: token-lab
-modules:
+stages:
 - orient
 - measure
 - research
@@ -32,17 +32,17 @@ ever written.
 ## How to run this state machine
 1. `read_file state/phase.json` → `{"phase": ...}`. If missing or the previous run
    finished, start at `orient`.
-2. `read_file` the module for the current state (`steps/<state>.md`) and follow it.
+2. `read_file` the module for the current state (`stages/<state>.md`) and follow it.
 3. Each module ends by naming the next state — write it to `state/phase.json`
    (`{"phase": "<state>"}`) and continue until `record-close` finishes the run.
 
 States, in order:
-- `orient` → `steps/orient.md`
-- `measure` → `steps/measure.md`
-- `research` → `steps/research.md`
-- `experiment` → `steps/experiment.md`
-- `report` → `steps/report.md`
-- `record-close` → `steps/record-close.md`
+- `orient` → `stages/orient.md`
+- `measure` → `stages/measure.md`
+- `research` → `stages/research.md`
+- `experiment` → `stages/experiment.md`
+- `report` → `stages/report.md`
+- `record-close` → `stages/record-close.md`
 
 ## Run flow
 1. **orient** — read the backlog, the memory index, and the previous run's result; pick

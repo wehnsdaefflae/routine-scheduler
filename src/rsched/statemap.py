@@ -5,8 +5,9 @@ recipes may use a `## Phases` bullet list) whose items lead with a **bold** stat
 `state_graph` parses those states and pairs them with the routine's CURRENT phase
 (`state/phase.json`, mirrored live into status.json by the engine) so the web layer can
 render a simple highlighted chain. Parsing is tolerant by design: recipes are prose owned
-by the routine, not a schema — an unparseable flow yields the steps/ module names, and an
-unknown current phase is simply appended as its own node client-side.
+by the routine, not a schema — a flow with no parseable state names yields the stages/
+module names (each stage IS a node), and an unknown current phase is simply appended as
+its own node client-side.
 """
 
 from __future__ import annotations
@@ -17,10 +18,13 @@ from pathlib import Path
 
 MAX_STATES = 16
 
-# "1. **name** — desc" / "- **name**: desc" / "2) **name**" …
+# "1. **name** — desc" / "- **name**: desc" / "2) **name**" … — the canonical shape.
 _BOLD_ITEM = re.compile(r"^\s*(?:\d+[.)]|[-*])\s+\*\*(.+?)\*\*\s*[—:–-]?\s*(.*)$")
-# plain "1. name — desc" (no bold) — the fallback shape inside a Run flow list
-_PLAIN_ITEM = re.compile(r"^\s*\d+[.)]\s+([^—:]{1,60}?)\s*[—:]\s*(.*)$")
+# plain "1. name — desc" (no bold), the fallback shape inside a Run flow list. The name is
+# held to a short word-ish token (letters/digits/space/underscore/hyphen) so a line of PROSE
+# — "1. Read `state/phase.json` (…)" — never scrapes into a junk node; such recipes fall
+# through to the stages/ listing instead.
+_PLAIN_ITEM = re.compile(r"^\s*\d+[.)]\s+([A-Za-z][A-Za-z0-9 _-]{0,40}?)\s*[—:]\s*(.*)$")
 
 
 def norm(name: str) -> str:
@@ -70,8 +74,9 @@ def current_phase(routine_dir: Path) -> str:
         data = json.loads((routine_dir / "state" / "phase.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return ""
-    # recipes name the current-phase field "phase" (canonical) or "state" — accept either
-    return str(data.get("phase") or data.get("state") or "") if isinstance(data, dict) else ""
+    # recipes name the current-phase field "phase" (canonical), "state", or "step" — accept any
+    return (str(data.get("phase") or data.get("state") or data.get("step") or "")
+            if isinstance(data, dict) else "")
 
 
 def state_graph(routine_dir: Path) -> dict:
@@ -82,8 +87,63 @@ def state_graph(routine_dir: Path) -> dict:
     except OSError:
         md = ""
     states = parse_states(md)
-    if not states:  # recipe keeps its flow unparseable → the step modules ARE the map
-        steps = routine_dir / "steps"
-        if steps.is_dir():
-            states = [{"name": p.stem, "desc": ""} for p in sorted(steps.glob("*.md"))][:MAX_STATES]
+    if not states:  # no parseable flow leads → the stage modules ARE the map (each a node)
+        stages = routine_dir / "stages"
+        if stages.is_dir():
+            states = [{"name": p.stem, "desc": ""} for p in sorted(stages.glob("*.md"))][:MAX_STATES]
     return {"states": states, "current": current_phase(routine_dir)}
+
+
+_HEADING = re.compile(r"^(#{1,4})\s+(.+?)\s*$")
+
+
+def outline(md_text: str) -> list[dict]:
+    """[{level, text}] for the ## / ### / #### headings of a recipe file — the file's own
+    structure, for the routine page's navigable tree. Headings inside ``` fenced blocks
+    (a pattern's Python, say) are skipped so a `# comment` never poses as a section."""
+    out: list[dict] = []
+    in_fence = False
+    for line in md_text.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = _HEADING.match(line)
+        if m and 2 <= len(m.group(1)) <= 4:
+            out.append({"level": len(m.group(1)), "text": m.group(2).strip().strip("`")})
+    return out
+
+
+def recipe_tree(routine_dir: Path) -> dict:
+    """The routine's recipe as a navigable tree for the routine page: main.md + its stage modules
+    (in ## Run flow order, any extras appended alphabetically) + trait modules, each with its
+    heading outline. Purely a read-model over the routine's own files."""
+    def _read(p: Path) -> str:
+        try:
+            return p.read_text(encoding="utf-8")
+        except OSError:
+            return ""
+
+    main_md = _read(routine_dir / "main.md")
+    order = [norm(s["name"]) for s in parse_states(main_md)]
+
+    def _rank(p: Path) -> int:
+        try:
+            return order.index(norm(p.stem))
+        except ValueError:
+            return len(order) + 1  # extras (no flow entry) sort after the flow, then alphabetically
+
+    def _entry(p: Path) -> dict:
+        return {"path": str(p.relative_to(routine_dir)), "name": p.stem, "outline": outline(_read(p))}
+
+    def _files(sub: str) -> list[Path]:
+        d = routine_dir / sub
+        return sorted(d.glob("*.md")) if d.is_dir() else []
+
+    stage_files = sorted(_files("stages"), key=lambda p: (_rank(p), p.stem))
+    return {
+        "main": {"path": "main.md", "name": "main", "outline": outline(main_md)},
+        "stages": [_entry(p) for p in stage_files],
+        "traits": [_entry(p) for p in _files("traits")],
+    }

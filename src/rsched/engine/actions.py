@@ -337,7 +337,7 @@ def example_action() -> dict:
     reading with a terse `say` (NOT util discovery: the catalog is already in
     CAPABILITIES, so opening a run by re-listing it just re-buys known information)."""
     return {
-        "say": "Workflow step 1 — reading its module before acting.",
+        "say": "Workflow stage 1 — reading its module before acting.",
         "kind": "read_file",
-        "path": "steps/scan.md",
+        "path": "stages/scan.md",
     }

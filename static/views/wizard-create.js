@@ -12,7 +12,7 @@ export function stageBuilding(ctx, wid, snap) {
   ctx.closeTail();
   ctx.clearBuilding();
   ctx.stage.replaceChildren(el("h2", {}, "Building the routine"),
-    busy("Building the routine — the model is decomposing the workflow into steps tailored to your "
+    busy("Building the routine — the model is decomposing the workflow into stages tailored to your"
       + "task. This usually takes a minute or two. You can leave this page; you'll be taken to the "
       + "routine when it's ready, and the banner up top brings you back."));
   let done = false;

@@ -19,6 +19,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.28.0] — 2026-07-15
+
+### Changed
+- **Step modules are now "stage modules" (`stages/`).** A routine's decomposed workflow modules were
+  called *step modules* and lived in `steps/`; they are now **stage modules** in `stages/`, listed by
+  the `stages:` key in `main.md`'s frontmatter (was `modules:`), and the wizard/decompose schema emits
+  `stages` (was `steps`). How a run reads them is unchanged — `main.md` is still the entry state machine
+  that routes to on-demand modules.
+- **The live workflow diagram is labelled with the routine's own stage names.** `decompose` now emits
+  task-specific bold `## Run flow` state names that match the stage filenames, so the state-graph card
+  in the run and conversation rails shows the routine's actual stages instead of the generic library
+  pattern's states.
+- **The routine-improver edits a target's RECIPE directly and proposes config changes via a deferred
+  ask.** It rewrites `main.md` / `stages/` / `traits/` in place (the recipe is the source of truth); for
+  any `routine.yaml` CONFIG change — budgets, models, permissions, capabilities, fs-roots — it files a
+  **deferred `ask_user`** to the Decisions page rather than writing the file. A run NEVER writes
+  `routine.yaml`.
+
+### Removed
+- **The seed→recompile machinery is gone — stage modules are the sole source of truth.** There is no
+  longer a persisted per-routine *Seed*, no recompile-from-instruction step, no seed↔stages drift
+  detection, no provenance hashing (`seed_sha256` / `compiled_sha256`), no routine-page Seed editor, and
+  no `RecompileDriftError`. The clarified instruction is only a **transient compile seed** consumed at
+  creation; a real routine dir no longer contains `instruction.md` (only the wizard's throwaway clarify
+  session still uses one internally). After creation you edit a routine by editing its `stages/` /
+  `main.md` / `traits/` directly — the routine page gains a navigable **Recipe** file-tree for exactly
+  that — and there is no recompile step to undo those edits.
+
 ## [0.26.0] — 2026-07-15
 
 ### Added

@@ -8,6 +8,8 @@
    run should pick up. The summary is the next run's orientation — write it for that
    reader.
 
-Never: propose enabling anything, patch any util others use, or touch anything outside
-this directory. If a finding demands a system change, the report and a deferred
-`ask_user` are the ONLY channels.
+Never modify anything outside this routine's directory — not the scheduler code, the
+library, utils others use, other routines, or any config — and never enable, schedule, or
+change anything in the system. You observe and test; you never integrate. Recommendations
+go in the report; adoption is the user's and the routine-improver's job. If a finding
+demands a system change, the report and a deferred `ask_user` are the ONLY channels.

@@ -143,13 +143,15 @@ The shipped set:
 A run's allowed action kinds are **workflow `tools:` ∩ (base ∪ enabled capabilities)**
 (`finish` always allowed). Gated calls — `write_util` switched off, a reserved
 util, a `read_file` into `runs/` beyond the enabled depth, and any `write_file` into the run's
-OWN `main.md` / `steps/` / `traits/` / `instruction.md` / `routine.yaml` (a fixed rule,
-not a capability — unlocked only when a user-granted fs_write_root covers the routine
-dir, the routine-improver's case) — are rejected inside the schema-retry cycle by
-`validate_action`, with an error naming the way out (the covering permission the user
-could activate, or a deferred `ask_user`). A rejected call never becomes a turn. The current run's own `runs/<ts>/` tree
-(status, archived history) stays readable regardless — the engine itself points the model
-there after compaction. `runs/` is never writable.
+OWN recipe — `main.md` / `stages/` / `traits/` (a fixed rule, not a capability — unlocked only
+when a user-granted fs_write_root covers the routine dir, the routine-improver's case) — are
+rejected inside the schema-retry cycle by `validate_action`, with an error naming the way out
+(the covering permission the user could activate, or a deferred `ask_user`). A run NEVER writes
+its own `routine.yaml` at all: config (budgets, models, permissions, capabilities, fs-roots) is
+the user's, so even the routine-improver proposes a config change with a deferred `ask_user`
+rather than editing the file. A rejected call never becomes a turn. The current run's own
+`runs/<ts>/` tree (status, archived history) stays readable regardless — the engine itself
+points the model there after compaction. `runs/` is never writable.
 
 The model sees its surface in the prompt's machine-facing **CAPABILITIES** section —
 the enabled capabilities, the held permission slugs, and each held permission's short

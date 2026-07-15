@@ -17,4 +17,4 @@ Turn evidence into concrete, evidence-backed findings.
 5. Reuse stable ids from last run's report; assign new ids (F-next) only to genuinely new items.
 
 ## Next
-Write `state/phase.json` = `{"state": "separate-decisions"}` and read `steps/separate-decisions.md`.
+Write `state/phase.json` = `{"state": "separate-decisions"}` and read `stages/separate-decisions.md`.

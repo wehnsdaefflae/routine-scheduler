@@ -3,7 +3,6 @@ manual fire, archive, file reads."""
 
 from __future__ import annotations
 
-import asyncio
 import shutil
 import subprocess
 from pathlib import Path
@@ -15,9 +14,8 @@ from pydantic import BaseModel
 from .. import schedule
 from ..config import MODEL_KINDS
 from ..daemon import registry
-from ..endpoints.instrument import process_scope
 from ..ids import now_iso, run_ts
-from ..paths import atomic_write_json, read_json, resolve_rel
+from ..paths import resolve_rel
 
 router = APIRouter(tags=["routines"])
 
@@ -41,7 +39,7 @@ def _info(request: Request, slug: str) -> registry.RoutineInfo:
 
 def _guard_not_active(request: Request, info: registry.RoutineInfo) -> None:
     if info.active_run or _state(request).runner.is_busy(info.slug):
-        raise HTTPException(409, f"routine {info.slug!r} is busy (a run or recompile is in progress) "
+        raise HTTPException(409, f"routine {info.slug!r} is busy (a run is in progress) "
                                  "— try again after it ends")
 
 
@@ -95,9 +93,9 @@ def routine_detail(request: Request, slug: str) -> dict:
     if ledger.exists():
         lines = ledger.read_text(encoding="utf-8").splitlines()
         ledger_tail = "\n".join(lines[-100:])
-    # editable routine files by directory (step modules + the routine's own trait copies + state)
+    # editable routine files by directory (stage modules + the routine's own trait copies + state)
     files = {}
-    for sub in ("steps", "traits", "state"):
+    for sub in ("stages", "traits", "state"):
         subdir = d / sub
         files[sub] = ([p.name for p in sorted(subdir.iterdir()) if p.is_file() and p.suffix == ".md"]
                       if subdir.is_dir() else [])
@@ -105,10 +103,6 @@ def routine_detail(request: Request, slug: str) -> dict:
     # this routine's), plus the machine-enforced capabilities mapping + its vocabulary
     from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
 
-    from ..workflows import provenance
-
-    instruction = (d / "instruction.md").read_text(encoding="utf-8") \
-        if (d / "instruction.md").exists() else ""
     all_perms = library_docs.list_docs(server.permissions_home)
     held = set(info.cfg.permissions)
     permissions = [{"slug": p["slug"], "summary": p["summary"], "title": p["title"],
@@ -129,11 +123,6 @@ def routine_detail(request: Request, slug: str) -> dict:
         # workflow that isn't there (hand-authored recipes carry an empty slug).
         "workflow_ref": {"slug": info.cfg.workflow_slug, "commit": info.cfg.workflow_commit,
                          "in_library": in_library},
-        # the seed = instruction.md; drift tells the UI whether it has been edited since the
-        # steps were compiled, or the steps changed under it. Recompilable only when a source
-        # workflow is actually present to re-derive from.
-        "seed": provenance.drift(d, instruction),
-        "recompilable": in_library,
         # Per-routine model roles (main/subroutine/tool_call/uncensored) — each a catalog model
         # NAME, or null to fall back to the server system_model. `catalog` populates the picker.
         "models": {k: (info.cfg.models.get(k) or None) for k in MODEL_KINDS},
@@ -142,7 +131,6 @@ def routine_detail(request: Request, slug: str) -> dict:
         "system_model": server.system_model or None,
         "permissions": permissions,
         "capabilities": capabilities,
-        "instruction": instruction,
         "ledger_tail": ledger_tail,
         "files": files,
         "questions": info.open_questions,
@@ -162,6 +150,17 @@ def stategraph(request: Request, slug: str) -> dict:
 
     info = _info(request, slug)
     return statemap.state_graph(info.cfg.dir)
+
+
+@router.get("/routines/{slug}/recipe")
+def recipe(request: Request, slug: str) -> dict:
+    """The routine's recipe as a navigable tree — main.md + stage modules (in Run-flow order) +
+    trait modules, each with its heading outline. Powers the routine page's file browser; edits
+    still go through the generic /file endpoint."""
+    from .. import statemap
+
+    info = _info(request, slug)
+    return statemap.recipe_tree(info.cfg.dir)
 
 
 @router.get("/routines/{slug}/artifacts")
@@ -222,8 +221,10 @@ class RoutineFileBody(BaseModel):
 
 @router.put("/routines/{slug}/file")
 def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict:
-    """Edit any of the routine's own files — main.md, step modules, traits, instruction, state.
-    A routine owns its recipe (materialized in), so main.md, steps/ and traits/ ARE editable here."""
+    """Edit any of the routine's own files — main.md, stage modules, traits, state, or routine.yaml.
+    A routine owns its recipe (materialized in), so main.md, stages/ and traits/ ARE editable here.
+    This is the USER editing via the web (guarded while a run is active) — distinct from a run,
+    which may never write its own recipe or config."""
     info = _info(request, slug)
     _guard_not_active(request, info)
     try:
@@ -333,102 +334,6 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     _git_commit(info.cfg.dir, f"routine.yaml edit via web ({', '.join(updates)})")
     _state(request).scheduler.rescan()
     return {"ok": True, "updated": list(updates)}
-
-
-class FileBody(BaseModel):
-    content: str
-
-
-@router.put("/routines/{slug}/instruction")
-def put_instruction(request: Request, slug: str, body: FileBody) -> dict:
-    return _put_doc(request, slug, "instruction.md", body.content)
-
-
-def _put_doc(request: Request, slug: str, filename: str, content: str) -> dict:
-    info = _info(request, slug)
-    _guard_not_active(request, info)
-    (info.cfg.dir / filename).write_text(content, encoding="utf-8")
-    _git_commit(info.cfg.dir, f"{filename} edit via web")
-    return {"ok": True}
-
-
-@router.post("/routines/{slug}/recompile")
-async def recompile(request: Request, slug: str, force: bool = False) -> dict:
-    """Re-derive main.md + steps/ from the CURRENT instruction (the seed) × the routine's workflow —
-    the slow decompose runs in the BACKGROUND (state/recompile.json: building | done | error, plus a
-    bus event), mirroring the new-routine wizard. The slug is RESERVED so no scheduled run fires
-    mid-recompile. 400 if there's no source workflow to re-derive from; 409 if the routine is busy.
-
-    By default recompile REFUSES when the routine's step modules have hand-edits not reflected in the
-    seed (it would silently discard them — recorded as state=error, reason=steps_drift); pass
-    ?force=true to overwrite them (a backup is kept under state/recompile-backups/)."""
-    info = _info(request, slug)
-    _guard_not_active(request, info)
-    server = _state(request).server
-    if not info.cfg.workflow_slug:
-        raise HTTPException(400, "this routine was written directly (no source workflow) — "
-                                 "edit main.md / steps below instead")
-    if not (server.library_home / "workflows" / f"{info.cfg.workflow_slug}.py").exists():
-        raise HTTPException(400, f"its workflow {info.cfg.workflow_slug!r} is not in this library "
-                                 "— nothing to recompile from")
-    from ..endpoints import EndpointRegistry
-    try:   # decompose needs a system model — fail fast rather than degrade to a main-only flatten
-        EndpointRegistry(server).for_system()
-    except Exception as exc:  # noqa: BLE001 — surface any resolution failure as a clear 400
-        raise HTTPException(400, f"no system model configured to recompile with: {exc}") from exc
-    runner = _state(request).runner
-    runner.reserved.add(slug)   # guard already ensured not busy; single-threaded → no race to add
-    atomic_write_json(info.cfg.dir / "state" / "recompile.json",
-                      {"state": "building", "started": now_iso()})
-    if (c := getattr(request.app.state, "llm_tasks", None)) is not None:
-        c.open_process(f"recompile:{slug}", kind="recompile", label=f"Recompile {slug}")
-    asyncio.create_task(_run_recompile(request.app.state, info.cfg.dir, slug, force))
-    return {"recompiling": True, "slug": slug}
-
-
-async def _run_recompile(app_state, routine_dir: Path, slug: str, force: bool = False) -> None:
-    """Background: run the (blocking) recompile off the loop, record the outcome to
-    state/recompile.json + a bus event, and ALWAYS release the reservation."""
-    from ..config import load_routine
-    from ..workflows.recompile import RecompileDriftError, recompile_routine
-
-    server, bus, runner = app_state.server, app_state.bus, app_state.runner
-    center = getattr(app_state, "llm_tasks", None)
-    status_path = routine_dir / "state" / "recompile.json"
-    try:
-        cfg, _ = load_routine(routine_dir)
-        if cfg is None:
-            raise RuntimeError("routine config is invalid")
-        with process_scope(f"recompile:{slug}"):   # the decompose call attaches to this process
-            summary = await asyncio.to_thread(recompile_routine, server, routine_dir, cfg, force=force)
-        await asyncio.to_thread(_git_commit, routine_dir, "recompile main.md + steps from the seed")
-        atomic_write_json(status_path, {"state": "done", "finished": now_iso(), **summary})
-        bus.publish({"event": "routine_recompiled", "slug": slug, **summary})
-    except RecompileDriftError as exc:  # refused: hand-edits would be lost — offer force to the UI
-        atomic_write_json(status_path, {"state": "error", "finished": now_iso(),
-                                        "reason": "steps_drift", "error": str(exc)[:300]})
-        bus.publish({"event": "routine_recompile_failed", "slug": slug,
-                     "reason": "steps_drift", "error": str(exc)[:300]})
-    except Exception as exc:  # noqa: BLE001 — any failure leaves the routine's files untouched-enough
-        atomic_write_json(status_path, {"state": "error", "finished": now_iso(), "error": str(exc)[:300]})
-        bus.publish({"event": "routine_recompile_failed", "slug": slug, "error": str(exc)[:300]})
-    finally:
-        if center is not None:
-            center.close_process(f"recompile:{slug}")
-        runner.reserved.discard(slug)
-        app_state.scheduler.rescan()
-
-
-@router.get("/routines/{slug}/recompile")
-def recompile_status(request: Request, slug: str) -> dict:
-    """Poll target for the background recompile (the wizard-style fallback to the bus event)."""
-    info = _info(request, slug)
-    st = read_json(info.cfg.dir / "state" / "recompile.json", {}) or {}
-    state = st.get("state", "idle")
-    if state == "building" and not _state(request).runner.is_busy(slug):
-        state = "stale"   # the daemon restarted mid-recompile — never completed
-    return {"state": state, "error": st.get("error"),
-            **{k: st[k] for k in ("modules", "removed", "reason", "steps_drift", "backup") if k in st}}
 
 
 @router.post("/routines/{slug}/run")

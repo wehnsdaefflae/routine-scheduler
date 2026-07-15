@@ -17,4 +17,4 @@ trivially reversible via git. What makes a change BIG is the care it demands, no
    workflow — a question for guidance, not a gate: continue with what you are sure of.
 
 ## Next
-Write `cursor.applied_big`, set `step: "draft-new-workflow"`. Read `steps/draft-new-workflow.md`.
+Write `cursor.applied_big`, set `step: "draft-new-workflow"`. Read `stages/draft-new-workflow.md`.

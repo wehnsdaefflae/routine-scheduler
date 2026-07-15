@@ -75,7 +75,6 @@ class Runner:
         self.interactive_semaphore = asyncio.Semaphore(INTERACTIVE_SLOTS)
         self.background_semaphore = asyncio.Semaphore(BACKGROUND_SLOTS)
         self.active: dict[str, ActiveRun] = {}  # slug → run
-        self.reserved: set[str] = set()  # slugs held by a non-run op (recompile) — no run may fire
         self.draining = False  # set while quiescing for a self-update restart: no new runs fire
 
     def _under_home(self, cfg: RoutineConfig, home_attr: str) -> bool:
@@ -104,9 +103,8 @@ class Runner:
         return slug in self.active
 
     def is_busy(self, slug: str) -> bool:
-        """A run is active OR the slug is reserved for a recompile — either blocks config/file
-        edits and new fires."""
-        return slug in self.active or slug in self.reserved
+        """A run is active — blocks config/file edits and new fires."""
+        return slug in self.active
 
     def active_states(self) -> list[str]:
         """Current state of each active run (read from status.json) — for the drain check.
@@ -128,7 +126,7 @@ class Runner:
         if self.draining:
             log.info("fire_refused_draining routine=%s reason=%s", cfg.slug, reason)
             return None
-        if cfg.slug in self.active or cfg.slug in self.reserved:
+        if cfg.slug in self.active:
             log.info("overrun_skipped routine=%s reason=%s", cfg.slug, reason)
             return None
         ts = make_run_ts()
@@ -148,7 +146,7 @@ class Runner:
         """Re-run an interrupted (terminal) run in place, rehydrating its transcript so it continues
         where it left off. Refuses if draining, the routine already has an active run, or the run
         dir is gone."""
-        if self.draining or cfg.slug in self.active or cfg.slug in self.reserved:
+        if self.draining or cfg.slug in self.active:
             return None
         run_dir = cfg.dir / "runs" / ts
         if not run_dir.is_dir():

@@ -38,7 +38,7 @@ def test_doc_carries_every_system_prompt_section_header(make_routine, tmp_path):
     # is subrun-only now (a top-level routine's instruction is the compile seed, not in the prompt)
     prompts = (_system_prompt(make_routine, tmp_path, depth=0),
                _system_prompt(make_routine, tmp_path, depth=1))
-    # the composer's own section headers are "# UPPERCASE …" — fragment/workflow bodies may
+    # the composer's own section headers are "# UPPERCASE …" — trait/workflow bodies may
     # carry their own "# …" headings, which are not part of the composition contract
     headers = sorted({ln for p in prompts for ln in p.splitlines()
                       if ln.startswith("# ") and ln.split()[1].isupper()})

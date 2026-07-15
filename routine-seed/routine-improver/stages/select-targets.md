@@ -15,4 +15,4 @@ Pick what this run improves: **every candidate that has run since your last pass
 
 ## Next
 Write `state/phase.json = {step: "study-target", cursor: {targets: [...], done: []}}`.
-Read `steps/study-target.md`.
+Read `stages/study-target.md`.

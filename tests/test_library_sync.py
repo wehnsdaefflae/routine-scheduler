@@ -18,7 +18,7 @@ def _server(tmp_path) -> ServerConfig:
 
 
 def _mk_routine_tree(home):
-    keep = ["routine.yaml", "instruction.md", "main.md", "steps/one.md", "state/phase.json"]
+    keep = ["routine.yaml", "main.md", "stages/one.md", "state/phase.json"]
     drop = ["status.json", "runs/2026-01-01T00-00-00/transcript.jsonl", "inbox/msg.json",
             "questions/pending/q.json", ".git/HEAD"]
     for rel in keep + drop:
@@ -41,9 +41,9 @@ def test_export_mirrors_prunes_and_skips_transients(tmp_path):
     assert not (dest / ".control").exists()                    # dot-dirs are not routines
     assert result["skipped"] == [".control"]
     # rsync-like: delete at the source → pruned from the mirror; unchanged files untouched
-    (home / "demo" / "steps" / "one.md").unlink()
+    (home / "demo" / "stages" / "one.md").unlink()
     second = library_sync.export_routines(home, dest)
-    assert not (dest / "demo" / "steps").exists()
+    assert not (dest / "demo" / "stages").exists()
     assert second["removed"] == 1
 
 

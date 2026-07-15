@@ -9,8 +9,8 @@ system as a whole.
 A **routine** = one **instruction** (a user prompt refined through clarifying questions in
 the wizard) + one **workflow** (a Python control-flow pattern from a git-synced library,
 decomposed into the routine's own markdown) + a schedule. Each routine lives in its own git
-repository under `~/routines/<slug>`, with reusable standards (**fragments**) active by
-default — the active set is per-routine config in `routine.yaml`.
+repository under `~/routines/<slug>`, with reusable practice **traits** (adapted in at creation)
+and user-set **permissions** — the held set is per-routine config in `routine.yaml`.
 
 **The workflow is the harness.** Runs execute on a provider-agnostic engine: the
 orchestrator LLM follows the workflow document and acts only by returning one JSON action
@@ -39,12 +39,13 @@ path: this scheduler is the only harness.
   reversible ones directly (committed per routine), and files a deferred question to the
   **Decisions** page when unsure; answers are remembered in the LEDGERs, so user
   interaction shrinks over time.
-- **As a whole**: two more bundled meta routines use the exact same building blocks —
+- **As a whole**: three more bundled meta routines use the exact same building blocks —
   `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, acting
-  is lens-scoped and test-gated, with bigger decisions on the **Audit** page) and
+  is lens-scoped and test-gated, with bigger decisions on the **Audit** page),
   `workflow-curator` (fixes and drafts library workflows from all routines' transcripts —
   applied directly, lint-gated and committed; you can edit or delete any workflow on the
-  Library tab). They ship **disabled**; the
+  Library tab), and `token-lab` (measures token usage and A/B-tests efficiency methods via
+  `llm` subcalls only — never integrating — and publishes a report). They ship **disabled**; the
   dashboard says so until you enable them, because self-improvement costs tokens. The
   instance itself syncs to one GitHub repo — routines, workflows, traits, utils, sanitized
   config — via the scheduled **Library sync** job in Settings (a plain daemon job, no LLM).
@@ -71,9 +72,9 @@ endpoints, the central Secrets store, GitHub, the library repo.
 - **Decisions** — one inbox for everything the system is asking you: blocking questions
   (a run is waiting), deferred ones, and open self-audit decisions. Keyboard-first;
   answers flow back into the asking routine's next turn or next run.
-- **Routines** — the catalog: each routine's state, schedule, budgets, models, fragments,
+- **Routines** — the catalog: each routine's state, schedule, budgets, models, permissions,
   and run history; drill into any run to watch its conversation live.
-- **Library** — browse and edit the shared workflows, fragments, and global utils; every
+- **Library** — browse and edit the shared workflows, traits, permissions, playbooks, and global utils; every
   save is lint/selftest-gated.
 - **Settings** — LLM endpoints (with a live test call), the write-only Secrets store
   every util reads, GitHub device flow, library/source remotes, graceful server restart.
@@ -90,7 +91,7 @@ endpoints, the central Secrets store, GitHub, the library repo.
 Click **+ New routine**: the wizard interrogates your draft (a real engine run of the
 `clarify-instruction` workflow), suggests a library workflow (or generates a draft one),
 and scaffolds the routine — its own git repo, materialized workflow with the standard
-fragments inlined, seeded LEDGER, chosen cron. Or from the shell:
+traits adapted in, seeded LEDGER, chosen cron. Or from the shell:
 
 ```bash
 uv run rsched scaffold my-routine --workflow general-task --cron "0 7 * * 1" \
@@ -104,7 +105,7 @@ Every run is a transparent conversation: watch it live in the run view, **inject
 message (picked up at the next turn boundary, or at the next run's boot), **pause/resume**,
 **abort**, **switch the model mid-run**, and answer **blocking or deferred questions** on
 the Decisions page. Answers to deferred questions reach the routine's next run
-automatically. A routine with the `communication` fragment active may additionally ask
+automatically. A routine with the `communication` permission held may additionally ask
 blocking questions through Discord (one batched, phone-answerable message per run) — the UI
 stays the only channel otherwise.
 
@@ -130,10 +131,11 @@ docstrings at every daemon boot, so docstrings are user-facing here.
 - `static/` — no-build vanilla-JS frontend; `docs/` — hand-written guides, rendered into
   the Help tab next to the pdoc-generated API reference (`docs_build.py`, at boot)
 - `library-seed/` + `util-seed/` — seeded to `~/.local/share/routine-scheduler-libraries`,
-  ONE git repo holding `workflows/`, `fragments/` and `utils/` (with the `gu` dispatcher at
-  the root); `routine-seed/` — the three meta routines, installed disabled
-- Routine dirs: `routine.yaml`, `instruction.md`, `main.md` (the workflow, materialized with
-  provenance) + `steps/` modules, `fragments/`, `state/`, `LEDGER.md`, `inbox/`, `questions/`,
-  `runs/<ts>/` (transcripts, gitignored, keep-last-N with gzip)
+  ONE git repo holding `workflows/`, `traits/`, `permissions/`, `playbooks/` and `utils/` (with the `gu` dispatcher at
+  the root); `routine-seed/` — the four meta routines, installed disabled
+- Routine dirs: `routine.yaml`, `main.md` (the workflow, materialized) + `stages/` modules
+  (the routine's sole source of truth — no persisted instruction, no recompile), `traits/`,
+  `state/`, `LEDGER.md`, `inbox/`, `questions/`, `runs/<ts>/` (transcripts, gitignored,
+  keep-last-N with gzip)
 
 See `CLAUDE.md` for working conventions and the transcript/action contracts.

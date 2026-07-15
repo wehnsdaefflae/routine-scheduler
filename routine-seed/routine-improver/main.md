@@ -5,7 +5,7 @@ materialized_from:
   slug: hand-authored
   commit: ''
   version: 1
-modules:
+stages:
 - orient
 - select-targets
 - study-target
@@ -31,22 +31,20 @@ do exactly what it says, then advance.
 
 ## Run flow
 
-1. Read `state/phase.json` (`{step: <name>, cursor: {...}}`). If it is missing or empty,
-   start at `orient`.
-2. `read_file` the module for the current step from `steps/<step>.md` and follow it. Each
-   module ends by telling you the next step and what to write back into `state/phase.json`.
-3. `apply-lenses` and `fresh-eyes` repeat per target: the cursor tracks which target is in
-   hand; when one target is done, loop back to `study-target` for the next.
-4. Continue until the `record` module finishes the run.
+Read `state/phase.json` (`{step: <stage>, cursor: {...}}`) for the current stage; if missing or
+empty, start at `orient`. `read_file` that stage's module (`stages/<stage>.md`) and follow it —
+each ends by naming the next stage and what to write back into `state/phase.json`. `apply-lenses`
+and `fresh-eyes` repeat per target (the cursor tracks which target is in hand; when one is done,
+loop back to `study-target` for the next). Continue until `record` finishes the run.
 
-The steps, in order, are:
-- `steps/orient.md` — read `state/visits.json`, enumerate routines, apply the exclusion
-  flag, keep only those with runs newer than `last_run_seen`.
-- `steps/select-targets.md` — ALL of those (every candidate that ran since the last pass), oldest first.
-- `steps/study-target.md` — read ONE target's recipe + recent runs; infer its intention.
-- `steps/apply-lenses.md` — run the five lens modules on the target and apply safe fixes.
-- `steps/fresh-eyes.md` — first-time-reader pass over the target's recipe; de-clutter.
-- `steps/record.md` — commit targets, update visits, LEDGER, finish.
+1. **orient** — read `state/visits.json`, enumerate routines (and conversations), apply the
+   exclusion flag, keep only those with runs newer than `last_run_seen`.
+2. **select-targets** — ALL qualifying candidates (every one that ran since the last pass), oldest first.
+3. **study-target** — read ONE target's recipe + recent runs; infer its intention from behaviour.
+4. **apply-lenses** — run the five lens modules and apply safe RECIPE fixes directly; any config
+   change (routine.yaml) is proposed via a deferred ask_user, never applied.
+5. **fresh-eyes** — first-time-reader pass over the target's recipe; de-clutter.
+6. **record** — commit targets, update visits, LEDGER, finish.
 
 Phase model is **steady**: every run is the same sweep shape; only the rotation of targets
 differs, tracked in `state/visits.json`.

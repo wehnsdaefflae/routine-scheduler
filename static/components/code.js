@@ -50,7 +50,7 @@ export function highlightPython(src) {
 }
 
 // A drop-in editor: same `.value` contract as a textarea. lang "python" gets the highlight
-// overlay; anything else stays a plain textarea (fragments are markdown — no highlighter).
+// overlay; anything else stays a plain textarea (traits/permissions are markdown — no highlighter).
 export function codeEditor(content, { lang = null, minHeight = 360 } = {}) {
   const ta = el("textarea", { class: "code", spellcheck: "false",
     style: `min-height:${minHeight}px` });

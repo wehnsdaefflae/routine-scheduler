@@ -203,7 +203,7 @@ def test_routine_structural_problems(tmp_path):
     cfg, problems = load_routine(d)
     text = " | ".join(problems)
     assert "not kebab-case" in text and "does not match directory name" in text
-    assert "no main.md" in text and "instruction.md missing" in text
+    assert "no main.md" in text   # instruction.md is a transient seed, no longer required
     assert cfg is not None  # best-effort config still comes back
 
     cfg2, problems2 = load_routine(tmp_path)  # no routine.yaml at all

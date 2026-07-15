@@ -496,3 +496,37 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   }
   .run-rail > summary { display: none; }
 }
+
+/* the routine page's recipe file-tree: main.md + stage modules (run-flow order) + trait
+   modules, each expandable to its heading outline; a nav | editor two-column that stacks narrow */
+.recipe-wrap { display: flex; gap: 14px; align-items: flex-start; }
+.recipe-navcol { flex: 0 0 236px; max-width: 236px; border-right: 1px solid var(--line);
+  padding-right: 10px; max-height: 560px; overflow-y: auto; }
+.recipe-editorcol { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 760px) {
+  .recipe-wrap { flex-direction: column; }
+  .recipe-navcol { flex: none; max-width: none; width: 100%; border-right: 0; padding-right: 0;
+    border-bottom: 1px solid var(--line); padding-bottom: 8px; max-height: 240px; }
+}
+.recipe-nav { display: flex; flex-direction: column; gap: 10px; font-family: var(--sans); }
+.rn-group { display: flex; flex-direction: column; gap: 1px; }
+.rn-grouphead { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 3px; }
+.rn-file { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
+  background: none; border: 0; color: var(--text); font: inherit; font-size: 12.5px;
+  padding: 3px 6px; border-radius: 6px; cursor: pointer; }
+.rn-file:hover { background: var(--surface-2); }
+.rn-file.active { background: var(--surface-2); color: var(--amber); }
+.rn-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rn-count { flex: none; font-size: 10px; color: var(--faint); }
+.rn-headings { margin-left: 10px; border-left: 1px solid var(--line-2); padding-left: 6px;
+  display: flex; flex-direction: column; gap: 1px; }
+.rn-h { text-align: left; background: none; border: 0; color: var(--muted); font: inherit;
+  font-size: 11.5px; padding: 1px 6px; border-radius: 5px; cursor: pointer; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.rn-h:hover { background: var(--surface-2); color: var(--text); }
+.rn-h3 { padding-left: 16px; }
+.rn-h4 { padding-left: 26px; color: var(--faint); }
+.recipe-ta { width: 100%; min-height: 340px; color: var(--text); background: var(--ink-2);
+  font-family: var(--mono); font-size: 12px; line-height: 1.55; resize: vertical; }
+.recipe-preview { max-height: 520px; overflow-y: auto; padding: 4px 2px; }

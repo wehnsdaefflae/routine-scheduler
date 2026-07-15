@@ -43,21 +43,23 @@ the limits (single-writer status.json preserved).
   may do — adapters, UI, and the CLI event renderer all key off it. A workflow's `tools:` allowlist AND
   the routine's **capabilities** (`grants.py`) are enforced there too: allowed kinds = workflow tools
   ∩ (base ∪ enabled capabilities), plus path gates (runs/ needs the previous-runs depth; a run NEVER
-  writes its own main.md / steps/ / traits/ / instruction.md / routine.yaml — not a capability but a
-  fixed rule, unlocked only when a user-granted fs_write_root covers the routine dir, the
-  routine-improver's case; executor.py backstops absolute paths and scopes `runs: last`).
+  writes its own recipe — main.md / stages/ / traits/ — a fixed rule unlocked only when a user-granted
+  fs_write_root covers the routine dir (the routine-improver's case); `routine.yaml` is NEVER writable
+  by any run, even under an fs_write_root — config is the user's; executor.py backstops absolute paths
+  and scopes `runs: last`).
   A disallowed/switched-off call is corrected inside the schema-retry cycle with an error naming the
   covering permission, and never becomes a turn.
 - **The system prompt is composed once at boot** (`engine/composer.py`): harness contract → action schema
   + example → workflow body (the routine's own `main.md`, ending in a `## Standing practices` tail that
-  references `traits/*.md` — practice prose is NEVER inlined) → instruction → **capabilities** (model +
+  references `traits/*.md` — practice prose is NEVER inlined; a SUBRUN inserts its INSTRUCTION brief
+  here, a top-level routine does NOT — its task is baked into the recipe) → **capabilities** (model +
   context window, the action kinds usable this run, enabled capabilities + held permissions' short
   conduct notes,
   spawnable workflow patterns, the util catalog at name+summary altitude — ONE util's usage on demand via
-  `util name=list args=["<name>"]`) → **state digest** (phase, `state/`, step + trait modules, last result,
+  `util name=list args=["<name>"]`) → **state digest** (phase, `state/`, stage + trait modules, last result,
   LEDGER tail, open/answered questions, inbox messages). Effect actions (`util`/`read_file`/`write_file`/
   `edit_file`/`llm`) run through `engine/executor.py`. A default routine's composed prompt is ~25k chars;
-  everything else is reachable on demand (read_file steps/traits/history, util name=list, memory_read).
+  everything else is reachable on demand (read_file stages/traits/history, util name=list, memory_read).
 - **The message list is a prompt-caching contract**: composed once, appended-to only, never mutated —
   so providers serve each turn's prefix from cache (~0.1x). Per-turn boilerplate is banned: the util
   reminder is ONE-SHOT on the kickoff/resume note, the history pointer re-appears only every 10th turn,
@@ -75,7 +77,7 @@ the limits (single-writer status.json preserved).
   (`history.maybe_compact`) on any failure. The on-disk transcript keeps everything regardless.
 - **Phase is live state**: a run's write to `state/phase.json` (write_file or edit_file) is mirrored
   into `ctx.phase` → status.json (every turn) → the run SSE `state` event, which also fires on phase
-  change. `statemap.py` parses the routine's own main.md (`## Run flow` bold leads; steps/ fallback)
+  change. `statemap.py` parses the routine's own main.md (`## Run flow` bold leads — the TASK-SPECIFIC state names decompose emits; stages/ filenames as fallback)
   into the UI's state-graph diagram (`/stategraph` endpoints, `static/components/stategraph.js` —
   rendered in the run view's rail and the conversation artifact rail, current phase highlighted live).
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
@@ -157,9 +159,11 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   budgets/fs-roots/schedules are resources, never capabilities; `improve: false` opts the routine
   out of the routine-improver's passes (default: included).
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
-  routes to `steps/<name>.md` modules, read on demand, and ends with a Standing practices tail
-  referencing `traits/`). `instruction.md` — the task. `traits/*.md` — the routine's OWN practice
-  modules, ADAPTED from library traits at creation (self-refined afterwards; no post-creation toggle).
+  routes to `stages/<name>.md` modules, read on demand, and ends with a Standing practices tail
+  referencing `traits/`). The clarified instruction is only a transient compile SEED — decomposed into
+  the stages at creation and NOT persisted (a routine carries no `instruction.md`); the stages are the
+  sole source of truth. `traits/*.md` — the routine's OWN practice modules, ADAPTED from library traits
+  at creation (self-refined afterwards; no post-creation toggle).
 - `state/`, `LEDGER.md`, `inbox/` (daemon/web drop messages + answers here), `questions/pending/`
   (the ONE decision-record shape: {mode, type, default, expires} — asks and util approvals alike),
   `runs/<ts>/` (transcripts + status.json incl. usage/turns/elapsed_s — the dashboard's sortable
@@ -275,7 +279,7 @@ first boot; `deploy/install.sh` for host installs.
   allowlist), `PHASES` / `COMPLETION` literals, a top-level `run()` whose body is the per-run control flow,
   one function per step, and dummy parameter imports (`from routine.params import …`) naming the routine's
   parameters by type+meaning. The runtime is
-  unchanged — routines are still the markdown `main.md`+`steps/` the orchestrator interprets: `adapt.decompose`
+  unchanged — routines are still the markdown `main.md`+`stages/` the orchestrator interprets: `adapt.decompose`
   turns a Python pattern into that markdown at scaffold; `materialize` renders it whole (sub-routines/fallback).
   A `tools:` list restricts action kinds (`finish` always allowed) — how `clarify-instruction` is held to
   ask/read/write/finish. `workflows/lint.py` gates every change; `suggest`/`generate` rank/draft via the
@@ -332,7 +336,7 @@ first boot; `deploy/install.sh` for host installs.
   `routine.yaml` records the binding → `cfg.playbook_slug`). The conversation's **Save as playbook**
   distils a NEW one and **Update playbook** revises the bound one, both from the transcript via the
   `system_model` (`playbook_distill.py` — `PLAYBOOK_SCHEMA`, mirroring `adapt.decompose` and
-  recompile's refuse-to-degrade). `workflows/lint.py` `lint_playbook_text` gates edits; the Library
+  the same refuse-to-degrade discipline). `workflows/lint.py` `lint_playbook_text` gates edits; the Library
   tab has a Playbooks section (`web/api_playbooks.py`). Reaches existing instances at boot via
   `bootstrap.sync_seed_library_docs` (subfolder-aware). See docs/playbooks.md.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`,

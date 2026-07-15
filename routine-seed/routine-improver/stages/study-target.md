@@ -18,4 +18,4 @@ DID before touching anything.
 4. Write a compact brief into `cursor.brief`: intention, evidence bullets, oddities.
 
 ## Next
-Write `state/phase.json = {step: "apply-lenses", cursor: {...}}`. Read `steps/apply-lenses.md`.
+Write `state/phase.json = {step: "apply-lenses", cursor: {...}}`. Read `stages/apply-lenses.md`.

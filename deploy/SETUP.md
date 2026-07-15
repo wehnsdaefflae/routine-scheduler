@@ -76,13 +76,13 @@ No container terminal, no PAT to mint. Skip only if all your repos are public an
 
 ## 5. Set up your library  (Settings → Library repository)
 
-Workflows, fragments, and utils live together in ONE git repo on your account (subdirs
-`workflows/`, `fragments/`, `utils/`). On a fresh deploy its row offers two buttons (do §4
-first — both need GitHub):
+Workflows, traits, permissions, playbooks, and utils live together in ONE git repo on your account
+(subdirs `workflows/`, `traits/`, `permissions/`, `playbooks/`, `utils/`). On a fresh deploy its row
+offers two buttons (do §4 first — both need GitHub):
 
 - **Clone existing** — enter `owner/name` of a repo you already have → its content is pulled in.
 - **Create + seed** — enter a new name → a **private** repo is created on your account, seeded with
-  the built-in defaults, and pushed. Future generated workflows/fragments/utils auto-sync there.
+  the built-in defaults, and pushed. Future generated workflows and library edits auto-sync there.
 
 Once the library has content its row switches to a **remote** field with a **Test** button
 (`git ls-remote` → **✓ reachable** / **✗ authentication required** / **✗ not found**). The

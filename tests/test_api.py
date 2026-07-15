@@ -84,7 +84,6 @@ def test_routine_cards_and_detail(client):
     assert lr["turns"] == 2 and lr["elapsed_s"] == 95
     assert lr["usage"] == {"in": 10, "out": 4, "cost": 0.0123}
     detail = c.get("/api/routines/apir").json()
-    assert "Test instruction" in detail["instruction"]
     assert detail["workflow_ref"]["slug"] == "test-flow"   # workflow is REFERENCED, not a routine file
     assert isinstance(detail["permissions"], list)   # hermetic test library → may be empty
     assert all("requires" in p and "active" in p for p in detail["permissions"])
@@ -103,92 +102,15 @@ def test_patch_routine_and_409_guard(client):
     assert raw["schedule"]["tz"] == "Europe/Berlin"  # merged, not replaced
     _mk_run(tmp / "routines", "apir", "20260708-090000", "running")
     assert c.patch("/api/routines/apir", json={"enabled": True}).status_code == 409
-    assert c.put("/api/routines/apir/instruction", json={"content": "x"}).status_code == 409
+    assert c.put("/api/routines/apir/file",
+                 json={"path": "main.md", "content": "x"}).status_code == 409
 
 
-def test_put_docs(client):
+def test_put_routine_file(client):
     c, tmp = client
-    r = c.put("/api/routines/apir/instruction", json={"content": "# New instruction"})
+    r = c.put("/api/routines/apir/file", json={"path": "main.md", "content": "# New main"})
     assert r.status_code == 200
-    assert (tmp / "routines" / "apir" / "instruction.md").read_text() == "# New instruction"
-
-
-def test_recompile_endpoint_launches_and_guards(client, monkeypatch):
-    """recompile() returns immediately (the slow decompose runs in the background), reserves the
-    slug so no run can fire, and refuses when there is nothing to recompile from."""
-    import asyncio
-
-    from rsched.web import api_routines
-
-    c, tmp = client
-    # the fixture routine references 'test-flow', absent from the empty test library → 400
-    assert c.post("/api/routines/apir/recompile").status_code == 400
-    # seed the workflow file so the existence + system-model checks pass; stub the worker so the
-    # background task is a no-op and the building/reserved state is deterministic to assert
-    lib = tmp / "library" / "workflows"
-    lib.mkdir(parents=True, exist_ok=True)
-    (lib / "test-flow.py").write_text("META = {'slug': 'test-flow'}\ndef run():\n    pass\n")
-
-    async def _noop(*a, **k):
-        return None
-    monkeypatch.setattr(api_routines, "_run_recompile", _noop)
-
-    r = c.post("/api/routines/apir/recompile")
-    assert r.status_code == 200 and r.json()["recompiling"] is True
-    assert read_json(tmp / "routines" / "apir" / "state" / "recompile.json")["state"] == "building"
-    assert "apir" in c.app.state.runner.reserved
-    # while reserved, config/file edits and a second recompile are all refused (busy)
-    assert c.put("/api/routines/apir/instruction", json={"content": "x"}).status_code == 409
-    assert c.post("/api/routines/apir/recompile").status_code == 409
-    assert c.patch("/api/routines/apir", json={"enabled": False}).status_code == 409
-    c.app.state.runner.reserved.discard("apir")
-
-
-def test_run_recompile_worker_records_done_and_releases(client, monkeypatch):
-    """The background worker runs the recompile off the loop, records 'done' + the summary, emits a
-    bus event, and always frees the reservation."""
-    import asyncio
-
-    from rsched.web import api_routines
-
-    c, tmp = client
-    d = tmp / "routines" / "apir"
-    c.app.state.runner.reserved.add("apir")
-    monkeypatch.setattr("rsched.workflows.recompile.recompile_routine",
-                        lambda server, routine_dir, cfg, *, force=False: {"modules": ["x"], "removed": ["old"]})
-    asyncio.run(api_routines._run_recompile(c.app.state, d, "apir"))
-    st = read_json(d / "state" / "recompile.json")
-    assert st["state"] == "done" and st["modules"] == ["x"] and st["removed"] == ["old"]
-    assert "apir" not in c.app.state.runner.reserved
-    assert c.get("/api/routines/apir/recompile").json()["state"] == "done"
-
-
-def test_run_recompile_worker_records_error_and_releases(client, monkeypatch):
-    """A failing recompile is recorded as 'error' (retryable) and still frees the reservation."""
-    import asyncio
-
-    from rsched.web import api_routines
-
-    c, tmp = client
-    d = tmp / "routines" / "apir"
-    c.app.state.runner.reserved.add("apir")
-
-    def boom(server, routine_dir, cfg, *, force=False):
-        raise RuntimeError("decompose blew up")
-    monkeypatch.setattr("rsched.workflows.recompile.recompile_routine", boom)
-    asyncio.run(api_routines._run_recompile(c.app.state, d, "apir"))
-    st = read_json(d / "state" / "recompile.json")
-    assert st["state"] == "error" and "decompose blew up" in st["error"]
-    assert "apir" not in c.app.state.runner.reserved
-
-
-def test_routine_detail_reports_seed_drift(client):
-    """The detail payload carries the seed ↔ steps drift block so the page can surface it. The
-    fixture routine has no provenance baseline → tracked False."""
-    c, _ = client
-    detail = c.get("/api/routines/apir").json()
-    assert detail["seed"] == {"tracked": False, "instruction": False, "steps": False}
-    assert "recompilable" in detail
+    assert (tmp / "routines" / "apir" / "main.md").read_text() == "# New main"
 
 
 def test_file_read_guarded(client):
@@ -211,6 +133,22 @@ def test_stategraph_endpoint(client):
     g = c.get("/api/routines/apir/stategraph").json()
     assert [s["name"] for s in g["states"]] == ["gather", "write"]
     assert g["current"] == "gather"
+
+
+def test_recipe_endpoint(client):
+    """The recipe tree — main.md + stage modules (in run-flow order) + trait modules, each with
+    its heading outline; the routine page's file browser."""
+    c, tmp = client
+    d = tmp / "routines" / "apir"
+    (d / "stages").mkdir(exist_ok=True)
+    d.joinpath("main.md").write_text(
+        "## Run flow\n1. **gather** — g.\n2. **write** — w.\n\n## Done\n- x\n", encoding="utf-8")
+    (d / "stages" / "write.md").write_text("## Steps\n", encoding="utf-8")
+    (d / "stages" / "gather.md").write_text("text\n", encoding="utf-8")
+    r = c.get("/api/routines/apir/recipe").json()
+    assert r["main"]["path"] == "main.md"
+    assert [h["text"] for h in r["main"]["outline"]] == ["Run flow", "Done"]
+    assert [s["name"] for s in r["stages"]] == ["gather", "write"]   # run-flow order, not alphabetical
 
 
 def test_routine_artifacts_listed_and_served(client):

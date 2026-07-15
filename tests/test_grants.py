@@ -303,20 +303,23 @@ def test_deny_gates_edit_file_like_write_file():
 
 
 def test_deny_blocks_own_recipe_and_config_writes():
-    """Own recipe + routine.yaml writes are a FIXED rule, not a capability: denied for
-    everyone, unlocked only via recipe_unlocked (a user fs_write_root covering the dir)."""
+    """Own recipe writes (main.md/stages/traits) are a FIXED rule, unlocked only via
+    recipe_unlocked (a user fs_write_root covering the dir). routine.yaml is config: denied for
+    EVERYONE, even when the recipe is unlocked — config is the user's."""
     none = GrantPolicy()
-    for path in ("main.md", "steps/collect.md", "traits/ask-policy.md", "instruction.md",
-                 "./main.md", "routine.yaml"):
+    for path in ("main.md", "stages/collect.md", "traits/ask-policy.md", "./main.md", "routine.yaml"):
         denial = none.deny({"kind": "write_file", "path": path, "content": "x"})
         assert denial and "routine-improver" in denial, path
         assert none.deny({"kind": "read_file", "path": path}) is None, path
+    # instruction.md is no longer a recipe file (the seed isn't persisted) — writes are open
+    assert none.deny({"kind": "write_file", "path": "instruction.md", "content": "x"}) is None
     # non-recipe writes stay open
     assert none.deny({"kind": "write_file", "path": "state/notes.md", "content": "x"}) is None
     assert none.deny({"kind": "write_file", "path": "LEDGER.md", "content": "x"}) is None
     unlocked = GrantPolicy(recipe_unlocked=True)
     assert unlocked.deny({"kind": "write_file", "path": "main.md", "content": "x"}) is None
-    assert unlocked.deny({"kind": "write_file", "path": "routine.yaml", "content": "x"}) is None
+    # …but routine.yaml stays denied even when the recipe is unlocked (config ≠ recipe)
+    assert unlocked.deny({"kind": "write_file", "path": "routine.yaml", "content": "x"}) is not None
 
 
 def test_validate_action_carries_capability_denials():

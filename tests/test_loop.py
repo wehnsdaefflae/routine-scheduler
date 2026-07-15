@@ -111,7 +111,7 @@ def test_apply_model_switch(make_routine):
 
 def test_ensure_decomposed_builds_main_on_run(make_routine, monkeypatch):
     """A routine created as (workflow + instruction) with no main.md — the wizard's clarify session —
-    is decomposed on run: main.md + steps written, carrying the workflow's tools allowlist through."""
+    is decomposed on run: main.md + stages written, carrying the workflow's tools allowlist through."""
     from rsched.config import load_routine
     from rsched.engine import runtime as runtime_mod
     from rsched.workflows import adapt as adapt_mod
@@ -124,11 +124,11 @@ def test_ensure_decomposed_builds_main_on_run(make_routine, monkeypatch):
         {"tools": ["ask_user", "write_file", "finish"], "includes": ["ask-policy"], "version": 4}, "", ""))
     monkeypatch.setattr(lib_mod, "head_commit", lambda home: "deadbee")
     monkeypatch.setattr(adapt_mod, "decompose", lambda server, slug, instruction, **k: {
-        "main": "## Run flow\n1. ask\n## Completion criteria\ndone", "modules": {"ask-step": "ask the user"}})
+        "main": "## Run flow\n1. ask\n## Completion criteria\ndone", "stages": {"ask-step": "ask the user"}})
 
     cfg, _ = load_routine(d)
     runtime_mod._ensure_decomposed(d, cfg, _server(d))
-    assert (d / "main.md").exists() and (d / "steps" / "ask-step.md").read_text().startswith("ask the user")
+    assert (d / "main.md").exists() and (d / "stages" / "ask-step.md").read_text().startswith("ask the user")
     import frontmatter
     meta = frontmatter.load(d / "main.md").metadata
     assert meta["tools"] == ["ask_user", "write_file", "finish"]              # allowlist carried through
@@ -1160,16 +1160,16 @@ def test_schema_forcefail_telemetry(make_routine, scripted):
 
 
 def test_own_recipe_writes_blocked_unless_write_root_covers_dir(make_routine, scripted):
-    """write_file into own main.md/steps/traits/routine.yaml is rejected for every routine
-    (inside the schema-retry cycle) — no permission unlocks it. A user-granted
-    fs_write_root covering the routine dir (the routine-improver's case) does."""
+    """write_file into own main.md/stages/traits is rejected for every routine (inside the
+    schema-retry cycle) — no permission unlocks it. A user-granted fs_write_root covering the
+    routine dir (the routine-improver's case) does (routine.yaml stays blocked even then)."""
     import yaml as _yaml
 
     from rsched.engine.transcript import read_events as _read
 
     d = make_routine(slug="frozen")
     scripted([
-        write_file("steps/collect.md", content="rewritten"),   # denied
+        write_file("stages/collect.md", content="rewritten"),   # denied
         probe(),
         finish(),
     ])
@@ -1178,19 +1178,19 @@ def test_own_recipe_writes_blocked_unless_write_root_covers_dir(make_routine, sc
     assert status == "ok"
     errs = [e for e in events if e["type"] == "error"]
     assert len(errs) == 1 and "routine-improver" in errs[0]["payload"]["message"]
-    assert not (d / "steps" / "collect.md").exists()
+    assert not (d / "stages" / "collect.md").exists()
 
     d2 = make_routine(slug="unfrozen")
     cfg2 = _yaml.safe_load((d2 / "routine.yaml").read_text())
     cfg2["fs_write_roots"] = [str(d2.parent)]      # user-granted root covers the own dir
     (d2 / "routine.yaml").write_text(_yaml.safe_dump(cfg2))
     scripted([
-        write_file("steps/collect.md", content="rewritten"),
+        write_file("stages/collect.md", content="rewritten"),
         finish(),
     ])
     status2, run_dir2 = run_routine(d2, _server(d2), run_ts=TS)
     assert status2 == "ok"
-    assert (d2 / "steps" / "collect.md").read_text().strip() == "rewritten"
+    assert (d2 / "stages" / "collect.md").read_text().strip() == "rewritten"
 
 
 def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):

@@ -16,4 +16,4 @@ kills a run. Do nothing further about the restart.
 Do not write the sentinel. There is nothing new for the daemon to pick up.
 
 ## Next
-Write `state/phase.json` = `{"state": "record-close"}` and read `steps/record-close.md`.
+Write `state/phase.json` = `{"state": "record-close"}` and read `stages/record-close.md`.

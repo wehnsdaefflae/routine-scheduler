@@ -364,6 +364,68 @@ def cmd_migrate_model_catalog(args) -> int:
     return 0
 
 
+def cmd_migrate_stages(args) -> int:
+    """One-shot (pre-0.28 → 0.28): make each routine's `stages/` its source of truth. Renames
+    `steps/` → `stages/`, renames the main.md frontmatter `modules:` key to `stages:` and strips
+    the retired seed/compiled drift hashes, and removes the now-dead seed + recompile artifacts —
+    `instruction.md` for ROUTINES (never conversations, whose instruction.md is the user's first
+    message), plus `state/recompile.json` and `state/recompile-backups/`. Commits each changed
+    dir. Delete this command once it has run on the instance (migrations are not kept)."""
+    import shutil
+    import subprocess
+
+    import frontmatter
+
+    from .workflows.adapt import dump_markdown
+
+    server, _ = load_server_config()
+
+    def _commit(d: Path, msg: str) -> None:
+        if not (d / ".git").exists():
+            return
+        subprocess.run(["git", "add", "-A"], cwd=d, capture_output=True, timeout=30)
+        subprocess.run(["git", "commit", "-qm", msg], cwd=d, capture_output=True, timeout=30)
+
+    changed = 0
+    for home, is_routine in ((server.routines_home, True),
+                             (server.conversations_home, False),
+                             (server.background_home, False)):
+        if not home or not home.exists():
+            continue
+        for d in sorted(p for p in home.iterdir() if (p / "routine.yaml").exists()):
+            touched: list[str] = []
+            if (d / "steps").is_dir() and not (d / "stages").exists():
+                (d / "steps").rename(d / "stages")
+                touched.append("steps→stages")
+            main = d / "main.md"
+            if main.exists():
+                try:
+                    meta, body = frontmatter.parse(main.read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001 — a malformed recipe is skipped, never crashes the sweep
+                    meta = None
+                if isinstance(meta, dict):
+                    m2 = {("stages" if k == "modules" else k): v for k, v in meta.items()
+                          if k not in ("seed_sha256", "compiled_sha256")}
+                    if m2 != meta:
+                        main.write_text(dump_markdown(m2, body), encoding="utf-8")
+                        touched.append("main.md frontmatter")
+            if (d / "state" / "recompile.json").exists():
+                (d / "state" / "recompile.json").unlink()
+                touched.append("rm recompile.json")
+            if (d / "state" / "recompile-backups").is_dir():
+                shutil.rmtree(d / "state" / "recompile-backups", ignore_errors=True)
+                touched.append("rm recompile-backups")
+            if is_routine and (d / "instruction.md").exists():
+                (d / "instruction.md").unlink()
+                touched.append("rm instruction.md (seed)")
+            if touched:
+                _commit(d, "migrate to stages (0.28): " + ", ".join(touched))
+                changed += 1
+                print(f"  {d.name}: {', '.join(touched)}", file=sys.stderr)
+    print(f"migrate-stages: updated {changed} routine/conversation dir(s).", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="rsched", description="LLM agent routine scheduler")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -407,7 +469,7 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("--tz", default="Europe/Berlin")
     sc.add_argument("--name", default="")
     sc.add_argument("--description", default="", help="one-line description shown in the UI (defaults to name)")
-    sc.add_argument("--instruction-file", help="file whose content becomes instruction.md")
+    sc.add_argument("--instruction-file", help="file whose content is the compile SEED (decomposed into the stages, not persisted)")
     sc.add_argument("--tag", action="append", help="tag for filtering, e.g. meta (repeatable)")
     sc.add_argument("--read-root", action="append", help="extra fs read root (repeatable)")
     sc.add_argument("--write-root", action="append", help="extra fs write root (repeatable)")
@@ -416,6 +478,10 @@ def main(argv: list[str] | None = None) -> int:
     mm = sub.add_parser("migrate-model-catalog",
                         help="one-shot: migrate pre-0.27 endpoint attributes → the model catalog")
     mm.set_defaults(fn=cmd_migrate_model_catalog)
+
+    ms = sub.add_parser("migrate-stages",
+                        help="one-shot: rename pre-0.28 steps/ → stages/, drop drift hashes + seed/recompile artifacts")
+    ms.set_defaults(fn=cmd_migrate_stages)
 
     args = p.parse_args(argv)
     return args.fn(args)

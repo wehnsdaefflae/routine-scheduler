@@ -20,4 +20,4 @@ Build the candidate list: every routine with runs you haven't processed yet.
 
 ## Next
 Write `state/phase.json = {step: "select-targets", cursor: {candidates: [{slug,
-newest_run}, ...]}}`. Read `steps/select-targets.md`.
+newest_run}, ...]}}`. Read `stages/select-targets.md`.

@@ -33,11 +33,13 @@ recipe/config files — a rejected call is corrected inside the schema-retry cyc
 never becomes a turn. Base kinds — util, read_file, write_file, llm, spawn, … — stay
 ungated.
 
-Recipe writes are NOT a capability: a run never edits its own recipe (main.md, steps/,
-traits/, instruction.md) or its own routine.yaml — recipe improvement is the
-routine-improver meta routine's job, and config is the user's. The single override is the
-user-granted resource `fs_write_roots`: when a write root covers the routine's own dir
-(the improver's case), the engine unlocks these paths for that run.
+Recipe writes are NOT a capability: a run never edits its own recipe (main.md, stages/,
+traits/) — recipe improvement is the routine-improver meta routine's job. The single
+override is the user-granted resource `fs_write_roots`: when a write root covers a
+routine's dir (the improver's case), the engine unlocks the recipe files for that run.
+`routine.yaml` is NEVER writable by any run — not even the improver, not even under an
+fs_write_root: config (permissions, capabilities, budgets, roots) is the user's, changed
+only via the UI or a deferred ask_user.
 """
 
 from __future__ import annotations
@@ -72,11 +74,13 @@ RUN_HISTORY_LEVELS = ("none", "last", "all")
 # demanding it names only "generate" (catalog is the absence of the requirement).
 WORKFLOW_LEVELS = ("catalog", "generate")
 _WORKFLOW_SOURCE = ("workflow-generation",)
-# The routine's own recipe + config files — never writable by the owning run unless a
-# user-granted fs_write_root covers the routine dir (see the module docstring). traits/
-# holds the routine's adapted practice copies; steps/ + main.md the materialized workflow;
-# routine.yaml is the user's config (permissions, capabilities, budgets, roots).
-RECIPE_PREFIXES = ("main.md", "instruction.md", "steps/", "traits/", "routine.yaml")
+# The routine's own recipe files — never writable by the owning run unless a user-granted
+# fs_write_root covers the routine dir (the improver's case; see the module docstring).
+# traits/ holds the routine's adapted practice copies; stages/ + main.md the materialized
+# workflow. routine.yaml (the user's config) is guarded separately: NEVER writable by any
+# run, even the improver — see CONFIG_FILE and GrantPolicy.deny.
+RECIPE_PREFIXES = ("main.md", "stages/", "traits/")
+CONFIG_FILE = "routine.yaml"
 # An all-off capabilities mapping — the base for cascades and the subrun/clarify default.
 EMPTY_CAPABILITIES = {"actions": [], "utils": [], "confirm": "always", "runs": "none",
                       "workflows": "catalog"}
@@ -342,12 +346,16 @@ class GrantPolicy:
                                 f"last run or all; the {srcs} permission covers the conduct). "
                                 f"The state digest already carries the last run's result; if "
                                 f"you need more, file a deferred ask_user.")
+                if writes and _norm_rel(path).split("/")[-1] == CONFIG_FILE:
+                    return (f"writing {_norm_rel(path)!r} would change routine config "
+                            f"(routine.yaml — permissions, capabilities, budgets, roots). Config "
+                            f"is the user's: NO run edits it, not even the routine-improver. File "
+                            f"a deferred ask_user describing the change you need.")
                 if writes and is_recipe_path(path) and not self.recipe_unlocked:
                     return (f"writing {_norm_rel(path)!r} would modify this routine's own recipe "
-                            f"or config (main.md / steps/ / traits/ / instruction.md / "
-                            f"routine.yaml) — a run never edits its own: recipes are refined by "
-                            f"the routine-improver meta routine, config by the user. File a "
-                            f"deferred ask_user describing the change instead.")
+                            f"(main.md / stages/ / traits/) — a run never edits its own recipe; "
+                            f"the routine-improver meta routine refines recipes. File a deferred "
+                            f"ask_user describing the change instead.")
         return None
 
 

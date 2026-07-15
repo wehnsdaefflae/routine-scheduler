@@ -3,8 +3,8 @@
 The Save-as-playbook / Update-playbook buttons in a conversation call these: read the intent
 (instruction.md — the first message — plus the run transcript) and the PROCEDURE that satisfied
 it, then ask the system model for a GENERALIZED playbook a future conversation can be seeded with.
-Mirrors workflows/adapt.decompose (a structured LLM inference with a graceful failure) and
-recompile (revise, refusing to degrade to an empty result)."""
+Mirrors workflows/adapt.decompose (a structured LLM inference with a graceful failure) and its
+refuse-to-degrade discipline (a revise never overwrites the current playbook with an empty result)."""
 
 from __future__ import annotations
 
