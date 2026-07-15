@@ -8,6 +8,8 @@ import asyncio
 import contextlib
 import logging
 import os
+import secrets
+import time
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -43,12 +45,21 @@ def build_stamp(repo: Path | None) -> str:
         return ""
 
 
+SSE_TICKET_TTL_S = 60
+
+
 def require_auth(request: Request) -> None:
     token = request.app.state.server.token
     if not token:
         return  # auth disabled (empty token in config)
     header = request.headers.get("authorization", "")
-    if header == f"Bearer {token}" or request.query_params.get("token") == token:
+    if header == f"Bearer {token}":
+        return
+    # EventSource cannot send headers, and the bearer token in a query string would leak
+    # into access logs — a SHORT-LIVED ticket (POST /api/sse-ticket) rides there instead.
+    ticket = request.query_params.get("ticket") or ""
+    expiry = request.app.state.sse_tickets.get(ticket)
+    if ticket and expiry is not None and expiry >= time.monotonic():
         return
     raise HTTPException(status_code=401, detail="missing or invalid token")
 
@@ -154,6 +165,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     runner = Runner(server, bus, task_center)   # runs are processes; llm-calls their children
     scheduler = Scheduler(server, runner, bus)
     app.state.server = server
+    app.state.sse_tickets = {}   # ticket → monotonic expiry (see require_auth / sse-ticket)
     app.state.bus = bus
     app.state.runner = runner
     app.state.scheduler = scheduler
@@ -198,6 +210,20 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         if marker:
             marker.write_text("done\n", encoding="utf-8")
         return {"ok": True}
+
+    @app.post("/api/sse-ticket", dependencies=deps)
+    def sse_ticket() -> dict:
+        """A short-lived, unguessable query-string credential for EventSource connections
+        (which cannot send an Authorization header). Multi-use within its TTL so the
+        browser's automatic reconnects keep working; expired tickets are purged here.
+        """
+        now = time.monotonic()
+        tickets = app.state.sse_tickets
+        for stale in [t for t, exp in tickets.items() if exp < now]:
+            del tickets[stale]
+        ticket = secrets.token_urlsafe(24)
+        tickets[ticket] = now + SSE_TICKET_TTL_S
+        return {"ticket": ticket, "ttl": SSE_TICKET_TTL_S}
 
     @app.get("/api/events", dependencies=deps)
     async def global_events():

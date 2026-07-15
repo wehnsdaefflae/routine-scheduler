@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.42.0] — 2026-07-15
+
+### Security
+- **The bearer token no longer rides SSE query strings** (where it leaked into access
+  logs). EventSource connections mint a short-lived, unguessable ticket first
+  (`POST /api/sse-ticket`, 60 s TTL, multi-use within it so browser reconnects keep
+  working; expired tickets purged on mint) and send that instead; `?token=` is no longer
+  accepted anywhere. Reconnects mint fresh tickets automatically via the `sse()` wrapper.
+
 ## [0.41.0] — 2026-07-15
 
 ### Changed

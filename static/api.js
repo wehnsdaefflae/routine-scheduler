@@ -1,6 +1,6 @@
 // Fetch + SSE wrappers with bearer-token auth. The token lives in localStorage; when it is
 // missing or rejected, an in-page gate overlay collects it and pending requests retry — no
-// window.prompt, no lost navigation. SSE carries the token in the query (EventSource has no
+// window.prompt, no lost navigation. SSE mints a short-lived ticket per connection (EventSource has no
 // headers).
 
 import { storage } from "/static/util.js";
@@ -125,15 +125,27 @@ export async function apiBlobUrl(path) {
   return { url: URL.createObjectURL(await resp.blob()), type: resp.headers.get("content-type") || "" };
 }
 
-// Raw EventSource wrapper. Handlers are keyed by SSE event name; "onerror"/"onopen" are the
-// EventSource callbacks. Prefer stream.js liveTail for transcript tails — it reconnects.
+// EventSource wrapper. Handlers are keyed by SSE event name; "onerror"/"onopen" are the
+// EventSource callbacks. EventSource cannot send an Authorization header, and the bearer
+// token in a query string would leak into access logs — so every connection first mints
+// a SHORT-LIVED ticket (POST /api/sse-ticket) and sends that instead; reconnects (via
+// stream.js liveTail, which re-invokes this) mint fresh tickets. Returns { close() } —
+// usable before the connection is even up. Prefer liveTail for transcript tails.
 export function sse(path, handlers) {
-  const sep = path.includes("?") ? "&" : "?";
-  const source = new EventSource(`${path}${sep}token=${encodeURIComponent(getToken())}`);
-  for (const [event, fn] of Object.entries(handlers)) {
-    if (event === "onerror") source.onerror = fn;
-    else if (event === "onopen") source.onopen = fn;
-    else source.addEventListener(event, (e) => fn(JSON.parse(e.data)));
-  }
-  return source;
+  let source = null;
+  let closed = false;
+  (async () => {
+    let ticket;
+    try { ticket = (await api("/api/sse-ticket", { method: "POST" })).ticket; }
+    catch (err) { handlers.onerror?.(err); return; }
+    if (closed) return;
+    const sep = path.includes("?") ? "&" : "?";
+    source = new EventSource(`${path}${sep}ticket=${encodeURIComponent(ticket)}`);
+    for (const [event, fn] of Object.entries(handlers)) {
+      if (event === "onerror") source.onerror = fn;
+      else if (event === "onopen") source.onopen = fn;
+      else source.addEventListener(event, (e) => fn(JSON.parse(e.data)));
+    }
+  })();
+  return { close: () => { closed = true; source?.close(); } };
 }

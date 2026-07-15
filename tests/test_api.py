@@ -70,8 +70,26 @@ def test_auth_required(client):
     c, _ = client
     bare = TestClient(c.app)
     assert bare.get("/api/routines").status_code == 401
-    assert bare.get(f"/api/routines?token={TOKEN}").status_code == 200
+    # the bearer token is NEVER accepted via query string — it would leak into access logs
+    assert bare.get(f"/api/routines?token={TOKEN}").status_code == 401
     assert c.get("/api/status").status_code == 200
+
+
+def test_sse_ticket_flow(client):
+    """EventSource auth: a short-lived ticket minted over the authed channel works in the
+    query string; garbage and expired tickets do not."""
+    c, _ = client
+    bare = TestClient(c.app)
+    minted = c.post("/api/sse-ticket").json()
+    assert minted["ttl"] == 60
+    ticket = minted["ticket"]
+    assert bare.get(f"/api/routines?ticket={ticket}").status_code == 200
+    assert bare.get("/api/routines?ticket=bogus").status_code == 401
+    c.app.state.sse_tickets[ticket] = 0.0   # fast-forward: long expired
+    assert bare.get(f"/api/routines?ticket={ticket}").status_code == 401
+    # expired tickets are purged at the next mint
+    c.post("/api/sse-ticket")
+    assert ticket not in c.app.state.sse_tickets
 
 
 def test_routine_cards_and_detail(client):

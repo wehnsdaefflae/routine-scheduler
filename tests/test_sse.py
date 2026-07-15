@@ -164,10 +164,11 @@ def test_wizard_events_endpoint_same_contract(client):
     assert pairs[-1] == ("end", {"state": "finished"})
 
 
-def test_bus_endpoint_wire_and_query_token(client, monkeypatch):
-    """/api/events wiring: 401 without credentials, streams with ?token= (the only auth a
-    native EventSource can send). A finite stand-in generator lets the response complete —
-    the real bus_stream never ends, which a buffering TestClient cannot consume."""
+def test_bus_endpoint_wire_and_sse_ticket(client, monkeypatch):
+    """/api/events wiring: 401 without credentials, streams with a short-lived ?ticket=
+    (EventSource cannot send headers; the bearer token never rides the query string). A
+    finite stand-in generator lets the response complete — the real bus_stream never ends,
+    which a buffering TestClient cannot consume."""
     c, _ = client
 
     async def one_bus_event(bus):
@@ -176,7 +177,8 @@ def test_bus_endpoint_wire_and_query_token(client, monkeypatch):
     monkeypatch.setattr(sse, "bus_stream", one_bus_event)
     bare = TestClient(c.app)                    # no Authorization header
     assert bare.get("/api/events").status_code == 401
-    r = bare.get(f"/api/events?token={TOKEN}")
+    ticket = c.post("/api/sse-ticket").json()["ticket"]
+    r = bare.get(f"/api/events?ticket={ticket}")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/event-stream")
     assert ("bus", {"event": "run_started", "run_id": f"apir:{TS}"}) in _wire_events(r.text)
