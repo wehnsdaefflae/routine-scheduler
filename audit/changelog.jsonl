@@ -28,3 +28,9 @@
   "summary": "Conversation state diagram now lights the current reply-cycle state (working/waiting for you) from the live run state; /conversations/{slug}/stategraph returns the lifecycle graph. AUDIT note 1.",
   "run_id": "self-audit:20260715-030003"
 }
+{
+  "ts": "2026-07-15T03:40:00+00:00",
+  "commit": "c46339c2fb67a74e6fbc8c643f89ffdfdee82abd",
+  "summary": "Dual conversation budgets: per-reply max_turns + cumulative max_total_turns (whole conversation), both settable in the New conversation view; new max_total_turns budget enforced in budget_violation/warning against cumulative ctx.turn. AUDIT note 2.",
+  "run_id": "self-audit:20260715-030003"
+}

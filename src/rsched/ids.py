@@ -23,7 +23,14 @@ def slugify(name: str) -> str:
 
 
 def run_ts(now: datetime | None = None) -> str:
-    now = now or datetime.now(timezone.utc).astimezone()
+    """A run's timestamp id, ALWAYS in UTC. Run-ts is a bare `YYYYMMDD-HHMMSS` string with
+    no offset, so generating AND reading it both in UTC is what keeps run-dir names, ordering
+    and the UI's local-time rendering consistent regardless of the SERVER's timezone — a UTC
+    host running Europe/Berlin routines otherwise skews every run-ts-derived time by the
+    offset. The web UI converts the UTC stamp to the viewer's local time for display."""
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is not None:
+        now = now.astimezone(timezone.utc)
     return now.strftime("%Y%m%d-%H%M%S")
 
 

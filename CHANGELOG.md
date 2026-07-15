@@ -19,7 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
-## [0.18.0] — 2026-07-15
+## [0.19.0] — 2026-07-15
+
+### Fixed
+- **Run timestamps are now unambiguously UTC end-to-end — the ~2h clock skew is gone.**
+  `ids.run_ts()` always emits UTC (was server-local: identical on a UTC host, but a bare
+  `YYYYMMDD-HHMMSS` carries no offset, so a UTC server running Europe/Berlin routines skewed
+  every run-ts-derived time). `registry.parse_run_ts()` now reads run-ts as UTC (was stamping
+  the routine's tz, which could spuriously re-fire a `catchup: run_once` routine on a UTC
+  host), and the web UI's `toDate()` parses run-ts as UTC and renders it in the **viewer's**
+  local time — so run-ts and ISO timestamps finally agree. (AUDIT note; residual: the
+  pre-`elapsed_s` fallback in `registry.read_run` still treats both stamps as naive — correct
+  on a UTC host, a minor follow-up elsewhere.)
 
 ### Added
 - **Two conversation budgets, settable before the conversation starts.** The "New

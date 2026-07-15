@@ -10,7 +10,7 @@ from __future__ import annotations
 import gzip
 import shutil
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -143,9 +143,14 @@ def last_due_fire(cfg: RoutineConfig, before: datetime) -> datetime | None:
     return croniter(cfg.cron, before.astimezone(tz)).get_prev(datetime)
 
 
-def parse_run_ts(ts: str, tz: str) -> datetime | None:
+def parse_run_ts(ts: str, tz: str = "UTC") -> datetime | None:
+    """Parse a run-ts back to an aware datetime. Run-ts is ALWAYS UTC (see ids.run_ts), so it
+    is read as UTC regardless of the routine's display tz — catch-up comparisons are by
+    absolute instant. (Reading it in the routine's tz used to skew last_start by the
+    server↔routine offset, which could spuriously re-fire a run_once routine on a UTC host.)
+    `tz` is retained for call-site compatibility."""
     try:
-        return datetime.strptime(ts, "%Y%m%d-%H%M%S").replace(tzinfo=ZoneInfo(tz))
+        return datetime.strptime(ts, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
     except ValueError:
         return None
 

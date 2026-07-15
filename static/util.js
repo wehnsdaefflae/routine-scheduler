@@ -25,11 +25,14 @@ export function el(tag, attrs = {}, ...children) {
 }
 
 // ---- time: absolute + relative, always together ---------------------------------------------
-// Accepts an ISO string or a run-ts ("20260708-220004").
+// Accepts an ISO string or a run-ts ("20260708-220004"). A run-ts is ALWAYS UTC (see
+// ids.run_ts) and carries no offset, so it is parsed as UTC (Date.UTC) and then rendered in
+// the VIEWER's local time by the formatters below — otherwise a UTC server + a non-UTC
+// viewer would show every run-ts-derived time skewed by their offset.
 export function toDate(v) {
   if (!v) return null;
   const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})?/.exec(String(v));
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)));
   const d = new Date(v);
   return isNaN(d) ? null : d;
 }
