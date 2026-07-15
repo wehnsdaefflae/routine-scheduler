@@ -321,9 +321,9 @@ def test_routine_card_spend_line(client):
     ctrl.mkdir(parents=True, exist_ok=True)
     entries = [
         {"ts": "2026-06-10T08:00:00+00:00", "routine": "apir", "depth": 0,
-         "tokens": 900, "cost": 0.9},
+         "tokens": 900, "cost": 0.9, "referrals": 2},
         {"ts": "2026-07-10T08:00:00+00:00", "routine": "apir", "depth": 0,
-         "tokens": 2000, "cost": 2.0},
+         "tokens": 2000, "cost": 2.0, "referrals": 1},
     ]
     (ctrl / "workflow-usage.jsonl").write_text(
         "".join(_j.dumps(e) + "\n" for e in entries), encoding="utf-8")
@@ -333,6 +333,9 @@ def test_routine_card_spend_line(client):
     assert card["spend"]["prev"]["cost"] == 0.9
     detail = c.get("/api/routines/apir").json()
     assert detail["spend"]["current"]["cost"] == 2.0
+    # the uncensored-referral audit rides the same durable stream
+    assert detail["referrals_total"] == 3
+    assert detail["spend"]["current"]["referrals"] == 1
 
 
 def test_routine_card_flags_decision_backlog(client):

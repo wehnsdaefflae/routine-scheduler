@@ -239,10 +239,13 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   unanswered deferred asks gets a `decision_backlog` flag on its dashboard card. Every finished
   (sub)run appends to
   `~/routines/.control/workflow-usage.jsonl` — the workflow-curator routine's evidence stream
-  AND the durable spend series (tokens + cost per finished run; run dirs fall to retention, this
-  stream survives): `stats.monthly_spend` aggregates it per routine × month — the Stats tab's
-  "Monthly spend" table and the dashboard cards' compact month line (bg-task slugs attributed
-  to their owner conversation; depth-0 entries only, a parent already folds its children in).
+  AND the durable spend series (tokens + cost + uncensored-referral count per finished run; run
+  dirs fall to retention, this stream survives): `stats.monthly_spend` aggregates it per routine ×
+  month — the Stats tab's "Monthly spend" table and the dashboard cards' compact month line
+  (bg-task slugs attributed to their owner conversation; depth-0 entries only, a parent already
+  folds its children in). The referral AUDIT (`ctx.referrals`: turns + llm calls the uncensored
+  model answered — both paths increment it, children fold into the parent, status.json carries it
+  per run) surfaces on the routine page's Models section.
 
 ## Conversations (interactive sessions)
 

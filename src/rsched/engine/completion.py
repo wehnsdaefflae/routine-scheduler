@@ -170,6 +170,7 @@ def refer_turn_to_uncensored(loop, usage_sum: dict, base_len: int) -> dict | Non
         return None
     if len(loop.messages) > base_len:
         del loop.messages[base_len:]
+    ctx.referrals += 1
     return candidate
 
 

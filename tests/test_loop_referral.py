@@ -68,6 +68,7 @@ def test_refers_refusal_to_uncensored_when_configured(make_routine):
     action, usage = next_action(loop)
     assert action["kind"] == "read_file"          # the uncensored model's action won the turn
     assert loop._referred_turn is True
+    assert loop.ctx.referrals == 1                 # the audit counter (status.json + spend stream)
     assert main.calls == 1 and unc.calls == 1
     assert usage["out"] == 2                       # both completions folded into turn usage
 
@@ -78,6 +79,7 @@ def test_no_referral_when_uncensored_unset(make_routine):
     action, _ = next_action(loop)
     assert action is None                          # inert: falls through to schema forcefail
     assert loop._referred_turn is False
+    assert loop.ctx.referrals == 0
     assert main.calls == 3                         # MAX_SCHEMA_ATTEMPTS, no referral tried
 
 

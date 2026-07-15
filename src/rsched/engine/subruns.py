@@ -164,6 +164,7 @@ class SubrunManager:
         if not sub.collected:
             sub.collected = True
             self.parent.ctx.add_usage(sub.ctx.usage)
+            self.parent.ctx.referrals += sub.ctx.referrals
             self.parent.ctx.transcript.event("subrun_end", {
                 "n": sub.n, "label": sub.label, "workflow": sub.workflow, "mode": sub.mode,
                 "status": sub.status, "summary": sub.summary,
@@ -178,7 +179,8 @@ class SubrunManager:
                                turns=sub.ctx.turn,
                                tokens=int(sub.ctx.usage.get("in", 0))
                                       + int(sub.ctx.usage.get("out", 0)),
-                               cost=float(sub.ctx.usage.get("cost") or 0.0))
+                               cost=float(sub.ctx.usage.get("cost") or 0.0),
+                               referrals=sub.ctx.referrals)
 
     def status_table(self) -> dict:
         rows = [{"n": sub.n, "label": sub.label, "workflow": sub.workflow,

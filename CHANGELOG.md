@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.36.0] — 2026-07-15
+
+### Added
+- **Uncensored-referral audit**: every referral — a turn the main model refused that the
+  `uncensored` model answered (turn loop), or an `llm` call the tool model refused
+  (executor) — increments `ctx.referrals`; children fold theirs into the parent. The
+  count rides each run's `status.json`, the durable workflow-usage stream (so it survives
+  retention and aggregates per month), and surfaces on the routine page's Models section
+  ("↪ uncensored referrals: N total · M this month").
+
 ## [0.35.0] — 2026-07-15
 
 ### Added

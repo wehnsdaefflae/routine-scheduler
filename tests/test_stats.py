@@ -186,9 +186,11 @@ def test_monthly_spend_reads_the_durable_stream(tmp_path):
         fh.write("not json\n")
     m = monthly_spend(s)
     assert m["months"] == ["2026-06", "2026-07"]
-    assert m["by_routine"]["alpha"]["2026-07"] == {"runs": 1, "tokens": 3000, "cost": 1.5}
+    assert m["by_routine"]["alpha"]["2026-07"] == {"runs": 1, "tokens": 3000, "cost": 1.5,
+                                                   "referrals": 0}
     assert m["by_routine"]["alpha"]["2026-06"]["tokens"] == 1000
-    assert m["by_routine"]["chat"]["2026-07"] == {"runs": 1, "tokens": 500, "cost": 0.0}
+    assert m["by_routine"]["chat"]["2026-07"] == {"runs": 1, "tokens": 500, "cost": 0.0,
+                                                  "referrals": 0}
     assert list(m["by_routine"]) == ["alpha", "chat"]          # latest-month tokens, desc
 
 

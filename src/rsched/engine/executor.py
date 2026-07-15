@@ -466,6 +466,7 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
             if u_completion is not None:
                 ctx.add_usage(u_completion.usage)
                 completion, referred = u_completion, True
+                ctx.referrals += 1
                 endpoint_name, model_name = u_ref.endpoint, u_ref.model
 
     reply = completion.text

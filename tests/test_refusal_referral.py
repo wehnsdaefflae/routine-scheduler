@@ -71,7 +71,7 @@ def _ctx(registry):
     usages = []
     ctx = SimpleNamespace(registry=registry,
                           routine=SimpleNamespace(models={}),
-                          add_usage=usages.append)
+                          add_usage=usages.append, referrals=0)
     ctx.usages = usages
     return ctx
 
@@ -83,8 +83,10 @@ def _action():
 def test_refers_refusal_to_uncensored_when_configured():
     tool = _FakeEndpoint(reply=REFUSAL)
     unc = _FakeEndpoint(reply="Here is the uncensored answer.")
-    out = do_llm(_action(), _ctx(_FakeRegistry(tool, unc)))
+    ctx = _ctx(_FakeRegistry(tool, unc))
+    out = do_llm(_action(), ctx)
     assert out["referred"] is True
+    assert ctx.referrals == 1                      # the audit counter
     assert out["model"] == "unc-model" and out["endpoint"] == "unc-ep"
     assert out["reply"] == "Here is the uncensored answer."
     assert tool.calls == 1 and unc.calls == 1

@@ -159,8 +159,14 @@ def routine_detail(request: Request, slug: str) -> dict:
     permissions, capabilities = permission_layers_detail(server, info.cfg)
     in_library = bool(info.cfg.workflow_slug) and \
         (server.library_home / "workflows" / f"{info.cfg.workflow_slug}.py").exists()
+    monthly = monthly_spend(server)
+    # uncensored-referral audit: how often a turn/llm call was answered by the uncensored
+    # model (durable stream; the current month rides spend.current.referrals)
+    referrals_total = sum(int(c.get("referrals") or 0)
+                          for c in (monthly["by_routine"].get(slug) or {}).values())
     return {
-        **_card(request, info, monthly=monthly_spend(server)),
+        **_card(request, info, monthly=monthly),
+        "referrals_total": referrals_total,
         "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
         "server_tz": schedule.server_tz(),
         # Provenance is a CLAIM ("generated from") — in_library says whether the referenced

@@ -99,10 +99,12 @@ def monthly_spend(server: ServerConfig) -> dict:
         if m := _BG_SLUG.fullmatch(slug):
             slug = m.group(1)
         months.add(month)
-        cell = by_routine[slug].setdefault(month, {"runs": 0, "tokens": 0, "cost": 0.0})
+        cell = by_routine[slug].setdefault(month, {"runs": 0, "tokens": 0, "cost": 0.0,
+                                                   "referrals": 0})
         cell["runs"] += 1
         cell["tokens"] += int(rec.get("tokens") or 0)
         cell["cost"] = round(cell["cost"] + float(rec.get("cost") or 0.0), 6)
+        cell["referrals"] += int(rec.get("referrals") or 0)
     latest = max(months) if months else ""
     ordered = sorted(by_routine.items(),
                      key=lambda kv: kv[1].get(latest, {}).get("tokens", 0), reverse=True)

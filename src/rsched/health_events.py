@@ -41,7 +41,7 @@ def log_health_event(routines_home: Path, event: str, *, routine: str,
 
 def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str, workflow: str,
                        depth: int, status: str, turns: int, tokens: int,
-                       cost: float = 0.0) -> None:
+                       cost: float = 0.0, referrals: int = 0) -> None:
     """Append one line per finished (sub)run to <routines_home>/.control/workflow-usage.jsonl —
     the feedback stream the meta-workflows routine mines to optimize the library, and the
     DURABLE spend series (run dirs fall to retention; this stream survives — monthly spend
@@ -62,6 +62,7 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str, workfl
                 "turns": turns,
                 "tokens": tokens,
                 "cost": round(cost, 6),
+                "referrals": referrals,
             }) + "\n")
     except OSError:
         pass

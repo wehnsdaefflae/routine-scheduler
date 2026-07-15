@@ -194,6 +194,7 @@ export async function render(view, slug, query = {}) {
       el("span", { class: "muted small", style: "min-width:150px" }, desc),
       sel);
   });
+  const refMonth = d.spend?.current?.referrals || 0;
   view.append(el("h2", {}, "Models"),
     el("div", { class: "panel" },
       el("div", { class: "muted small", style: "margin-bottom:8px" },
@@ -201,6 +202,11 @@ export async function render(view, slug, query = {}) {
           ? "which catalog model this routine uses for each role — leave on system default to fall back to the system model"
           : "add a model in Settings first"),
       ...modelRows,
+      d.referrals_total
+        ? el("div", { class: "muted small mt",
+            title: "turns or llm calls the main/tool model refused and the uncensored model answered instead (from the durable usage stream)" },
+            `↪ uncensored referrals: ${d.referrals_total} total` + (refMonth ? ` · ${refMonth} this month` : ""))
+        : null,
       el("div", { class: "row mt" }, el("button", { class: "btn primary",
         onclick: async () => {
           const models = {};

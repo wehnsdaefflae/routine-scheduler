@@ -96,6 +96,7 @@ class RunContext:
     main_model: str = ""              # "<endpoint>/<model>" resolved each turn (in status.json)
     budget_base_turn: int = 0         # turns before this count against a prior window (resume)
     schema_retries: int = 0           # cumulative schema-violation retries this run (telemetry)
+    referrals: int = 0                # turns/llm-calls answered by the `uncensored` model (audit)
     schema_forcefails: int = 0        # turns that exhausted every schema attempt (telemetry)
     _started_mono: float = field(default_factory=time.monotonic)
     _suspended_s: float = 0.0
@@ -225,6 +226,7 @@ class RunContext:
             "model": self.main_model,
             "schema_retries": self.schema_retries,
             "schema_forcefails": self.schema_forcefails,
+            "referrals": self.referrals,
             "budgets": {
                 "turns_left": None if turns_left is None else int(turns_left),
                 "wall_clock_left_s": None if wall_left_min is None else int(wall_left_min * 60),
