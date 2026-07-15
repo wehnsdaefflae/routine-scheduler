@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.21.0] — 2026-07-15
+
+### Added
+- **Refusal referral now covers the main orchestrator loop and subroutine loops** (extends the
+  0.20.0 `llm`-tool-call referral; AUDIT decision **D8 → C**). In an agent loop a turn is a
+  schema-constrained *action*, so a model refusal surfaces as a free-text reply that fails to
+  parse as an action **and** reads as a decline (`executor._looks_like_refusal`). When that
+  happens and the routine has an `uncensored` model configured, `EngineLoop._next_action`
+  re-issues the SAME turn to it once; a schema-valid action from the uncensored model continues
+  the run untouched and the `assistant_action` transcript event is tagged `referred: true`.
+  Subroutines run the same loop, so both are covered by one code path. Strictly **opt-in and
+  inert**: no `uncensored` role → no referral, unchanged behaviour. A malformed-but-not-refusing
+  reply still takes the normal schema-retry path (the uncensored model is consulted only on a
+  genuine decline, at most once per turn); referral usage is folded into the turn's usage. No
+  new action kind or transcript `EVENT_TYPE` — `referred` is an additive field on the existing
+  `assistant_action` event, mirroring 0.20.0's observation field. `docs/endpoints.md` scope note
+  updated.
+
 ## [0.20.1] — 2026-07-15
 
 ### Fixed

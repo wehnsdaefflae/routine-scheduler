@@ -193,8 +193,14 @@ instead, with `referred: true` on the observation.
 - **Typical wiring:** point `uncensored` at a Nano-GPT abliterated model (above), keep
   `tool_call` on your normal model. Requests the normal model refuses get answered by the
   abliterated one; everything else stays on the normal model.
-- Scope today is the `llm` tool-call only (not the main orchestrator loop or subroutine
-  loops, where a refusal has no clean free-text signal).
+- **Scope: the `llm` tool-call AND the agent loops** (main orchestrator + subroutine). In a
+  loop, a turn is a schema-constrained *action*, so a refusal shows up as a free-text reply
+  that fails to parse as an action **and** reads as a decline: when that happens and an
+  `uncensored` model is configured, the engine re-issues the same turn to it once and, if it
+  produces a valid action, continues the run with it (the `assistant_action` transcript event
+  carries `referred: true`). A malformed-but-not-refusing reply still takes the normal
+  schema-retry path — the uncensored model is only consulted on a genuine decline. Subroutines
+  run the same loop, so they are covered by the same mechanism.
 
 ## Troubleshooting
 

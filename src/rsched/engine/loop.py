@@ -156,7 +156,9 @@ class EngineLoop:
                     return self._finish_run("failed", "Orchestrator failed to produce a valid action "
                                                       f"after {MAX_SCHEMA_ATTEMPTS} attempts.")
                 ctx.turn += 1
-                ctx.transcript.event("assistant_action", dict(action), turn=ctx.turn, usage=usage)
+                ctx.transcript.event("assistant_action", dict(action), turn=ctx.turn, usage=usage,
+                                     **({"referred": True} if getattr(self, "_referred_turn", False)
+                                        else {}))
                 ctx.add_usage(usage)
                 self.messages.append({"role": "assistant", "content": json.dumps(action, ensure_ascii=False)})
                 self._record_turn(action)
@@ -351,6 +353,7 @@ class EngineLoop:
 
     def _next_action(self) -> tuple[dict | None, dict]:
         ctx = self.ctx
+        self._referred_turn = False   # set when the uncensored model produced THIS turn's action
         endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
         ctx.main_model = f"{ref.endpoint}/{ref.model}"     # surfaced in status.json; updates on a switch
         self._compact_if_needed(endpoint, ref)
@@ -360,6 +363,7 @@ class EngineLoop:
             self._shed_schema_turns -= 1
             schema = None
         prev_raw: str | None = None
+        referral_tried = False   # D8 scope C: refer a free-text refusal to the uncensored model once
         base_len = len(self.messages)   # schema-retry debris beyond this is dropped on success
         for attempt in range(1, MAX_SCHEMA_ATTEMPTS + 1):
             # Generous output cap: reasoning models need room to think AND answer — a
@@ -431,6 +435,18 @@ class EngineLoop:
                                                **({"provider": completion.provider}
                                                   if completion.provider else {})})
                 ctx.note_schema_retry()
+                # Refusal referral (opt-in, D8 scope C): a free-text reply that reads as a
+                # content refusal — not a malformed action — means the main/subroutine model
+                # DECLINED the turn. If the routine configured an `uncensored` model, re-issue
+                # this turn to it once; a schema-valid action from it continues the loop
+                # untouched. Inert when the role is unset (for_uncensored → None).
+                if (not referral_tried and completion.parsed is None
+                        and executor._looks_like_refusal(completion.text)):
+                    referral_tried = True
+                    referred_action = self._refer_turn_to_uncensored(usage_sum, base_len)
+                    if referred_action is not None:
+                        self._referred_turn = True
+                        return referred_action, usage_sum
                 self.messages.append({"role": "assistant", "content": raw[:4000]})
                 self.messages.append({"role": "user", "content": retry_message(
                     exc.problems, example=KIND_EXAMPLES.get(kind_hint), repeated=repeated)})
@@ -441,6 +457,48 @@ class EngineLoop:
                     schema = None
         ctx.note_schema_forcefail()
         return None, usage_sum
+
+    def _refer_turn_to_uncensored(self, usage_sum: dict, base_len: int) -> dict | None:
+        """D8 scope C: the routine's main/subroutine model refused the turn in free text. If an
+        `uncensored` model is configured, re-issue the CURRENT turn to it once and return a
+        schema-valid action if it produces one (else None → fall back to normal schema retry).
+        Opt-in and inert: no `uncensored` role (for_uncensored → None) means no-op. Usage from the
+        referred completion is folded into this turn's usage; on success the schema-retry debris
+        is dropped like the primary success path. Best-effort — any endpoint/parse failure returns
+        None so the loop keeps its existing retry behaviour."""
+        ctx = self.ctx
+        target = ctx.registry.for_uncensored(ctx.routine.models)
+        if target is None:
+            return None
+        u_endpoint, u_ref = target
+        try:
+            completion = u_endpoint.complete(self.messages, model=u_ref.model,
+                                             schema=ACTION_SCHEMA, effort=u_ref.effort,
+                                             max_tokens=16_384, session=str(ctx.run_dir),
+                                             purpose=f"turn {ctx.turn + 1} · referred", kind="turn")
+        except EndpointError:
+            return None
+        usage_sum["in"] += completion.usage["in"]
+        usage_sum["out"] += completion.usage["out"]
+        for cache_key in ("cached_in", "cache_write"):
+            if completion.usage.get(cache_key):
+                usage_sum[cache_key] = usage_sum.get(cache_key, 0) + int(completion.usage[cache_key])
+        if completion.usage.get("cost"):
+            usage_sum["cost"] = round(usage_sum.get("cost", 0.0) + float(completion.usage["cost"]), 6)
+        try:
+            candidate = (completion.parsed if completion.parsed is not None
+                         else extract_json(completion.text))
+            candidate = normalize_action(candidate)
+            problems = (validate(candidate, ACTION_SCHEMA)
+                        or validate_action(candidate, allowed_kinds=self.allowed_tools,
+                                           grants=self.grants))
+        except Exception:   # best-effort: a bad referred reply just falls through to normal retry
+            return None
+        if problems:
+            return None
+        if len(self.messages) > base_len:
+            del self.messages[base_len:]
+        return candidate
 
     def _compact_if_needed(self, endpoint, ref) -> None:
         """When the prompt exceeds ~60% of context, archive the middle to a navigable on-disk
