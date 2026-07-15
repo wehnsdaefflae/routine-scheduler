@@ -271,7 +271,15 @@ chat message; the next user message resumes the SAME run in place (fresh budget 
   `control.run_user_command` — parse (`engine/commands.py`) → the model action's exact
   validate_action gates → executor.dispatch — costing NO model turn; the observation lands in the
   transcript (`user_injection {command}` + `observation {user_command}` payload extensions) and in
-  the model's context as one USER COMMAND message. Loop-control kinds are not commands.
+  the model's context as one USER COMMAND message. **The speaker turn stays with the user**: when
+  the model has handed the turn back (an authored finish) and the resuming message ONLY runs
+  commands (`loop.leg_commands` and not `leg_prose`, boot sets `leg_after_authored`), the loop's
+  command-only gate ends the leg after boot with NO model turn and NO reply
+  (`loop._exit_commands_only` — no finish event, result.md untouched, status→finished); the next
+  PROSE message hands the turn over and the model replies, seeing the command results replayed. A
+  run with its OWN work (a scheduled routine fire, crash recovery mid-workflow) has no authored
+  hand-back, so it always proceeds and a command there is injected context. Loop-control kinds are
+  not commands.
 - Web: `web/api_conversations.py` (create/message are multipart — **attachments** land in
   `<conv>/attachments/` and ride the message text as an `[attached files]` block; vision util for
   images). **Artifacts**: deliverables the model `write_file`s into `<conv>/artifacts/` are

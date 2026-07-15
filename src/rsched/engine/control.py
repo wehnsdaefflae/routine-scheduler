@@ -126,6 +126,9 @@ def run_user_command(loop, m: dict) -> None:
     if obs.get("media"):  # a /view_image the model can show natively
         msg["media"] = obs["media"]
     loop.messages.append(msg)
+    # a command is a real, observed action — it grounds a later model finish (the
+    # fabrication guard rejects a finish only when NOTHING has been executed this run)
+    loop.executed_actions += 1
     ctx.write_status()
 
 

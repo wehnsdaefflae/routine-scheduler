@@ -91,6 +91,12 @@ it asks for some — then finish again with an updated summary (the previous res
 what this follow-up changed).
 ```
 
+When the resuming message ONLY runs slash commands (the speaker turn is the user's after an
+authored finish), the leg is **command-only**: the engine executes the commands at boot,
+appends `USER COMMAND (executed directly)` + its observation to the transcript, and ends
+the leg WITHOUT any model turn or reply — the turn stays with the user. The model sees those
+command results only on the NEXT prose reply, replayed like any other turn.
+
 ---
 
 ## 3 · Messages in the middle of a conversation

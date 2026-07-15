@@ -538,8 +538,11 @@ export async function render(view, slug, _query = {}) {
           input.value = "";
           forgetField(input);   // sent — the draft must not refill on reload
           clearFiles();
-          toast(r.delivery === "mid-run" ? "delivered — picked up next turn" : "waking the conversation…");
-          if (r.delivery !== "mid-run") setTimeout(mountConversation, 700);   // reattach to the live run
+          toast(r.command ? "command running — you keep the turn"
+            : r.delivery === "mid-run" ? "delivered — picked up next turn"
+            : "waking the conversation…");
+          // reattach to show the result (command) or the live reply; mid-run streams already
+          if (r.delivery !== "mid-run") setTimeout(mountConversation, 700);
         } catch (err) { toast(err.message, 5000, { error: true }); }
         send.disabled = false;
       };

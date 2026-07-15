@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.46.0] — 2026-07-16
+
+### Changed
+- **A slash command keeps the speaking turn with the user — it never hands the turn to the
+  model.** When the model has given the turn back (an authored finish) and the resuming
+  message only runs commands, the engine executes them and returns to idle with **no model
+  turn and no reply** (the loop's command-only gate: `loop.leg_after_authored` + all
+  commands, no prose → `_exit_commands_only`, no finish event, `result.md` untouched). You
+  can run any number of commands in a row and the assistant stays quiet; it replies only
+  when you send a plain message — and then it sees every command's result (replayed from the
+  transcript). The rule is uniform across conversations and routines: it fires wherever the
+  turn is yours (a conversation reply, or a resumed finished run), and does NOT fire for a
+  routine's own scheduled execution (its workflow always runs; an injected command there is
+  context). A command still grounds the run, so a following model finish is not treated as
+  fabricated. The command composer's send toast now reads "command running — you keep the
+  turn".
+
 ## [0.45.1] — 2026-07-16
 
 ### Fixed

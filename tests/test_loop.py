@@ -1241,27 +1241,55 @@ def test_assistant_actions_carry_the_active_phase(make_routine, scripted):
     assert acts[2]["phase"] == "only"
 
 
-def test_user_command_executes_without_a_model_turn(make_routine, scripted):
-    """A slash command queued while no run was live EXECUTES at boot: the observation
-    lands in the transcript (the chat renders it) AND in the model's context, and no
-    model turn is consumed — the user ran the action, not the model."""
+def test_command_only_wake_executes_without_a_reply(make_routine, scripted):
+    """A conversation woken ONLY to run a slash command executes it and returns to idle
+    WITHOUT any model turn or reply — the user keeps the speaking turn. The command +
+    result are in the transcript (the chat renders them); no assistant_action, no finish
+    event, result.md untouched."""
     d = make_routine(slug="cmdr")
+    # a prior finished reply — the conversation is idle, resuming in place
+    run_dir = d / "runs" / TS
+    run_dir.mkdir(parents=True)
+    (run_dir / "transcript.jsonl").write_text(
+        '{"type":"header"}\n{"type":"finish","payload":{"status":"ok","summary":"prior reply","authored":true}}\n',
+        encoding="utf-8")
+    (run_dir / "result.md").write_text("prior reply\n", encoding="utf-8")
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": f"cmdr:{TS}", "state": "finished", "turn": 1})
     atomic_write_json(d / "inbox" / "msg-1.json",
                       {"text": "/read_file LEDGER.md", "command": True, "ts": "t"})
-    ep = scripted([probe(), finish()])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
-    assert status == "ok"
+    ep = scripted([])   # NO scripted actions — the model must not be called at all
+    status, run_dir = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    assert status == "finished"
+    assert ep.calls == []                                       # the model never spoke
     events, _ = read_events(run_dir / "transcript.jsonl")
-    injection = next(e for e in events if e["type"] == "user_injection")
-    assert injection["payload"]["command"] is True
+    assert not [e for e in events if e["type"] == "assistant_action"]
+    assert len([e for e in events if e["type"] == "finish"]) == 1   # only the PRIOR reply
+    injection = next(e for e in events if e["type"] == "user_injection"
+                     and (e.get("payload") or {}).get("command"))
+    assert injection["payload"]["text"] == "/read_file LEDGER.md"
     obs = next(e for e in events if e["type"] == "observation"
                and (e.get("payload") or {}).get("user_command"))
     assert obs["payload"]["kind"] == "read_file"
-    # the model sees command + result as ONE user message; no extra model turn happened
-    cmd_msg = next(m for m in ep.calls[0]["messages"] if "USER COMMAND" in m.get("content", ""))
-    assert "/read_file LEDGER.md" in cmd_msg["content"]
-    assert "routine created for tests" in cmd_msg["content"]   # the LEDGER content came back
-    assert len([e for e in events if e["type"] == "assistant_action"]) == 2
+    assert (run_dir / "result.md").read_text().strip() == "prior reply"   # unchanged
+
+
+def test_command_then_prose_replies_and_sees_the_result(make_routine, scripted):
+    """A command followed by a PROSE message: the prose hands the turn to the assistant,
+    which replies having seen the command's result — one leg, one reply."""
+    d = make_routine(slug="cmdp")
+    atomic_write_json(d / "inbox" / "msg-1.json",
+                      {"text": "/read_file LEDGER.md", "command": True, "ts": "t1"})
+    atomic_write_json(d / "inbox" / "msg-2.json",
+                      {"text": "what did that say?", "ts": "t2"})
+    ep = scripted([finish(summary="the ledger notes the routine's creation")])
+    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    assert len(ep.calls) == 1                                   # the model replied once
+    seen = ep.calls[0]["messages"]
+    assert any("USER COMMAND" in m.get("content", "") and "routine created for tests"
+               in m.get("content", "") for m in seen)          # command result in context
+    assert any("what did that say?" in m.get("content", "") for m in seen)
 
 
 def test_user_command_rides_the_same_enforcement_as_model_actions(make_routine, scripted):

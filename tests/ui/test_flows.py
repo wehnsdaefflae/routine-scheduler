@@ -244,14 +244,17 @@ def test_conversation_slash_commands(ui, ui_page):
     composer_input.fill("/util dir")
     expect(suggest.locator(".cs-item", has_text="/util dir-tree")).to_be_visible()
 
-    # a sent command is marked for the engine to EXECUTE
+    # a sent command is marked for the engine to EXECUTE, and the toast confirms the turn
+    # stays with the user (no reply handed to the model — a plain message would say "waking")
     composer_input.fill("/read_file instruction.md")
     ui_page.locator(".conv-composer").get_by_role("button", name="send", exact=True).click()
-    expect(_toast(ui_page)).to_be_visible()
+    expect(_toast(ui_page)).to_contain_text("you keep the turn")
     flagged = [json.loads(m.read_text(encoding="utf-8"))
                for m in (ui.conversations / slug / "inbox").glob("msg-*.json")]
     command = next(d for d in flagged if d.get("command"))
     assert command["text"] == "/read_file instruction.md"
+    # a bare word (not a known /kind) is NOT flagged — it would hand the turn to the model
+    assert all("read_file" in d["text"] or not d.get("command") for d in flagged)
 
 
 # ---- 3. Routine page saves ---------------------------------------------------------------

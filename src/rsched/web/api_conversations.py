@@ -203,16 +203,21 @@ async def message(request: Request, slug: str, text: Annotated[str, Form()],
                       {"text": full, "ts": now_iso(), "via": "conversation",
                        **({"command": True} if command.strip() else {}),
                        **({"attachments": rels} if rels else {})})
+    is_command = bool(command.strip())
     last = info.last_run
     if last and last.state not in registry.TERMINAL_STATES:
-        return {"ok": True, "delivery": "mid-run", "run_id": last.run_id}
+        return {"ok": True, "delivery": "mid-run", "run_id": last.run_id,
+                "command": is_command}
     runner = request.app.state.runner
+    # A command wakes the engine to EXECUTE it and return to idle without a reply (the loop's
+    # command-only gate) — same resume, but the model never takes a turn.
     rid = (await runner.resume_terminal(info.cfg, reason="converse") if last
            else await runner.fire(info.cfg, reason="conversation"))
     if not rid:
         raise HTTPException(
             409, "could not wake the conversation (draining, or a reply just started)")
-    return {"ok": True, "delivery": "resumed", "run_id": rid}
+    return {"ok": True, "delivery": "command" if is_command else "resumed",
+            "run_id": rid, "command": is_command}
 
 
 @router.get("/conversations/{slug}")

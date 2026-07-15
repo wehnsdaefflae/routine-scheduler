@@ -101,13 +101,20 @@ every global util with its usage line).
 ```
 
 A command executes through the engine's normal action path — the same capability
-enforcement, the same working-directory rules — at the next turn boundary (immediately if
-a reply is live, at wake-up otherwise). It costs **no model turn**: the result appears in
-the chat as a command block, and the assistant sees exactly what you ran and what came
-back, so you can hand work off mid-thought ("I already fetched it — take it from there").
-A malformed or disallowed command answers with its usage line instead of failing silently.
-Loop-control actions (`spawn`, `subtask`, `wait`, `ask_user`, `finish`, …) are deliberately
-not commands — they steer the assistant's run; ask for them in plain words.
+enforcement, the same working-directory rules — and costs **no model turn**. Crucially,
+**the speaking turn stays with you**: a message that only runs commands does not hand the
+turn to the assistant, so you can run as many as you like (fetch a page, read a file, jot
+a memory note) and the assistant stays quiet. It replies only when you send a plain
+message — and then it sees everything your commands produced. The result of each command
+appears in the chat as a command block; a malformed or disallowed command answers with its
+usage line instead of failing silently. Loop-control actions (`spawn`, `subtask`, `wait`,
+`ask_user`, `finish`, …) are deliberately not commands — they steer the assistant's run;
+ask for them in plain words.
+
+The same rule holds anywhere the turn is yours: if you resume a finished run (a conversation
+reply, or a completed routine) with a command, it executes and the turn stays with you. It
+does **not** apply to a routine's own scheduled execution — that is the routine's turn, not
+yours, so its workflow always runs (a command you inject there is context for that run).
 
 ## Artifacts — deliverables in the side panel
 

@@ -198,10 +198,13 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
                                 "brief": json.dumps(brief, ensure_ascii=False),
                                 "say": p.get("say", "")})
         elif kind_ev == "observation":
-            messages.append({"role": "user", "content": format_observation(p)})
+            rendered = (f"COMMAND ERROR: {p.get('error')}" if p.get("kind") == "user_command"
+                        else format_observation(p))
+            messages.append({"role": "user", "content": rendered})
         elif kind_ev == "user_injection":
-            messages.append({"role": "user",
-                             "content": f"USER MESSAGE (injected mid-run): {p.get('text', '')}"})
+            label = ("USER COMMAND (executed directly)" if p.get("command")
+                     else "USER MESSAGE (injected mid-run)")
+            messages.append({"role": "user", "content": f"{label}: {p.get('text', '')}"})
         elif kind_ev == "answer":
             messages.append({"role": "user", "content": f"ANSWER: {p.get('text', '')}"})
         # header / question / compaction / finish / error / subrun_* are not part of the prompt

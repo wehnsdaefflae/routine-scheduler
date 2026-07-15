@@ -80,6 +80,15 @@ class EngineLoop:
         self.final_summary = ""
         self.dialog_qid: str | None = None   # open ask_user record a dialog reply left behind
         self.executed_actions = 0  # actions that produced an observation this run
+        # This leg's wake, set in boot. The speaker turn is the USER's after the model hands
+        # it back with an authored finish (`leg_after_authored`); a message that resumes then
+        # keeps the turn with the user if it only EXECUTES commands (`leg_commands`, no
+        # `leg_prose`) — the model takes no turn. Prose hands the turn over. A run with its own
+        # work to do — a scheduled routine fire, or crash recovery mid-workflow — has no
+        # authored hand-back, so it always proceeds (commands there are injected context).
+        self.leg_commands = False
+        self.leg_prose = False
+        self.leg_after_authored = False
         # Gated capabilities (write_util, reserved utils, runs/ access) come from the
         # routine's CAPABILITIES mapping — user-set config a routine cannot self-grant
         # (its own routine.yaml is write-protected like the recipe); the library docs'
@@ -151,6 +160,9 @@ class EngineLoop:
         ctx = self.ctx
         try:
             boot(self)
+            if (ctx.depth == 0 and self.leg_after_authored
+                    and self.leg_commands and not self.leg_prose):
+                return self._exit_commands_only()
             while True:
                 if self._aborted():
                     raise RunAborted
@@ -281,6 +293,16 @@ class EngineLoop:
                      "aborted": "aborted"}.get(status, "finished")
             ctx.write_status(state, question=None)
         return status
+
+    def _exit_commands_only(self) -> str:
+        """A conversation woken ONLY to run slash commands: the commands already executed in
+        boot, appending their events to the transcript. End the leg with NO model turn and NO
+        authored reply (no finish event, result.md untouched) so the conversation returns to
+        idle and the user keeps the speaking turn. The next PROSE message resumes normally and
+        the model sees the command results replayed from the transcript.
+        """
+        self.ctx.write_status("finished", question=None)
+        return "finished"
 
     def _record_turn(self, action: dict) -> None:
         brief = str(action.get(BRIEF_FIELD.get(action["kind"], ""), ""))[:80]

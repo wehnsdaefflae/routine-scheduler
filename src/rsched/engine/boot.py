@@ -67,6 +67,9 @@ def boot(loop) -> None:
                 "still need."})
         fin = next((e for e in reversed(events) if e.get("type") == "finish"), None)
         fin_payload = (fin.get("payload") or {}) if fin else {}
+        # an authored finish means the model handed the speaker turn back to the user — a
+        # command-only resume then keeps the turn with the user (loop.run's gate)
+        loop.leg_after_authored = bool(fin_payload.get("authored"))
         if fin_payload.get("authored"):
             # the model itself concluded this run (web converse on a finished run):
             # a follow-up conversation, not crash recovery
@@ -91,16 +94,34 @@ def boot(loop) -> None:
         if loop.util_reminder:   # one-shot, on the resume note (the kickoff's counterpart)
             loop.messages[-1] = {"role": "user",
                                  "content": loop.messages[-1]["content"] + loop.util_reminder}
-        for m in msgs:   # boot-drained messages: visible injections AFTER the note,
-            inject_user_message(loop, m)     # not a prompt section
+        _ingest(loop, msgs, resuming=True)   # commands execute; prose injects after the note
     else:
         kickoff = {"role": "user", "content": kickoff_message(ctx) + loop.util_reminder}
         attach_first_message_media(loop, kickoff)  # conversation: images the user attached
         loop.messages = [{"role": "system", "content": system}, kickoff]
-        for m in msgs:               # commands queued while idle execute now, after kickoff
-            if m.get("command"):
-                run_user_command(loop, m)
+        _ingest(loop, msgs, resuming=False)  # commands execute; prose is already in the prompt
+    # Absorb messages that landed WHILE boot ran (rapid slash commands) so this leg handles
+    # them all; a prose straggler upgrades the leg to a reply (see loop.run's command-only gate).
+    if ctx.depth == 0:
+        while extra := inbox.drain_messages(ctx.routine.dir, loop.consumed_dir):
+            _ingest(loop, extra, resuming=True)
     ctx.write_status("running")
+
+
+def _ingest(loop, msgs: list[dict], *, resuming: bool) -> None:
+    """Route each boot-drained message and flag the leg: a slash command EXECUTES (no model
+    turn), prose becomes a visible injection (resume) or is already in the prompt (fresh).
+    `leg_commands`/`leg_prose` let loop.run tell a command-only wake (execute, stay idle)
+    from one that owes the user a reply.
+    """
+    for m in msgs:
+        if m.get("command"):
+            run_user_command(loop, m)
+            loop.leg_commands = True
+        else:
+            if resuming:
+                inject_user_message(loop, m)
+            loop.leg_prose = True
 
 
 def attach_first_message_media(loop, kickoff: dict) -> None:
