@@ -258,6 +258,71 @@ def test_questions_flow(client):
     assert c.post("/api/questions/q-unknown/answer", json={"text": "x"}).status_code == 404
 
 
+def test_question_snooze_lifecycle(client):
+    """Snooze hides a deferred record until a timestamp (a `snoozed_until` field on the
+    ONE record shape, `snoozed: true` derived on read); minutes<=0 clears it. A blocking
+    question refuses to be snoozed — it parks a live run."""
+    c, tmp = client
+    routines = tmp / "routines"
+    pending = routines / "apir" / "questions" / "pending"
+    atomic_write_json(pending / "q-z1.json", {"qid": "q-z1", "question": "Later?",
+                                              "options": [], "asked": "20260707",
+                                              "mode": "deferred"})
+    r = c.post("/api/questions/q-z1/snooze", json={"minutes": 60})
+    assert r.status_code == 200 and r.json()["snoozed_until"]
+    assert read_json(pending / "q-z1.json")["snoozed_until"] == r.json()["snoozed_until"]
+    q = next(x for x in c.get("/api/questions").json() if x["qid"] == "q-z1")
+    assert q["snoozed"] is True
+
+    assert c.post("/api/questions/q-z1/snooze", json={"minutes": 0}).status_code == 200
+    assert "snoozed_until" not in read_json(pending / "q-z1.json")
+    q = next(x for x in c.get("/api/questions").json() if x["qid"] == "q-z1")
+    assert not q.get("snoozed")
+
+    # a blocking question cannot be snoozed — answer it or defer it
+    _mk_run(routines, "apir", "20260708-110000", "waiting_user",
+            question={"qid": "q-b1", "question": "Now?", "options": []})
+    atomic_write_json(pending / "q-b1.json", {"qid": "q-b1", "question": "Now?",
+                                              "options": [], "asked": "20260708-110000",
+                                              "mode": "blocking"})
+    assert c.post("/api/questions/q-b1/snooze", json={"minutes": 60}).status_code == 400
+
+
+def test_question_defer_to_next_run(client):
+    """Defer writes the inbox marker the engine's blocking wait consumes; only a blocking
+    question can be deferred, and a queued answer wins over a late defer click."""
+    c, tmp = client
+    routines = tmp / "routines"
+    pending = routines / "apir" / "questions" / "pending"
+    _mk_run(routines, "apir", "20260708-110000", "waiting_user",
+            question={"qid": "q-d1", "question": "Ship?", "options": []})
+    atomic_write_json(pending / "q-d1.json", {"qid": "q-d1", "question": "Ship?",
+                                              "options": [], "asked": "20260708-110000",
+                                              "mode": "blocking"})
+    assert c.post("/api/questions/q-d1/defer").status_code == 200
+    marker = read_json(routines / "apir" / "inbox" / "answer-q-d1.json")
+    assert marker["defer"] is True and "text" not in marker
+    # the marker is already queued → a second defer (or any change) conflicts
+    assert c.post("/api/questions/q-d1/defer").status_code == 409
+
+    atomic_write_json(pending / "q-d2.json", {"qid": "q-d2", "question": "Deferred?",
+                                              "options": [], "asked": "20260707",
+                                              "mode": "deferred"})
+    assert c.post("/api/questions/q-d2/defer").status_code == 400
+
+
+def test_routine_card_flags_decision_backlog(client):
+    c, tmp = client
+    pending = tmp / "routines" / "apir" / "questions" / "pending"
+    for i in range(6):   # one past DEFERRED_BACKLOG_N
+        atomic_write_json(pending / f"q-p{i}.json",
+                          {"qid": f"q-p{i}", "question": f"Q{i}?", "options": [],
+                           "asked": "20260707", "mode": "deferred"})
+    card = next(x for x in c.get("/api/routines").json() if x["slug"] == "apir")
+    assert card["decision_backlog"] is True
+    assert card["open_questions"] == 6
+
+
 def test_deferred_question_links_back_to_its_run(client):
     """A deferred question's `asked` run_ts resolves to run_id + live run state when that run
     still exists — the Decisions view uses it to flag stale questions."""

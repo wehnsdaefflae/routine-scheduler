@@ -177,6 +177,12 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
         if obs.get("answered"):
             via = f" (via {obs['source']})" if obs.get("source", "web") != "web" else ""
             return f"OBSERVATION (ask_user): the user answered{via}:\n{obs['answer']}"
+        if obs.get("deferred_by_user"):
+            tail = (f"Proceed on your stated default: {obs['default']}"
+                    if obs.get("default") else "Continue and plan around it")
+            return (f"OBSERVATION (ask_user): the user DEFERRED this question to a future run — "
+                    f"it stays open as deferred ({obs['qid']}). {tail}; their answer, if any, "
+                    "reaches a future run.")
         if obs.get("timed_out"):
             tail = (f"Proceed on your stated default: {obs['default']}"
                     if obs.get("default") else "Continue and plan around it")

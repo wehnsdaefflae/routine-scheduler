@@ -10,7 +10,8 @@ import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, skeleton, toast, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
 
-const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["deferred", "Deferred"], ["meta", "Meta"]];
+const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["deferred", "Deferred"], ["meta", "Meta"], ["snoozed", "Snoozed"]];
+const SNOOZES = [["60", "1 hour"], ["240", "4 hours"], ["1440", "1 day"], ["10080", "1 week"]];
 const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest", "oldest"], ["routine", "routine"]];
 
 const rank = (q) => (q.answered ? 3 : q.mode === "blocking" ? 0 : q.meta ? 1 : 2);
@@ -59,7 +60,12 @@ export async function render(view) {
 
   function visible() {
     let qs = state.items;
-    if (state.filter !== "all") qs = qs.filter((q) => kindOf(q) === state.filter);
+    // snoozed items live in their own bucket — hidden from every other view of the inbox
+    if (state.filter === "snoozed") qs = qs.filter((q) => q.snoozed);
+    else {
+      qs = qs.filter((q) => !q.snoozed);
+      if (state.filter !== "all") qs = qs.filter((q) => kindOf(q) === state.filter);
+    }
     if (state.routine) qs = qs.filter((q) => q.routine === state.routine);
     const byAsked = (a, b) => String(a.asked || "").localeCompare(String(b.asked || ""));
     if (state.sort === "priority") qs = [...qs].sort((a, b) => rank(a) - rank(b) || byAsked(a, b));
@@ -73,8 +79,9 @@ export async function render(view) {
   }
 
   function syncToolbar() {
-    const counts = { all: state.items.length };
-    for (const q of state.items) counts[kindOf(q)] = (counts[kindOf(q)] || 0) + 1;
+    const open = state.items.filter((q) => !q.snoozed);
+    const counts = { all: open.length, snoozed: state.items.length - open.length };
+    for (const q of open) counts[kindOf(q)] = (counts[kindOf(q)] || 0) + 1;
     for (const [key, b] of filterChips) {
       const n = counts[key] || 0;
       b.textContent = `${FILTERS.find(([k]) => k === key)[1]} · ${n}`;
@@ -167,18 +174,73 @@ export async function render(view) {
       q.run_state && TERMINAL.has(q.run_state)
         ? el("span", { class: "faint small" }, "run already ended — the answer feeds the next one") : null,
     ] : [];
+    // Lifecycle controls beside the answer: a BLOCKING question can be deferred to the
+    // next run (unblocks the run on its stated default, record stays open); every other
+    // file-backed record can be snoozed (hidden here until a timestamp — runs still see it).
+    let lifecycle = null;
+    if (q.mode === "blocking" && !q.meta) {
+      lifecycle = el("button", { class: "btn small",
+        title: "unblock the run WITHOUT deciding — it continues on its stated default and the question stays open for the next run" },
+        "defer to next run");
+      lifecycle.onclick = async () => {
+        lifecycle.disabled = true;
+        try {
+          await api(`/api/questions/${q.qid}/defer`, { method: "POST", body: {} });
+          toast("deferred — the run continues on its default");
+          panel.classList.remove("warn");
+          controls.replaceChildren(el("div", { class: "flow-note" },
+            chip("deferred to next run", "partial"),
+            el("span", {}, "the run continues on its default — the question stays open")));
+          q.mode = "deferred";
+          syncToolbar();
+        } catch (err) { toast(err.message, 4000, { error: true }); lifecycle.disabled = false; }
+      };
+    } else if (!q.meta) {
+      if (q.snoozed) {
+        lifecycle = el("button", { class: "btn small", title: "bring it back into the inbox now" },
+          "unsnooze");
+        lifecycle.onclick = async () => {
+          try {
+            await api(`/api/questions/${q.qid}/snooze`, { method: "POST", body: { minutes: 0 } });
+            toast("back in the inbox");
+            q.snoozed = false;
+            delete q.snoozed_until;
+            renderList();
+          } catch (err) { toast(err.message, 4000, { error: true }); }
+        };
+      } else {
+        lifecycle = el("select", { class: "small", "data-nopersist": true,
+          title: "hide this decision here for a while — the routine still sees it as open" },
+          el("option", { value: "" }, "snooze…"),
+          ...SNOOZES.map(([min, label]) => el("option", { value: min }, label)));
+        lifecycle.onchange = async () => {
+          if (!lifecycle.value) return;
+          try {
+            const r = await api(`/api/questions/${q.qid}/snooze`,
+              { method: "POST", body: { minutes: +lifecycle.value } });
+            toast("snoozed — it waits under the Snoozed filter");
+            q.snoozed = true;
+            q.snoozed_until = r.snoozed_until;
+            renderList();
+          } catch (err) { toast(err.message, 4000, { error: true }); lifecycle.value = ""; }
+        };
+      }
+    }
     const controls = el("div", {},
       options.length ? el("div", { class: "row mt", style: "gap:8px" },
         options.map((o, i) => el("button", { class: "btn small", title: `press ${i + 1}`,
           onclick: () => { input.value = o; input.focus(); } }, `${i + 1} · ${o}`))) : null,
-      el("div", { class: "row mt" }, input, send));
+      el("div", { class: "row mt" }, input, send, lifecycle));
     const panel = el("div", { class: `panel question-item${q.mode === "blocking" ? " warn" : ""}` },
       el("div", { class: "q-meta" },
         q.wizard ? chip("wizard", "meta") : q.meta ? chip("meta", "meta") : null,
         q.type === "util-approval" ? chip("util approval", "partial") : null,
         chip(q.mode, q.mode),
+        q.snoozed ? chip("snoozed", "meta") : null,
         sourceLink(q),
         q.asked ? el("span", {}, "asked ", when(q.asked)) : null,
+        q.snoozed && q.snoozed_until
+          ? el("span", { class: "faint small" }, "returns ", when(q.snoozed_until, { mode: "rel" })) : null,
         q.mode === "blocking" && q.expires
           ? el("span", { class: "faint small", title: "when the run continues without an answer" },
               "continues without you ", when(q.expires, { mode: "rel" })) : null,

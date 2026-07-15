@@ -623,6 +623,43 @@ def test_ask_user_blocking_answered(make_routine, scripted):
     assert not list((d / "questions" / "pending").glob("*.json"))
 
 
+def test_ask_user_blocking_deferred_by_user(make_routine, scripted):
+    """The Decisions page's defer-to-next-run marker unblocks the wait WITHOUT deciding:
+    the run continues on its stated default, the record stays open as deferred, and the
+    marker is consumed (never mistaken for an answer later)."""
+    import threading
+
+    qid = f"q-{TS}-1"
+    d = make_routine(slug="deferrer")
+    # the marker lands MID-WAIT (as the Decisions page writes it) — a marker present at
+    # boot would rightly be swept as stale, since its run is over by definition
+    timer = threading.Timer(0.3, lambda: atomic_write_json(
+        d / "inbox" / f"answer-{qid}.json", {"qid": qid, "defer": True, "source": "web"}))
+    timer.start()
+    ep = scripted([{"say": "q", "kind": "ask_user", "question": "Replace the old copy?",
+                    "mode": "blocking", "default": "keep the old copy"}, finish()])
+    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    timer.join()
+    assert status == "ok"
+    obs = ep.calls[1]["messages"][-1]["content"]
+    assert "DEFERRED this question" in obs
+    assert "keep the old copy" in obs
+    record = read_json(next((d / "questions" / "pending").glob("*.json")))
+    assert record["mode"] == "deferred"          # open for the next run, no longer blocking
+    assert not (d / "inbox" / f"answer-{qid}.json").exists()
+
+
+def test_stale_defer_marker_is_swept_at_run_start(make_routine, scripted):
+    """A defer marker that outlived its run (crash mid-wait) must not be mistaken for an
+    answer or warn-spam every future run — the next boot consumes it silently."""
+    d = make_routine(slug="stale")
+    atomic_write_json(d / "inbox" / "answer-q-old.json", {"qid": "q-old", "defer": True})
+    _ep = scripted([probe(), finish()])
+    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    assert not (d / "inbox" / "answer-q-old.json").exists()
+
+
 def test_ask_user_blocking_timeout_defers(make_routine, scripted):
     d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
         {"say": "q", "kind": "ask_user", "question": "Anyone?", "mode": "blocking"},

@@ -21,6 +21,10 @@ from . import artifacts
 
 router = APIRouter(tags=["routines"])
 
+# Above this many unanswered deferred asks, a routine's card flags a decision backlog —
+# the operator question is "which routine is silently starving on my input".
+DEFERRED_BACKLOG_N = 5
+
 
 def _state(request: Request):
     return request.app.state
@@ -100,6 +104,12 @@ def _card(request: Request, info: registry.RoutineInfo) -> dict:
                       "summary": last.summary[:280], "turns": last.turn,
                       "usage": last.usage, "elapsed_s": last.elapsed_s} if last else None),
         "open_questions": sum(1 for q in info.open_questions if not q.get("answered")),
+        # >N unanswered deferred asks = the routine is starving on decisions; the
+        # dashboard flags it loud instead of letting the count quietly grow.
+        "decision_backlog": sum(1 for q in info.open_questions
+                                if not q.get("answered")
+                                and q.get("mode", "deferred") != "blocking")
+                            > DEFERRED_BACKLOG_N,
         "problems": info.problems,
         "improve": info.cfg.improve,
     }

@@ -82,6 +82,15 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     finally:
         ctx.credit_suspended(time.monotonic() - started)
         ctx.write_status("running", question=None)
+    if answer and answer.get("defer"):
+        # The user parked the decision from the Decisions page — continue exactly like a
+        # timeout: on the stated default, the record staying open as deferred.
+        inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
+                            qtype=qtype, default=default)
+        if mirror:
+            mirror.notify_deferred(default)
+        return {"kind": "ask_user", "qid": qid, "mode": mode, "deferred_by_user": True,
+                **({"default": default} if default else {})}
     if answer:
         source = answer.get("source", "web")
         ctx.transcript.event("answer", {"qid": qid, "text": answer["text"], "source": source,

@@ -219,7 +219,8 @@ async function refreshStatus() {
 async function refreshBadges() {
   try {
     const qs = await api("/api/questions");
-    const open = qs.filter((q) => !q.answered);   // answered-but-unconsumed items are settled
+    // answered-but-unconsumed items are settled; snoozed ones wait silently by design
+    const open = qs.filter((q) => !q.answered && !q.snoozed);
     const badge = document.getElementById("q-badge");
     badge.textContent = open.length;
     badge.hidden = open.length === 0;

@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.34.0] — 2026-07-15
+
+### Added
+- **Decision lifecycle on the Decisions page** — fields on the ONE record shape, not a
+  new record type:
+  - **Defer to next run** (blocking questions): a `{defer: true}` inbox marker releases
+    the engine's blocking wait immediately — the run continues on the action's stated
+    default, exactly the timeout path but chosen by the user; the record stays open as
+    deferred, Discord (when mirrored) is told, and a marker that outlives its run is
+    swept silently at the next boot.
+  - **Snooze** (deferred questions): `snoozed_until` on the record hides it from the
+    inbox, the nav badge, and every non-Snoozed filter until the timestamp (1h/4h/1d/1w
+    or unsnooze); runs still see the open question in their state digest — snooze is UI
+    noise control, never an answer.
+  - **Decision-backlog flag**: a routine with more than 5 unanswered deferred asks gets a
+    loud `decision backlog` chip on its dashboard card — the "silently starving on my
+    input" signal.
+
 ## [0.33.0] — 2026-07-15
 
 ### Added

@@ -57,6 +57,39 @@ def test_decisions_blocking_question_from_live_run(ui, ui_page):
     assert answer["text"] == "yes — ship"
 
 
+def test_decisions_snooze_and_defer(ui, ui_page):
+    ui.seed_question("uir", "q-snz", "Review the weekly digest?")
+    ui.seed_run("uir", "20260715-090000", "waiting_user",
+                question={"qid": "q-blk", "question": "Overwrite the export?", "options": [],
+                          "default": "keep both", "asked": "20260715-090000"})
+    ui.seed_question("uir", "q-blk", "Overwrite the export?", mode="blocking",
+                     default="keep both")
+    ui_page.goto(f"{ui.url}/#/questions")
+
+    # snooze the deferred one → it leaves the inbox and waits under the Snoozed filter
+    card = ui_page.locator(".question-item", has_text="weekly digest")
+    card.locator("select").select_option("60")
+    expect(_toast(ui_page)).to_contain_text("snoozed")
+    expect(ui_page.locator(".question-item", has_text="weekly digest")).to_have_count(0)
+    record = json.loads((ui.routine_dir("uir") / "questions" / "pending" / "q-snz.json")
+                        .read_text(encoding="utf-8"))
+    assert record["snoozed_until"]
+    ui_page.get_by_role("button", name="Snoozed · 1").click()
+    snoozed = ui_page.locator(".question-item", has_text="weekly digest")
+    expect(snoozed.locator(".chip.meta", has_text="snoozed")).to_be_visible()
+    snoozed.get_by_role("button", name="unsnooze").click()
+    expect(_toast(ui_page)).to_contain_text("back in the inbox")
+
+    # defer the blocking one → the release marker lands in the inbox, the card settles
+    ui_page.get_by_role("button", name="All · 2").click()
+    blocking = ui_page.locator(".question-item", has_text="Overwrite the export?")
+    blocking.get_by_role("button", name="defer to next run").click()
+    expect(_toast(ui_page)).to_contain_text("deferred")
+    marker = json.loads((ui.routine_dir("uir") / "inbox" / "answer-q-blk.json")
+                        .read_text(encoding="utf-8"))
+    assert marker["defer"] is True
+
+
 # ---- 2. Conversation composer ------------------------------------------------------------
 
 

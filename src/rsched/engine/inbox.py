@@ -70,10 +70,13 @@ def has_pending_messages(routine_dir: Path) -> bool:
 
 
 def take_answer(routine_dir: Path, qid: str, consumed_dir: Path) -> dict | None:
-    """The answer file for a specific question, if present (consumed on read)."""
+    """The answer file for a specific question, if present (consumed on read). A defer
+    marker (`{"defer": true}`, written by the Decisions page's defer-to-next-run action)
+    is returned like an answer — the caller unblocks without a decision.
+    """
     path = routine_dir / "inbox" / f"answer-{qid}.json"
     obj = read_json(path)
-    if not isinstance(obj, dict) or "text" not in obj:
+    if not isinstance(obj, dict) or ("text" not in obj and not obj.get("defer")):
         return None
     _consume(path, consumed_dir)
     return obj
@@ -90,6 +93,10 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path) -> list[dict
     pairs: list[dict] = []
     for path in sorted(inbox.glob("answer-*.json")):
         obj = read_json(path)
+        if isinstance(obj, dict) and obj.get("defer") and "text" not in obj:
+            # a defer marker that outlived the run it targeted — its purpose is spent
+            _consume(path, consumed_dir)
+            continue
         if not isinstance(obj, dict) or "text" not in obj:
             log.warning("inbox: answer file %s is unreadable or has no text — skipping it",
                         path.name)

@@ -46,6 +46,11 @@ expires}`). Answering on any surface resolves the record everywhere.
 4. If you don't answer within `ask_timeout_min`, the run continues on the stated
    `default` and the record stays open as *deferred* — a late answer still reaches the
    next run.
+5. Or you **defer it yourself** (the Decisions page's *defer to next run* button): the
+   run unblocks immediately on its stated default — the timeout path, chosen by you —
+   and Discord is told the question was deferred from the console. Deferred (non-blocking)
+   records can also be **snoozed** from the Decisions page: hidden there until a
+   timestamp, still open to the routine.
 
 ## For developers: one seam in the code
 

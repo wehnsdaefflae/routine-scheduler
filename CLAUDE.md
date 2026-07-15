@@ -231,7 +231,13 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   the ENGINE (`engine/decisions.py`): a reply on either surface resolves everywhere and the other side
   is notified. All implicit outbound sends (the mirror + the detached-delivery ping) go through
   the ONE notification seam `rsched/notify.py` — see docs/notifications.md. The web layer posts
-  answers into `inbox/`. Every finished (sub)run appends to
+  answers into `inbox/`. Decisions-page LIFECYCLE (fields on the one record shape, never a new
+  type): a blocking ask can be **deferred to the next run** (a `{defer: true}` inbox marker —
+  the engine unblocks on the stated default, the record stays open; stale markers are swept at
+  boot), a non-blocking one **snoozed** (`snoozed_until` on the record → `snoozed: true` derived
+  on read; hidden from the inbox + badge, still in the run's digest), and a routine with >5
+  unanswered deferred asks gets a `decision_backlog` flag on its dashboard card. Every finished
+  (sub)run appends to
   `~/routines/.control/workflow-usage.jsonl` — the workflow-curator routine's evidence stream.
 
 ## Conversations (interactive sessions)

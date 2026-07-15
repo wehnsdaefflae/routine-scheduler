@@ -14,6 +14,7 @@ derivation, and each answer POST publishes a bus event so open views resync at o
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -150,10 +151,29 @@ def _wizard_questions(server) -> list[dict]:
 
 def open_decisions(server) -> list[dict]:
     """Every decision across the instance, one shape — the Decisions page, the badge, the
-    tab-open notifier, and the Web Push sender all read this.
+    tab-open notifier, and the Web Push sender all read this. A record snoozed into the
+    future carries `snoozed: True` (still open, still visible to runs — hidden by default
+    on the user surfaces only).
     """
-    return (_all_questions(server) + _all_questions(server, conversations=True)
-            + _wizard_questions(server) + _audit_decisions(server))
+    items = (_all_questions(server) + _all_questions(server, conversations=True)
+             + _wizard_questions(server) + _audit_decisions(server))
+    now = datetime.now(UTC)
+    for item in items:
+        if _snooze_active(item.get("snoozed_until"), now):
+            item["snoozed"] = True
+    return items
+
+
+def _snooze_active(snoozed_until: object, now: datetime) -> bool:
+    if not snoozed_until:
+        return False
+    try:
+        until = datetime.fromisoformat(str(snoozed_until))
+    except ValueError:
+        return False
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=UTC)
+    return until > now
 
 
 @router.get("/questions")
@@ -233,3 +253,75 @@ async def _resume_terminal_conversation(request: Request, match: dict, routine_d
     if cfg is None:
         return False
     return bool(await runner.resume_terminal(cfg, reason="converse"))
+
+
+# ---- lifecycle: snooze (hide until) + defer-to-next-run (unblock without deciding) ---------
+
+
+def _record_match(server, qid: str) -> dict:
+    """The open FILE-BACKED decision for qid (audit decisions live in the report, not as
+    records — they can't be snoozed or deferred).
+    """
+    match = next((q for q in _all_questions(server)
+                  + _all_questions(server, conversations=True)
+                  + _wizard_questions(server)
+                  if q.get("qid") == qid), None)
+    if match is None:
+        raise HTTPException(404, f"no open question {qid!r}")
+    return match
+
+
+def _record_dir(server, match: dict):
+    home = server.conversations_home if match.get("conversation") else server.routines_home
+    return home / match["routine"]
+
+
+class Snooze(BaseModel):
+    minutes: int = 0   # > 0 hides the record until now+minutes; <= 0 clears the snooze
+
+
+@router.post("/questions/{qid}/snooze")
+def snooze_question(request: Request, qid: str, body: Snooze) -> dict:
+    """Hide a decision until a timestamp — UI noise control, NOT an answer. The record
+    keeps its one shape (a `snoozed_until` field rides along); runs still see the open
+    question in their state digest.
+    """
+    server = request.app.state.server
+    match = _record_match(server, qid)
+    if match["mode"] == "blocking":
+        raise HTTPException(400, "a blocking question parks a live run — answer it, or "
+                                 "defer it to the next run instead of snoozing it")
+    qfile = _record_dir(server, match) / "questions" / "pending" / f"{qid}.json"
+    record = read_json(qfile)
+    if not isinstance(record, dict):
+        raise HTTPException(404, f"decision record for {qid!r} is gone")
+    until = ""
+    if body.minutes > 0:
+        until = (datetime.now(UTC) + timedelta(minutes=body.minutes)).isoformat(
+            timespec="seconds")
+        record["snoozed_until"] = until
+    else:
+        record.pop("snoozed_until", None)
+    atomic_write_json(qfile, record)
+    _announce_answer(request, qid, match["routine"])   # every open view resyncs
+    return {"ok": True, "snoozed_until": until or None}
+
+
+@router.post("/questions/{qid}/defer")
+def defer_question(request: Request, qid: str) -> dict:
+    """Unblock a run parked on a blocking question WITHOUT deciding: a defer marker in
+    the inbox releases the wait, the engine continues on the action's stated default,
+    and the record stays open as deferred — exactly the timeout path, chosen by the user.
+    """
+    server = request.app.state.server
+    match = _record_match(server, qid)
+    if match["mode"] != "blocking":
+        raise HTTPException(400, "only a blocking question can be deferred — a deferred "
+                                 "one already waits for a future run")
+    routine_dir = _record_dir(server, match)
+    marker = routine_dir / "inbox" / f"answer-{qid}.json"
+    if marker.exists():
+        raise HTTPException(409, "an answer for this question is already queued")
+    atomic_write_json(marker, {"qid": qid, "defer": True, "ts": now_iso(), "source": "web"})
+    _announce_answer(request, qid, match["routine"])
+    return {"ok": True, "deferred": True}

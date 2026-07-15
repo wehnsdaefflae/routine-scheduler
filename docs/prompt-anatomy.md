@@ -109,7 +109,7 @@ back — `format_observation(obs)`, always starting `OBSERVATION (<kind>…)`:
 - `OBSERVATION (memory_read portal-quirks.md, 14 lines):\n<note>` / `no note named 'x'. Existing topics: …`
 - `OBSERVATION (memory_write): note portal-quirks.md revised (14 lines); INDEX.md updated from 'about'.`
 - `OBSERVATION (llm reply):\n<the tool-call model's reply>`
-- `OBSERVATION (ask_user): question filed as deferred (q-…). … Continue.` / `…the user answered (via discord):\n<text>` / `…no answer within 8h — question stays open as deferred (q-…). Proceed on your stated default: …`
+- `OBSERVATION (ask_user): question filed as deferred (q-…). … Continue.` / `…the user answered (via discord):\n<text>` / `…no answer within 8h — question stays open as deferred (q-…). Proceed on your stated default: …` / `…the user DEFERRED this question to a future run — it stays open as deferred (q-…). Proceed on your stated default: …` (the Decisions page's defer-to-next-run action — the timeout path, chosen by the user)
 - `OBSERVATION (write_util 'x': selftest passed, created and committed).` / `…approval requested from the user (q-…)…` / header problems (the doc standard: a `tags:` line, every credential env var declared on `secrets:`) are rejected before the approval ask, naming the fix.
 - `OBSERVATION (spawn): sub-workflow 1 'child' started … keep going.`
 - `OBSERVATION (subtask): sequential child 2 'draft' started (workflow general-task) — it runs in the BACKGROUND. To keep sequential order, wait for it (n=2) …` — subtask is NON-blocking; its completion arrives via the `wait` observation or the `SUBTASK FINISHED` hook (§3c), not here. `subtask REJECTED: …` when a cap is hit

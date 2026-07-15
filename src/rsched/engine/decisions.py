@@ -70,6 +70,14 @@ class DiscordMirror:
             f"✔ resolved on the {source or 'web'} console: {answer.strip()[:300]}"
         self._run(["send", note, "--title", f"{self.ctx.routine.slug}: decision {self.qid}"])
 
+    def notify_deferred(self, default: str) -> None:
+        if self._dead:
+            return
+        note = ("↷ deferred to a future run from the console — continuing"
+                + (f" with the stated default: {default}" if default else "")
+                + ". The question stays open on the Decisions page.")
+        self._run(["send", note, "--title", f"{self.ctx.routine.slug}: decision {self.qid}"])
+
     def notify_timeout(self, default: str) -> None:
         if self._dead:
             return
