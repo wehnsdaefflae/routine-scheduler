@@ -1,8 +1,9 @@
 // Decisions inbox: everything open across routines — blocking questions, deferred ones,
-// and the self-audit report's open decisions (meta badge) — in ONE answering surface.
-// Keyboard-first: the first pending item autofocuses, Enter submits, ↑/↓ move, 1–9 pick
-// an option. Toolbar: filter by kind or routine, sort by priority/age/routine.
-// Priority rank: blocking (a run is waiting) > meta (system-level) > deferred.
+// and the self-audit report's open decisions (meta badge) — in ONE answering surface,
+// grouped by priority (blocking > deferred > meta > settled; asks about to hit their
+// timeout are flagged "expiring" and sort first). Keyboard-first: the first pending item
+// autofocuses, Enter submits, ↑/↓ move, 1–9 pick an option. Toolbar: filter by kind or
+// routine, sort by priority/age/routine (non-priority sorts render flat).
 
 import { api } from "/static/api.js";
 import { answerForm } from "/static/components/answerform.js";
@@ -14,7 +15,17 @@ const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["deferred", "Deferre
 const SNOOZES = [["60", "1 hour"], ["240", "4 hours"], ["1440", "1 day"], ["10080", "1 week"]];
 const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest", "oldest"], ["routine", "routine"]];
 
-const rank = (q) => (q.answered ? 3 : q.mode === "blocking" ? 0 : q.meta ? 1 : 2);
+const rank = (q) => (q.answered ? 3 : q.mode === "blocking" ? 0 : q.meta ? 2 : 1);
+// inbox groups, strongest first — the priority sort renders these as sections
+const GROUPS = [
+  ["Blocking — a run is waiting on you", (q) => !q.answered && q.mode === "blocking"],
+  ["Deferred — the next run picks these up", (q) => !q.answered && !q.meta && q.mode !== "blocking"],
+  ["Meta — system-level decisions", (q) => !q.answered && q.meta],
+  ["Settled — answered, queued for pickup", (q) => q.answered],
+];
+const EXPIRING_MS = 30 * 60 * 1000;   // a blocking ask this close to its timeout is LOUD
+const expiringSoon = (q) => q.mode === "blocking" && q.expires
+  && new Date(q.expires).getTime() - Date.now() < EXPIRING_MS;
 const kindOf = (q) => (q.meta ? "meta" : q.mode);
 const sourceLink = (q) => (q.wizard
   ? el("a", { href: `#/wizard/${q.routine}` }, "new-routine wizard")
@@ -68,7 +79,11 @@ export async function render(view) {
     }
     if (state.routine) qs = qs.filter((q) => q.routine === state.routine);
     const byAsked = (a, b) => String(a.asked || "").localeCompare(String(b.asked || ""));
-    if (state.sort === "priority") qs = [...qs].sort((a, b) => rank(a) - rank(b) || byAsked(a, b));
+    if (state.sort === "priority") {
+      qs = [...qs].sort((a, b) => rank(a) - rank(b)
+        || String(a.expires || "9999").localeCompare(String(b.expires || "9999"))
+        || byAsked(a, b));
+    }
     else if (state.sort === "oldest") qs = [...qs].sort(byAsked);
     else if (state.sort === "newest") qs = [...qs].sort((a, b) => byAsked(b, a));
     else if (state.sort === "routine") {
@@ -106,7 +121,18 @@ export async function render(view) {
             "The routines are self-sufficient. Blocking questions pause their run here; deferred and meta ones wait for the next run."));
       return;
     }
-    qs.forEach((q, i) => list.append(item(q, i)));
+    if (state.sort === "priority") {
+      let i = 0;
+      for (const [label, match] of GROUPS) {
+        const members = qs.filter(match);
+        if (!members.length) continue;
+        list.append(el("div", { class: "q-group-head" },
+          el("span", {}, label), el("span", { class: "q-group-count" }, String(members.length))));
+        for (const q of members) list.append(item(q, i++));
+      }
+    } else {
+      qs.forEach((q, i) => list.append(item(q, i)));
+    }
     if (focus) focusAt(0);
   }
 
@@ -219,6 +245,7 @@ export async function render(view) {
     const controls = el("div", {}, form.node);
     const panel = el("div", { class: `panel question-item${q.mode === "blocking" ? " warn" : ""}` },
       el("div", { class: "q-meta" },
+        expiringSoon(q) ? chip("expiring", "failed") : null,
         q.wizard ? chip("wizard", "meta") : q.meta ? chip("meta", "meta") : null,
         q.type === "util-approval" ? chip("util approval", "partial") : null,
         chip(q.mode, q.mode),

@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.41.0] — 2026-07-15
+
+### Changed
+- **Decisions page is a grouped inbox**: the priority view renders sections — *Blocking
+  (a run is waiting on you)* → *Deferred* → *Meta* → *Settled (answered, queued)* — with
+  section headers + counts; a blocking ask within 30 minutes of its timeout carries a
+  loud red "expiring" chip and sorts to the very top of its group. Keyboard navigation
+  (↵ / ↑↓ / 1-9), every filter chip, the routine filter and the non-priority sorts (which
+  render flat, as before) all survive unchanged.
+
 ## [0.40.0] — 2026-07-15
 
 ### Changed

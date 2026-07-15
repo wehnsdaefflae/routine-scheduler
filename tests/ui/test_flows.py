@@ -90,6 +90,27 @@ def test_decisions_snooze_and_defer(ui, ui_page):
     assert marker["defer"] is True
 
 
+def test_decisions_inbox_groups(ui, ui_page):
+    """Priority view renders SECTIONS (blocking > deferred), an about-to-expire blocking
+    ask carries the loud chip, and keyboard focus lands on the first (most urgent) input."""
+    from datetime import UTC, datetime, timedelta
+
+    soon = (datetime.now(UTC) + timedelta(minutes=10)).isoformat(timespec="seconds")
+    ui.seed_question("uir", "q-d1", "Deferred thing?")
+    ui.seed_run("uir", "20260715-090000", "waiting_user",
+                question={"qid": "q-b1", "question": "Blocking thing?", "options": [],
+                          "asked": "20260715-090000", "expires": soon})
+    ui.seed_question("uir", "q-b1", "Blocking thing?", mode="blocking", expires=soon)
+    ui_page.goto(f"{ui.url}/#/questions")
+
+    heads = ui_page.locator(".q-group-head")
+    expect(heads).to_have_count(2)
+    expect(heads.nth(0)).to_contain_text("Blocking")
+    expect(heads.nth(1)).to_contain_text("Deferred")
+    expect(ui_page.locator(".question-item.warn .chip", has_text="expiring")).to_be_visible()
+    assert ui_page.evaluate("document.activeElement.dataset.persist") == "answer-q-b1"
+
+
 def test_run_view_question_form(ui, ui_page):
     """The run view's blocking-question panel rides the shared answerForm: option buttons
     prefill, the mirrored/Discord note renders, and ask-back sends an intermediate reply."""
