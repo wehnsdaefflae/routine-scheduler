@@ -138,6 +138,45 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
     return {"ok": True}
 
 
+@router.delete("/library/{kind}/{slug}")
+def delete_library_doc(request: Request, kind: str, slug: str) -> dict:
+    """Delete a trait (committed; a deleted SEED trait returns at the next daemon boot) or
+    a util (`kind=utils` dispatches below). Permission docs are NOT deletable — they are
+    the capability layer's conduct surface; edit them instead.
+    """
+    from .. import library_docs
+
+    if kind == "utils":
+        return delete_util(request, slug)
+    if kind == "permissions":
+        raise HTTPException(400, "permission docs cannot be deleted — they are the "
+                                 "capability layer's conduct surface; edit the doc instead")
+    home = _docs_home(request, kind)
+    path = home / f"{slug}.md"
+    if not path.is_file():
+        raise HTTPException(404, f"no {kind[:-1]} {slug!r}")
+    path.unlink()
+    library_docs.git_commit(home, f"delete {kind[:-1]} {slug} via web")
+    return {"ok": True}
+
+
+@router.delete("/library/utils/{name}")
+def delete_util(request: Request, name: str) -> dict:
+    """Delete a global util — its whole <name>/ dir, committed, so it is recoverable from
+    git history. Routines discover utils live; the catalog shrinks at their next run.
+    """
+    import shutil
+
+    from .. import utils_lib
+
+    server = request.app.state.server
+    if not utils_lib.exists(server.utils_home, name):
+        raise HTTPException(404, f"no util {name!r}")
+    shutil.rmtree(utils_lib.util_dir(server.utils_home, name))
+    utils_lib.git_commit(server.utils_home, f"delete util {name} via web")
+    return {"ok": True}
+
+
 @router.get("/library/utils/{name}")
 def util_detail(request: Request, name: str) -> dict:
     from .. import utils_lib
@@ -207,8 +246,12 @@ def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
 def delete_workflow(request: Request, slug: str) -> dict:
     """Delete a workflow pattern (committed). Routines materialized from it are untouched —
     they own their recipes. A deleted SEED pattern reappears at the next daemon boot
-    (sync_seed_library_docs restores missing seed docs).
+    (sync_seed_library_docs restores missing seed docs). `clarify-instruction` is
+    undeletable: the new-routine wizard runs it to create every routine.
     """
+    if slug == "clarify-instruction":
+        raise HTTPException(400, "clarify-instruction cannot be deleted — the new-routine "
+                                 "wizard runs it to create every routine")
     home = _home(request)
     path = _workflow_file(home, slug)
     if path is None:

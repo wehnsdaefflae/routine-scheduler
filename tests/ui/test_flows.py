@@ -304,6 +304,42 @@ def test_spend_surfaces(ui, ui_page):
     expect(row.locator(".chip.partial", has_text="growing")).to_be_visible()
 
 
+# ---- 3c. Library deletes (traits/utils/workflows — permissions + clarify protected) -------
+
+
+def test_library_delete_flows(ui, ui_page):
+    ui_page.goto(f"{ui.url}/#/library")
+    editor_panel = ui_page.locator(
+        ".panel", has=ui_page.get_by_role("button", name="save + commit"))
+
+    # a trait deletes through the themed dialog; the reload lands on the bare list
+    ui_page.get_by_role("link", name="ask-policy", exact=True).click()
+    editor_panel.get_by_role("button", name="delete").click()
+    _confirm_modal(ui_page, "delete")
+    expect(ui_page.get_by_role("link", name="ask-policy", exact=True)).to_have_count(0)
+    assert not (ui.tmp / "library" / "traits" / "ask-policy.md").exists()
+    assert "#/library" in ui_page.url and "trait/" not in ui_page.url
+
+    # a util deletes the same way (whole dir, git-recoverable)
+    ui_page.get_by_role("link", name="dir-tree", exact=True).click()
+    editor_panel.get_by_role("button", name="delete").click()
+    _confirm_modal(ui_page, "delete")
+    expect(ui_page.get_by_role("link", name="dir-tree", exact=True)).to_have_count(0)
+    assert not (ui.tmp / "library" / "utils" / "dir-tree").exists()
+
+    # a permission opens WITHOUT any delete affordance
+    ui_page.get_by_role("link", name="memory", exact=True).click()
+    expect(editor_panel.get_by_role("button", name="save + commit")).to_be_visible()
+    expect(editor_panel.get_by_role("button", name="delete")).to_have_count(0)
+
+    # clarify-instruction: editable, NOT deletable; its sibling workflows are
+    ui_page.goto(f"{ui.url}/#/library/workflow/clarify-instruction")
+    expect(editor_panel.get_by_role("button", name="save + commit")).to_be_visible()
+    expect(editor_panel.get_by_role("button", name="delete")).to_have_count(0)
+    ui_page.goto(f"{ui.url}/#/library/workflow/general-task")
+    expect(editor_panel.get_by_role("button", name="delete")).to_be_visible()
+
+
 # ---- 4. Settings endpoints CRUD ----------------------------------------------------------
 
 

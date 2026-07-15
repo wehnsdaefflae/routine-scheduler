@@ -304,7 +304,11 @@ integrates), publishes `artifacts/report.html`. `library-sync`
 syncs the WHOLE instance into that one repo: `instance-export` copies each routine's working tree
 (minus `runs/`, `.git`, transient inbox/question state) into `routines/<slug>/` and the server config —
 token and api_key values redacted — into `config/`, then `git-sync` pushes. `bootstrap.py` seeds on
-first boot; `deploy/install.sh` for host installs.
+first boot; `deploy/install.sh` for host installs. Everything in the library is user-EDITABLE from
+the Library tab, and DELETABLE except permission docs (the capability layer's conduct surface) and
+the `clarify-instruction` workflow (the new-routine wizard runs it) — both guards are server-side.
+A deleted seed workflow/trait returns at the next daemon boot (sync_seed_library_docs); a deleted
+util stays deleted (git-recoverable — seed utils only land at repo creation).
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
   never executed, parsed statically with `ast` (`workflows/pyworkflow.py`). Each has a `META = {...}` dict
   (`slug / name / description / when_to_use / version / tags / includes`, optional `tools:`

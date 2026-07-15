@@ -101,15 +101,17 @@ export async function render(view, sub, query = {}) {
   async function openWorkflow(slug) {
     openSub = `workflow/${slug}`; updateURL();
     const d = await api(`/api/workflows/${slug}`);
+    // clarify-instruction is undeletable (the new-routine wizard runs it) — no button
+    const wfDelete = slug === "clarify-instruction" ? undefined : async () => {
+      if (!(await confirmDialog(`Delete workflow "${slug}"? Routines born from it keep their own `
+                   + "recipes. A seed pattern returns at the next daemon boot.",
+                   { confirmLabel: "delete" }))) return false;
+      await api(`/api/workflows/${slug}`, { method: "DELETE" });
+      return true;
+    };
     showEditor(`workflow: ${slug}`, d.content, d.log, async (content) =>
       api(`/api/workflows/${slug}`, { method: "PUT", body: { content } }), "python",
-      async () => {
-        if (!(await confirmDialog(`Delete workflow "${slug}"? Routines born from it keep their own `
-                     + "recipes. A seed pattern returns at the next daemon boot.",
-                     { confirmLabel: "delete" }))) return false;
-        await api(`/api/workflows/${slug}`, { method: "DELETE" });
-        return true;
-      });
+      wfDelete);
   }
   async function openDoc(kind, slug) {
     openSub = `${kind.slice(0, -1)}/${slug}`; updateURL();
@@ -117,10 +119,19 @@ export async function render(view, sub, query = {}) {
     // permissions get a structured, prefilled requires: panel — it is authoritative for
     // that key on save (the server merges it into the frontmatter); prose stays in the editor
     const requires = kind === "permissions" ? requiresPanel(d.requires || {}) : null;
+    // traits are deletable (a seed trait returns at the next boot; routines keep their
+    // adapted copies) — permission docs are NOT (the capability layer's conduct surface)
+    const docDelete = kind === "traits" ? async () => {
+      if (!(await confirmDialog(`Delete trait "${slug}"? Routines keep their own adapted copies; `
+                   + "a seed trait returns at the next daemon boot.",
+                   { confirmLabel: "delete" }))) return false;
+      await api(`/api/library/traits/${slug}`, { method: "DELETE" });
+      return true;
+    } : undefined;
     showEditor(`${kind.slice(0, -1)}: ${slug}`, d.content, d.log, async (content) =>
       api(`/api/library/${kind}/${slug}`, { method: "PUT",
         body: { content, ...(requires ? { requires: requires.value() } : {}) } }),
-      undefined, undefined, requires?.node);
+      undefined, docDelete, requires?.node);
   }
 
   // Author a fresh trait/permission doc: a lint-satisfying template plus a slug field; save
@@ -189,7 +200,14 @@ export async function render(view, sub, query = {}) {
     openSub = `util/${name}`; updateURL();
     const d = await api(`/api/library/utils/${name}`);
     showEditor(`util: ${name} (selftest-gated)`, d.content, null, async (content) =>
-      api(`/api/library/utils/${name}`, { method: "PUT", body: { content } }), "python");
+      api(`/api/library/utils/${name}`, { method: "PUT", body: { content } }), "python",
+      async () => {
+        if (!(await confirmDialog(`Delete util "${name}"? Every routine loses it at its next run. `
+                     + "It is git-versioned — recoverable from history.",
+                     { confirmLabel: "delete" }))) return false;
+        await api(`/api/library/utils/${name}`, { method: "DELETE" });
+        return true;
+      });
   }
 
   // A playbook is a subfolder (MAIN.md + optional detail files) — the editor edits MAIN.md; its
@@ -238,7 +256,13 @@ export async function render(view, sub, query = {}) {
       delBtn.onclick = async () => {
         delBtn.disabled = true;
         try {
-          if (await del()) { toast("deleted + committed"); location.reload(); return; }
+          if (await del()) {
+            toast("deleted + committed");
+            openSub = null;     // the deep link points at a file that no longer exists
+            updateURL();
+            location.reload();
+            return;
+          }
         } catch (err) { toast(err.message, 5000, { error: true }); }
         delBtn.disabled = false;
       };

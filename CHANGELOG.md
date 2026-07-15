@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.44.0] — 2026-07-16
+
+### Added
+- **Library items are deletable, not just editable**: traits and global utils gain a
+  delete button in their editors (themed confirm, committed to the library repo) beside
+  the existing workflow and playbook deletes. Two protections, enforced server-side and
+  reflected in the UI: **permission docs cannot be deleted** (they are the capability
+  layer's conduct surface — edit them instead) and the **`clarify-instruction` workflow
+  cannot be deleted** (the new-routine wizard runs it to create every routine; its editor
+  simply has no delete button). A deleted seed workflow/trait returns at the next daemon
+  boot; a deleted util stays deleted but is git-recoverable. After a delete the page
+  reloads onto the bare Library list instead of the dead item's deep link.
+
 ## [0.43.0] — 2026-07-15
 
 ### Added

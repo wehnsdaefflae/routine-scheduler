@@ -812,6 +812,49 @@ def test_workflow_delete_and_no_proposals_flow(client):
     assert c.get("/api/proposals").status_code == 404          # flow retired
 
 
+def test_clarify_instruction_workflow_is_undeletable(client):
+    """The new-routine wizard runs clarify-instruction to create every routine — the API
+    refuses to delete it even though every other workflow is deletable."""
+    c, tmp = client
+    wf_dir = tmp / "library" / "workflows"
+    wf_dir.mkdir(parents=True, exist_ok=True)
+    (wf_dir / "clarify-instruction.py").write_text("META = {}\n")
+    r = c.delete("/api/workflows/clarify-instruction")
+    assert r.status_code == 400 and "wizard" in r.json()["detail"]
+    assert (wf_dir / "clarify-instruction.py").exists()
+
+
+def test_library_trait_delete_and_permission_guard(client):
+    """Traits are deletable (committed; routines keep their adapted copies) — permission
+    docs are NOT (the capability layer's conduct surface)."""
+    c, tmp = client
+    traits = tmp / "library" / "traits"
+    traits.mkdir(parents=True, exist_ok=True)
+    (traits / "doomed.md").write_text("# trait: doomed — a goner\n\nbody\n")
+    assert c.delete("/api/library/traits/doomed").status_code == 200
+    assert not (traits / "doomed.md").exists()
+    assert c.delete("/api/library/traits/doomed").status_code == 404
+
+    perms = tmp / "library" / "permissions"
+    perms.mkdir(parents=True, exist_ok=True)
+    (perms / "keepme.md").write_text(
+        "---\nrequires: {}\n---\n# permission: keepme — stays\n\nbody\n")
+    r = c.delete("/api/library/permissions/keepme")
+    assert r.status_code == 400 and "cannot be deleted" in r.json()["detail"]
+    assert (perms / "keepme.md").exists()
+
+
+def test_library_util_delete(client):
+    c, tmp = client
+    udir = tmp / "library" / "utils" / "doomed"
+    udir.mkdir(parents=True, exist_ok=True)
+    (udir / "main.py").write_text(
+        '"""doomed — a goner.\n\nusage: gu doomed\ntags: [test]\n"""\n')
+    assert c.delete("/api/library/utils/doomed").status_code == 200
+    assert not udir.exists()
+    assert c.delete("/api/library/utils/doomed").status_code == 404
+
+
 def test_workflow_ref_reports_library_presence(client):
     """Provenance honesty: workflow_ref.in_library is False when the claimed origin
     pattern is not in this instance's library (and for hand-authored empty slugs)."""
