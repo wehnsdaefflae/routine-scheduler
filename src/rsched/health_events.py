@@ -40,11 +40,13 @@ def log_health_event(routines_home: Path, event: str, *, routine: str,
 
 
 def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str, workflow: str,
-                       depth: int, status: str, turns: int, tokens: int) -> None:
+                       depth: int, status: str, turns: int, tokens: int,
+                       cost: float = 0.0) -> None:
     """Append one line per finished (sub)run to <routines_home>/.control/workflow-usage.jsonl —
-    the feedback stream the meta-workflows routine mines to optimize the library. Subruns
-    report like any other run (depth > 0), so per-purpose child workflows inform pattern
-    evolution too. Best-effort, like the health log.
+    the feedback stream the meta-workflows routine mines to optimize the library, and the
+    DURABLE spend series (run dirs fall to retention; this stream survives — monthly spend
+    aggregation reads it). Subruns report like any other run (depth > 0), so per-purpose
+    child workflows inform pattern evolution too. Best-effort, like the health log.
     """
     path = Path(routines_home) / ".control" / WORKFLOW_USAGE_FILE
     try:
@@ -59,6 +61,7 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str, workfl
                 "status": status,
                 "turns": turns,
                 "tokens": tokens,
+                "cost": round(cost, 6),
             }) + "\n")
     except OSError:
         pass

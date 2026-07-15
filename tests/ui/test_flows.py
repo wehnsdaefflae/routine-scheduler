@@ -139,6 +139,37 @@ def test_routine_page_saves(ui, ui_page):
     assert raw["budgets"]["max_turns"] == 42
 
 
+# ---- 3b. Spend surfaces (dashboard card line + Stats monthly table) -----------------------
+
+
+def test_spend_surfaces(ui, ui_page):
+    entries = [
+        {"ts": "2026-06-10T08:00:00+00:00", "routine": "uir", "depth": 0,
+         "tokens": 900_000, "cost": 0.9},
+        {"ts": "2026-07-10T08:00:00+00:00", "routine": "uir", "depth": 0,
+         "tokens": 2_000_000, "cost": 2.0},
+    ]
+    ctrl = ui.routines / ".control"
+    ctrl.mkdir(parents=True, exist_ok=True)
+    (ctrl / "workflow-usage.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
+    ui.seed_run("uir", "20260714-070000", "finished", summary="ran",
+                usage={"in": 10, "out": 5, "cost": 0.01})
+
+    ui_page.goto(ui.url)   # dashboard: the card carries the compact month line
+    card = ui_page.locator(".card", has_text="Test uir")
+    expect(card).to_contain_text("Jul: 2.00M tok")
+    expect(card).to_contain_text("Jun: 900.0k tok")
+    expect(card.locator(".chip.partial", has_text="growing")).to_be_visible()
+
+    ui_page.goto(f"{ui.url}/#/stats")   # stats: the monthly table with the trend chip
+    section = ui_page.locator(".stat-section", has_text="Monthly spend by routine")
+    expect(section).to_be_visible()
+    row = section.locator("tbody tr", has_text="uir")
+    expect(row).to_contain_text("2.00M · $2.00")
+    expect(row.locator(".chip.partial", has_text="growing")).to_be_visible()
+
+
 # ---- 4. Settings endpoints CRUD ----------------------------------------------------------
 
 

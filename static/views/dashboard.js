@@ -36,6 +36,19 @@ const STATE_BUCKETS = {
   disabled: (c) => !c.enabled,
 };
 
+// "Jul: 1.2M tok · $4.31 (Jun: 0.9M · $3.10)" — the durable monthly series, not last-run
+function spendLine(spend) {
+  if (!spend?.current) return null;
+  const cell = (c) => c ? [fmtNum(c.tokens) + " tok", fmtCost({ cost: c.cost })].filter(Boolean).join(" · ") : "—";
+  const monthName = (m) => new Date(m + "-01T00:00:00").toLocaleString("en", { month: "short" });
+  let text = `${monthName(spend.month)}: ${cell(spend.current)}`;
+  if (spend.prev) text += `  (${monthName(spend.prev_month)}: ${cell(spend.prev)})`;
+  const growing = spend.prev && spend.current.tokens > spend.prev.tokens * 1.2;
+  return el("div", { class: "muted small",
+    title: "this month's spend from the durable usage stream (survives run retention)" },
+    text, growing ? el("span", { class: "chip partial", style: "margin-left:6px" }, "↑ growing") : null);
+}
+
 function statsLine(run) {
   if (!run) return "";
   const parts = [];
@@ -221,6 +234,7 @@ export async function render(view) {
           title: "open questions waiting for you" }, `${c.open_questions} open question${c.open_questions > 1 ? "s" : ""}`) : null,
         c.decision_backlog ? el("a", { href: "#/questions", class: "chip failed",
           title: "this routine is starving on deferred decisions — answer some" }, "decision backlog") : null),
+      spendLine(c.spend),
       last ? el("div", { class: "lastrun" },
           el("div", { class: "lr-line" }, when(last.ts), chip(last.state, last.state),
             stats ? el("span", { class: "muted small", title: "last run: turns · duration · tokens · cost" },

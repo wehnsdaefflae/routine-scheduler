@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.35.0] — 2026-07-15
+
+### Added
+- **Monthly spend aggregation** — answers "what does this routine cost me and is it
+  growing": the workflow-usage stream now records each finished (sub)run's `cost` and
+  serves as the DURABLE spend series (run dirs fall to retention; the stream survives).
+  `stats.monthly_spend` rolls it up per routine × calendar month (depth-0 entries only —
+  a parent's usage already folds its children in; detached-task slugs attributed to their
+  owner conversation). Surfaced as a **"Monthly spend by routine" table on the Stats tab**
+  (last 6 months, tokens · cost per cell, growing/steady/shrinking trend chips) and a
+  **compact month line on every dashboard card** ("Jul: 2.00M tok · $2.00 (Jun: …)", with
+  an ↑ growing chip past +20%). Historical entries predate the cost field, so cost sums
+  start now; token trends are complete.
+
 ## [0.34.0] — 2026-07-15
 
 ### Added

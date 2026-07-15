@@ -9,6 +9,8 @@ unit-testable without a running server.
 
 from __future__ import annotations
 
+import json
+import re
 from collections import defaultdict
 from datetime import UTC, date, datetime
 
@@ -16,6 +18,10 @@ from .config import ServerConfig
 from .daemon import registry
 from .endpoints import EndpointError, EndpointRegistry
 from .paths import read_json
+
+# a detached background task's slug (`bg-<owner>-<hex8>`) → its owner, so spend lands on
+# the conversation the user actually launched, not on a transient id
+_BG_SLUG = re.compile(r"bg-(.+)-[0-9a-f]{8}")
 
 # run-state buckets rolled into a single success/failure health read for the tab
 _OK_STATES = {"finished"}
@@ -62,6 +68,45 @@ def _run_ref(recorded, main_ref) -> tuple[str, str]:
     if endpoint:  # a bare model name with no endpoint prefix (old status.json shape)
         return fallback, endpoint
     return fallback, (main_ref.model if main_ref else "unknown")
+
+
+def monthly_spend(server: ServerConfig) -> dict:
+    """Per-routine tokens/cost per calendar month — the answer to "what does this routine
+    cost me and is it growing". Source: the durable workflow-usage stream (run dirs fall to
+    retention; the stream survives), top-level entries only (depth 0 — a parent's usage
+    already folds its children in). Detached background tasks are attributed to their owner
+    conversation. Shape: {"months": [...asc], "by_routine": {slug: {month: {runs, tokens,
+    cost}}}} — routines sorted by latest-month tokens, descending.
+    """
+    path = server.routines_home / ".control" / "workflow-usage.jsonl"
+    months: set[str] = set()
+    by_routine: dict[str, dict[str, dict]] = defaultdict(dict)
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {"months": [], "by_routine": {}}
+    for line in lines:
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(rec, dict) or rec.get("depth"):
+            continue
+        month = str(rec.get("ts") or "")[:7]
+        if len(month) != 7:
+            continue
+        slug = str(rec.get("routine") or "?")
+        if m := _BG_SLUG.fullmatch(slug):
+            slug = m.group(1)
+        months.add(month)
+        cell = by_routine[slug].setdefault(month, {"runs": 0, "tokens": 0, "cost": 0.0})
+        cell["runs"] += 1
+        cell["tokens"] += int(rec.get("tokens") or 0)
+        cell["cost"] = round(cell["cost"] + float(rec.get("cost") or 0.0), 6)
+    latest = max(months) if months else ""
+    ordered = sorted(by_routine.items(),
+                     key=lambda kv: kv[1].get(latest, {}).get("tokens", 0), reverse=True)
+    return {"months": sorted(months), "by_routine": dict(ordered)}
 
 
 def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:

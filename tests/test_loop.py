@@ -1244,6 +1244,7 @@ def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):
     tops = [ln for ln in lines if ln["depth"] == 0 and ln["routine"] == "usagelog"]
     assert subs and subs[0]["run_id"].endswith("#sub1") and subs[0]["status"] == "ok"
     assert tops and tops[0]["workflow"] == "test-flow" and tops[0]["turns"] >= 3
+    assert "cost" in tops[0] and "cost" in subs[0]   # the durable spend series needs it
 
 
 def test_previous_runs_ride_the_run_history_permission(make_routine, scripted):

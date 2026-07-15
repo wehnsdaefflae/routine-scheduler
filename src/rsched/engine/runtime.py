@@ -133,5 +133,6 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     log_workflow_usage(server.routines_home, routine=cfg.slug, run_id=ctx.run_id,
                        workflow=prov.get("slug") or "", depth=0, status=status,
                        turns=ctx.turn,
-                       tokens=int(ctx.usage.get("in", 0)) + int(ctx.usage.get("out", 0)))
+                       tokens=int(ctx.usage.get("in", 0)) + int(ctx.usage.get("out", 0)),
+                       cost=float(ctx.usage.get("cost") or 0.0))
     return status, run_dir

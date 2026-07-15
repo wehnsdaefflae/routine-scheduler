@@ -311,6 +311,30 @@ def test_question_defer_to_next_run(client):
     assert c.post("/api/questions/q-d2/defer").status_code == 400
 
 
+def test_routine_card_spend_line(client):
+    """Cards carry this month + last month from the durable spend series, so the
+    dashboard can answer "what does this cost me and is it growing" at a glance."""
+    import json as _j
+
+    c, tmp = client
+    ctrl = tmp / "routines" / ".control"
+    ctrl.mkdir(parents=True, exist_ok=True)
+    entries = [
+        {"ts": "2026-06-10T08:00:00+00:00", "routine": "apir", "depth": 0,
+         "tokens": 900, "cost": 0.9},
+        {"ts": "2026-07-10T08:00:00+00:00", "routine": "apir", "depth": 0,
+         "tokens": 2000, "cost": 2.0},
+    ]
+    (ctrl / "workflow-usage.jsonl").write_text(
+        "".join(_j.dumps(e) + "\n" for e in entries), encoding="utf-8")
+    card = next(x for x in c.get("/api/routines").json() if x["slug"] == "apir")
+    assert card["spend"]["month"] == "2026-07"
+    assert card["spend"]["current"]["tokens"] == 2000
+    assert card["spend"]["prev"]["cost"] == 0.9
+    detail = c.get("/api/routines/apir").json()
+    assert detail["spend"]["current"]["cost"] == 2.0
+
+
 def test_routine_card_flags_decision_backlog(client):
     c, tmp = client
     pending = tmp / "routines" / "apir" / "questions" / "pending"

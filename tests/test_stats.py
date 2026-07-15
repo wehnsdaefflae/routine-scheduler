@@ -1,10 +1,12 @@
 """Usage statistics aggregation across the routines + conversations homes."""
 
+import json
+
 import yaml
 
 from rsched.config import EndpointConfig, ModelConfig, ServerConfig
 from rsched.paths import atomic_write_json
-from rsched.stats import aggregate
+from rsched.stats import aggregate, monthly_spend
 
 
 def _server(tmp_path) -> ServerConfig:
@@ -156,3 +158,41 @@ def test_aggregate_empty_homes(tmp_path):
     assert agg["totals"]["runs"] == 0
     assert agg["totals"]["success_rate"] is None
     assert agg["by_routine"] == {}
+
+
+def test_monthly_spend_reads_the_durable_stream(tmp_path):
+    """Monthly per-routine spend comes from workflow-usage.jsonl (survives run retention):
+    depth-0 entries only (a parent's usage already folds its children in), background-task
+    slugs attributed to their owner, malformed/dateless lines skipped, routines ordered by
+    latest-month tokens."""
+    s = ServerConfig()
+    s.routines_home = tmp_path / "routines"
+    ctrl = s.routines_home / ".control"
+    ctrl.mkdir(parents=True)
+    entries = [
+        {"ts": "2026-06-20T10:00:00+00:00", "routine": "alpha", "depth": 0,
+         "tokens": 1000, "cost": 0.5},
+        {"ts": "2026-07-01T10:00:00+00:00", "routine": "alpha", "depth": 0,
+         "tokens": 3000, "cost": 1.5},
+        {"ts": "2026-07-02T10:00:00+00:00", "routine": "alpha", "depth": 1,
+         "tokens": 999_999, "cost": 9.0},                      # child — already in the parent
+        {"ts": "2026-07-03T11:00:00+00:00", "routine": "bg-chat-1a2b3c4d", "depth": 0,
+         "tokens": 500},                                       # detached task → owner "chat"
+        {"ts": "", "routine": "x", "depth": 0, "tokens": 5},   # dateless → skipped
+    ]
+    with (ctrl / "workflow-usage.jsonl").open("w", encoding="utf-8") as fh:
+        for e in entries:
+            fh.write(json.dumps(e) + "\n")
+        fh.write("not json\n")
+    m = monthly_spend(s)
+    assert m["months"] == ["2026-06", "2026-07"]
+    assert m["by_routine"]["alpha"]["2026-07"] == {"runs": 1, "tokens": 3000, "cost": 1.5}
+    assert m["by_routine"]["alpha"]["2026-06"]["tokens"] == 1000
+    assert m["by_routine"]["chat"]["2026-07"] == {"runs": 1, "tokens": 500, "cost": 0.0}
+    assert list(m["by_routine"]) == ["alpha", "chat"]          # latest-month tokens, desc
+
+
+def test_monthly_spend_without_stream(tmp_path):
+    s = ServerConfig()
+    s.routines_home = tmp_path / "routines"
+    assert monthly_spend(s) == {"months": [], "by_routine": {}}

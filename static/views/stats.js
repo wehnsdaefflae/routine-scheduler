@@ -125,6 +125,39 @@ function sliceTable(title, slice, keyLabel, extraCols) {
         el("thead", {}, head), el("tbody", {}, ...body))));
 }
 
+// Monthly spend by routine — the durable series (workflow-usage stream, survives run
+// retention): one row per routine, one column per month, tokens + cost per cell, a
+// growth chip when the latest month runs >20% over the one before.
+function monthlySection(monthly) {
+  const months = (monthly?.months || []).slice(-6);
+  const rows = Object.entries(monthly?.by_routine || {});
+  if (!months.length || !rows.length) return null;
+  const latest = months[months.length - 1];
+  const prev = months[months.length - 2];
+  const cell = (c) => (c ? `${fmtNum(c.tokens)} · ${fmtUsd(c.cost)}` : NBSP);
+  const head = el("tr", {}, el("th", {}, "routine"),
+    ...months.map((m) => el("th", { class: "num" }, m)),
+    el("th", {}, "trend"));
+  const body = rows.map(([slug, cells]) => {
+    const cur = cells[latest];
+    const before = prev ? cells[prev] : null;
+    const growing = cur && before && cur.tokens > before.tokens * 1.2;
+    const shrinking = cur && before && cur.tokens < before.tokens * 0.8;
+    return el("tr", {},
+      el("td", {}, slug),
+      ...months.map((m) => el("td", { class: "num" }, cell(cells[m]))),
+      el("td", {}, growing ? el("span", { class: "chip partial" }, "↑ growing")
+        : shrinking ? el("span", { class: "chip ok" }, "↓ shrinking")
+        : before && cur ? el("span", { class: "chip bare" }, "→ steady") : NBSP));
+  });
+  return el("div", { class: "stat-section" },
+    el("h2", {}, "Monthly spend by routine"),
+    el("div", { class: "sub" },
+      "tokens · cost per calendar month, from the durable usage stream — unlike the tables above, this survives run retention"),
+    el("div", { class: "table-wrap" },
+      el("table", { class: "stat-table" }, el("thead", {}, head), el("tbody", {}, ...body))));
+}
+
 export async function render(view) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
@@ -164,6 +197,9 @@ export async function render(view) {
 
     // ---- configurable charts (metric × grouping × range × form, persisted) ----
     parts.push(chartsSection(agg.runs || []));
+
+    // ---- monthly spend (durable series) ------------------------------------
+    parts.push(monthlySection(agg.monthly));
 
     // ---- slice tables -----------------------------------------------------
     parts.push(sliceTable("By routine / conversation", agg.by_routine, "name", [

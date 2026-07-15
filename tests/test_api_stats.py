@@ -30,6 +30,9 @@ def test_stats_route_serves_the_stats_tab_shape(api_client, make_routine):
     assert r.status_code == 200
     agg = r.json()
 
+    # the durable monthly series rides the same payload (empty here — no usage stream)
+    assert agg["monthly"] == {"months": [], "by_routine": {}}
+
     # totals → the summary cards
     t = agg["totals"]
     assert t["runs"] == 2 and t["tokens_in"] == 150 and t["tokens_out"] == 50

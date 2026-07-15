@@ -17,6 +17,7 @@ from ..config import MODEL_KINDS
 from ..daemon import registry
 from ..ids import now_iso, run_ts
 from ..paths import atomic_write, resolve_rel
+from ..stats import monthly_spend
 from . import artifacts
 
 router = APIRouter(tags=["routines"])
@@ -84,7 +85,21 @@ def _git_commit(routine_dir: Path, message: str) -> None:
                    capture_output=True, timeout=30, check=False)
 
 
-def _card(request: Request, info: registry.RoutineInfo) -> dict:
+def _spend_line(monthly: dict, slug: str) -> dict | None:
+    """This month + last month from the durable spend series — the card's compact answer
+    to "what does this cost me and is it growing".
+    """
+    months = monthly.get("months") or []
+    cells = (monthly.get("by_routine") or {}).get(slug) or {}
+    if not months or not cells:
+        return None
+    current = months[-1]
+    prev = months[-2] if len(months) > 1 else None
+    return {"month": current, "current": cells.get(current),
+            "prev_month": prev, "prev": cells.get(prev) if prev else None}
+
+
+def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None = None) -> dict:
     sched = _state(request).scheduler
     last = info.last_run
     return {
@@ -112,12 +127,14 @@ def _card(request: Request, info: registry.RoutineInfo) -> dict:
                             > DEFERRED_BACKLOG_N,
         "problems": info.problems,
         "improve": info.cfg.improve,
+        **({"spend": _spend_line(monthly, info.slug)} if monthly is not None else {}),
     }
 
 
 @router.get("/routines")
 def list_routines(request: Request) -> list[dict]:
-    return [_card(request, info) for info in _catalog(request).values()]
+    monthly = monthly_spend(_state(request).server)   # one read serves every card
+    return [_card(request, info, monthly=monthly) for info in _catalog(request).values()]
 
 
 @router.get("/routines/{slug}")
@@ -143,7 +160,7 @@ def routine_detail(request: Request, slug: str) -> dict:
     in_library = bool(info.cfg.workflow_slug) and \
         (server.library_home / "workflows" / f"{info.cfg.workflow_slug}.py").exists()
     return {
-        **_card(request, info),
+        **_card(request, info, monthly=monthly_spend(server)),
         "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
         "server_tz": schedule.server_tz(),
         # Provenance is a CLAIM ("generated from") — in_library says whether the referenced
