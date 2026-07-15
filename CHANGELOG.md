@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.17.0] — 2026-07-15
+
+### Fixed
+- **Conversation state diagram now lights the current state.** The Conversations tab's
+  "state" rail parsed the converse workflow's single `conversation` phase, which is never
+  written to `state/phase.json`, so no node ever highlighted (AUDIT note). The
+  `/api/conversations/{slug}/stategraph` endpoint now returns a two-node reply-cycle graph
+  (**working** ⇄ **waiting for you**) with the current node lit from the live run state, and
+  the view re-lights it on every SSE state event.
+
 ## [0.16.0] — 2026-07-14
 
 The changes that had accumulated since 0.15.0 without a version bump — collected here and

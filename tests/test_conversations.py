@@ -186,6 +186,28 @@ def test_artifacts_list_and_serving(client):
                  params={"path": "artifacts/../routine.yaml"}).status_code in (400, 404)
 
 
+def test_conversation_phase_mapping():
+    for s in ("running", "queued", "starting"):
+        assert conv_mod.conversation_phase(s) == "working"
+    for s in ("finished", "failed", "aborted", "waiting_user", "new", None):
+        assert conv_mod.conversation_phase(s) == "waiting for you"
+
+
+def test_conversation_stategraph_reflects_run_state(client):
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "do a thing"}).json()["slug"]
+    conv_dir = server.conversations_home / slug
+    ts = "20260712-120000"
+    # fake_fire wrote status.json state=running → the diagram lights "working"
+    g = c.get(f"/api/conversations/{slug}/stategraph").json()
+    assert [s["name"] for s in g["states"]] == ["working", "waiting for you"]
+    assert g["current"] == "working"
+    # a finished reply → it is the user's turn again ("waiting for you")
+    atomic_write_json(conv_dir / "runs" / ts / "status.json",
+                      {"run_id": f"{slug}:{ts}", "state": "finished", "turn": 2})
+    assert c.get(f"/api/conversations/{slug}/stategraph").json()["current"] == "waiting for you"
+
+
 def test_patch_and_permissions(client):
     c, server = client
     slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]

@@ -331,6 +331,9 @@ export async function render(view, slug, _query = {}) {
       stateChip.className = `chip ${s}`;
       waiting.replaceChildren();
       if (WORKING.has(s)) waiting.append(busy(s === "queued" ? "queued for a slot…" : "working…"));
+      // the conversation state diagram lights the reply-cycle node from the live run state
+      // (a conversation loops — it has no single workflow phase to highlight)
+      stateGraph.setPhase(WORKING.has(s) ? "working" : "waiting for you");
       composer.setLive(!TERMINAL.has(s));
       if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); }
     };
@@ -342,7 +345,7 @@ export async function render(view, slug, _query = {}) {
       events: (o) => `/api/runs/${detail.run_id}/events?offset=${o}`,
       offset: 0,
       onEvent: (ev) => { chat.add(ev); scrollDown(); },
-      onState: (s) => { setState(s.state); stateGraph.setPhase(s.phase);
+      onState: (s) => { setState(s.state);   // setState re-lights the state diagram
                         showQuestion(questionBox, s.question); },
       onGone: () => setState("finished"),
     });

@@ -333,12 +333,15 @@ def update_playbook(request: Request, slug: str) -> dict:
 
 @router.get("/conversations/{slug}/stategraph")
 def stategraph(request: Request, slug: str) -> dict:
-    """The conversation's state graph (from its materialized converse workflow) + current
-    phase — same shape as the routines endpoint; the artifact rail renders it."""
-    from .. import statemap
-
+    """The conversation's lifecycle graph (working ⇄ waiting for you) with the CURRENT node
+    lit from the live run state — same shape as the routines endpoint so the artifact rail
+    renders it. A conversation is a loop, so its state IS its reply cycle, not the single
+    converse workflow phase (which is never written to phase.json, so the generic routine
+    state graph would never highlight a node)."""
     info = _info(request, slug)
-    return statemap.state_graph(info.cfg.dir)
+    last = info.last_run
+    return {"states": [dict(s) for s in conv_mod.CONVERSATION_STATES],
+            "current": conv_mod.conversation_phase(last.state if last else None)}
 
 
 @router.get("/conversations/{slug}/artifacts")

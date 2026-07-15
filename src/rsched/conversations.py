@@ -40,6 +40,23 @@ CONVERSATION_BUDGETS = {**DEFAULT_BUDGETS, "max_turns": 10, "max_wall_clock_min"
 # Permissions that only make sense for scheduled routines — the UI greys them out.
 ROUTINE_ONLY_PERMISSIONS = ["run-history"]
 
+# The conversation "state diagram" the Conversations tab shows. A conversation is a LOOP,
+# not a one-pass workflow, so its meaningful state is the live reply cycle — not the single
+# converse workflow phase (which is never written to state/phase.json, so the generic
+# routine state graph never lights a node). These two nodes are lit from the live run state.
+CONVERSATION_STATES = [
+    {"name": "working", "desc": "the agent is composing a reply"},
+    {"name": "waiting for you", "desc": "your turn — send a message to continue"},
+]
+_WORKING_RUN_STATES = {"queued", "starting", "running"}
+
+
+def conversation_phase(run_state: str | None) -> str:
+    """Map a conversation's live RUN state to its lifecycle phase (the diagram's CURRENT
+    node). Anything not actively working — finished, blocked on your answer, brand new — is
+    the user's turn."""
+    return "working" if run_state in _WORKING_RUN_STATES else "waiting for you"
+
 _LEDGER_SEED = "# LEDGER — conversation\n\n### seed — conversation created\n"
 
 
