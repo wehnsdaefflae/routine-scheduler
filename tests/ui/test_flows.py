@@ -156,10 +156,47 @@ def test_routine_page_saves(ui, ui_page):
     ui_page.get_by_role("button", name="save budgets").click()
     expect(_toast(ui_page)).to_contain_text("budgets saved")
 
+    # tags: the shared editor saves each change immediately — no save button
+    tag_input = ui_page.locator(".tags input")
+    tag_input.fill("nightly")
+    tag_input.press("Enter")
+    expect(_toast(ui_page)).to_contain_text("tags saved")
+    expect(ui_page.locator(".tags .tag", has_text="nightly")).to_be_visible()
+
+    # schedule: saves in place — the page must NOT reload (marker survives)
+    ui_page.evaluate("window.__no_reload = true")
+    ui_page.locator(".panel", has=ui_page.get_by_role("button", name="save schedule")) \
+        .get_by_role("checkbox").first.uncheck()   # enabled off
+    ui_page.get_by_role("button", name="save schedule").click()
+    expect(_toast(ui_page)).to_contain_text("schedule saved")
+    ui_page.wait_for_timeout(600)   # the old reload fired at 400ms — outlive it
+    assert ui_page.evaluate("window.__no_reload") is True
+
     raw = yaml.safe_load(
         (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
     assert raw["description"] == "A sharper one-line description."
     assert raw["budgets"]["max_turns"] == 42
+    assert raw["tags"] == ["nightly"]
+    assert raw["enabled"] is False
+    # removing the tag also saves immediately
+    ui_page.locator(".tags .tag", has_text="nightly").locator(".x").click()
+    expect(ui_page.locator(".tags .tag", has_text="nightly")).to_have_count(0)
+    ui_page.wait_for_timeout(200)
+    raw = yaml.safe_load(
+        (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
+    assert raw["tags"] == []
+
+    # permissions: the panel re-renders in place from the server's post-cascade state
+    perm_panel = ui_page.locator(
+        ".panel", has=ui_page.get_by_role("button", name="save permissions"))
+    perm_panel.locator(".toggle-row input").first.check()
+    ui_page.get_by_role("button", name="save permissions").click()
+    expect(_toast(ui_page)).to_contain_text("permissions saved")
+    ui_page.wait_for_timeout(600)
+    assert ui_page.evaluate("window.__no_reload") is True
+    raw = yaml.safe_load(
+        (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
+    assert raw["permissions"]   # the toggled doc landed in config without a reload
 
 
 # ---- 3b. Spend surfaces (dashboard card line + Stats monthly table) -----------------------

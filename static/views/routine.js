@@ -3,13 +3,13 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
+import { tagsEditor } from "/static/components/tags.js";
 import { md, mdInline } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { permissionsPanel } from "/static/components/permissions.js";
 import { recipeNav } from "/static/components/recipenav.js";
-import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, tagChip, toast, when } from "/static/util.js";
-import { forgetField } from "/static/formpersist.js";
+import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, toast, when } from "/static/util.js";
 
 export async function render(view, slug, query = {}) {
   view.append(skeleton(["35%", "100%", "70%"]));
@@ -19,13 +19,14 @@ export async function render(view, slug, query = {}) {
   view.replaceChildren();
   const llmReady = st.llm_ready !== false;
 
-  const stateChip = d.active_state ? chip(d.active_state, d.active_state)
-    : d.enabled ? chip("idle", "idle") : chip("disabled", "disabled");
+  const runChip = (x) => (x.active_state ? chip(x.active_state, x.active_state)
+    : x.enabled ? chip("idle", "idle") : chip("disabled", "disabled"));
+  const chipHost = el("span", {}, runChip(d));
   view.append(el("div", { class: "page-head" },
     el("div", {},
       el("div", { class: "kicker" }, "routine"),
       el("h1", {}, d.name || slug)),
-    el("div", { class: "row" }, stateChip,
+    el("div", { class: "row" }, chipHost,
       d.active_run
         ? el("a", { class: "btn primary", href: `#/run/${d.active_run}` }, "◉ watch live")
         : el("button", { class: "btn primary", disabled: !llmReady,
@@ -64,39 +65,28 @@ export async function render(view, slug, query = {}) {
           catch (err) { toast(err.message, 4000, { error: true }); }
         } }, "save description"))));
 
-  // -- tags -----------------------------------------------------------------------
-  let tags = [...(d.tags || [])];
-  const tagsRow = el("div", { class: "tags" });
-  const tagInput = el("input", { type: "text", placeholder: "add tag…", style: "width:130px" });
-  function renderTags() {
-    tagsRow.replaceChildren();
-    tags.forEach((t) => tagsRow.append(tagChip(t,
-      { onRemove: () => { tags = tags.filter((x) => x !== t); renderTags(); } })));
-    tagsRow.append(tagInput);
-  }
-  function addTag() {
-    const v = tagInput.value.trim().toLowerCase().replace(/\s+/g, "-");
-    if (v && !tags.includes(v)) { tags.push(v); tagInput.value = ""; forgetField(tagInput); renderTags(); }
-    tagInput.focus();
-  }
-  tagInput.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } };
-  renderTags();
+  // -- tags (shared editor — every add/remove saves immediately) --------------------
   view.append(el("h2", {}, "Tags"),
     el("div", { class: "panel" },
       el("div", { class: "muted small", style: "margin-bottom:8px" },
-        "freeform labels for filtering on the dashboard (e.g. meta tucks a routine away by default)"),
-      tagsRow,
-      el("div", { class: "row mt" },
-        el("button", { class: "btn small", onclick: addTag }, "+ add"),
-        el("button", {
-          class: "btn primary",
-          onclick: async () => {
-            try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { tags } }); toast("tags saved"); }
-            catch (err) { toast(err.message, 4000, { error: true }); }
-          },
-        }, "save tags"))));
+        "freeform labels for filtering on the dashboard (e.g. meta tucks a routine away by ",
+        "default) — each change saves immediately"),
+      tagsEditor(d.tags, async (next) => {
+        await api(`/api/routines/${slug}`, { method: "PATCH", body: { tags: next } });
+        toast("tags saved");
+      })));
 
   // -- schedule -------------------------------------------------------------------
+  const nextFireLine = el("div", { class: "muted mt small" },
+    ...(d.next_fire ? ["next run · ", when(d.next_fire)] : []));
+  // saves update the header chip + next-fire IN PLACE — never a page reload
+  async function refreshHead() {
+    try {
+      const nd = await api(`/api/routines/${slug}`);
+      chipHost.replaceChildren(runChip(nd));
+      nextFireLine.replaceChildren(...(nd.next_fire ? ["next run · ", when(nd.next_fire)] : []));
+    } catch { /* cosmetic refresh — the save itself already succeeded */ }
+  }
   const sched = scheduleEditor(d.schedule_friendly || { frequency: "manual" }, d.server_tz);
   const enabledBox = el("input", { type: "checkbox", checked: d.enabled || null });
   const improveBox = el("input", { type: "checkbox", checked: d.improve !== false || null });
@@ -112,25 +102,33 @@ export async function render(view, slug, query = {}) {
             await api(`/api/routines/${slug}`, { method: "PATCH",
               body: { enabled: enabledBox.checked, improve: improveBox.checked,
                       schedule: { friendly: sched.value() } } });
-            toast("schedule saved"); setTimeout(() => location.reload(), 400);
+            toast("schedule saved"); refreshHead();
           } catch (err) { toast(err.message, 4000, { error: true }); }
         },
       }, "save schedule")),
-      d.next_fire ? el("div", { class: "muted mt small" }, "next run · ", when(d.next_fire)) : null));
+      nextFireLine));
 
   // -- permissions: conduct docs + machine-enforced capabilities (user-only) --------
+  // The server re-applies the activation cascade on save, so the panel re-renders from a
+  // fresh detail read IN PLACE — the old full page reload is gone.
+  const permHost = el("div", {});
+  const buildPermPanel = (perms, caps) => permissionsPanel(perms, caps, {
+    onSave: async (payload) => {
+      try {
+        await api(`/api/routines/${slug}/permissions`, { method: "PUT", body: payload });
+        toast("permissions saved");
+        const nd = await api(`/api/routines/${slug}`);
+        permHost.replaceChildren(buildPermPanel(nd.permissions, nd.capabilities));
+      } catch (err) { toast(err.message, 4000, { error: true }); }
+    },
+  });
+  permHost.append(buildPermPanel(d.permissions, d.capabilities));
   view.append(el("h2", {}, "Permissions & capabilities"),
     el("div", { class: "panel" },
       el("div", { class: "muted small", style: "margin-bottom:10px" },
         "what this routine is ALLOWED to do — enforced by the engine on every action. Only you can ",
         "change either column; the routine can never grant itself anything. Takes effect at the next run."),
-      permissionsPanel(d.permissions, d.capabilities, {
-        onSave: async (payload) => {
-          try { await api(`/api/routines/${slug}/permissions`, { method: "PUT", body: payload });
-            toast("permissions saved"); setTimeout(() => location.reload(), 400); }
-          catch (err) { toast(err.message, 4000, { error: true }); }
-        },
-      })));
+      permHost));
 
   // -- budgets (per-run ceilings — every invisible limit, surfaced) -----------------
   const UNLIMITED_BUDGETS = ["max_total_tokens", "max_wall_clock_min", "max_cost"];  // -1 = unlimited
@@ -214,7 +212,7 @@ export async function render(view, slug, query = {}) {
           for (const [kind, sel] of Object.entries(modelSelects))
             if (sel.value) models[kind] = sel.value;
           try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { models } });
-            toast("models saved"); setTimeout(() => location.reload(), 400); }
+            toast("models saved"); }
           catch (err) { toast(err.message, 4000, { error: true }); }
         } }, "save models"))));
 

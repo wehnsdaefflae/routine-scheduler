@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.39.0] — 2026-07-15
+
+### Changed
+- **Routine page saves in place — no full-page reload anywhere.** Schedule saves refresh
+  the header chip + next-fire line from a fresh read; permissions saves re-render the
+  panel from the server's post-cascade state; models saves just toast (the selects already
+  hold the truth). Scroll position and unsaved edits elsewhere on the page survive a save.
+- **One shared tag editor** (`components/tags.js`) for routines AND conversations: chips
+  with ✕ remove plus an inline add field, every change saved immediately — the routine
+  page's separate "save tags" button and the conversation's prompt-dialog "+" are gone.
+
 ## [0.38.0] — 2026-07-15
 
 ### Changed

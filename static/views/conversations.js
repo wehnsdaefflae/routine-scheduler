@@ -8,7 +8,8 @@
 
 import { api, apiUpload } from "/static/api.js";
 import { answerForm } from "/static/components/answerform.js";
-import { confirmDialog, promptDialog } from "/static/components/dialog.js";
+import { confirmDialog } from "/static/components/dialog.js";
+import { tagsEditor } from "/static/components/tags.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
@@ -17,7 +18,7 @@ import { createArtifacts } from "/static/components/artifacts.js";
 import { createStateGraph } from "/static/components/stategraph.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { permissionsPanel } from "/static/components/permissions.js";
-import { busy, chip, el, emptyState, relTime, storage, tagChip, toast } from "/static/util.js";
+import { busy, chip, el, emptyState, relTime, storage, toast } from "/static/util.js";
 import { followScroll } from "/static/follow.js";
 import { enabled as notifyEnabled } from "/static/notify.js";
 import { TERMINAL, WORKING } from "/static/states.js";
@@ -533,23 +534,11 @@ export async function render(view, slug, _query = {}) {
       try { await api(`/api/conversations/${slug}`, { method: "PATCH", body: { title: t } }); loadList(); }
       catch (err) { toast(err.message, 4000, { error: true }); }
     };
-    const tagsRow = el("span", { class: "conv-tagline" });
-    const drawTags = (tags) => {
-      tagsRow.replaceChildren(
-        ...tags.map((t) => tagChip(t, { onRemove: async () => {
-          const next = tags.filter((x) => x !== t);
-          await api(`/api/conversations/${slug}`, { method: "PATCH", body: { tags: next } })
-            .then(() => { drawTags(next); loadList(); }).catch((e) => toast(e.message, 3000, { error: true }));
-        } })),
-        el("button", { class: "btn small ghost", title: "add tag", onclick: async () => {
-          const t = await promptDialog("new tag", { placeholder: "e.g. research" });
-          if (!t) return;
-          const next = [...tags, t.toLowerCase()];
-          await api(`/api/conversations/${slug}`, { method: "PATCH", body: { tags: next } })
-            .then(() => { drawTags(next); loadList(); }).catch((e) => toast(e.message, 3000, { error: true }));
-        } }, "+"));
-    };
-    drawTags(detail.tags || []);
+    const tagsRow = el("span", { class: "conv-tagline" },
+      tagsEditor(detail.tags, async (next) => {
+        await api(`/api/conversations/${slug}`, { method: "PATCH", body: { tags: next } });
+        loadList();
+      }, { placeholder: "add tag…" }));
     const del = el("button", { class: "btn small danger" }, "delete");
     del.onclick = async () => {
       if (!(await confirmDialog("Delete this conversation? It is unversioned — this cannot be undone.", { confirmLabel: "delete" }))) return;
