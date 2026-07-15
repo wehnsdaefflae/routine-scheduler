@@ -20,8 +20,7 @@ Schema — routine.yaml `capabilities:` and permission-doc `requires:` share it,
     capabilities:
       actions: [write_util, memory_read, memory_write]   # only GATED_KINDS are enforced
       utils: [discord]                 # reserved utils switched on for this routine
-      confirm: always | creations | never    # write_util approval (legacy true /
-                                             # revisions-only / false still accepted)
+      confirm: always | creations | never    # write_util approval level
       runs: none | last | all          # previous-run read depth (requires: last | all)
 
 Which utils are "reserved" at all is library-defined: the union of every permission
@@ -60,12 +59,10 @@ _DEFAULT_KIND_SOURCE = {"write_util": "util-authoring",
                         "memory_read": "memory", "memory_write": "memory",
                         "detach": "background-tasks"}
 _DEFAULT_RUNS_SOURCE = ("run-history",)
-# write_util approval policy, least → most permissive. The legacy vocabulary still maps:
-# true → "always" (user approves create AND revise), "revisions-only" → "creations"
-# (revisions are autonomous once the selftest passes; NEW utils still ask), false → "never".
+# write_util approval policy, least → most permissive: "always" (user approves create AND
+# revise), "creations" (revisions are autonomous once the selftest passes; NEW utils ask),
+# "never".
 CONFIRM_LEVELS = ("always", "creations", "never")
-_RAW_CONFIRM = {True: "always", "revisions-only": "creations", False: "never",
-                "always": "always", "creations": "creations", "never": "never"}
 # runs: access to previous runs, none → last (only the previous run) → all
 RUN_HISTORY_LEVELS = ("none", "last", "all")
 # workflows: how a run may source a child's pattern at decomposition. catalog = pick an
@@ -73,7 +70,6 @@ RUN_HISTORY_LEVELS = ("none", "last", "all")
 # on demand (workflows/generate.py, a system-model call) when none fits. A `requires:` doc
 # demanding it names only "generate" (catalog is the absence of the requirement).
 WORKFLOW_LEVELS = ("catalog", "generate")
-_WORKFLOW_SOURCE = ("workflow-generation",)
 # The routine's own recipe files — never writable by the owning run unless a user-granted
 # fs_write_root covers the routine dir (the improver's case; see the module docstring).
 # traits/ holds the routine's adapted practice copies; stages/ + main.md the materialized
@@ -92,7 +88,8 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
     with requires=True, a permission doc's `requires:`). Returns (mapping, problems);
     invalid parts are dropped and reported, so a bad edit degrades a capability instead
     of crashing a run. `confirm` comes back as a CONFIRM_LEVELS value and is rejected
-    inside requires — the approval level is the user's policy, not a doc's demand."""
+    inside requires — the approval level is the user's policy, not a doc's demand.
+    """
     if raw is None:
         return {}, []
     if not isinstance(raw, dict):
@@ -117,8 +114,8 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
         problems += [f"{label}.{key}: {v!r} is not {kind_label}" for v in vals if not valid(v)]
         out[key] = [v for v in vals if valid(v)]
     if "confirm" in raw and not requires:
-        if raw["confirm"] in _RAW_CONFIRM:
-            out["confirm"] = _RAW_CONFIRM[raw["confirm"]]
+        if raw["confirm"] in CONFIRM_LEVELS:
+            out["confirm"] = raw["confirm"]
         else:
             problems.append(f"{label}.confirm must be always, creations or never")
     runs_ok = ("last", "all") if requires else ("none", "last", "all")
@@ -138,7 +135,8 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
 
 def _parse(text: str) -> dict:
     """Lenient frontmatter meta: broken YAML reads as no frontmatter (mirrors
-    library_docs), so a bad edit never takes policy loading down."""
+    library_docs), so a bad edit never takes policy loading down.
+    """
     try:
         return frontmatter.parse(text)[0]
     except yaml.YAMLError:
@@ -146,9 +144,10 @@ def _parse(text: str) -> dict:
 
 
 def read_library_requires(permissions_home: Path) -> dict[str, dict]:
-    """slug → normalized `requires:` for every LIBRARY permission doc that declares one —
+    """Slug → normalized `requires:` for every LIBRARY permission doc that declares one —
     the vocabulary of reservable capabilities and the docs↔capabilities dependency map.
-    Nothing under a routine dir is ever consulted."""
+    Nothing under a routine dir is ever consulted.
+    """
     out: dict[str, dict] = {}
     if not permissions_home.is_dir():
         return out
@@ -172,7 +171,8 @@ def capabilities_for(active: list[str], lib: dict[str, dict],
                      base: dict | None = None) -> dict:
     """The activation cascade: raise `base` (an all-off mapping when None) until every
     active doc's requires are covered. `runs` rises to the highest required depth;
-    `confirm` is untouched — it is user policy, not a requirement."""
+    `confirm` is untouched — it is user policy, not a requirement.
+    """
     caps = {**EMPTY_CAPABILITIES, **(base or {})}
     actions = list(dict.fromkeys(caps.get("actions") or []))
     utils = list(dict.fromkeys(caps.get("utils") or []))
@@ -204,7 +204,8 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
     mapping becomes exactly the union of the active docs' requires (actions/utils) plus the
     user's chosen depth/approval policy — no orphan capability can contradict the held
     permissions. Enforcement still reads capabilities alone (fail-closed); this keeps the
-    saved mapping from ever expressing a capability its permissions did not ask for."""
+    saved mapping from ever expressing a capability its permissions did not ask for.
+    """
     caps = {**EMPTY_CAPABILITIES, **(caps or {})}
     req_actions: set[str] = set()
     req_utils: set[str] = set()
@@ -228,9 +229,10 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
 
 def unsatisfied_requires(active: list[str], capabilities: dict,
                          lib: dict[str, dict]) -> dict[str, list[str]]:
-    """doc slug → the capabilities its requires: names that the mapping does NOT cover —
+    """Doc slug → the capabilities its requires: names that the mapping does NOT cover —
     the deactivation cascade's input (the UI drops these docs; enforcement doesn't care:
-    it fails closed on capabilities alone)."""
+    it fails closed on capabilities alone).
+    """
     caps, _ = normalize_capabilities(capabilities)
     actions = set(caps.get("actions") or [])
     utils = set(caps.get("utils") or [])
@@ -273,7 +275,8 @@ def is_runs_path(path: str) -> bool:
 class GrantPolicy:
     """One run's enforcement view: the routine's enabled capabilities, plus (from the
     whole library) which docs cover each capability — so a denial can name the
-    permission whose conduct prose the user would activate alongside it."""
+    permission whose conduct prose the user would activate alongside it.
+    """
 
     active: tuple[str, ...] = ()               # held conduct-permission slugs (prompt prose)
     actions: frozenset = frozenset()           # enabled gated action kinds
@@ -283,7 +286,6 @@ class GrantPolicy:
     confirm: str = "always"                    # write_util approval policy
     run_history: str = "none"                  # previous-runs read access: none | last | all
     workflows: str = "catalog"                 # child-pattern sourcing: catalog | generate
-    workflows_sources: tuple = _WORKFLOW_SOURCE          # docs covering workflow generation
     # own recipe/config writable? True only when a user fs_write_root covers the routine
     # dir (the routine-improver's case) — computed at policy load, never a capability.
     recipe_unlocked: bool = False
@@ -298,7 +300,8 @@ class GrantPolicy:
 
     def may_generate_workflow(self) -> bool:
         """May a subtask DRAFT a new library pattern when none fits (vs pick from the catalog)?
-        Off by default — a user-set capability, covered by the workflow-generation permission."""
+        Off by default — a user-set capability, covered by the workflow-generation permission.
+        """
         return self.workflows == "generate"
 
     def needs_confirm(self, creating: bool) -> bool:
@@ -308,7 +311,8 @@ class GrantPolicy:
     def deny(self, action: dict) -> str | None:
         """A precise, actionable rejection for a gated call — or None when permitted. Worded
         for the model inside the schema-retry cycle: capabilities are switched by the USER
-        (on the routine's Permissions panel), so route to ask_user."""
+        (on the routine's Permissions panel), so route to ask_user.
+        """
         kind = action.get("kind")
         if kind in GATED_KINDS and kind not in self.actions:
             srcs = ", ".join(self.kind_sources.get(kind)
@@ -365,12 +369,12 @@ def load_policy(permissions_home: Path, active: list[str] | None,
     """Build the run policy from the routine's OWN capabilities mapping; the library's
     `requires:` declarations contribute only the reserved-util vocabulary and the
     capability→doc index that lets denials name the covering permission. `active` (the
-    held conduct docs) is carried for the composer's prose — it unlocks nothing here."""
+    held conduct docs) is carried for the composer's prose — it unlocks nothing here.
+    """
     lib = read_library_requires(permissions_home)
     gated_utils: dict[str, list[str]] = {}
     kind_sources: dict[str, list[str]] = {}
     runs_sources: list[str] = []
-    workflows_sources: list[str] = []
     for slug, req in lib.items():
         for kind in req.get("actions") or []:
             if kind in GATED_KINDS:
@@ -379,8 +383,6 @@ def load_policy(permissions_home: Path, active: list[str] | None,
             gated_utils.setdefault(util, []).append(slug)
         if req.get("runs"):
             runs_sources.append(slug)
-        if req.get("workflows"):
-            workflows_sources.append(slug)
     caps, _ = normalize_capabilities(capabilities)
     return GrantPolicy(active=tuple(active or []),
                        actions=frozenset(k for k in caps.get("actions") or []
@@ -391,7 +393,6 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                        confirm=caps.get("confirm") or "always",
                        run_history=caps.get("runs") or "none",
                        workflows=caps.get("workflows") or "catalog",
-                       workflows_sources=tuple(workflows_sources) or _WORKFLOW_SOURCE,
                        recipe_unlocked=recipe_unlocked,
                        runs_sources=tuple(runs_sources) or _DEFAULT_RUNS_SOURCE,
                        current_run_ts=current_run_ts)

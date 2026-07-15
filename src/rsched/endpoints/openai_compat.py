@@ -3,7 +3,7 @@
 API key: inline `api_key` in config, or (preferred for real providers) `key_env_file` +
 `key_var` pointing into ~/.credentials/. Schema enforcement via `response_format` in the
 endpoint's configured mode:
-  json_schema  → {"type":"json_schema","json_schema":{name,schema,strict}} (OpenRouter, Ollama ≥0.5, OpenAI)
+  json_schema  → {"type":"json_schema","json_schema":{name,schema,strict}} (OpenRouter, OpenAI)
   json_object  → {"type":"json_object"} (guard validates)
   none         → nothing requested; the code-level validator + retry loop does all the work
 A provider/model that rejects the requested response_format is retried once without it —
@@ -20,16 +20,28 @@ from pathlib import Path
 import httpx
 
 from ..config import EndpointConfig
-from .base import (DEFAULT_TIMEOUT, PDF_MIME, Completion, EndpointError, Message,
-                   json_or_raise, key_from_env_file, read_media_b64, supports_media_type,
-                   with_retries)
+from .base import (
+    DEFAULT_TIMEOUT,
+    PDF_MIME,
+    Completion,
+    EndpointError,
+    Message,
+    json_or_raise,
+    post_json,
+    raise_for_status,
+    read_media_b64,
+    resolve_api_key,
+    supports_media_type,
+    with_retries,
+)
 
 _RF_ERROR_HINTS = ("response_format", "json_schema", "structured", "structured_outputs")
 
 
 def _openai_content(content: str, media: list[dict]) -> list[dict]:
     """A message's string content + media list → OpenAI content parts: text first, then each
-    image as a base64 data-URI `image_url` part (the shape the `vision` util already uses)."""
+    image as a base64 data-URI `image_url` part (the shape the `vision` util already uses).
+    """
     parts: list[dict] = [{"type": "text", "text": content}] if content else []
     for item in media:
         mime = item["media_type"]
@@ -45,7 +57,8 @@ def _openai_content(content: str, media: list[dict]) -> list[dict]:
 
 def _render_media(messages: list[Message]) -> list[Message]:
     """Rewrite any message carrying `media` into OpenAI content-array form; text-only
-    messages keep their plain string content. Drops the engine-side `media` key."""
+    messages keep their plain string content. Drops the engine-side `media` key.
+    """
     return [{"role": m["role"], "content": _openai_content(m.get("content", ""), m["media"])}
             if m.get("media") else {"role": m["role"], "content": m["content"]}
             for m in messages]
@@ -54,7 +67,8 @@ def _render_media(messages: list[Message]) -> list[Message]:
 class OpenAICompatEndpoint:
     """Adapter for every OpenAI-compatible chat API — OpenRouter, Featherless, vLLM,
     Ollama, OpenAI itself. `extra_body` merges into each request (aggregator routing);
-    rejected `response_format`/`reasoning` fields get one degraded retry."""
+    rejected `response_format`/`reasoning` fields get one degraded retry.
+    """
 
     def __init__(self, cfg: EndpointConfig):
         self.name = cfg.name
@@ -73,25 +87,14 @@ class OpenAICompatEndpoint:
 
     def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
         """OpenAI-compatible vision models take images natively when the resolved model is
-        multimodal; PDF support is spotty across providers, so PDFs route to the vision util."""
+        multimodal; PDF support is spotty across providers, so PDFs route to the vision util.
+        """
         return supports_media_type(media_type, multimodal=multimodal, pdf=False)
 
     def _resolve_key(self) -> str:
-        if self.api_key:                                  # inline key (UI-set) wins over a file
-            return self.api_key
-        from ..secrets import load_secrets                # then the central secrets store
-        if self.key_var and (k := load_secrets().get(self.key_var)):
-            return k
-        if self.key_env_file:
-            key = key_from_env_file(self.key_env_file, self.key_var)
-            if not key:
-                raise EndpointError(
-                    f"{self.name}: no API key — paste one in Settings, or put "
-                    f"`{self.key_var}=...` into {self.key_env_file}",
-                    auth=True,
-                )
-            return key
-        return "none"
+        # required=False: a keyless local backend (Ollama, vLLM) gets the "none" placeholder.
+        return resolve_api_key(name=self.name, api_key=self.api_key, key_var=self.key_var,
+                               key_env_file=self.key_env_file, required=False)
 
     def _response_format(self, schema: dict | None) -> dict | None:
         if schema is None or self.schema_mode == "none":
@@ -105,12 +108,13 @@ class OpenAICompatEndpoint:
 
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
-                 timeout: int = DEFAULT_TIMEOUT, session: str | None = None,
+                 timeout: int = DEFAULT_TIMEOUT,
+                 session: str | None = None,  # noqa: ARG002 — protocol caching hint (below)
                  temperature: float | None = None) -> Completion:
         # `session` is unused here: OpenAI-style providers cache implicitly on byte-stable
         # prefixes, which the engine's append-only message list already gives them; the
         # cached share shows up as usage "cached_in" (see _parse).
-        temp = temperature if temperature is not None else self.temperature  # model wins, endpoint default
+        temp = temperature if temperature is not None else self.temperature  # model wins
         if self.native and schema is not None:
             return self._complete_native(messages, model, schema, max_tokens, timeout, temp)
         if any(m.get("media") for m in messages):  # only touched when an image rides a turn
@@ -176,14 +180,8 @@ class OpenAICompatEndpoint:
                 "options": options}
 
         def call() -> Completion:
-            try:
-                resp = httpx.post(self.native_url, json=body, timeout=timeout)
-            except httpx.HTTPError as exc:
-                raise EndpointError(f"{self.name}: {exc}", retryable=True) from exc
-            if resp.status_code == 429 or resp.status_code >= 500:
-                raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}", retryable=True)
-            if resp.status_code != 200:
-                raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}")
+            resp = post_json(self.native_url, body, None, timeout, name=self.name)
+            raise_for_status(resp, self.name)
             data = json_or_raise(resp, self.name)
             text = (data.get("message") or {}).get("content", "") or ""
             return Completion(text=text,
@@ -193,38 +191,34 @@ class OpenAICompatEndpoint:
         return with_retries(call)
 
     def _post(self, body: dict, headers: dict, timeout: int) -> httpx.Response:
-        try:
-            return httpx.post(f"{self.base_url}/chat/completions", json=body,
-                              headers=headers, timeout=timeout)
-        except httpx.HTTPError as exc:
-            raise EndpointError(f"{self.name}: {exc}", retryable=True) from exc
+        return post_json(f"{self.base_url}/chat/completions", body, headers, timeout,
+                         name=self.name)
 
     def _parse(self, resp: httpx.Response) -> Completion:
-        if resp.status_code in (401, 403):
-            raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}", auth=True)
-        if resp.status_code == 429 or resp.status_code >= 500:
-            raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}", retryable=True)
-        if resp.status_code != 200:
-            raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}")
+        raise_for_status(resp, self.name)
         data = json_or_raise(resp, self.name)
         try:
             message = data["choices"][0]["message"]
             text = message.get("content") or ""
         except (KeyError, IndexError, TypeError) as exc:
-            raise EndpointError(f"{self.name}: malformed response: {json.dumps(data)[:300]}") from exc
+            raise EndpointError(
+                f"{self.name}: malformed response: {json.dumps(data)[:300]}") from exc
         if not text.strip():
             # Reasoning models sometimes spend the whole output budget "thinking" and leave
             # content empty; the answer (or at least the JSON) often sits in `reasoning`.
             text = message.get("reasoning") or ""
         usage = data.get("usage") or {}
-        out = {"in": int(usage.get("prompt_tokens") or 0),
-               "out": int(usage.get("completion_tokens") or 0)}
-        # Implicit prompt caching (OpenAI/OpenRouter/DeepSeek-style): cached_tokens is the
-        # SUBSET of prompt_tokens served from cache — surfaced so cache hit rates are
-        # visible per run; "in" stays the full prompt count (this API's convention).
+        # Implicit prompt caching (OpenAI/OpenRouter/DeepSeek-style): cached_tokens arrives
+        # as a SUBSET of prompt_tokens on this API — subtract it so "in" is fresh input
+        # only, the same cached-kept-OUT-of-"in" convention the other two adapters report
+        # (token budgets keep their meaning; cache hit rates stay visible per run).
         details = usage.get("prompt_tokens_details") or {}
-        if details.get("cached_tokens"):
-            out["cached_in"] = int(details["cached_tokens"])
+        cached = int(details.get("cached_tokens") or 0)
+        out: dict[str, int | float] = {
+            "in": max(int(usage.get("prompt_tokens") or 0) - cached, 0),
+            "out": int(usage.get("completion_tokens") or 0)}
+        if cached:
+            out["cached_in"] = cached
         if usage.get("cost") is not None:   # OpenRouter usage accounting → $ (credits)
             out["cost"] = float(usage.get("cost") or 0)
         return Completion(text=text, usage=out, provider=str(data.get("provider") or ""))

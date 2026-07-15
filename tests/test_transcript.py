@@ -34,7 +34,7 @@ def test_partial_line_held_back(tmp_path):
     events, offset = read_events(path)
     assert len(events) == 1 and offset == len(full.encode())
     # complete the partial line → next read from offset picks it up
-    with open(path, "a", encoding="utf-8") as fh:
+    with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps({"type": "error", "payload": {}})[-4:] + "\n")
     events2, offset2 = read_events(path, offset)
     assert len(events2) == 1 and events2[0]["type"] == "error" and offset2 > offset

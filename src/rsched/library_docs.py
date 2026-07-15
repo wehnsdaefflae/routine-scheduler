@@ -26,13 +26,14 @@ import yaml
 
 # Title before the em-dash may be a kebab slug OR a readable phrase ("ask policy"); the summary is
 # whatever follows the em-dash. (Splitting on a bare hyphen would swallow hyphens inside a slug.)
-DOC_RE = re.compile(r"^#\s*(?:trait|permission|fragment):\s*(?P<slug>.+?)\s*—\s*(?P<summary>.+)$",
-                    re.M)
+DOC_RE = re.compile(r"^#\s*(?:trait|permission):\s*(?P<slug>.+?)\s*—\s*(?P<summary>.+)$",
+                    re.MULTILINE)
 
 
 def _parse(text: str) -> tuple[dict, str]:
     """frontmatter.parse for user-editable files: broken YAML reads as no frontmatter, so a
-    bad edit never crashes a run or the listing."""
+    bad edit never crashes a run or the listing.
+    """
     try:
         return frontmatter.parse(text)
     except yaml.YAMLError:
@@ -46,12 +47,14 @@ def doc_body(raw: str) -> str:
 
 def ensure_dir(home: Path) -> None:
     """traits/ and permissions/ live in the library repo — the repo itself is managed by
-    utils_lib.ensure_library; here we only make sure the directory exists."""
+    utils_lib.ensure_library; here we only make sure the directory exists.
+    """
     home.mkdir(parents=True, exist_ok=True)
 
 
 def _git(home: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(home), *args], capture_output=True, text=True, timeout=30)
+    return subprocess.run(["git", "-C", str(home), *args], capture_output=True, text=True,
+                          timeout=30, check=False)
 
 
 def list_docs(home: Path) -> list[dict]:
@@ -66,7 +69,7 @@ def list_docs(home: Path) -> list[dict]:
         m = DOC_RE.search(text)
         out.append({"slug": path.stem,
                     "summary": (m.group("summary").strip() if m else ""),
-                    "title": _title(path.stem, m),
+                    "title": _title(path.stem),
                     "tags": meta.get("tags") or [],
                     # the capabilities this doc's instructions presume (permissions dir only)
                     "requires": normalize_capabilities(meta.get("requires"), label="requires",
@@ -74,7 +77,7 @@ def list_docs(home: Path) -> list[dict]:
     return out
 
 
-def _title(slug: str, m) -> str:
+def _title(slug: str) -> str:
     # a short human label, e.g. "run-history" → "Run history"
     return slug.replace("-", " ").replace("_", " ").capitalize()
 
@@ -105,7 +108,7 @@ def git_log(home: Path, rel_path: str | None = None, limit: int = 20) -> list[di
     if rel_path:
         cmd += ["--", rel_path]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, check=False)
     except OSError:
         return []
     out = []

@@ -108,6 +108,29 @@ export function fmtCost(usage) {
   return `$${usage.cost >= 0.1 ? usage.cost.toFixed(2) : usage.cost.toFixed(4)}`;
 }
 
+// ---- plain-number formatters (stats tables, charts, compact token counts) --------------------
+export function fmtInt(n) {
+  return (n || 0).toLocaleString("en-US");
+}
+
+// Compact count for tight spots (token totals, chart axis labels): 1234 → "1.2k",
+// 2_300_000 → "2.30M". Rounds sub-1k values (chart ticks can be fractional).
+export function fmtNum(n) {
+  n = n || 0;
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return String(Math.round(n));
+}
+
+// A raw dollar amount (fmtCost's usage-object sibling): always renders — a zero shows as
+// "$0.00" in a stats table rather than disappearing; 4 decimals under $1 so tiny per-run
+// costs stay legible.
+export function fmtUsd(c) {
+  c = c || 0;
+  return "$" + c.toFixed(c && c < 1 ? 4 : 2);
+}
+
 // ---- chips / tags ----------------------------------------------------------------------------
 export function chip(text, cls = "") {
   return el("span", { class: `chip ${cls}` }, text);

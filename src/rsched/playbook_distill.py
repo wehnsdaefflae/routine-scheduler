@@ -4,13 +4,14 @@ The Save-as-playbook / Update-playbook buttons in a conversation call these: rea
 (instruction.md — the first message — plus the run transcript) and the PROCEDURE that satisfied
 it, then ask the system model for a GENERALIZED playbook a future conversation can be seeded with.
 Mirrors workflows/adapt.decompose (a structured LLM inference with a graceful failure) and its
-refuse-to-degrade discipline (a revise never overwrites the current playbook with an empty result)."""
+refuse-to-degrade discipline (a revise never overwrites the current playbook with an empty result).
+"""
 
 from __future__ import annotations
 
 import json
 import re
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 
 PLAYBOOK_SCHEMA = {
@@ -20,7 +21,8 @@ PLAYBOOK_SCHEMA = {
         "slug": {"type": "string", "description": "kebab-case identifier for the playbook"},
         "title": {"type": "string", "description": "short imperative title"},
         "when": {"type": "string",
-                 "description": "ONE line: when to reuse this playbook (this is the catalog entry)"},
+                 "description": "ONE line: when to reuse this playbook (this is the "
+                                "catalog entry)"},
         "tags": {"type": "array", "items": {"type": "string"},
                  "description": "2-5 short lowercase topic tags (domain or project words)"},
         "axis": {"type": "string",
@@ -37,7 +39,8 @@ PLAYBOOK_SCHEMA = {
                         "properties": {
                             "name": {"type": "string",
                                      "description": "kebab-case detail file name, no extension"},
-                            "body": {"type": "string", "description": "the detail file's markdown"}}}},
+                            "body": {"type": "string",
+                                     "description": "the detail file's markdown"}}}},
     },
 }
 
@@ -65,10 +68,10 @@ referenced from main by a one-line "read `<name>.md` when you need X"; omit deta
 
 Return ONLY the JSON playbook object."""
 
-_REVISE_PROMPT = """You are REVISING an existing playbook to reflect what a NEW conversation taught \
-you. The user re-ran this playbook and adjusted course; fold those adjustments — corrected intent, \
-better or added steps, dropped steps — back into it. Keep everything that still holds; refine and \
-tighten, never blindly rewrite from scratch.
+_REVISE_PROMPT = """You are REVISING an existing playbook to reflect what a NEW conversation \
+taught you. The user re-ran this playbook and adjusted course; fold those adjustments — corrected \
+intent, better or added steps, dropped steps — back into it. Keep everything that still holds; \
+refine and tighten, never blindly rewrite from scratch.
 
 EXISTING PLAYBOOK (its full MAIN.md):
 ---
@@ -80,9 +83,9 @@ THE NEW CONVERSATION (where the user adjusted the procedure or intent):
 {digest}
 ---
 
-Keep the SAME slug "{slug}". Preserve the parts that still hold, change only what this conversation \
-showed should change, keep "main" lean (push long material into "details"), and state the (possibly \
-updated) generalization axis.
+Keep the SAME slug "{slug}". Preserve the parts that still hold, change only what this \
+conversation showed should change, keep "main" lean (push long material into "details"), and \
+state the (possibly updated) generalization axis.
 
 Return ONLY the JSON playbook object."""
 
@@ -90,7 +93,8 @@ Return ONLY the JSON playbook object."""
 def conversation_digest(conv_dir: Path, *, max_chars: int = 24_000) -> str:
     """A compact intent+procedure digest: the first message (instruction.md — NOT in the
     transcript) followed by each user message, assistant action (the procedure), and reply from the
-    conversation's one continuous run."""
+    conversation's one continuous run.
+    """
     from .daemon import registry
     from .engine.transcript import read_events
 
@@ -130,11 +134,13 @@ def _slugify(v: object) -> str:
 
 def _normalize(data: dict) -> dict:
     """Validate + clean the model's playbook into the shape materialize() consumes. Raises
-    ValueError on an empty body (the refuse-to-degrade guard)."""
+    ValueError on an empty body (the refuse-to-degrade guard).
+    """
     main_body = str(data.get("main") or "").strip()
     if not main_body:
         raise ValueError("the model returned an empty playbook body")
-    tags = [re.sub(r"[^a-z0-9-]+", "-", str(t).lower()).strip("-") for t in (data.get("tags") or [])]
+    tags = [re.sub(r"[^a-z0-9-]+", "-", str(t).lower()).strip("-")
+            for t in (data.get("tags") or [])]
     tags = [t for t in tags if t][:6] or ["general"]
     details = {}
     for d in (data.get("details") or []):
@@ -161,7 +167,8 @@ def _infer(server, prompt: str, *, purpose: str, kind: str) -> dict:
 
 def distill_playbook(server, conv_dir: Path) -> dict:
     """Infer a NEW generalized playbook from a conversation. Raises on no endpoint / bad output —
-    the caller (a user-initiated button) surfaces the error rather than silently degrading."""
+    the caller (a user-initiated button) surfaces the error rather than silently degrading.
+    """
     digest = conversation_digest(conv_dir)
     return _infer(server, _DISTILL_PROMPT.format(digest=digest),
                   purpose="Distil conversation → playbook", kind="save-playbook")
@@ -181,5 +188,7 @@ def materialize(pb: dict) -> tuple[str, dict]:
     from . import playbooks
 
     meta = {"slug": pb["slug"], "title": pb["title"], "when": pb["when"],
-            "tags": pb["tags"], "axis": pb["axis"], "updated": date.today().isoformat()}
+            "tags": pb["tags"], "axis": pb["axis"],
+            # user-facing doc metadata: the LOCAL calendar date, made timezone-explicit
+            "updated": datetime.now().astimezone().date().isoformat()}
     return playbooks.compose_main(meta, pb["main_body"]), pb["details"]

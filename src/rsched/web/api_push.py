@@ -1,5 +1,6 @@
 """Web Push subscription API: the browser fetches the VAPID public key, registers its
-subscription, and can drop it or fire a test push. All state handling lives in push.py."""
+subscription, and can drop it or fire a test push. All state handling lives in push.py.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ def push_info(request: Request) -> dict:
     server = request.app.state.server
     try:
         key = push.vapid_public_key(server)
-    except Exception as exc:  # noqa: BLE001 — surface as a clean API error, not a 500 trace
+    except Exception as exc:
         raise HTTPException(503, f"push keys unavailable: {exc}") from exc
     return {"public_key": key, "subscriptions": len(push.subscriptions(server))}
 

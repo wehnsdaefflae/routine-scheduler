@@ -16,9 +16,10 @@ import { createStateGraph } from "/static/components/stategraph.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { permissionsPanel } from "/static/components/permissions.js";
 import { busy, chip, el, emptyState, relTime, storage, tagChip, toast } from "/static/util.js";
+import { followScroll } from "/static/follow.js";
+import { enabled as notifyEnabled } from "/static/notify.js";
+import { TERMINAL, WORKING } from "/static/states.js";
 
-const TERMINAL = new Set(["finished", "failed", "aborted"]);
-const WORKING = new Set(["running", "starting", "queued"]);
 const PREFILL_KEY = "conv-new-prefill";
 
 export async function render(view, slug, _query = {}) {
@@ -186,8 +187,8 @@ export async function render(view, slug, _query = {}) {
   const onBus = (e) => {
     const ev = e.detail || {};
     if (ev.event === "run_finished" || ev.event === "run_started") loadList();
-    if (ev.event === "run_finished" && ev.routine === slug && document.hidden
-        && "Notification" in window && Notification.permission === "granted") {
+    // same opt-in as every other tier-1 notification (Settings → Notifications)
+    if (ev.event === "run_finished" && ev.routine === slug && document.hidden && notifyEnabled()) {
       new Notification("conversation reply ready", { body: (ev.summary || "").slice(0, 120) });
     }
   };
@@ -400,17 +401,10 @@ export async function render(view, slug, _query = {}) {
     cleanup.push(() => tail.stop());
 
     // scrolling up pauses follow; back to the bottom resumes (same rule as the run view)
-    let lastY = window.scrollY;
-    const onScroll = () => {
-      const y = window.scrollY;
-      const up = y < lastY - 1;
-      lastY = y;
-      const atBottom = window.innerHeight + y >= document.body.scrollHeight - 80;
-      if (up && !atBottom) autoscroll = false;
-      else if (atBottom) autoscroll = true;
-    };
-    window.addEventListener("scroll", onScroll);
-    cleanup.push(() => window.removeEventListener("scroll", onScroll));
+    cleanup.push(followScroll({
+      pause: () => { autoscroll = false; },
+      resume: () => { autoscroll = true; },
+    }));
 
     function buildComposer() {
       const input = el("textarea", { rows: 2, placeholder: "message…" });
@@ -490,23 +484,28 @@ export async function render(view, slug, _query = {}) {
     const input = el("textarea", { rows: 1, placeholder: "your answer… (Shift+Enter for a new line)",
       "data-persist": `answer-${q.qid}`, style: "flex:1;resize:vertical" });
     const send = el("button", { class: "btn primary" }, "answer");
-    const submit = async () => {
+    const discuss = el("button", { class: "btn",
+      title: "send as a follow-up question / thought — the model replies and the question stays open" },
+      "ask back");
+    const submit = async (intermediate) => {
       if (!input.value.trim()) return;
       try {
-        await api(`/api/questions/${q.qid}/answer`, { method: "POST", body: { text: input.value } });
+        await api(`/api/questions/${q.qid}/answer`, { method: "POST",
+          body: { text: input.value, intermediate } });
         forgetField(input);   // answered — the draft must never refill
-        toast("answer sent");
+        toast(intermediate ? "sent — the model will reply and re-ask" : "answer sent");
         box.replaceChildren();
       } catch (err) { toast(err.message, 4000, { error: true }); }
     };
-    send.onclick = submit;
-    input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } };
+    send.onclick = () => submit(false);
+    discuss.onclick = () => submit(true);
+    input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(false); } };
     box.append(el("div", { class: "panel warn mt" },
       el("div", { class: "prose" }, "❓ ", q.question || ""),
       q.default ? el("div", { class: "faint small mt" }, `↪ without an answer: ${q.default}`) : null,
       q.options?.length ? el("div", { class: "row mt" },
         q.options.map((o) => el("button", { class: "btn small", onclick: () => { input.value = o; } }, o))) : null,
-      el("div", { class: "row mt" }, input, send)));
+      el("div", { class: "row mt" }, input, send, discuss)));
   }
 
   // The model line at the top of a conversation: shows the EFFECTIVE model (override or

@@ -34,4 +34,4 @@ Run `util pytest-run /home/mark/git-repos/routine-scheduler`.
 Batch related edits into one commit where sensible; keep unrelated changes as separate commits.
 
 ## Next
-Write `state/phase.json` = `{"state": "write-report"}` and read `stages/write-report.md`.
+Write `state/phase.json` = `{"phase": "write-report"}` and read `stages/write-report.md`.

@@ -2,9 +2,9 @@
 name: Workflow curator
 slug: workflow-curator
 materialized_from:
-  slug: meta-workflows
-  commit: 4567d70
-  version: 3
+  slug: hand-authored
+  commit: ''
+  version: 1
 stages:
 - apply-small-edits
 - cluster-findings
@@ -31,7 +31,7 @@ do exactly what it says, then advance.
 
 ## Run flow
 
-Read `state/phase.json` (`{step: <stage>, cursor: {...}}`) for the current stage; if missing or
+Read `state/phase.json` (`{phase: <stage>, cursor: {...}}`) for the current stage; if missing or
 empty, start at `orient`. `read_file` that stage's module (`stages/<stage>.md`) and follow it —
 each ends by naming the next stage and what to write back into `state/phase.json`. Continue until
 `record` finishes the run.

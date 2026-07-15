@@ -57,7 +57,8 @@ export async function render(view, sub, query = {}) {
         item(w.name || w.slug, w.problems, w.tags, () => openWorkflow(w.slug), w.description)));
     section("Traits", "reusable practices — adapted into each new routine at creation, then owned by the routine (this is only the template)",
       data.traits.filter((f) => matches(f.tags)).map((f) =>
-        item(f.slug, f.problems, f.tags, () => openDoc("traits", f.slug), f.summary)));
+        item(f.slug, f.problems, f.tags, () => openDoc("traits", f.slug), f.summary)),
+      el("button", { class: "btn ghost small", onclick: () => newDoc("traits") }, "+ new trait"));
     section("Permissions", "conduct docs — held per routine via its Permissions panel; the requires: frontmatter names the capabilities each doc's instructions presume (activating the doc switches them on; open a doc to edit the mapping)",
       data.permissions.filter((f) => matches(f.tags)).map((f) => {
         const req = requiresSummary(f.requires);
@@ -66,7 +67,8 @@ export async function render(view, sub, query = {}) {
               el("span", { style: "color:var(--warn)" }, ` ▸ ${req}`))
           : f.summary;
         return item(f.slug, f.problems, f.tags, () => openDoc("permissions", f.slug), summary);
-      }));
+      }),
+      el("button", { class: "btn ghost small", onclick: () => newDoc("permissions") }, "+ new permission"));
     section("Playbooks", "one-shot recipes — saved from a conversation (Save as playbook) and reused to seed a new one; MAIN.md is the always-loaded brief",
       data.playbooks.filter((p) => matches(p.tags)).map((p) =>
         item(p.title || p.slug, p.problems, p.tags, () => openPlaybook(p.slug), p.summary)));
@@ -75,10 +77,12 @@ export async function render(view, sub, query = {}) {
         item(u.name, [], u.tags, () => openUtil(u.name), u.summary)));
   }
 
-  function section(title, desc, rows) {
+  function section(title, desc, rows, action) {
     sections.append(el("h2", {}, title));
     sections.append(el("div", { class: "panel", style: "padding:0" },
-      el("div", { class: "muted small", style: "padding:11px 16px;border-bottom:1px solid var(--line)" }, desc),
+      el("div", { class: "muted small",
+        style: "padding:11px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px" },
+        el("span", {}, desc), action || ""),
       el("div", { class: "tablewrap" },
         el("table", { class: "list" }, el("tbody", {}, rows.length ? rows
           : el("tr", {}, el("td", { class: "muted" }, active.size ? "none match this filter" : "none")))))));
@@ -115,6 +119,34 @@ export async function render(view, sub, query = {}) {
       api(`/api/library/${kind}/${slug}`, { method: "PUT",
         body: { content, ...(requires ? { requires: requires.value() } : {}) } }),
       undefined, undefined, requires?.node);
+  }
+
+  // Author a fresh trait/permission doc: a lint-satisfying template plus a slug field; save
+  // PUTs to /api/library/<kind>/<slug> (create-or-update, lint-gated) and reopens the saved doc.
+  function newDoc(kind) {
+    const isPerm = kind === "permissions";
+    const slugIn = el("input", { placeholder: "kebab-case-slug", style: "width:240px" });
+    const requires = isPerm ? requiresPanel({}) : null;
+    const template = isPerm
+      ? "---\ntags: [conduct, capability, draft]\nrequires: {}\n---\n"
+        + "# permission: <name> — <one-line summary of the conduct>\n\n"
+        + "Short conduct instructions — at most ~14 lines reach the prompt while the doc is held.\n"
+        + "Tick what the instructions presume in the requires panel above.\n"
+      : "---\ntags: [conduct, practice, draft]\n---\n"
+        + "# trait: <name> — <one-line summary of the practice>\n\n"
+        + "The practice prose: when it applies, what it looks like in action, what to avoid.\n"
+        + "It is adapted to each new routine at creation — write the general form here.\n";
+    const head = el("div", { class: "panel", style: "margin-bottom:10px" },
+      el("div", { class: "lbl" }, "slug — the doc's file name in the library"), slugIn);
+    showEditor(`new ${kind.slice(0, -1)}`, template, null, async (content) => {
+      const slug = slugIn.value.trim();
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
+        throw new Error("slug must be kebab-case (a-z, 0-9, dashes)");
+      }
+      await api(`/api/library/${kind}/${slug}`, { method: "PUT",
+        body: { content, ...(requires ? { requires: requires.value() } : {}) } });
+      await openDoc(kind, slug);   // reopen as the saved doc: URL, git history, panel state
+    }, undefined, undefined, requires ? el("div", {}, head, requires.node) : head);
   }
 
   // The capabilities a permission doc's instructions presume. Prefilled from the doc's
@@ -159,13 +191,30 @@ export async function render(view, sub, query = {}) {
   }
 
   // A playbook is a subfolder (MAIN.md + optional detail files) — the editor edits MAIN.md; its
-  // detail files are managed by the Update-playbook distillation, listed here for reference.
+  // detail files are managed by the Update-playbook distillation, viewable read-only here.
   async function openPlaybook(slug) {
     openSub = `playbook/${slug}`; updateURL();
     const d = await api(`/api/playbooks/${slug}`);
     const extra = d.details?.length
-      ? el("div", { class: "muted small", style: "margin-bottom:8px" },
-          `on-demand detail files: ${d.details.join(", ")}`)
+      ? el("div", { class: "panel", style: "margin-bottom:10px" },
+          el("div", { class: "lbl" }, "on-demand detail files (read-only — revised by Update playbook)"),
+          d.details.map((name) => {
+            const pre = el("pre", { class: "prose small",
+              style: "display:none;white-space:pre-wrap;max-height:300px;overflow:auto;margin:6px 0" });
+            const link = el("a", { href: "#", onclick: async (e) => {
+              e.preventDefault();
+              if (pre.style.display === "none") {
+                if (!pre.textContent) {
+                  try {
+                    const f = await api(`/api/playbooks/${slug}/detail/${encodeURIComponent(name)}`);
+                    pre.textContent = f.content || "(empty)";
+                  } catch (err) { pre.textContent = err.message; }
+                }
+                pre.style.display = "block";
+              } else { pre.style.display = "none"; }
+            } }, name);
+            return el("div", {}, link, pre);
+          }))
       : null;
     showEditor(`playbook: ${slug} (MAIN.md)`, d.content, d.log, async (content) =>
       api(`/api/playbooks/${slug}`, { method: "PUT", body: { content } }), undefined,

@@ -21,14 +21,16 @@ def request_abort() -> None:
     _ABORT["flag"] = True
 
 
-class RunAborted(Exception):
+class RunAborted(Exception):  # noqa: N818 — control-flow signal (caught to finish as aborted)
     """Raised at a turn boundary when an abort was requested (signal or control.json);
-    the loop catches it to finish the run as `aborted`."""
+    the loop catches it to finish the run as `aborted`.
+    """
 
 
 def pause_gate(loop, poll_s: float) -> None:
     """Hold the run while control.json says pause; the waiting time is credited back to
-    the wall-clock budget."""
+    the wall-clock budget.
+    """
     ctx = loop.ctx
     control = ctx.root_run_dir / "control.json"
     obj = read_json(control)
@@ -38,7 +40,7 @@ def pause_gate(loop, poll_s: float) -> None:
     started = time.monotonic()
     while True:
         if loop._aborted():
-            raise RunAborted()
+            raise RunAborted
         time.sleep(poll_s)
         obj = read_json(control)
         if not (isinstance(obj, dict) and obj.get("pause")):
@@ -51,7 +53,8 @@ def apply_model_switch(loop) -> None:
     """Turn-boundary: honour a mid-run model switch written to control.json by the web layer.
     Edge-triggered on the signal's `ts` so the engine never has to write control.json (which
     stays web-owned). The switch lands on the NEXT completion, since for_model re-resolves
-    ctx.routine.models every turn — the model, its context size, and effort all self-correct."""
+    ctx.routine.models every turn — the model, its context size, and effort all self-correct.
+    """
     ctx = loop.ctx
     obj = read_json(ctx.root_run_dir / "control.json")
     sw = obj.get("switch_model") if isinstance(obj, dict) else None
@@ -71,25 +74,33 @@ def apply_model_switch(loop) -> None:
             f"ENGINE NOTE: {note}. Continue the run on the new model."})
 
 
+def inject_user_message(loop, m: dict) -> None:
+    """Append ONE inbox message to the conversation as a visible mid-run injection,
+    auto-attaching image/PDF media the main endpoint can show — the single place the
+    injected-message shape is built (turn-boundary drain and boot-drain alike).
+    """
+    ctx = loop.ctx
+    ctx.transcript.event("user_injection", {"text": m["text"]})
+    msg: dict = {"role": "user", "content": f"USER MESSAGE (injected mid-run):\n{m['text']}"}
+    if m.get("attachments") and (media := executor.media_from_paths(ctx, m["attachments"])):
+        msg["media"] = media
+    loop.messages.append(msg)
+
+
 def drain_injections(loop) -> None:
-    """Feed mid-run user messages from the inbox into the conversation (root runs only).
-    Image/PDF attachments the main endpoint can show are auto-attached (media) to the
-    injected message so the model sees them without a separate view_image."""
+    """Feed mid-run user messages from the inbox into the conversation (root runs only)."""
     ctx = loop.ctx
     if ctx.depth > 0:
         return
     for m in inbox.drain_messages(ctx.routine.dir, loop.consumed_dir):
-        ctx.transcript.event("user_injection", {"text": m["text"]})
-        msg = {"role": "user", "content": f"USER MESSAGE (injected mid-run):\n{m['text']}"}
-        if m.get("attachments") and (media := executor.media_from_paths(ctx, m["attachments"])):
-            msg["media"] = media
-        loop.messages.append(msg)
+        inject_user_message(loop, m)
 
 
 def announce_finished_subruns(loop) -> None:
     """Turn-boundary notification: children that exited since the last boundary — the
     "child finished" hook. A SEQUENTIAL subtask's completion prompts result-forwarding; a
-    PARALLEL subrun's is informational (keeps `SUB-WORKFLOW FINISHED`, pinned in the docs)."""
+    PARALLEL subrun's is informational (keeps `SUB-WORKFLOW FINISHED`, pinned in the docs).
+    """
     for sub in loop.subruns.take_finished_unannounced():
         summary, _ = truncate(sub.summary, cap=4000)
         if getattr(sub, "mode", "parallel") == "sequential":

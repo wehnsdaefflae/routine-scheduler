@@ -18,9 +18,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..config import RoutineConfig, ServerConfig
-from ..ids import now_iso, run_ts as make_run_ts
-from ..paths import atomic_write_json, read_json
 from ..health_events import log_health_event
+from ..ids import now_iso
+from ..ids import run_ts as make_run_ts
+from ..paths import atomic_write_json, read_json
 from . import registry
 from .events import EventBus
 from .llm_tailer import tail_llm_sidecar
@@ -39,7 +40,8 @@ BACKGROUND_SLOTS = 2
 
 def engine_cmd(target: str, run_ts: str, *, resume: bool = False) -> list[str]:
     """`target` is a routine slug (resolved under routines_home) or a directory path —
-    conversations live under their own home, so the runner always passes cfg.dir."""
+    conversations live under their own home, so the runner always passes cfg.dir.
+    """
     cmd = [sys.executable, "-m", "rsched.cli", "engine-run", target, "--run-ts", run_ts]
     if resume:
         cmd.append("--resume")
@@ -49,7 +51,8 @@ def engine_cmd(target: str, run_ts: str, *, resume: bool = False) -> list[str]:
 @dataclass
 class ActiveRun:
     """A run the daemon tracks: queued for a slot, running as a subprocess, or parked on
-    a user question (a parked run releases its slot — `holds_slot`)."""
+    a user question (a parked run releases its slot — `holds_slot`).
+    """
 
     slug: str
     run_id: str
@@ -58,20 +61,23 @@ class ActiveRun:
     proc: asyncio.subprocess.Process | None = None  # None while queued for a slot
     holds_slot: bool = False
     sem: asyncio.Semaphore | None = None  # the pool this run draws from (cron vs interactive)
-    background: bool = False  # a detached background task — excluded from the self-update drain gate
+    background: bool = False  # a detached task — excluded from the self-update drain gate
 
 
 class Runner:
     """Spawns and supervises one `engine-run` subprocess per firing routine — never two
     of the same routine at once, `max_concurrent_runs` slots overall (conversations draw
     from their own INTERACTIVE_SLOTS pool instead), plus the drain mode a self-update
-    restart uses to quiesce without killing active runs."""
+    restart uses to quiesce without killing active runs.
+    """
 
     def __init__(self, server: ServerConfig, bus: EventBus, center=None):
         self.server = server
         self.bus = bus
-        self.center = center   # llm_tasks.TaskCenter — each run is a process; its calls are children
+        self.center = center   # llm_tasks.TaskCenter — a run is a process; its calls are children
         self.semaphore = asyncio.Semaphore(server.max_concurrent_runs)
+        # strong refs to the supervise tasks (RUF006: a bare create_task can be GC'd mid-flight)
+        self._supervisors: set[asyncio.Task] = set()
         self.interactive_semaphore = asyncio.Semaphore(INTERACTIVE_SLOTS)
         self.background_semaphore = asyncio.Semaphore(BACKGROUND_SLOTS)
         self.active: dict[str, ActiveRun] = {}  # slug → run
@@ -79,7 +85,8 @@ class Runner:
 
     def _under_home(self, cfg: RoutineConfig, home_attr: str) -> bool:
         """True if the run's dir is a direct child of the named server home. Run kind is
-        discriminated by HOME everywhere (cfg.kind is dropped by pydantic)."""
+        discriminated by HOME everywhere (cfg.kind is dropped by pydantic).
+        """
         home = getattr(self.server, home_attr, None)
         try:
             return home is not None and cfg.dir.resolve().parent == Path(home).resolve()
@@ -92,7 +99,8 @@ class Runner:
 
     def _sem_for(self, cfg: RoutineConfig) -> asyncio.Semaphore:
         """Detached background tasks draw from their own pool; conversations (dirs under
-        conversations_home) from the reserved interactive pool; everything else from cron."""
+        conversations_home) from the reserved interactive pool; everything else from cron.
+        """
         if self.is_background(cfg):
             return self.background_semaphore
         if self._under_home(cfg, "conversations_home"):
@@ -102,16 +110,13 @@ class Runner:
     def is_active(self, slug: str) -> bool:
         return slug in self.active
 
-    def is_busy(self, slug: str) -> bool:
-        """A run is active — blocks config/file edits and new fires."""
-        return slug in self.active
-
     def active_states(self) -> list[str]:
         """Current state of each active run (read from status.json) — for the drain check.
         Detached background tasks are EXCLUDED: a self-update restart must not block on a
         long fire-and-forget job. Its engine child spawns start_new_session=True, so it
         survives the daemon's SIGTERM regardless; the DetachedManager's disk-poll delivers
-        it after the restart."""
+        it after the restart.
+        """
         states: list[str] = []
         for run in self.active.values():
             if run.background:
@@ -122,7 +127,8 @@ class Runner:
 
     async def fire(self, cfg: RoutineConfig, *, reason: str = "schedule") -> str | None:
         """Queue a run unless one is already active for this routine. The subprocess is
-        spawned only once a concurrency slot is held. Returns the run_id."""
+        spawned only once a concurrency slot is held. Returns the run_id.
+        """
         if self.draining:
             log.info("fire_refused_draining routine=%s reason=%s", cfg.slug, reason)
             return None
@@ -139,13 +145,14 @@ class Runner:
                            "updated": now_iso(), "turn": 0, "question": None,
                            "usage": {"in": 0, "out": 0}})
         self.active[cfg.slug] = run
-        asyncio.create_task(self._supervise(run, cfg, reason))
+        self._spawn_supervisor(run, cfg, reason)
         return run.run_id
 
     async def resume(self, cfg: RoutineConfig, ts: str, *, reason: str = "resume") -> str | None:
         """Re-run an interrupted (terminal) run in place, rehydrating its transcript so it continues
         where it left off. Refuses if draining, the routine already has an active run, or the run
-        dir is gone."""
+        dir is gone.
+        """
         if self.draining or cfg.slug in self.active:
             return None
         run_dir = cfg.dir / "runs" / ts
@@ -155,10 +162,32 @@ class Runner:
                         sem=self._sem_for(cfg), background=self.is_background(cfg))
         atomic_write_json(run_dir / "status.json",
                           {"run_id": run.run_id, "state": "queued", "started": ts,
-                           "updated": now_iso(), "turn": 0, "question": None, "usage": {"in": 0, "out": 0}})
+                           "updated": now_iso(), "turn": 0, "question": None,
+                           "usage": {"in": 0, "out": 0}})
         self.active[cfg.slug] = run
-        asyncio.create_task(self._supervise(run, cfg, reason, resume=True))
+        self._spawn_supervisor(run, cfg, reason, resume=True)
         return run.run_id
+
+    async def resume_terminal(self, cfg: RoutineConfig, ts: str | None = None, *,
+                              reason: str = "resume") -> str | None:
+        """Resume cfg's LAST (or the given ts's) run in place only if that run is TERMINAL —
+        the shared "wake a finished conversation" core (the message endpoint, converse on a
+        run, answering a finished conversation, detached-result delivery). Returns the new
+        run_id, or None when there is nothing terminal to resume (or resume() itself
+        refuses: active / draining / run dir gone).
+        """
+        runs = registry.run_index(cfg.dir, cfg.slug)
+        run = (next((r for r in runs if r.ts == ts), None) if ts
+               else (runs[0] if runs else None))
+        if run is None or run.state not in registry.TERMINAL_STATES:
+            return None
+        return await self.resume(cfg, run.ts, reason=reason)
+
+    def _spawn_supervisor(self, run: ActiveRun, cfg: RoutineConfig, reason: str,
+                          resume: bool = False) -> None:
+        task = asyncio.create_task(self._supervise(run, cfg, reason, resume=resume))
+        self._supervisors.add(task)
+        task.add_done_callback(self._supervisors.discard)
 
     async def _supervise(self, run: ActiveRun, cfg: RoutineConfig, reason: str,
                          resume: bool = False) -> None:
@@ -201,7 +230,8 @@ class Runner:
     async def _watch_waiting(self, run: ActiveRun) -> None:
         """A run parked on a blocking question releases its concurrency slot (an idle
         2s-polling process is free); it re-acquires lazily on resume — brief
-        oversubscription is accepted, the engine never blocks on it."""
+        oversubscription is accepted, the engine never blocks on it.
+        """
         sem = run.sem or self.semaphore
         while True:
             await asyncio.sleep(STATUS_POLL_S)
@@ -220,10 +250,11 @@ class Runner:
 
     def _llm_recorder(self, run: ActiveRun):
         """Callback for this run's sidecar tailer: attribute each engine LLM record to the run
-        (which is its own process in the task manager) and fold it into the center."""
+        (which is its own process in the task manager) and fold it into the center.
+        """
         def _on(rec: dict) -> None:
             rec["run_id"] = run.run_id
-            rec.setdefault("process_id", run.run_id)   # engine calls have no scope → the run IS the process
+            rec.setdefault("process_id", run.run_id)   # no engine-call scope: run = process
             self.center.ingest(rec)
         return _on
 
@@ -243,7 +274,8 @@ class Runner:
                 error=(info.summary[:200] if info.state in ("failed", "aborted") else None))
         self.bus.publish({"event": "run_finished", "routine": run.slug, "run_id": run.run_id,
                           "state": info.state, "summary": info.summary[:300]})
-        log.info("run_finished routine=%s run=%s rc=%s state=%s", run.slug, run.run_id, rc, info.state)
+        log.info("run_finished routine=%s run=%s rc=%s state=%s",
+                 run.slug, run.run_id, rc, info.state)
         try:
             registry.apply_retention(cfg.dir, cfg.slug, cfg.keep_runs)
         except OSError as exc:
@@ -252,19 +284,19 @@ class Runner:
     def _close_out(self, run_dir: Path, run_id: str, message: str) -> None:
         """Append a synthetic finish to a dead run (single writer: the engine is gone)."""
         try:
-            with open(run_dir / "transcript.jsonl", "a", encoding="utf-8") as fh:
+            with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"ts": now_iso(), "type": "finish",
                                      "payload": {"status": "failed", "summary": message,
                                                  "authored": False}}) + "\n")
         except OSError:
             pass
-        st = read_json(run_dir / "status.json")
-        st = st if isinstance(st, dict) else {"run_id": run_id}
+        raw = read_json(run_dir / "status.json")
+        st: dict = raw if isinstance(raw, dict) else {"run_id": run_id}
         st.update(state="failed", updated=now_iso(), question=None)
         atomic_write_json(run_dir / "status.json", st)
         (run_dir / "result.md").write_text(message + "\n", encoding="utf-8")
         log_health_event(self.server.routines_home, "orphaned_run",
-                         routine=run_id.split(":")[0] if ":" in run_id else run_id,
+                         routine=run_id.split(":", maxsplit=1)[0] if ":" in run_id else run_id,
                          run_id=run_id, detail=message[:500])
 
     async def abort(self, slug: str) -> bool:
@@ -298,7 +330,7 @@ def _pid_alive(pid: int | None) -> bool:
         return False
 
 
-async def abort_process(pid: int | None, run_dir: Path, run_id: str) -> bool:
+async def abort_process(pid: int | None, _run_dir: Path, _run_id: str) -> bool:
     """SIGTERM the engine's process group; SIGKILL stragglers after the grace period."""
     if not pid or not _pid_alive(pid):
         return False

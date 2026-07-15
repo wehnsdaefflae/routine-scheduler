@@ -5,8 +5,8 @@ import json
 from types import SimpleNamespace
 
 import yaml
-from conftest import WORKFLOW_MD, finish
 
+from conftest import WORKFLOW_MD, finish
 from rsched import grants
 from rsched.config import ServerConfig
 from rsched.engine import detach
@@ -80,7 +80,7 @@ def test_detached_run_defers_blocking_ask(tmp_path, scripted):
     scripted([{"say": "asking", "kind": "ask_user", "question": "which way?",
                "mode": "blocking", "default": "left"},
               finish(summary="did it")])
-    status, run_dir = run_routine(d, server, run_ts="20260715-120000")
+    status, _run_dir = run_routine(d, server, run_ts="20260715-120000")
     assert status == "ok"                                     # it did not block on the ask
     pend = list((d / "questions" / "pending").glob("*.json"))
     assert len(pend) == 1 and json.loads(pend[0].read_text())["mode"] == "deferred"

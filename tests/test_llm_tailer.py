@@ -19,8 +19,7 @@ def test_tail_drains_records_as_they_are_appended(tmp_path, monkeypatch):
         path.write_text('{"id": "a", "phase": "started"}\n')
         task = asyncio.create_task(tail_llm_sidecar(tmp_path, got.append))
         await asyncio.sleep(0.1)                     # a poll picks up "a: started"
-        with open(path, "a", encoding="utf-8") as f:  # append while the tailer runs
-            f.write('{"id": "a", "phase": "finished"}\n')
+        _append(path, '{"id": "a", "phase": "finished"}\n')  # append while the tailer runs
         await asyncio.sleep(0.1)
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -40,8 +39,7 @@ def test_final_drain_catches_records_written_before_cancel(tmp_path, monkeypatch
     async def scenario():
         task = asyncio.create_task(tail_llm_sidecar(tmp_path, got.append))
         await asyncio.sleep(0.05)                    # first (empty) read done; now in the long sleep
-        with open(path, "a", encoding="utf-8") as f:
-            f.write('{"id": "z", "phase": "finished"}\n')
+        _append(path, '{"id": "z", "phase": "finished"}\n')
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
@@ -59,3 +57,9 @@ def test_missing_sidecar_never_crashes(tmp_path):
             await task
 
     asyncio.run(scenario())  # no file present → clean no-op
+
+
+def _append(path, line):
+    """Sync append helper — keeps blocking file IO out of the async test bodies."""
+    with path.open("a", encoding="utf-8") as f:
+        f.write(line)

@@ -15,5 +15,5 @@ Make the run incremental and finish.
    decisions awaiting the user; whether a restart was requested.
 
 ## Done
-Set `state/phase.json` = `{"state": "orient-baseline"}` so the next run starts a fresh sweep.
+Set `state/phase.json` = `{"phase": "orient-baseline"}` so the next run starts a fresh sweep.
 This run is complete.

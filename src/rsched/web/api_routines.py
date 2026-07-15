@@ -1,5 +1,6 @@
 """Routine CRUD: dashboard cards, detail, config edits (409 while a run is active),
-manual fire, archive, file reads."""
+manual fire, archive, file reads.
+"""
 
 from __future__ import annotations
 
@@ -15,11 +16,10 @@ from .. import schedule
 from ..config import MODEL_KINDS
 from ..daemon import registry
 from ..ids import now_iso, run_ts
-from ..paths import resolve_rel
+from ..paths import atomic_write, resolve_rel
+from . import artifacts
 
 router = APIRouter(tags=["routines"])
-
-MAX_FILE_BYTES = 400_000
 
 
 def _state(request: Request):
@@ -37,18 +37,47 @@ def _info(request: Request, slug: str) -> registry.RoutineInfo:
     return info
 
 
-def _guard_not_active(request: Request, info: registry.RoutineInfo) -> None:
-    if info.active_run or _state(request).runner.is_busy(info.slug):
-        raise HTTPException(409, f"routine {info.slug!r} is busy (a run is in progress) "
+def guard_not_active(request: Request, info: registry.RoutineInfo,
+                     noun: str = "routine") -> None:
+    """409 while a run is active — the web layer edits config/files only between runs
+    (shared with conversations, where the 'run' is a live reply).
+    """
+    if info.active_run or request.app.state.runner.is_active(info.slug):
+        raise HTTPException(409, f"{noun} {info.slug!r} is busy (a run is active) "
                                  "— try again after it ends")
+
+
+def permission_layers_detail(server, cfg, *,
+                             routine_only: list[str] | None = None) -> tuple[list[dict], dict]:
+    """The two permission layers of a detail payload (shared with conversations): every
+    library conduct doc as a toggle row (held ones active; `routine_only` marks the docs a
+    conversation greys out), plus the machine-enforced capabilities mapping + its vocabulary.
+    """
+    from .. import library_docs
+    from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
+
+    all_perms = library_docs.list_docs(server.permissions_home)
+    held = set(cfg.permissions)
+    permissions = [{"slug": p["slug"], "summary": p["summary"], "title": p["title"],
+                    "requires": p["requires"], "active": p["slug"] in held,
+                    **({"routine_only": p["slug"] in routine_only}
+                       if routine_only is not None else {})}
+                   for p in all_perms]
+    own_caps = cfg.capabilities or {}
+    reservable = sorted({u for p in all_perms for u in (p["requires"].get("utils") or [])}
+                        | set(own_caps.get("utils") or []))
+    capabilities = {"active": {**EMPTY_CAPABILITIES, **own_caps},
+                    "vocabulary": {"actions": list(GATED_KINDS), "utils": reservable}}
+    return permissions, capabilities
 
 
 def _git_commit(routine_dir: Path, message: str) -> None:
     if not (routine_dir / ".git").exists():
         return
-    subprocess.run(["git", "add", "-A"], cwd=routine_dir, capture_output=True, timeout=30)
+    subprocess.run(["git", "add", "-A"], cwd=routine_dir, capture_output=True, timeout=30,
+                   check=False)
     subprocess.run(["git", "commit", "-qm", message], cwd=routine_dir,
-                   capture_output=True, timeout=30)
+                   capture_output=True, timeout=30, check=False)
 
 
 def _card(request: Request, info: registry.RoutineInfo) -> dict:
@@ -83,8 +112,6 @@ def list_routines(request: Request) -> list[dict]:
 
 @router.get("/routines/{slug}")
 def routine_detail(request: Request, slug: str) -> dict:
-    from .. import library_docs
-
     info = _info(request, slug)
     server = _state(request).server
     d = info.cfg.dir
@@ -97,21 +124,12 @@ def routine_detail(request: Request, slug: str) -> dict:
     files = {}
     for sub in ("stages", "traits", "state"):
         subdir = d / sub
-        files[sub] = ([p.name for p in sorted(subdir.iterdir()) if p.is_file() and p.suffix == ".md"]
+        files[sub] = ([p.name for p in sorted(subdir.iterdir())
+                       if p.is_file() and p.suffix == ".md"]
                       if subdir.is_dir() else [])
     # the two permission layers: all library conduct docs → toggle list (held ones are
     # this routine's), plus the machine-enforced capabilities mapping + its vocabulary
-    from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
-
-    all_perms = library_docs.list_docs(server.permissions_home)
-    held = set(info.cfg.permissions)
-    permissions = [{"slug": p["slug"], "summary": p["summary"], "title": p["title"],
-                    "requires": p["requires"], "active": p["slug"] in held} for p in all_perms]
-    own_caps = info.cfg.capabilities or {}
-    reservable = sorted({u for p in all_perms for u in (p["requires"].get("utils") or [])}
-                        | set(own_caps.get("utils") or []))
-    capabilities = {"active": {**EMPTY_CAPABILITIES, **own_caps},
-                    "vocabulary": {"actions": list(GATED_KINDS), "utils": reservable}}
+    permissions, capabilities = permission_layers_detail(server, info.cfg)
     in_library = bool(info.cfg.workflow_slug) and \
         (server.library_home / "workflows" / f"{info.cfg.workflow_slug}.py").exists()
     return {
@@ -127,7 +145,6 @@ def routine_detail(request: Request, slug: str) -> dict:
         # NAME, or null to fall back to the server system_model. `catalog` populates the picker.
         "models": {k: (info.cfg.models.get(k) or None) for k in MODEL_KINDS},
         "catalog": list(server.models.keys()),
-        "endpoints": list(server.endpoints.keys()),
         "system_model": server.system_model or None,
         "permissions": permissions,
         "capabilities": capabilities,
@@ -145,7 +162,8 @@ def routine_detail(request: Request, slug: str) -> dict:
 @router.get("/routines/{slug}/stategraph")
 def stategraph(request: Request, slug: str) -> dict:
     """The routine's state graph (parsed from its own main.md) + the current phase — the
-    UI's live diagram; phase transitions arrive over the run SSE `state` events."""
+    UI's live diagram; phase transitions arrive over the run SSE `state` events.
+    """
     from .. import statemap
 
     info = _info(request, slug)
@@ -156,7 +174,8 @@ def stategraph(request: Request, slug: str) -> dict:
 def recipe(request: Request, slug: str) -> dict:
     """The routine's recipe as a navigable tree — main.md + stage modules (in Run-flow order) +
     trait modules, each with its heading outline. Powers the routine page's file browser; edits
-    still go through the generic /file endpoint."""
+    still go through the generic /file endpoint.
+    """
     from .. import statemap
 
     info = _info(request, slug)
@@ -166,42 +185,19 @@ def recipe(request: Request, slug: str) -> dict:
 @router.get("/routines/{slug}/artifacts")
 def list_artifacts(request: Request, slug: str) -> list[dict]:
     """Everything under <routine>/artifacts/ — the routine's deliverables, newest first
-    (the conversations panel's counterpart)."""
+    (the conversations panel's counterpart).
+    """
     info = _info(request, slug)
-    art = info.cfg.dir / "artifacts"
-    out = []
-    if art.is_dir():
-        for p in art.rglob("*"):
-            if p.is_file():
-                st = p.stat()
-                out.append({"path": str(p.relative_to(info.cfg.dir)), "name": p.name,
-                            "size": st.st_size, "mtime": int(st.st_mtime)})
-    out.sort(key=lambda x: x["mtime"], reverse=True)
-    return out
+    return artifacts.list_artifacts(info.cfg.dir)
 
 
 @router.get("/routines/{slug}/artifact")
 def get_artifact(request: Request, slug: str, path: str):
     """Serve one artifact raw (blob-rendered client-side). ONLY artifacts/ is servable
-    here — routine config/recipe reads stay on the JSON /file endpoint."""
-    import mimetypes
-
-    from fastapi.responses import FileResponse
-
-    from ..paths import within
-
+    here — routine config/recipe reads stay on the JSON /file endpoint.
+    """
     info = _info(request, slug)
-    try:
-        p = resolve_rel(info.cfg.dir, path.lstrip("/"))
-    except PermissionError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    # the check runs on the RESOLVED path — 'artifacts/../routine.yaml' must not pass
-    if not within(info.cfg.dir / "artifacts", p):
-        raise HTTPException(400, "only artifacts/ files are served")
-    if not p.is_file():
-        raise HTTPException(404, f"no file {path!r}")
-    media = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
-    return FileResponse(p, media_type=media, filename=p.name)
+    return artifacts.serve_file(info.cfg.dir, path)
 
 
 @router.get("/routines/{slug}/file")
@@ -224,9 +220,10 @@ def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict
     """Edit any of the routine's own files — main.md, stage modules, traits, state, or routine.yaml.
     A routine owns its recipe (materialized in), so main.md, stages/ and traits/ ARE editable here.
     This is the USER editing via the web (guarded while a run is active) — distinct from a run,
-    which may never write its own recipe or config."""
+    which may never write its own recipe or config.
+    """
     info = _info(request, slug)
-    _guard_not_active(request, info)
+    guard_not_active(request, info)
     try:
         p = resolve_rel(info.cfg.dir, body.path)
     except PermissionError as exc:
@@ -247,10 +244,15 @@ def resolve_permission_layers(server, body: PermissionsBody, current: dict) -> t
     slugs are dropped, the capabilities mapping is normalized (422 on junk), then RAISED
     until every active doc's requires are covered — so the invariant 'held docs' needs
     are on' holds regardless of what the client sent. Deactivation cascades live in the
-    UI (dropping a capability there also unticks the docs requiring it)."""
+    UI (dropping a capability there also unticks the docs requiring it).
+    """
     from .. import library_docs
-    from ..grants import (capabilities_for, floor_capabilities, normalize_capabilities,
-                          read_library_requires)
+    from ..grants import (
+        capabilities_for,
+        floor_capabilities,
+        normalize_capabilities,
+        read_library_requires,
+    )
 
     available = set(library_docs.slugs(server.permissions_home))
     active = [p for p in body.active if p in available]
@@ -273,17 +275,17 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     """Set both permission layers (user-only; a routine can never change its own): the
     held conduct docs AND the capabilities mapping. Pure routine.yaml config, read at run
     start, so changes take effect at the next run. Traits are NOT toggleable here: they
-    became the routine's own files at creation."""
+    became the routine's own files at creation.
+    """
     info = _info(request, slug)
-    _guard_not_active(request, info)
+    guard_not_active(request, info)
     server = _state(request).server
     active, caps = resolve_permission_layers(server, body, info.cfg.capabilities or {})
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     raw["permissions"] = active
     raw["capabilities"] = caps
-    raw.pop("fragments", None)   # pre-split key, retired
-    path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
     _git_commit(info.cfg.dir, f"permissions: {', '.join(active) or '(none)'}")
     return {"ok": True, "active": active, "capabilities": caps}
 
@@ -292,7 +294,7 @@ class RoutinePatch(BaseModel):
     enabled: bool | None = None
     schedule: dict | None = None            # {"friendly": {...}} — converted to cron server-side
     budgets: dict | None = None
-    models: dict | None = None              # {main|subroutine|tool_call|uncensored: "<catalog model name>"}
+    models: dict | None = None              # {main|subroutine|tool_call|uncensored: catalog name}
     name: str | None = None
     description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
@@ -302,7 +304,7 @@ class RoutinePatch(BaseModel):
 @router.patch("/routines/{slug}")
 def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     info = _info(request, slug)
-    _guard_not_active(request, info)
+    guard_not_active(request, info)
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     updates = patch.model_dump(exclude_none=True)
@@ -312,7 +314,8 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
         server = _state(request).server
         for kind, name in (updates["models"] or {}).items():
             if kind not in MODEL_KINDS:
-                raise HTTPException(400, f"unknown model kind {kind!r} (expected one of {MODEL_KINDS})")
+                raise HTTPException(
+                    400, f"unknown model kind {kind!r} (expected one of {MODEL_KINDS})")
             if not isinstance(name, str) or name not in server.models:
                 raise HTTPException(400, f"models.{kind}: must be a catalog model name")
         raw["models"] = updates.pop("models")
@@ -330,7 +333,7 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
             raw[key].update(val)
         else:
             raw[key] = val
-    path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
     _git_commit(info.cfg.dir, f"routine.yaml edit via web ({', '.join(updates)})")
     _state(request).scheduler.rescan()
     return {"ok": True, "updated": list(updates)}
@@ -348,22 +351,10 @@ async def run_now(request: Request, slug: str) -> dict:
 @router.post("/routines/{slug}/archive")
 def archive_routine(request: Request, slug: str) -> dict:
     info = _info(request, slug)
-    _guard_not_active(request, info)
+    guard_not_active(request, info)
     home = _state(request).server.routines_home
     target = home / ".archive" / f"{slug}-{run_ts()}"
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(info.cfg.dir), str(target))
     _state(request).scheduler.rescan()
     return {"ok": True, "archived_to": str(target), "ts": now_iso()}
-
-
-@router.get("/routines/{slug}/files")
-def read_file(request: Request, slug: str, path: str) -> dict:
-    info = _info(request, slug)
-    try:
-        p = resolve_rel(info.cfg.dir, path)
-        data = p.read_bytes()[:MAX_FILE_BYTES]
-    except (PermissionError, OSError) as exc:
-        raise HTTPException(404, str(exc)) from exc
-    return {"path": path, "content": data.decode("utf-8", "replace"),
-            "truncated": p.stat().st_size > MAX_FILE_BYTES}

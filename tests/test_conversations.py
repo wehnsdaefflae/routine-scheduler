@@ -255,7 +255,7 @@ def test_delete_guarded_while_active(client):
 def test_settings_editable_while_active(client):
     """Budgets AND permissions retune at any time on a live conversation — each reply reads
     routine.yaml at its own boot, so the edit simply lands on the NEXT reply (no 409)."""
-    c, server = client
+    c, _server = client
     slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
     # fake fire leaves the run 'running' → the conversation counts as active
     assert c.patch(f"/api/conversations/{slug}",
@@ -268,7 +268,7 @@ def test_capabilities_floored_to_held_permissions(client):
     """D8: a gated capability is only the MEANS of a held permission. Asking for write_util
     with no permission held floors it away; holding util-authoring grants it (and the
     confirm level — user policy — is preserved)."""
-    c, server = client
+    c, _server = client
     slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
     r = c.put(f"/api/conversations/{slug}/permissions",
               json={"active": [], "capabilities": {"actions": ["write_util"], "confirm": "never"}})
@@ -473,7 +473,7 @@ def test_conversation_runs_end_to_end(server, scripted):
         {"say": "Replying.", "kind": "finish", "status": "ok",
          "summary": "Wrote artifacts/haiku.md — a haiku about the scheduler."},
     ])
-    status, run_dir = run_routine(d, server)
+    status, _run_dir = run_routine(d, server)
     assert status == "ok"
     assert (d / "artifacts" / "haiku.md").read_text() == "silent scheduler"
     assert not (d / ".git").exists()          # the finish autocommit no-ops: unversioned
@@ -509,3 +509,32 @@ def test_autolabel_fallback_never_raises(server):
     conv_mod.autolabel(server, d, "hello world")   # dummy endpoint is unreachable → no-op
     raw = yaml.safe_load((d / "routine.yaml").read_text())
     assert raw["name"] == "hello world"
+
+
+def test_autolabel_rewrites_config_atomically(server, monkeypatch):
+    """autolabel rewrites routine.yaml OFF the reply path while the daemon may scan it —
+    the rewrite must land whole (title + tags applied, every other key intact) and leave
+    no atomic_write tmp debris behind in the conversation dir."""
+    from types import SimpleNamespace
+
+    d = conv_mod.create_conversation(server, slug="c-atomic", first_message="track my garden beds")
+    before = yaml.safe_load((d / "routine.yaml").read_text())
+
+    class FakeEndpoint:
+        def complete(self, *a, **k):
+            return SimpleNamespace(parsed={"title": "Garden bed tracker",
+                                           "tags": ["Garden", "WEEKLY!"]}, text="")
+
+    class FakeRegistry:
+        def __init__(self, _server): ...
+        def for_system(self):
+            return FakeEndpoint(), SimpleNamespace(model="m", effort=None, temperature=None)
+
+    monkeypatch.setattr("rsched.endpoints.EndpointRegistry", FakeRegistry)
+    conv_mod.autolabel(server, d, "track my garden beds")
+    raw = yaml.safe_load((d / "routine.yaml").read_text())   # parses whole → no torn write
+    assert raw["name"] == raw["description"] == "Garden bed tracker"
+    assert raw["tags"] == ["garden", "weekly"]               # normalized lowercase slugs
+    untouched = {k: v for k, v in before.items() if k not in ("name", "description", "tags")}
+    assert {k: raw[k] for k in untouched} == untouched       # the rest of the config survives
+    assert not list(d.glob("*.tmp"))                         # tmp file was renamed, not left

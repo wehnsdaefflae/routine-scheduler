@@ -19,6 +19,9 @@ routine config (`routine.yaml` / UI).
 - `uv sync` — install/refresh the venv
 - `uv run pytest -q` — full suite (fast, no network). Single test: `uv run pytest tests/test_loop.py -q`
   or `-k <name>`. Live endpoint smoke tests run only with `RSCHED_LIVE_TESTS=1`.
+- `uv run ruff check` + `uv run mypy` — the strict quality gates (ruff runs `select = ALL`;
+  every ignore in pyproject.toml carries its house-style reason). Both MUST be green in every
+  commit; `uv run pre-commit install` wires them into git.
 - `uv run rsched run-once <slug>` — execute one run from the CLI (slug under `routines_home`, or a dir
   path), streaming events. `--model kind=endpoint:model` overrides a model role; `--quiet` drops the stream.
 - `uv run rsched daemon` — scheduler + web UI in one process (what systemd runs).
@@ -142,8 +145,7 @@ generation/suggestion). `EndpointRegistry.resolve(name)` /
 model id, effort + the filled-in multimodal/context_chars/temperature) — the runtime handle, no
 longer parsed from yaml. `supports_media(mime, *, multimodal)` and compaction (`ref.context_chars`)
 take the resolved model's values; `complete()` gains a `temperature` kwarg. Editing a catalog
-model updates every routine that names it; a one-shot `rsched migrate-model-catalog` converts a
-pre-0.27 endpoint-attribute config.
+model updates every routine that names it.
 
 ## Routines on disk
 
@@ -186,7 +188,8 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   subtask does NOT survive a conversation reply-finish — a job that must outlive a reply is the
   separate **`detach`** capability below, not a subtask.
   Decomposition is recursive (a child hits its own decompose gate; depth ≤ `max_subrun_depth`) and
-  the seed workflows carry a standardized `decompose_decision()` gate (inline | sequential | parallel).
+  the `general-task` seed workflow carries a standardized `decompose_decision()` gate
+  (inline | sequential | parallel); `converse` handles decomposition as inline prose.
   Children are killed at parent finish (never outlive it); exits fold usage into the parent. The
   recursive tree is visualized live in the run/conversation rail (`web/tasktree.py` read-model →
   `static/components/tasktree.js`). `subrun_start`/`subrun_end` events carry `mode` (sequential/parallel)
@@ -208,7 +211,7 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   window. Detached runs are excluded from the restart drain gate (the child survives SIGTERM via
   `start_new_session`; disk-poll delivers post-restart) and use deferred asks only. Gated by the
   `background-tasks` permission (default-ON for conversations); action = `detach` (never call it
-  "background" — that means the within-reply subtask). Monitor/cancel via `web/api_conversations.py`
+  "background" — that means the within-reply subtask). Monitor/cancel via `web/api_background.py`
   (`GET/POST …/background`, `…/background/{id}/cancel`); the rail renders the tasks. See
   docs/background-tasks.md.
 - **ask_user** is `blocking` (poll `inbox/answer-<qid>.json` up to `ask_timeout_min`, then the run
@@ -216,8 +219,10 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   (filed to `questions/pending/`, surfaced in a later run's state digest). Blocking asks are durable
   records too, and — when the routine holds the `communication` permission — are mirrored to Discord by
   the ENGINE (`engine/decisions.py`): a reply on either surface resolves everywhere and the other side
-  is notified. The web layer posts answers into `inbox/`. Every finished (sub)run appends to
-  `~/routines/.control/workflow-usage.jsonl` — the meta-workflows routine's evidence stream.
+  is notified. All implicit outbound sends (the mirror + the detached-delivery ping) go through
+  the ONE notification seam `rsched/notify.py` — see docs/notifications.md. The web layer posts
+  answers into `inbox/`. Every finished (sub)run appends to
+  `~/routines/.control/workflow-usage.jsonl` — the workflow-curator routine's evidence stream.
 
 ## Conversations (interactive sessions)
 
@@ -275,8 +280,8 @@ token and api_key values redacted — into `config/`, then `git-sync` pushes. `b
 first boot; `deploy/install.sh` for host installs.
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
   never executed, parsed statically with `ast` (`workflows/pyworkflow.py`). Each has a `META = {...}` dict
-  (`slug / name / description / when_to_use / version / status / tags / includes`, optional `tools:`
-  allowlist), `PHASES` / `COMPLETION` literals, a top-level `run()` whose body is the per-run control flow,
+  (`slug / name / description / when_to_use / version / tags / includes`, optional `tools:`
+  allowlist), `PHASES` / `COMPLETION` literals, a top-level `main()` whose body is the per-run control flow,
   one function per step, and dummy parameter imports (`from routine.params import …`) naming the routine's
   parameters by type+meaning. The runtime is
   unchanged — routines are still the markdown `main.md`+`stages/` the orchestrator interprets: `adapt.decompose`
@@ -290,7 +295,8 @@ first boot; `deploy/install.sh` for host installs.
   prose. Selected at creation (the wizard preselects via `suggest_traits_permissions` from the refined
   instruction + chosen pattern), ADAPTED to the task by `adapt.decompose` (schema carries a `traits`
   array), written to `<routine>/traits/`, referenced from main.md's Standing practices tail
-  (`scaffold._with_practices_tail` guarantees it) — the routine's own files from then on, never toggled.
+  (`scaffold.with_practices_tail` guarantees it; `scaffold.copy_traits` is the one trait-copy
+  path routines and conversations share) — the routine's own files from then on, never toggled.
   The routine defaults (`DEFAULT_TRAITS`): `ask-policy / global-utils / web-research / ledger-discipline`;
   plus `git-checkpoint` (external-repo undo points — a conversations default, wizard-preselected for
   repo-editing routines, NOT a routine default). The five **after-run improvement passes** (bugfix /
@@ -373,6 +379,12 @@ first boot; `deploy/install.sh` for host installs.
 - Tests accompany every module in the same commit; `ScriptedEndpoint` in `tests/conftest.py` replays
   canned actions and is the main engine harness. Endpoint adapters are mock-tested; anything touching the
   network hides behind `RSCHED_LIVE_TESTS=1`.
+- `ruff check` (select ALL — every pyproject ignore names its house-style reason) and `mypy`
+  are green in every commit; pre-commit enforces both. New ignores need the same one-line
+  justification the existing ones carry.
+- ONE outbound notification seam: any engine/daemon-implicit "reach the user" send goes through
+  `rsched/notify.py` (see docs/notifications.md); new channels become a permission + a notify
+  transport, never an inline util call.
 
 ## Versioning
 

@@ -2,34 +2,14 @@
 boot and after an SSE reconnect. Also asserts the daemon sink is installed for the app's life."""
 
 import pytest
-import yaml
-from fastapi.testclient import TestClient
 
-from rsched.config import load_server_config
 from rsched.endpoints.instrument import get_sink
 from rsched.llm_tasks import DaemonSink
-from rsched.web.app import create_app
-
-TOKEN = "test-token"
 
 
 @pytest.fixture
-def client(tmp_path):
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "libraries_home": str(tmp_path / "library"),
-        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "models": {"m": {"endpoint": "dummy", "model": "m"}},
-        "system_model": "m",
-    }))
-    server, problems = load_server_config(cfg_path)
-    assert not problems
-    app = create_app(server, with_scheduler=False)
-    with TestClient(app) as c:
-        c.headers["Authorization"] = f"Bearer {TOKEN}"
-        yield c
+def client(api_client):
+    return api_client[0]
 
 
 def test_requires_auth(client):

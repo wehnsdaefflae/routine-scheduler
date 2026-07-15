@@ -29,8 +29,8 @@ ACTION_SCHEMA: dict = {
         "say": {
             "type": "string",
             "description": "ONE short sentence: what you observed / why this action. A few words "
-                           "suffice for routine steps; spend words only on decisions and surprises. "
-                           "Simple Markdown (bold, `code`, links) renders in the UI.",
+                           "suffice for routine steps; spend words only on decisions and "
+                           "surprises. Simple Markdown (bold, `code`, links) renders in the UI.",
         },
         "kind": {"type": "string", "enum": list(KINDS)},
         # util / write_util (the ONLY way to run code — there is no shell)
@@ -41,11 +41,13 @@ ACTION_SCHEMA: dict = {
         },
         "args": {
             "type": "array", "items": {"type": "string"},
-            "description": "util: command-line arguments passed to the util (append '--json' for structured output)",
+            "description": "util: command-line arguments passed to the util "
+                           "(append '--json' for structured output)",
         },
         "timeout_s": {
             "type": "integer", "minimum": 1, "maximum": 600,
-            "description": "util: seconds before the util is killed (default 300) · wait: max seconds to block (default 600)",
+            "description": "util: seconds before the util is killed (default 300) · "
+                           "wait: max seconds to block (default 600)",
         },
         # read_file / view_image / write_file / edit_file
         "path": {
@@ -58,7 +60,8 @@ ACTION_SCHEMA: dict = {
             "description": "read_file/view_image: act on SEVERAL files in one action (instead "
                            "of `path`) — batch related reads/images",
         },
-        "start_line": {"type": "integer", "minimum": 1, "description": "read_file: first line (default 1)"},
+        "start_line": {"type": "integer", "minimum": 1,
+                       "description": "read_file: first line (default 1)"},
         "max_lines": {
             "type": "integer", "minimum": 1, "maximum": 500,
             "description": "read_file: line cap (default 200)",
@@ -70,21 +73,25 @@ ACTION_SCHEMA: dict = {
         },
         "replacement": {
             "type": "string",
-            "description": "edit_file: the text that replaces the anchor (omit or \"\" to delete "
+            "description": 'edit_file: the text that replaces the anchor (omit or "" to delete '
                            "it) — edit in place instead of rewriting whole files with write_file",
         },
         "content": {"type": ["string", "object", "array"],
-                    "description": "write_file: the full new content — a string, or a JSON object/array "
-                                   "(written pretty-printed; no escaping needed) · "
+                    "description": "write_file: the full new content — a string, or a JSON "
+                                   "object/array (written pretty-printed; no escaping needed) · "
                                    "write_util: the complete PEP 723 script as a string · "
-                                   "memory_write: the note's full markdown (one string, ≤100 lines)"},
-        "append": {"type": "boolean", "description": "write_file: append instead of overwrite (default false)"},
+                                   "memory_write: the note's full markdown (one string, "
+                                   "≤100 lines)"},
+        "append": {"type": "boolean",
+                   "description": "write_file: append instead of overwrite (default false)"},
         # memory_write (memory_read needs only `name`)
         "about": {"type": "string",
-                  "description": "memory_write: one-line INDEX entry — what this note holds + when to "
-                                 "consult it (the engine maintains .memory/INDEX.md from it)"},
+                  "description": "memory_write: one-line INDEX entry — what this note holds + "
+                                 "when to consult it (the engine maintains .memory/INDEX.md "
+                                 "from it)"},
         "delete": {"type": "boolean",
-                   "description": "memory_write: remove the note and its INDEX line (content/about not needed)"},
+                   "description": "memory_write: remove the note and its INDEX line "
+                                  "(content/about not needed)"},
         # llm / spawn / subtask / detach / view_image
         "prompt": {"type": "string",
                    "description": "llm: the prompt · spawn/subtask/detach: the child's full "
@@ -92,11 +99,14 @@ ACTION_SCHEMA: dict = {
                                   "subtask's result) · view_image: what to look for (used only if "
                                   "the file falls back to the vision util)"},
         "system": {"type": "string", "description": "llm: optional system prompt"},
-        "response_schema": {"type": "object", "description": "llm: optional JSON schema constraining the reply"},
+        "response_schema": {"type": "object",
+                            "description": "llm: optional JSON schema constraining the reply"},
         "workflow": {"type": "string",
                      "description": "spawn/subtask/detach: library workflow slug for the child "
-                                    "(default general-task) — pick the pattern matching its purpose"},
-        "label": {"type": "string", "description": "spawn/subtask/detach: short name shown in the run tree"},
+                                    "(default general-task) — pick the pattern matching its "
+                                    "purpose"},
+        "label": {"type": "string",
+                  "description": "spawn/subtask/detach: short name shown in the run tree"},
         "turns": {"type": "integer", "minimum": 1,
                   "description": "subtask: turn budget for this sequential child (default: half "
                                  "your remaining turns)"},
@@ -108,10 +118,12 @@ ACTION_SCHEMA: dict = {
                                "anchor must be unique)"},
         # ask_user
         "question": {"type": "string",
-                     "description": "ask_user: the question, self-contained (simple Markdown renders in the UI)"},
+                     "description": "ask_user: the question, self-contained (simple Markdown "
+                                    "renders in the UI)"},
         "mode": {
             "type": "string", "enum": ["blocking", "deferred"],
-            "description": "ask_user: wait for the answer vs file it and continue (default deferred)",
+            "description": "ask_user: wait for the answer vs file it and continue "
+                           "(default deferred)",
         },
         "options": {
             "type": "array", "items": {"type": "string"}, "maxItems": 5,
@@ -124,14 +136,15 @@ ACTION_SCHEMA: dict = {
                            "with the question",
         },
         # finish
-        "status": {"type": "string", "enum": ["ok", "partial", "failed"], "description": "finish: run outcome"},
+        "status": {"type": "string", "enum": ["ok", "partial", "failed"],
+                   "description": "finish: run outcome"},
         "summary": {
             "type": "string",
-            "description": "finish: a DETAILED 8-20 line result summary — concrete outcomes (numbers, "
-                           "names, links), decisions taken + why, files changed, open ends and what the "
-                           "next run should pick up (becomes result.md, the dashboard's last-outcome, and "
-                           "the next run's context; simple Markdown — bold, lists, `code`, links — renders "
-                           "in the UI)",
+            "description": "finish: a DETAILED 8-20 line result summary — concrete outcomes "
+                           "(numbers, names, links), decisions taken + why, files changed, "
+                           "open ends and what the next run should pick up (becomes result.md, "
+                           "the dashboard's last-outcome, and the next run's context; simple "
+                           "Markdown — bold, lists, `code`, links — renders in the UI)",
         },
     },
 }
@@ -208,7 +221,8 @@ def normalize_action(obj: dict) -> dict:
     """Strip grammar-padding: constrained decoders (Ollama json_schema, OpenRouter strict)
     tend to emit OTHER kinds' fields as empty strings/false/null. Empty-valued fields that
     are not required for this kind carry no information — drop them so the semantic
-    validator sees the model's intent, not the grammar's debris."""
+    validator sees the model's intent, not the grammar's debris.
+    """
     # weak models sometimes wrap the action in a generic tool-call envelope — unwrap it
     if "kind" not in obj:
         if isinstance(obj.get("action"), dict):        # {"action": {...}}
@@ -229,7 +243,8 @@ def normalize_action(obj: dict) -> dict:
             obj = {k: v for k, v in obj.items() if k != stray}
 
     kind = obj.get("kind")
-    required = set(_KIND_FIELDS.get(kind, ((), ()))[0])
+    kind_fields = _KIND_FIELDS.get(kind) if isinstance(kind, str) else None
+    required = set(kind_fields[0]) if kind_fields else set()
     out = {}
     for key, val in obj.items():
         if key in ("say", "kind") or key in required:
@@ -244,8 +259,8 @@ def normalize_action(obj: dict) -> dict:
     # When a required field is missing, keep the strays so the retry error names them.
     if kind in _KIND_FIELDS:
         req, opt = _KIND_FIELDS[kind]
-        complete = all(out.get(f) is not None
-                       and not (isinstance(out.get(f), str) and not out.get(f).strip())
+        complete = all((val := out.get(f)) is not None
+                       and not (isinstance(val, str) and not val.strip())
                        for f in req)
         if complete:
             allowed = {"say", "kind", *req, *opt}
@@ -253,7 +268,9 @@ def normalize_action(obj: dict) -> dict:
     return out
 
 
-def validate_action(obj: dict, allowed_kinds: set[str] | None = None,
+# One flat per-kind checker on purpose: this function IS the action contract's single home;
+# splitting it per kind would scatter what a turn may do across files.
+def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C901, PLR0912
                     grants=None) -> list[str]:
     """Semantic per-kind checks on an object that already passed the JSON Schema.
     `allowed_kinds` narrows the vocabulary to a workflow's `tools:` allowlist; `grants`
@@ -261,7 +278,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,
     reserved utils, runs/ access, own-recipe/config writes) — so allowed kinds =
     workflow tools ∩ (base ∪ capabilities). `finish` is always permitted so a run can
     end. Both rejections happen here, inside the schema-retry cycle, so a denied call is
-    corrected and never becomes a turn. Returns a list of problems (empty = valid)."""
+    corrected and never becomes a turn. Returns a list of problems (empty = valid).
+    """
     problems: list[str] = []
     kind = obj.get("kind")
     if kind not in _KIND_FIELDS:
@@ -335,7 +353,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,
 def example_action() -> dict:
     """The few-shot example embedded in the harness contract — models on-demand step
     reading with a terse `say` (NOT util discovery: the catalog is already in
-    CAPABILITIES, so opening a run by re-listing it just re-buys known information)."""
+    CAPABILITIES, so opening a run by re-listing it just re-buys known information).
+    """
     return {
         "say": "Workflow stage 1 — reading its module before acting.",
         "kind": "read_file",

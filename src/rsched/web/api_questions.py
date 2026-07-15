@@ -8,7 +8,8 @@ routine consumes both identically.
 Question STATE is derived, never stored twice: a question is `answered` the moment its
 inbox/answer-<qid>.json exists — even though the pending file lives on until the routine's
 next run consumes it. Every surface (Decisions page, run view, badges) reads that one
-derivation, and each answer POST publishes a bus event so open views resync at once."""
+derivation, and each answer POST publishes a bus event so open views resync at once.
+"""
 
 from __future__ import annotations
 
@@ -30,7 +31,8 @@ def _audit_decisions(server) -> list[dict]:
     """The self-audit report's OPEN decisions as meta-badged question items. A decision
     leaves the inbox when an answer is queued for it, or when the report marks it
     settled (`status: settled` — or the routine's prose convention, a detail starting
-    with SETTLED)."""
+    with SETTLED).
+    """
     from .api_audit import SELF_AUDIT_SLUG, _pending_feedback
 
     rdir = server.routines_home / SELF_AUDIT_SLUG
@@ -56,7 +58,9 @@ def _audit_decisions(server) -> list[dict]:
             continue
         marker = str(answered.get(did) or "")
         if marker and marker >= str(report.get("generated") or ""):
-            continue   # answered since this report was written — not open again until a newer report says so
+            # answered since this report was written — not open again until a newer
+            # report says so
+            continue
         text = str(d.get("title") or did)
         if d.get("detail"):
             text += "\n\n" + str(d["detail"])
@@ -71,7 +75,8 @@ def _mark_answered(routine_dir, item: dict) -> dict:
     """The single answered-state derivation: an inbox answer file means the user has
     spoken, even while the pending file waits for the next run to consume it. Without
     this, an answered decision re-appears as open on every reload. The answer's source
-    rides along so every surface can say WHERE the decision was made (web / discord)."""
+    rides along so every surface can say WHERE the decision was made (web / discord).
+    """
     ans = read_json(routine_dir / "inbox" / f"answer-{item.get('qid')}.json")
     if isinstance(ans, dict) and "text" in ans:
         item["answered"] = True
@@ -82,7 +87,8 @@ def _mark_answered(routine_dir, item: dict) -> dict:
 
 def _all_questions(server, *, conversations: bool = False) -> list[dict]:
     """Open questions of one home's catalog. Conversation questions carry
-    `conversation: True` so the answer endpoint (and the UI) can tell the homes apart."""
+    `conversation: True` so the answer endpoint (and the UI) can tell the homes apart.
+    """
     home = server.conversations_home if conversations else None
     out: list[dict] = []
     for info in registry.scan(server, home).values():
@@ -117,7 +123,8 @@ def _all_questions(server, *, conversations: bool = False) -> list[dict]:
 def _wizard_questions(server) -> list[dict]:
     """Clarify-session questions. Wizard sessions are dot-hidden pseudo-routines the
     registry deliberately skips — but their questions belong in the same inbox as every
-    other decision, answerable from either surface."""
+    other decision, answerable from either surface.
+    """
     from . import wizard_store
 
     home = server.routines_home
@@ -143,7 +150,8 @@ def _wizard_questions(server) -> list[dict]:
 
 def open_decisions(server) -> list[dict]:
     """Every decision across the instance, one shape — the Decisions page, the badge, the
-    tab-open notifier, and the Web Push sender all read this."""
+    tab-open notifier, and the Web Push sender all read this.
+    """
     return (_all_questions(server) + _all_questions(server, conversations=True)
             + _wizard_questions(server) + _audit_decisions(server))
 
@@ -165,7 +173,8 @@ async def answer(request: Request, qid: str, body: Answer) -> dict:
     if qid.startswith("audit:"):
         from .api_audit import Feedback, write_feedback
 
-        match = next((q for q in _audit_decisions(request.app.state.server) if q["qid"] == qid), None)
+        match = next((q for q in _audit_decisions(request.app.state.server)
+                      if q["qid"] == qid), None)
         if match is None:
             raise HTTPException(404, f"no open audit decision {qid!r}")
         text = body.text.strip()
@@ -201,7 +210,8 @@ async def answer(request: Request, qid: str, body: Answer) -> dict:
 
 def _announce_answer(request: Request, qid: str, routine: str) -> None:
     """One bus event per answer: every open view (Decisions page, run views, badges)
-    resyncs its question state immediately instead of waiting for a reload."""
+    resyncs its question state immediately instead of waiting for a reload.
+    """
     bus = getattr(request.app.state, "bus", None)
     if bus is not None:
         bus.publish({"event": "question_answered", "qid": qid, "routine": routine})
@@ -210,20 +220,16 @@ def _announce_answer(request: Request, qid: str, routine: str) -> None:
 async def _resume_terminal_conversation(request: Request, match: dict, routine_dir) -> bool:
     """Resume a FINISHED conversation so a just-filed answer is actually consumed (F39).
     No-op for a scheduled routine (it has its own next run), for a LIVE conversation (the
-    answer drains at the next turn boundary), or when the run cannot be resumed."""
+    answer drains at the next turn boundary), or when the run cannot be resumed.
+    """
     if not match.get("conversation"):
         return False
     from ..config import load_routine
-    from .sse import TERMINAL_STATES
 
     runner = getattr(request.app.state, "runner", None)
-    if runner is None or runner.is_active(match["routine"]):
+    if runner is None:
         return False
     cfg, _ = load_routine(routine_dir)
     if cfg is None:
         return False
-    runs = registry.run_index(routine_dir, cfg.slug)
-    last = runs[0] if runs else None
-    if not last or last.state not in TERMINAL_STATES:
-        return False
-    return bool(await runner.resume(cfg, last.ts, reason="converse"))
+    return bool(await runner.resume_terminal(cfg, reason="converse"))

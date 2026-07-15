@@ -7,7 +7,7 @@
 
 import { api } from "/static/api.js";
 import { GROUPS, METRICS, RANGES, chartNode, colorMap, hideTip } from "/static/components/charts.js";
-import { el, emptyState, skeleton, storage, toast } from "/static/util.js";
+import { el, emptyState, fmtDur, fmtInt, fmtNum, fmtUsd, skeleton, storage } from "/static/util.js";
 
 const CHARTS_KEY = "rsched.stats.charts";
 const DEFAULT_CHARTS = [
@@ -25,25 +25,6 @@ function loadChartSpecs() {
 
 const NBSP = " ";
 
-function fmtInt(n) {
-  return (n || 0).toLocaleString("en-US");
-}
-function fmtTokens(n) {
-  n = n || 0;
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
-  return String(n);
-}
-function fmtCost(c) {
-  return "$" + (c || 0).toFixed(c && c < 1 ? 4 : 2);
-}
-function fmtDur(s) {
-  s = Math.round(s || 0);
-  if (s >= 3600) return (s / 3600).toFixed(1) + "h";
-  if (s >= 60) return (s / 60).toFixed(1) + "m";
-  return s + "s";
-}
 function tokensOf(d) {
   return (d.tokens_in || 0) + (d.tokens_out || 0);
 }
@@ -135,7 +116,7 @@ function sliceTable(title, slice, keyLabel, extraCols) {
     el("td", { class: "num" }, fmtInt(d.runs)),
     el("td", { class: "num" }, fmtInt(d.tokens_in)),
     el("td", { class: "num" }, fmtInt(d.tokens_out)),
-    el("td", { class: "num" }, fmtCost(d.cost)),
+    el("td", { class: "num" }, fmtUsd(d.cost)),
     el("td", { class: "num" }, fmtDur(d.elapsed_s))));
   return el("div", { class: "stat-section" },
     el("h2", {}, title),
@@ -162,12 +143,12 @@ export async function render(view) {
     try {
       agg = await api("/api/stats");
     } catch (err) {
-      body.replaceChildren(emptyState("stats unavailable", err.message));
+      body.replaceChildren(emptyState("✕", "stats unavailable", err.message));
       return;
     }
     const t = agg.totals || {};
     if (!t.runs) {
-      body.replaceChildren(emptyState("no runs yet", "usage stats appear once routines have run"));
+      body.replaceChildren(emptyState("◌", "no runs yet", "usage stats appear once routines have run"));
       return;
     }
     const parts = [];
@@ -176,8 +157,8 @@ export async function render(view) {
     const successPct = t.success_rate == null ? "—" : Math.round(t.success_rate * 100) + "%";
     parts.push(el("div", { class: "stat-cards" },
       card("total runs", fmtInt(t.runs), `${fmtInt(t.routines)} routines · ${fmtInt(t.conversations)} conversations`),
-      card("tokens", fmtTokens(tokensOf(t)), `${fmtTokens(t.tokens_in)} in · ${fmtTokens(t.tokens_out)} out`),
-      card("cost", fmtCost(t.cost), "provider-reported"),
+      card("tokens", fmtNum(tokensOf(t)), `${fmtNum(t.tokens_in)} in · ${fmtNum(t.tokens_out)} out`),
+      card("cost", fmtUsd(t.cost), "provider-reported"),
       card("compute time", fmtDur(t.elapsed_s), "summed wall-clock"),
       card("success rate", successPct, "finished ÷ graded")));
 

@@ -6,10 +6,9 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+from rsched.endpoints.base import EndpointError, supports_media_type
 from rsched.engine import executor
 from rsched.engine.actions import KIND_EXAMPLES, KINDS, validate_action
-from rsched.endpoints.base import EndpointError, supports_media_type
-
 
 # --- action schema -----------------------------------------------------------
 

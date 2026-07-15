@@ -10,8 +10,14 @@ import threading
 import pytest
 
 from rsched.endpoints.base import Completion, EndpointError
-from rsched.endpoints.instrument import (FileSink, InstrumentedEndpoint, current_process,
-                                         make_record, process_scope, set_sink)
+from rsched.endpoints.instrument import (
+    FileSink,
+    InstrumentedEndpoint,
+    current_process,
+    make_record,
+    process_scope,
+    set_sink,
+)
 
 
 class StubEndpoint:
@@ -27,9 +33,9 @@ class StubEndpoint:
 
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None,
                  timeout=600, session=None, temperature=None):
-        self.calls.append(dict(messages=messages, model=model, schema=schema, effort=effort,
-                               max_tokens=max_tokens, timeout=timeout, session=session,
-                               temperature=temperature))
+        self.calls.append({"messages": messages, "model": model, "schema": schema,
+                           "effort": effort, "max_tokens": max_tokens, "timeout": timeout,
+                           "session": session, "temperature": temperature})
         if self._boom is not None:
             raise self._boom
         return self._reply
@@ -57,9 +63,9 @@ def test_passthrough_when_no_sink():
                       effort="high", max_tokens=42, timeout=90, session="sess")
     assert out is stub._reply  # exact same object, unchanged
     # every standard kwarg forwarded verbatim; instrumentation kwargs never reach the adapter
-    assert stub.calls == [dict(messages=[{"role": "user", "content": "hi"}], model="m",
-                               schema={"x": 1}, effort="high", max_tokens=42, timeout=90,
-                               session="sess", temperature=None)]
+    assert stub.calls == [{"messages": [{"role": "user", "content": "hi"}], "model": "m",
+                           "schema": {"x": 1}, "effort": "high", "max_tokens": 42,
+                           "timeout": 90, "session": "sess", "temperature": None}]
 
 
 def test_proxies_name_context_and_adapter_attrs():

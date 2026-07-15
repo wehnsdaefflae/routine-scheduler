@@ -23,4 +23,4 @@ Decide what you may settle yourself vs what needs the user.
    instrumentation) and **SURFACE** (open decisions).
 
 ## Next
-Write `state/phase.json` = `{"state": "act-apply-fixes"}` and read `stages/act-apply-fixes.md`.
+Write `state/phase.json` = `{"phase": "act-apply-fixes"}` and read `stages/act-apply-fixes.md`.

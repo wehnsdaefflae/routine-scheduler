@@ -12,17 +12,20 @@ import asyncio
 import json
 
 import pytest
-import yaml
 from fastapi.testclient import TestClient
 
-from rsched.config import load_server_config
+from conftest import TEST_TOKEN as TOKEN
 from rsched.daemon.events import EventBus
 from rsched.paths import atomic_write_json
 from rsched.web import sse
-from rsched.web.app import create_app
 
-TOKEN = "sse-token"
 TS = "20260710-120000"
+
+
+def _append_line(path, obj):
+    # sync helper: keeps blocking file IO out of the async test bodies (ASYNC230)
+    with path.open("a") as fh:
+        fh.write(json.dumps(obj) + "\n")
 
 
 def _mk_run(routines, slug, ts, state):
@@ -30,10 +33,10 @@ def _mk_run(routines, slug, ts, state):
     run_dir.mkdir(parents=True, exist_ok=True)
     atomic_write_json(run_dir / "status.json",
                       {"run_id": f"{slug}:{ts}", "state": state, "turn": 1})
-    with open(run_dir / "transcript.jsonl", "w") as fh:
-        fh.write(json.dumps({"type": "header", "run_id": f"{slug}:{ts}"}) + "\n")
-        fh.write(json.dumps({"ts": "t", "type": "assistant_action", "turn": 1,
-                             "payload": {"say": "s", "kind": "util", "name": "gu-list"}}) + "\n")
+    (run_dir / "transcript.jsonl").write_text(
+        json.dumps({"type": "header", "run_id": f"{slug}:{ts}"}) + "\n"
+        + json.dumps({"ts": "t", "type": "assistant_action", "turn": 1,
+                      "payload": {"say": "s", "kind": "util", "name": "gu-list"}}) + "\n")
     return run_dir
 
 
@@ -56,9 +59,8 @@ async def test_run_stream_tails_appends_then_ends(tmp_path, monkeypatch):
                                           ("transcript", "assistant_action"),
                                           ("state", "running")]
     # append while the stream is live — the tail must deliver it before ending
-    with open(run_dir / "transcript.jsonl", "a") as fh:
-        fh.write(json.dumps({"ts": "t", "type": "finish", "turn": 2,
-                             "payload": {"status": "ok"}}) + "\n")
+    _append_line(run_dir / "transcript.jsonl",
+                 {"ts": "t", "type": "finish", "turn": 2, "payload": {"status": "ok"}})
     atomic_write_json(run_dir / "status.json",
                       {"run_id": f"apir:{TS}", "state": "finished", "turn": 2})
     rest = []
@@ -120,21 +122,10 @@ async def test_bus_stream_delivers_published_events():
 
 
 @pytest.fixture
-def client(tmp_path, make_routine, monkeypatch):
+def client(api_client, make_routine, monkeypatch):
     monkeypatch.setattr(sse, "POLL_S", 0.01)
     make_routine(slug="apir")
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "libraries_home": str(tmp_path / "library"),
-    }))
-    server, problems = load_server_config(cfg_path)
-    assert not problems
-    app = create_app(server, with_scheduler=False)
-    with TestClient(app) as c:
-        c.headers["Authorization"] = f"Bearer {TOKEN}"
-        yield c, tmp_path
+    return api_client
 
 
 def _wire_events(text: str) -> list[tuple[str, dict]]:

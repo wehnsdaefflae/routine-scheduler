@@ -3,8 +3,9 @@
 import json
 import time
 
-from conftest import finish, spawn, subtask, util, wait_, write_file
+import pytest
 
+from conftest import ScriptedRegistry, finish, spawn, subtask, util, wait_, write_file
 from rsched.config import ServerConfig
 from rsched.endpoints.base import EndpointError
 from rsched.engine.runtime import run_routine
@@ -151,7 +152,7 @@ tools: [read_file, write_file, ask_user]
 def test_tools_allowlist_enforced_at_runtime(make_routine, scripted):
     """A `tools:` frontmatter allowlist rejects other kinds inside the schema-retry cycle —
     the model is told which kinds ARE allowed and the run continues on a permitted action."""
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         util("websearch"),                       # util is NOT in the allowlist
         probe(),                                 # write_file is
         finish(summary="stayed inside the allowlist"),
@@ -291,7 +292,7 @@ def test_orphaned_children_detection():
     orphans = orphaned_children(events)
     assert [o["n"] for o in orphans] == [2] and orphans[0]["mode"] == "parallel"
     # everything ended → no orphans
-    assert orphaned_children(events + [{"type": "subrun_end", "payload": {"n": 2}}]) == []
+    assert orphaned_children([*events, {"type": "subrun_end", "payload": {"n": 2}}]) == []
 
 
 def test_resume_marks_orphaned_children_dead(make_routine, scripted):
@@ -343,7 +344,7 @@ def test_happy_path(make_routine, scripted):
 
 
 def test_util_missing_then_continue(make_routine, scripted):
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         util("nonexistent-util", ["arg"]),      # no such util → missing observation, run continues
         probe(),
         finish(),
@@ -369,7 +370,7 @@ def test_write_util_header_gate_blocks_bad_docs(make_routine, scripted, monkeypa
     wrote = []
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
     monkeypatch.setattr(ul, "write_util_file", lambda *a: wrote.append(a))
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "Create it.", "kind": "write_util", "name": "untagged",
          "content": ('"""untagged — x.\n\nusage: gu untagged\n"""\n'
                      'import os\nk = os.environ["FOO_API_KEY"]\n')},
@@ -393,7 +394,7 @@ def test_write_util_gating_and_commit(make_routine, scripted, monkeypatch):
                         lambda home, name, content: seen.update(name=name, content=content))
     monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (True, "selftest: ok"))
     monkeypatch.setattr(ul, "git_commit", lambda home, msg: seen.update(commit=msg) or True)
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "No util fits — creating one.", "kind": "write_util", "name": "adder",
          "content": util_src("adder")},
         finish(summary="created adder"),
@@ -413,7 +414,7 @@ def test_write_util_selftest_failure_not_committed(make_routine, scripted, monke
     monkeypatch.setattr(ul, "write_util_file", lambda home, name, content: None)
     monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (False, "AssertionError: boom"))
     monkeypatch.setattr(ul, "git_commit", lambda home, msg: committed.append(msg) or True)
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "Create it.", "kind": "write_util", "name": "bad", "content": util_src("bad")},
         finish(status="partial", summary="util did not pass selftest"),
     ], slug="wubad")
@@ -434,7 +435,7 @@ def test_write_util_confirmation_declined(make_routine, scripted, monkeypatch):
     qid = f"q-{TS}-1"
     atomic_write_json(d / "inbox" / f"answer-{qid}.json", {"qid": qid, "text": "decline"})
     server = _server(d, util_authoring="true")   # grant with approval gate ON
-    ep = scripted([
+    scripted([
         {"say": "Propose a util.", "kind": "write_util", "name": "risky", "content": util_src("risky")},
         finish(status="partial", summary="util declined"),
     ])
@@ -478,7 +479,7 @@ def test_write_util_autonomous_revisions(make_routine, scripted, monkeypatch):
     monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (True, "selftest: ok"))
     monkeypatch.setattr(ul, "git_commit", lambda home, msg: True)
     d = make_routine(slug="wuauto")
-    ep = scripted([
+    scripted([
         {"say": "Fix it.", "kind": "write_util", "name": "adder", "content": util_src("adder")},
         finish(summary="revised without a question"),
     ])
@@ -498,7 +499,7 @@ def test_gated_util_requires_its_permission(make_routine, scripted):
     d = make_routine(slug="gated")
     server = _server(d)
     _library_permission(server, "communication", "requires:\n  utils: [discord]")
-    ep = scripted([
+    scripted([
         util("discord", ["send", "hi"]),          # communication not active → denied
         probe(),
         finish(),
@@ -528,7 +529,7 @@ def test_gated_util_requires_its_permission(make_routine, scripted):
 
 
 def test_invalid_json_retry_then_ok(make_routine, scripted):
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         "utter prose, no JSON at all",
         probe(),
         finish(),
@@ -540,7 +541,7 @@ def test_invalid_json_retry_then_ok(make_routine, scripted):
 
 
 def test_three_invalid_attempts_fail_run(make_routine, scripted):
-    d, ep, status, run_dir, events = _run(make_routine, scripted,
+    _d, _ep, status, run_dir, events = _run(make_routine, scripted,
                                           ["nope", "still nope", "nope again"])
     assert status == "failed"
     assert len([e for e in events if e["type"] == "error"]) == 3
@@ -549,7 +550,7 @@ def test_three_invalid_attempts_fail_run(make_routine, scripted):
 
 
 def test_turn_budget_forces_partial_finish(make_routine, scripted):
-    d, ep, status, run_dir, events = _run(
+    _d, ep, status, _run_dir, events = _run(
         make_routine, scripted,
         [probe(say=f"s{i}") for i in range(3)],
         budgets={"max_turns": 2})
@@ -561,7 +562,7 @@ def test_turn_budget_forces_partial_finish(make_routine, scripted):
 
 def test_repeated_action_warn_then_fail(make_routine, scripted):
     same = probe(say="again")
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [same, same, same, same, same])
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [same, same, same, same, same])
     assert status == "failed"
     fin = events[-1]["payload"]
     assert "repeated" in fin["summary"]
@@ -572,7 +573,7 @@ def test_repeated_action_warn_then_fail(make_routine, scripted):
 
 
 def test_fabricated_finish_rejected(make_routine, scripted):
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         finish(summary="All done! Committed everything."),   # turn 1: pure fabrication
         probe(),
         finish(summary="Now actually done."),
@@ -583,14 +584,14 @@ def test_fabricated_finish_rejected(make_routine, scripted):
     assert len(rejected) == 1
     assert "not executed a single action" in ep.calls[1]["messages"][-1]["content"]
     # a failed-finish without work IS allowed (e.g. broken preconditions)
-    d2, ep2, status2, run_dir2, events2 = _run(make_routine, scripted, [
+    _d2, _ep2, status2, _run_dir2, events2 = _run(make_routine, scripted, [
         finish(status="failed", summary="Cannot start: credentials missing."),
     ], slug="failer")
     assert status2 == "failed" and events2[-1]["payload"]["authored"] is True
 
 
 def test_ask_user_deferred(make_routine, scripted):
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
         {"say": "Need input eventually.", "kind": "ask_user", "question": "Which city?",
          "mode": "deferred"},
         finish(),
@@ -623,7 +624,7 @@ def test_ask_user_blocking_answered(make_routine, scripted):
 
 
 def test_ask_user_blocking_timeout_defers(make_routine, scripted):
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
         {"say": "q", "kind": "ask_user", "question": "Anyone?", "mode": "blocking"},
         finish(),
     ], slug="timeouter", budgets={"ask_timeout_min": 0})
@@ -633,14 +634,14 @@ def test_ask_user_blocking_timeout_defers(make_routine, scripted):
 
 
 def test_deferred_answer_reaches_next_run_digest(make_routine, scripted):
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    d, _ep, _status, _run_dir, _events = _run(make_routine, scripted, [
         {"say": "q", "kind": "ask_user", "question": "Favorite color?", "mode": "deferred"},
         finish(),
     ], slug="qcarry")
     qid = read_json(next((d / "questions" / "pending").glob("*.json")))["qid"]
     atomic_write_json(d / "inbox" / f"answer-{qid}.json", {"qid": qid, "text": "teal"})
     ep2 = scripted([probe(), finish(summary="noted teal")])
-    status2, run_dir2 = run_routine(d, ServerConfig(), run_ts="20260709-070000")
+    status2, _run_dir2 = run_routine(d, ServerConfig(), run_ts="20260709-070000")
     assert status2 == "ok"
     system = ep2.calls[0]["messages"][0]["content"]
     assert "Favorite color?" in system and "teal" in system
@@ -653,7 +654,7 @@ PARENT = "(no previous runs)"  # structurally parent-only: it is in the parent's
 
 
 def test_spawn_and_wait_collects_child(make_routine, scripted):
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, run_dir, events = _run(make_routine, scripted, [
         (PARENT, spawn("CHILD-A: compute the answer to X.", label="research")),
         ("CHILD-A", finish(summary="X is 42, verified twice.")),
         (PARENT, wait_(all_=True)),
@@ -687,7 +688,7 @@ def test_parallel_children_notify_at_boundary(make_routine, scripted):
         time.sleep(0.4)
         return probe()
 
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         (PARENT, spawn("CHILD-A: research alpha.", label="a")),
         (PARENT, spawn("CHILD-B: research beta.", label="b")),
         ("CHILD-A: research alpha.", slow_child("alpha result ready")),
@@ -718,7 +719,7 @@ def test_wait_wakes_for_exit_during_completion(make_routine, scripted):
         return wait_(timeout_s=30)
 
     t0 = time.monotonic()
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
         (PARENT, spawn("CHILD-Q: quick task.", label="q")),
         ("CHILD-Q", slow_child),
         (PARENT, compose_wait_slowly),
@@ -739,7 +740,7 @@ def test_wait_returns_at_once_when_nothing_left_to_wait_for(make_routine, script
         return probe()
 
     t0 = time.monotonic()
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         (PARENT, spawn("CHILD-D: done fast.", label="d")),
         ("CHILD-D", finish(summary="already reported")),
         (PARENT, slow_probe),
@@ -760,7 +761,7 @@ def test_kill_child(make_routine, scripted):
         time.sleep(0.5)
         return finish(summary="should never land")
 
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         (PARENT, spawn("CHILD-S: sleep forever.", label="slow")),
         ("CHILD-S", sleepy),
         (PARENT, {"say": "Too slow — killing it.", "kind": "kill", "n": 1}),
@@ -779,7 +780,7 @@ def test_children_never_outlive_parent(make_routine, scripted):
         time.sleep(0.8)
         return finish(summary="late child")
 
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         (PARENT, spawn("CHILD-L: long job.", label="long")),
         ("CHILD-L", sleepy),
         (PARENT, finish(summary="parent leaves early")),
@@ -792,7 +793,7 @@ def test_children_never_outlive_parent(make_routine, scripted):
 
 
 def test_spawn_caps(make_routine, scripted):
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, _ep, status, run_dir, events = _run(make_routine, scripted, [
         (PARENT, spawn("CHILD-1: quick job.")),
         ("CHILD-1: quick job.", spawn("GRANDCHILD: deeper.")),  # child hits the depth cap
         ("CHILD-1: quick job.", finish(summary="child done")),
@@ -849,7 +850,7 @@ def test_subtask_starts_nonblocking_and_is_awaited(make_routine, scripted):
     """A subtask starts a SEQUENTIAL child NON-BLOCKING (its observation is a 'started' note, not
     the summary); the parent WAITS for it and the result reaches the parent (via the wait or the
     finished-hook). Tree events carry mode=sequential; usage folds in."""
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         (PARENT, subtask("CHILD-A: compute step one.", label="step1")),
         ("CHILD-A", finish(summary="step one result: 7, verified.")),
         (PARENT, wait_(n=1)),
@@ -873,7 +874,7 @@ def test_subtask_starts_nonblocking_and_is_awaited(make_routine, scripted):
 def test_subtasks_run_in_order_and_forward_results(make_routine, scripted):
     """Two subtasks, each awaited before the next; the first's result is in the parent's context
     before it composes the second (the parent forwards it)."""
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         (PARENT, subtask("CHILD-A: find the seed number.", label="s1")),
         ("CHILD-A", finish(summary="the seed number is 42")),
         (PARENT, wait_(n=1)),
@@ -894,7 +895,7 @@ def test_subtasks_run_in_order_and_forward_results(make_routine, scripted):
 
 def test_subtask_explicit_turn_budget(make_routine, scripted):
     """`turns` pins the child's turn budget (not the naive half-of-remainder default)."""
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         (PARENT, subtask("CHILD-T: bounded work.", label="bt", turns=3)),
         ("CHILD-T", finish(summary="did it in one")),
         (PARENT, wait_(n=1)),
@@ -919,7 +920,7 @@ def test_wait_yields_to_a_pending_user_message(make_routine, scripted):
         atomic_write_json(d / "inbox" / "msg-1.json", {"text": "quick question while you work"})
         return wait_(n=1, timeout_s=30)
 
-    ep = scripted([
+    scripted([
         (PARENT, subtask("CHILD-SLOW: a long job.", label="slow")),
         ("CHILD-SLOW", slow_child),
         (PARENT, inject_then_wait),
@@ -999,7 +1000,7 @@ def test_subtask_generate_gate(monkeypatch):
 
 
 def test_llm_subcall(make_routine, scripted):
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "Scoped call.", "kind": "llm", "prompt": "Summarize: hello world"},
         "a plain text llm reply",   # ← consumed by the subcall (no schema → text)
         finish(),
@@ -1046,7 +1047,7 @@ def test_abort_flag(make_routine, scripted):
         return probe()
 
     d = make_routine(slug="aborted")
-    ep = scripted([act_then_abort, finish()])
+    scripted([act_then_abort, finish()])
     status, run_dir = run_routine(d, ServerConfig(), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert status == "aborted"
@@ -1055,7 +1056,7 @@ def test_abort_flag(make_routine, scripted):
 
 
 def test_endpoint_error_fails_run(make_routine, scripted):
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         EndpointError("boom 401", auth=True),
     ], slug="eperr")
     assert status == "failed"
@@ -1074,15 +1075,10 @@ def test_pause_gate(make_routine, scripted):
         atomic_write_json(rd / "control.json", {"pause": True})
         return probe()
 
-    def unpause_soon():
-        # runs inside the SECOND completion call — by then the engine must have gone
-        # through the pause gate; we clear it from a thread to release the engine.
-        raise AssertionError("must not be reached while paused")
-
     import threading
     import time as _t
 
-    ep = scripted([act_and_pause, finish()])
+    scripted([act_and_pause, finish()])
 
     def clearer():
         for _ in range(200):  # wait until the run dir is known, then release the pause
@@ -1106,7 +1102,7 @@ def test_retry_shows_kind_example_and_repeat_notice(make_routine, scripted):
     identical action again adds the do-not-repeat escalation."""
     bad = {"say": "writing phase", "kind": "write_file", "path": "state/phase.json",
            "status": "ok", "summary": "phase = orient", "workflow": "self-audit"}
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
         dict(bad), dict(bad), write_file("state/phase.json", '{"phase": "orient"}'),
         finish(),
     ])
@@ -1122,7 +1118,7 @@ def test_retry_shows_kind_example_and_repeat_notice(make_routine, scripted):
 
 def test_write_file_accepts_structured_content(make_routine, scripted):
     """A JSON object as `content` is serialized pretty-printed — no escaping gymnastics."""
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    d, _ep, status, _run_dir, _events = _run(make_routine, scripted, [
         {"say": "Recording the phase.", "kind": "write_file",
          "path": "state/phase.json", "content": {"phase": "gather-evidence", "n": 2}},
         finish(),
@@ -1136,7 +1132,7 @@ def test_write_file_accepts_structured_content(make_routine, scripted):
 def test_schema_retry_telemetry(make_routine, scripted):
     """A schema violation recovered within the same turn increments schema_retries, and the
     counter is surfaced in status.json (telemetry so audits can spot retry storms at a glance)."""
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, _ep, status, run_dir, _events = _run(make_routine, scripted, [
         "this is not a valid action object",       # invalid reply → one schema retry
         probe("recovered after the retry"),         # attempt 2 of the same turn succeeds
         finish(summary="done after a single retry"),
@@ -1150,7 +1146,7 @@ def test_schema_retry_telemetry(make_routine, scripted):
 def test_schema_forcefail_telemetry(make_routine, scripted):
     """When every schema attempt fails, the run force-fails and both counters are recorded in
     status.json (schema_retries once per attempt, schema_forcefails once for the turn)."""
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, _ep, status, run_dir, _events = _run(make_routine, scripted, [
         "nope one", "nope two", "nope three",       # all three attempts invalid
     ])
     assert status == "failed"
@@ -1188,7 +1184,7 @@ def test_own_recipe_writes_blocked_unless_write_root_covers_dir(make_routine, sc
         write_file("stages/collect.md", content="rewritten"),
         finish(),
     ])
-    status2, run_dir2 = run_routine(d2, _server(d2), run_ts=TS)
+    status2, _run_dir2 = run_routine(d2, _server(d2), run_ts=TS)
     assert status2 == "ok"
     assert (d2 / "stages" / "collect.md").read_text().strip() == "rewritten"
 
@@ -1198,7 +1194,7 @@ def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):
     .control/workflow-usage.jsonl, the meta-workflows routine's evidence stream."""
     from rsched.paths import read_json as _rj  # noqa: F401 — parity import
 
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    d, _ep, status, _run_dir, _events = _run(make_routine, scripted, [
         (PARENT, spawn("CHILD-B: do the small thing.", label="c1")),
         ("CHILD-B", finish(summary="child done")),
         (PARENT, wait_(all_=True, timeout_s=10)),
@@ -1262,7 +1258,7 @@ def test_repeat_warn_sheds_provider_schema(make_routine, scripted):
     next completions (grammar distortion can suppress optional fields like args while the
     model narrates that it keeps forgetting them)."""
     same = util("git-log", say="Trying git-log.")
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
         dict(same), dict(same), dict(same),
         util("git-log", args=["--stat"], say="Now with args."),
         finish(),
@@ -1280,11 +1276,11 @@ def test_second_shed_disables_provider_schema_for_the_run(make_routine, scripted
     the rest of the run instead of re-triggering the suppression cycle per util call."""
     a = util("git-log", say="A.")
     b = util("dir-tree", say="B.")
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         dict(a), dict(a), dict(a),                       # streak 1 → shed #1
         util("git-log", args=["--stat"], say="A ok."),
         dict(b), dict(b), dict(b),                       # streak 2 → shed #2 → sticky off
-        util("dir-tree", args=["/tmp"], say="B ok."),
+        util("dir-tree", args=["./data"], say="B ok."),
         util("pytest-run", args=["/x"], say="C."),
         finish(),
     ])
@@ -1325,6 +1321,7 @@ def test_unlimited_time_and_cost_budgets_honor_minus_one():
     no violation/warning however far past a finite ceiling, children inherit unlimited, and
     finite time/cost caps still trip exactly as before."""
     import time as _t
+
     from rsched.engine.run_context import Budgets, RunContext
 
     ctx = RunContext.__new__(RunContext)
@@ -1361,6 +1358,7 @@ def test_conversation_total_turn_budget_caps_the_whole_conversation():
     """max_total_turns bounds the CUMULATIVE turns across every resume window (a
     conversation's whole life), independent of the per-reply max_turns window."""
     import time as _t
+
     from rsched.engine.run_context import Budgets, RunContext
 
     ctx = RunContext.__new__(RunContext)
@@ -1398,6 +1396,7 @@ def test_unlimited_turn_budget_honors_minus_one():
     or warning however many turns pass, a child inherits unlimited turns (not 1), and a
     finite max_turns still trips exactly as before."""
     import time as _t
+
     from rsched.engine.run_context import Budgets, RunContext
 
     ctx = RunContext.__new__(RunContext)
@@ -1447,7 +1446,7 @@ def test_usage_accounting_cache_keys_and_resume_base():
 
 def test_budget_warning_appended_near_exhaustion(make_routine, scripted):
     """Past 85% of the turn budget, observations carry the wind-down nudge."""
-    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+    _d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
         *[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(9)],
         finish(),                                    # turn 9 crosses 85% of 10
     ], budgets={"max_turns": 10})
@@ -1462,10 +1461,10 @@ def test_health_event_on_budget_exhaustion(make_routine, scripted, tmp_path):
     d = make_routine(slug="healthbud")
     s = _server(d)
     s.routines_home = tmp_path / "routines"
-    ep = scripted([
+    scripted([
         *[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(11)],
     ])
-    status, run_dir = run_routine(d, s, run_ts=TS)
+    status, _run_dir = run_routine(d, s, run_ts=TS)
     assert status == "partial"
     health_path = tmp_path / "routines" / ".control" / "health-events.jsonl"
     assert health_path.exists()
@@ -1482,8 +1481,8 @@ def test_health_event_on_run_failure(make_routine, scripted, tmp_path):
     d = make_routine(slug="healthfail")
     s = _server(d)
     s.routines_home = tmp_path / "routines"
-    ep = scripted(["nope one", "nope two", "nope three"])
-    status, run_dir = run_routine(d, s, run_ts=TS)
+    scripted(["nope one", "nope two", "nope three"])
+    status, _run_dir = run_routine(d, s, run_ts=TS)
     assert status == "failed"
     health_path = tmp_path / "routines" / ".control" / "health-events.jsonl"
     assert health_path.exists()
@@ -1497,8 +1496,8 @@ def test_no_health_event_on_ok_finish(make_routine, scripted, tmp_path):
     d = make_routine(slug="healthok")
     s = _server(d)
     s.routines_home = tmp_path / "routines"
-    ep = scripted([probe(), finish()])
-    status, run_dir = run_routine(d, s, run_ts=TS)
+    scripted([probe(), finish()])
+    status, _run_dir = run_routine(d, s, run_ts=TS)
     assert status == "ok"
     health_path = tmp_path / "routines" / ".control" / "health-events.jsonl"
     assert not health_path.exists()
@@ -1508,11 +1507,11 @@ def test_compaction_antithrash(make_routine, monkeypatch):
     """Head + tail are an incompressible floor: once the middle is a handful of messages, or
     the prompt hasn't grown since the last archive, _compact_if_needed must SKIP — each attempt
     costs a full-prompt LLM call (seen live: 4 compactions/run, the last saving 5k chars)."""
+    import rsched.engine.loop as loop_mod
     from rsched.config import load_routine
     from rsched.engine.loop import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, EngineLoop
     from rsched.engine.run_context import Budgets, RunContext
     from rsched.engine.transcript import Transcript
-    import rsched.engine.loop as loop_mod
 
     d = make_routine(slug="cmp")
     run_dir = d / "runs" / TS
@@ -1550,7 +1549,7 @@ def test_compaction_antithrash(make_routine, monkeypatch):
 def test_edit_file_replaces_anchor_in_place(make_routine, scripted):
     """edit_file: revisions cost the diff, not the document — and the failure modes teach
     the fix (anchor not found → copy verbatim; ambiguous → extend or all: true)."""
-    d, ep, status, _, events = _run(make_routine, scripted, [
+    d, _ep, status, _, events = _run(make_routine, scripted, [
         write_file("state/notes.md", content="alpha\nbeta\nalpha\n"),
         {"say": "s", "kind": "edit_file", "path": "state/notes.md",
          "anchor": "gamma", "replacement": "x"},                      # not found
@@ -1574,7 +1573,7 @@ def test_edit_file_replaces_anchor_in_place(make_routine, scripted):
 def test_edit_file_respects_recipe_write_gate(make_routine, scripted):
     """edit_file is a write: the own-recipe gate rejects it inside the schema-retry cycle
     (never a turn), exactly like write_file."""
-    d, ep, status, _, events = _run(make_routine, scripted, [
+    d, _ep, status, _, events = _run(make_routine, scripted, [
         {"say": "s", "kind": "edit_file", "path": "main.md",
          "anchor": "Run flow", "replacement": "Hacked"},
         probe(),
@@ -1589,7 +1588,7 @@ def test_edit_file_respects_recipe_write_gate(make_routine, scripted):
 def test_read_file_paths_batches_several_files(make_routine, scripted):
     """`paths` reads several files in ONE action — one observation section per file,
     failures inline instead of failing the batch."""
-    d, ep, status, _, events = _run(make_routine, scripted, [
+    _d, _ep, status, _, events = _run(make_routine, scripted, [
         write_file("state/a.md", content="AAA"),
         write_file("state/b.md", content="BBB"),
         {"say": "s", "kind": "read_file", "paths": ["state/a.md", "state/b.md", "state/nope.md"]},
@@ -1616,7 +1615,7 @@ def test_util_list_with_name_returns_one_entry(make_routine, scripted):
     (server.utils_home / "utils" / "other").mkdir(parents=True)
     (server.utils_home / "utils" / "other" / "main.py").write_text(
         '"""other — another util.\n\nusage: gu other\n\ntags: test\n"""\n', encoding="utf-8")
-    ep = scripted([
+    scripted([
         util("list", args=["frob"]),
         finish(),
     ])
@@ -1633,7 +1632,7 @@ def test_util_list_with_name_returns_one_entry(make_routine, scripted):
 def test_util_reminder_rides_first_message_only(make_routine, scripted):
     """The util nudge is one-shot on the kickoff — observations no longer carry an
     identical [tools: …] tail every turn (that was rent re-read for the whole run)."""
-    d, ep, status, _, events = _run(make_routine, scripted, [
+    _d, ep, status, _, _events = _run(make_routine, scripted, [
         probe(),
         probe("More work."),
         finish(),
@@ -1650,7 +1649,7 @@ def test_schema_retry_debris_dropped_after_recovery(make_routine, scripted):
     """A failed attempt + correction earn their keep eliciting the valid reply, then leave
     the live prompt (the transcript keeps the error events) — later turns don't re-read
     the poison every time."""
-    d, ep, status, _, events = _run(make_routine, scripted, [
+    _d, ep, status, _, events = _run(make_routine, scripted, [
         "utter garbage, no JSON at all",     # attempt 1: invalid
         probe(),                              # attempt 2: valid
         finish(),
@@ -1668,7 +1667,7 @@ def test_phase_write_tracked_live_in_status(make_routine, scripted):
     """Writing state/phase.json IS the run's state transition: ctx.phase follows it and
     status.json (written every turn) carries the live phase — the state-graph diagram's
     data path."""
-    d, ep, status, run_dir, _ = _run(make_routine, scripted, [
+    _d, _ep, status, run_dir, _ = _run(make_routine, scripted, [
         write_file("state/phase.json", content={"phase": "measure"}),
         probe(),
         finish(),
@@ -1681,7 +1680,158 @@ def test_phase_write_tracked_live_in_status(make_routine, scripted):
 def test_session_key_rides_every_completion(make_routine, scripted):
     """The loop hands each completion a stable per-run session key — the caching hint
     endpoints may use (claude-cli keeps a CLI session per key) and may ignore."""
-    d, ep, status, run_dir, _ = _run(make_routine, scripted, [probe(), finish()])
+    _d, ep, status, run_dir, _ = _run(make_routine, scripted, [probe(), finish()])
     assert status == "ok"
     sessions = {c["session"] for c in ep.calls}
     assert sessions == {str(run_dir)}
+
+
+def test_parallel_cap_guard_counts_only_running_children():
+    """MAX_PARALLEL bounds CONCURRENCY, not the lifetime total: with 4 live children the
+    guard returns the documented reason; a finished child frees its slot."""
+    from types import SimpleNamespace
+
+    from rsched.engine.subruns import MAX_PARALLEL, SubrunManager
+
+    parent = SimpleNamespace(ctx=SimpleNamespace(
+        sub_counter=[MAX_PARALLEL], depth=0,
+        budgets=SimpleNamespace(max_subruns=10, max_subrun_depth=2)))
+    mgr = SubrunManager(parent)
+    mgr.subruns = {i: SimpleNamespace(status="running") for i in range(1, MAX_PARALLEL + 1)}
+    reason = mgr._cap_reason(noun="child-task")
+    assert reason and f"parallel cap {MAX_PARALLEL}" in reason and "wait for or kill" in reason
+    mgr.subruns[1].status = "ok"                      # an exited child frees its slot
+    assert mgr._cap_reason(noun="child-task") is None
+
+
+def test_fifth_concurrent_spawn_rejected_at_the_parallel_cap(make_routine, scripted):
+    """With MAX_PARALLEL (4) children still running, a 5th spawn is rejected with the
+    documented reason — surfaced as a rejected observation the model reads next turn —
+    and no 5th child ever starts. Deterministic: the children block on an Event the
+    parent releases only after the rejection."""
+    import threading
+
+    from rsched.engine.subruns import MAX_PARALLEL
+
+    release = threading.Event()
+
+    def blocked_child(summary):
+        def reply():
+            assert release.wait(timeout=30), "children were never released"
+            return finish(summary=summary)
+        return reply
+
+    def release_children():
+        release.set()
+        return wait_(all_=True, timeout_s=60)
+
+    replies = [(PARENT, spawn(f"CHILD-{i}: hold position.", label=f"c{i}"))
+               for i in range(1, MAX_PARALLEL + 1)]
+    replies += [(f"CHILD-{i}: hold position.", blocked_child(f"c{i} done"))
+                for i in range(1, MAX_PARALLEL + 1)]
+    replies += [
+        (PARENT, spawn("CHILD-5: one too many.", label="c5")),   # 4 running → rejected
+        (PARENT, release_children),
+        (PARENT, finish(summary="cap respected")),
+    ]
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, replies, slug="parcap",
+                                          budgets={"max_subruns": 8, "max_turns": 20})
+    assert status == "ok"
+    rejected = [e["payload"] for e in events if e["type"] == "observation"
+                and e["payload"].get("kind") == "spawn" and e["payload"].get("rejected")]
+    assert len(rejected) == 1 and rejected[0]["label"] == "c5"
+    assert f"parallel cap {MAX_PARALLEL}" in rejected[0]["reason"]
+    assert f"{MAX_PARALLEL} child-tasks already running" in rejected[0]["reason"]
+    starts = [e for e in events if e["type"] == "subrun_start"]
+    assert len(starts) == MAX_PARALLEL                # the 5th child never started
+    # the reason reached the model at the next turn boundary
+    assert "parallel cap" in json.dumps(ep.calls[-1]["messages"])
+
+
+def _role_registry(ep, windows):
+    """A ScriptedRegistry whose catalog names resolve to per-name context windows, with the
+    NAME as the model id — so the archival-model pick is visible in ep.calls."""
+    from rsched.config import ModelRef
+
+    class _RoleRegistry(ScriptedRegistry):
+        def resolve(self, name):
+            name = name or "system"
+            return self.get(name), ModelRef(endpoint="scripted", model=name,
+                                            context_chars=windows.get(name, 2_000), name=name)
+
+    return _RoleRegistry(ep)
+
+
+@pytest.mark.parametrize(("tool_window", "archival_model"), [
+    (500_000, "tool-model"),   # the tool_call window holds the middle → archival routed there
+    (100, "main-model"),       # too small for the middle → the main model is the fallback
+])
+def test_loop_compaction_archives_middle_to_history(make_routine, scripted, monkeypatch,
+                                                    tool_window, archival_model):
+    """End-to-end loop compaction: a prompt past the main model's window threshold triggers
+    compact_to_history mid-run — the elided middle lands as navigable files under
+    runs/<ts>/history/, the live prompt shrinks to head + pointer + tail, the archival call
+    is routed to the tool_call model when its window fits (main otherwise), and the archival
+    spend hits the run's books."""
+    import yaml as _yaml
+
+    import rsched.engine.runtime as runtime_mod
+    from rsched.engine.history import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
+
+    d = make_routine(slug=f"cmp-{archival_model.split('-')[0]}", budgets={"max_turns": 40})
+    raw = _yaml.safe_load((d / "routine.yaml").read_text())
+    raw["models"] = {"main": "main-model", "tool_call": "tool-model"}
+    (d / "routine.yaml").write_text(_yaml.safe_dump(raw))
+    # 18 fat notes: the observations blow the prompt past every compaction gate
+    # (>60% of main's 2k window, middle ≥ 8 messages, ≥ 20k chars total) by turn 19
+    for i in range(18):
+        (d / "state" / f"note-{i:02d}.md").write_text(
+            f"note {i}\n" + ("x" * 120 + "\n") * 14, encoding="utf-8")
+
+    replies = [{"say": f"Reading note {i}.", "kind": "read_file",
+                "path": f"state/note-{i:02d}.md"} for i in range(18)]
+    replies += [
+        # the archival call's own prompt is its marker (its messages[0] IS the request)
+        ("You are archiving", {"files": [{"name": "notes-archive",
+                                          "content": "all the notes, reorganized"}],
+                               "index": "- notes-archive: the archived note reads"}),
+        finish(summary="compacted and finished"),
+    ]
+    ep = scripted(replies)
+    monkeypatch.setattr(runtime_mod, "EndpointRegistry",
+                        lambda server: _role_registry(
+                            ep, {"main-model": 2_000, "tool-model": tool_window}))
+
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+
+    comps = [e["payload"] for e in events if e["type"] == "compaction"]
+    assert len(comps) == 1
+    assert comps[0]["mode"] == "llm-history"
+    assert comps[0]["model"] == f"scripted/{archival_model}"
+    assert comps[0]["history_files"] == 1 and comps[0]["elided_messages"] == 8
+
+    hist = run_dir / "history"
+    assert "notes-archive" in (hist / "INDEX.md").read_text()
+    archived = list(hist.glob("t*-notes-archive.md"))
+    assert len(archived) == 1
+    assert archived[0].read_text().strip() == "all the notes, reorganized"
+
+    # the archival completion went to the SELECTED model (loop.py's tool_call-vs-main pick)
+    archive_calls = [c for c in ep.calls if "You are archiving" in c["messages"][0]["content"]]
+    assert len(archive_calls) == 1 and archive_calls[0]["model"] == archival_model
+    turn_models = {c["model"] for c in ep.calls if c not in archive_calls}
+    assert turn_models == {"main-model"}
+
+    # the final turn ran on the COMPACTED prompt: head + pointer + tail
+    final = ep.calls[-1]["messages"]
+    assert len(final) == KEEP_HEAD_MSGS + 1 + KEEP_TAIL_MSGS
+    assert "CONTEXT COMPACTED" in final[KEEP_HEAD_MSGS]["content"]
+    assert "INDEX.md" in final[KEEP_HEAD_MSGS]["content"]
+
+    # the archival call's spend hit the books (each scripted completion bills 10 in / 5 out;
+    # the archival call is one of ep.calls, so equality proves its usage was folded in)
+    st = read_json(run_dir / "status.json")
+    assert st["usage"]["in"] == 10 * len(ep.calls)
+    assert comps[0]["usage"] == {"in": 10, "out": 5}

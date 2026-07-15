@@ -40,7 +40,7 @@ def _mk_run(routines, slug, ts, state, question=None):
                       {"run_id": f"{slug}:{ts}", "state": state, "pid": 4242, "turn": 2,
                        "usage": {"in": 10, "out": 4, "cost": 0.0123}, "elapsed_s": 95,
                        "question": question})
-    with open(run_dir / "transcript.jsonl", "w") as fh:
+    with (run_dir / "transcript.jsonl").open("w") as fh:
         fh.write(json.dumps({"type": "header", "run_id": f"{slug}:{ts}"}) + "\n")
         fh.write(json.dumps({"ts": "t", "type": "assistant_action", "turn": 1,
                              "payload": {"say": "s", "kind": "util", "name": "gu-list"}}) + "\n")
@@ -115,8 +115,8 @@ def test_put_routine_file(client):
 
 def test_file_read_guarded(client):
     c, _ = client
-    assert c.get("/api/routines/apir/files", params={"path": "LEDGER.md"}).status_code == 200
-    assert c.get("/api/routines/apir/files",
+    assert c.get("/api/routines/apir/file", params={"path": "LEDGER.md"}).status_code == 200
+    assert c.get("/api/routines/apir/file",
                  params={"path": "../../../etc/passwd"}).status_code == 404
 
 
@@ -885,7 +885,7 @@ def test_wizard_transcript_paging_and_event_offset(client):
     c, tmp = client
     wid, d = _mk_wizard(tmp / "routines", "20260710-180000")
     run_dir = d / "runs" / "20260710-180000"
-    with open(run_dir / "transcript.jsonl", "w") as fh:
+    with (run_dir / "transcript.jsonl").open("w") as fh:
         fh.write(json.dumps({"type": "header", "run_id": f"{wid}:20260710-180000"}) + "\n")
         fh.write(json.dumps({"ts": "t", "type": "assistant_action", "turn": 1,
                              "payload": {"say": "hi", "kind": "ask_user", "question": "?"}}) + "\n")

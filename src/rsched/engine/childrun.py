@@ -15,9 +15,13 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from .run_context import RunContext
 from .transcript import Transcript
+
+if TYPE_CHECKING:
+    from .loop import EngineLoop
 
 # Fallback body when the library (or the requested recipe) is unavailable — keeps child tasks
 # functional on library-less installs and in tests.
@@ -38,13 +42,14 @@ class Subrun:
     """One spawned child: its own RunContext + EngineLoop running in a thread, tracked until
     its exit is announced to the parent and its usage folded in. `mode` distinguishes a
     parallel subroutine (the parent keeps working) from a sequential subtask (the parent
-    blocks on it)."""
+    blocks on it).
+    """
 
     n: int
     label: str
     workflow: str
     ctx: RunContext
-    loop: object                       # the child EngineLoop
+    loop: EngineLoop                   # the child EngineLoop
     abort_event: threading.Event
     started_mono: float
     mode: str = "parallel"             # parallel (spawn) | sequential (subtask)
@@ -60,7 +65,8 @@ class Subrun:
 def materialize_to_disk(server, slug: str, sub_dir, prompt: str) -> tuple[str, str]:
     """Write the child's files into sub_dir (main.md + instruction.md) so it is a real on-disk
     routine while it runs. Returns (effective slug, note). Permissions stay OFF — a child
-    reports through its finish summary; it keeps no LEDGER/audit of its own."""
+    reports through its finish summary; it keeps no LEDGER/audit of its own.
+    """
     try:
         from ..workflows.adapt import materialize
 
@@ -71,7 +77,7 @@ def materialize_to_disk(server, slug: str, sub_dir, prompt: str) -> tuple[str, s
         return slug, ""
     except Exception as exc:  # missing library/recipe/params → degrade, don't fail
         (sub_dir / "main.md").write_text(
-            "---\nname: Fallback\nslug: fallback\nstatus: stable\n"
+            "---\nname: Fallback\nslug: fallback\n"
             "materialized_from: {slug: fallback, commit: '', version: 0}\n---\n\n"
             + FALLBACK_SUB_BODY + "\n", encoding="utf-8")
         (sub_dir / "instruction.md").write_text(prompt, encoding="utf-8")
@@ -84,7 +90,8 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
     """Materialize + wire ONE child task (not started). `mode` selects the scheduler and how the
     budget is sliced (`alloc_overrides` pins e.g. a subtask's explicit `turns` cap; otherwise
     the child gets half the parent's remainder). `emit` records the `subrun_start` event on the
-    PARENT transcript (single writer). The caller starts + tracks the returned Subrun."""
+    PARENT transcript (single writer). The caller starts + tracks the returned Subrun.
+    """
     label = action.get("label") or default_label
     recipe_slug = action.get("workflow") or "general-task"
 
@@ -92,7 +99,8 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
     n = parent_ctx.sub_counter[0]
     sub_dir = parent_ctx.run_dir / "sub" / str(n)
     sub_dir.mkdir(parents=True, exist_ok=True)
-    recipe_slug, note = materialize_to_disk(parent_ctx.server, recipe_slug, sub_dir, action["prompt"])
+    recipe_slug, note = materialize_to_disk(parent_ctx.server, recipe_slug, sub_dir,
+                                            action["prompt"])
     transcript = Transcript(sub_dir / "transcript.jsonl")
     _, sub_ref = parent_ctx.registry.for_model("subroutine", parent_ctx.routine.models)
     child_budgets = parent_ctx.child_budgets(overrides=alloc_overrides)
@@ -107,8 +115,7 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
                       workflow={"slug": recipe_slug, "commit": "", "version": 0},
                       orchestrator={"endpoint": sub_ref.endpoint, "model": sub_ref.model},
                       depth=parent_ctx.depth + 1, parent=parent_ctx.run_id)
-    from .loop import EngineLoop          # local import: loop imports this module
-
+    from .loop import EngineLoop  # local import: loop imports this module
     from .runtime import load_workflow
 
     body, _prov, _tools = load_workflow(sub_dir, child_ctx.routine)
@@ -133,13 +140,14 @@ def _sub_routine(routine, sub_dir, ref):
     the parent's fs roots inherited, the parent's SUBROUTINE model as the child's MAIN model
     (subroutine/tool_call inherited so the child can spawn/subtask/llm too), permissions and
     capabilities off (a child holds nothing gated: it reports through its finish summary and
-    keeps no LEDGER/audit)."""
+    keeps no LEDGER/audit).
+    """
     import copy
 
     r = copy.copy(routine)
     r.dir = sub_dir
     r.models = dict(routine.models)   # role → catalog NAME (subroutine/tool_call inherited)
-    r.models["main"] = ref.name       # the resolved subroutine catalog name becomes the child's main
+    r.models["main"] = ref.name       # resolved subroutine catalog name → the child's main
     r.permissions = []
     r.capabilities = {}
     return r

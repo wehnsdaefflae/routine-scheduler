@@ -61,7 +61,8 @@ def _fmt_left(resource: str, left: float) -> str:
 class Budget:
     """One resource's stop condition: a `limit` (-1 = unlimited), whether exceeding it is
     `hard` (stops the run) vs soft (warning only), and the fraction `warn_at` at which to warn.
-    Pure — it never holds live consumption; a `current` value is passed to every method."""
+    Pure — it never holds live consumption; a `current` value is passed to every method.
+    """
 
     resource: str
     limit: float = -1
@@ -89,7 +90,8 @@ class BudgetLedger:
     Every check takes a `meter` snapshot `{resource: current_value}`; the FIRST hard budget
     exceeded is the violation, the FIRST past its warn line is the warning (order preserved
     from construction, matching the pre-refactor check order: turns, total_turns, wall_clock,
-    tokens, cost)."""
+    tokens, cost).
+    """
 
     budgets: list[Budget]
 
@@ -102,7 +104,9 @@ class BudgetLedger:
     def warning(self, meter: dict) -> str | None:
         for b in self.budgets:
             if b.warns(meter.get(b.resource, 0)):
-                return _fmt_left(b.resource, b.left(meter.get(b.resource, 0)))
+                left = b.left(meter.get(b.resource, 0))
+                if left is not None:    # warns() implies a finite limit, so left is never None
+                    return _fmt_left(b.resource, left)
         return None
 
     def remaining(self, resource: str, meter: dict) -> float | None:
@@ -111,15 +115,13 @@ class BudgetLedger:
                 return b.left(meter.get(resource, 0))
         return None
 
-    def get(self, resource: str) -> Budget | None:
-        return next((b for b in self.budgets if b.resource == resource), None)
-
     def allocate(self, meter: dict, *, fraction: float = 0.5,
-                 overrides: dict[str, float] | None = None) -> "BudgetLedger":
+                 overrides: dict[str, float] | None = None) -> BudgetLedger:
         """A child's ledger derived from this one: each CONSUMABLE resource gets `fraction` of
         the parent's REMAINING (floored per resource); unlimited stays unlimited; every other
         resource is copied unchanged. `overrides` pins a resource to an absolute limit — a
-        subtask's explicit `turns` cap sets `{"turns": n}`."""
+        subtask's explicit `turns` cap sets `{"turns": n}`.
+        """
         overrides = overrides or {}
         out: list[Budget] = []
         for b in self.budgets:

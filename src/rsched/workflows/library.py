@@ -54,19 +54,16 @@ def list_traits(home: Path) -> list[str]:
 
 def read_workflow(home: Path, slug: str) -> tuple[dict, str, str]:
     """(meta, body, raw) for `<slug>.py`. body==raw==the source — the whole file is the pattern.
-    Raises FileNotFoundError."""
+    Raises FileNotFoundError.
+    """
     from .pyworkflow import parse_py
     raw = (workflows_dir(home) / f"{slug}.py").read_text(encoding="utf-8")
     return parse_py(raw), raw, raw
 
 
-def read_trait(home: Path, slug: str) -> str:
-    return (traits_dir(home) / f"{slug}.md").read_text(encoding="utf-8")
-
-
 def head_commit(home: Path) -> str:
     try:
-        r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=home,
+        r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=home, check=False,
                            capture_output=True, text=True, timeout=15)
         return r.stdout.strip() if r.returncode == 0 else ""
     except OSError:
@@ -75,8 +72,9 @@ def head_commit(home: Path) -> str:
 
 def git_commit(home: Path, message: str) -> bool:
     try:
-        subprocess.run(["git", "add", "-A"], cwd=home, capture_output=True, timeout=30)
-        r = subprocess.run(["git", "commit", "-qm", message], cwd=home,
+        subprocess.run(["git", "add", "-A"], cwd=home, check=False,
+                       capture_output=True, timeout=30)
+        r = subprocess.run(["git", "commit", "-qm", message], cwd=home, check=False,
                            capture_output=True, timeout=30)
         return r.returncode == 0
     except OSError:
@@ -88,7 +86,7 @@ def git_log(home: Path, rel_path: str | None = None, limit: int = 20) -> list[di
     if rel_path:
         cmd += ["--", rel_path]
     try:
-        r = subprocess.run(cmd, cwd=home, capture_output=True, text=True, timeout=15)
+        r = subprocess.run(cmd, cwd=home, check=False, capture_output=True, text=True, timeout=15)
     except OSError:
         return []
     out = []

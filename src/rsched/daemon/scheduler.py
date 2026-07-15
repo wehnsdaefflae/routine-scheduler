@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .. import library_sync
 from ..config import ServerConfig
@@ -26,13 +26,14 @@ TICK_S = 5.0
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Scheduler:
     """The cron heart: rescans the catalog, computes next fires (croniter, per-routine
     tz + catchup policy), hands due routines to the Runner, and snapshots its state for
-    the UI."""
+    the UI.
+    """
 
     def __init__(self, server: ServerConfig, runner: Runner, bus: EventBus):
         self.server = server
@@ -94,7 +95,7 @@ class Scheduler:
         loop = asyncio.get_event_loop()
         self._last_scan = loop.time()
         log.info("scheduler up: %d routines, next fires: %s", len(self.catalog),
-                 {s: t.isoformat(timespec='minutes') for s, t in self.next_fires.items()})
+                 {s: t.isoformat(timespec="minutes") for s, t in self.next_fires.items()})
         while True:
             await asyncio.sleep(TICK_S)
             if self._maybe_restart():
@@ -120,7 +121,8 @@ class Scheduler:
 
     def _fire_library_sync(self) -> None:
         """Run the sync off-loop (git talks to the network); one at a time — an overrun
-        skips the fire like a still-running routine does."""
+        skips the fire like a still-running routine does.
+        """
         if self._sync_task is not None and not self._sync_task.done():
             log.info("library sync still running — skipping this fire")
             return
@@ -133,7 +135,8 @@ class Scheduler:
 
     def _maybe_restart(self) -> bool:
         """Drive the graceful self-restart state machine. Returns True when the scheduler
-        should fire nothing this tick (draining or shutting down)."""
+        should fire nothing this tick (draining or shutting down).
+        """
         if self._shutting_down:
             return True
         action = restart.restart_action(
@@ -152,7 +155,8 @@ class Scheduler:
             return False  # not draining: keep scheduling normally until cleanly drainable
         if action == "drain":
             if not self.runner.draining:
-                log.warning("restart requested — draining: no new runs will start until active ones finish")
+                log.warning("restart requested — draining: no new runs will start "
+                            "until active ones finish")
                 self.runner.draining = True
             return True
         # action == "restart": drained, nothing active

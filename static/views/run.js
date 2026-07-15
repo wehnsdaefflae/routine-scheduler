@@ -13,9 +13,8 @@ import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtDur, fmtTokens, fmtTs, skeleton, streamStatus,
          toDate, toast, when } from "/static/util.js";
 import { forgetField } from "/static/formpersist.js";
-
-const TERMINAL = new Set(["finished", "failed", "aborted"]);
-const WORKING = new Set(["running", "starting", "queued"]);
+import { followScroll } from "/static/follow.js";
+import { TERMINAL, WORKING } from "/static/states.js";
 
 export async function render(view, runId, query = {}) {
   const [slug, ts] = runId.split(":");
@@ -368,23 +367,15 @@ export async function render(view, runId, query = {}) {
   });
   if (viewingSub != null) mountSubPolling(viewingSub, initialOffset);
 
-  // Manual scroll pauses following; scrolling back to the bottom resumes it. Only an UPWARD
-  // move pauses: content growth pushes the bottom away without any scroll of ours, and the old
-  // symmetric check read that as "user left the bottom" — silently unchecking follow on every
-  // busy run.
-  let lastY = window.scrollY;
-  const onScroll = () => {
-    const y = window.scrollY;
-    const up = y < lastY - 1;
-    lastY = y;
-    const atBottom = window.innerHeight + y >= document.body.scrollHeight - 60;
-    if (up && !atBottom && followChk.checked) { followChk.checked = false; autoscroll = false; }
-    else if (atBottom && !followChk.checked) { followChk.checked = true; autoscroll = true; }
-  };
-  window.addEventListener("scroll", onScroll);
+  // Manual scroll pauses following; scrolling back to the bottom resumes it (follow.js —
+  // only an upward move pauses). The checkbox mirrors the live follow state.
+  const stopFollow = followScroll({ margin: 60,
+    pause: () => { if (followChk.checked) { followChk.checked = false; autoscroll = false; } },
+    resume: () => { if (!followChk.checked) { followChk.checked = true; autoscroll = true; } },
+  });
 
   return () => { if (tail) tail.stop(); stopSubPoll(); clearInterval(durTimer);
                  artifacts.destroy();
-                 window.removeEventListener("scroll", onScroll);
+                 stopFollow();
                  window.removeEventListener("rsched-bus", onBus); };
 }

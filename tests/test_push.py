@@ -4,32 +4,16 @@ diff-and-dedupe behavior. Actual webpush sends are mocked — no network."""
 from __future__ import annotations
 
 import pytest
-import yaml
-from fastapi.testclient import TestClient
 
-from rsched.config import ServerConfig, load_server_config
+from rsched.config import ServerConfig
 from rsched.engine import inbox
 from rsched.web import push
-from rsched.web.app import create_app
-
-TOKEN = "test-token"
 
 
 @pytest.fixture
-def client(tmp_path, make_routine):
+def client(api_client, make_routine):
     make_routine(slug="apir")
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "libraries_home": str(tmp_path / "library"),
-    }))
-    server, problems = load_server_config(cfg_path)
-    assert not problems
-    app = create_app(server, with_scheduler=False)
-    with TestClient(app) as c:
-        c.headers["Authorization"] = f"Bearer {TOKEN}"
-        yield c, tmp_path
+    return api_client
 
 
 def _server(tmp_path) -> ServerConfig:
@@ -117,7 +101,7 @@ def test_dead_subscription_is_dropped(tmp_path, monkeypatch):
 
 
 def test_push_api_routes(client):
-    c, tmp = client
+    c, _tmp = client
     info = c.get("/api/push").json()
     assert info["subscriptions"] == 0 and len(info["public_key"]) > 40
     r = c.post("/api/push/subscribe", json={"subscription": SUB_A})

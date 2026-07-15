@@ -83,7 +83,8 @@ input[type="search"] { background: #141d28; color: #d5dee6; border: 1px solid #1
 # The Help tab's reading order: orientation first, worked examples second, then the
 # deeper contract docs. Guides not named here sort alphabetically after them.
 GUIDE_ORDER = ["getting-started", "examples", "conversations", "playbooks",
-               "traits-permissions", "subtasks", "background-tasks", "prompt-anatomy", "endpoints"]
+               "traits-permissions", "notifications", "subtasks", "background-tasks",
+               "authoring", "prompt-anatomy", "endpoints"]
 
 
 def docs_out_dir() -> Path:
@@ -95,7 +96,8 @@ def docs_out_dir() -> Path:
 
 def source_stamp(source_repo: Path) -> str:
     """Cheap staleness key: version + newest mtime across the doc inputs. Mtime (not git
-    HEAD) so uncommitted docstring edits rebuild too — the scan is ~70 files."""
+    HEAD) so uncommitted docstring edits rebuild too — the scan is ~70 files.
+    """
     from . import __version__
 
     newest = 0
@@ -117,9 +119,9 @@ def render_guide(text: str, title: str) -> str:
 
     body = markdown2.markdown(
         text, extras=["fenced-code-blocks", "tables", "header-ids", "strike"])
-    return (f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-            f"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-            f"<title>{title}</title><link rel=\"icon\" href=\"{FAVICON}\">"
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
+            f'<title>{title}</title><link rel="icon" href="{FAVICON}">'
             f"<style>{GUIDE_CSS}</style></head><body>{body}</body></html>")
 
 
@@ -127,7 +129,8 @@ def build_docs(source_repo: Path, out: Path, *, modules: tuple[str, ...] = ("rsc
                force: bool = False) -> bool:
     """Generate guides + API reference into `out`. Returns False when the stamp says the
     source is unchanged (the cheap path a no-op restart takes). The stamp is written LAST,
-    so a failed build retries on the next boot."""
+    so a failed build retries on the next boot.
+    """
     stamp = source_stamp(source_repo)
     marker = out / STAMP_FILE
     if not force and marker.is_file() and marker.read_text(encoding="utf-8") == stamp:

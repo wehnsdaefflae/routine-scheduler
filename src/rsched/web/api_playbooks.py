@@ -1,7 +1,8 @@
 """Playbook library API: list (catalog), read MAIN.md + its on-demand detail files, lint-gated
 MAIN edits, delete. Playbooks are captured from conversations (Save/Update-playbook — see
 api_conversations.py) and reused to seed new ones; here they are browsed and hand-edited like any
-library doc. Git lives at the library root (workflows.library.*)."""
+library doc. Git lives at the library root (workflows.library.*).
+"""
 
 from __future__ import annotations
 
@@ -29,7 +30,8 @@ def list_playbooks(request: Request) -> dict:
     items = playbooks.list_playbooks(home)
     for it in items:
         pb = playbooks.read_playbook(home, it["slug"])
-        it["problems"] = lint_playbook_text(pb["content"], filename=f"{it['slug']}/MAIN.md") if pb else []
+        it["problems"] = (lint_playbook_text(pb["content"], filename=f"{it['slug']}/MAIN.md")
+                          if pb else [])
     return {"playbooks": items, "head": library.head_commit(home)}
 
 
@@ -58,7 +60,8 @@ class PlaybookBody(BaseModel):
 @router.put("/playbooks/{slug}")
 def put_playbook(request: Request, slug: str, body: PlaybookBody) -> dict:
     """Edit a playbook's MAIN.md (lint-gated, committed). Detail files are left untouched — they
-    are managed by the Update-playbook distillation, not hand-edited here."""
+    are managed by the Update-playbook distillation, not hand-edited here.
+    """
     home = _home(request)
     if playbooks.read_playbook(home, slug) is None:
         raise HTTPException(404, f"no playbook {slug!r}")

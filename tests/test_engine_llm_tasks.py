@@ -7,11 +7,11 @@ from __future__ import annotations
 import json
 
 import pytest
-from conftest import finish
-from test_loop import TS, _run, _server, probe
 
+from conftest import finish
 from rsched.endpoints.instrument import FileSink, set_sink
 from rsched.engine.runtime import run_routine
+from test_loop import TS, _run, _server, probe
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +32,7 @@ class CapSink:
 def test_each_turn_is_recorded(make_routine, scripted):
     cap = CapSink()
     set_sink(cap)
-    _, ep, status, run_dir, _events = _run(make_routine, scripted, [probe(), finish()])
+    _, ep, status, _run_dir, _events = _run(make_routine, scripted, [probe(), finish()])
     assert status == "ok"
 
     started = [r for r in cap.records if r["phase"] == "started"]

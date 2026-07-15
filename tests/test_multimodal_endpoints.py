@@ -12,8 +12,13 @@ import pytest
 
 from rsched.config import EndpointConfig
 from rsched.endpoints import anthropic_api, claude_cli, openai_compat
-from rsched.endpoints.base import (PDF_MIME, EndpointError, guess_media_type, read_media_b64,
-                                   supports_media_type)
+from rsched.endpoints.base import (
+    PDF_MIME,
+    EndpointError,
+    guess_media_type,
+    read_media_b64,
+    supports_media_type,
+)
 
 
 def _file(tmp_path, name="shot.png", data=b"PNGDATA"):
@@ -175,7 +180,7 @@ def test_claude_cli_parse_stream_json_output():
                     "structured_output": {"say": "hi", "kind": "finish"},
                     "usage": {"input_tokens": 3, "output_tokens": 2}}),
     ])
-    text, parsed, usage = claude_cli.parse_result(stream, want_json=True, stream_out=True)
+    _text, parsed, usage = claude_cli.parse_result(stream, want_json=True, stream_out=True)
     assert parsed == {"say": "hi", "kind": "finish"} and usage["in"] == 3 and usage["out"] == 2
     with pytest.raises(EndpointError):   # no result event in the stream → clean error
         claude_cli.parse_result(json.dumps({"type": "system"}), want_json=True, stream_out=True)
@@ -194,7 +199,7 @@ def test_claude_cli_encode_gates_on_probe(tmp_path):
 
 
 def test_claude_cli_msg_hashes_text_stable_media_distinct(tmp_path):
-    legacy = hashlib.sha1("user\x00hi".encode()).hexdigest()
+    legacy = hashlib.sha1(b"user\x00hi", usedforsecurity=False).hexdigest()
     assert claude_cli._msg_hashes([{"role": "user", "content": "hi"}]) == [legacy]
     assert claude_cli._msg_hashes(
         [{"role": "user", "content": "hi", "media": _media(_file(tmp_path))}]) != [legacy]

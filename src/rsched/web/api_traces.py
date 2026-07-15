@@ -42,7 +42,8 @@ def traces_dir(server):
 
 
 def _prune(d) -> None:
-    cutoff = (dt.date.today() - dt.timedelta(days=KEEP_DAYS)).strftime("%Y%m%d")
+    # UTC, matching the day-file names below (now.strftime over an aware UTC now)
+    cutoff = (dt.datetime.now(dt.UTC).date() - dt.timedelta(days=KEEP_DAYS)).strftime("%Y%m%d")
     for p in d.glob("*.jsonl"):
         if p.stem < cutoff:
             p.unlink(missing_ok=True)
@@ -69,7 +70,7 @@ def ingest(request: Request, body: TraceBatch) -> dict:
     d.mkdir(parents=True, exist_ok=True)
     day_file = d / f"{now.strftime('%Y%m%d')}.jsonl"
     try:
-        with open(day_file, "a", encoding="utf-8") as fh:
+        with day_file.open("a", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + "\n")
         _prune(d)
     except OSError as exc:

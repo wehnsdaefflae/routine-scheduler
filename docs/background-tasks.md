@@ -66,7 +66,7 @@ one can never park in `waiting_user` and hold a restart.
 - The conversation rail (`static/views/conversations.js`) shows a **background** card: each task's label,
   state, and a cancel button while it runs. It refreshes when the conversation wakes (a completion) and on
   a light poll.
-- API (`web/api_conversations.py`): `GET /conversations/{slug}/background` lists them,
+- API (`web/api_background.py`): `GET /conversations/{slug}/background` lists them,
   `POST …/background` drops an intent (the human/test analog of the engine action),
   `POST …/background/{id}/cancel` aborts one (`runner.abort` + a pid fallback for a task that outlived a
   restart). Deleting a conversation tears down its detached tasks.

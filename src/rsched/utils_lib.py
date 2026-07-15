@@ -88,14 +88,15 @@ def _git(home: Path, *args: str, check: bool = False) -> subprocess.CompletedPro
 
 def ensure_library(home: Path, *, remote: str = "") -> None:
     """Create the util library if absent (dir + dispatcher + git). If `remote` is set and
-    the library does not exist yet, clone it to bootstrap; otherwise init empty."""
+    the library does not exist yet, clone it to bootstrap; otherwise init empty.
+    """
     if home.exists() and (home / ".git").exists():
         _install_dispatcher(home)
         return
     home.parent.mkdir(parents=True, exist_ok=True)
     if remote and not home.exists():
         r = subprocess.run(["git", "clone", "--quiet", remote, str(home)],
-                           capture_output=True, text=True, timeout=120)
+                           capture_output=True, text=True, timeout=120, check=False)
         if r.returncode == 0:
             _configure_repo(home)
             _install_dispatcher(home)
@@ -121,15 +122,16 @@ def _configure_repo(home: Path) -> None:
 def _install_dispatcher(home: Path) -> None:
     """Install our minimal `gu` dispatcher + push hook — but NEVER overwrite an existing one.
     When the library root already carries its own richer `gu`, we leave its dispatcher and
-    hook untouched and just use them."""
+    hook untouched and just use them.
+    """
     gu = home / "gu"
     if not gu.exists():
         gu.write_text(DISPATCHER, encoding="utf-8")
-        os.chmod(gu, 0o755)
+        gu.chmod(0o755)  # the dispatcher is a shared executable by design
     hook = home / ".git" / "hooks" / "post-commit"
     if (home / ".git").is_dir() and not hook.exists():
         hook.write_text(POST_COMMIT_HOOK, encoding="utf-8")
-        os.chmod(hook, 0o755)
+        hook.chmod(0o755)  # git hooks must be executable
 
 
 def util_dir(home: Path, name: str) -> Path:
@@ -163,7 +165,8 @@ def _parse_header(src: str) -> dict:
     summary = lines[0] if lines else ""
     usage = next((ln for ln in lines if ln.lower().startswith("usage:")), "")
     tags_line = next((ln for ln in lines if ln.lower().startswith("tags:")), "")
-    tags = [t.strip() for t in tags_line[len("tags:"):].split(",") if t.strip()] if tags_line else []
+    tags = ([t.strip() for t in tags_line[len("tags:"):].split(",") if t.strip()]
+            if tags_line else [])
     sec_line = next((ln for ln in lines if ln.lower().startswith("secrets:")), "")
     secrets = [s.strip() for s in sec_line[len("secrets:"):].split(",")
                if s.strip() and s.strip().lower() != "(none)"] if sec_line else []
@@ -181,7 +184,8 @@ def header_problems(content: str) -> list[str]:
     machine-read surface (catalog, Settings secrets page): it must carry a summary, a
     usage: line, at least one tag, and a secrets: declaration covering every
     credential-looking env var the code reads. Comment-form `# secrets:` lines above the
-    docstring are invisible to the parser — that is exactly the failure this gate stops."""
+    docstring are invisible to the parser — that is exactly the failure this gate stops.
+    """
     h = _parse_header(content)
     problems = []
     if not h["summary"]:
@@ -238,14 +242,15 @@ def _child_env() -> dict:
     from .secrets import load_secrets
     env = {**os.environ, **load_secrets()}      # central secrets store → utils (env-first)
     for k in STRIP_VARS:
-        env.pop(k, None)                         # …but never LLM keys: utils bill only via `gu claude`
+        env.pop(k, None)                # …but never LLM keys: utils bill only via `gu claude`
     return env
 
 
 def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300
              ) -> tuple[int, str, str]:
     """Controlled runner: only a named util from THIS library, uv-run, scrubbed env,
-    library root on PATH (so the util can call siblings via `gu`). Returns (exit, out, err)."""
+    library root on PATH (so the util can call siblings via `gu`). Returns (exit, out, err).
+    """
     if not is_slug(name):
         return 2, "", f"invalid util name {name!r}"
     if not exists(home, name):
@@ -258,8 +263,9 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300
     # shells out to `gu <sibling>` always resolves siblings here.
     env["GLOBAL_UTILS_HOME"] = str(home)
     try:
-        r = subprocess.run(["uv", "run", "--script", str(util_dir(home, name) / "main.py"), *args],
-                           capture_output=True, text=True, timeout=timeout, env=env, cwd=str(home))
+        r = subprocess.run(["uv", "run", "--script", str(util_dir(home, name) / "main.py"),
+                            *args], capture_output=True, text=True, timeout=timeout,
+                           env=env, cwd=str(home), check=False)
         return r.returncode, r.stdout, r.stderr
     except subprocess.TimeoutExpired:
         return -1, "", f"util {name!r} timed out after {timeout}s"

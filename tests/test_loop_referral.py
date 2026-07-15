@@ -4,13 +4,12 @@ Drives EngineLoop._next_action directly with fake endpoints (no network)."""
 
 from __future__ import annotations
 
-from test_loop import TS, _server
-
 from rsched.config import ModelRef, load_routine
 from rsched.endpoints.base import Completion, EndpointError
 from rsched.engine.loop import EngineLoop
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
+from test_loop import TS, _server
 
 REFUSAL = Completion(text="I'm sorry, but I can't help with that request.", parsed=None,
                      usage={"in": 1, "out": 1})

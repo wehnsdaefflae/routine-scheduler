@@ -2,9 +2,10 @@
 
 Recipes rot by accretion: each revision made sense at the time, and the sum is a maze.
 Incremental eyes — the target's own, and yours after studying it — learn to ignore that
-accretion. This pass is the antidote. Read the target's recipe (`instruction.md`,
-`main.md`, every `stages/` and `traits/` file, the `state/` inventory) **as if you had
-never seen it or its history**, and hunt specifically for what accumulated:
+accretion. This pass is the antidote. Read the target's recipe (`main.md`, every `stages/`
+and `traits/` file, the `state/` inventory — plus the seed `instruction.md` when the target
+is a conversation; routines carry none) **as if you had never seen it or its history**, and
+hunt specifically for what accumulated:
 
 - **Contradictions between eras** — a practice added in one revision that fights an older
   one; two steps that give different answers to the same question.
@@ -28,5 +29,5 @@ that might delete meaning the user relies on → deferred `ask_user` naming the 
 
 ## Next
 More targets in `cursor.targets`? Move the finished one to `cursor.done`, then
-`state/phase.json = {step: "study-target", ...}`. Otherwise
-`state/phase.json = {step: "record", ...}`. Read that module.
+`state/phase.json = {phase: "study-target", ...}`. Otherwise
+`state/phase.json = {phase: "record", ...}`. Read that module.

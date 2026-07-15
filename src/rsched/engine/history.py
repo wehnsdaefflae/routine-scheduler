@@ -49,13 +49,13 @@ def maybe_compact(messages: list[dict], turn_records: list[dict], context_chars:
     tail = messages[-KEEP_TAIL_MSGS:]
     elided = len(messages) - len(head) - len(tail)
     # Digest from turn records whose messages fell in the middle: turns 3 .. N-12.
-    first_kept_tail_turn = max((r["turn"] for r in turn_records), default=0) - KEEP_TAIL_MSGS // 2 + 1
-    lines = [r_line for r in turn_records
-             if 2 < r["turn"] < first_kept_tail_turn
-             for r_line in [f"turn {r['turn']}: {r['kind']} {r['brief']} — say: \"{r['say'][:120]}\""]]
+    first_kept_tail_turn = (max((r["turn"] for r in turn_records), default=0)
+                            - KEEP_TAIL_MSGS // 2 + 1)
+    lines = [f'turn {r['turn']}: {r['kind']} {r['brief']} — say: "{r['say'][:120]}"'
+             for r in turn_records if 2 < r["turn"] < first_kept_tail_turn]
     digest = ("CONTEXT COMPACTED — this replaces the elided middle of the conversation "
               f"({elided} messages). One line per elided turn:\n" + "\n".join(lines))
-    new_messages = head + [{"role": "user", "content": digest}] + tail
+    new_messages = [*head, {"role": "user", "content": digest}, *tail]
     info = {"elided_messages": elided, "digest_chars": len(digest),
             "before_chars": messages_size(messages), "after_chars": messages_size(new_messages)}
     return new_messages, info
@@ -69,9 +69,11 @@ _HISTORY_SCHEMA = {
             "properties": {
                 "name": {"type": "string", "description": "kebab-case topic name (no extension)"},
                 "content": {"type": "string",
-                            "description": "markdown, AT MOST ~100 lines — split into more files if longer"}}}},
+                            "description": "markdown, AT MOST ~100 lines — split into more "
+                                           "files if longer"}}}},
         "index": {"type": "string",
-                  "description": "INDEX.md markdown: one line per file — what it holds + when to read it"},
+                  "description": "INDEX.md markdown: one line per file — what it holds + "
+                                 "when to read it"},
     },
 }
 
@@ -96,7 +98,8 @@ Return ONLY the JSON object {{files: [{{name, content}}], index}}."""
 def _swap_in_history(hist_dir: Path, files: list[dict], index: str, turn: int) -> list[str]:
     """Build the COMPLETE next history (files carried over from earlier compactions + the new
     ones + INDEX.md) in a sibling temp dir, then swap it into place — a reader or a crash never
-    sees a half-written history. Returns the new file names."""
+    sees a half-written history. Returns the new file names.
+    """
     tmp = hist_dir.parent / f".{hist_dir.name}.tmp-{os.getpid()}"
     displaced = hist_dir.parent / f".{hist_dir.name}.out-{os.getpid()}"
     written: list[str] = []
@@ -108,19 +111,20 @@ def _swap_in_history(hist_dir: Path, files: list[dict], index: str, turn: int) -
                 if p.name != "INDEX.md":
                     shutil.copy2(p, tmp / p.name)   # earlier compactions' files carry over
         for f in files:
-            stem = re.sub(r"[^a-z0-9-]+", "-", str(f.get("name", "part")).lower()).strip("-") or "part"
+            raw_name = str(f.get("name", "part")).lower()
+            stem = re.sub(r"[^a-z0-9-]+", "-", raw_name).strip("-") or "part"
             name = f"t{turn}-{stem}.md"
             (tmp / name).write_text(str(f["content"]).rstrip() + "\n", encoding="utf-8")
             written.append(name)
         (tmp / "INDEX.md").write_text(index.rstrip() + "\n", encoding="utf-8")
         shutil.rmtree(displaced, ignore_errors=True)
         if hist_dir.is_dir():
-            os.replace(hist_dir, displaced)
-        os.replace(tmp, hist_dir)
+            hist_dir.replace(displaced)
+        tmp.replace(hist_dir)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         if not hist_dir.exists() and displaced.is_dir():
-            os.replace(displaced, hist_dir)         # restore the pre-swap history
+            displaced.replace(hist_dir)             # restore the pre-swap history
         raise
     shutil.rmtree(displaced, ignore_errors=True)
     return written
@@ -131,15 +135,17 @@ def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint,
     """LLM-driven compaction: reorganize the elided middle into a navigable set of markdown files
     (each ~≤100 lines) under runs/<ts>/history/ + INDEX.md, and replace the middle with a short
     pointer telling the agent to consult the index. Returns (new_messages, info), or None on any
-    failure (the caller falls back to the deterministic digest)."""
+    failure (the caller falls back to the deterministic digest).
+    """
     head, tail = messages[:KEEP_HEAD_MSGS], messages[-KEEP_TAIL_MSGS:]
     middle = messages[KEEP_HEAD_MSGS:len(messages) - KEEP_TAIL_MSGS]
     if not middle:
         return None
     hist_dir = run_dir / "history"
-    prior = (hist_dir / "INDEX.md").read_text(encoding="utf-8") if (hist_dir / "INDEX.md").exists() else ""
-    existing_note = (f"\nThere is already a history index — KEEP its entries and add the new files to it:\n"
-                     f"---\n{prior}\n---\n" if prior else "\n")
+    index_md = hist_dir / "INDEX.md"
+    prior = index_md.read_text(encoding="utf-8") if index_md.exists() else ""
+    existing_note = ("\nThere is already a history index — KEEP its entries and add the new "
+                     f"files to it:\n---\n{prior}\n---\n" if prior else "\n")
     convo = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in middle)
     comp = endpoint.complete([{"role": "user", "content":
                                _HISTORY_PROMPT.format(existing_note=existing_note, convo=convo)}],
@@ -147,7 +153,8 @@ def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint,
                              temperature=ref.temperature, timeout=180,
                              purpose="Compaction · archival", kind="compaction")
     data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
-    files = [f for f in (data.get("files") or []) if isinstance(f, dict) and str(f.get("content", "")).strip()]
+    files = [f for f in (data.get("files") or [])
+             if isinstance(f, dict) and str(f.get("content", "")).strip()]
     index = str(data.get("index") or "").strip()
     if not files or not index:
         return None
@@ -156,9 +163,9 @@ def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint,
     pointer = {"role": "user", "content":
         f"CONTEXT COMPACTED — {len(middle)} earlier messages have been archived to an on-disk, "
         f"navigable history. Read `{hist_rel}/INDEX.md` (read_file) to see what's there, then read "
-        f"the specific {hist_rel}/*.md files relevant to your current step. Do not rely on memory of "
-        f"the archived turns — consult the index."}
-    new_messages = head + [pointer] + tail
+        f"the specific {hist_rel}/*.md files relevant to your current step. Do not rely on "
+        f"memory of the archived turns — consult the index."}
+    new_messages = [*head, pointer, *tail]
     info = {"elided_messages": len(middle), "history_files": len(written), "mode": "llm-history",
             "model": f"{ref.endpoint}/{ref.model}",
             "before_chars": messages_size(messages), "after_chars": messages_size(new_messages),
@@ -172,7 +179,8 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
     """Rebuild the (turn-pair) message list from a run's transcript events — for RESUME. Returns
     (messages, last_turn, turn_records); the caller prepends the freshly-composed system message.
     Every turn is replayed (compaction events are ignored — this reconstitutes the full
-    conversation and maybe_compact re-compacts it on the next turn if it's too big)."""
+    conversation and maybe_compact re-compacts it on the next turn if it's too big).
+    """
     messages: list[dict] = []
     records: list[dict] = []
     last_turn = 0
@@ -184,13 +192,16 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
             turn = ev.get("turn")
             if isinstance(turn, int):
                 last_turn = turn
-                brief = str(p.get(BRIEF_FIELD.get(p.get("kind"), ""), ""))[:80]
+                action_kind = str(p.get("kind") or "")
+                brief = str(p.get(BRIEF_FIELD.get(action_kind, ""), ""))[:80]
                 records.append({"turn": turn, "kind": p.get("kind", "?"),
-                                "brief": json.dumps(brief, ensure_ascii=False), "say": p.get("say", "")})
+                                "brief": json.dumps(brief, ensure_ascii=False),
+                                "say": p.get("say", "")})
         elif kind_ev == "observation":
             messages.append({"role": "user", "content": format_observation(p)})
         elif kind_ev == "user_injection":
-            messages.append({"role": "user", "content": f"USER MESSAGE (injected mid-run): {p.get('text', '')}"})
+            messages.append({"role": "user",
+                             "content": f"USER MESSAGE (injected mid-run): {p.get('text', '')}"})
         elif kind_ev == "answer":
             messages.append({"role": "user", "content": f"ANSWER: {p.get('text', '')}"})
         # header / question / compaction / finish / error / subrun_* are not part of the prompt
@@ -202,7 +213,8 @@ def orphaned_children(events: list[dict]) -> list[dict]:
     subrun) with no matching `subrun_end`. Children are threads in the parent process, so they do
     NOT survive a restart: on resume these are dead. Returns [{n, label, mode}] so the engine can
     mark them aborted and tell the model, instead of leaving it to `wait` forever for a child that
-    will never finish."""
+    will never finish.
+    """
     started: dict[int, dict] = {}
     ended: set[int] = set()
     for ev in events:
@@ -221,15 +233,15 @@ def prior_usage(events: list[dict]) -> dict:
     """Token spend recorded across ALL prior legs of a run's transcript. A resume starts a
     fresh budget window (ctx.usage), so without this base status.json under-reports resumed
     runs by however much the earlier legs spent. Sums every event that carries usage:
-    assistant actions, llm-subcall observations, and compaction calls."""
+    assistant actions, llm-subcall observations, and compaction calls.
+    """
     total: dict = {"in": 0, "out": 0}
     for ev in events:
         etype = ev.get("type")
         if etype == "assistant_action":
             u = ev.get("usage")
-        elif etype == "observation" and (ev.get("payload") or {}).get("kind") == "llm":
-            u = (ev.get("payload") or {}).get("usage")
-        elif etype == "compaction":
+        elif ((etype == "observation" and (ev.get("payload") or {}).get("kind") == "llm")
+              or etype == "compaction"):
             u = (ev.get("payload") or {}).get("usage")
         else:
             continue

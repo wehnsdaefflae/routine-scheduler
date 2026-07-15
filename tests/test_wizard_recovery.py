@@ -1,6 +1,8 @@
 """Boot-time recovery of wizard builds orphaned by a server restart/crash (finalize.json
 stuck at 'building'). See wizard_store.recover_orphan_builds."""
 
+from pathlib import Path
+
 from rsched.config import ServerConfig
 from rsched.paths import atomic_write_json, read_json
 from rsched.web import wizard_store
@@ -13,7 +15,7 @@ def _server(tmp_path) -> ServerConfig:
     return s
 
 
-def _wizard(server, wid: str, finalize: dict | None) -> "Path":
+def _wizard(server, wid: str, finalize: dict | None) -> Path:
     d = server.routines_home / wid
     (d / "state").mkdir(parents=True)
     if finalize is not None:
@@ -28,7 +30,7 @@ def test_recovers_orphaned_building_and_cleans_half_built_dir(tmp_path):
     # half-scaffolded routine dir: subdirs exist but routine.yaml never got written
     partial = server.routines_home / "config-optimizer"
     (partial / "state").mkdir(parents=True)
-    (partial / "steps").mkdir()
+    (partial / "stages").mkdir()
 
     recovered = wizard_store.recover_orphan_builds(server)
 

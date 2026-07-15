@@ -6,11 +6,11 @@ Notifications). State lives in the config dir (mounted in Docker, never inside a
 `vapid-private.pem` (generated on first use), `push-subscriptions.json` (one entry per
 browser), `push-notified.json` (qids already pushed — the sender's dedupe memory).
 A dead subscription (push service answers 404/410) is dropped on sight. Everything is
-best-effort: push failures never disturb the daemon."""
+best-effort: push failures never disturb the daemon.
+"""
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import threading
@@ -30,7 +30,8 @@ _lock = threading.Lock()   # subscriptions + notified state are read-modify-writ
 
 def push_dir(server) -> Path:
     """Where push state lives: next to config.yaml (server.source), so a container keeps
-    it across restarts via the mounted config dir."""
+    it across restarts via the mounted config dir.
+    """
     return (server.source.parent if getattr(server, "source", None)
             else config_file().parent)
 
@@ -40,9 +41,10 @@ def push_dir(server) -> Path:
 
 def vapid_public_key(server) -> str:
     """The applicationServerKey browsers subscribe with (urlsafe-b64, no padding) —
-    generating and persisting the private key on first use."""
-    from py_vapid import Vapid, b64urlencode
+    generating and persisting the private key on first use.
+    """
     from cryptography.hazmat.primitives import serialization
+    from py_vapid import Vapid, b64urlencode
 
     path = push_dir(server) / _VAPID_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +94,8 @@ def remove_subscription(server, endpoint: str) -> int:
 
 def _send_one(server, subscription: dict, payload: dict) -> bool:
     """Push one payload to one browser. Returns False when the subscription is dead
-    (removed on the spot); transient failures just log."""
+    (removed on the spot); transient failures just log.
+    """
     from pywebpush import WebPushException, webpush
 
     try:
@@ -109,7 +112,7 @@ def _send_one(server, subscription: dict, payload: dict) -> bool:
         else:
             log.warning("push: send failed: %s", exc)
         return False
-    except Exception as exc:  # noqa: BLE001 — pushes must never disturb the daemon
+    except Exception as exc:
         log.warning("push: send failed: %s", exc)
         return False
 
@@ -123,7 +126,8 @@ def notify_new_decisions(server) -> int:
     """The sender the bus listener calls: diff the instance's open decisions against the
     already-pushed set and push one notification per NEW one. Same source of truth as the
     Decisions page (api_questions.open_decisions), so the surfaces can never disagree.
-    Cheap no-op while nobody is subscribed."""
+    Cheap no-op while nobody is subscribed.
+    """
     if not subscriptions(server):
         return 0
     from .api_questions import open_decisions
@@ -153,7 +157,8 @@ def notify_new_decisions(server) -> int:
 async def bus_listener(server, bus) -> None:
     """Daemon-side subscriber: any bus event may mean a new decision exists (a run parked
     on a blocking ask, a finished run that filed deferred ones, a wizard asking) — debounce
-    briefly, then diff-and-push off the event loop. Runs for the daemon's lifetime."""
+    briefly, then diff-and-push off the event loop. Runs for the daemon's lifetime.
+    """
     import asyncio
 
     with bus.subscribe() as q:
@@ -162,9 +167,9 @@ async def bus_listener(server, bus) -> None:
             try:
                 while True:   # coalesce the burst a finishing run produces
                     await asyncio.wait_for(q.get(), timeout=2.0)
-            except (asyncio.TimeoutError, TimeoutError):
+            except TimeoutError:
                 pass
             try:
                 await asyncio.to_thread(notify_new_decisions, server)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning("push: notify pass failed: %s", exc)

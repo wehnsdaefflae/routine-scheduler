@@ -20,4 +20,4 @@ From each top-level `transcript.jsonl` and the run's `LEDGER.md`, collect:
 For every finding, capture the **workflow slug + commit** from the run header so it can be clustered later.
 
 ## Next
-Write `state/phase.json = {step: "cluster-findings", cursor: {...cursor, findings}}`. Read `stages/cluster-findings.md`.
+Write `state/phase.json = {phase: "cluster-findings", cursor: {...cursor, findings}}`. Read `stages/cluster-findings.md`.

@@ -387,12 +387,6 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .stat-card .stat-sub { font-size: 11px; color: var(--muted); font-family: var(--sans); }
 .stat-section { margin: 22px 0; }
 .stat-section h2 { font-size: 14px; color: var(--text); margin: 0 0 10px; letter-spacing: 0.01em; }
-.bar-chart { display: flex; flex-direction: column; gap: 5px; }
-.bar-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
-.bar-row .bar-label { flex: 0 0 130px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sans); }
-.bar-row .bar-track { flex: 1 1 auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; height: 14px; overflow: hidden; }
-.bar-row .bar-fill { height: 100%; background: linear-gradient(90deg, var(--amber), var(--warn)); }
-.bar-row .bar-value { flex: 0 0 72px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
 .stat-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .stat-table th, .stat-table td { padding: 7px 11px; text-align: left; border-bottom: 1px solid var(--line); }

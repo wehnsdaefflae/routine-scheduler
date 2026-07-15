@@ -32,7 +32,7 @@ path: this scheduler is the only harness.
 ## How the system improves itself
 
 - **Across routines**: the bundled `routine-improver` meta routine sweeps every routine
-  that hasn't set its `exclude_from_improvement` flag — **itself included** — and improves
+  that hasn't opted out with `improve: false` — **itself included** — and improves
   each through five lenses (bugfix, research, features, ui, efficiency) plus a fresh-eyes
   de-clutter pass that hunts what accumulated over many revisions. It infers each routine's
   intention from its recent runs, grounds changes in online research, applies the safe
@@ -113,15 +113,22 @@ stays the only channel otherwise.
 
 `uv run rsched --help` — `daemon` (what the service/container runs: scheduler + web in one
 process), `run-once` (`--model kind=name` overrides a model role with a catalog model),
-`engine-run` (internal), `validate`, `lint`, `suggest`, `scaffold`, `abort`,
-`migrate-model-catalog` (one-shot pre-0.27 config migration).
+`engine-run` (internal), `validate`, `lint`, `suggest`, `scaffold`, `abort`.
 
 ## Development
 
 `uv sync`, then `uv run pytest -q` — the suite is fast and offline (`RSCHED_LIVE_TESTS=1`
-adds live endpoint smoke tests). Working conventions, the action/transcript contracts, and
-the module standards live in `CLAUDE.md`; the Help tab's API reference regenerates from
-docstrings at every daemon boot, so docstrings are user-facing here.
+adds live endpoint smoke tests). Quality gates are strict and enforced:
+
+- `uv run ruff check` — lint with `select = ALL`; every ignore in `pyproject.toml` names
+  the deliberate house-style reason. Zero findings is the only passing state.
+- `uv run mypy` — type check of `src/rsched`.
+- `uv run pre-commit install` once — both gates then run on every commit.
+- `uv run pytest --cov` — coverage report (branch coverage on).
+
+Working conventions, the action/transcript contracts, and the module standards live in
+`CLAUDE.md`; the Help tab's API reference regenerates from docstrings at every daemon
+boot, so docstrings are user-facing here.
 
 ## Layout
 

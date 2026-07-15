@@ -6,10 +6,10 @@ import { api } from "/static/api.js";
 import { setQuery } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
-import { chip, el, emptyState, fmtDur, skeleton, toDate, when } from "/static/util.js";
+import { chip, el, emptyState, fmtDur, fmtNum, skeleton, toDate, when } from "/static/util.js";
+import { TERMINAL } from "/static/states.js";
 
 const WINDOWS = { "24h": 86400, "7d": 604800, "30d": 2592000, all: Infinity };
-const TERMINAL = new Set(["finished", "failed", "aborted"]);
 const isActive = (state) => !TERMINAL.has(state);
 
 const withinS = (ts, secs) => {
@@ -17,8 +17,7 @@ const withinS = (ts, secs) => {
   return t != null && (Date.now() - t.getTime()) / 1000 <= secs;
 };
 
-const kfmt = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n || 0));
-const compactTokens = (u) => (u && (u.in || u.out)) ? `${kfmt(u.in || 0)}/${kfmt(u.out || 0)} tok` : "";
+const compactTokens = (u) => (u && (u.in || u.out)) ? `${fmtNum(u.in || 0)}/${fmtNum(u.out || 0)} tok` : "";
 function runDuration(r) {
   const start = toDate(r.ts);
   if (!start) return "";

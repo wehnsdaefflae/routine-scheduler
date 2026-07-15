@@ -131,6 +131,36 @@ class ScriptedRegistry(EndpointRegistry):
         return self.resolve("system")
 
 
+TEST_TOKEN = "test-token"
+
+
+@pytest.fixture
+def api_client(tmp_path):
+    """(TestClient, tmp_path) over a hermetic app: tmp homes, bearer auth TEST_TOKEN, a dummy
+    endpoint + one-model catalog as the system model, no scheduler. The shared base for the
+    web-API test files — each layers its own routines/monkeypatches on top."""
+    from fastapi.testclient import TestClient
+
+    from rsched.config import load_server_config
+    from rsched.web.app import create_app
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.safe_dump({
+        "token": TEST_TOKEN,
+        "routines_home": str(tmp_path / "routines"),
+        "libraries_home": str(tmp_path / "library"),
+        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
+        "models": {"m": {"endpoint": "dummy", "model": "m"}},
+        "system_model": "m",
+    }))
+    server, problems = load_server_config(cfg_path)
+    assert not problems
+    app = create_app(server, with_scheduler=False)
+    with TestClient(app) as c:
+        c.headers["Authorization"] = f"Bearer {TEST_TOKEN}"
+        yield c, tmp_path
+
+
 @pytest.fixture
 def make_routine(tmp_path):
     def _make(slug: str = "testr", *, budgets: dict | None = None,

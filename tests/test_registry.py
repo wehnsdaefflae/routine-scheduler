@@ -1,7 +1,7 @@
 """Derived catalog, run index, cron math, catch-up, retention."""
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from rsched.config import ServerConfig, load_routine
@@ -103,12 +103,12 @@ def test_run_ts_is_always_utc():
     # an aware Berlin time (03:00:03 = 01:00:03 UTC) is recorded in UTC, not server-local
     assert run_ts(datetime(2026, 7, 15, 3, 0, 3, tzinfo=BERLIN)) == "20260715-010003"
     # a plain UTC time is unchanged
-    assert run_ts(datetime(2026, 1, 2, 12, 0, 0, tzinfo=timezone.utc)) == "20260102-120000"
+    assert run_ts(datetime(2026, 1, 2, 12, 0, 0, tzinfo=UTC)) == "20260102-120000"
 
 
-def test_parse_run_ts_reads_utc_regardless_of_tz():
-    # run-ts is UTC, so it is read as UTC even when a routine's display tz is passed
-    d = registry.parse_run_ts("20260715-030003", "Europe/Berlin")
+def test_parse_run_ts_reads_utc():
+    # run-ts is ALWAYS UTC (ids.run_ts) — parsed back as an aware UTC instant
+    d = registry.parse_run_ts("20260715-030003")
     assert d is not None and d.utcoffset() == timedelta(0)
     assert (d.year, d.hour, d.minute, d.second) == (2026, 3, 0, 3)
     assert registry.parse_run_ts("not-a-ts") is None

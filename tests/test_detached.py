@@ -10,6 +10,7 @@ import yaml
 
 from rsched.config import ServerConfig
 from rsched.daemon.detached import DetachedManager
+from rsched.daemon.runner import Runner
 from rsched.ids import now_iso
 from rsched.paths import atomic_write_json, read_json
 
@@ -54,6 +55,10 @@ class FakeRunner:
             return None
         self.resumed.append((cfg.slug, ts, reason))
         return f"{cfg.slug}:{ts}"
+
+    # the real terminal-gated resume (it only touches registry + self.resume, so it binds
+    # cleanly onto the fake) — what _wake_owner calls
+    resume_terminal = Runner.resume_terminal
 
 
 def _owner(server, slug="c-1", *, last_state="finished",
@@ -205,10 +210,11 @@ async def test_crashed_task_delivers_failure(tmp_path):
 # -- wake -----------------------------------------------------------------------------------
 
 async def test_discord_ping_gated_on_communication(tmp_path, monkeypatch):
-    import rsched.utils_lib as utils_lib
+    from rsched import utils_lib
     sent = []
     monkeypatch.setattr(utils_lib, "run_util",
                         lambda home, name, args, **kw: sent.append((name, args)) or (0, "", ""))
+    monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
 
     server = _server(tmp_path)
     # owner WITHOUT communication → no ping
@@ -273,7 +279,7 @@ async def test_gc_removes_aged_delivered_task(tmp_path):
     # owner drains the message, then the delivered marker ages past the grace window
     for m in (owner / "inbox").glob("msg-bg-*.json"):
         m.unlink()
-    old = os.stat(task / "delivered.json").st_mtime - 10_000
+    old = (task / "delivered.json").stat().st_mtime - 10_000
     os.utime(task / "delivered.json", (old, old))
     await mgr.tick()
     assert not task.exists()                          # gc'd

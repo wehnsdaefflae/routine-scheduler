@@ -6,7 +6,7 @@ run_id format: "<slug>:<YYYYMMDD-HHMMSS>" — the timestamp part is also the run
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 RUN_TS_RE = re.compile(r"^\d{8}-\d{6}$")
@@ -27,10 +27,11 @@ def run_ts(now: datetime | None = None) -> str:
     no offset, so generating AND reading it both in UTC is what keeps run-dir names, ordering
     and the UI's local-time rendering consistent regardless of the SERVER's timezone — a UTC
     host running Europe/Berlin routines otherwise skews every run-ts-derived time by the
-    offset. The web UI converts the UTC stamp to the viewer's local time for display."""
-    now = now or datetime.now(timezone.utc)
+    offset. The web UI converts the UTC stamp to the viewer's local time for display.
+    """
+    now = now or datetime.now(UTC)
     if now.tzinfo is not None:
-        now = now.astimezone(timezone.utc)
+        now = now.astimezone(UTC)
     return now.strftime("%Y%m%d-%H%M%S")
 
 
@@ -53,7 +54,8 @@ def question_id(ts: str, n: int) -> str:
 def background_task_id(owner_slug: str) -> str:
     """A unique slug for a detached background task, tagged with its owner conversation for
     readability. Uniqueness (a random suffix) is load-bearing: the DetachedManager keys task
-    dirs by this id, so a collision would silently drop a task."""
+    dirs by this id, so a collision would silently drop a task.
+    """
     import uuid
 
     base = owner_slug if is_slug(owner_slug) else slugify(owner_slug)
@@ -61,4 +63,4 @@ def background_task_id(owner_slug: str) -> str:
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    return datetime.now(UTC).astimezone().isoformat(timespec="seconds")

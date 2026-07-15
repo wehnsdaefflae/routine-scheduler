@@ -6,13 +6,13 @@
 import { api } from "/static/api.js";
 import { weekGrid } from "/static/components/weekgrid.js";
 import { mdInline } from "/static/md.js";
-import { chip, el, emptyState, fmtCost, fmtDur, skeleton, storage, tagChip, toast, when } from "/static/util.js";
+import { chip, el, emptyState, fmtCost, fmtDur, fmtNum, skeleton, storage, tagChip, toast, when } from "/static/util.js";
+import { WORKING as RUNNING } from "/static/states.js";
 
 const FILTER_KEY = "rsched_dash_tags";
 const VIEW_KEY = "rsched_dash_view";
 const SORT_KEY = "rsched_dash_sort";
 const WEEK_KEY = "rsched_dash_week";
-const RUNNING = new Set(["running", "starting", "queued"]);
 
 // ---- sort keys: [label, value-fn, descending?] -------------------------------------------------
 const tokensOf = (c) => (c.last_run?.usage?.in || 0) + (c.last_run?.usage?.out || 0);
@@ -36,13 +36,13 @@ const STATE_BUCKETS = {
   disabled: (c) => !c.enabled,
 };
 
-export function statsLine(run) {
+function statsLine(run) {
   if (!run) return "";
   const parts = [];
   if (run.turns) parts.push(`${run.turns} turns`);
   if (run.elapsed_s != null) parts.push(fmtDur(run.elapsed_s));
   const tok = (run.usage?.in || 0) + (run.usage?.out || 0);
-  if (tok) parts.push(`${tok >= 1000 ? `${(tok / 1000).toFixed(tok >= 100_000 ? 0 : 1)}k` : tok} tok`);
+  if (tok) parts.push(`${fmtNum(tok)} tok`);
   const cost = fmtCost(run.usage);
   if (cost) parts.push(cost);
   return parts.join(" · ");
@@ -258,7 +258,7 @@ export async function render(view) {
         el("td", { class: "muted small" }, c.next_fire ? when(c.next_fire, { mode: "rel" }) : "—"),
         el("td", {}, last ? el("a", { href: `#/run/${last.run_id}` }, when(last.ts)) : el("span", { class: "faint" }, "never")),
         el("td", { class: "num" }, last?.turns ? String(last.turns) : "—"),
-        el("td", { class: "num" }, tok ? (tok >= 1000 ? `${(tok / 1000).toFixed(1)}k` : String(tok)) : "—"),
+        el("td", { class: "num" }, tok ? fmtNum(tok) : "—"),
         el("td", { class: "num" }, fmtCost(last?.usage) || "—"),
         el("td", { class: "num" }, last?.elapsed_s != null ? fmtDur(last.elapsed_s) : "—"),
         el("td", { class: "num" }, c.open_questions
@@ -273,7 +273,11 @@ export async function render(view) {
   }
 
   await load();
-  const onBus = () => load().catch(() => {});
+  let pending = null;
+  const onBus = () => {
+    clearTimeout(pending);
+    pending = setTimeout(() => load().catch(() => {}), 600);   // debounce bursts of bus events
+  };
   window.addEventListener("rsched-bus", onBus);
-  return () => window.removeEventListener("rsched-bus", onBus);
+  return () => { window.removeEventListener("rsched-bus", onBus); clearTimeout(pending); };
 }

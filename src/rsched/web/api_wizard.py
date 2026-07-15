@@ -1,6 +1,7 @@
 """The new-routine wizard routes: a clarify-instruction engine run in a dot-hidden
 pseudo-routine dir (identical engine path, invisible to the registry), then suggest →
-finalize/scaffold. Session persistence and snapshots live in wizard_store."""
+finalize/scaffold. Session persistence and snapshots live in wizard_store.
+"""
 
 from __future__ import annotations
 
@@ -26,11 +27,13 @@ from . import wizard_store
 from .sse import run_stream
 
 router = APIRouter(tags=["wizard"])
+_build_tasks: set[asyncio.Task] = set()   # strong refs for in-flight background build tasks
 
 
 def _wizard_pid(wid: str) -> str:
     """The LLM-task-manager process id for a whole routine-creation flow — shared across the
-    separate wizard requests (start → suggest → generate → finalize) so their calls group."""
+    separate wizard requests (start → suggest → generate → finalize) so their calls group.
+    """
     return f"create:{wid.lstrip('.')}"
 
 
@@ -63,7 +66,8 @@ def _wizard_dir(request: Request, wid: str) -> Path:
 @router.get("/wizard")
 def wizard_list(request: Request) -> list[dict]:
     """Every in-flight new-routine session (the hidden .wizard-* dirs), newest first — so the UI
-    can surface + resume them instead of only tracking one in memory."""
+    can surface + resume them instead of only tracking one in memory.
+    """
     return wizard_store.list_sessions(request.app.state)
 
 
@@ -75,7 +79,8 @@ def wizard_detail(request: Request, wid: str) -> dict:
 @router.delete("/wizard/{wid}")
 async def wizard_cancel(request: Request, wid: str) -> dict:
     """Cancel a session: stop the clarify engine process and move the dir out of the way so it
-    stops showing as in-flight (mirrors finalize's archive move — no dangling process or dir)."""
+    stops showing as in-flight (mirrors finalize's archive move — no dangling process or dir).
+    """
     d = _wizard_dir(request, wid)
     sess = wizard_store.sessions(request.app.state).pop(wid, None)
     _stop_tailer(sess)
@@ -86,7 +91,8 @@ async def wizard_cancel(request: Request, wid: str) -> dict:
     ts = (sess or {}).get("run_ts") or wizard_store.latest_run_ts(d)
     if ts and (d / "runs" / ts).is_dir():
         st = read_json(d / "runs" / ts / "status.json")
-        await abort_process(st.get("pid") if isinstance(st, dict) else None, d / "runs" / ts, f"{wid}:{ts}")
+        await abort_process(st.get("pid") if isinstance(st, dict) else None,
+                            d / "runs" / ts, f"{wid}:{ts}")
     await asyncio.to_thread(wizard_store.archive_session, request.app.state.server.routines_home,
                             d, f"{wid.lstrip('.')}-canceled")
     if (c := _center(request.app.state)) is not None:
@@ -137,7 +143,8 @@ async def events(request: Request, wid: str, offset: int = 0):
 @router.get("/wizard/{wid}/transcript")
 def wizard_transcript(request: Request, wid: str, offset: int = 0) -> dict:
     """Paged clarify-chat transcript (mirrors /runs/{id}/transcript) — the byte offset it
-    returns is what the UI resumes its SSE tail from after a dropped connection."""
+    returns is what the UI resumes its SSE tail from after a dropped connection.
+    """
     from ..engine.transcript import read_events
 
     events, new_offset = read_events(_clarify_run_dir(request, wid) / "transcript.jsonl", offset)
@@ -170,13 +177,16 @@ def wizard_suggest(request: Request, wid: str) -> dict:
     server = request.app.state.server
     with process_scope(_wizard_pid(wid)):
         suggested_tags = suggest_tags(server, result["refined_instruction"])
-    # The clarifier already suggested a pattern (it read the candidates and married the task to one).
-    # Lead the pick list with its choice so the wizard pre-selects it; the rest are override options.
-    choice = result.get("workflow_choice") if isinstance(result.get("workflow_choice"), dict) else {}
+    # The clarifier already suggested a pattern (it read the candidates and married the task
+    # to one). Lead the pick list with its choice so the wizard pre-selects it; the rest are
+    # override options.
+    raw_choice = result.get("workflow_choice")
+    choice: dict = raw_choice if isinstance(raw_choice, dict) else {}
     chosen = str(choice.get("slug") or "")
     suggestions = [{"slug": w["slug"],
                     "confidence": 1.0 if w["slug"] == chosen else 0.5,
-                    "reason": "chosen by the clarifier" if w["slug"] == chosen else w.get("description", "")}
+                    "reason": ("chosen by the clarifier" if w["slug"] == chosen
+                               else w.get("description", ""))}
                    for w in wizard_store.candidate_patterns(server)]
     suggestions.sort(key=lambda s: -s["confidence"])
     none_fit = bool(choice.get("generate"))
@@ -202,7 +212,8 @@ def wizard_generate(request: Request, wid: str, body: GenerateBody) -> dict:
         raise HTTPException(409, "no wizard result yet")
     try:
         with process_scope(_wizard_pid(wid)):
-            slug, note = generate(request.app.state.server, result["refined_instruction"], body.hint)
+            slug, note = generate(request.app.state.server, result["refined_instruction"],
+                                  body.hint)
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
     return {"workflow_slug": slug, "note": note}
@@ -212,9 +223,9 @@ class FinalizeBody(BaseModel):
     slug: str
     name: str
     workflow_slug: str
-    instruction: str = ""         # user-edited refined instruction; empty = the clarifier's verbatim
+    instruction: str = ""         # user-edited refined instruction; empty = clarifier verbatim
     description: str = ""         # one-line UI summary; defaults to the clarifier's, then the name
-    models: dict | None = None    # {main|subroutine|tool_call: {endpoint, model}} picked in the wizard
+    models: dict | None = None    # {main|subroutine|tool_call: {endpoint, model}} wizard pick
     friendly: dict = {}          # friendly schedule spec → cron + server tz
     params: dict = {}
     tags: list[str] = []         # >=3 tags, suggested (reuse-first) then user-editable
@@ -229,7 +240,8 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
     """Kick off the routine build in the BACKGROUND and return immediately — building calls
     decompose(), a blocking LLM step that can take a minute or two. Progress is tracked in
     state/finalize.json (building | done | error) so the client (or a reloaded one) can poll
-    /wizard/{wid}; a bus event announces completion. Fast, obvious errors are still returned here."""
+    /wizard/{wid}; a bus event announces completion. Fast, obvious errors are still returned here.
+    """
     from .. import schedule
 
     d = _wizard_dir(request, wid)
@@ -243,23 +255,29 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
         schedule.friendly_to_cron(body.friendly or {"frequency": "manual"})
     except (ValueError, KeyError) as exc:
         raise HTTPException(400, f"invalid schedule: {exc}") from exc
-    # Don't start a build while the daemon is draining for a self-restart — the restart waits for
-    # in-flight builds, but a NEW build accepted mid-drain would never converge. Retry once it's back.
+    # Don't start a build while the daemon is draining for a self-restart — the restart
+    # waits for in-flight builds, but a NEW build accepted mid-drain would never converge.
+    # Retry once it's back.
     if request.app.state.scheduler.runner.draining:
         raise HTTPException(503, "the server is restarting — please retry the build in a moment")
     atomic_write_json(d / "state" / "finalize.json", {"state": "building", "slug": body.slug})
-    # the clarify process is done — stop its sidecar tailer (the create process stays open until build)
+    # the clarify process is done — stop its sidecar tailer (the create process stays open
+    # until the build)
     _stop_tailer(wizard_store.sessions(request.app.state).pop(wid, None))
-    # register the build so a concurrent self-restart drains it instead of stranding it half-built
+    # register the build so a concurrent self-restart drains it instead of stranding it
+    # half-built; the strong ref keeps the build task from being GC'd mid-flight (RUF006)
     request.app.state.scheduler.wizard_builds.add(wid)
-    asyncio.create_task(_run_build(request.app.state, wid, d, body, result))
+    task = asyncio.create_task(_run_build(request.app.state, wid, d, body, result))
+    _build_tasks.add(task)
+    task.add_done_callback(_build_tasks.discard)
     return {"building": True, "slug": body.slug, "wid": wid}
 
 
-async def _run_build(app_state, wid: str, d: Path, body: "FinalizeBody", result: dict) -> None:
+async def _run_build(app_state, wid: str, d: Path, body: FinalizeBody, result: dict) -> None:
     """Thin wrapper around _build_routine that GUARANTEES the build is deregistered from the
     scheduler's in-flight set on every exit (success, handled error, or crash), so the restart
-    drain can converge. Kept separate so _build_routine's body stays untouched."""
+    drain can converge. Kept separate so _build_routine's body stays untouched.
+    """
     try:
         await _build_routine(app_state, wid, d, body, result)
     finally:
@@ -267,9 +285,10 @@ async def _run_build(app_state, wid: str, d: Path, body: "FinalizeBody", result:
             app_state.scheduler.wizard_builds.discard(wid)
 
 
-async def _build_routine(app_state, wid: str, d: Path, body: "FinalizeBody", result: dict) -> None:
+async def _build_routine(app_state, wid: str, d: Path, body: FinalizeBody, result: dict) -> None:
     """Background: scaffold the routine (the slow decompose call), fire the first run if asked, and
-    record the outcome to state/finalize.json + a bus event. Errors leave the session recoverable."""
+    record the outcome to state/finalize.json + a bus event. Errors leave the session recoverable.
+    """
     from .. import schedule
     from ..config import load_routine
 
@@ -280,8 +299,9 @@ async def _build_routine(app_state, wid: str, d: Path, body: "FinalizeBody", res
         cron = schedule.friendly_to_cron(body.friendly or {"frequency": "manual"})
         stages = result.get("stages") if isinstance(result.get("stages"), dict) else None
         description = body.description.strip() or str(result.get("description") or "").strip()
-        params = body.params or (result.get("params") if isinstance(result.get("params"), dict) else {})
-        with process_scope(_wizard_pid(wid)):   # the decompose LLM call attaches to the create process
+        params = body.params or (result.get("params")
+                                 if isinstance(result.get("params"), dict) else {})
+        with process_scope(_wizard_pid(wid)):   # decompose LLM call → the create process
             routine_dir = await asyncio.to_thread(
                 scaffold, server, slug=body.slug, name=body.name,
                 instruction=body.instruction.strip() or result["refined_instruction"],
@@ -289,18 +309,22 @@ async def _build_routine(app_state, wid: str, d: Path, body: "FinalizeBody", res
                 tz=schedule.server_tz(), params=params, stages=stages, description=description,
                 models=body.models, tags=normalize_tags(body.tags) or None,
                 traits=body.traits, permissions=body.permissions, budgets=body.budgets)
-    except Exception as exc:   # scaffold/decompose failure — the session stays so the user can retry
-        partial = server.routines_home / body.slug   # clean up a half-built dir so the retry isn't blocked
+    except Exception as exc:   # scaffold/decompose failure — the session stays for a retry
+        # clean up a half-built dir so the retry isn't blocked
+        partial = server.routines_home / body.slug
         if partial.is_dir() and not (partial / "routine.yaml").exists():
             shutil.rmtree(partial, ignore_errors=True)
-        atomic_write_json(status_path, {"state": "error", "slug": body.slug, "error": str(exc)[:300]})
+        atomic_write_json(status_path,
+                          {"state": "error", "slug": body.slug, "error": str(exc)[:300]})
         if (c := _center(app_state)) is not None:
             c.close_process(_wizard_pid(wid), error=str(exc)[:200])
-        bus.publish({"event": "routine_failed", "wid": wid, "slug": body.slug, "error": str(exc)[:300]})
+        bus.publish({"event": "routine_failed", "wid": wid, "slug": body.slug,
+                     "error": str(exc)[:300]})
         return
 
     def keep_provenance() -> None:
-        # the clarify conversation stays inside the new routine (transcripts can be large — off-loop)
+        # the clarify conversation stays inside the new routine (transcripts can be large,
+        # so this runs off-loop)
         provenance = routine_dir / "state" / "wizard"
         provenance.mkdir(parents=True, exist_ok=True)
         ts = wizard_store.latest_run_ts(d)

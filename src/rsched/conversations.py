@@ -20,6 +20,7 @@ import yaml
 
 from .config import DEFAULT_BUDGETS, DEFAULT_PERMISSIONS, ServerConfig
 from .ids import run_ts
+from .paths import atomic_write
 
 log = logging.getLogger("rsched.conversations")
 
@@ -56,7 +57,8 @@ _WORKING_RUN_STATES = {"queued", "starting", "running"}
 def conversation_phase(run_state: str | None) -> str:
     """Map a conversation's live RUN state to its lifecycle phase (the diagram's CURRENT
     node). Anything not actively working — finished, blocked on your answer, brand new — is
-    the user's turn."""
+    the user's turn.
+    """
     return "working" if run_state in _WORKING_RUN_STATES else "waiting for you"
 
 _LEDGER_SEED = "# LEDGER — conversation\n\n### seed — conversation created\n"
@@ -84,7 +86,8 @@ def attachment_note(paths: list[str]) -> str:
     Paths are relative to the conversation dir; the model reads text with read_file and SEES
     images/PDFs with the view_image action (shown to it directly when the model is
     multimodal, else described by the vision util). Images are auto-shown to a multimodal
-    model already, so view_image is mainly for when it wants another look."""
+    model already, so view_image is mainly for when it wants another look.
+    """
     if not paths:
         return ""
     lines = "\n".join(f"- {p}" for p in paths)
@@ -97,7 +100,8 @@ def _seed_instruction(pb: dict | None, first_message: str, conv_dir: Path) -> st
     """instruction.md for a conversation. Without a playbook it IS the first message. With one, the
     playbook's brief (MAIN.md body) leads as the working brief and the first message SPECIALIZES it;
     on-demand detail files are copied into `<conv>/playbook/` so the run can read them with
-    read_file (the use-instruction analog: MAIN always loaded, details pulled in on demand)."""
+    read_file (the use-instruction analog: MAIN always loaded, details pulled in on demand).
+    """
     if not pb:
         return first_message.rstrip()
     parts = [pb["body"].strip()]
@@ -125,12 +129,13 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
 
     A `playbook_slug` seeds instruction.md from that library playbook's brief (the first message
     specializes it) and records a `playbook: {slug, commit}` binding — the Update-playbook button
-    later revises that source playbook from this conversation's deltas."""
+    later revises that source playbook from this conversation's deltas.
+    """
     from . import library_docs, playbooks
     from .workflows.adapt import dump_markdown
     from .workflows.library import head_commit, read_workflow
     from .workflows.pyworkflow import render_markdown
-    from .workflows.scaffold import _with_practices_tail
+    from .workflows.scaffold import copy_traits, with_practices_tail
 
     conv_dir = server.conversations_home / slug
     if conv_dir.exists():
@@ -144,22 +149,13 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
         (conv_dir / sub).mkdir(parents=True)
     # trait copies: library text verbatim — the conversation's own files from here on
     # (refined by the routine-improver meta routine, like any routine's).
-    available = set(library_docs.slugs(server.traits_home))
-    trait_summaries: dict[str, str] = {}
-    for t in [t for t in CONVERSATION_TRAITS if t in available]:
-        raw_doc = library_docs.read_doc(server.traits_home, t)
-        body = library_docs.doc_body(raw_doc).strip() if raw_doc else ""
-        if not body:
-            continue
-        (conv_dir / "traits" / f"{t}.md").write_text(body + "\n", encoding="utf-8")
-        m = library_docs.DOC_RE.search(body)
-        trait_summaries[t] = m.group("summary").strip() if m else ""
+    trait_summaries = copy_traits(server.traits_home, conv_dir, list(CONVERSATION_TRAITS))
     commit = head_commit(server.library_home)
     main_meta = {"name": title, "slug": slug,
                  "materialized_from": {"slug": CONVERSE_WORKFLOW, "commit": commit,
                                        "version": meta.get("version", 0)},
                  **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {})}
-    body = _with_practices_tail(render_markdown(raw, meta), trait_summaries)
+    body = with_practices_tail(render_markdown(raw, meta), trait_summaries)
     (conv_dir / "main.md").write_text(dump_markdown(main_meta, body), encoding="utf-8")
     (conv_dir / "instruction.md").write_text(
         _seed_instruction(pb, first_message, conv_dir) + "\n", encoding="utf-8")
@@ -190,8 +186,8 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
     if workdir.strip():
         cfg["fs_read_roots"] = [workdir.strip()]
         cfg["fs_write_roots"] = [workdir.strip()]
-    (conv_dir / "routine.yaml").write_text(
-        yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    atomic_write(conv_dir / "routine.yaml",
+                 yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
     return conv_dir
 
 
@@ -209,7 +205,8 @@ def autolabel(server: ServerConfig, conv_dir: Path, text: str) -> None:
     """Best-effort title + tags from the first message via the system model — runs OFF the
     reply path (the API fires it in a thread). Falls back to the first-line title already
     written at creation; never raises. Only touches name/description/tags — keys the
-    engine never writes, so a live run is safe."""
+    engine never writes, so a live run is safe.
+    """
     try:
         from .endpoints import EndpointRegistry
 
@@ -235,7 +232,8 @@ def autolabel(server: ServerConfig, conv_dir: Path, text: str) -> None:
         raw["description"] = title
         if tags:
             raw["tags"] = tags
-        (conv_dir / "routine.yaml").write_text(
-            yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    except Exception as exc:  # noqa: BLE001 — cosmetic labelling must never break a create
+        # atomic: the daemon scans routine.yaml between replies — never let it read a torn file
+        atomic_write(conv_dir / "routine.yaml",
+                     yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    except Exception as exc:
         log.info("autolabel skipped for %s: %s", conv_dir.name, exc)

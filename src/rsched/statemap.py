@@ -81,7 +81,8 @@ def current_phase(routine_dir: Path) -> str:
 
 def state_graph(routine_dir: Path) -> dict:
     """{states: [{name, desc}], current: str} for one routine/conversation dir. `current`
-    is the raw recorded phase — the client matches it against states via norm()."""
+    is the raw recorded phase — the client matches it against states via norm().
+    """
     try:
         md = (routine_dir / "main.md").read_text(encoding="utf-8")
     except OSError:
@@ -90,7 +91,8 @@ def state_graph(routine_dir: Path) -> dict:
     if not states:  # no parseable flow leads → the stage modules ARE the map (each a node)
         stages = routine_dir / "stages"
         if stages.is_dir():
-            states = [{"name": p.stem, "desc": ""} for p in sorted(stages.glob("*.md"))][:MAX_STATES]
+            states = [{"name": p.stem, "desc": ""}
+                      for p in sorted(stages.glob("*.md"))][:MAX_STATES]
     return {"states": states, "current": current_phase(routine_dir)}
 
 
@@ -100,7 +102,8 @@ _HEADING = re.compile(r"^(#{1,4})\s+(.+?)\s*$")
 def outline(md_text: str) -> list[dict]:
     """[{level, text}] for the ## / ### / #### headings of a recipe file — the file's own
     structure, for the routine page's navigable tree. Headings inside ``` fenced blocks
-    (a pattern's Python, say) are skipped so a `# comment` never poses as a section."""
+    (a pattern's Python, say) are skipped so a `# comment` never poses as a section.
+    """
     out: list[dict] = []
     in_fence = False
     for line in md_text.splitlines():
@@ -118,7 +121,8 @@ def outline(md_text: str) -> list[dict]:
 def recipe_tree(routine_dir: Path) -> dict:
     """The routine's recipe as a navigable tree for the routine page: main.md + its stage modules
     (in ## Run flow order, any extras appended alphabetically) + trait modules, each with its
-    heading outline. Purely a read-model over the routine's own files."""
+    heading outline. Purely a read-model over the routine's own files.
+    """
     def _read(p: Path) -> str:
         try:
             return p.read_text(encoding="utf-8")
@@ -135,7 +139,8 @@ def recipe_tree(routine_dir: Path) -> dict:
             return len(order) + 1  # extras (no flow entry) sort after the flow, then alphabetically
 
     def _entry(p: Path) -> dict:
-        return {"path": str(p.relative_to(routine_dir)), "name": p.stem, "outline": outline(_read(p))}
+        return {"path": str(p.relative_to(routine_dir)), "name": p.stem,
+                "outline": outline(_read(p))}
 
     def _files(sub: str) -> list[Path]:
         d = routine_dir / sub

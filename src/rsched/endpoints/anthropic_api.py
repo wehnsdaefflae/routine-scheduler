@@ -23,9 +23,22 @@ import json
 import httpx
 
 from ..config import EndpointConfig
-from .base import (DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT, PDF_MIME, Completion, EndpointError,
-                   Message, json_or_raise, key_from_env_file, read_media_b64, split_system,
-                   supports_media_type, with_retries)
+from .base import (
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_TIMEOUT,
+    PDF_MIME,
+    Completion,
+    Message,
+    anthropic_usage,
+    json_or_raise,
+    post_json,
+    raise_for_status,
+    read_media_b64,
+    resolve_api_key,
+    split_system,
+    supports_media_type,
+    with_retries,
+)
 
 API_VERSION = "2023-06-01"
 
@@ -35,7 +48,8 @@ _EFFORT_ERROR_HINTS = ("effort", "output_config")
 def merge_consecutive(messages: list[Message]) -> list[Message]:
     """The Messages API requires alternating roles; the engine legitimately produces
     consecutive user messages (observation + injection, compaction digests). Merge them —
-    concatenating text content and carrying any `media` forward."""
+    concatenating text content and carrying any `media` forward.
+    """
     merged: list[Message] = []
     for m in messages:
         if merged and merged[-1]["role"] == m["role"]:
@@ -52,7 +66,8 @@ def merge_consecutive(messages: list[Message]) -> list[Message]:
 
 def _content_blocks(content: str, media: list[dict]) -> list[dict]:
     """A message's string content + its media list → Anthropic content blocks (text first,
-    then each file as a base64 image or document block)."""
+    then each file as a base64 image or document block).
+    """
     blocks: list[dict] = [{"type": "text", "text": content}] if content else []
     for item in media:
         mime = item["media_type"]
@@ -63,7 +78,8 @@ def _content_blocks(content: str, media: list[dict]) -> list[dict]:
 
 def _render_media(messages: list[Message]) -> list[Message]:
     """Turn any message carrying `media` into block-form content; text-only messages keep
-    their plain string content (cache-stable). Drops the engine-side `media` key."""
+    their plain string content (cache-stable). Drops the engine-side `media` key.
+    """
     out: list[Message] = []
     for m in messages:
         if m.get("media"):
@@ -79,7 +95,8 @@ def _mark_tail(messages: list[Message]) -> list[Message]:
     previous turn's breakpoint (the prefix is append-only) and re-reads everything before
     it from cache; only the newest exchange is fresh input. Handles both a plain string tail
     and an already-rendered block list (a media message) — the breakpoint rides its last
-    block either way."""
+    block either way.
+    """
     if not messages:
         return messages
     out = [dict(m) for m in messages]
@@ -116,7 +133,8 @@ def _strip_cache_control(body: dict) -> dict:
 
 class AnthropicEndpoint:
     """Anthropic Messages API adapter — METERED per-token billing. Schema enforcement via
-    a single forced tool-use; effort via `output_config`, degraded on a 400 naming it."""
+    a single forced tool-use; effort via `output_config`, degraded on a 400 naming it.
+    """
 
     def __init__(self, cfg: EndpointConfig):
         self.name = cfg.name
@@ -129,26 +147,20 @@ class AnthropicEndpoint:
 
     def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
         """The Messages API takes images AND PDFs (document blocks) natively when the resolved
-        model is multimodal."""
+        model is multimodal.
+        """
         return supports_media_type(media_type, multimodal=multimodal, pdf=True)
 
     def _api_key(self) -> str:
-        if self.api_key:                                  # inline key (UI-set) wins over a file
-            return self.api_key
-        from ..secrets import load_secrets                # then the central secrets store
-        if self.key_var and (k := load_secrets().get(self.key_var)):
-            return k
-        key = key_from_env_file(self.key_env_file, self.key_var) if self.key_env_file else None
-        if not key:
-            raise EndpointError(
-                f"{self.name}: no API key — paste one in Settings, or put "
-                f"`{self.key_var}=...` into {self.key_env_file}", auth=True
-            )
-        return key
+        # required=True: metered API — there is no keyless mode, a miss raises auth-flagged.
+        return resolve_api_key(name=self.name, api_key=self.api_key, key_var=self.key_var,
+                               key_env_file=self.key_env_file, required=True)
 
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
-                 timeout: int = DEFAULT_TIMEOUT, session: str | None = None,
+                 timeout: int = DEFAULT_TIMEOUT,
+                 session: str | None = None,  # noqa: ARG002 — protocol caching hint; the
+                 # always-on cache_control breakpoints make a per-run key unnecessary here
                  temperature: float | None = None) -> Completion:
         system, rest = split_system(messages)
         body: dict = {
@@ -156,7 +168,7 @@ class AnthropicEndpoint:
             "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
             "messages": _mark_tail(_render_media(merge_consecutive(rest))),
         }
-        temp = temperature if temperature is not None else self.temperature  # model wins, endpoint default
+        temp = temperature if temperature is not None else self.temperature  # model wins
         if temp is not None:
             body["temperature"] = temp
         if system:
@@ -194,19 +206,11 @@ class AnthropicEndpoint:
         return with_retries(call)
 
     def _post(self, body: dict, headers: dict, timeout: int) -> httpx.Response:
-        try:
-            return httpx.post(f"{self.base_url}/v1/messages", json=body,
-                              headers=headers, timeout=timeout)
-        except httpx.HTTPError as exc:
-            raise EndpointError(f"{self.name}: {exc}", retryable=True) from exc
+        return post_json(f"{self.base_url}/v1/messages", body, headers, timeout,
+                         name=self.name)
 
     def _parse(self, resp: httpx.Response) -> Completion:
-        if resp.status_code in (401, 403):
-            raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}", auth=True)
-        if resp.status_code in (429, 529) or resp.status_code >= 500:
-            raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}", retryable=True)
-        if resp.status_code != 200:
-            raise EndpointError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:300]}")
+        raise_for_status(resp, self.name)
         data = json_or_raise(resp, self.name)
         parsed, texts = None, []
         for block in data.get("content") or []:
@@ -214,16 +218,8 @@ class AnthropicEndpoint:
                 parsed = block.get("input")
             elif block.get("type") == "text":
                 texts.append(block.get("text", ""))
-        usage = data.get("usage") or {}
-        out_usage = {"in": int(usage.get("input_tokens") or 0),
-                     "out": int(usage.get("output_tokens") or 0)}
-        # Cache traffic (input_tokens EXCLUDES it on this API): reads ~0.1x, writes ~1.25x.
-        if usage.get("cache_read_input_tokens"):
-            out_usage["cached_in"] = int(usage["cache_read_input_tokens"])
-        if usage.get("cache_creation_input_tokens"):
-            out_usage["cache_write"] = int(usage["cache_creation_input_tokens"])
         return Completion(
             text="\n".join(texts),
             parsed=parsed if isinstance(parsed, dict) else None,
-            usage=out_usage,
+            usage=anthropic_usage(data.get("usage") or {}),  # reads ~0.1x, writes ~1.25x
         )

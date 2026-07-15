@@ -2,9 +2,9 @@
 name: Self audit
 slug: self-audit
 materialized_from:
-  slug: self-audit-code
-  commit: 4567d70
-  version: 3
+  slug: hand-authored
+  commit: ''
+  version: 1
 stages:
 - act-apply-fixes
 - analyse-findings
@@ -43,7 +43,7 @@ Fixed paths for this routine:
 - Daemon service (journal): `routine-scheduler.service`
 
 ## How to run this state machine
-1. `read_file state/phase.json` → `{state, ...}`. If missing/first run, start at `orient-baseline`.
+1. `read_file state/phase.json` → `{"phase": ...}`. If missing/first run, start at `orient-baseline`.
 2. `read_file` the module for the current state (`stages/<state>.md`) and follow it exactly.
 3. Each module ends by telling you the next state — write it to `state/phase.json` and continue
    until `record-close` finishes the run.
@@ -68,8 +68,9 @@ States, in order:
    (surface as decisions); fold in reviewer feedback.
 5. **act-apply-fixes** — edit smallest file(s) + tests on the LIVE tree; **test-gate**; green →
    commit/push/changelog, red → revert + record. Never touch the contracts in CLAUDE.md.
-6. **write-report** — rewrite `audit/report.json` (stable ids); file deferred `ask_user` for
-   pivotal decisions.
+6. **write-report** — rewrite `audit/report.json` (stable ids); pivotal decisions surface
+   through the report ONLY (never doubled as deferred asks — `ask_user` stays for questions
+   the report does not carry).
 7. **request-restart** — drop restart sentinel **iff** you committed code this run.
 8. **record-close** — advance the anchor, append the LEDGER, finish with a short summary.
 

@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from rsched import playbooks
 from rsched.config import load_server_config
-from rsched.endpoints import EndpointRegistry as _RealRegistry   # captured before any monkeypatch
+from rsched.endpoints import EndpointRegistry as _RealRegistry  # captured before any monkeypatch
 from rsched.web.app import create_app
 
 REPO = Path(__file__).resolve().parents[1]
@@ -171,7 +171,8 @@ def test_sync_installs_playbook_subfolders(tmp_path):
 # ---- distill + revise ---------------------------------------------------------------------------
 
 def test_distill_and_revise(server, monkeypatch):
-    from rsched import conversations as conv_mod, playbook_distill
+    from rsched import conversations as conv_mod
+    from rsched import playbook_distill
     from rsched.workflows.lint import lint_playbook_text
 
     d = conv_mod.create_conversation(server, slug="c-x",
@@ -195,7 +196,8 @@ def test_distill_and_revise(server, monkeypatch):
 
 
 def test_distill_refuses_empty(server, monkeypatch):
-    from rsched import conversations as conv_mod, playbook_distill
+    from rsched import conversations as conv_mod
+    from rsched import playbook_distill
     conv = conv_mod.create_conversation(server, slug="c-empty", first_message="do a thing")
     _patch_system_model(monkeypatch, {**_REPLY, "main": ""})
     with pytest.raises(ValueError):
@@ -275,6 +277,6 @@ def test_update_playbook_endpoint(client, monkeypatch):
 
 
 def test_update_playbook_requires_binding(client):
-    c, server = client
+    c, _server = client
     slug = c.post("/api/conversations", data={"text": "no playbook here"}).json()["slug"]
     assert c.put(f"/api/conversations/{slug}/playbook").status_code == 400

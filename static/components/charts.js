@@ -4,7 +4,7 @@
 // series beyond the sixth fold into a gray "other". Colors follow the ENTITY (a key
 // keeps its color when the range filter changes), text wears text tokens only.
 
-import { el } from "/static/util.js";
+import { el, fmtNum, fmtUsd } from "/static/util.js";
 
 export const SERIES_COLORS = ["#cc7f1f", "#3d8fe0", "#219e8e", "#a86fd1", "#d16a92", "#7fa03f"];
 export const OTHER_COLOR = "#56697e";
@@ -12,11 +12,11 @@ const MAX_SERIES = 6;
 
 export const METRICS = {
   runs: { label: "runs", of: () => 1, fmt: (v) => String(Math.round(v)) },
-  tokens: { label: "tokens", of: (r) => r.tokens_in + r.tokens_out, fmt: fmtTokens },
-  tokens_in: { label: "tokens in", of: (r) => r.tokens_in, fmt: fmtTokens },
-  tokens_out: { label: "tokens out", of: (r) => r.tokens_out, fmt: fmtTokens },
-  tokens_cached: { label: "tokens cached", of: (r) => r.tokens_cached || 0, fmt: fmtTokens },
-  cost: { label: "cost", of: (r) => r.cost, fmt: (v) => "$" + v.toFixed(v && v < 1 ? 3 : 2) },
+  tokens: { label: "tokens", of: (r) => r.tokens_in + r.tokens_out, fmt: fmtNum },
+  tokens_in: { label: "tokens in", of: (r) => r.tokens_in, fmt: fmtNum },
+  tokens_out: { label: "tokens out", of: (r) => r.tokens_out, fmt: fmtNum },
+  tokens_cached: { label: "tokens cached", of: (r) => r.tokens_cached || 0, fmt: fmtNum },
+  cost: { label: "cost", of: (r) => r.cost, fmt: fmtUsd },
   minutes: { label: "compute minutes", of: (r) => r.elapsed_s / 60, fmt: (v) => v.toFixed(v < 10 ? 1 : 0) + "m" },
 };
 export const GROUPS = {
@@ -24,14 +24,6 @@ export const GROUPS = {
   endpoint: "by endpoint", state: "by outcome",
 };
 export const RANGES = [7, 14, 30, 90];
-
-function fmtTokens(n) {
-  n = n || 0;
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
-  return String(Math.round(n));
-}
 
 function lastDays(n) {
   const out = [];

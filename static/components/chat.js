@@ -35,7 +35,6 @@ export function createChat(container, opts = {}) {
   container.append(root);
 
   let fold = null;         // { details, summary, transcript, steps } — the open work group
-  let sawWork = false;     // any action since the last reply → next finish gets a fold behind it
   let lastUser = "";       // the newest user message — the fork button pre-fills with it
 
   function ensureFold() {
@@ -47,7 +46,6 @@ export function createChat(container, opts = {}) {
       answer: opts.answer, loadSub: opts.loadSub, isLive: opts.isLive });
     root.append(details);
     fold = { details, summary, transcript, steps: 0, briefs: [] };
-    sawWork = true;
     return fold;
   }
 
@@ -129,7 +127,6 @@ export function createChat(container, opts = {}) {
         case "finish":
           closeFold(p.status);
           root.append(replyNode(ev));
-          sawWork = false;
           return;
         case "assistant_action":
           if (p.kind === "finish") return;   // the finish EVENT carries the reply
@@ -164,7 +161,5 @@ export function createChat(container, opts = {}) {
       }
     },
     finishOpenFold() { closeFold("ok"); },
-    clear() { root.replaceChildren(); fold = null; sawWork = false; },
-    get sawWork() { return sawWork; },
   };
 }

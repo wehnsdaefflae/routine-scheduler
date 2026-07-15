@@ -14,32 +14,34 @@ within-reply child (depth > 0) or a detached task itself must not spawn further 
 
 from __future__ import annotations
 
-from .run_context import RunContext
 from ..ids import background_task_id
 from ..paths import atomic_write_json
+from .run_context import RunContext
 
 
 def _is_root_conversation(ctx: RunContext) -> bool:
     try:
         conv_home = ctx.server.conversations_home.resolve()
         return ctx.depth == 0 and ctx.routine.dir.resolve().parent == conv_home
-    except OSError:
+    except Exception:  # a bare/degraded ctx (tests, tools) means "not a conversation"
         return False
 
 
 def is_detached_run(ctx: RunContext) -> bool:
     """True if THIS run is itself a detached background task (its dir sits under
     background_home). Such a run defers every ask (no user is watching it), so it never parks in
-    waiting_user and can't hold a self-update restart in the 'defer' state."""
+    waiting_user and can't hold a self-update restart in the 'defer' state.
+    """
     try:
         return ctx.routine.dir.resolve().parent == ctx.server.background_home.resolve()
-    except OSError:
+    except Exception:  # a bare/degraded ctx means "not a detached run"
         return False
 
 
 def handle_detach(ctx: RunContext, action: dict) -> dict:
     """Write the detached-task intent (or reject when not a root conversation). Returns the
-    observation dict the loop records and renders."""
+    observation dict the loop records and renders.
+    """
     if not _is_root_conversation(ctx):
         return {"kind": "detach", "rejected": True,
                 "reason": "detach is only available from a top-level conversation (not a scheduled "

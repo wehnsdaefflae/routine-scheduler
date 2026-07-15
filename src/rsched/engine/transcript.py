@@ -10,8 +10,9 @@ from __future__ import annotations
 import gzip
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import IO, Callable
+from typing import IO
 
 from ..ids import now_iso
 
@@ -27,13 +28,16 @@ class Transcript:
     """Append-side handle. One instance per (sub)run; the engine is the only writer.
 
     `on_event` is an optional observer called with every event object right after it hits
-    disk — the CLI's live stream. It can only watch; what lands in the file is fixed here."""
+    disk — the CLI's live stream. It can only watch; what lands in the file is fixed here.
+    """
 
     def __init__(self, path: Path, on_event: Callable[[dict], None] | None = None):
         self.path = path
         self.on_event = on_event
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._fh: IO[str] = open(path, "a", encoding="utf-8", buffering=1)  # line-buffered
+        # Long-lived line-buffered append handle by design (closed via close()); a
+        # with-block per event would re-open the file on every write.
+        self._fh: IO[str] = path.open("a", encoding="utf-8", buffering=1)
 
     def write(self, obj: dict) -> None:
         self._fh.write(json.dumps(obj, ensure_ascii=False) + "\n")
@@ -49,7 +53,8 @@ class Transcript:
 
     def event(self, type_: str, payload: dict, *, turn: int | None = None,
               usage: dict | None = None, **extra) -> dict:
-        assert type_ in EVENT_TYPES, f"unknown transcript event type {type_!r}"
+        # engine-internal invariant (the vocabulary is a contract), not input validation
+        assert type_ in EVENT_TYPES, f"unknown transcript event type {type_!r}"  # noqa: S101
         obj: dict = {"ts": now_iso(), "type": type_, "payload": payload}
         if turn is not None:
             obj["turn"] = turn
@@ -65,6 +70,15 @@ class Transcript:
         except OSError:
             pass
 
+    def __del__(self) -> None:
+        # Backstop, not the contract: owners close explicitly (the loop's finally, subrun
+        # exit). This keeps a Transcript that never got a run — a rejected child, a test
+        # fixture — from leaking its append handle.
+        try:
+            self.close()
+        except Exception:
+            pass
+
 
 def _open_maybe_gz(path: Path):
     """Returns (fh, is_gz). Falls back to <path>.gz when the plain file is rotated away."""
@@ -72,13 +86,14 @@ def _open_maybe_gz(path: Path):
         return gzip.open(path, "rt", encoding="utf-8"), True
     if not path.exists() and path.with_suffix(path.suffix + ".gz").exists():
         return gzip.open(path.with_suffix(path.suffix + ".gz"), "rt", encoding="utf-8"), True
-    return open(path, "r", encoding="utf-8"), False
+    return path.open(encoding="utf-8"), False
 
 
 def read_events(path: Path, offset: int = 0) -> tuple[list[dict], int]:
     """Read complete JSONL lines from byte `offset`. Returns (events, new_offset).
     A partial final line (mid-write) is held back — new_offset stops before it, so a
-    concurrent reader never sees broken JSON. Gzipped transcripts only support offset 0."""
+    concurrent reader never sees broken JSON. Gzipped transcripts only support offset 0.
+    """
     events: list[dict] = []
     try:
         fh, is_gz = _open_maybe_gz(path)

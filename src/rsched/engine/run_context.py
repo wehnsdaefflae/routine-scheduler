@@ -9,19 +9,28 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from ..config import RoutineConfig, ServerConfig
 from ..endpoints import EndpointRegistry
-from ..ids import now_iso, run_id as make_run_id
+from ..ids import now_iso
+from ..ids import run_id as make_run_id
 from ..paths import atomic_write_json
 from .budget import Budget, BudgetLedger
 from .transcript import Transcript
+
+if TYPE_CHECKING:
+    from ..grants import GrantPolicy
+
+# Sentinel default for "argument not passed" where None is a meaningful value.
+_UNSET: Any = "\0"
 
 
 @dataclass
 class Budgets:
     """A run's hard ceilings (turns, wall clock, tokens, subruns, ask timeout) — checked
-    at every turn boundary; children get half the parent's remainder."""
+    at every turn boundary; children get half the parent's remainder.
+    """
 
     max_turns: int
     max_wall_clock_min: int   # -1 = unlimited: lifts the wall-clock ceiling (turns still bound)
@@ -34,7 +43,7 @@ class Budgets:
                                # (a conversation's whole life); max_turns bounds one window
 
     @classmethod
-    def from_config(cls, budgets: dict) -> "Budgets":
+    def from_config(cls, budgets: dict) -> Budgets:
         return cls(**budgets)
 
     def ledger(self) -> BudgetLedger:
@@ -42,7 +51,8 @@ class Budgets:
         place the run/window/subtask/subrun checks all share — turns, the conversation-life
         cap, wall clock, tokens, cost — in the order they are checked. The structural knobs
         (max_subruns/max_subrun_depth/ask_timeout_min) are not stop-over-time budgets and stay
-        plain fields."""
+        plain fields.
+        """
         return BudgetLedger([
             Budget("turns", self.max_turns),
             Budget("total_turns", self.max_total_turns),
@@ -56,7 +66,8 @@ class Budgets:
 class RunContext:
     """Everything one run carries: identity (routine, ts, dir), collaborators (registry,
     transcript), budgets, and live state mirrored to `status.json` (single writer: the
-    engine process)."""
+    engine process).
+    """
 
     routine: RoutineConfig
     server: ServerConfig
@@ -68,10 +79,10 @@ class RunContext:
     depth: int = 0
     parent_run_id: str | None = None
     sub_counter: list[int] = field(default_factory=lambda: [0])  # shared across the whole tree
-    # The run's grant policy (grants.GrantPolicy), set by EngineLoop from the routine's
-    # capabilities mapping (+ the library's requires: index for denial wording).
+    # The run's grant policy, set by EngineLoop from the routine's capabilities mapping
+    # (+ the library's requires: index for denial wording).
     # None (direct construction) = unrestricted.
-    grants: object | None = None
+    grants: GrantPolicy | None = None
 
     turn: int = 0
     phase: str = ""
@@ -82,8 +93,8 @@ class RunContext:
     usage_base: dict = field(default_factory=dict)
     state: str = "starting"
     question: dict | None = None
-    main_model: str = ""              # "<endpoint>/<model>" resolved each turn (surfaced in status.json)
-    budget_base_turn: int = 0         # turns before this count against a prior budget window (resume)
+    main_model: str = ""              # "<endpoint>/<model>" resolved each turn (in status.json)
+    budget_base_turn: int = 0         # turns before this count against a prior window (resume)
     schema_retries: int = 0           # cumulative schema-violation retries this run (telemetry)
     schema_forcefails: int = 0        # turns that exhausted every schema attempt (telemetry)
     _started_mono: float = field(default_factory=time.monotonic)
@@ -143,7 +154,8 @@ class RunContext:
         """A snapshot of live consumption per budgeted resource, in each limit's own unit —
         the input to every ledger check. Consumption lives HERE (single writer), never in the
         ledger. `turns` is window-scoped (a resume gets a fresh window via budget_base_turn);
-        `total_turns` is the cumulative whole-conversation count."""
+        `total_turns` is the cumulative whole-conversation count.
+        """
         return {
             "turns": self.turn - self.budget_base_turn,
             "total_turns": self.turn,
@@ -157,7 +169,8 @@ class RunContext:
 
     def budget_warning(self) -> str | None:
         """The 85% line on any budget — the run's cue to wind down DELIBERATELY (record, then
-        an authored finish) instead of being cut off mid-work by budget_violation."""
+        an authored finish) instead of being cut off mid-work by budget_violation.
+        """
         return self.budgets.ledger().warning(self.meter())
 
     def tokens_remaining(self) -> int | None:
@@ -170,7 +183,8 @@ class RunContext:
         (an unlimited time/token/cost budget stays unlimited); the conversation-life cap
         (max_total_turns) is NOT inherited, structural knobs are copied. `overrides` pins a
         resource to an absolute limit — a subtask's explicit `turns` cap. Uses the unified
-        allocator (BudgetLedger.allocate)."""
+        allocator (BudgetLedger.allocate).
+        """
         alloc = self.budgets.ledger().allocate(self.meter(), fraction=0.5, overrides=overrides)
         lim = {b.resource: int(b.limit) for b in alloc.budgets}
         b = self.budgets
@@ -184,7 +198,7 @@ class RunContext:
             max_cost=lim["cost"],
         )
 
-    def write_status(self, state: str | None = None, question: dict | None = "\0") -> None:
+    def write_status(self, state: str | None = None, question: dict | None = _UNSET) -> None:
         """Update status.json (root runs only — subruns report through the parent transcript)."""
         if state is not None:
             self.state = state

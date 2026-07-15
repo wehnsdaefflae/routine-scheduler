@@ -8,6 +8,7 @@ import { api } from "/static/api.js";
 import { forgetField } from "/static/formpersist.js";
 import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, skeleton, toast, when } from "/static/util.js";
+import { TERMINAL } from "/static/states.js";
 
 const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["deferred", "Deferred"], ["meta", "Meta"]];
 const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest", "oldest"], ["routine", "routine"]];
@@ -163,7 +164,7 @@ export async function render(view) {
     const runBits = q.run_id ? [
       el("a", { class: "btn small", href: `#/run/${q.run_id}` }, "view run"),
       q.run_state ? chip(q.run_state, q.run_state) : null,
-      q.run_state && ["finished", "failed", "aborted"].includes(q.run_state)
+      q.run_state && TERMINAL.has(q.run_state)
         ? el("span", { class: "faint small" }, "run already ended — the answer feeds the next one") : null,
     ] : [];
     const controls = el("div", {},

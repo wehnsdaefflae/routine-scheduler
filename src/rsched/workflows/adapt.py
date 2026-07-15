@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import date
 from pathlib import Path
 
@@ -19,23 +18,12 @@ import frontmatter
 from ..ids import is_slug
 from .library import head_commit, read_workflow
 
-# One `### improve-<lens>` section: its heading line plus everything up to the next heading.
-_IMPROVE_SECTION_RE = re.compile(r"(?m)^#{2,4}\s*`?improve-([a-z-]+)`?\b.*\n(?:(?!#{1,4}\s).*\n?)*")
-
-
-def strip_inactive_improve(text: str, active: list[str] | set[str]) -> str:
-    """Deterministic belt-and-braces after the generator LLM: drop `### improve-<lens>`
-    sections whose trait was NOT selected for this routine. The decompose prompt asks the
-    model to omit them, but LLM output isn't guaranteed."""
-    active = set(active)
-    return _IMPROVE_SECTION_RE.sub(
-        lambda m: m.group(0) if f"improve-{m.group(1)}" in active else "", text)
-
 
 def dump_markdown(meta: dict, body: str) -> str:
-    """meta + markdown body → the main.md document: '---\\n<yaml>\\n---\\n\\n<body>' with key
+    r"""Meta + markdown body → the main.md document: '---\n<yaml>\n---\n\n<body>' with key
     order preserved and exactly one trailing newline. The single writer-side counterpart of
-    frontmatter.parse, so materialized files always round-trip."""
+    frontmatter.parse, so materialized files always round-trip.
+    """
     post = frontmatter.Post(body.strip())
     post.metadata = dict(meta)
     return frontmatter.dumps(post, sort_keys=False) + "\n"
@@ -55,12 +43,13 @@ def _routine_frontmatter(meta: dict, slug: str, provenance: dict, adapted: str) 
 
 def materialize(home: Path, slug: str, *, today: str | None = None) -> tuple[str, dict]:
     """Single-file workflow → the routine's main.md content (whole workflow rendered to markdown).
-    The Python pattern is rendered to markdown — the orchestrator acts it out."""
+    The Python pattern is rendered to markdown — the orchestrator acts it out.
+    """
     from .pyworkflow import render_markdown
 
     meta, _, raw = read_workflow(home, slug)
     provenance = {"slug": slug, "commit": head_commit(home), "version": meta.get("version", 0)}
-    adapted = today or date.today().isoformat()
+    adapted = today or date.today().isoformat()  # noqa: DTZ011 — a local-date stamp is the point
     return dump_markdown(_routine_frontmatter(meta, slug, provenance, adapted),
                          render_markdown(raw, meta)), provenance
 
@@ -70,11 +59,14 @@ DECOMPOSE_SCHEMA = {
     "required": ["main", "stages"],
     "properties": {
         "main": {"type": "string",
-                 "description": "main.md body: the entry state-machine that routes into the stages"},
+                 "description":
+                     "main.md body: the entry state-machine that routes into the stages"},
         "stages": {"type": "array", "items": {
             "type": "object", "additionalProperties": False, "required": ["name", "body"],
-            "properties": {"name": {"type": "string", "description": "kebab-case stage/state name"},
-                           "body": {"type": "string", "description": "the stage's markdown body"}}}},
+            "properties": {"name": {"type": "string",
+                                    "description": "kebab-case stage/state name"},
+                           "body": {"type": "string",
+                                    "description": "the stage's markdown body"}}}},
         "traits": {"type": "array", "items": {
             "type": "object", "additionalProperties": False, "required": ["slug", "body"],
             "properties": {"slug": {"type": "string",
@@ -84,7 +76,8 @@ DECOMPOSE_SCHEMA = {
     },
 }
 
-_DECOMPOSE_PROMPT = """You are generating a ROUTINE by applying a workflow pattern to a specific task.
+_DECOMPOSE_PROMPT = """\
+You are generating a ROUTINE by applying a workflow pattern to a specific task.
 
 WORKFLOW (a Python control-flow pattern — a precise depiction you do NOT execute):
 ---
@@ -104,20 +97,21 @@ agent will follow one action per turn:
   {{"phase": "<stage-name>"}}) as it advances from stage to stage. It keeps a `## Run flow` section
   and a `## Completion criteria` section. `## Run flow` is a NUMBERED list; every item LEADS with a
   **bold** stage name that is SPECIFIC to this task (never a generic workflow or function name) and
-  MATCHES a stage filename exactly — these bold names are the live progress diagram the user watches,
-  so make them read as this task's real steps. It names each stage file as `stages/<name>.md`.
-- "stages": one entry per step/state of the workflow (kebab-case `name` + markdown `body`), concrete
-  and specific to THIS task. main.md must reference every stage you create by its name, and its
-  `## Run flow` must list them in order with matching bold names.
+  MATCHES a stage filename exactly — these bold names are the live progress diagram the user
+  watches, so make them read as this task's real steps. It names each stage file as
+  `stages/<name>.md`.
+- "stages": one entry per step/state of the workflow (kebab-case `name` + markdown `body`),
+  concrete and specific to THIS task. main.md must reference every stage you create by its name,
+  and its `## Run flow` must list them in order with matching bold names.
 
 Turn each of the pattern's steps (the `main()` control flow and the functions it calls) into
 concrete prose for THIS task — never leave Python in the output.
 
 SELF-CONTAINED — the running agent acts ONLY from main.md and the stage modules; the INSTRUCTION
-above will NOT exist at run time. So INLINE every concrete detail the task needs directly into them:
-exact values, thresholds, names, formats, category lists, file paths, URLs, output shapes, completion
-criteria. Never write "as the instruction says" or otherwise defer to the instruction — it is the
-SEED you are compiling from, not a document the run can read.
+above will NOT exist at run time. So INLINE every concrete detail the task needs directly into
+them: exact values, thresholds, names, formats, category lists, file paths, URLs, output shapes,
+completion criteria. Never write "as the instruction says" or otherwise defer to the instruction —
+it is the SEED you are compiling from, not a document the run can read.
 
 Return ONLY the JSON object {{main, stages}}."""
 
@@ -144,7 +138,8 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
     Returns {'main': <body>, 'stages': {name: body}, 'traits': {slug: adapted body}}. Degrades to
     the whole workflow rendered as main.md (no stages, no adapted traits — the caller copies
     library traits verbatim) on any failure, so generation without a usable endpoint still yields
-    a valid, self-contained markdown routine."""
+    a valid, self-contained markdown routine.
+    """
     from .. import library_docs
 
     meta, _, raw = read_workflow(server.library_home, slug)
@@ -177,9 +172,6 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
             raise ValueError("empty main")
         adapted = {t["slug"]: str(t["body"]).strip() for t in (data.get("traits") or [])
                    if t.get("slug") in trait_bodies and str(t.get("body", "")).strip()}
-        if traits is not None:
-            main = strip_inactive_improve(main, traits)
-            stages = {k: strip_inactive_improve(v, traits) for k, v in stages.items()}
         return {"main": main, "stages": stages, "traits": adapted}
     except Exception:
         from .pyworkflow import render_markdown

@@ -22,7 +22,9 @@ PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-z0-9_]+)\s*\}\}")
 
 def lint_workflow_py(source: str, *, filename: str, trait_slugs: list[str]) -> list[str]:
     """Validate a Python-workflow file: parseable, META completeness, slug↔filename, resolvable
-    includes, a main() entry, and PHASES/COMPLETION (the Python equivalents of the required sections)."""
+    includes, a main() entry, and PHASES/COMPLETION (the Python equivalents of the required
+    sections).
+    """
     from .pyworkflow import REQUIRED_META, parse_py
 
     try:
@@ -31,10 +33,9 @@ def lint_workflow_py(source: str, *, filename: str, trait_slugs: list[str]) -> l
         return [f"{filename}: invalid Python ({exc.msg} at line {exc.lineno})"]
     except ValueError as exc:
         return [f"{filename}: {exc}"]
-    problems: list[str] = []
-    for key in REQUIRED_META:
-        if key not in meta or meta[key] in (None, ""):
-            problems.append(f"{filename}: META missing {key!r}")
+    problems: list[str] = [f"{filename}: META missing {key!r}"
+                           for key in REQUIRED_META
+                           if key not in meta or meta[key] in (None, "")]
     slug = str(meta.get("slug", ""))
     if slug and not is_slug(slug):
         problems.append(f"{filename}: slug {slug!r} is not kebab-case")
@@ -45,9 +46,8 @@ def lint_workflow_py(source: str, *, filename: str, trait_slugs: list[str]) -> l
         problems.append(f"{filename}: tags must be a list")
     elif len([t for t in (tags or []) if isinstance(t, str) and t.strip()]) < 3:
         problems.append(f"{filename}: needs at least 3 tags")
-    for trait in meta.get("includes") or []:
-        if trait not in trait_slugs:
-            problems.append(f"{filename}: include {trait!r} does not resolve to traits/{trait}.md")
+    problems.extend(f"{filename}: include {trait!r} does not resolve to traits/{trait}.md"
+                    for trait in meta.get("includes") or [] if trait not in trait_slugs)
     if not meta.get("has_main"):
         problems.append(f"{filename}: no top-level main() function (the per-run control flow)")
     if not meta.get("phases"):
@@ -60,21 +60,24 @@ def lint_workflow_py(source: str, *, filename: str, trait_slugs: list[str]) -> l
 def lint_trait_text(raw: str, *, filename: str) -> list[str]:
     """A trait is pure practice prose: titled, tagged, non-trivial — and NEVER carries
     capabilities (requires belongs to permissions; a trait carrying one would silently do
-    nothing, which is worse than an error)."""
+    nothing, which is worse than an error).
+    """
     problems = []
     try:
         meta, body = frontmatter.parse(raw)
     except yaml.YAMLError as exc:
         return [f"{filename}: invalid YAML frontmatter: {exc}"]
     if not body.strip().startswith("# trait:"):
-        problems.append(f"{filename}: body must start with '# trait: <name> — <summary>' (after any frontmatter)")
+        problems.append(f"{filename}: body must start with '# trait: <name> — <summary>' "
+                        "(after any frontmatter)")
     if "grants" in meta or "requires" in meta:
         problems.append(f"{filename}: traits must not carry grants/requires — move the "
                         "capability to a permission doc under permissions/")
     tags = meta.get("tags")
+    tag_list = tags if isinstance(tags, list) else []
     if "tags" in meta and not isinstance(tags, list):
         problems.append(f"{filename}: tags must be a list")
-    elif len([t for t in (tags or []) if isinstance(t, str) and t.strip()]) < 3:
+    elif len([t for t in tag_list if isinstance(t, str) and t.strip()]) < 3:
         problems.append(f"{filename}: needs at least 3 tags")
     if len(raw.strip().splitlines()) < 4:
         problems.append(f"{filename}: suspiciously short for a practice module")
@@ -84,7 +87,8 @@ def lint_trait_text(raw: str, *, filename: str) -> list[str]:
 def lint_permission_text(raw: str, *, filename: str) -> list[str]:
     """A permission is a conduct doc: titled, with a well-formed `requires:` key naming
     the capabilities its instructions presume, and a SHORT body (it doubles as the
-    prompt's capability note when held)."""
+    prompt's capability note when held).
+    """
     from ..grants import normalize_capabilities
 
     problems = []
@@ -93,7 +97,8 @@ def lint_permission_text(raw: str, *, filename: str) -> list[str]:
     except yaml.YAMLError as exc:
         return [f"{filename}: invalid YAML frontmatter: {exc}"]
     if not body.strip().startswith("# permission:"):
-        problems.append(f"{filename}: body must start with '# permission: <name> — <summary>' (after any frontmatter)")
+        problems.append(f"{filename}: body must start with '# permission: <name> — <summary>' "
+                        "(after any frontmatter)")
     if "grants" in meta:
         problems.append(f"{filename}: grants: was renamed — permissions declare requires: "
                         "(the capabilities their instructions presume); the capabilities "
@@ -112,15 +117,16 @@ def lint_permission_text(raw: str, *, filename: str) -> list[str]:
 
 def lint_playbook_text(raw: str, *, filename: str = "MAIN.md") -> list[str]:
     """A playbook's MAIN.md: front matter (slug/title/one-line when/tags/axis) + an imperative
-    '## Instructions' body. It is a reusable conversation brief, not a control-flow pattern."""
-    problems = []
+    '## Instructions' body. It is a reusable conversation brief, not a control-flow pattern.
+    """
+    problems: list[str] = []
     try:
         meta, body = frontmatter.parse(raw)
     except yaml.YAMLError as exc:
         return [f"{filename}: invalid YAML frontmatter: {exc}"]
-    for key in ("slug", "title", "when", "axis"):
-        if not str(meta.get(key) or "").strip():
-            problems.append(f"{filename}: front matter missing {key!r}")
+    problems.extend(f"{filename}: front matter missing {key!r}"
+                    for key in ("slug", "title", "when", "axis")
+                    if not str(meta.get(key) or "").strip())
     slug = str(meta.get("slug") or "")
     if slug and not is_slug(slug):
         problems.append(f"{filename}: slug {slug!r} is not kebab-case")
@@ -146,15 +152,16 @@ def lint_materialized_text(raw: str, *, filename: str = "main.md") -> list[str]:
     leftovers = PLACEHOLDER_RE.findall(body)
     if leftovers:
         problems.append(f"{filename}: unresolved placeholders: {sorted(set(leftovers))}")
-    for section in ("## Run flow", "## Completion criteria"):
-        if section not in body:
-            problems.append(f"{filename}: missing section {section!r}")
+    problems.extend(f"{filename}: missing section {section!r}"
+                    for section in ("## Run flow", "## Completion criteria")
+                    if section not in body)
     return problems
 
 
 def lint_all(home: Path) -> dict[str, list[str]]:
     """path-relative-name → problems. Empty lists mean clean. `home` is the library repo root
-    (workflows/, traits/ and permissions/ subdirs)."""
+    (workflows/, traits/ and permissions/ subdirs).
+    """
     from .. import library_docs
 
     results: dict[str, list[str]] = {}

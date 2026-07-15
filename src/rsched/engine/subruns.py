@@ -31,7 +31,8 @@ class SubrunManager:
     """The parent loop's window onto its children: `spawn` (a parallel subroutine), `subtask` (a
     sequential subtask the parent blocks on), monitor (`subruns`/`wait`), `kill`, auto-announce
     exits at turn boundaries. Both schedulers share the budget/depth/parallel caps and the
-    child-run executor — a subtask and a subroutine differ only in scheduling."""
+    child-run executor — a subtask and a subroutine differ only in scheduling.
+    """
 
     def __init__(self, parent_loop):
         self.parent = parent_loop
@@ -44,7 +45,8 @@ class SubrunManager:
 
     def _cap_reason(self, *, noun: str) -> str | None:
         """Why a new child cannot start now, or None. Budget + depth bound the WHOLE tree
-        (parallel and sequential children alike); the parallel cap bounds concurrency."""
+        (parallel and sequential children alike); the parallel cap bounds concurrency.
+        """
         ctx = self.parent.ctx
         if ctx.sub_counter[0] >= ctx.budgets.max_subruns:
             return f"{noun} budget ({ctx.budgets.max_subruns}) exhausted"
@@ -58,12 +60,13 @@ class SubrunManager:
 
     def _start(self, sub: Subrun) -> None:
         """Register the child and run its EngineLoop in a daemon thread; its exit sets the
-        completion events so a blocked parent wakes at once."""
+        completion events so a blocked parent wakes at once.
+        """
         def run_child() -> None:
             try:
                 sub.status = sub.loop.run()
                 sub.summary = sub.loop.final_summary
-            except Exception as exc:  # noqa: BLE001 — a child crash must never kill the parent
+            except Exception as exc:
                 sub.status = "failed"
                 sub.summary = f"sub-routine crashed: {exc}"
             finally:
@@ -100,7 +103,8 @@ class SubrunManager:
         never by monopolizing this turn. The parent keeps sequential order by WAITING for it (a
         responsive `wait n=N`, which yields to user input) before starting the next subtask, and
         folds the announced result into that next brief. `turns` pins its budget (else half the
-        parent's remainder)."""
+        parent's remainder).
+        """
         ctx = self.parent.ctx
         default_label = f"task-{ctx.sub_counter[0] + 1}"
         if reason := self._cap_reason(noun="child-task"):
@@ -120,7 +124,8 @@ class SubrunManager:
         routine holds the `workflows: generate` capability and the budget allows, DRAFT a new
         pattern for the subtask's brief (folding the generation call's spend into the run via
         ctx.add_usage); otherwise fall back to the default pattern with a note. Returns
-        (action, note)."""
+        (action, note).
+        """
         if action.get("workflow") != "generate":
             return action, ""
         ctx = self.parent.ctx
@@ -132,14 +137,15 @@ class SubrunManager:
         remaining = ctx.tokens_remaining()
         if remaining is not None and remaining < GEN_FLOOR_TOKENS:
             action["workflow"] = None
-            return action, "skipped workflow generation — token budget nearly spent; used the default pattern"
+            return action, ("skipped workflow generation — token budget nearly spent; "
+                            "used the default pattern")
         try:
             from ..workflows.generate import generate
 
             slug, _ = generate(ctx.server, action["prompt"], on_usage=ctx.add_usage)
             action["workflow"] = slug
             return action, f"generated a new pattern '{slug}' for this subtask"
-        except Exception as exc:  # noqa: BLE001 — generation is best-effort; never fail the subtask
+        except Exception as exc:
             action["workflow"] = None
             return action, f"workflow generation failed ({exc}) — used the default pattern"
 
@@ -174,14 +180,14 @@ class SubrunManager:
                                       + int(sub.ctx.usage.get("out", 0)))
 
     def status_table(self) -> dict:
-        rows = []
-        for sub in self.subruns.values():
-            rows.append({"n": sub.n, "label": sub.label, "workflow": sub.workflow,
-                         "mode": sub.mode,
-                         "state": sub.status if sub.done.is_set() else "running",
-                         "turns": sub.ctx.turn,
-                         "elapsed_s": round(time.monotonic() - sub.started_mono, 1),
-                         "summary_head": truncate(sub.summary, cap=200)[0] if sub.done.is_set() else ""})
+        rows = [{"n": sub.n, "label": sub.label, "workflow": sub.workflow,
+                 "mode": sub.mode,
+                 "state": sub.status if sub.done.is_set() else "running",
+                 "turns": sub.ctx.turn,
+                 "elapsed_s": round(time.monotonic() - sub.started_mono, 1),
+                 "summary_head": (truncate(sub.summary, cap=200)[0]
+                                  if sub.done.is_set() else "")}
+                for sub in self.subruns.values()]
         return {"kind": "subruns", "count": len(rows), "rows": rows}
 
     def kill(self, n: int) -> dict:
@@ -199,7 +205,8 @@ class SubrunManager:
         """Block until a target child (n), all children, or any unreported exit. Wakes on the
         child's completion event, not on a poll tick — and an exit the parent has not been
         told about yet satisfies an any-wait immediately (a child that finished while the
-        parent was composing this very action must not cost a full timeout)."""
+        parent was composing this very action must not cost a full timeout).
+        """
         n = action.get("n")
         want_all = bool(action.get("all"))
         timeout = float(action.get("timeout_s") or 600)
@@ -225,13 +232,16 @@ class SubrunManager:
             # back to the turn loop (which drains it and lets the parent reply) instead of
             # freezing the conversation until the child finishes — the child keeps running and
             # is announced when it exits. Root runs only (children don't drain the routine inbox).
-            if self.parent.ctx.depth == 0 and inbox.has_pending_messages(self.parent.ctx.routine.dir):
+            if (self.parent.ctx.depth == 0
+                    and inbox.has_pending_messages(self.parent.ctx.routine.dir)):
                 finished = self.take_finished_unannounced()
                 return {"kind": "wait", "interrupted_by_user": True, "timed_out": False,
                         "finished": self._finished_rows(finished),
-                        "still_running": [s.n for s in self.subruns.values() if not s.done.is_set()]}
+                        "still_running": [s.n for s in self.subruns.values()
+                                          if not s.done.is_set()]}
             self.exit_event.clear()
-            if satisfied():   # re-check after clear: an exit between check and wait must not be lost
+            # re-check after clear: an exit between check and wait must not be lost
+            if satisfied():
                 break
             self.exit_event.wait(timeout=min(poll_s, max(0.0, deadline - time.monotonic())))
         sat = satisfied()   # before collection below flips `announced` on the exits we report

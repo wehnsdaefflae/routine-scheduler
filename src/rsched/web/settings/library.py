@@ -1,5 +1,6 @@
 """The library repository (ONE git repo: workflows/ + traits/ + permissions/ + utils/): status,
-remote wiring, and first-run provisioning (clone existing, or seed + create)."""
+remote wiring, and first-run provisioning (clone existing, or seed + create).
+"""
 
 from __future__ import annotations
 
@@ -18,7 +19,8 @@ LIBRARY_NAME = "library"
 
 def _has_content(home) -> bool:
     """True once the library actually holds items — the daemon auto-git-inits an empty
-    scaffold, so a bare .git is NOT 'set up'. This drives the provision-vs-remote UI."""
+    scaffold, so a bare .git is NOT 'set up'. This drives the provision-vs-remote UI.
+    """
     from ... import library_docs, utils_lib
     from ...workflows.library import list_workflows
     try:
@@ -48,12 +50,14 @@ def set_library_remote(request: Request, name: str, body: RemoteBody) -> dict:
     update_config(request, lambda raw: raw.update(libraries_remote=body.remote))
     s.libraries_remote = body.remote
     # point the local repo's origin at it (best-effort)
-    result = {"ok": True, "pushed": False}
+    result: dict = {"ok": True, "pushed": False}
     if body.remote and (home / ".git").is_dir():
-        subprocess.run(["git", "-C", str(home), "remote", "remove", "origin"], capture_output=True)
-        subprocess.run(["git", "-C", str(home), "remote", "add", "origin", body.remote], capture_output=True)
+        subprocess.run(["git", "-C", str(home), "remote", "remove", "origin"],
+                       capture_output=True, check=False)
+        subprocess.run(["git", "-C", str(home), "remote", "add", "origin", body.remote],
+                       capture_output=True, check=False)
         push = subprocess.run(["git", "-C", str(home), "push", "-u", "origin", "main"],
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, timeout=60, check=False)
         result["pushed"] = push.returncode == 0
         if push.returncode != 0:
             result["push_error"] = push.stderr.strip()[:200]
@@ -81,14 +85,18 @@ def provision_library(request: Request, name: str, body: Provision) -> dict:
         raise HTTPException(400, "the `gh` CLI is not available")
     if body.mode == "clone":
         home.mkdir(parents=True, exist_ok=True)
-        for item in list(home.iterdir()):          # drop any empty scaffold so the clone target is clean
+        for item in list(home.iterdir()):   # drop any empty scaffold: clean clone target
             shutil.rmtree(item) if item.is_dir() else item.unlink()
         r = subprocess.run(["gh", "repo", "clone", repo, str(home)],
-                           capture_output=True, text=True, timeout=120)
+                           capture_output=True, text=True, timeout=120, check=False)
         if r.returncode != 0:
-            raise HTTPException(502, f"clone failed (connect GitHub first?): {r.stderr.strip()[:300]}")
-        for k, v in (("user.name", "routine-scheduler"), ("user.email", "noreply@routine-scheduler.local")):
-            subprocess.run(["git", "-C", str(home), "config", k, v], capture_output=True)  # so later commits work
+            raise HTTPException(
+                502, f"clone failed (connect GitHub first?): {r.stderr.strip()[:300]}")
+        for k, v in (("user.name", "routine-scheduler"),
+                     ("user.email", "noreply@routine-scheduler.local")):
+            # so later commits work
+            subprocess.run(["git", "-C", str(home), "config", k, v],
+                           capture_output=True, check=False)
         bootstrap.install_push_hook(home)
     elif body.mode == "create":
         try:
@@ -96,9 +104,11 @@ def provision_library(request: Request, name: str, body: Provision) -> dict:
         except OSError as exc:
             raise HTTPException(500, f"could not seed the library: {exc}") from exc
         r = subprocess.run(["gh", "repo", "create", repo, "--private", "--source", str(home),
-                            "--remote", "origin", "--push"], capture_output=True, text=True, timeout=120)
+                            "--remote", "origin", "--push"],
+                           capture_output=True, text=True, timeout=120, check=False)
         if r.returncode != 0:
-            raise HTTPException(502, f"repo create failed (connect GitHub first?): {r.stderr.strip()[:300]}")
+            raise HTTPException(
+                502, f"repo create failed (connect GitHub first?): {r.stderr.strip()[:300]}")
     else:
         raise HTTPException(400, "mode must be 'clone' or 'create'")
     return {"ok": True, "mode": body.mode, "remote": remote_of(home)}

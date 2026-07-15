@@ -16,10 +16,11 @@ export async function render(view, query = {}) {
 
   // Section nav — a visible location indicator within Settings; the active sub-section is in the
   // URL (#/settings?section=endpoints), so a deep link / reload lands on the same section.
-  const SECTIONS = [["github", "GitHub"], ["secrets", "Secrets"], ["libraries", "Library"],
-                    ["library-sync", "Library sync"],
+  // Endpoints (with the model catalog + system model) leads: it is the first-run critical path.
+  const SECTIONS = [["endpoints", "Endpoints"], ["github", "GitHub"], ["secrets", "Secrets"],
+                    ["libraries", "Library"], ["library-sync", "Library sync"],
                     ["source", "Source"], ["server", "Server"],
-                    ["notifications", "Notifications"], ["endpoints", "Endpoints"]];
+                    ["notifications", "Notifications"]];
   const secNav = el("div", { class: "filterbar" });
   view.append(secNav);
   const sectionHead = (id, title) => el("h2", { id: `sec-${id}` }, title);
@@ -67,11 +68,18 @@ export async function render(view, query = {}) {
     banner.append(
       el("strong", {}, "First-run setup"),
       el("div", { class: "muted mt small" },
-        "Add a model provider (LLM endpoints, below), connect GitHub, and point at your repos — ",
+        "Add a model provider (LLM endpoints, at the top), connect GitHub, and point at your repos — ",
         "Test each remote. When you're set:"),
       el("div", { class: "row mt" }, done));
     view.append(banner);
   }
+
+  // -- LLM endpoints + model catalog + system model (settings-endpoints.js) --------
+  // First in the DOM: without an endpoint, a model, and the system model nothing else works.
+  // renderEndpoints appends its containers synchronously, so calling it un-awaited keeps the
+  // DOM order while its data loads in parallel with the sections below.
+  view.append(sectionHead("endpoints", "LLM endpoints"));
+  const endpointsReady = renderEndpoints(view);
 
   // -- GitHub connection (device flow — no container terminal) ---------------------
   view.append(sectionHead("github", "GitHub"));
@@ -138,7 +146,7 @@ export async function render(view, query = {}) {
         .catch(() => setQuery({ flow: "" }));   // gone/expired → just show the connect button
     }
   }
-  await renderGithub();
+  const githubReady = renderGithub();
 
   // -- central secrets store ------------------------------------------------------
   view.append(sectionHead("secrets", "Secrets"));
@@ -203,59 +211,62 @@ export async function render(view, query = {}) {
     };
     secBox.append(el("div", { class: "row mt" }, keyIn, valIn, save));
   }
-  await renderSecrets();
+  const secretsReady = renderSecrets();
 
   // -- the library repository ------------------------------------------------------
   view.append(sectionHead("libraries", "Library repository"));
   const libBox = el("div", { class: "panel" });
   libBox.append(skeleton(["60%", "90%"]));
   view.append(libBox);
-  try {
-    const { libraries } = await api("/api/settings/libraries");
-    libBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
-      "One git repo holds everything the instance acquires: workflows/, traits/, permissions/, utils/ ",
-      "(with the gu dispatcher) — plus routines/ and sanitized config, exported by the scheduled ",
-      "Library sync below. ",
-      "Clone your existing repo, or create a new private one seeded with the built-in defaults. ",
-      "(Connect GitHub above first.)"));
-    for (const lib of libraries) {
-      if (!lib.provisioned) {
-        const repoIn = el("input", { type: "text", placeholder: "owner/name or full URL", style: "flex:1" });
-        const cloneB = el("button", { class: "btn small" }, "clone existing");
-        const createB = el("button", { class: "btn small primary" }, "create + seed");
-        const doProv = async (mode) => {
-          const repo = repoIn.value.trim();
-          if (!repo) { toast("enter a repo (owner/name or URL)"); return; }
-          cloneB.disabled = createB.disabled = true;
-          try {
-            await api(`/api/settings/libraries/${lib.name}/provision`, { method: "POST", body: { repo, mode } });
-            toast(`${lib.name}: ${mode === "clone" ? "cloned" : "created + seeded"}`); location.reload();
-          } catch (err) { toast(err.message, 7000, { error: true }); cloneB.disabled = createB.disabled = false; }
+  async function renderLibraries() {
+    try {
+      const { libraries } = await api("/api/settings/libraries");
+      libBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
+        "One git repo holds everything the instance acquires: workflows/, traits/, permissions/, utils/ ",
+        "(with the gu dispatcher) — plus routines/ and sanitized config, exported by the scheduled ",
+        "Library sync below. ",
+        "Clone your existing repo, or create a new private one seeded with the built-in defaults. ",
+        "(Connect GitHub above first.)"));
+      for (const lib of libraries) {
+        if (!lib.provisioned) {
+          const repoIn = el("input", { type: "text", placeholder: "owner/name or full URL", style: "flex:1" });
+          const cloneB = el("button", { class: "btn small" }, "clone existing");
+          const createB = el("button", { class: "btn small primary" }, "create + seed");
+          const doProv = async (mode) => {
+            const repo = repoIn.value.trim();
+            if (!repo) { toast("enter a repo (owner/name or URL)"); return; }
+            cloneB.disabled = createB.disabled = true;
+            try {
+              await api(`/api/settings/libraries/${lib.name}/provision`, { method: "POST", body: { repo, mode } });
+              toast(`${lib.name}: ${mode === "clone" ? "cloned" : "created + seeded"}`); location.reload();
+            } catch (err) { toast(err.message, 7000, { error: true }); cloneB.disabled = createB.disabled = false; }
+          };
+          cloneB.onclick = () => doProv("clone");
+          createB.onclick = () => doProv("create");
+          libBox.append(el("div", { class: "row", style: "margin:9px 0" },
+            el("span", { class: "ref-tag", style: "min-width:90px;text-align:center" }, lib.name),
+            repoIn, cloneB, createB));
+          libBox.append(el("div", { class: "faint small", style: "margin:-4px 0 8px 98px" },
+            "not set up yet"));
+          continue;
+        }
+        const input = el("input", { type: "text", value: lib.remote || "",
+          placeholder: "https://github.com/<you>/<repo>.git — empty = local only" });
+        const save = el("button", { class: "btn small primary" }, "save + push");
+        save.onclick = async () => {
+          try { const r = await api(`/api/settings/libraries/${lib.name}`, { method: "PUT", body: { remote: input.value.trim() } });
+            toast(r.pushed ? `${lib.name}: saved + pushed` : r.push_error ? `${lib.name}: saved (push failed: ${r.push_error})` : `${lib.name}: saved`); }
+          catch (err) { toast(err.message, 5000, { error: true }); }
         };
-        cloneB.onclick = () => doProv("clone");
-        createB.onclick = () => doProv("create");
+        const t = remoteTester(input);
         libBox.append(el("div", { class: "row", style: "margin:9px 0" },
           el("span", { class: "ref-tag", style: "min-width:90px;text-align:center" }, lib.name),
-          repoIn, cloneB, createB));
-        libBox.append(el("div", { class: "faint small", style: "margin:-4px 0 8px 98px" },
-          "not set up yet"));
-        continue;
+          input, t.btn, save));
+        libBox.append(el("div", { style: "margin:-4px 0 8px 98px" }, t.result));
       }
-      const input = el("input", { type: "text", value: lib.remote || "",
-        placeholder: "https://github.com/<you>/<repo>.git — empty = local only" });
-      const save = el("button", { class: "btn small primary" }, "save + push");
-      save.onclick = async () => {
-        try { const r = await api(`/api/settings/libraries/${lib.name}`, { method: "PUT", body: { remote: input.value.trim() } });
-          toast(r.pushed ? `${lib.name}: saved + pushed` : r.push_error ? `${lib.name}: saved (push failed: ${r.push_error})` : `${lib.name}: saved`); }
-        catch (err) { toast(err.message, 5000, { error: true }); }
-      };
-      const t = remoteTester(input);
-      libBox.append(el("div", { class: "row", style: "margin:9px 0" },
-        el("span", { class: "ref-tag", style: "min-width:90px;text-align:center" }, lib.name),
-        input, t.btn, save));
-      libBox.append(el("div", { style: "margin:-4px 0 8px 98px" }, t.result));
-    }
-  } catch (err) { libBox.replaceChildren(el("div", { class: "muted" }, err.message)); }
+    } catch (err) { libBox.replaceChildren(el("div", { class: "muted" }, err.message)); }
+  }
+  const librariesReady = renderLibraries();
 
   // -- scheduled library sync (a plain daemon job — the same commands every time) ---
   view.append(sectionHead("library-sync", "Library sync"));
@@ -311,36 +322,39 @@ export async function render(view, query = {}) {
       el("div", { class: "faint small" },
         ls.enabled && ls.next_fire ? `next: ${ls.next_fire}` : "not scheduled"));
   }
-  renderLibrarySync();
+  const librarySyncReady = renderLibrarySync();
 
   // -- scheduler source repository (self-audit's push target) ---------------------
   view.append(sectionHead("source", "Source repository"));
   const srcBox = el("div", { class: "panel" });
   srcBox.append(skeleton(["60%", "90%"]));
   view.append(srcBox);
-  try {
-    const src = await api("/api/settings/source");
-    srcBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
-      "The scheduler's own code repo — where the self-audit routine commits and pushes its changes. ",
-      "Set the remote to the fork those autonomous pushes should target."));
-    const input = el("input", { type: "text", value: src.remote || "",
-      placeholder: "https://github.com/<you>/routine-scheduler.git — empty = local only" });
-    const save = el("button", { class: "btn small primary" }, "save + push");
-    save.onclick = async () => {
-      try {
-        const r = await api("/api/settings/source", { method: "PUT", body: { remote: input.value.trim() } });
-        toast(r.pushed ? "source: saved + pushed"
-          : r.push_error ? `source: saved (push failed: ${r.push_error})` : "source: saved");
-      } catch (err) { toast(err.message, 5000, { error: true }); }
-    };
-    const t = remoteTester(input);
-    srcBox.append(el("div", { class: "row", style: "margin:9px 0" },
-      el("span", { class: "ref-tag", style: "min-width:90px;text-align:center" }, src.branch),
-      input, t.btn, save));
-    srcBox.append(el("div", { style: "margin:-4px 0 8px 98px" }, t.result));
-    srcBox.append(el("div", { class: "faint small" },
-      src.home + (src.exists ? "" : "  ⚠ not a git repo")));
-  } catch (err) { srcBox.replaceChildren(el("div", { class: "muted" }, err.message)); }
+  async function renderSource() {
+    try {
+      const src = await api("/api/settings/source");
+      srcBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
+        "The scheduler's own code repo — where the self-audit routine commits and pushes its changes. ",
+        "Set the remote to the fork those autonomous pushes should target."));
+      const input = el("input", { type: "text", value: src.remote || "",
+        placeholder: "https://github.com/<you>/routine-scheduler.git — empty = local only" });
+      const save = el("button", { class: "btn small primary" }, "save + push");
+      save.onclick = async () => {
+        try {
+          const r = await api("/api/settings/source", { method: "PUT", body: { remote: input.value.trim() } });
+          toast(r.pushed ? "source: saved + pushed"
+            : r.push_error ? `source: saved (push failed: ${r.push_error})` : "source: saved");
+        } catch (err) { toast(err.message, 5000, { error: true }); }
+      };
+      const t = remoteTester(input);
+      srcBox.append(el("div", { class: "row", style: "margin:9px 0" },
+        el("span", { class: "ref-tag", style: "min-width:90px;text-align:center" }, src.branch),
+        input, t.btn, save));
+      srcBox.append(el("div", { style: "margin:-4px 0 8px 98px" }, t.result));
+      srcBox.append(el("div", { class: "faint small" },
+        src.home + (src.exists ? "" : "  ⚠ not a git repo")));
+    } catch (err) { srcBox.replaceChildren(el("div", { class: "muted" }, err.message)); }
+  }
+  const sourceReady = renderSource();
 
   // -- server process (graceful restart onto committed code) -----------------------
   view.append(sectionHead("server", "Server"));
@@ -440,14 +454,17 @@ export async function render(view, query = {}) {
       watch(s.started);
     }
   }
-  await renderServer();
+  const serverReady = renderServer();
 
-  // -- LLM endpoints (settings-endpoints.js) ---------------------------------------
+  // -- notifications (tier 1 + Web Push) --------------------------------------------
   view.append(sectionHead("notifications", "Notifications"));
   view.append(renderNotifications());
 
-  view.append(sectionHead("endpoints", "LLM endpoints"));
-  await renderEndpoints(view);
+  // The section fills load in parallel — every panel was appended above in its final DOM
+  // order, so each async render only fills its own box. Wait for all of them before the
+  // deep-link jump so the anchor lands on settled heights.
+  await Promise.all([endpointsReady, githubReady, secretsReady, librariesReady,
+                     librarySyncReady, sourceReady, serverReady]);
 
   // Land on the requested section (deep link / reload). Everything above is now in the DOM, so
   // the anchor exists; jump without smooth-scroll on first paint.

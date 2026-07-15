@@ -7,13 +7,23 @@ and falls back to its default instead of failing the whole load.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Literal, cast, get_args
 
 import yaml
-from pydantic import (AliasPath, BaseModel, BeforeValidator, ConfigDict, Field,
-                      ValidationError, field_validator)
+from pydantic import (
+    AliasPath,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from .ids import is_slug
 from .paths import config_file, expand
@@ -80,6 +90,11 @@ SCHEMA_MODES = get_args(SchemaMode)
 # `openai` varies per model (GLM is text-only, GPT-4o/Gemini aren't) so it defaults OFF — the
 # user flips `multimodal` on for the specific catalog model (see ModelConfig).
 NATIVE_MM_KINDS = {"anthropic", "claude-cli"}
+# The secrets-store / env-file variable an endpoint's key is looked up under when the
+# config doesn't set `key_var`. Per KIND: an openai endpoint must never default to the
+# Anthropic key. claude-cli has no entry — it authenticates via the subscription token
+# (`credentials_env` / CLAUDE_CODE_OAUTH_TOKEN), never key_var.
+KEY_VAR_DEFAULTS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
 
 # YAML-friendly coercions: a bare `key:` (null) reads as the empty string; path strings
 # expand `~` and $VARS.
@@ -100,7 +115,7 @@ class EndpointConfig(_Config):
     base_url: BlankableStr = ""
     api_key: BlankableStr = ""
     key_env_file: BlankableStr = ""
-    key_var: str = "ANTHROPIC_API_KEY"
+    key_var: BlankableStr = ""  # unset → the endpoint kind's KEY_VAR_DEFAULTS entry
     credentials_env: str = "~/.credentials/claude-code-oauth.env"  # claude-cli kind
     schema_mode: SchemaMode = "json_schema"  # openai kind only
     # DEFAULTS a catalog model inherits when it leaves the field unset. Per-model attributes
@@ -114,6 +129,12 @@ class EndpointConfig(_Config):
     # fields, leaks foreign keys through "strict" mode).
     extra_body: dict = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def _kind_default_key_var(self):
+        if not self.key_var:
+            self.key_var = KEY_VAR_DEFAULTS.get(self.kind, "")
+        return self
+
 
 class ModelConfig(_Config):
     """One catalog model: a provider model id BOUND to a configured endpoint, plus the
@@ -121,7 +142,8 @@ class ModelConfig(_Config):
     many models, so multimodality, context window, effort, and temperature belong here.
     A None attribute inherits the serving endpoint's default (multimodal → the endpoint
     kind's NATIVE_MM_KINDS default; context_chars/temperature → the endpoint's own).
-    Routines/conversations reference a model by its catalog NAME (see RoutineConfig.models)."""
+    Routines/conversations reference a model by its catalog NAME (see RoutineConfig.models).
+    """
 
     name: str = ""  # filled from the `models:` mapping key
     endpoint: str   # which configured endpoint transports this model
@@ -139,7 +161,8 @@ class ModelRef:
     """A RESOLVED model handle produced by EndpointRegistry from a catalog entry + its
     endpoint — no longer parsed from yaml. Carries the provider model id and every
     per-model attribute the run needs: reasoning effort, native multimodality, the
-    context-window budget, sampling temperature, and the catalog name it came from."""
+    context-window budget, sampling temperature, and the catalog name it came from.
+    """
 
     endpoint: str
     model: str
@@ -153,7 +176,8 @@ class ModelRef:
 class LibrarySyncConfig(_Config):
     """The daemon-scheduled library sync (`library_sync:` in config.yaml): mirror the
     instance into the ONE library repo and git-sync it. Deliberately NOT a routine —
-    the exact same commands every time, no LLM in the path (see library_sync.py)."""
+    the exact same commands every time, no LLM in the path (see library_sync.py).
+    """
 
     enabled: bool = False
     cron: BlankableStr = "0 6 * * *"   # friendly-representable (daily 06:00) for the UI editor
@@ -175,7 +199,8 @@ class LibrarySyncConfig(_Config):
 class ServerConfig(_Config):
     """The instance config (`~/.config/routine-scheduler/config.yaml`): bind/auth, the
     homes (routines, the one library repo, this source repo), endpoints, and the single
-    system model for pre-routine machine work."""
+    system model for pre-routine machine work.
+    """
 
     bind: str = "127.0.0.1"
     port: int = 8321
@@ -188,13 +213,13 @@ class ServerConfig(_Config):
     # `detach` action) are routine-shaped dirs under their OWN home too: daemon-managed,
     # each `routine.yaml` records its `owner` conversation, deleted after delivery.
     background_home: HomePath = Field(default_factory=lambda: expand("~/background"))
-    # ONE git repo holding workflows/, traits/, permissions/, playbooks/, utils/ (+ gu, README) — the library.
+    # ONE git repo holding workflows/, traits/, permissions/, playbooks/, utils/ — the library.
     libraries_home: HomePath = Field(
         default_factory=lambda: expand("~/.local/share/routine-scheduler-libraries"))
     libraries_remote: BlankableStr = ""  # clone-from / sync-to for the library repo
     source_repo: HomePath = Field(default_factory=lambda: Path(__file__).resolve().parents[2])
-    source_remote: BlankableStr = ""     # optional: push target for self-audit's autonomous code commits
-    github_client_id: BlankableStr = ""  # OAuth app client_id for the in-UI device flow (default: gh CLI's)
+    source_remote: BlankableStr = ""     # optional: self-audit's push target for code commits
+    github_client_id: BlankableStr = ""  # OAuth client_id for the device flow (default: gh CLI's)
     max_concurrent_runs: int = 2
     registry_rescan_s: int = 30
     endpoints: dict[str, EndpointConfig] = Field(default_factory=dict)
@@ -232,21 +257,23 @@ class ServerConfig(_Config):
 
     @property
     def playbooks_home(self) -> Path:
-        """The library repo's playbooks/ subdir (reusable conversation briefs — see playbooks.py)."""
+        """The library repo's playbooks/ subdir (reusable conversation briefs)."""
         return self.libraries_home / "playbooks"
 
 
 def _pop(data: dict, loc: tuple) -> None:
     """Remove the value at a (possibly nested) error location from the raw input."""
+    node: object = data
     for key in loc[:-1]:
-        data = data.get(key) if isinstance(data, dict) else None
-    if isinstance(data, dict) and loc:
-        data.pop(loc[-1], None)
+        node = node.get(key) if isinstance(node, dict) else None
+    if isinstance(node, dict) and loc:
+        node.pop(loc[-1], None)
 
 
 def _validate_lenient(model: type[_Config], data: dict, problems: list[str]):
     """model_validate that degrades per key: report every invalid key, drop it (or its
-    parent, when a required subfield is missing) and retry so the rest still loads."""
+    parent, when a required subfield is missing) and retry so the rest still loads.
+    """
     for round_no in range(4):
         try:
             return model.model_validate(data)
@@ -276,6 +303,16 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
     if not isinstance(raw, dict):
         return ServerConfig(source=path), [f"{path}: expected a mapping at top level"]
 
+    # extra="ignore" would drop a mistyped endpoint/model key silently — surface each as a
+    # problem line (a warning; the entry still loads with the unknown key ignored).
+    for section, cls in (("endpoints", EndpointConfig), ("models", ModelConfig)):
+        entries = raw.get(section)
+        if isinstance(entries, dict):
+            for name, entry in entries.items():
+                if isinstance(entry, dict):
+                    problems.extend(f"{section}.{name}.{key}: unknown key (ignored)"
+                                    for key in sorted(set(entry) - set(cls.model_fields)))
+
     cfg = _validate_lenient(ServerConfig, {**raw, "source": path}, problems) \
         or ServerConfig(source=path)
     for name, ep in cfg.endpoints.items():
@@ -291,9 +328,11 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
 
 class RoutineConfig(_Config):
     """One routine's `routine.yaml`: schedule, models (main/subroutine/tool_call/uncensored),
-    budgets, held permissions, filesystem roots, and retention. The instruction and
-    workflow live next to it as `instruction.md` / `main.md`; its adapted practice
-    prose under `traits/`."""
+    budgets, held permissions, filesystem roots, and retention. The routine's recipe lives
+    next to it as `main.md` + `stages/`; its adapted practice prose under `traits/`. (The
+    instruction is a transient compile seed — decomposed into the stages at creation,
+    never persisted.)
+    """
 
     slug: str
     dir: Path
@@ -362,21 +401,18 @@ class RoutineConfig(_Config):
 
     @field_validator("fs_read_roots", "fs_write_roots", "models", mode="before")
     @classmethod
-    def _none_as_absent(cls, v: object) -> object:
-        return cls.model_fields["models"].default_factory() if v is None else v
+    def _none_as_absent(cls, v: object, info: ValidationInfo) -> object:
+        # a bare `key:` (YAML null) reads as the FIELD'S OWN empty default ([] or {})
+        if v is not None or info.field_name is None:
+            return v
+        factory = cast("Callable[[], object]",
+                       cls.model_fields[info.field_name].default_factory)
+        return factory()
 
     @field_validator("budgets", mode="before")
     @classmethod
     def _merged_over_defaults(cls, v: object) -> object:
-        if not isinstance(v, dict):
-            return v
-        # legacy key: routine.yaml written before the timeout moved to minutes — convert,
-        # never drop (an existing 8h stays 8h, just expressed as 480m)
-        if "ask_timeout_h" in v:
-            v = dict(v)
-            legacy = v.pop("ask_timeout_h")
-            v.setdefault("ask_timeout_min", int(legacy) * 60)
-        return {**DEFAULT_BUDGETS, **v}
+        return {**DEFAULT_BUDGETS, **v} if isinstance(v, dict) else v
 
     @field_validator("permissions", mode="before")
     @classmethod
@@ -387,12 +423,17 @@ class RoutineConfig(_Config):
     @classmethod
     def _default_unless_mapping(cls, v: object) -> object:
         # an explicit mapping wins ({} = everything gated off); anything else → defaults
-        return v if isinstance(v, dict) else cls.model_fields["capabilities"].default_factory()
+        if isinstance(v, dict):
+            return v
+        factory = cast("Callable[[], object]",
+                       cls.model_fields["capabilities"].default_factory)
+        return factory()
 
 
 def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     """Parse <dir>/routine.yaml. Returns (config, problems); config is None only when the
-    file is missing/unreadable — otherwise problems may be non-empty but best-effort applies."""
+    file is missing/unreadable — otherwise problems may be non-empty but best-effort applies.
+    """
     path = routine_dir / "routine.yaml"
     problems: list[str] = []
     try:
@@ -416,7 +457,8 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
         or RoutineConfig(slug=slug, dir=routine_dir)
     cfg.name = cfg.name or slug
     if not cfg.description:
-        problems.append("description is empty — every routine needs a one-line description (shown in the UI)")
+        problems.append("description is empty — every routine needs a one-line "
+                        "description (shown in the UI)")
     for kind in [k for k in cfg.models if k not in MODEL_KINDS]:
         problems.append(f"models.{kind}: unknown model kind (expected one of {MODEL_KINDS})")
         del cfg.models[kind]

@@ -4,3 +4,11 @@ __pycache__/
 .pytest_cache/
 dist/
 *.egg-info/
+
+# a self-audit run pointed at the source tree writes here — never commit it
+audit/
+
+# quality-gate artifacts (ruff/mypy/coverage run in-repo on the server)
+.ruff_cache/
+.mypy_cache/
+.coverage

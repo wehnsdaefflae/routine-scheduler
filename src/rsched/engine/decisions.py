@@ -4,27 +4,26 @@ decision everywhere, and each side is told when the other decided.
 
 Mirroring is opt-in via the `communication` permission (which reserves the `discord`
 util); the engine — not the model — does the mirroring, so every blocking decision of a
-communication-enabled routine reaches the channel with the same shape. Everything here is
-best-effort: a missing/broken util degrades to the web-only flow, never blocks a run."""
+communication-enabled routine reaches the channel with the same shape. All sends go
+through the ONE outbound seam (rsched.notify) and are best-effort: a missing/broken
+channel degrades to the web-only flow, never blocks a run.
+"""
 
 from __future__ import annotations
 
 import json
-import logging
 import time
 
-from .. import utils_lib
-
-log = logging.getLogger("rsched.decisions")
+from .. import notify
 
 DISCORD_POLL_S = 20      # how often the wait loop asks the channel for replies
-_UTIL_TIMEOUT_S = 25
 
 
 class DiscordMirror:
     """One blocking question's presence on Discord. Created by `mirror_blocking` (None
     when the routine lacks the permission or the util); then `poll()` inside the wait
-    loop and exactly one of `notify_resolved` / `notify_timeout` at the end."""
+    loop and exactly one of `notify_resolved` / `notify_timeout` at the end.
+    """
 
     def __init__(self, ctx, qid: str):
         self.ctx = ctx
@@ -34,20 +33,13 @@ class DiscordMirror:
         self._dead = False
 
     def _run(self, args: list[str]) -> tuple[int, str]:
-        try:
-            code, out, err = utils_lib.run_util(self.ctx.server.utils_home, "discord",
-                                                args, timeout=_UTIL_TIMEOUT_S)
-        except Exception as exc:  # noqa: BLE001 — the mirror must never take the run down
-            log.warning("discord mirror: %s", exc)
-            return 1, ""
-        if code != 0:
-            log.warning("discord mirror: exit %s: %s", code, (err or out)[:200])
-        return code, out
+        return notify.run_channel(self.ctx.server, args)
 
     def send_question(self, question: str, options: list[str], default: str,
                       timeout_min: int) -> bool:
         """Post the question; advance the reply cursor first so stale channel chatter is
-        never mistaken for the answer. Returns False when the channel is unusable."""
+        never mistaken for the answer. Returns False when the channel is unusable.
+        """
         self._run(["read", "--cursor", self.cursor, "--json"])   # prime: skip old messages
         lines = [f"❓ **{self.ctx.routine.name}** needs a decision:", question.strip()]
         if options:
@@ -89,7 +81,8 @@ class DiscordMirror:
 
 def _reply_texts(raw: str) -> list[str]:
     """Tolerant parse of `discord read --json` output: a JSON list of strings or of
-    objects with a text-ish field; anything else reads as no replies."""
+    objects with a text-ish field; anything else reads as no replies.
+    """
     try:
         data = json.loads(raw.strip() or "[]")
     except ValueError:
@@ -110,11 +103,10 @@ def _reply_texts(raw: str) -> list[str]:
 def mirror_blocking(ctx, qid: str, question: str, options: list[str], default: str,
                     timeout_min: int):
     """A live DiscordMirror for this question, or None when the routine is not set up
-    for it (no communication permission / no discord util) or the channel is down."""
+    for it (no communication permission / no discord util) or the channel is down.
+    """
     g = ctx.grants
-    if g is None or "discord" not in g.utils:
-        return None
-    if not utils_lib.exists(ctx.server.utils_home, "discord"):
+    if g is None or not notify.discord_enabled(ctx.server, granted_utils=g.utils):
         return None
     mirror = DiscordMirror(ctx, qid)
     return mirror if mirror.send_question(question, options, default, timeout_min) else None

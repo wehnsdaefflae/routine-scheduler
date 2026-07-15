@@ -23,13 +23,18 @@ function skip(node) {
 }
 
 // A stable identifier for a field within its view: explicit id/name/data-persist win;
-// otherwise fall back to placeholder + DOM position among siblings of the same tag.
+// otherwise fall back to placeholder — disambiguated by document position when several
+// same-tag fields share one placeholder (e.g. the identical inputs on every endpoint /
+// model card), so their drafts never bleed into each other. A lone field keeps the plain
+// "ph:" key, so the common single-field case's saved drafts stay stable.
 function fieldKey(node) {
   const explicit = node.getAttribute("data-persist") || node.id || node.getAttribute("name");
   if (explicit) return explicit;
   const ph = node.getAttribute("placeholder");
-  if (ph) return "ph:" + ph;
-  return "";
+  if (!ph) return "";
+  const same = [...document.querySelectorAll(node.tagName)]
+    .filter((n) => n.getAttribute("placeholder") === ph);
+  return same.length > 1 ? `ph:${ph}#${same.indexOf(node)}` : "ph:" + ph;
 }
 
 function viewKey() {

@@ -48,7 +48,7 @@ def test_valid_actions_pass_both_layers(action):
 
 
 @pytest.mark.parametrize(
-    "action,fragment",
+    ("action", "fragment"),
     [
         ({"say": "s", "kind": "util"}, "name"),
         ({"say": "s", "kind": "util", "name": "   "}, "name"),

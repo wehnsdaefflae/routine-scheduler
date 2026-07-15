@@ -29,6 +29,10 @@ def _is_approval(text: str) -> bool:
 
 def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> dict:
     ctx = loop.ctx
+    if qtype == "question" and getattr(loop, "dialog_qid", None):
+        # a re-ask after a dialog reply supersedes the still-open previous record
+        inbox.resolve_question(ctx.routine.dir, loop.dialog_qid)
+        loop.dialog_qid = None
     qid = question_id(ctx.run_ts, ctx.turn)
     mode = action.get("mode") or "deferred"
     if ctx.depth > 0 or detach.is_detached_run(ctx):
@@ -45,7 +49,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         return {"kind": "ask_user", "qid": qid, "mode": mode}
 
     timeout_min = ctx.budgets.ask_timeout_min
-    expires = (datetime.now().astimezone() + timedelta(minutes=timeout_min)).isoformat(timespec="seconds")
+    expires = ((datetime.now().astimezone() + timedelta(minutes=timeout_min))
+               .isoformat(timespec="seconds"))
     # blocking decisions are durable records too — the Decisions page never depends on a
     # live status.json to show one, and an aborted run leaves it behind as deferred
     inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
@@ -61,7 +66,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     try:
         while time.monotonic() < deadline:
             if loop._aborted():
-                raise RunAborted()
+                raise RunAborted
             answer = inbox.take_answer(ctx.routine.dir, qid, loop.consumed_dir)
             if answer:
                 break
@@ -81,18 +86,23 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         source = answer.get("source", "web")
         ctx.transcript.event("answer", {"qid": qid, "text": answer["text"], "source": source,
                                         "intermediate": bool(answer.get("intermediate"))})
-        inbox.resolve_question(ctx.routine.dir, qid)   # answered (or superseded by a re-ask)
-        if mirror:
-            mirror.notify_resolved(answer["text"], source)
         if answer.get("intermediate"):
             # A dialog reply, not the answer: the user needs some back-and-forth before they
-            # can decide. The observation tells the model to respond and re-ask — each round
-            # is one ordinary turn, so the dialog can go on until a real answer arrives.
+            # can decide. The decision record STAYS OPEN (deferred — the run is no longer
+            # parked on it): the model's re-ask supersedes it, and a finish without a re-ask
+            # leaves it live for the next run instead of silently dropping it. Discord gets
+            # no "resolved" note — the follow-up question is the reply.
+            inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
+                                qtype=qtype, default=default)
+            loop.dialog_qid = qid
             return {"kind": "ask_user", "qid": qid, "mode": mode, "dialog": True,
                     "user_message": answer["text"],
                     "note": "This is a dialog reply, NOT the final answer — the user needs "
                             "more back-and-forth first. Address their message, then ask again "
                             "with ask_user (the original question, or a sharper version)."}
+        inbox.resolve_question(ctx.routine.dir, qid)
+        if mirror:
+            mirror.notify_resolved(answer["text"], source)
         return {"kind": "ask_user", "qid": qid, "mode": mode, "answered": True,
                 "answer": answer["text"], "source": source}
     # timeout: continue WITHOUT the decision — on the stated default when there is one.

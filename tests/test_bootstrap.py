@@ -4,7 +4,7 @@ import json
 
 import yaml
 
-import rsched.bootstrap as bootstrap
+from rsched import bootstrap
 from rsched.bootstrap import _ADOPTED_MARKER, adopt_permissions
 
 PERM = ("---\ntags: [a, b, c]\nrequires:\n  actions: [memory_read, memory_write]\n---\n"
@@ -91,10 +91,9 @@ def test_adopt_seeds_missing_library_copy_from_repo_seed(make_routine, tmp_path,
     assert "memory" in yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))["permissions"]
 
 
-# ------------------------------------------------------------------ the 2026-07 split
+# ------------------------------------------------------------------ seed syncing
 
 
-OLD_PROSE = "---\ntags: [a, b, c]\n---\n# fragment: ask policy — when to ask\nbody\n"
 def test_sync_seed_utils_installs_missing_never_overwrites(tmp_path, monkeypatch):
     """A util added to util-seed after bootstrap reaches the live catalog at daemon boot;
     an existing (possibly locally-modified) util is never touched."""

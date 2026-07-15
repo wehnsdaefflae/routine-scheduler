@@ -27,7 +27,7 @@ def log_health_event(routines_home: Path, event: str, *, routine: str,
     path = Path(routines_home) / ".control" / HEALTH_EVENTS_FILE
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as fh:
+        with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({
                 "ts": now_iso(),
                 "event": event,
@@ -44,11 +44,12 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str, workfl
     """Append one line per finished (sub)run to <routines_home>/.control/workflow-usage.jsonl —
     the feedback stream the meta-workflows routine mines to optimize the library. Subruns
     report like any other run (depth > 0), so per-purpose child workflows inform pattern
-    evolution too. Best-effort, like the health log."""
+    evolution too. Best-effort, like the health log.
+    """
     path = Path(routines_home) / ".control" / WORKFLOW_USAGE_FILE
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as fh:
+        with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({
                 "ts": now_iso(),
                 "routine": routine,

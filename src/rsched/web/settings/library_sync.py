@@ -2,7 +2,8 @@
 
 The job itself is src/rsched/library_sync.py — a plain daemon job, not a routine. This
 router edits its `library_sync:` block in config.yaml, live-patches the running server,
-and exposes the last outcome the job wrote to .control/library-sync.json."""
+and exposes the last outcome the job wrote to .control/library-sync.json.
+"""
 
 from __future__ import annotations
 

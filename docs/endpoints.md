@@ -78,8 +78,9 @@ system_model: glm                 # the fallback model for setup-time work — a
   `http://127.0.0.1:11434/v1`. Self-hosted vLLM: `http://host:8000/v1`.
 - `api_key` / `key_var` / `key_env_file` — credential lookup order: inline `api_key`
   first, then `key_var` in the Secrets store, then `key_var` inside `key_env_file`
-  (a `~/.credentials/*.env` style file). `key_var` defaults to `ANTHROPIC_API_KEY` — set it
-  explicitly (e.g. `OPENROUTER_API_KEY`) for an `openai` endpoint.
+  (a `~/.credentials/*.env` style file). `key_var` defaults per kind — `OPENAI_API_KEY`
+  for `openai`, `ANTHROPIC_API_KEY` for `anthropic` — set it explicitly for an aggregator
+  (e.g. `OPENROUTER_API_KEY`). `claude-cli` ignores it (subscription token instead).
 - `schema_mode` — how the endpoint enforces the one-JSON-action-per-turn contract:
   - `json_schema` (default): strict `response_format` — OpenRouter, OpenAI, Ollama ≥ 0.5.
     Providers that reject it — with a 400, or a generic 503 that hides a schema-incapable

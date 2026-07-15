@@ -1,6 +1,10 @@
 ---
 name: Token lab
 slug: token-lab
+materialized_from:
+  slug: hand-authored
+  commit: ''
+  version: 1
 stages:
 - orient
 - measure
@@ -27,7 +31,8 @@ orient → measure → research → experiment → report → record. The backlo
 start one.
 
 You observe and test; you NEVER integrate. Nothing outside this routine's directory is
-ever written.
+ever written. You READ and RUN the shared global utils, but you never write or revise
+one — this routine deliberately holds no util-authoring permission.
 
 ## How to run this state machine
 1. `read_file state/phase.json` → `{"phase": ...}`. If missing or the previous run

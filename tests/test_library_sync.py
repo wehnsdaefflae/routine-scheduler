@@ -49,9 +49,9 @@ def test_export_mirrors_prunes_and_skips_transients(tmp_path):
 
 def test_config_export_redacts_secrets(tmp_path):
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("bind: 127.0.0.1\ntoken: \"super-secret\"\n"
+    cfg.write_text('bind: 127.0.0.1\ntoken: "super-secret"\n'
                    "endpoints:\n  or:\n    kind: openai\n    api_key: sk-live-123\n"
-                   "  local:\n    kind: openai\n    api_key: \"\"\n", encoding="utf-8")
+                   '  local:\n    kind: openai\n    api_key: ""\n', encoding="utf-8")
     out = library_sync.export_config(cfg, tmp_path / "dest")
     data = yaml.safe_load((tmp_path / "dest" / "config.yaml").read_text(encoding="utf-8"))
     assert data["token"] == "REDACTED"
@@ -65,7 +65,7 @@ def test_run_sync_ok_writes_status_and_is_idempotent(tmp_path):
     _mk_routine_tree(s.routines_home)
     s.libraries_home.mkdir()
     subprocess.run(["git", "-C", str(s.libraries_home), "init", "-q", "-b", "main"], check=True)
-    s.source.write_text("token: \"t0p\"\n", encoding="utf-8")
+    s.source.write_text('token: "t0p"\n', encoding="utf-8")
     result = library_sync.run_sync(s)
     assert result["status"] == "ok", result
     assert result["sync"]["committed"] is True and result["sync"]["has_remote"] is False

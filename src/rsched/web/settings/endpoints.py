@@ -1,5 +1,6 @@
 """Endpoint settings: CRUD over the config.yaml endpoints block, the system model,
-and a live test call."""
+and a live test call.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +10,13 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...config import (ENDPOINT_KINDS, NATIVE_MM_KINDS, EndpointConfig, ModelConfig,
-                       load_server_config)
+from ...config import (
+    ENDPOINT_KINDS,
+    NATIVE_MM_KINDS,
+    EndpointConfig,
+    ModelConfig,
+    load_server_config,
+)
 from ...endpoints import EndpointRegistry
 from ...endpoints.base import EndpointError
 from ...schema_guard import SchemaViolation, parse_reply
@@ -31,7 +37,8 @@ def _endpoint_view(name: str, ep: EndpointConfig) -> dict:
 
 def _model_view(mc: ModelConfig, endpoints: dict) -> dict:
     """A catalog model's raw config PLUS the effective multimodal/context (endpoint-kind or
-    endpoint default filled in) so the list can label it and the editor can show what's set."""
+    endpoint default filled in) so the list can label it and the editor can show what's set.
+    """
     ep = endpoints.get(mc.endpoint)
     kind = ep.kind if ep else ""
     return {"name": mc.name, "endpoint": mc.endpoint, "model": mc.model,
@@ -186,7 +193,8 @@ class SystemModelBody(BaseModel):
 def set_system_model(request: Request, body: SystemModelBody) -> dict:
     """Set the ONE fallback model for machine work that isn't a routine yet — workflow
     generation/suggestion and the new-routine clarify wizard. Setting it is what makes the
-    instance 'llm_ready'; routines otherwise pick their own (also by catalog name)."""
+    instance 'llm_ready'; routines otherwise pick their own (also by catalog name).
+    """
     s = server_of(request)
     if body.name not in s.models:
         raise HTTPException(400, f"unknown model {body.name!r} — add it to the catalog first")
@@ -200,7 +208,8 @@ def set_system_model(request: Request, body: SystemModelBody) -> dict:
 async def endpoint_credits(request: Request, name: str) -> dict:
     """Provider account balance, where the provider exposes one (OpenRouter today):
     credits purchased minus usage → remaining. Never raises on provider trouble — the card
-    shows the error text instead."""
+    shows the error text instead.
+    """
     server = server_of(request)
     ep = server.endpoints.get(name)
     if ep is None:
@@ -248,7 +257,8 @@ async def test_endpoint(request: Request, name: str, body: TestBody) -> dict:
     def call() -> dict:
         start = time.monotonic()
         completion = ep.complete(
-            [{"role": "user", "content": "What is 2+3? Reply as one JSON object matching the schema."}],
+            [{"role": "user",
+              "content": "What is 2+3? Reply as one JSON object matching the schema."}],
             model=body.model, schema=TEST_SCHEMA, timeout=90,
             purpose=f"Test endpoint {name}", kind="test")
         latency = round((time.monotonic() - start) * 1000)

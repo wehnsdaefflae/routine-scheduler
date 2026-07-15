@@ -1,5 +1,6 @@
 """FastAPI app factory: bearer-token auth, API routers, SSE, static frontend, and the
-scheduler running as a startup task — one process serves everything."""
+scheduler running as a startup task — one process serves everything.
+"""
 
 from __future__ import annotations
 
@@ -28,14 +29,15 @@ STATIC_DIR = Path(__file__).resolve().parents[3] / "static"
 def build_stamp(repo: Path | None) -> str:
     """Short commit + date of the running checkout ('46e48e3 2026-07-13'), '' if unknown.
 
-    Computed once at boot: deploys always restart the daemon, so the stamp can't go stale."""
+    Computed once at boot: deploys always restart the daemon, so the stamp can't go stale.
+    """
     if not repo:
         return ""
     try:
         import subprocess
 
         out = subprocess.run(["git", "-C", str(repo), "log", "-1", "--format=%h %cs"],
-                             capture_output=True, text=True, timeout=5)
+                             capture_output=True, text=True, timeout=5, check=False)
         return out.stdout.strip() if out.returncode == 0 else ""
     except Exception:
         return ""
@@ -51,11 +53,11 @@ def require_auth(request: Request) -> None:
     raise HTTPException(status_code=401, detail="missing or invalid token")
 
 
-def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = True) -> FastAPI:
-    if server is None:
-        server, problems = load_server_config()
-        for pr in problems:
-            log.warning("config: %s", pr)
+def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
+                   *, with_scheduler: bool):
+    """The app's startup/shutdown seam, built before the FastAPI instance exists (it only
+    needs the shared server/bus/center; the scheduler is reached via app.state at runtime).
+    """
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -110,10 +112,46 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
-    app = FastAPI(title="routine-scheduler", lifespan=lifespan)
+    return lifespan
+
+
+def _include_api_routers(app: FastAPI, deps: list) -> None:
+    from . import (
+        api_audit,
+        api_background,
+        api_conversations,
+        api_llm_tasks,
+        api_playbooks,
+        api_push,
+        api_questions,
+        api_routines,
+        api_runs,
+        api_schedule,
+        api_stats,
+        api_traces,
+        api_wizard,
+        api_workflows,
+        settings,
+    )
+
+    for module in (api_push, api_routines, api_conversations, api_background, api_runs,
+                   api_schedule, api_stats, api_questions, api_audit, api_traces, settings,
+                   api_workflows, api_playbooks, api_wizard, api_llm_tasks):
+        app.include_router(module.router, prefix="/api", dependencies=deps)
+
+
+def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = True) -> FastAPI:
+    if server is None:
+        server, problems = load_server_config()
+        for pr in problems:
+            log.warning("config: %s", pr)
+
     bus = EventBus()
     task_center = TaskCenter(bus)
-    runner = Runner(server, bus, task_center)   # runs are processes; their turns/llm-calls are children
+    app = FastAPI(title="routine-scheduler",
+                  lifespan=_make_lifespan(server, bus, task_center,
+                                          with_scheduler=with_scheduler))
+    runner = Runner(server, bus, task_center)   # runs are processes; llm-calls their children
     scheduler = Scheduler(server, runner, bus)
     app.state.server = server
     app.state.bus = bus
@@ -122,25 +160,8 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.state.detached = scheduler.detached   # detached-background-task manager (Phase 2 API)
     app.state.llm_tasks = task_center
 
-    from . import (api_audit, api_conversations, api_llm_tasks, api_playbooks, api_push,
-                   api_questions, api_routines, api_runs, api_schedule, api_stats, api_traces,
-                   api_wizard, api_workflows, settings)
-
     deps = [Depends(require_auth)]
-    app.include_router(api_push.router, prefix="/api", dependencies=deps)
-    app.include_router(api_routines.router, prefix="/api", dependencies=deps)
-    app.include_router(api_conversations.router, prefix="/api", dependencies=deps)
-    app.include_router(api_runs.router, prefix="/api", dependencies=deps)
-    app.include_router(api_schedule.router, prefix="/api", dependencies=deps)
-    app.include_router(api_stats.router, prefix="/api", dependencies=deps)
-    app.include_router(api_questions.router, prefix="/api", dependencies=deps)
-    app.include_router(api_audit.router, prefix="/api", dependencies=deps)
-    app.include_router(api_traces.router, prefix="/api", dependencies=deps)
-    app.include_router(settings.router, prefix="/api", dependencies=deps)
-    app.include_router(api_workflows.router, prefix="/api", dependencies=deps)
-    app.include_router(api_playbooks.router, prefix="/api", dependencies=deps)
-    app.include_router(api_wizard.router, prefix="/api", dependencies=deps)
-    app.include_router(api_llm_tasks.router, prefix="/api", dependencies=deps)
+    _include_api_routers(app, deps)
 
     def _setup_marker():
         return (server.source.parent / ".setup-complete") if server.source else None
@@ -171,7 +192,8 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     @app.post("/api/setup/complete", dependencies=deps)
     def setup_complete() -> dict:
         """The first-run setup flow calls this once the user has configured (or chosen to skip)
-        providers + repos — it stops the first-launch redirect to Settings."""
+        providers + repos — it stops the first-launch redirect to Settings.
+        """
         marker = _setup_marker()
         if marker:
             marker.write_text("done\n", encoding="utf-8")

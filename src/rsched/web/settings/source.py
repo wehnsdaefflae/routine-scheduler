@@ -1,5 +1,6 @@
 """Scheduler source repository (where self-audit commits + pushes code) and the git-remote
-reachability probe behind the Settings 'Test' button."""
+reachability probe behind the Settings 'Test' button.
+"""
 
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ def get_source_repo(request: Request) -> dict:
     branch = ""
     if is_git:
         r = subprocess.run(["git", "-C", str(home), "rev-parse", "--abbrev-ref", "HEAD"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, check=False)
         branch = r.stdout.strip() if r.returncode == 0 else ""
     return {"home": str(home), "remote": remote_of(home) or s.source_remote,
             "exists": is_git, "branch": branch or "main"}
@@ -34,15 +35,16 @@ def set_source_remote(request: Request, body: RemoteBody) -> dict:
     update_config(request, lambda raw: raw.update(source_remote=body.remote))
     s.source_remote = body.remote
     # point origin at it — SAFE: set-url (add if absent), never remove; this is the live code repo
-    result = {"ok": True, "pushed": False}
+    result: dict = {"ok": True, "pushed": False}
     if body.remote and (home / ".git").is_dir():
-        set_url = subprocess.run(["git", "-C", str(home), "remote", "set-url", "origin", body.remote],
-                                 capture_output=True, text=True)
+        set_url = subprocess.run(
+            ["git", "-C", str(home), "remote", "set-url", "origin", body.remote],
+            capture_output=True, text=True, check=False)
         if set_url.returncode != 0:                     # no origin yet → add it
             subprocess.run(["git", "-C", str(home), "remote", "add", "origin", body.remote],
-                           capture_output=True)
+                           capture_output=True, check=False)
         push = subprocess.run(["git", "-C", str(home), "push", "-u", "origin", "HEAD"],
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, timeout=60, check=False)
         result["pushed"] = push.returncode == 0
         if push.returncode != 0:
             result["push_error"] = push.stderr.strip()[:200]
@@ -50,10 +52,11 @@ def set_source_remote(request: Request, body: RemoteBody) -> dict:
 
 
 @router.post("/settings/test-remote")
-def test_remote(_request: Request, body: RemoteBody) -> dict:
+def test_remote(body: RemoteBody) -> dict:
     """Validate that a git remote is reachable AND authorized, for the Settings 'Test' button.
     Runs `git ls-remote` with prompts disabled so a private repo without credentials fails fast
-    (rather than hanging), and surfaces the git error verbatim (auth failure, no such repo, DNS)."""
+    (rather than hanging), and surfaces the git error verbatim (auth failure, no such repo, DNS).
+    """
     url = body.remote.strip()
     if not url:
         return {"ok": False, "error": "no remote URL configured"}
@@ -61,21 +64,23 @@ def test_remote(_request: Request, body: RemoteBody) -> dict:
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
     try:
         r = subprocess.run(["git", "ls-remote", "--heads", url],
-                           capture_output=True, text=True, timeout=30, env=env)
+                           capture_output=True, text=True, timeout=30, env=env, check=False)
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "timed out after 30s — host unreachable?"}
     if r.returncode == 0:
         branches = [ln.split("refs/heads/")[-1] for ln in r.stdout.splitlines() if ln.strip()]
-        return {"ok": True, "branches": len(branches),
-                "detail": f"reachable — {len(branches)} branch(es)" + (f": {branches[0]}…" if branches else "")}
+        detail = (f"reachable — {len(branches)} branch(es)"
+                  + (f": {branches[0]}…" if branches else ""))
+        return {"ok": True, "branches": len(branches), "detail": detail}
     raw = r.stderr.strip() or "git ls-remote failed"
     last = raw.splitlines()[-1][:300]
     low = raw.lower()
     # actionable hints for the two errors users actually hit on first setup
-    if any(s in low for s in ("could not read username", "authentication failed", "terminal prompts disabled")):
+    if any(s in low for s in ("could not read username", "authentication failed",
+                              "terminal prompts disabled")):
         return {"ok": False, "error": "authentication required — is it a private repo? run "
                 "`gh auth login` in the container (see deploy/SETUP.md)", "detail": last}
     if "not found" in low:
-        return {"ok": False, "error": "repository not found (or no access) — check the URL and auth",
-                "detail": last}
+        return {"ok": False, "detail": last,
+                "error": "repository not found (or no access) — check the URL and auth"}
     return {"ok": False, "error": last}

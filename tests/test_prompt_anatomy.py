@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from rsched.config import ServerConfig, load_routine
-from rsched.engine.actions import KINDS, KIND_EXAMPLES
+from rsched.engine.actions import KIND_EXAMPLES, KINDS
 from rsched.engine.composer import build_system_prompt, kickoff_message, state_digest
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
@@ -75,5 +75,5 @@ def test_doc_names_every_action_kind_and_the_finish_example_matches():
     for kind in KINDS:
         assert kind in DOC, f"action kind {kind!r} missing from docs/prompt-anatomy.md"
     # the finish guidance shown in the doc must track the example's altitude
-    assert KIND_EXAMPLES["finish"]["summary"].strip("<>") in ("detailed 8-20 line result summary",)
+    assert KIND_EXAMPLES["finish"]["summary"].strip("<>") == "detailed 8-20 line result summary"
     assert "8-20 line" in DOC

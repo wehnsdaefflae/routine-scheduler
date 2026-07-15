@@ -1,6 +1,7 @@
 """On-disk store for new-routine wizard sessions: the dot-hidden .wizard-* dirs under
 routines_home — creation, meta persistence, state snapshots, listing, and archival.
-No FastAPI in here; api_wizard keeps the route handlers thin on top of this."""
+No FastAPI in here; api_wizard keeps the route handlers thin on top of this.
+"""
 
 from __future__ import annotations
 
@@ -11,20 +12,20 @@ import yaml
 
 from ..daemon import registry
 from ..daemon.runner import _pid_alive
-from ..ids import now_iso, run_ts as make_run_ts
-from ..paths import atomic_write_json, read_json
+from ..ids import now_iso
+from ..ids import run_ts as make_run_ts
+from ..paths import atomic_write, atomic_write_json, read_json
 from ..schema_guard import loads_tolerant
 from ..workflows.scaffold import GITIGNORE
 
 WIZARD_BUDGETS = {"max_turns": 25, "max_wall_clock_min": 30, "max_total_tokens": 200_000,
                   "max_subruns": 0, "max_subrun_depth": 0, "ask_timeout_min": 120}
 
-TERMINAL = ("finished", "failed", "aborted")
-
 
 def sessions(app_state) -> dict:
     """In-memory handles of live clarify processes ({wid: {proc, run_ts, dir}}); snapshots fall
-    back to disk for sessions this process never saw (after a reload / daemon restart)."""
+    back to disk for sessions this process never saw (after a reload / daemon restart).
+    """
     if not hasattr(app_state, "wizards"):
         app_state.wizards = {}
     return app_state.wizards
@@ -77,10 +78,12 @@ def snapshot(app_state, d: Path) -> dict:
                 "question": None, "alive": None}
     result = read_result(d)
     has_result = isinstance(result, dict) and bool(result.get("refined_instruction"))
-    ts = (sessions(app_state).get(d.name) or {}).get("run_ts") or meta.get("run_ts") or latest_run_ts(d)
-    run = registry.read_run(d / "runs" / ts, d.name.lstrip(".")) if ts and (d / "runs" / ts).is_dir() else None
+    ts = ((sessions(app_state).get(d.name) or {}).get("run_ts") or meta.get("run_ts")
+          or latest_run_ts(d))
+    run = (registry.read_run(d / "runs" / ts, d.name.lstrip("."))
+           if ts and (d / "runs" / ts).is_dir() else None)
     state = run.state if run else "unknown"
-    stage = "suggest" if has_result else ("error" if state in TERMINAL else "chat")
+    stage = "suggest" if has_result else ("error" if state in registry.TERMINAL_STATES else "chat")
     # Only meaningful while clarifying — a DEAD pid there means the session is stuck (needs
     # cancel). A missing pid is NOT death: the boot status (create_session) carries no pid
     # until the engine takes over, and the pre-run decompose can hold that phase for a
@@ -102,7 +105,7 @@ def list_sessions(app_state) -> list[dict]:
                 continue
             try:
                 snap = snapshot(app_state, d)
-            except Exception:  # a half-written dir must never break the list
+            except Exception:  # noqa: S112 — a half-written dir must never break the list
                 continue
             if snap.get("stage") != "done":
                 out.append(snap)
@@ -114,14 +117,16 @@ def recover_orphan_builds(server) -> list[str]:
     as a web-process background task (asyncio.create_task) with NO persistence: if the process dies
     between finalize.json='building' and the terminal 'done'/'error' write (a self-restart drains
     engine runs but not in-flight builds, plus crashes/SIGKILL), the build is stranded forever —
-    finalize.json stuck at 'building', a half-scaffolded routine dir that never got its routine.yaml,
-    and nothing to finish it (Runner.recover_orphans covers engine RUNS only, never builds). The
-    setup then 'never finishes' with no error surfaced.
+    finalize.json stuck at 'building', a half-scaffolded routine dir that never got its
+    routine.yaml, and nothing to finish it (Runner.recover_orphans covers engine RUNS only,
+    never builds). The setup then 'never finishes' with no error surfaced.
 
-    Called once at boot: a fresh process owns no build task, so ANY 'building' state is by definition
-    orphaned. Mark each 'error' (recoverable — the user retries or cancels from the wizard) and
-    remove a half-built routine dir that lacks routine.yaml (mirrors _build_routine's except handler).
-    Returns the recovered wids."""
+    Called once at boot: a fresh process owns no build task, so ANY 'building' state is by
+    definition orphaned. Mark each 'error' (recoverable — the user retries or cancels from
+    the wizard) and remove a half-built routine dir that lacks routine.yaml (mirrors
+    _build_routine's except handler).
+    Returns the recovered wids.
+    """
     home = server.routines_home
     recovered: list[str] = []
     if not home.is_dir():
@@ -152,7 +157,8 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
     operation as any (workflow + task → routine). The session is created as (workflow +
     instruction) with NO main.md; the engine decomposes it on run, so this throwaway
     clarification routine follows tailored markdown (reliable) instead of a raw pattern.
-    Its `tools:` allowlist carries through the decompose."""
+    Its `tools:` allowlist carries through the decompose.
+    """
     from ..workflows import library
 
     ts = make_run_ts()
@@ -164,7 +170,7 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
     (d / "instruction.md").write_text(draft.rstrip() + "\n", encoding="utf-8")
     (d / "LEDGER.md").write_text("# LEDGER — wizard session\n", encoding="utf-8")
     (d / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
-    (d / "routine.yaml").write_text(yaml.safe_dump({
+    atomic_write(d / "routine.yaml", yaml.safe_dump({
         "name": "New-routine wizard", "slug": f"wizard-{ts}", "enabled": False,
         "description": "New-routine clarification wizard session.",
         "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
@@ -172,7 +178,7 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
         "budgets": WIZARD_BUDGETS,
         "permissions": [], "capabilities": {},   # the clarify session holds nothing gated;
         # its tools allowlist narrows further
-    }, sort_keys=False), encoding="utf-8")
+    }, sort_keys=False))
     # Persist the session's meta so it survives a daemon/container restart: /api/wizard can
     # list it without depending on the client or in-memory state.
     atomic_write_json(d / "state" / "wizard_meta.json",
@@ -183,7 +189,8 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
     (d / "runs" / ts).mkdir(parents=True, exist_ok=True)
     atomic_write_json(d / "runs" / ts / "status.json",
                       {"run_id": f"{wid}:{ts}", "state": "starting", "started": ts,
-                       "updated": now_iso(), "turn": 0, "question": None, "usage": {"in": 0, "out": 0}})
+                       "updated": now_iso(), "turn": 0, "question": None,
+                       "usage": {"in": 0, "out": 0}})
     return wid, ts, d
 
 
@@ -196,11 +203,13 @@ def candidate_patterns(server) -> list[dict]:
 def write_candidates(server, d: Path) -> None:
     """Write the workflow patterns the clarifier chooses from into the session's state/, so it can
     suggest one (and marry the task to it) by reading a single file — its `tools` allowlist permits
-    read_file but not library discovery. Each pattern is inlined with its full control flow."""
+    read_file but not library discovery. Each pattern is inlined with its full control flow.
+    """
     from ..workflows import library
 
     parts = ["# Candidate workflow patterns", "",
-             "Pick the ONE whose control flow best fits this task (that is your suggestion), or choose",
+             "Pick the ONE whose control flow best fits this task (that is your suggestion),",
+             "or choose",
              "to generate a new one. A pattern's parameter contract is its dummy imports.", ""]
     for w in candidate_patterns(server):
         try:
@@ -214,7 +223,8 @@ def write_candidates(server, d: Path) -> None:
 
 def archive_session(home: Path, d: Path, name: str) -> Path:
     """Move a session dir into routines_home/.archive under `name`, uniquified if taken —
-    canceled and completed sessions both leave the in-flight set this way."""
+    canceled and completed sessions both leave the in-flight set this way.
+    """
     archive = home / ".archive"
     archive.mkdir(exist_ok=True)
     dest = archive / name

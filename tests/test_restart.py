@@ -85,7 +85,7 @@ def test_scheduler_drains_then_restarts(tmp_path, monkeypatch):
     assert runner.draining is True and triggered == []
 
     # the run finishes → nothing active → restart: shutdown signalled, sentinel cleared
-    monkeypatch.setattr(runner, "active_states", lambda: [])
+    monkeypatch.setattr(runner, "active_states", list)
     assert sched._maybe_restart() is True
     assert triggered == [True]
     assert sched._shutting_down is True
@@ -112,7 +112,7 @@ def test_scheduler_resumes_when_request_withdrawn(tmp_path, monkeypatch):
     runner = Runner(server, EventBus())
     sched = Scheduler(server, runner, EventBus())
     runner.draining = True                                   # was draining
-    monkeypatch.setattr(runner, "active_states", lambda: [])
+    monkeypatch.setattr(runner, "active_states", list)
     # no sentinel present → idle: draining cleared, scheduling resumes
     assert sched._maybe_restart() is False
     assert runner.draining is False
@@ -140,7 +140,7 @@ def test_scheduler_waits_for_wizard_build(tmp_path, monkeypatch):
     p = restart.sentinel_path(server)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("{}")
-    monkeypatch.setattr(runner, "active_states", lambda: [])   # no engine runs active...
+    monkeypatch.setattr(runner, "active_states", list)   # no engine runs active...
     sched.wizard_builds.add(".wizard-x")                        # ...but a build is in flight
     assert sched._maybe_restart() is True                       # → drain, not restart
     assert runner.draining is True and triggered == []

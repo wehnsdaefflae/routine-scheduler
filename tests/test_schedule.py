@@ -5,7 +5,7 @@ import pytest
 from rsched.schedule import cron_to_friendly, describe, friendly_to_cron, server_tz
 
 
-@pytest.mark.parametrize("spec,cron", [
+@pytest.mark.parametrize(("spec", "cron"), [
     ({"frequency": "manual"}, ""),
     ({"frequency": "hourly", "minute": 15}, "15 * * * *"),
     ({"frequency": "daily", "time": "07:30"}, "30 7 * * *"),
@@ -40,5 +40,33 @@ def test_invalid_friendly():
         friendly_to_cron({"frequency": "weekly", "time": "08:00", "weekday": 9})
 
 
-def test_server_tz_is_a_string():
-    assert isinstance(server_tz(), str) and server_tz()
+def test_server_tz_reports_the_local_zoneinfo_key(monkeypatch):
+    """When the local zone resolves to a named IANA zone, server_tz reports that key."""
+    from types import SimpleNamespace
+    from zoneinfo import ZoneInfo
+
+    class _Stamp:
+        @staticmethod
+        def astimezone():
+            return SimpleNamespace(tzinfo=ZoneInfo("Europe/Berlin"))
+
+    class _DT:
+        @staticmethod
+        def now(_tz=None):
+            return _Stamp()
+
+    monkeypatch.setattr("rsched.schedule.datetime", _DT)
+    assert server_tz() == "Europe/Berlin"
+
+
+def test_server_tz_degrades_to_utc_when_zone_is_undetectable(monkeypatch):
+    """server_tz never raises: an unresolvable local zone falls back to 'UTC' (the
+    scheduler still needs SOME zone to compute fires)."""
+
+    class _Broken:
+        @staticmethod
+        def now(_tz=None):
+            raise OSError("no clock")
+
+    monkeypatch.setattr("rsched.schedule.datetime", _Broken)
+    assert server_tz() == "UTC"

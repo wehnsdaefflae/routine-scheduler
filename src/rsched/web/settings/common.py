@@ -1,5 +1,6 @@
 """Shared plumbing for the settings modules: the live ServerConfig, config.yaml
-read-modify-write persistence, and git-remote helpers."""
+read-modify-write persistence, and git-remote helpers.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +29,8 @@ def config_path(request: Request) -> Path:
 
 def update_config(request: Request, mutate) -> Path:
     """Read-modify-write config.yaml; returns the path so callers can reload derived state.
-    The daemon-side ServerConfig is live-reloaded by callers; engine subprocesses read it fresh."""
+    The daemon-side ServerConfig is live-reloaded by callers; engine subprocesses read it fresh.
+    """
     path = config_path(request)
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     mutate(raw)
@@ -38,5 +40,5 @@ def update_config(request: Request, mutate) -> Path:
 
 def remote_of(home: Path) -> str:
     r = subprocess.run(["git", "-C", str(home), "remote", "get-url", "origin"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, check=False)
     return r.stdout.strip() if r.returncode == 0 else ""

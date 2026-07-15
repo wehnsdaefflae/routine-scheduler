@@ -37,11 +37,20 @@ import subprocess
 import tempfile
 import threading
 import uuid
+from collections.abc import Mapping
 
 from ..config import EndpointConfig
 from ..paths import expand
-from .base import (DEFAULT_TIMEOUT, Completion, EndpointError, Message, read_media_b64,
-                   split_system, supports_media_type)
+from .base import (
+    DEFAULT_TIMEOUT,
+    Completion,
+    EndpointError,
+    Message,
+    anthropic_usage,
+    read_media_b64,
+    split_system,
+    supports_media_type,
+)
 
 
 def _has_media(messages: list[Message]) -> bool:
@@ -50,18 +59,19 @@ def _has_media(messages: list[Message]) -> bool:
 
 def _cli_content_blocks(content: str, media: list[dict]) -> list[dict]:
     """Text + images → Anthropic-shape content blocks for a stream-json message (images
-    only; PDFs are filtered out upstream by supports_media)."""
+    only; PDFs are filtered out upstream by supports_media).
+    """
     blocks: list[dict] = [{"type": "text", "text": content}] if content else []
-    for item in media:
-        blocks.append({"type": "image", "source": {
-            "type": "base64", "media_type": item["media_type"],
-            "data": read_media_b64(item["path"])}})
+    blocks.extend({"type": "image", "source": {
+        "type": "base64", "media_type": item["media_type"],
+        "data": read_media_b64(item["path"])}} for item in media)
     return blocks
 
 
 def stream_json_stdin(messages: list[Message]) -> str:
     """NDJSON stdin for `--input-format stream-json`: one line per message, each an
-    `{"type": <role>, "message": {role, content:[blocks]}}` envelope."""
+    `{"type": <role>, "message": {role, content:[blocks]}}` envelope.
+    """
     lines = []
     for m in messages:
         role = m["role"]
@@ -73,7 +83,7 @@ def stream_json_stdin(messages: list[Message]) -> str:
 # Vars that would re-route the child CLI to metered API-key auth (or a proxy).
 STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
               "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS")
-TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
+TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 — the env var's NAME, not a credential
 
 
 def find_cli() -> str | None:
@@ -101,7 +111,8 @@ def resolve_token(credentials_env: str, inline: str = "") -> str | None:
     return None
 
 
-def scrub_env(base: dict, *, token: str | None, max_tokens: int | None = None) -> dict:
+def scrub_env(base: Mapping[str, str], *, token: str | None,
+              max_tokens: int | None = None) -> dict:
     env = dict(base)
     for k in STRIP_VARS:
         env.pop(k, None)
@@ -144,7 +155,8 @@ def build_cmd(cli: str, model: str, *, system: str | None, schema_str: str | Non
 
 def render_prompt(rest: list[Message]) -> str:
     """Serialize the non-system turns into one prompt. The transcript framing plus a final
-    cue keeps stateless calls faithful to the conversation."""
+    cue keeps stateless calls faithful to the conversation.
+    """
     if len(rest) == 1 and rest[0]["role"] == "user":
         return rest[0]["content"]
     lines = ["The conversation so far (you are the assistant):", ""]
@@ -159,7 +171,8 @@ def render_prompt(rest: list[Message]) -> str:
 
 def _result_event(stdout_text: str) -> dict:
     """The terminal `{"type":"result", …}` line of a `--output-format stream-json` stream —
-    same fields as the `--output-format json` envelope. Non-JSON/other-type lines are skipped."""
+    same fields as the `--output-format json` envelope. Non-JSON/other-type lines are skipped.
+    """
     obj = None
     for line in stdout_text.splitlines():
         line = line.strip()
@@ -172,14 +185,16 @@ def _result_event(stdout_text: str) -> dict:
         if isinstance(ev, dict) and ev.get("type") == "result":
             obj = ev
     if obj is None:
-        raise EndpointError(f"claude-cli: no result event in stream-json output: {stdout_text[:300]}")
+        raise EndpointError(
+            f"claude-cli: no result event in stream-json output: {stdout_text[:300]}")
     return obj
 
 
 def parse_result(stdout_text: str, want_json: bool,
                  stream_out: bool = False) -> tuple[str, dict | None, dict]:
     """CLI --output-format json envelope (or the final `result` event of a stream-json
-    output stream, used for image turns) → (text, parsed, usage)."""
+    output stream, used for image turns) → (text, parsed, usage).
+    """
     try:
         obj = _result_event(stdout_text) if stream_out else json.loads(stdout_text)
     except json.JSONDecodeError as exc:
@@ -187,15 +202,9 @@ def parse_result(stdout_text: str, want_json: bool,
     if obj.get("is_error"):
         msg = str(obj.get("result") or "claude CLI reported an error")
         raise EndpointError(f"claude-cli: {msg}", auth="401" in msg)
-    usage_raw = obj.get("usage") or {}
-    usage = {"in": int(usage_raw.get("input_tokens") or 0),
-             "out": int(usage_raw.get("output_tokens") or 0)}
-    # input_tokens excludes cache traffic on this API — without these two fields a run
+    # input_tokens excludes cache traffic on this API — without cached_in/cache_write a run
     # shows "in=4" while the real prompt was served from (and written into) the cache.
-    if usage_raw.get("cache_read_input_tokens"):
-        usage["cached_in"] = int(usage_raw["cache_read_input_tokens"])
-    if usage_raw.get("cache_creation_input_tokens"):
-        usage["cache_write"] = int(usage_raw["cache_creation_input_tokens"])
+    usage = anthropic_usage(obj.get("usage") or {})
     text = obj.get("result", "") or ""
     parsed = None
     if want_json:
@@ -219,7 +228,7 @@ def _msg_hashes(messages: list[Message]) -> list[str]:
         key = f"{m['role']}\x00{m['content']}"
         if m.get("media"):
             key += "\x00" + json.dumps(m["media"], sort_keys=True)
-        out.append(hashlib.sha1(key.encode("utf-8")).hexdigest())
+        out.append(hashlib.sha1(key.encode("utf-8"), usedforsecurity=False).hexdigest())
     return out
 
 
@@ -227,7 +236,8 @@ class ClaudeCliEndpoint:
     """`claude -p` fully stripped (tools off, no MCP/settings, our system prompt replacing
     its own) — a SUBSCRIPTION-billed completion function. Metered-auth env vars are
     scrubbed so it can never silently fall back to API billing. With a `session` key it
-    keeps one CLI session per run and sends per-turn deltas (see the module docstring)."""
+    keeps one CLI session per run and sends per-turn deltas (see the module docstring).
+    """
 
     def __init__(self, cfg: EndpointConfig):
         self.name = cfg.name
@@ -246,7 +256,8 @@ class ClaudeCliEndpoint:
     def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
         """Images only (when the resolved model is multimodal), and only until a stream-json
         send has proven the CLI can't take them (then everything routes to the vision util).
-        PDFs always route to the vision util."""
+        PDFs always route to the vision util.
+        """
         if self._media_capable is False:
             return False
         return supports_media_type(media_type, multimodal=multimodal, pdf=False)
@@ -254,18 +265,20 @@ class ClaudeCliEndpoint:
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
                  timeout: int = DEFAULT_TIMEOUT, session: str | None = None,
-                 temperature: float | None = None) -> Completion:
-        # temperature is accepted for protocol conformance but ignored: the stripped `claude -p`
-        # subscription CLI exposes no sampling knob.
+                 temperature: float | None = None) -> Completion:  # noqa: ARG002 — see below
+        # temperature is accepted for protocol conformance but ignored: the stripped
+        # `claude -p` subscription CLI exposes no sampling knob.
         cli = find_cli()
         if not cli:
             raise EndpointError("claude-cli: claude CLI not found on PATH (or set $CLAUDE_CLI)")
         from ..secrets import load_secrets
-        token = resolve_token(self.credentials_env, self.oauth_token or load_secrets().get(TOKEN_VAR, ""))
+        token = resolve_token(self.credentials_env,
+                              self.oauth_token or load_secrets().get(TOKEN_VAR, ""))
         if not token:
             raise EndpointError(
-                f"claude-cli: no subscription token — paste one in Settings, set {TOKEN_VAR}, or "
-                f"put it in {self.credentials_env} (run `claude setup-token`); refusing API billing",
+                f"claude-cli: no subscription token — paste one in Settings, set "
+                f"{TOKEN_VAR}, or put it in {self.credentials_env} "
+                "(run `claude setup-token`); refusing API billing",
                 auth=True,
             )
         system, rest = split_system(messages)
@@ -291,7 +304,7 @@ class ClaudeCliEndpoint:
                         self._sessions.pop(session, None)
             sid = str(uuid.uuid4())
             cwd = expand("~/.cache/rsched/claude-cli") / hashlib.sha1(
-                session.encode("utf-8")).hexdigest()[:16]
+                session.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
             cwd.mkdir(parents=True, exist_ok=True)
             return self._run_session(cli, model, system, schema_str, effort, env, timeout,
                                      session, sid, str(cwd), msgs=rest,
@@ -301,11 +314,12 @@ class ClaudeCliEndpoint:
         prompt = render_prompt(rest)
         cmd = build_cmd(cli, model, system=system or None, schema_str=schema_str, effort=effort)
         try:
-            with tempfile.TemporaryDirectory(prefix="rsched-claude-") as cwd:
+            with tempfile.TemporaryDirectory(prefix="rsched-claude-") as tmp_cwd:
                 r = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
-                                   timeout=timeout, env=env, cwd=cwd)
+                                   timeout=timeout, env=env, cwd=tmp_cwd, check=False)
         except subprocess.TimeoutExpired as exc:
-            raise EndpointError(f"claude-cli: call timed out after {timeout}s", retryable=True) from exc
+            raise EndpointError(f"claude-cli: call timed out after {timeout}s",
+                                retryable=True) from exc
         if r.returncode != 0 and not r.stdout.strip():
             raise EndpointError(
                 f"claude-cli: exited {r.returncode}: {r.stderr.strip()[:300] or '(no stderr)'}",
@@ -315,11 +329,13 @@ class ClaudeCliEndpoint:
         return Completion(text=text, parsed=parsed, usage=usage)
 
     @staticmethod
-    def _session_delta(st: dict, messages: list[Message], hashes: list[str]) -> list[Message] | None:
+    def _session_delta(st: dict, messages: list[Message],
+                       hashes: list[str]) -> list[Message] | None:
         """The new user MESSAGES since the session last saw this conversation — or None
         when the session can't continue it (no state, rewritten prefix after compaction,
         or unexpected roles in the delta). Returned as messages (not joined text) so a
-        media-carrying turn keeps its `media` for stream-json encoding."""
+        media-carrying turn keeps its `media` for stream-json encoding.
+        """
         seen = st.get("hashes")
         if not st.get("sid") or not st.get("cwd") or not seen:
             return None
@@ -335,7 +351,8 @@ class ClaudeCliEndpoint:
     def _encode(self, msgs: list[Message], plain: str) -> tuple[str, bool]:
         """(stdin, use_stream_json). Media present → an NDJSON stream-json body; else the
         plain text prompt. If native image input is already known-broken this run, raise so
-        the engine's runtime net falls back to the vision util for the current image."""
+        the engine's runtime net falls back to the vision util for the current image.
+        """
         if _has_media(msgs):
             if self._media_capable is False:
                 raise EndpointError("claude-cli: native image input unavailable this run — "
@@ -343,7 +360,8 @@ class ClaudeCliEndpoint:
             return stream_json_stdin(msgs), True
         return plain, False
 
-    def _run_session(self, cli, model, system, schema_str, effort, env, timeout,
+    # One arg per CLI invocation fact — a params object would rename the width, not reduce it.
+    def _run_session(self, cli, model, system, schema_str, effort, env, timeout,  # noqa: PLR0913
                      session: str, sid: str, cwd: str, *, msgs: list[Message], plain: str,
                      hashes: list[str], resume: bool, want_json: bool) -> Completion:
         stdin, stream = self._encode(msgs, plain)
@@ -352,9 +370,10 @@ class ClaudeCliEndpoint:
                         resume=sid if resume else None, input_stream_json=stream)
         try:
             r = subprocess.run(cmd, input=stdin, capture_output=True, text=True,
-                               timeout=timeout, env=env, cwd=cwd)
+                               timeout=timeout, env=env, cwd=cwd, check=False)
         except subprocess.TimeoutExpired as exc:
-            raise EndpointError(f"claude-cli: call timed out after {timeout}s", retryable=True) from exc
+            raise EndpointError(f"claude-cli: call timed out after {timeout}s",
+                                retryable=True) from exc
         if r.returncode != 0 and not r.stdout.strip():
             if stream:                    # a stream-json (image) send failed — stop trying it
                 self._media_capable = False

@@ -27,9 +27,11 @@ log = logging.getLogger("rsched.runtime")
 
 def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
     """A routine created as (workflow + instruction) but not yet turned into files — the wizard's
-    clarify session is exactly this — has no main.md. Decompose its workflow against its instruction
-    now (the SAME operation scaffold does at creation), so the run follows tailored MARKDOWN, never a
-    raw pattern. Degrades to the whole workflow rendered as main.md if no endpoint is available."""
+    clarify session is exactly this — has no main.md. Decompose its workflow against its
+    instruction now (the SAME operation scaffold does at creation), so the run follows tailored
+    MARKDOWN, never a raw pattern. Degrades to the whole workflow rendered as main.md if no
+    endpoint is available.
+    """
     if (routine_dir / "main.md").exists() or not cfg.workflow_slug:
         return
     from ..workflows import library
@@ -53,7 +55,8 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
         main_meta["tools"] = meta["tools"]
     (routine_dir / "stages").mkdir(exist_ok=True)
     for stage_name, stage_body in result["stages"].items():
-        (routine_dir / "stages" / f"{stage_name}.md").write_text(stage_body.rstrip() + "\n", encoding="utf-8")
+        (routine_dir / "stages" / f"{stage_name}.md").write_text(stage_body.rstrip() + "\n",
+                                                                 encoding="utf-8")
     (routine_dir / "main.md").write_text(
         dump_markdown(main_meta, result["main"]), encoding="utf-8")
 
@@ -64,19 +67,23 @@ def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:
 
     A routine is self-contained: nothing is read from the workflow library at run time. The model
     reads the stage modules under stages/ and the practice modules under traits/ on demand via
-    read_file (main.md routes to them)."""
+    read_file (main.md routes to them).
+    """
     main = routine_dir / "main.md"
     if not main.exists():
         raise RuntimeError(f"routine {cfg.slug!r} has no main.md — cannot run")
     try:
         meta, mbody = frontmatter.parse(main.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:  # fail loud: silently losing meta would drop the tools allowlist
-        raise RuntimeError(f"routine {cfg.slug!r}: main.md frontmatter is invalid YAML: {exc}") from exc
+        raise RuntimeError(
+            f"routine {cfg.slug!r}: main.md frontmatter is invalid YAML: {exc}") from exc
     body = mbody.strip()
-    src = meta.get("materialized_from") if isinstance(meta.get("materialized_from"), dict) else {}
+    raw_src = meta.get("materialized_from")
+    src = raw_src if isinstance(raw_src, dict) else {}
     prov = {"slug": src.get("slug", cfg.workflow_slug),
             "commit": src.get("commit", cfg.workflow_commit), "version": src.get("version", 0)}
-    tools = meta.get("tools") if isinstance(meta.get("tools"), list) else None
+    raw_tools = meta.get("tools")
+    tools = raw_tools if isinstance(raw_tools, list) else None
     return body, prov, tools
 
 
@@ -86,7 +93,8 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     """Execute one run of the routine at routine_dir. Returns (final status, run dir).
     on_event(obj) is called for every transcript event (used by `rsched run-once`). When
     resume_from is a prior run's ts, that run dir is reused and its transcript is rehydrated
-    into the prompt so the run continues where it left off (with a fresh budget window)."""
+    into the prompt so the run continues where it left off (with a fresh budget window).
+    """
     cfg, problems = load_routine(routine_dir)
     if cfg is None:
         raise RuntimeError("; ".join(problems))
@@ -108,14 +116,14 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                      run_dir=run_dir, transcript=transcript,
                      budgets=Budgets.from_config(cfg.budgets))
     if not resume_from:
-        _ensure_decomposed(routine_dir, cfg, server)   # workflow + instruction → main.md, if not yet
+        _ensure_decomposed(routine_dir, cfg, server)   # workflow + instruction → main.md, if needed
     body, prov, allowed_tools = load_workflow(routine_dir, cfg)
     # instruction.md is only a transient compile seed (real routines don't persist it; the wizard's
     # throwaway clarify dir does). A top-level run never puts it in the prompt — main.md + stages/
     # are self-contained — so a missing seed is normal.
     instruction = ((routine_dir / "instruction.md").read_text(encoding="utf-8")
                    if (routine_dir / "instruction.md").exists() else "")
-    if not resume_from:            # a resumed run keeps the original header (transcript is append-only)
+    if not resume_from:            # a resumed run keeps the original header (append-only)
         transcript.header(run_id=ctx.run_id, routine=cfg.slug, workflow=prov,
                           orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model})
     status = EngineLoop(ctx, body, instruction,

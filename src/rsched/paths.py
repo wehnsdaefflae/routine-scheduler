@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 
 
@@ -34,10 +35,10 @@ def atomic_write(path: str | Path, data: str | bytes) -> Path:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
-        os.replace(tmp, path)
+        Path(tmp).replace(path)
     except BaseException:
         try:
-            os.unlink(tmp)
+            Path(tmp).unlink()
         except OSError:
             pass
         raise
@@ -64,9 +65,10 @@ def within(root: Path, candidate: Path) -> bool:
         return False
 
 
-def resolve_rel(base: Path, rel: str, extra_roots: list[Path] = ()) -> Path:
+def resolve_rel(base: Path, rel: str, extra_roots: Sequence[Path] = ()) -> Path:
     """Resolve a path from an action: relative → under base; absolute → must fall inside
-    base or one of extra_roots. Raises PermissionError otherwise."""
+    base or one of extra_roots. Raises PermissionError otherwise.
+    """
     p = expand(rel)
     candidate = p if p.is_absolute() else (base / p)
     roots = [base, *extra_roots]

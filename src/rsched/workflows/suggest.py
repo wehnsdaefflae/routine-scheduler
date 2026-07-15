@@ -23,9 +23,11 @@ SUGGEST_SCHEMA = {
                                      "reason": {"type": "string"}}},
         },
         "none_fit": {"type": "boolean",
-                     "description": "true when no listed workflow fits well and a new one should be drafted"},
+                     "description": "true when no listed workflow fits well and a new one "
+                                    "should be drafted"},
         "new_workflow_hint": {"type": "string",
-                              "description": "when none_fit: one paragraph sketching the missing workflow"},
+                              "description": "when none_fit: one paragraph sketching the "
+                                             "missing workflow"},
     },
 }
 
@@ -57,7 +59,8 @@ def suggest(server: ServerConfig, instruction: str) -> dict:
     for _attempt in range(2):
         completion = endpoint.complete(messages, model=ref.model,
                                        schema=SUGGEST_SCHEMA, temperature=ref.temperature,
-                                       timeout=120, purpose="Rank library workflows", kind="suggest")
+                                       timeout=120, purpose="Rank library workflows",
+                                       kind="suggest")
         try:
             obj = completion.parsed if completion.parsed is not None else parse_reply(
                 completion.text, SUGGEST_SCHEMA)
@@ -131,7 +134,8 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
     (engine-enforced capabilities) for a new routine, from its instruction + chosen
     workflow. Returns {'traits': [...], 'permissions': [...]}, validated against the
     library; falls back to the defaults when no endpoint answers. The wizard shows the
-    result as an editable preselection — this is a first pass, not a decision."""
+    result as an editable preselection — this is a first pass, not a decision.
+    """
     from .. import library_docs
     from ..config import DEFAULT_PERMISSIONS, DEFAULT_TRAITS
 
@@ -143,7 +147,8 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
         return fallback
     workflow_note = ""
     if workflow_slug:
-        wf = next((w for w in list_workflows(server.library_home) if w["slug"] == workflow_slug), None)
+        wf = next((w for w in list_workflows(server.library_home)
+                   if w["slug"] == workflow_slug), None)
         if wf:
             workflow_note = (f"\nCHOSEN WORKFLOW: {wf['slug']} — {wf['description']}\n"
                              f"Its suggested traits: {wf.get('includes') or '(none)'}")
@@ -192,7 +197,8 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
 def suggest_tags(server: ServerConfig, instruction: str) -> list[str]:
     """Suggest exactly 3 tags for a new routine. Reuse the existing vocabulary wherever a tag
     fits; coin a new tag only for a genuinely uncovered facet, never a synonym of an existing one.
-    Returns [] if no generator endpoint answers (the caller falls back to manual entry)."""
+    Returns [] if no generator endpoint answers (the caller falls back to manual entry).
+    """
     vocab = existing_tags(server)
     prompt = (
         "Assign exactly THREE lowercase kebab-case tags to a new recurring LLM-agent routine so it "
@@ -204,7 +210,8 @@ def suggest_tags(server: ServerConfig, instruction: str) -> list[str]:
         "exists, no 'automation' when 'browser' exists).\n\n"
         f"INSTRUCTION:\n{instruction}\n\n"
         f"EXISTING VOCABULARY ({len(vocab)} tags): {', '.join(vocab) or '(none yet)'}\n\n"
-        "Reply with ONLY one JSON object matching this schema (no prose):\n" + json.dumps(TAGS_SCHEMA)
+        "Reply with ONLY one JSON object matching this schema (no prose):\n"
+        + json.dumps(TAGS_SCHEMA)
     )
     endpoint, ref = EndpointRegistry(server).for_system()
     messages = [{"role": "user", "content": prompt}]

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+import httpx
 from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
 
 # {"role": "system"|"user"|"assistant", "content": str} — plus an OPTIONAL "media" list for
@@ -45,7 +46,8 @@ def read_media_b64(path: str | Path) -> str:
 
 def supports_media_type(mime: str, *, multimodal: bool, pdf: bool) -> bool:
     """Shared `supports_media` core: images when multimodal; PDFs only where `pdf` (native
-    document support) is also true. Everything else → the caller's vision-util fallback."""
+    document support) is also true. Everything else → the caller's vision-util fallback.
+    """
     if not multimodal:
         return False
     if mime in IMAGE_MIMES:
@@ -57,7 +59,8 @@ def supports_media_type(mime: str, *, multimodal: bool, pdf: bool) -> bool:
 
 class EndpointError(Exception):
     """A transport failure. `retryable` feeds the with_retries backoff; `auth` lets the
-    UI say "check the key" instead of a bare error."""
+    UI say "check the key" instead of a bare error.
+    """
 
     def __init__(self, message: str, *, retryable: bool = False, auth: bool = False):
         super().__init__(message)
@@ -73,7 +76,8 @@ class Completion:
     usage keys: "in" (fresh input tokens) and "out" always; "cached_in" (input served
     from the provider's prompt cache, ~0.1x price) and "cache_write" (input written into
     it, ~1.25x) when the provider reports cache traffic; "cost" (real $) when known.
-    Adapters keep cache traffic OUT of "in" so token budgets keep their meaning."""
+    Adapters keep cache traffic OUT of "in" so token budgets keep their meaning.
+    """
 
     text: str                     # raw reply text ("" when only parsed content came back)
     parsed: dict | None = None    # object from the endpoint's native schema mode, if any
@@ -87,7 +91,8 @@ class ChatEndpoint(Protocol):
     `session` is a CACHING hint only (a stable opaque key per conversation): an adapter
     may use it to keep the provider's prompt cache warm across turns (claude-cli keeps a
     CLI session per key); semantics never depend on it — every call still carries the
-    full message list and adapters are free to ignore it."""
+    full message list and adapters are free to ignore it.
+    """
 
     name: str
     context_chars: int
@@ -111,7 +116,8 @@ class ChatEndpoint(Protocol):
         caller passes it; one endpoint serves many models). False → the engine routes that
         file through the `vision` util instead. The adapter contributes only kind/runtime
         facts on top: PDFs are anthropic-only, and claude-cli drops to False once a
-        stream-json image send has proven the CLI can't take them."""
+        stream-json image send has proven the CLI can't take them.
+        """
         ...
 
 
@@ -133,7 +139,8 @@ def key_from_env_file(path: str, var: str) -> str | None:
 
 def split_system(messages: list[Message]) -> tuple[str, list[Message]]:
     """Pull leading system message(s) out; most APIs want them separated."""
-    system_parts, rest = [], []
+    system_parts: list[str] = []
+    rest: list[Message] = []
     for m in messages:
         if m["role"] == "system" and not rest:
             system_parts.append(m["content"])
@@ -142,10 +149,74 @@ def split_system(messages: list[Message]) -> tuple[str, list[Message]]:
     return "\n\n".join(system_parts), rest
 
 
+def resolve_api_key(*, name: str, api_key: str, key_var: str, key_env_file: str,
+                    required: bool) -> str:
+    """The shared credential ladder: inline `api_key` (UI-set) wins, then `key_var` in the
+    central secrets store, then `key_var` inside `key_env_file`. A full miss raises
+    auth-flagged when the endpoint requires a key (`required`, the anthropic case) or when
+    an env file was explicitly configured; otherwise returns "none" — the placeholder
+    bearer keyless local backends (Ollama, vLLM) ignore.
+    """
+    if api_key:
+        return api_key
+    from ..secrets import load_secrets
+    if key_var and (key := load_secrets().get(key_var)):
+        return key
+    if key_env_file and (key := key_from_env_file(key_env_file, key_var)):
+        return key
+    if required or key_env_file:
+        raise EndpointError(
+            f"{name}: no API key — paste one in Settings, or put "
+            f"`{key_var}=...` into {key_env_file}", auth=True)
+    return "none"
+
+
+def post_json(url: str, body: dict, headers: dict | None, timeout: int,
+              *, name: str) -> httpx.Response:
+    """POST a JSON body. A network-level failure (the provider was never reached) is always
+    retryable; status-code classification is the caller's (`raise_for_status`).
+    """
+    try:
+        return httpx.post(url, json=body, headers=headers, timeout=timeout)
+    except httpx.HTTPError as exc:
+        raise EndpointError(f"{name}: {exc}", retryable=True) from exc
+
+
+def raise_for_status(resp: httpx.Response, name: str) -> None:
+    """The shared HTTP-status classifier: 401/403 → auth (the UI says "check the key"),
+    429/5xx → retryable (rate limit, outage — anthropic's 529 overloaded rides the 5xx
+    branch), any other non-200 → fatal.
+    """
+    if resp.status_code == 200:
+        return
+    msg = f"{name}: HTTP {resp.status_code}: {resp.text[:300]}"
+    if resp.status_code in (401, 403):
+        raise EndpointError(msg, auth=True)
+    if resp.status_code == 429 or resp.status_code >= 500:
+        raise EndpointError(msg, retryable=True)
+    raise EndpointError(msg)
+
+
+def anthropic_usage(raw: dict) -> dict:
+    """Anthropic-shaped usage (the Messages API and the claude CLI envelope) → our usage
+    dict. `input_tokens` EXCLUDES cache traffic on this API; cache reads/writes are
+    surfaced as `cached_in` / `cache_write`, kept OUT of "in" so token budgets keep
+    their meaning.
+    """
+    usage = {"in": int(raw.get("input_tokens") or 0),
+             "out": int(raw.get("output_tokens") or 0)}
+    if raw.get("cache_read_input_tokens"):
+        usage["cached_in"] = int(raw["cache_read_input_tokens"])
+    if raw.get("cache_creation_input_tokens"):
+        usage["cache_write"] = int(raw["cache_creation_input_tokens"])
+    return usage
+
+
 def json_or_raise(resp, name: str) -> dict:
     """Parse an HTTP body that should be JSON. A 2xx with a garbled body (truncated stream,
     proxy interference) is a transport fault — raised retryable so `with_retries` catches it
-    instead of a JSONDecodeError blowing past the retry wrapper."""
+    instead of a JSONDecodeError blowing past the retry wrapper.
+    """
     try:
         return resp.json()
     except ValueError as exc:  # json.JSONDecodeError is a ValueError
@@ -157,7 +228,8 @@ def json_or_raise(resp, name: str) -> dict:
 
 def with_retries(fn, *, tries: int = 3, base_delay: float = 1.0):
     """Run fn(); on EndpointError(retryable=True) back off 1s/2s and retry (3 tries total).
-    Non-retryable EndpointErrors propagate immediately; the last error is re-raised as-is."""
+    Non-retryable EndpointErrors propagate immediately; the last error is re-raised as-is.
+    """
     return Retrying(
         retry=retry_if_exception(lambda e: isinstance(e, EndpointError) and e.retryable),
         stop=stop_after_attempt(tries),

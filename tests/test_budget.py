@@ -95,4 +95,5 @@ def test_allocate_floors_a_nearly_spent_parent():
 def test_allocate_override_pins_absolute_limit():
     led = _run_ledger()
     child = led.allocate({"turns": 0}, overrides={"turns": 8})
-    assert child.get("turns").limit == 8   # a subtask's explicit turn cap
+    lim = {b.resource: b.limit for b in child.budgets}
+    assert lim["turns"] == 8   # a subtask's explicit turn cap

@@ -42,7 +42,8 @@ def current_process() -> str | None:
 @contextlib.contextmanager
 def process_scope(process_id: str | None):
     """Attribute every complete() in this block (incl. ones dispatched to to_thread) to
-    `process_id`. A no-op when process_id is None."""
+    `process_id`. A no-op when process_id is None.
+    """
     token = _process.set(process_id)
     try:
         yield
@@ -56,7 +57,8 @@ def make_record(phase: str, *, id: str, endpoint: str, model: str, purpose: str,
                 usage: dict | None = None, provider: str | None = None,
                 error: str | None = None) -> dict:
     """One lifecycle line. The descriptive fields ride every phase so a record is
-    self-describing even if an earlier phase's event was dropped by a full SSE queue."""
+    self-describing even if an earlier phase's event was dropped by a full SSE queue.
+    """
     rec: dict = {"id": id, "phase": phase, "ts": now_iso(), "endpoint": endpoint,
                  "model": model, "purpose": purpose}
     if kind:
@@ -77,7 +79,8 @@ class FileSink:
     """Engine-subprocess sink: append each record as one JSON line to a sidecar the daemon
     tails. Same discipline as Transcript (append, line-buffered, flush, no fsync); a lock
     keeps parallel subrun threads — which share this one process-global sink — from
-    interleaving partial lines. Opens lazily so a run with no LLM call writes no file."""
+    interleaving partial lines. Opens lazily so a run with no LLM call writes no file.
+    """
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -89,7 +92,8 @@ class FileSink:
         with self._lock:
             if self._fh is None:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
-                self._fh = open(self.path, "a", encoding="utf-8", buffering=1)
+                # deliberately long-lived (append-per-record); closed in close()
+                self._fh = self.path.open("a", encoding="utf-8", buffering=1)
             self._fh.write(line)
             self._fh.flush()
 
@@ -100,13 +104,21 @@ class FileSink:
                     self._fh.close()
                 self._fh = None
 
+    def __del__(self) -> None:
+        # Backstop, not the contract: the engine process closes its sink explicitly at
+        # exit; this keeps a replaced/abandoned sink from leaking its append handle.
+        try:
+            self.close()
+        except Exception:
+            pass
+
 
 _sink = None  # None = no bookkeeping configured (pure passthrough)
 
 
 def set_sink(sink) -> None:
     """Install the process-global sink (a `.record(rec)` object). Call once at boot."""
-    global _sink
+    global _sink  # noqa: PLW0603 — the one process-global seam, set once at boot by design
     _sink = sink
 
 
@@ -118,7 +130,8 @@ def get_sink():
 class InstrumentedEndpoint:
     """Transparent decorator over a ChatEndpoint. Records each complete() to the current
     sink and otherwise behaves exactly like `inner` — same Completion, same exceptions,
-    all standard kwargs forwarded untouched."""
+    all standard kwargs forwarded untouched.
+    """
 
     def __init__(self, inner: ChatEndpoint):
         object.__setattr__(self, "_inner", inner)
@@ -138,21 +151,22 @@ class InstrumentedEndpoint:
             raise AttributeError(item)
         return getattr(self._inner, item)
 
-    def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
+    def complete(self, messages: list[Message], *,  # noqa: PLR0913 — protocol + audit kwargs
+                 model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
                  timeout: int = DEFAULT_TIMEOUT, session: str | None = None,
                  temperature: float | None = None,
                  purpose: str | None = None, process: str | None = None,
                  kind: str | None = None) -> Completion:
-        inner_kwargs = dict(model=model, schema=schema, effort=effort,
-                            max_tokens=max_tokens, timeout=timeout, session=session,
-                            temperature=temperature)
+        inner_kwargs = {"model": model, "schema": schema, "effort": effort,
+                        "max_tokens": max_tokens, "timeout": timeout, "session": session,
+                        "temperature": temperature}
         sink = _sink
         if sink is None:                       # fast path: nothing observing
             return self._inner.complete(messages, **inner_kwargs)
-        common = dict(id=uuid.uuid4().hex[:12], endpoint=self._inner.name, model=model,
-                      purpose=purpose or "LLM call", kind=kind,
-                      process_id=process if process is not None else current_process())
+        common = {"id": uuid.uuid4().hex[:12], "endpoint": self._inner.name, "model": model,
+                  "purpose": purpose or "LLM call", "kind": kind,
+                  "process_id": process if process is not None else current_process()}
         _emit(sink, make_record("started", **common))
         try:
             comp = self._inner.complete(messages, **inner_kwargs)
@@ -168,5 +182,5 @@ def _emit(sink, rec: dict) -> None:
     """Recording must never break a real LLM call (disk full, a slow subscriber…)."""
     try:
         sink.record(rec)
-    except Exception:  # noqa: BLE001 — bookkeeping is best-effort by design
+    except Exception:
         pass

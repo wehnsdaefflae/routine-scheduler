@@ -22,8 +22,8 @@ def truncate(text: str, cap: int = OBS_CAP_CHARS) -> tuple[str, bool]:
         return text, False
     head = int(cap * 0.6)
     tail = cap - head
-    return (text[:head] + f"\n[... output truncated: showing {cap} of {len(text)} chars (head+tail) ...]\n"
-            + text[-tail:]), True
+    marker = f"\n[... output truncated: showing {cap} of {len(text)} chars (head+tail) ...]\n"
+    return (text[:head] + marker + text[-tail:]), True
 
 
 def harness_contract(ctx: RunContext) -> str:
@@ -77,10 +77,10 @@ contradictions. read_file / write_file are rejected on .memory/ paths.""")
                      "your task: goal, deliverable, constraints, completion criteria. It is the "
                      "single source of truth for what to do. ")
     return f"""You are the orchestrator of the routine "{r.name}" ({r.slug}), run {ctx.run_id}\
-{f" (schedule: {r.cron})" if r.cron else ""}. This conversation IS the run: every turn you reply with \
-EXACTLY one JSON object matching the action schema below — no prose outside the JSON. The "say" \
-field is ONE short sentence — what you observed / why this action; keep it terse (a few words for \
-routine steps), spend words only on decisions and surprises.
+{f" (schedule: {r.cron})" if r.cron else ""}. This conversation IS the run: every turn you reply \
+with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. The \
+"say" field is ONE short sentence — what you observed / why this action; keep it terse (a few \
+words for routine steps), spend words only on decisions and surprises.
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \
 conversation, one per turn, each answered by an observation before your next reply. Never state or \
@@ -127,9 +127,10 @@ built-in checks, data on stdout / diagnostics on stderr / exit 0 on success; on 
 missing arguments it MUST print its own usage line to stderr and exit 2 — an error that
 doesn't teach the correct call wastes every future caller's turn). The engine runs
 `--selftest` and only commits if it passes; a util may call sibling utils via `gu <name>`. If it \
-needs a secret (token, password, API key), read it env-first — `os.environ["NAME"]` — never hardcode \
-or prompt for it, AND declare the names in a header `secrets: NAME1, NAME2` line so the UI tells the \
-user what to set (they set it once in the Secrets store; the engine injects it).{util_confirm}
+needs a secret (token, password, API key), read it env-first — `os.environ["NAME"]` — never \
+hardcode or prompt for it, AND declare the names in a header `secrets: NAME1, NAME2` line so the \
+UI tells the user what to set (they set it once in the Secrets store; the engine injects it).\
+{util_confirm}
 - read_file / write_file / edit_file: read or write a file (within the working dir or an \
 allowed root). read_file takes `path` or `paths` (several files in ONE action — batch related \
 reads instead of spending a turn per file). edit_file replaces an exact `anchor` string with \
@@ -156,22 +157,22 @@ that step's purpose (or omit for the default, or "generate" to DRAFT one when no
 that capability is enabled); give a self-contained "prompt"; "turns" bounds it (default: half your \
 remaining). Unlike a plain workflow step it runs on its own context window + pattern.
 - detach: start a LONG background task that OUTLIVES this reply — for a big, self-contained job (a \
-large scrape, a bulk conversion, a slow build) you want to kick off and keep chatting around. Unlike \
-spawn/subtask (children that die when this reply's process ends), a detached task runs as its OWN \
-process; when it finishes the engine delivers its result back into this conversation and you relay \
-it to the user. Give a complete self-contained "prompt" (it CANNOT ask you blocking questions) and \
-pick its "workflow"; then `finish` the reply ("started it — I'll report back") and do NOT wait. Its \
-status is in state/background.json. Only from a conversation, only for jobs too long to finish in \
-this reply — otherwise do the work directly or use subtask.
+large scrape, a bulk conversion, a slow build) you want to kick off and keep chatting around. \
+Unlike spawn/subtask (children that die when this reply's process ends), a detached task runs as \
+its OWN process; when it finishes the engine delivers its result back into this conversation and \
+you relay it to the user. Give a complete self-contained "prompt" (it CANNOT ask you blocking \
+questions) and pick its "workflow"; then `finish` the reply ("started it — I'll report back") and \
+do NOT wait. Its status is in state/background.json. Only from a conversation, only for jobs too \
+long to finish in this reply — otherwise do the work directly or use subtask.
 - subruns: a status table of your sub-workflows (state, turns, elapsed).
 - kill: terminate sub-workflow "n". wait: block until sub-workflow "n" / "all": true / any \
 unreported exit (timeout_s, default 600) — it returns AT ONCE when a finished child hasn't \
 been reported to you yet, or when nothing is running. Children never outlive you — your \
 finish kills them.
 - ask_user: mode "deferred" (default) files the question and CONTINUES — plan around the missing \
-answer. Mode "blocking" pauses the run until answered; after {b.ask_timeout_min} minutes without an answer \
-the run CONTINUES on your stated `default` (set it on every blocking ask) and the question stays \
-open for a future run. Ask sparingly; batch what can wait until run end.
+answer. Mode "blocking" pauses the run until answered; after {b.ask_timeout_min} minutes without \
+an answer the run CONTINUES on your stated `default` (set it on every blocking ask) and the \
+question stays open for a future run. Ask sparingly; batch what can wait until run end.
 - finish: end the run with status ok|partial|failed and a DETAILED 8-20 line summary: concrete \
 outcomes (numbers, names, links), decisions taken and why, what changed on disk, open ends and \
 what the next run should pick up. That summary is what the user and the next run see — it is \
@@ -188,7 +189,8 @@ _PERMISSION_NOTE_MAX_LINES = 14
 def _permission_notes(ctx: RunContext, g) -> str:
     """Usage notes for the held permissions that carry one — the library permission's body,
     capped. This is the ONLY prose a permission contributes to the prompt (permissions are
-    an enforcement surface, not standards); traits carry the routine's practice prose."""
+    an enforcement surface, not standards); traits carry the routine's practice prose.
+    """
     from .. import library_docs
 
     try:
@@ -201,11 +203,11 @@ def _permission_notes(ctx: RunContext, g) -> str:
         if not raw:
             continue
         body = library_docs.doc_body(raw).strip()
-        lines = [ln for ln in body.splitlines()]
+        lines = list(body.splitlines())
         if not lines:
             continue
         if len(lines) > _PERMISSION_NOTE_MAX_LINES:
-            lines = lines[:_PERMISSION_NOTE_MAX_LINES] + ["[…]"]
+            lines = [*lines[:_PERMISSION_NOTE_MAX_LINES], "[…]"]
         chunks.append("\n".join(lines))
     return "\n\n".join(chunks)
 
@@ -216,7 +218,8 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
     capability notes, and the util catalog at one line per util. Every run — including the
     wizard's clarify session, whose tools allowlist can't even call `util name=list` —
     plans against this instead of guessing. Exact usage flags still come from
-    `util name=list` (live, never stale)."""
+    `util name=list` (live, never stale).
+    """
     from .. import utils_lib
     from .actions import KINDS
 
@@ -227,7 +230,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                      f"{ref.context_chars:,} chars; the engine archives the middle of "
                      "the conversation to on-disk history at ~60-80% of that, so budget your "
                      "reads (large files via read_file ranges, not whole).")
-    except Exception:  # noqa: BLE001 — a bare test context has no registry; degrade silently
+    except Exception:
         pass
     g = ctx.grants
     kinds = [k for k in KINDS
@@ -265,7 +268,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
 
             patterns = [w for w in list_workflows(ctx.server.library_home)
                         if "meta" not in (w.get("tags") or [])]
-        except Exception:  # noqa: BLE001 — bare test contexts have no library
+        except Exception:
             patterns = []
         if patterns:
             parts.append("Sub-workflow patterns for spawn — pick the one matching the CHILD's "
@@ -282,7 +285,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                     if g is not None and u["name"] in g.gated_utils
                     and u["name"] not in g.utils else "")
             lines.append(f"- {head}{note}")
-        header = (f"Global utils ({len(utils)}; run `util name=list args=[\"<name>\"]` for "
+        header = (f'Global utils ({len(utils)}; run `util name=list args=["<name>"]` for '
                   "one's exact usage before calling it):" if "util" in kinds else
                   f"Global utils ({len(utils)} — this workflow cannot CALL utils; the list "
                   "tells you what a routine can be built to do):")
@@ -301,7 +304,8 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                  else "Current phase: (none recorded — likely the first run)")
     state_dir = routine_dir / "state"
     if state_dir.is_dir():
-        entries = [f"{p.name} ({p.stat().st_size}B)" for p in sorted(state_dir.iterdir()) if p.is_file()]
+        entries = [f"{p.name} ({p.stat().st_size}B)"
+                   for p in sorted(state_dir.iterdir()) if p.is_file()]
         parts.append("state/: " + (", ".join(entries) if entries else "(empty)"))
     background = read_json(routine_dir / "state" / "background.json")
     if isinstance(background, list) and background:
@@ -325,10 +329,12 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
             parts.append("traits/ practice modules (this routine's own adapted standards — read "
                          "each before the situation it governs; the workflow's Standing practices "
                          "section says when): " + ", ".join(names))
-    runs = sorted((routine_dir / "runs").glob("*/result.md")) if (routine_dir / "runs").is_dir() else []
+    runs_dir = routine_dir / "runs"
+    runs = sorted(runs_dir.glob("*/result.md")) if runs_dir.is_dir() else []
     if runs:
         last = runs[-1]
-        parts.append(f"Last run result ({last.parent.name}):\n{last.read_text(encoding='utf-8').strip()}")
+        parts.append(f"Last run result ({last.parent.name}):\n"
+                     f"{last.read_text(encoding='utf-8').strip()}")
     else:
         parts.append("Last run result: (no previous runs)")
     ledger = routine_dir / "LEDGER.md"
@@ -351,7 +357,8 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
             parts.append(".memory/ notes (INDEX.md is MISSING — re-save each with "
                          "memory_write to rebuild it): " + ", ".join(names))
     if open_qs:
-        qlines = "\n".join(f"- [{q['qid']}] {q['question']} (asked {q.get('asked', '?')})" for q in open_qs)
+        qlines = "\n".join(f"- [{q['qid']}] {q['question']} (asked {q.get('asked', '?')})"
+                           for q in open_qs)
         parts.append(f"Open deferred questions (still unanswered):\n{qlines}")
     if deferred_qa:
         alines = "\n".join(f"- Q: {p['question']}\n  A: {p['answer']}" for p in deferred_qa)
@@ -392,7 +399,9 @@ def kickoff_message(ctx: RunContext) -> str:
             "not a summary, not a finish).")
 
 
-def format_observation(obs: dict) -> str:
+# One flat renderer on purpose: observation wording is prompt surface (docs/prompt-anatomy.md)
+# and lives in ONE place per kind — a dispatch table would only scatter the strings.
+def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR0915
     kind = obs.get("kind")
     if kind == "util":
         if obs.get("listing") is not None:
@@ -418,7 +427,8 @@ def format_observation(obs: dict) -> str:
             return (f"OBSERVATION (write_util {obs['name']!r}): approval requested from the user "
                     f"({obs['qid']}). It is NOT active yet; continue with other work or wait.")
         if obs.get("declined"):
-            return f"OBSERVATION (write_util {obs['name']!r} DECLINED by the user). Do not retry it."
+            return (f"OBSERVATION (write_util {obs['name']!r} DECLINED by the user). "
+                    "Do not retry it.")
         if not obs.get("selftest_ok"):
             return (f"OBSERVATION (write_util {obs['name']!r}: selftest FAILED — not committed):\n"
                     f"{obs.get('output', '')}\nFix the script and write_util again.")
@@ -437,8 +447,9 @@ def format_observation(obs: dict) -> str:
             return f"OBSERVATION (read_file, {len(obs['files'])} files):\n" + "\n\n".join(parts)
         if err := obs.get("error"):
             return f"OBSERVATION (read_file {obs.get('path')} FAILED): {err}"
-        return (f"OBSERVATION (read_file {obs['path']}, lines {obs['start_line']}-{obs['end_line']} "
-                f"of {obs['total_lines']}):\n{obs['content']}")
+        return (f"OBSERVATION (read_file {obs['path']}, lines "
+                f"{obs['start_line']}-{obs['end_line']} of {obs['total_lines']}):\n"
+                f"{obs['content']}")
     if kind == "view_image":
         parts = []
         for f in obs.get("files", []):
@@ -474,8 +485,9 @@ def format_observation(obs: dict) -> str:
                 f"{obs['content']}")
     if kind == "memory_write":
         if obs.get("deleted"):
-            return ("OBSERVATION (memory_write): note "
-                    f"{obs['name']}.md {'deleted and INDEX updated' if obs.get('existed') else 'did not exist — nothing to delete'}.")
+            fate = ("deleted and INDEX updated" if obs.get("existed")
+                    else "did not exist — nothing to delete")
+            return f"OBSERVATION (memory_write): note {obs['name']}.md {fate}."
         return (f"OBSERVATION (memory_write): note {obs['name']}.md "
                 f"{'created' if obs.get('created') else 'revised'} ({obs['lines']} lines); "
                 "INDEX.md updated from 'about'.")
@@ -519,7 +531,8 @@ def format_observation(obs: dict) -> str:
         if obs.get("error"):
             return f"OBSERVATION (kill FAILED): {obs['error']}"
         if obs.get("already_finished"):
-            return f"OBSERVATION (kill): sub-workflow {obs['n']} had already finished ({obs['status']})."
+            return (f"OBSERVATION (kill): sub-workflow {obs['n']} had already finished "
+                    f"({obs['status']}).")
         return f"OBSERVATION (kill): sub-workflow {obs['n']} terminated ({obs.get('status')})."
     if kind == "wait":
         if obs.get("error"):
@@ -530,9 +543,10 @@ def format_observation(obs: dict) -> str:
             parts.append(f"{noun} {f['n']} {f['label']!r} FINISHED "
                          f"(status {f['status']}, {f['turns']} turns):\n{f['summary']}")
         if obs.get("interrupted_by_user"):
-            parts.append("Wait PAUSED — a user message just arrived (delivered next). Handle it, "
-                         f"then `wait` again for the still-running child(ren) {obs.get('still_running')} "
-                         "when you are ready to continue the sequence.")
+            parts.append("Wait PAUSED — a user message just arrived (delivered next). Handle "
+                         "it, then `wait` again for the still-running child(ren) "
+                         f"{obs.get('still_running')} when you are ready to continue the "
+                         "sequence.")
         elif obs.get("timed_out"):
             parts.append(f"wait timed out; still running: {obs.get('still_running')}")
         elif not parts:
@@ -545,9 +559,9 @@ def format_observation(obs: dict) -> str:
         if obs.get("timed_out"):
             tail = (f"Proceed on your stated default: {obs['default']}"
                     if obs.get("default") else "Continue and plan around it")
-            return (f"OBSERVATION (ask_user): no answer within {obs.get('timeout_min') or int(obs.get('timeout_h', 0)) * 60}m — question "
-                    f"stays open as deferred ({obs['qid']}). {tail}; a late answer reaches a "
-                    "future run.")
+            return (f"OBSERVATION (ask_user): no answer within {obs.get('timeout_min')}m — "
+                    f"question stays open as deferred ({obs['qid']}). {tail}; a late answer "
+                    "reaches a future run.")
         return (f"OBSERVATION (ask_user): question filed as deferred ({obs['qid']}). The user will "
                 "see it in the UI; the answer, if any, reaches a future run. Continue.")
     return f"OBSERVATION ({kind}): {json.dumps(obs, ensure_ascii=False)[:500]}"

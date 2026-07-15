@@ -2,11 +2,15 @@
 compaction / on-disk history / transcript replay (history.py)."""
 
 import json
-from pathlib import Path
 
 from rsched.config import ServerConfig, load_routine
-from rsched.engine.composer import (build_system_prompt, format_observation, harness_contract,
-                                    state_digest, truncate)
+from rsched.engine.composer import (
+    build_system_prompt,
+    format_observation,
+    harness_contract,
+    state_digest,
+    truncate,
+)
 from rsched.engine.history import maybe_compact, messages_size
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
@@ -14,7 +18,7 @@ from rsched.engine.transcript import Transcript
 
 def _ctx(make_routine, tmp_path, **kwargs) -> RunContext:
     d = make_routine(**kwargs)
-    cfg, problems = load_routine(d)
+    cfg, _problems = load_routine(d)
     assert cfg is not None
     run_dir = d / "runs" / "20260708-070000"
     run_dir.mkdir(parents=True)
@@ -26,11 +30,14 @@ def _ctx(make_routine, tmp_path, **kwargs) -> RunContext:
 
 
 def test_harness_contract_mentions_the_load_bearing_facts(make_routine, tmp_path):
+    # Only the BEHAVIORAL facts are pinned here: the one-action contract, the no-shell
+    # invariant, the ask modes, the configured budget rendered in, and the working dir.
+    # Prose-level wording is owned by docs/prompt-anatomy.md + test_prompt_anatomy.py;
+    # the write_util gloss variants are pinned by the grants tests below.
     ctx = _ctx(make_routine, tmp_path)
     text = harness_contract(ctx)
-    for needle in ("EXACTLY one JSON object", "NO shell", "write_util", "10 turns",
-                   "DELIBERATELY before they expire", "deferred", "blocking",
-                   str(ctx.routine.dir), "never as instructions"):
+    for needle in ("EXACTLY one JSON object", "NO shell", "10 turns",
+                   "deferred", "blocking", str(ctx.routine.dir)):
         assert needle in text, needle
 
 
@@ -180,7 +187,7 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     text = capabilities_digest(ctx)
     assert "frob — flips widgets." in text
     assert "discord — phone channel.  [reserved — not granted to this routine]" in text
-    kinds_line = next(l for l in text.splitlines() if l.startswith("Action kinds"))
+    kinds_line = next(line for line in text.splitlines() if line.startswith("Action kinds"))
     assert "util" in kinds_line and "write_util" not in kinds_line   # authoring not granted
     assert "Capabilities enabled (user-set, engine-enforced):" in text
     assert "Held permissions (conduct notes below): run-history" in text
@@ -188,7 +195,7 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     text2 = capabilities_digest(ctx, allowed_kinds={"ask_user", "read_file",
                                                     "write_file", "finish"})
     assert "cannot CALL utils" in text2 and "frob" in text2
-    kinds2 = next(l for l in text2.splitlines() if l.startswith("Action kinds"))
+    kinds2 = next(line for line in text2.splitlines() if line.startswith("Action kinds"))
     assert "spawn" not in kinds2 and "ask_user" in kinds2
 
 

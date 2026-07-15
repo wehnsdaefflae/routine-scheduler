@@ -43,7 +43,8 @@ def _wanted_files(routine_dir: Path) -> list[Path]:
 
 def export_routines(routines_home: Path, dest_routines: Path) -> dict:
     """Mirror each routine's persistent tree into dest_routines/<slug>/ — rsync-like:
-    unchanged files are left alone, vanished files are pruned."""
+    unchanged files are left alone, vanished files are pruned.
+    """
     exported, skipped = [], []
     desired: set[Path] = set()
     if routines_home.is_dir():
@@ -77,7 +78,8 @@ def export_routines(routines_home: Path, dest_routines: Path) -> dict:
 
 def _redact(obj) -> int:
     """Recursively blank secret values: any token/api_key entry with a non-empty value
-    becomes REDACTED (empty stays empty — it honestly says 'nothing was set')."""
+    becomes REDACTED (empty stays empty — it honestly says 'nothing was set').
+    """
     hits = 0
     if isinstance(obj, dict):
         for key, val in obj.items():
@@ -108,12 +110,13 @@ def export_config(config_path: Path, dest_dir: Path) -> dict:
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(repo), *args],
-                          capture_output=True, text=True, timeout=120)
+                          capture_output=True, text=True, timeout=120, check=False)
 
 
 def git_sync(repo: Path, message: str = "instance sync") -> dict:
     """Commit local changes → pull --rebase from origin → push. Aborts cleanly on a
-    rebase conflict (pull_error) and never tries to resolve it."""
+    rebase conflict (pull_error) and never tries to resolve it.
+    """
     if not (repo / ".git").is_dir():
         raise ValueError(f"{repo} is not a git repository")
     _git(repo, "add", "-A")
@@ -149,7 +152,8 @@ def read_status(server: ServerConfig) -> dict | None:
 
 def run_sync(server: ServerConfig) -> dict:
     """One full sync. status: 'ok' (everything clean), 'partial' (exported but the pull
-    hit a conflict / config skipped), 'error' (nothing synced). Never raises."""
+    hit a conflict / config skipped), 'error' (nothing synced). Never raises.
+    """
     from .paths import config_file
 
     result: dict = {"ts": now_iso(), "status": "ok"}

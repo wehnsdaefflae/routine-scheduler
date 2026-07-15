@@ -128,6 +128,7 @@ def test_bootstrap_generates_config_with_token(tmp_path, monkeypatch):
 def test_bootstrap_seeds_meta_routines(tmp_path):
     """Fresh install installs the bundled meta routines — disabled, generic (no hardcoded endpoints)."""
     import yaml
+
     from rsched.bootstrap import seed_routines
     home = tmp_path / "routines"
     assert seed_routines(home) >= 1

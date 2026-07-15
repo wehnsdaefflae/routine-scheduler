@@ -2,9 +2,7 @@
 
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
-
-import pytest
+from datetime import UTC, datetime, timedelta
 
 import rsched.daemon.runner as runner_mod
 import rsched.daemon.scheduler as sched_mod
@@ -45,8 +43,8 @@ def test_rescan_keeps_owed_fires(make_routine, tmp_path):
     make_routine(slug="owed")
     sched = Scheduler(_server(tmp_path), FakeRunner(), EventBus())
     sched.rescan()
-    assert "owed" in sched.next_fires and sched.next_fires["owed"] > datetime.now(timezone.utc)
-    past = datetime.now(timezone.utc) - timedelta(seconds=30)
+    assert "owed" in sched.next_fires and sched.next_fires["owed"] > datetime.now(UTC)
+    past = datetime.now(UTC) - timedelta(seconds=30)
     sched.next_fires["owed"] = past
     sched.rescan()
     assert sched.next_fires["owed"] == past  # a due fire survives the rescan
@@ -71,11 +69,11 @@ async def test_fire_on_due_tick(make_routine, tmp_path, monkeypatch):
     sched = Scheduler(_server(tmp_path), fr, EventBus())
     task = asyncio.create_task(sched.run_forever())
     await asyncio.sleep(0.05)
-    sched.next_fires["ticker"] = datetime.now(timezone.utc) - timedelta(seconds=1)
+    sched.next_fires["ticker"] = datetime.now(UTC) - timedelta(seconds=1)
     await asyncio.sleep(0.1)
     task.cancel()
     assert ("ticker", "schedule") in fr.fired
-    assert sched.next_fires["ticker"] > datetime.now(timezone.utc)  # advanced past the fire
+    assert sched.next_fires["ticker"] > datetime.now(UTC)  # advanced past the fire
 
 
 async def test_library_sync_fires_on_due_tick(tmp_path, monkeypatch):
@@ -89,11 +87,11 @@ async def test_library_sync_fires_on_due_tick(tmp_path, monkeypatch):
     task = asyncio.create_task(sched.run_forever())
     await asyncio.sleep(0.05)
     assert sched.sync_next is not None                     # scheduled from config at rescan
-    sched.sync_next = datetime.now(timezone.utc) - timedelta(seconds=1)
+    sched.sync_next = datetime.now(UTC) - timedelta(seconds=1)
     assert await _wait_for(lambda: ran)
     task.cancel()
     assert ran == [server]
-    assert sched.sync_next > datetime.now(timezone.utc)    # advanced past the fire
+    assert sched.sync_next > datetime.now(UTC)    # advanced past the fire
     assert sched.snapshot()["library_sync_next"]
 
 
@@ -117,8 +115,8 @@ def _stub_engine(monkeypatch, script: str):
     monkeypatch.setattr(runner_mod, "engine_cmd", cmd)
 
 
-async def _wait_for(cond, timeout=5.0):
-    for _ in range(int(timeout / 0.02)):
+async def _wait_for(cond, wait_s=5.0):
+    for _ in range(int(wait_s / 0.02)):
         if cond():
             return True
         await asyncio.sleep(0.02)
@@ -176,7 +174,7 @@ async def test_waiting_user_releases_slot(make_routine, tmp_path, monkeypatch):
     # asker parks in waiting_user → its slot frees → worker spawns while asker still lives
     assert await _wait_for(lambda: runner.active.get("worker") and runner.active["worker"].proc)
     assert runner.is_active("asker")
-    assert await _wait_for(lambda: not runner.active, timeout=8)
+    assert await _wait_for(lambda: not runner.active, wait_s=8)
 
 
 async def test_abort_active_run(make_routine, tmp_path, monkeypatch):

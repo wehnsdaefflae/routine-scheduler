@@ -10,7 +10,7 @@ from __future__ import annotations
 import gzip
 import shutil
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -22,17 +22,22 @@ from ..paths import read_json
 
 GZIP_AFTER_RUNS = 5  # transcripts older than the N most recent runs get gzipped
 
+# THE run-state vocabulary (status.json `state`) — every consumer (SSE, wizard, detached
+# manager, retention) imports these rather than inlining its own tuple.
+TERMINAL_STATES = ("finished", "failed", "aborted")   # past these a run never changes again
+ACTIVE_STATES = ("queued", "starting", "running", "waiting_user", "paused")
+
 
 @dataclass
 class RunInfo:
     """One run as read off disk (`runs/<ts>/status.json`) — the registry never asks the
-    engine process; the filesystem is the interface."""
+    engine process; the filesystem is the interface.
+    """
 
     run_id: str
     ts: str
     dir: Path
     state: str = "unknown"       # running | waiting_user | paused | finished | failed | aborted
-    finish_status: str = ""      # ok | partial | failed | aborted ('' while running)
     summary: str = ""
     pid: int | None = None
     turn: int = 0
@@ -45,7 +50,8 @@ class RunInfo:
 @dataclass
 class RoutineInfo:
     """A routine plus its recent runs and open questions — one catalog entry, rebuilt
-    from the filesystem on every rescan (no cache, no database)."""
+    from the filesystem on every rescan (no cache, no database).
+    """
 
     cfg: RoutineConfig
     problems: list[str]
@@ -63,7 +69,7 @@ class RoutineInfo:
     @property
     def active_run(self) -> RunInfo | None:
         r = self.last_run
-        return r if r and r.state in ("queued", "running", "waiting_user", "paused", "starting") else None
+        return r if r and r.state in ACTIVE_STATES else None
 
 
 def read_run(run_dir: Path, slug: str) -> RunInfo:
@@ -81,9 +87,12 @@ def read_run(run_dir: Path, slug: str) -> RunInfo:
         elif st.get("updated") and st.get("started"):
             # runs from before elapsed_s existed: best-effort from the two stamps
             try:
-                started = datetime.strptime(str(st["started"]), "%Y%m%d-%H%M%S")
-                updated = datetime.fromisoformat(str(st["updated"])).replace(tzinfo=None)
-                info.elapsed_s = max(0, int((updated - started).total_seconds()))
+                started = parse_run_ts(str(st["started"]))
+                updated = datetime.fromisoformat(str(st["updated"]))
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=UTC)
+                if started is not None:
+                    info.elapsed_s = max(0, int((updated - started).total_seconds()))
             except ValueError:
                 pass
     result = run_dir / "result.md"
@@ -92,10 +101,6 @@ def read_run(run_dir: Path, slug: str) -> RunInfo:
             info.summary = result.read_text(encoding="utf-8").strip()
         except OSError:
             pass
-    if info.state in ("finished", "failed", "aborted"):
-        info.finish_status = {"finished": "ok", "failed": "failed", "aborted": "aborted"}[info.state]
-        # a partial finish still lands state=finished; refine from the transcript tail lazily
-        # only when a caller needs it — the summary is what the dashboard shows.
     return info
 
 
@@ -109,7 +114,8 @@ def run_index(routine_dir: Path, slug: str) -> list[RunInfo]:
 
 def scan(server: ServerConfig, home: Path | None = None) -> dict[str, RoutineInfo]:
     """Catalog one home. Default: routines_home; pass server.conversations_home to catalog
-    conversations — same dir shape, same RoutineInfo, different world (no schedule)."""
+    conversations — same dir shape, same RoutineInfo, different world (no schedule).
+    """
     home = home or server.routines_home
     catalog: dict[str, RoutineInfo] = {}
     if not home.is_dir():
@@ -143,27 +149,28 @@ def last_due_fire(cfg: RoutineConfig, before: datetime) -> datetime | None:
     return croniter(cfg.cron, before.astimezone(tz)).get_prev(datetime)
 
 
-def parse_run_ts(ts: str, tz: str = "UTC") -> datetime | None:
+def parse_run_ts(ts: str) -> datetime | None:
     """Parse a run-ts back to an aware datetime. Run-ts is ALWAYS UTC (see ids.run_ts), so it
     is read as UTC regardless of the routine's display tz — catch-up comparisons are by
     absolute instant. (Reading it in the routine's tz used to skew last_start by the
     server↔routine offset, which could spuriously re-fire a run_once routine on a UTC host.)
-    `tz` is retained for call-site compatibility."""
+    """
     try:
-        return datetime.strptime(ts, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+        return datetime.strptime(ts, "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
     except ValueError:
         return None
 
 
 def missed_fire(cfg: RoutineConfig, runs: list[RunInfo], now: datetime) -> datetime | None:
     """Boot-time catch-up: the most recent due fire that no run covered, honoring the
-    routine's catchup policy. Returns the missed fire time or None."""
+    routine's catchup policy. Returns the missed fire time or None.
+    """
     if cfg.catchup != "run_once" or not cfg.cron or not cfg.enabled:
         return None
     due = last_due_fire(cfg, now)
     if due is None:
         return None
-    last_start = parse_run_ts(runs[0].ts, cfg.tz) if runs else None
+    last_start = parse_run_ts(runs[0].ts) if runs else None
     if last_start is None or last_start < due - timedelta(seconds=59):
         return due
     return None
@@ -171,12 +178,13 @@ def missed_fire(cfg: RoutineConfig, runs: list[RunInfo], now: datetime) -> datet
 
 def _gzip_in_place(plain: Path) -> None:
     """Compress <name> → <name>.gz and remove the plain file; best-effort (kept files are
-    still read via read_events' _open_maybe_gz)."""
+    still read via read_events' _open_maybe_gz).
+    """
     if not plain.exists():
         return
     gz = plain.with_suffix(plain.suffix + ".gz")
     try:
-        with open(plain, "rb") as src, gzip.open(gz, "wb") as dst:
+        with plain.open("rb") as src, gzip.open(gz, "wb") as dst:
             shutil.copyfileobj(src, dst)
         plain.unlink()
     except OSError:
@@ -185,10 +193,10 @@ def _gzip_in_place(plain: Path) -> None:
 
 def apply_retention(routine_dir: Path, slug: str, keep_runs: int) -> None:
     """Delete run dirs beyond keep_runs (oldest first) and gzip the transcript + LLM-task
-    sidecar of runs older than the GZIP_AFTER_RUNS most recent. Never touches a live run."""
+    sidecar of runs older than the GZIP_AFTER_RUNS most recent. Never touches a live run.
+    """
     runs = run_index(routine_dir, slug)  # newest first
-    alive = {r.ts for r in runs
-             if r.state in ("queued", "running", "waiting_user", "paused", "starting")}
+    alive = {r.ts for r in runs if r.state in ACTIVE_STATES}
     for r in runs[keep_runs:]:
         if r.ts in alive:
             continue

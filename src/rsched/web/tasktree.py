@@ -17,8 +17,8 @@ from ..engine.transcript import read_events
 MAX_DEPTH = 8
 
 
-def _live_stats(sub_dir: Path) -> tuple[int, dict, str]:
-    """(turns, usage, phase) summed from a running child's own transcript."""
+def _live_stats(sub_dir: Path) -> tuple[int, dict]:
+    """(turns, usage) summed from a running child's own transcript."""
     events, _ = read_events(sub_dir / "transcript.jsonl", 0)
     turns = 0
     usage = {"in": 0, "out": 0}
@@ -28,7 +28,7 @@ def _live_stats(sub_dir: Path) -> tuple[int, dict, str]:
             u = ev.get("usage") or {}
             usage["in"] += int(u.get("in", 0) or 0)
             usage["out"] += int(u.get("out", 0) or 0)
-    return turns, usage, ""
+    return turns, usage
 
 
 def build_tree(run_dir: Path, depth_left: int = MAX_DEPTH) -> list[dict]:
@@ -36,7 +36,8 @@ def build_tree(run_dir: Path, depth_left: int = MAX_DEPTH) -> list[dict]:
     children nested (recursively). Node shape:
     {n, label, workflow, mode, budget:{turns,tokens}, state, turns, usage, summary, children:[…]}.
     `mode` is "sequential" (a subtask) or "parallel" (a spawn); `state` is running|ok|partial|
-    failed|aborted."""
+    failed|aborted.
+    """
     events, _ = read_events(run_dir / "transcript.jsonl", 0)
     nodes: dict[int, dict] = {}
     order: list[int] = []
@@ -56,7 +57,7 @@ def build_tree(run_dir: Path, depth_left: int = MAX_DEPTH) -> list[dict]:
         node = nodes[n]
         sub_dir = run_dir / "sub" / str(n)
         if node["state"] == "running" and sub_dir.is_dir():
-            node["turns"], node["usage"], _ = _live_stats(sub_dir)
+            node["turns"], node["usage"] = _live_stats(sub_dir)
         if depth_left > 0 and sub_dir.is_dir():
             node["children"] = build_tree(sub_dir, depth_left - 1)
         out.append(node)

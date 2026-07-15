@@ -122,13 +122,12 @@ def test_catalog_text_includes_usage_and_call_shape(tmp_path):
     assert '"args": ["<arg>", "--flag"]' in text          # the call shape
 
 def test_failed_util_observation_teaches_usage(tmp_path):
-    import json as _json
 
     from rsched.engine.composer import format_observation
     obs = {"kind": "util", "name": "demo", "args": [], "exit": 2,
            "stdout": "", "stderr": "usage error",
            "usage": "usage: gu demo TARGET [--json]",
-           "hint": 'pass every argument in `args` as a JSON array of strings'}
+           "hint": "pass every argument in `args` as a JSON array of strings"}
     text = format_observation(obs)
     assert "[usage] usage: gu demo TARGET" in text and "[hint]" in text
 
@@ -196,7 +195,7 @@ GOOD_UTIL = (
     "secrets: DEMO_API_KEY\n"
     "tags: demo, testing\n"
     '"""\n'
-    "import os\nkey = os.environ.get(\"DEMO_API_KEY\")\n"
+    'import os\nkey = os.environ.get("DEMO_API_KEY")\n'
 )
 
 

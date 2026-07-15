@@ -1,7 +1,8 @@
 """Central secrets store: one KEY=VALUE store injected into utils + endpoints + claude-cli.
 Set any credential here (a util's token, a username, an API key, the Claude subscription token as
 CLAUDE_CODE_OAUTH_TOKEN). The engine injects it into every util + endpoint at run time. Values are
-write-only: the API returns key NAMES, never the values."""
+write-only: the API returns key NAMES, never the values.
+"""
 
 from __future__ import annotations
 

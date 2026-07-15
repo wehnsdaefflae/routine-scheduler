@@ -26,4 +26,4 @@ Read one module, act in that lens only, then the next. Shared rules for every le
   record step writes them to the LEDGERs.
 
 ## Next
-Write `state/phase.json = {step: "fresh-eyes", cursor: {...}}`. Read `stages/fresh-eyes.md`.
+Write `state/phase.json = {phase: "fresh-eyes", cursor: {...}}`. Read `stages/fresh-eyes.md`.

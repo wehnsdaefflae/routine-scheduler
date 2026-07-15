@@ -1,6 +1,7 @@
 """GitHub connect: device flow driven from the web UI, then handed to `gh` in the container.
 The user never needs a container terminal: the UI shows a one-time code, they authorize in their
-own browser, and the backend stores the token via `gh` (persisted in the mounted ~/.config/gh)."""
+own browser, and the backend stores the token via `gh` (persisted in the mounted ~/.config/gh).
+"""
 
 from __future__ import annotations
 
@@ -18,14 +19,15 @@ from .common import server_of
 
 router = APIRouter()
 
-GH_CLI_CLIENT_ID = "178c6fc778ccc68e1d6a"   # GitHub CLI's public OAuth app (has device flow enabled)
+GH_CLI_CLIENT_ID = "178c6fc778ccc68e1d6a"   # GitHub CLI's public OAuth app (device flow on)
 _device_flows: dict[str, dict] = {}
 
 
 def _gh_login() -> str | None:
     if not shutil.which("gh"):
         return None
-    r = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True, text=True, timeout=15)
+    r = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True, text=True,
+                       timeout=15, check=False)
     return (r.stdout.strip() or None) if r.returncode == 0 else None
 
 
@@ -58,7 +60,8 @@ def github_device_start(request: Request) -> dict:
     # losing the one-time code — the device-flow state is then addressable as #/settings?flow=<id>.
     _device_flows[flow_id] = {"device_code": d["device_code"], "client_id": client_id,
                               "user_code": d["user_code"], "verification_uri": verification_uri,
-                              "interval": interval, "expires_at": time.time() + int(d.get("expires_in", 900))}
+                              "interval": interval,
+                              "expires_at": time.time() + int(d.get("expires_in", 900))}
     return {"flow_id": flow_id, "user_code": d["user_code"], "verification_uri": verification_uri,
             "interval": interval, "expires_in": d.get("expires_in", 900)}
 
@@ -66,7 +69,8 @@ def github_device_start(request: Request) -> dict:
 @router.get("/settings/github/device-flow/{flow_id}")
 def github_device_flow(_request: Request, flow_id: str) -> dict:
     """Resume a pending device flow after a reload: return its still-valid code + URL, or 404 if
-    it's unknown/expired (the UI then just shows the normal connect button)."""
+    it's unknown/expired (the UI then just shows the normal connect button).
+    """
     flow = _device_flows.get(flow_id)
     remaining = int(flow["expires_at"] - time.time()) if flow else 0
     if not flow or remaining <= 0:
@@ -109,9 +113,11 @@ def _gh_store_token(token: str) -> str:
     """Store the OAuth token via gh (into the mounted ~/.config/gh) and wire git to use it."""
     env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_TOKEN")}
     login = subprocess.run(
-        ["gh", "auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--with-token"],
-        input=token, capture_output=True, text=True, timeout=30, env=env)
+        ["gh", "auth", "login", "--hostname", "github.com", "--git-protocol", "https",
+         "--with-token"],
+        input=token, capture_output=True, text=True, timeout=30, env=env, check=False)
     if login.returncode != 0:
         raise HTTPException(502, f"gh auth login failed: {login.stderr.strip()[:200]}")
-    subprocess.run(["gh", "auth", "setup-git"], capture_output=True, timeout=15, env=env)
+    subprocess.run(["gh", "auth", "setup-git"], capture_output=True, timeout=15, env=env,
+                   check=False)
     return _gh_login() or "connected"

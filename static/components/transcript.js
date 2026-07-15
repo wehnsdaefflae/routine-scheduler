@@ -253,6 +253,5 @@ export function createTranscript(container, opts = {}) {
       const renderer = SIMPLE[ev.type];
       if (renderer) root.append(renderer(ev));
     },
-    clear() { root.replaceChildren(); openTurn = null; },
   };
 }

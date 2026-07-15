@@ -13,8 +13,8 @@ just before exiting, so the last calls land before the run's process is closed.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from ..engine.transcript import read_events
 
@@ -37,5 +37,5 @@ async def tail_llm_sidecar(run_dir: Path, on_record: Callable[[dict], None]) -> 
             events, _ = read_events(path, offset)
             for rec in events:
                 on_record(rec)
-        except Exception:  # noqa: BLE001 — best-effort; a tailer must never crash the daemon
+        except Exception:
             pass

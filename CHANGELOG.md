@@ -19,6 +19,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.29.0] — 2026-07-15
+
+The whole-codebase overhaul: every subsystem audited (engine, endpoints, daemon, web,
+UI, workflows/seeds, tests, docs), bugs fixed, dead code and every legacy shim removed,
+duplication unified, strict quality tooling introduced. No backwards compatibility is
+kept — converged one-shot migrations and tolerant readers for retired formats are gone.
+
+### Added
+- **One outbound notification seam (`rsched/notify.py`).** Every engine/daemon-implicit
+  "reach the user" send — the blocking-decision Discord mirror and the background-task
+  delivery ping — goes through one module; channels are user-selected (web always,
+  Discord via the `communication` permission), and the durable record is always the
+  Decisions page / the conversation. New guide: `docs/notifications.md`.
+- **Strict tooling, enforced.** `ruff` with `select = ALL` (every ignore carries its
+  house-style justification inline in pyproject.toml), `mypy` over `src/rsched`,
+  branch-coverage config, and a `.pre-commit-config.yaml` wiring both gates into git.
+- **`docs/authoring.md`** — the missing guide to writing utils (PEP 723 + docstring
+  standard + selftest), workflow patterns (`META`/`PHASES`/`main()`), traits,
+  permissions, and playbooks, each with a real example.
+
+### Fixed
+- **Token budgets now mean the same thing on every provider**: the OpenAI-compatible
+  adapter counted cached prefix tokens inside `in`, so `total_tokens` budgets burned
+  cached traffic at full weight on OpenRouter/Ollama but not on Anthropic; cached tokens
+  are now kept OUT of `in` across all three adapters (the documented invariant).
+- **A dialog ("ask back") reply no longer destroys the decision record.** Intermediate
+  replies used to resolve the pending question and tell Discord "resolved" before the
+  dialog was over — a finish without a re-ask silently dropped the decision. The record
+  now stays open (deferred) through the dialog; the model's re-ask supersedes it, a real
+  answer resolves it, and a finish leaves it live for the next run.
+- **`routine.yaml` is written atomically everywhere** (conversation autolabel, patch,
+  wizard finalize) — three raw `write_text` sites violated the cross-process
+  atomic-write invariant and could tear a concurrent engine boot read.
+- Conversation "reply ready" desktop notifications now honor the Settings opt-in;
+  Stats empty-states render their glyph correctly; same-placeholder form fields no
+  longer share one draft-persistence key.
+- Meta-routine seeds: three seeds shipped the removed `ask_timeout_h` key; the improver
+  read a nonexistent `instruction.md`; self-audit's main.md contradicted its own
+  write-report stage on deferred asks; phase-file keys standardized on `{"phase": …}`;
+  false workflow provenance (`self-audit-code`, `meta-workflows`) removed.
+
+### Changed
+- **Settings leads with Endpoints → Models → System model** (the first-run critical
+  path) and loads its sections in parallel; dashboard bus reloads are debounced.
+- Shared UI primitives extracted (`states.js`, `follow.js`, unified formatters in
+  `util.js`); duplicated backend logic unified (artifacts listing/serving, permission
+  detail blocks, active-run guards, terminal-state constants, terminal-resume, the
+  engine's usage folding, injection message shape, phase parsing, api-key resolution and
+  HTTP plumbing across the three endpoint adapters).
+- The stale committed `audit/` artifact (a self-audit run pointed at the source tree)
+  is removed and gitignored; CHANGELOG gains the missing 0.27 entry and a proper 0.18
+  header; README/CLAUDE.md/DOCKER.md drift fixed (`improve: false`, `workflow-curator`,
+  `main()` patterns, model-catalog era Docker notes).
+
+### Removed
+- **All converged one-shot migrations and legacy shims** (the delete-after-convergence
+  policy, applied): `rsched migrate-model-catalog`, `rsched migrate-stages`, the
+  `ask_timeout_h` config shim, the legacy `confirm` vocabulary (`true` /
+  `revisions-only` / `false`), the `fragment:` library-doc reader and `fragments` config
+  scrub, `parse_run_ts`'s dead tz parameter, the `timeout_h` observation fallback, the
+  `status: stable` frontmatter in fallback child recipes, and the empty boot-time
+  permission-adoption walk.
+- Dead code throughout: the unused `/routines/{slug}/files` endpoint, unread response
+  fields (`endpoints` lists, `finish_status`), `GrantPolicy.workflows_sources`,
+  `BudgetLedger.get`, `read_trait`, the vestigial `strip_inactive_improve` pass, unused
+  UI components/CSS/exports, and tautological or dead test code.
+
 ## [0.28.0] — 2026-07-15
 
 ### Changed
@@ -46,6 +113,27 @@ _Nothing yet._
   session still uses one internally). After creation you edit a routine by editing its `stages/` /
   `main.md` / `traits/` directly — the routine page gains a navigable **Recipe** file-tree for exactly
   that — and there is no recompile step to undo those edits.
+
+## [0.27.0] — 2026-07-15
+
+### Changed
+- **Per-model attributes moved off endpoints into a named model catalog.** A new
+  `models:` catalog in the server config (`ServerConfig.models`, Settings → Models) binds a
+  provider model id to an endpoint and owns the PER-MODEL attributes — `multimodal`,
+  `context_chars`, `effort`, `temperature` (each `None` inherits the endpoint-kind default
+  or the endpoint's own value). Endpoints hold only transport + auth + those defaults;
+  `multimodal` is no longer an endpoint property (one endpoint serves many models with
+  different windows and vision support). Every routine/conversation references models **by
+  catalog name** (`routine.yaml` `models:` maps role → name), as does the server's
+  `system_model`; `EndpointRegistry.resolve()` / `.for_model()` / `.for_system()` return a
+  fully resolved `ModelRef` (endpoint, model id, effort, multimodal, context_chars,
+  temperature). Editing a catalog model updates every routine that names it.
+- `supports_media()` and compaction take the resolved model's values; `complete()` gains a
+  `temperature` kwarg honored by all three adapters.
+
+### Added
+- A one-shot `rsched migrate-model-catalog` converted a pre-0.27 endpoint-attribute config
+  (deleted after production convergence, per the migration policy).
 
 ## [0.26.0] — 2026-07-15
 
@@ -225,6 +313,8 @@ _Nothing yet._
   local time — so run-ts and ISO timestamps finally agree. (AUDIT note; residual: the
   pre-`elapsed_s` fallback in `registry.read_run` still treats both stamps as naive — correct
   on a UTC host, a minor follow-up elsewhere.)
+
+## [0.18.0] — 2026-07-15
 
 ### Added
 - **Two conversation budgets, settable before the conversation starts.** The "New

@@ -15,9 +15,10 @@ import jsonschema
 _FENCE_RE = re.compile(r"```(?:json)?\s*\n(.*?)```", re.DOTALL)
 
 
-class SchemaViolation(Exception):
+class SchemaViolation(Exception):  # noqa: N818 — schema-retry control signal, not an error
     """Raised when a reply cannot be turned into a schema-valid object.
-    .problems holds model-readable error lines for the retry prompt."""
+    .problems holds model-readable error lines for the retry prompt.
+    """
 
     def __init__(self, problems: list[str]):
         super().__init__("; ".join(problems))
@@ -26,13 +27,15 @@ class SchemaViolation(Exception):
 
 def loads_tolerant(text: str):
     """json.loads for LLM-authored JSON: strict=False accepts raw control characters
-    (unescaped newlines/tabs) inside strings — a common weak-model slip."""
+    (unescaped newlines/tabs) inside strings — a common weak-model slip.
+    """
     return json.loads(text, strict=False)
 
 
 def extract_json(text: str) -> dict:
     """Pull one JSON object out of a model reply, tolerating code fences and
-    surrounding prose. Raises SchemaViolation if nothing parses."""
+    surrounding prose. Raises SchemaViolation if nothing parses.
+    """
     text = text.strip()
     candidates: list[str] = []
     try:
@@ -69,7 +72,8 @@ def validate(obj: dict, schema: dict) -> list[str]:
 
 def parse_reply(text: str, schema: dict, semantic=None) -> dict:
     """Full pipeline: extract → JSON-Schema validate → optional semantic check.
-    Returns the object or raises SchemaViolation with everything that is wrong."""
+    Returns the object or raises SchemaViolation with everything that is wrong.
+    """
     obj = extract_json(text)
     problems = validate(obj, schema)
     if not problems and semantic is not None:

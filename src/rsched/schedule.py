@@ -14,7 +14,7 @@ load, never surfaced to the user.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
@@ -22,7 +22,7 @@ WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "S
 def server_tz() -> str:
     """The server's local IANA timezone name (e.g. 'Europe/Berlin'), best-effort."""
     try:
-        tz = datetime.now(timezone.utc).astimezone().tzinfo
+        tz = datetime.now(UTC).astimezone().tzinfo
         key = getattr(tz, "key", None)
         if key:
             return key
@@ -63,7 +63,8 @@ def friendly_to_cron(spec: dict) -> str:
 
 def cron_to_friendly(cron: str) -> dict:
     """Cron string → friendly spec. Unrecognized crons come back as
-    {'frequency': 'custom', 'cron': <raw>} so the UI can show them read-only."""
+    {'frequency': 'custom', 'cron': <raw>} so the UI can show them read-only.
+    """
     cron = (cron or "").strip()
     if not cron:
         return {"frequency": "manual"}

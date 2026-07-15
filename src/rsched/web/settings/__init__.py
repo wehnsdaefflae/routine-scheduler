@@ -1,6 +1,7 @@
 """Settings API package: one focused router per concern (endpoints, library, the
 scheduled library sync, source, github, secrets, restart), assembled here into the
-single /settings router that app.py mounts."""
+single /settings router that app.py mounts.
+"""
 
 from __future__ import annotations
 

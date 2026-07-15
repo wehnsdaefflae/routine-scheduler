@@ -66,9 +66,9 @@ systemctl --user disable --now routine-scheduler.service
 - **bind:** the container sets `RSCHED_BIND=0.0.0.0` (env override in `cmd_daemon`) so it serves the
   LAN without editing the mounted `config.yaml`. The token is still the only auth — keep it on a
   trusted LAN.
-- **models:** the three `ollama-local` routines (`ai-agent-papers-digest`, `demo`, `library-sync`)
-  and the `cheap` role were repointed to `openrouter/z-ai/glm-5.2`, since Ollama doesn't come along.
-  The `ollama-local` endpoint definition is left in `config.yaml` (unused) if you re-add Ollama.
+- **models:** anything bound to a host-local Ollama endpoint must be repointed to a reachable
+  provider in the model catalog (Settings → Models), since Ollama doesn't come along into the
+  container. An unused endpoint definition can stay in `config.yaml` if you re-add Ollama later.
 - **restart:** `restart: unless-stopped` + `stop_grace_period: 20s` reproduce the old
   `Restart=always` / `TimeoutStopSec=20`. Self-audit's drain-and-exit restart just exits 0 and Docker
   relaunches it — same as before.
@@ -80,7 +80,7 @@ systemctl --user disable --now routine-scheduler.service
   subscription token is minted once elsewhere with `claude setup-token` and pasted in as
   `CLAUDE_CODE_OAUTH_TOKEN`; the container's `claude` CLI uses it via the environment and never logs
   in. It's long-lived — when it expires, re-run `claude setup-token` and update the Secrets value
-  (no restart). Only `self-audit` (orchestrator) and `meta-workflows` (subcall) use `claude-cli` by
+  (no restart). Only `self-audit` (orchestrator) and `workflow-curator` (subcall) use `claude-cli` by
   default; most setups can use API keys instead.
 - **Headless browsing works out of the box.** The image carries Chromium's system libraries;
   the `page-fetch` util downloads Playwright's Chromium itself on first use (once — the

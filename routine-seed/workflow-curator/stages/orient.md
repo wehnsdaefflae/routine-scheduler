@@ -18,4 +18,4 @@ Build the worklist of what is new since your last sweep.
 If no routine has an unseen run: note "no new runs" for the LEDGER, then still perform one review pass — pick a single workflow (e.g. least recently touched) and carry it to the `draft-new-workflow`/`record` steps so the sweep is never a complete no-op. Set `cursor.worklist` empty and `cursor.no_new_runs = true`.
 
 ## Next
-Write `state/phase.json = {step: "ingest-evidence", cursor: {worklist, no_new_runs}}`. Read `stages/ingest-evidence.md`.
+Write `state/phase.json = {phase: "ingest-evidence", cursor: {worklist, no_new_runs}}`. Read `stages/ingest-evidence.md`.

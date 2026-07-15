@@ -10,7 +10,7 @@ unit-testable without a running server.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, date, datetime
 
 from .config import ServerConfig
 from .daemon import registry
@@ -39,9 +39,12 @@ def _add(acc: dict, usage: dict, elapsed_s) -> None:
 
 
 def _run_day(ts: str) -> str:
-    """A run dir name is `YYYYMMDD-HHMMSS`; the day is its date part."""
+    """A run dir name is `YYYYMMDD-HHMMSS`; the day is its date part. A pure string
+    reformat of the (local-time) dir name — no timezone semantics, so no tz to attach.
+    """
+    raw = str(ts)[:8]
     try:
-        return datetime.strptime(str(ts)[:8], "%Y%m%d").strftime("%Y-%m-%d")
+        return date(int(raw[:4]), int(raw[4:6]), int(raw[6:8])).isoformat()
     except ValueError:
         return "unknown"
 
@@ -50,7 +53,8 @@ def _run_ref(recorded, main_ref) -> tuple[str, str]:
     """(endpoint, model) attribution for one run. status.json's `model` is the engine's
     resolved `<endpoint>/<model>` for that run — authoritative, it survives a mid-run
     switch_model. The routine's main ref (already system_model-backed by the caller,
-    mirroring `EndpointRegistry.for_model`) covers legacy runs that predate the field."""
+    mirroring `EndpointRegistry.for_model`) covers legacy runs that predate the field.
+    """
     endpoint, sep, model = str(recorded or "").partition("/")
     if sep:
         return endpoint, model
@@ -116,7 +120,7 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
     bad = sum(v for k, v in by_state.items() if k in _BAD_STATES)
     graded = ok + bad
     return {
-        "generated": (now or datetime.now(timezone.utc)).isoformat(),
+        "generated": (now or datetime.now(UTC)).isoformat(),
         "totals": {**totals,
                    "routines": sum(1 for v in by_routine.values() if v["kind"] == "routine"),
                    "conversations": sum(1 for v in by_routine.values()

@@ -8,7 +8,7 @@ import threading
 import time
 
 from conftest import finish
-
+from rsched import notify
 from rsched.config import ServerConfig
 from rsched.engine import decisions
 from rsched.engine.runtime import run_routine
@@ -104,11 +104,8 @@ def test_blocking_answer_resolves_the_record(make_routine, scripted):
 
 
 def test_util_approval_is_the_same_record_with_its_own_type(make_routine, scripted, tmp_path):
-    perms = tmp_path / "test-library" / "permissions"
-    perms.mkdir(parents=True, exist_ok=True)
-    (perms / "util-authoring.md").write_text(
-        "---\ntags: [a, b, c]\ngrants:\n  actions: [write_util]\n  confirm: true\n---\n"
-        "# permission: util-authoring — user-approved\nbody\n", encoding="utf-8")
+    # write_util + confirm "always" ride the routine's DEFAULT capabilities — no permission
+    # doc is needed for the approval gate to fire (docs carry conduct prose, not the gate).
     d = make_routine(slug="approval", budgets={"ask_timeout_min": 0})
     scripted([
         {"say": "new util", "kind": "write_util", "name": "frob",
@@ -122,6 +119,93 @@ def test_util_approval_is_the_same_record_with_its_own_type(make_routine, script
     assert "NOT applied until approved" in q["payload"]["default"]
     rec = read_json(next(iter((d / "questions" / "pending").glob("*.json"))))
     assert rec["type"] == "util-approval"
+
+
+def test_dialog_reply_keeps_the_record_open_and_a_reask_supersedes_it(make_routine, scripted):
+    """An intermediate ("ask back") reply is NOT the answer: the record survives as deferred
+    while the dialog continues, and the model's re-ask supersedes it — so exactly one open
+    decision exists at any time and a real answer resolves everything."""
+    d = make_routine(slug="dialog", budgets={"ask_timeout_min": 1})
+    seen: dict = {"first": None}
+
+    def driver():
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
+            blocking = [r for r in recs if r.get("mode") == "blocking"]
+            if seen["first"] is None and blocking:
+                seen["first"] = blocking[0]["qid"]
+                atomic_write_json(d / "inbox" / f"answer-{seen['first']}.json",
+                                  {"qid": seen["first"], "text": "which options do I have?",
+                                   "source": "web", "intermediate": True})
+            elif seen["first"] and blocking and blocking[0]["qid"] != seen["first"]:
+                atomic_write_json(d / "inbox" / f"answer-{blocking[0]['qid']}.json",
+                                  {"qid": blocking[0]["qid"], "text": "yes", "source": "web"})
+                return
+            time.sleep(0.02)
+
+    t = threading.Thread(target=driver)
+    t.start()
+    scripted([
+        {"say": "q", "kind": "ask_user", "question": "Go?", "mode": "blocking"},
+        {"say": "re-ask with options", "kind": "ask_user", "mode": "blocking",
+         "question": "Go? Options: yes (ship now) / no (hold)."},
+        finish(),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    t.join()
+    assert status == "ok"
+    events = _events(run_dir)
+    first_obs = next(e for e in events if e["type"] == "observation"
+                     and e["payload"]["kind"] == "ask_user")
+    assert first_obs["payload"].get("dialog") is True
+    answers = [e["payload"] for e in events if e["type"] == "answer"]
+    assert answers[0]["intermediate"] is True and answers[1]["text"] == "yes"
+    # the superseded record and the answered one are both gone — nothing lingers
+    assert not list((d / "questions" / "pending").glob("*.json"))
+
+
+def test_dialog_reply_survives_a_finish_without_reask(make_routine, scripted):
+    """If the model finishes without re-asking after a dialog reply, the decision is NOT
+    silently dropped — it stays open as a deferred record for the next run."""
+    d = make_routine(slug="dialogdrop", budgets={"ask_timeout_min": 1})
+
+    def driver():
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
+            blocking = [r for r in recs if r.get("mode") == "blocking"]
+            if blocking:
+                atomic_write_json(d / "inbox" / f"answer-{blocking[0]['qid']}.json",
+                                  {"qid": blocking[0]["qid"], "text": "hmm, tell me more",
+                                   "source": "web", "intermediate": True})
+                return
+            time.sleep(0.02)
+
+    t = threading.Thread(target=driver)
+    t.start()
+    scripted([
+        {"say": "q", "kind": "ask_user", "question": "Proceed?", "mode": "blocking"},
+        finish(status="partial", summary="ended mid-dialog"),
+    ])
+    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    t.join()
+    assert status == "partial"
+    recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
+    assert len(recs) == 1 and recs[0]["mode"] == "deferred"   # open for the next run
+
+
+def test_notify_is_the_single_outbound_seam(monkeypatch):
+    """notify.discord_enabled honours both gates — the engine's granted-util set and the
+    daemon's held-permissions list — and requires the channel util to exist at all."""
+    s = ServerConfig()
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
+    assert notify.discord_enabled(s, granted_utils={"discord"})
+    assert not notify.discord_enabled(s, granted_utils=set())
+    assert notify.discord_enabled(s, permissions=["communication"])
+    assert not notify.discord_enabled(s, permissions=["memory"])
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: False)
+    assert not notify.discord_enabled(s, granted_utils={"discord"})
 
 
 # ------------------------------------------------------------------ the Discord mirror
@@ -165,8 +249,8 @@ def _mirror_ctx(make_routine, slug, *, granted=True):
 
 def test_mirror_requires_the_communication_permission(make_routine, monkeypatch):
     fake = _FakeDiscord()
-    monkeypatch.setattr(decisions.utils_lib, "run_util", fake.run_util)
-    monkeypatch.setattr(decisions.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     ctx = _mirror_ctx(make_routine, "nomirror", granted=False)
     assert decisions.mirror_blocking(ctx, "q1", "Go?", [], "", 8) is None
     assert fake.calls == []                       # never touches the channel ungranted
@@ -175,8 +259,8 @@ def test_mirror_requires_the_communication_permission(make_routine, monkeypatch)
 def test_mirror_sends_polls_and_notifies(make_routine, monkeypatch):
     # one empty read (cursor prime), then a reply on the first poll
     fake = _FakeDiscord(replies=[[], [{"text": "yes please"}]])
-    monkeypatch.setattr(decisions.utils_lib, "run_util", fake.run_util)
-    monkeypatch.setattr(decisions.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
     ctx = _mirror_ctx(make_routine, "mirrored")
     mirror = decisions.mirror_blocking(ctx, "q1", "Ship v2 today?", ["yes", "no"],
@@ -195,11 +279,10 @@ def test_mirror_sends_polls_and_notifies(make_routine, monkeypatch):
 
 
 def test_mirror_reply_resolves_the_blocking_ask(make_routine, scripted, monkeypatch):
-    from rsched.engine import interact
 
     fake = _FakeDiscord(replies=[[], ["approved — go"]])
-    monkeypatch.setattr(decisions.utils_lib, "run_util", fake.run_util)
-    monkeypatch.setattr(decisions.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
     # the routine has the discord capability switched on (the doc covers the conduct)
     d = make_routine(slug="viaphone", budgets={"ask_timeout_min": 1})

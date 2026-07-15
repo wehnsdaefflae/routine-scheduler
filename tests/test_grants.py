@@ -6,10 +6,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rsched.grants import (CONFIRM_LEVELS, EMPTY_CAPABILITIES, GrantPolicy,
-                           capabilities_for, floor_capabilities, load_policy,
-                           normalize_capabilities, read_library_requires,
-                           unsatisfied_requires)
+from rsched.grants import (
+    EMPTY_CAPABILITIES,
+    GrantPolicy,
+    capabilities_for,
+    floor_capabilities,
+    load_policy,
+    normalize_capabilities,
+    read_library_requires,
+    unsatisfied_requires,
+)
 
 
 def _lib(tmp_path: Path, permissions: dict[str, str]) -> Path:
@@ -65,10 +71,10 @@ def test_normalize_capabilities_accepts_the_schema():
                                           "utils": ["discord"], "confirm": "always"})
     assert problems == []
     assert c == {"actions": ["util", "write_util"], "utils": ["discord"], "confirm": "always"}
-    # the legacy grants vocabulary still maps
-    assert normalize_capabilities({"confirm": True})[0] == {"confirm": "always"}
-    assert normalize_capabilities({"confirm": "revisions-only"})[0] == {"confirm": "creations"}
-    assert normalize_capabilities({"confirm": False})[0] == {"confirm": "never"}
+    # only the canonical vocabulary is accepted — legacy true/false/revisions-only is gone
+    for legacy in (True, False, "revisions-only"):
+        got, probs = normalize_capabilities({"confirm": legacy})
+        assert got == {} and any("confirm" in p for p in probs)
     assert normalize_capabilities({"confirm": "creations"})[0] == {"confirm": "creations"}
     assert normalize_capabilities({"runs": "none"})[0] == {"runs": "none"}
     assert normalize_capabilities({"runs": "all"})[0] == {"runs": "all"}
@@ -236,8 +242,6 @@ def test_needs_confirm_semantics():
     assert always.needs_confirm(creating=True) and always.needs_confirm(creating=False)
     assert creations.needs_confirm(creating=True) and not creations.needs_confirm(creating=False)
     assert not never.needs_confirm(creating=True) and not never.needs_confirm(creating=False)
-    for level in CONFIRM_LEVELS:
-        assert level in ("always", "creations", "never")
 
 
 # ------------------------------------------------------------------ denial messages

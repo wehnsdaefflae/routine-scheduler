@@ -25,6 +25,12 @@ rsched = "rsched.cli:main"
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.15",
+    "mypy>=1.14",
+    "types-croniter",
+    "types-jsonschema",
+    "types-pyyaml",
 ]
 
 [build-system]
@@ -41,3 +47,86 @@ packages = ["src/rsched"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+filterwarnings = [
+    "error",  # any warning is a failure — drift surfaces immediately
+    # third-party transitional notice (starlette's httpx→httpx2 migration), not ours to fix
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
+
+# ---- lint: everything on; every ignore below names the deliberate house-style reason ----
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D1",      # undocumented-*: docstrings are written where they earn their keep, not everywhere
+    "D200", "D205", "D212", "D400", "D401", "D404", "D415",  # prose-first docstring voice is house style
+    "D203", "D213",  # incompatible-pair halves (D211/D212 chosen)
+    "ANN",     # typing is mypy's gate (see [tool.mypy]); ruff doesn't double-police annotations
+    "TID252",  # relative imports inside the package are house style
+    "PLC0415", # lazy in-function imports are deliberate (startup cost, optional deps)
+    "COM812",  # trailing-comma churn; conflicts with non-formatted house layout
+    "E741",    # after review: no ambiguous names remain; rule kept off for one-letter loop vars
+    "TRY003", "EM101", "EM102",  # message-in-raise is house style; no exception-class zoo
+    "TRY300", "TRY301", "TRY400",  # try/except shapes are chosen per-site, not by rule
+    "FBT001", "FBT002", "FBT003",  # boolean args on internal seams are fine
+    "PLR2004", # magic-value comparisons: HTTP codes and thresholds read better inline
+    "S603", "S607",  # spawning subprocesses (utils, claude-cli, git) IS the product
+    "BLE001",  # broad excepts are used deliberately on best-effort seams (each carries prose why)
+    "SIM105",  # try/except-pass reads clearer than contextlib.suppress at these sites
+    "S110",    # best-effort try/except/pass seams (same reason as BLE001)
+    "TC001", "TC002", "TC003",  # TYPE_CHECKING import gymnastics hurt readability, help nothing here
+    "PERF203", # try/except in loops is the retry pattern
+    "RUF001", "RUF002", "RUF003",  # unicode arrows/dashes in prose strings are intentional
+    "PLW2901", # loop-var reassignment used deliberately in normalize passes
+    "SLF001",  # private-member access across sibling modules is deliberate at engine seams
+    "A002",    # shadowing builtins in narrow scopes (id, input) reads fine
+    "ERA001",  # commented code detector false-positives on prose examples
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # asserts are the point
+    "S106", "S105",  # hardcoded fake tokens in fixtures
+    "ARG001", "ARG002", "ARG005",  # fixture/callback signatures
+    "PT011",   # pytest.raises without match: precise types suffice here
+    "D",       # test docstrings are optional
+    "PLR0913", # fixture-heavy signatures
+    "E501",    # long literal lines in scripted-action fixtures
+    "PT018",   # composite asserts read as one assertion of one fact; pytest introspection shows parts
+]
+"src/rsched/cli.py" = ["T201"]  # print IS the CLI's output surface
+
+[tool.ruff.lint.mccabe]
+max-complexity = 22  # ratchet: current worst (engine loop); lower as refactors land
+
+[tool.ruff.lint.pylint]
+max-args = 10        # ratchet to current worst; lower over time
+max-branches = 22
+max-statements = 75
+max-returns = 8
+
+# ---- types ----
+[tool.mypy]
+python_version = "3.12"
+files = ["src/rsched"]
+plugins = ["pydantic.mypy"]  # teaches mypy the Field(validation_alias=…) defaults
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = true
+no_implicit_optional = true
+ignore_missing_imports = true  # py_vapid/pywebpush/croniter ship no stubs
+
+# ---- coverage ----
+[tool.coverage.run]
+source = ["src/rsched"]
+branch = true
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true
+fail_under = 83  # ratchet: current suite delivers 84% branch coverage — never drop below

@@ -1,6 +1,7 @@
 """Workflow library API: list with lint badges, content + git history, lint-gated edits,
 delete. The user's levers over workflows are EDIT and DELETE — there is no accept/decline
-gate; the workflow-curator routine applies its changes directly (lint-gated, committed)."""
+gate; the workflow-curator routine applies its changes directly (lint-gated, committed).
+"""
 
 from __future__ import annotations
 
@@ -8,8 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ..workflows import library
-from ..workflows.lint import (lint_all, lint_permission_text, lint_trait_text,
-                              lint_workflow_py)
+from ..workflows.lint import lint_all, lint_permission_text, lint_trait_text, lint_workflow_py
 
 router = APIRouter(tags=["workflows"])
 
@@ -83,16 +83,17 @@ def library_doc_detail(request: Request, kind: str, slug: str) -> dict:
     content = library_docs.read_doc(home, slug)
     if content is None:
         raise HTTPException(404, f"no {kind[:-1]} {slug!r}")
-    out = {"slug": slug, "content": content,
+    out: dict = {"slug": slug, "content": content,
            "log": library_docs.git_log(home, f"{slug}.md")}
     if kind == "permissions":
         # parsed requires: prefills the structured editor panel (see PUT below)
-        from ..grants import normalize_capabilities
         import frontmatter as fm
+
+        from ..grants import normalize_capabilities
 
         try:
             meta = fm.loads(content).metadata
-        except Exception:  # noqa: BLE001 — broken frontmatter reads as none (linted on save)
+        except Exception:
             meta = {}
         out["requires"] = normalize_capabilities(meta.get("requires"), label="requires",
                                                  requires=True)[0]
@@ -124,7 +125,7 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
             raise HTTPException(422, "; ".join(problems))
         try:
             post = fm.loads(content)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise HTTPException(422, f"invalid frontmatter: {exc}") from exc
         post.metadata["requires"] = req
         content = fm.dumps(post, sort_keys=False)
@@ -177,7 +178,8 @@ def workflow_detail(request: Request, slug: str) -> dict:
     if not path or not path.exists():
         raise HTTPException(404, f"no workflow {slug!r}")
     rel = str(path.relative_to(home))
-    return {"slug": slug, "content": path.read_text(encoding="utf-8"), "log": library.git_log(home, rel),
+    return {"slug": slug, "content": path.read_text(encoding="utf-8"),
+            "log": library.git_log(home, rel),
             "format": "py" if path.suffix == ".py" else "md"}
 
 
@@ -205,7 +207,8 @@ def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
 def delete_workflow(request: Request, slug: str) -> dict:
     """Delete a workflow pattern (committed). Routines materialized from it are untouched —
     they own their recipes. A deleted SEED pattern reappears at the next daemon boot
-    (sync_seed_library_docs restores missing seed docs)."""
+    (sync_seed_library_docs restores missing seed docs).
+    """
     home = _home(request)
     path = _workflow_file(home, slug)
     if path is None:

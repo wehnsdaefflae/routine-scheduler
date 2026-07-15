@@ -31,7 +31,7 @@ do exactly what it says, then advance.
 
 ## Run flow
 
-Read `state/phase.json` (`{step: <stage>, cursor: {...}}`) for the current stage; if missing or
+Read `state/phase.json` (`{phase: <stage>, cursor: {...}}`) for the current stage; if missing or
 empty, start at `orient`. `read_file` that stage's module (`stages/<stage>.md`) and follow it —
 each ends by naming the next stage and what to write back into `state/phase.json`. `apply-lenses`
 and `fresh-eyes` repeat per target (the cursor tracks which target is in hand; when one is done,

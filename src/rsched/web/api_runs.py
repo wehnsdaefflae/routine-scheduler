@@ -1,5 +1,6 @@
 """Run access: index, transcripts (paged + SSE live tail), intervention
-(inject / pause / resume / abort)."""
+(inject / pause / resume / abort).
+"""
 
 from __future__ import annotations
 
@@ -10,11 +11,12 @@ from pydantic import BaseModel
 from sse_starlette import EventSourceResponse
 
 from ..daemon import registry
+from ..daemon.registry import TERMINAL_STATES
 from ..daemon.runner import abort_process
 from ..engine.transcript import read_events
 from ..ids import now_iso, parse_run_id
 from ..paths import atomic_write_json, read_json
-from .sse import TERMINAL_STATES, run_stream
+from .sse import run_stream
 
 router = APIRouter(tags=["runs"])
 
@@ -22,7 +24,8 @@ router = APIRouter(tags=["runs"])
 def _run_dir(request: Request, run_id: str) -> tuple[str, Path]:
     """Resolve a run id in routines_home OR conversations_home — a conversation's run is a
     run like any other (transcript, SSE, inject, converse, abort all apply). The owning
-    routine/conversation dir is always run_dir.parent.parent."""
+    routine/conversation dir is always run_dir.parent.parent.
+    """
     try:
         slug, ts = parse_run_id(run_id)
     except ValueError as exc:
@@ -37,14 +40,23 @@ def _run_dir(request: Request, run_id: str) -> tuple[str, Path]:
 
 @router.get("/runs")
 def run_index(request: Request, routine: str | None = None, limit: int = 30) -> list[dict]:
-    catalog = registry.scan(request.app.state.server)
-    infos = ([catalog[routine]] if routine and routine in catalog else
-             list(catalog.values()) if not routine else [])
-    runs = [r for info in infos for r in info.runs]
+    """Recent runs, newest first. `routine` filters to ONE slug, resolved across all three
+    homes like _run_dir — a conversation's or a detached task's runs list here too;
+    without it, the index covers routines_home (the dashboard's world).
+    """
+    server = request.app.state.server
+    if routine:
+        runs = next((registry.run_index(home / routine, routine)
+                     for home in (server.routines_home, server.conversations_home,
+                                  server.background_home)
+                     if (home / routine / "routine.yaml").exists()), [])
+    else:
+        runs = [r for info in registry.scan(server).values() for r in info.runs]
     runs.sort(key=lambda r: r.ts, reverse=True)
     return [{"run_id": r.run_id, "routine": r.run_id.split(":", 1)[0], "ts": r.ts,
              "state": r.state, "turn": r.turn, "summary": r.summary[:200],
-             "usage": r.usage, "elapsed_s": r.elapsed_s, "updated": r.updated} for r in runs[:limit]]
+             "usage": r.usage, "elapsed_s": r.elapsed_s, "updated": r.updated}
+            for r in runs[:limit]]
 
 
 @router.get("/runs/{run_id}")
@@ -65,7 +77,8 @@ def run_detail(request: Request, run_id: str) -> dict:
 def run_transcript(request: Request, run_id: str, offset: int = 0, sub: str | None = None) -> dict:
     """Paged transcript events. `sub` selects a subrun's transcript; a nested child is a
     slash path of subrun numbers ("2/1" = child 1 of child 2), matching sub/<n>/sub/<m>/
-    on disk — the UI unfolds subrun conversations recursively with this."""
+    on disk — the UI unfolds subrun conversations recursively with this.
+    """
     import re
 
     _, run_dir = _run_dir(request, run_id)
@@ -87,7 +100,8 @@ async def run_events(request: Request, run_id: str, offset: int = 0):
 def run_tree(request: Request, run_id: str) -> dict:
     """The recursive task tree: this run's sequential subtasks + parallel subruns, each a node
     with mode / state / live turns / allotted budget and its own children nested. A read-model
-    over the on-disk sub/ transcripts (nothing is written) — the rail's decomposition view."""
+    over the on-disk sub/ transcripts (nothing is written) — the rail's decomposition view.
+    """
     from .tasktree import build_tree
 
     _, run_dir = _run_dir(request, run_id)
@@ -100,7 +114,7 @@ class Inject(BaseModel):
 
 @router.post("/runs/{run_id}/inject")
 def inject(request: Request, run_id: str, body: Inject) -> dict:
-    slug, run_dir = _run_dir(request, run_id)
+    _, run_dir = _run_dir(request, run_id)
     if not body.text.strip():
         raise HTTPException(400, "empty message")
     routine_dir = run_dir.parent.parent
@@ -117,7 +131,8 @@ async def converse(request: Request, run_id: str, body: Inject) -> dict:
     """Append a message to THIS run's conversation. Active run: an ordinary injection, picked
     up at the next turn boundary. Terminal run: the message lands in the inbox and the run is
     resumed in place (rehydrated transcript, fresh budget window) — so any run, live or
-    finished, is an open-ended conversation."""
+    finished, is an open-ended conversation.
+    """
     slug, run_dir = _run_dir(request, run_id)
     if not body.text.strip():
         raise HTTPException(400, "empty message")
@@ -133,7 +148,7 @@ async def converse(request: Request, run_id: str, body: Inject) -> dict:
     cfg, _ = load_routine(routine_dir)
     if cfg is None:
         raise HTTPException(404, f"routine {slug!r} not found")
-    rid = await request.app.state.runner.resume(cfg, run_dir.name, reason="converse")
+    rid = await request.app.state.runner.resume_terminal(cfg, run_dir.name, reason="converse")
     if not rid:
         raise HTTPException(409, "could not resume — another run of this routine is active, "
                                  "or the daemon is draining")
@@ -171,7 +186,8 @@ class ModelSwitch(BaseModel):
 @router.post("/runs/{run_id}/model")
 def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
     """Switch a live run's model mid-flight. Writes control.json (web-owned); the engine applies it
-    at the next turn boundary, where for_model already re-resolves the model every turn."""
+    at the next turn boundary, where for_model already re-resolves the model every turn.
+    """
     _, run_dir = _run_dir(request, run_id)
     server = request.app.state.server
     if body.model not in server.models:
@@ -191,11 +207,13 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
 @router.post("/runs/{run_id}/resume-run")
 async def resume_run(request: Request, run_id: str) -> dict:
     """Resume an interrupted run in place: re-spawn the engine on the SAME run dir, rehydrating its
-    transcript so it continues where it left off (fresh budget window). Only terminal runs."""
+    transcript so it continues where it left off (fresh budget window). Only terminal runs.
+    """
     slug, run_dir = _run_dir(request, run_id)
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:
-        raise HTTPException(409, "run is still active — only a finished / failed / aborted run resumes")
+        raise HTTPException(409,
+                            "run is still active — only a finished/failed/aborted run resumes")
     from ..config import load_routine
 
     cfg, _ = load_routine(run_dir.parent.parent)

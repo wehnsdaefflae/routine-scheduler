@@ -101,7 +101,8 @@ def do_util(action: dict, ctx: RunContext) -> dict:
 def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
     """Backstop for previous-run access (grants.deny handles the relative-path form inside
     the schema-retry cycle; this catches absolute paths and scopes `runs: last`). The
-    current run's own tree — status, archived history — is always readable."""
+    current run's own tree — status, archived history — is always readable.
+    """
     g = ctx.grants
     if g is None:
         return None
@@ -154,7 +155,8 @@ def do_read_file(action: dict, ctx: RunContext) -> dict:
 def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
     """Run the `vision` util on one file and return its text (or an 'error: …' string). The
     single fallback used both by do_view_image and the loop's runtime net when the main
-    endpoint can't take a file natively; the util bills its own key, out of the run's usage."""
+    endpoint can't take a file natively; the util bills its own key, out of the run's usage.
+    """
     home = ctx.server.utils_home
     if not utils_lib.exists(home, VISION_UTIL):
         return "error: the `vision` util is not installed, so this file cannot be described"
@@ -179,7 +181,8 @@ def _view_via_vision(rel_path: str, abspath: str, prompt: str, ctx: RunContext) 
 def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal: bool) -> dict:
     """Route one file: native (return a media entry for the endpoint to see) when the main
     MODEL is multimodal, the endpoint supports the type, and it's within the native size cap,
-    else the vision util."""
+    else the vision util.
+    """
     try:
         path = resolve_rel(ctx.routine.dir, rel_path, ctx.routine.fs_read_roots)
         if err := _runs_read_gate(ctx, path):
@@ -204,10 +207,11 @@ def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
     """`media` entries (path + media_type) for the image/PDF attachments among `rels` that
     the main endpoint can show natively — conversation auto-attach. Unsupported files (wrong
     type, too big, or a text-only endpoint) are skipped: the model can still view_image them,
-    which then routes through the vision util."""
+    which then routes through the vision util.
+    """
     try:
         endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
-    except Exception:  # noqa: BLE001 — bare/degraded contexts: no registry
+    except Exception:
         return []
     supports = getattr(endpoint, "supports_media", None)
     if supports is None:
@@ -228,11 +232,12 @@ def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
 def do_view_image(action: dict, ctx: RunContext) -> dict:
     """Let the orchestrator SEE an image/PDF: natively when the main MODEL is multimodal
     (the file rides the next message as a `media` block), else via the vision util (text back
-    now). Path resolution and gating mirror read_file."""
+    now). Path resolution and gating mirror read_file.
+    """
     prompt = str(action.get("prompt") or "")
     try:
         endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
-    except Exception:  # noqa: BLE001 — bare/degraded contexts: no registry → vision util only
+    except Exception:
         endpoint, ref = None, None
     multimodal = bool(ref.multimodal) if ref else False
     raw = action.get("paths") or ([action["path"]] if action.get("path") else [])
@@ -247,7 +252,8 @@ def do_view_image(action: dict, ctx: RunContext) -> dict:
 
 def _write_gate(ctx: RunContext, resolved) -> str | None:
     """Backstop for engine-owned and permission-gated writes (grants.deny handles the
-    relative-path form; this catches absolute paths into the routine's own dir)."""
+    relative-path form; this catches absolute paths into the routine's own dir).
+    """
     g = ctx.grants
     if g is None:
         return None
@@ -275,16 +281,14 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
 def _track_phase(ctx: RunContext, path) -> None:
     """A write to state/phase.json IS the run's state transition — mirror it into
     ctx.phase so status.json (written every turn) and the SSE state event carry the
-    live phase; the UI's state-graph diagram updates on it."""
+    live phase; the UI's state-graph diagram updates on it.
+    """
     if path != ctx.routine.dir / "state" / "phase.json":
         return
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        # recipes name the field "phase" (canonical), "state", or "step" — accept any
-        if isinstance(data, dict) and (data.get("phase") or data.get("state") or data.get("step")):
-            ctx.phase = str(data.get("phase") or data.get("state") or data.get("step"))
-    except (OSError, ValueError):
-        pass  # a malformed phase file never fails the write that produced it
+    from ..statemap import current_phase
+    # a malformed phase file never fails the write that produced it (current_phase → "")
+    if phase := current_phase(ctx.routine.dir):
+        ctx.phase = phase
 
 
 def do_write_file(action: dict, ctx: RunContext) -> dict:
@@ -300,7 +304,7 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
             # file bodies into strings; we serialize.
             data = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
         if action.get("append"):
-            with open(path, "a", encoding="utf-8") as fh:
+            with path.open("a", encoding="utf-8") as fh:
                 fh.write(data)
         else:
             path.write_text(data, encoding="utf-8")
@@ -313,7 +317,8 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
 
 def do_edit_file(action: dict, ctx: RunContext) -> dict:
     """Anchor-replace in place — revisions cost the diff, not the whole document (the
-    write_file counterpart for touching a few lines of a large file)."""
+    write_file counterpart for touching a few lines of a large file).
+    """
     try:
         path = resolve_rel(ctx.routine.dir, action["path"], ctx.routine.fs_write_roots)
         if err := _write_gate(ctx, path):
@@ -352,7 +357,8 @@ def _memory_topics(mem_dir) -> list[str]:
 
 def _memory_index_upsert(mem_dir, name: str, about: str | None) -> None:
     """INDEX.md is engine-owned: one `- <name>.md: <about>` line per note, updated in the
-    same operation as the note itself so the catalog can never drift. about=None removes."""
+    same operation as the note itself so the catalog can never drift. about=None removes.
+    """
     index = mem_dir / "INDEX.md"
     lines = index.read_text(encoding="utf-8").splitlines() if index.exists() else []
     prefix = f"- {name}.md:"
@@ -417,7 +423,8 @@ def _looks_like_refusal(text: str) -> bool:
     """Heuristic: does a free-text tool-call reply read as a content refusal rather than an
     answer? Conservative on purpose — only a marker in the reply's HEAD (first ~200 chars)
     counts, since real refusals open with the decline; this trades recall for precision so we
-    don't reroute genuine answers to the uncensored model."""
+    don't reroute genuine answers to the uncensored model.
+    """
     head = (text or "").strip().lower()[:200]
     return bool(head) and any(m in head for m in _REFUSAL_MARKERS)
 
@@ -449,7 +456,8 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
             u_endpoint, u_ref = target
             try:
                 u_completion = u_endpoint.complete(messages, model=u_ref.model, schema=schema,
-                                                   effort=u_ref.effort, temperature=u_ref.temperature,
+                                                   effort=u_ref.effort,
+                                                   temperature=u_ref.temperature,
                                                    max_tokens=16_384,
                                                    purpose=(purpose + " · referred")[:80],
                                                    kind="llm_action")

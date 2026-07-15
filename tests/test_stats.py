@@ -95,7 +95,7 @@ def test_aggregate_rolls_up_every_slice(tmp_path):
     assert agg["by_state"]["finished"] == 3 and agg["by_state"]["failed"] == 1
     # by_routine carries endpoint/model attribution, sorted by tokens desc
     assert agg["by_routine"]["beta"]["endpoint"] == "openrouter"
-    assert list(agg["by_routine"])[0] == "beta"  # most tokens
+    assert next(iter(agg["by_routine"])) == "beta"  # most tokens
 
 
 def test_aggregate_no_models_block_falls_back_to_system_model(tmp_path):

@@ -10,7 +10,8 @@ synced with the rest of the library (`git add -A` at the repo root already cover
 
 Distinct from a routine's "recipe" (its materialized main.md): a playbook is a library template,
 never executed. Git lives at the library ROOT — use workflows.library.git_commit / head_commit /
-git_log for commits (this module is pure storage)."""
+git_log for commits (this module is pure storage).
+"""
 
 from __future__ import annotations
 
@@ -34,7 +35,8 @@ def playbooks_dir(home: Path) -> Path:
 
 def _parse(text: str) -> tuple[dict, str]:
     """frontmatter.parse for user-editable files: broken YAML reads as no frontmatter, so a bad
-    edit never crashes listing or a run."""
+    edit never crashes listing or a run.
+    """
     try:
         return frontmatter.parse(text)
     except yaml.YAMLError:
@@ -55,7 +57,8 @@ def _safe_detail_name(name: str) -> str:
 def list_playbooks(home: Path) -> list[dict]:
     """Catalog: one entry per `<slug>/MAIN.md`, derived live from its front matter. `summary` and
     `when` are the same one-line 'when to reuse' string (kept under both keys so the Library tab's
-    generic renderer and the picker both find it)."""
+    generic renderer and the picker both find it).
+    """
     d = playbooks_dir(home)
     if not d.is_dir():
         return []
@@ -84,7 +87,8 @@ def slugs(home: Path) -> list[str]:
 
 def read_playbook(home: Path, slug: str) -> dict | None:
     """{slug, content (full MAIN.md), body (MAIN.md minus front matter), meta, details:{name:body}}
-    or None when the playbook does not exist."""
+    or None when the playbook does not exist.
+    """
     main = playbooks_dir(home) / slug / MAIN
     if not main.is_file():
         return None
@@ -114,10 +118,12 @@ def compose_main(meta: dict, body: str) -> str:
     return f"---\n{fm}\n---\n\n{body.strip()}\n"
 
 
-def write_playbook(home: Path, slug: str, *, main: str, details: dict[str, str] | None = None) -> None:
+def write_playbook(home: Path, slug: str, *,
+                   main: str, details: dict[str, str] | None = None) -> None:
     """Write `<slug>/MAIN.md` (full text, front matter included), creating the subfolder. When
     `details` is a dict, it is reconciled — files not in it are removed (so a revision drops stale
-    ones); when `details` is None the existing detail files are left untouched (a MAIN-only edit)."""
+    ones); when `details` is None the existing detail files are left untouched (a MAIN-only edit).
+    """
     sub = playbooks_dir(home) / slug
     sub.mkdir(parents=True, exist_ok=True)
     (sub / MAIN).write_text(main.rstrip() + "\n", encoding="utf-8")

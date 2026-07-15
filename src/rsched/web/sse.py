@@ -12,10 +12,10 @@ import asyncio
 import json
 from pathlib import Path
 
+from ..daemon.registry import TERMINAL_STATES
 from ..engine.transcript import read_events
 from ..paths import read_json
 
-TERMINAL_STATES = ("finished", "failed", "aborted")
 POLL_S = 0.4
 
 
@@ -25,7 +25,8 @@ def _event(name: str, data: dict) -> dict:
 
 async def run_stream(run_dir: Path, start_offset: int = 0):
     """Yield transcript events (event: transcript) interleaved with state changes
-    (event: state); ends shortly after the run reaches a terminal state."""
+    (event: state); ends shortly after the run reaches a terminal state.
+    """
     transcript = run_dir / "transcript.jsonl"
     offset = start_offset
     last_state = None
@@ -36,9 +37,10 @@ async def run_stream(run_dir: Path, start_offset: int = 0):
         events, offset = await asyncio.to_thread(read_events, transcript, offset)
         for ev in events:
             yield _event("transcript", ev)
-        st = await asyncio.to_thread(read_json, run_dir / "status.json")
-        state = st.get("state") if isinstance(st, dict) else None
-        phase = st.get("phase") if isinstance(st, dict) else None
+        raw = await asyncio.to_thread(read_json, run_dir / "status.json")
+        st: dict = raw if isinstance(raw, dict) else {}
+        state = st.get("state")
+        phase = st.get("phase")
         # phase transitions ride the same event — the state-graph diagram updates on them
         if state and (state, phase) != last_state:
             last_state = (state, phase)
@@ -56,7 +58,8 @@ async def run_stream(run_dir: Path, start_offset: int = 0):
 
 async def bus_stream(bus):
     """The global event bus as SSE (dashboard badges); EventSourceResponse's periodic ping
-    comments keep the connection alive between events."""
+    comments keep the connection alive between events.
+    """
     with bus.subscribe() as q:
         while True:
             yield _event("bus", await q.get())

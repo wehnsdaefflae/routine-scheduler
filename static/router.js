@@ -23,10 +23,6 @@ export function buildHash(path, query = {}) {
   return qs ? `${path}?${qs}` : path;
 }
 
-export function getQuery() {
-  return parseHash().query;
-}
-
 // Merge `updates` into the current query and rewrite the URL in place. By default this uses
 // replaceState (silent — the current view keeps its DOM); pass {push:true} to make it a real
 // navigation (fires hashchange → re-render). A value of "" / null / undefined drops the key.

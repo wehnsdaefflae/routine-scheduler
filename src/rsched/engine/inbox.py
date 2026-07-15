@@ -30,12 +30,14 @@ def _consume(path: Path, consumed_dir: Path) -> None:
 def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
     """Injected user messages, oldest first; answer-* files are left alone. Each item is
     {"text": str, "attachments": [rel, ...]} — the attachments (recorded by the web layer for
-    a conversation message) drive auto-attach of images/PDFs to the injected message."""
+    a conversation message) drive auto-attach of images/PDFs to the injected message.
+    """
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
         return []
     out: list[dict] = []
-    for path in sorted(p for p in inbox.iterdir() if p.is_file() and not p.name.startswith("answer-")):
+    for path in sorted(p for p in inbox.iterdir()
+                       if p.is_file() and not p.name.startswith("answer-")):
         obj = read_json(path)
         if isinstance(obj, dict) and obj.get("text"):
             out.append({"text": str(obj["text"]),
@@ -59,7 +61,8 @@ def has_pending_messages(routine_dir: Path) -> bool:
     """True if an unconsumed injected user message (a `msg-*` file, not an `answer-*`) is
     waiting. A responsive `wait` polls this so a child-wait YIELDS to the user — hands control
     back to the turn loop, which drains the message and lets the parent respond — instead of
-    freezing the conversation while a subtask/subrun runs."""
+    freezing the conversation while a subtask/subrun runs.
+    """
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
         return False
@@ -78,7 +81,8 @@ def take_answer(routine_dir: Path, qid: str, consumed_dir: Path) -> dict | None:
 
 def collect_deferred_answers(routine_dir: Path, consumed_dir: Path) -> list[dict]:
     """At run start: match stray answer files against questions/pending/, consume both,
-    and return [{question, answer}] for the state digest."""
+    and return [{question, answer}] for the state digest.
+    """
     inbox = routine_dir / "inbox"
     pending = routine_dir / "questions" / "pending"
     if not inbox.is_dir():
@@ -113,7 +117,8 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
     plain asks and util approvals, deferred and blocking alike. Blocking records carry
     `expires` (when the run continues without an answer) and are rewritten as deferred
     on timeout/abort; every surface (Decisions page, run view, Discord mirror) renders
-    from this shape."""
+    from this shape.
+    """
     from ..paths import atomic_write_json
 
     path = routine_dir / "questions" / "pending" / f"{qid}.json"
@@ -138,7 +143,8 @@ def resolve_question(routine_dir: Path, qid: str) -> None:
 def open_questions(routine_dir: Path) -> list[dict]:
     """Pending questions. A question whose answer already waits in the inbox (answered on
     the Decisions page, not yet drained by a run) is flagged `answered: True` so every
-    surface can show it as answered-and-queued instead of still-open."""
+    surface can show it as answered-and-queued instead of still-open.
+    """
     pending = routine_dir / "questions" / "pending"
     if not pending.is_dir():
         return []

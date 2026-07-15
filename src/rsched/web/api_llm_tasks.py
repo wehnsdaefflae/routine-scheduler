@@ -2,7 +2,8 @@
 
 The overlay streams live via the `llm_task`/`llm_process` bus events (see llm_tasks.TaskCenter);
 it fetches this snapshot on boot and after an SSE reconnect, since the bus drops events for a
-slow subscriber. The TaskCenter lives on app.state (set in app.py's lifespan)."""
+slow subscriber. The TaskCenter lives on app.state (set in app.py's lifespan).
+"""
 
 from __future__ import annotations
 

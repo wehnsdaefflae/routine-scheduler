@@ -1,0 +1,17 @@
+# Quality gates run on every commit (install once: `uv run pre-commit install`).
+# Local hooks on purpose: everything runs from the project venv — no pinned remote hook
+# repos to drift, works offline, and the versions are the ones pyproject declares.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff — strict lint (select ALL, documented ignores)
+        entry: uv run ruff check --force-exclude
+        language: system
+        types_or: [python]
+      - id: mypy
+        name: mypy — type check src/rsched
+        entry: uv run mypy
+        language: system
+        pass_filenames: false
+        files: ^(src/|pyproject\.toml)

@@ -57,14 +57,15 @@ def _read_changelog(path: Path, limit: int = 100) -> list[dict]:
 
 # messages written before feedback became editable carry only the formatted text —
 # recover their structured fields so they stay editable too
-_LEGACY_COMMENT_RE = re.compile(r"^\[AUDIT feedback · finding ([^\]]+)\]\s*(.*)$", re.S)
-_LEGACY_NOTE_RE = re.compile(r"^\[AUDIT note\]\s*(.*)$", re.S)
+_LEGACY_COMMENT_RE = re.compile(r"^\[AUDIT feedback · finding ([^\]]+)\]\s*(.*)$", re.DOTALL)
+_LEGACY_NOTE_RE = re.compile(r"^\[AUDIT note\]\s*(.*)$", re.DOTALL)
 
 
 def _pending_feedback(routine_dir: Path) -> list[dict]:
     """Web-submitted feedback still sitting in the inbox (not yet consumed by a run) — the UI
     shows these so a reviewer can see exactly what the next self-audit run will pick up, and
-    edit or withdraw any of it (by `id`) until then."""
+    edit or withdraw any of it (by `id`) until then.
+    """
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
         return []
@@ -132,7 +133,8 @@ def _format_feedback(fb: Feedback) -> str:
 
 def _message_payload(body: Feedback, ts: str, edited: str | None = None) -> dict:
     """One inbox message: `text` is what the engine injects; the structured fields exist
-    only so the web layer can re-open and re-format it while it is still queued."""
+    only so the web layer can re-open and re-format it while it is still queued.
+    """
     payload = {"text": _format_feedback(body), "ts": ts, "via": "web-audit",
                "kind": body.kind, "target": (body.target or "").strip(),
                "choice": (body.choice or "").strip(), "raw": (body.text or "").strip()}
@@ -147,7 +149,8 @@ def _record_decision_answer(routine_dir, decision_id: str) -> None:
     listing the decision open it re-enters the Decisions inbox — the user answers again,
     the routine gets the same injection again, forever. The marker outlives consumption;
     _audit_decisions hides a decision answered at-or-after the report's `generated`
-    until a NEWER report explicitly lists it open again."""
+    until a NEWER report explicitly lists it open again.
+    """
     path = routine_dir / "audit" / "decisions-answered.json"
     data = read_json(path)
     if not isinstance(data, dict):
@@ -162,7 +165,8 @@ def write_feedback(routine_dir, body: Feedback) -> str:
     Decisions page, which answers audit decisions through the same channel). Returns the
     message id — the handle for editing/withdrawing it until a run consumes it.
     Unique suffix: now_iso() is only second-resolution, so several submissions in the
-    same second would otherwise share a filename and clobber each other."""
+    same second would otherwise share a filename and clobber each other.
+    """
     fname = f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json"
     atomic_write_json(routine_dir / "inbox" / fname, _message_payload(body, now_iso()))
     if body.kind == "decision" and (body.target or "").strip():
@@ -176,7 +180,8 @@ _MSG_ID_RE = re.compile(r"^msg-[\w.+-]+$")
 def _queued_message(request: Request, msg_id: str) -> tuple[Path, dict]:
     """Resolve a feedback id to its still-queued inbox file, or 404. Only web-audit messages
     are reachable — the id pattern plus the `via` check keep every other inbox file (question
-    answers, routine-page injections) out of this endpoint's hands."""
+    answers, routine-page injections) out of this endpoint's hands.
+    """
     if not _MSG_ID_RE.fullmatch(msg_id):
         raise HTTPException(404, f"malformed feedback id {msg_id!r}")
     path = _routine_dir(request) / "inbox" / f"{msg_id}.json"
@@ -199,7 +204,8 @@ def audit_feedback(request: Request, body: Feedback) -> dict:
 @router.put("/audit/feedback/{msg_id}")
 def audit_feedback_edit(request: Request, msg_id: str, body: Feedback) -> dict:
     """Rewrite a queued message in place (same file, so its inbox position holds); the
-    original ts is kept and `edited` stamped. Gone from the inbox = consumed = immutable."""
+    original ts is kept and `edited` stamped. Gone from the inbox = consumed = immutable.
+    """
     path, prev = _queued_message(request, msg_id)
     atomic_write_json(path, _message_payload(body, str(prev.get("ts") or now_iso()),
                                              edited=now_iso()))
@@ -213,5 +219,6 @@ def audit_feedback_withdraw(request: Request, msg_id: str) -> dict:
     try:
         path.unlink()
     except FileNotFoundError:  # a run consumed it between the check and now — same outcome
-        raise HTTPException(404, "this feedback is no longer queued — a run already consumed it")
+        raise HTTPException(
+            404, "this feedback is no longer queued — a run already consumed it") from None
     return {"ok": True, "id": msg_id}

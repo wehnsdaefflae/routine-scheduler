@@ -9,7 +9,7 @@ from rsched.engine.transcript import Transcript
 
 def _ctx(make_routine, tmp_path):
     d = make_routine(slug="memr")
-    cfg, problems = load_routine(d)
+    cfg, _problems = load_routine(d)
     assert cfg is not None
     run_dir = d / "runs" / "20260712-070000"
     run_dir.mkdir(parents=True)

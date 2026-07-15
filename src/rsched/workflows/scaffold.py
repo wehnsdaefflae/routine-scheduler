@@ -1,9 +1,9 @@
 """Create a routine directory: workflow REFERENCE (edited in the library), adapted trait
-copies, stages/ modules; its own git repo with the auto-push hook."""
+copies, stages/ modules; its own git repo with the auto-push hook.
+"""
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -17,10 +17,12 @@ GITIGNORE = "runs/\ninbox/\nquestions/\n"
 PRACTICES_HEADING = "## Standing practices"
 
 
-def _with_practices_tail(main_body: str, trait_summaries: dict[str, str]) -> str:
+def with_practices_tail(main_body: str, trait_summaries: dict[str, str]) -> str:
     """Guarantee main.md ends with a Standing practices section referencing every trait file —
     the generator is asked to write one, but the reference must survive a forgetful LLM (and
-    the no-LLM fallback). One line per trait: file + when to read it."""
+    the no-LLM fallback). One line per trait: file + when to read it. Shared by routine
+    scaffolding and conversation creation — the ONE place the tail's shape lives.
+    """
     if not trait_summaries:
         return main_body
     if PRACTICES_HEADING.lower() in main_body.lower():
@@ -32,6 +34,29 @@ def _with_practices_tail(main_body: str, trait_summaries: dict[str, str]) -> str
             "read_file before the situation it governs (the routine-improver meta routine "
             "refines them over time):", *lines]
     return main_body.rstrip() + "\n\n" + "\n".join(tail) + "\n"
+
+
+def copy_traits(traits_home, dest_dir, slugs: list[str],
+                adapted: dict[str, str] | None = None) -> dict[str, str]:
+    """Write each selected trait into dest_dir/traits/ — the decompose pass's ADAPTED body
+    when one exists, else the library text verbatim — and return {slug: summary} for the
+    practices tail. Either way the files are the routine's/conversation's OWN from here on
+    (self-refined, never toggled); a slug the library doesn't carry is skipped silently.
+    """
+    from .. import library_docs
+
+    summaries: dict[str, str] = {}
+    for slug in slugs:
+        body = (adapted or {}).get(slug)
+        if not body:
+            raw = library_docs.read_doc(traits_home, slug)
+            body = library_docs.doc_body(raw).strip() if raw else ""
+        if not body:
+            continue
+        (dest_dir / "traits" / f"{slug}.md").write_text(body.rstrip() + "\n", encoding="utf-8")
+        m = library_docs.DOC_RE.search(body)
+        summaries[slug] = m.group("summary").strip() if m else ""
+    return summaries
 
 POST_COMMIT_HOOK = """#!/usr/bin/env bash
 # rsched auto-backup — push every commit to origin (best-effort, never blocks the commit).
@@ -45,7 +70,9 @@ exit 0
 """
 
 
-def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
+# The parameter list IS routine creation's config surface (wizard + API both fill it);
+# bundling it into an object would only relocate the same list.
+def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  # noqa: PLR0913
              workflow_slug: str, cron: str = "", tz: str = "Europe/Berlin",
              description: str = "", models: dict[str, str] | None = None,
              params: dict | None = None, budgets: dict | None = None,
@@ -62,7 +89,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     stages are the routine's sole source of truth from here on). `permissions` (engine-enforced,
     user-changeable) go into routine.yaml. A one-line `description` (for the UI) is always
     written, falling back to the name; `models` maps a role to a catalog model NAME (else the
-    role falls back to the server system_model)."""
+    role falls back to the server system_model).
+    """
     from .. import library_docs
     from ..config import DEFAULT_TRAITS
     from . import library
@@ -96,41 +124,32 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
 
     for sub in ("state", "stages", "inbox", "traits"):
         (routine_dir / sub).mkdir(parents=True)
-    # DECOMPOSE the single-file workflow (applied to the instruction) into the routine's OWN main.md
-    # (entry state machine) + one markdown stage per step/state, adapting the selected traits along
-    # the way. Self-contained: the library is never read at run time, and the instruction is consumed
-    # here (not persisted). Degrades to the whole workflow as main.md + verbatim trait copies if no
-    # endpoint is available.
+    # DECOMPOSE the single-file workflow (applied to the instruction) into the routine's OWN
+    # main.md (entry state machine) + one markdown stage per step/state, adapting the selected
+    # traits along the way. Self-contained: the library is never read at run time, and the
+    # instruction is consumed here (not persisted). Degrades to the whole workflow as main.md +
+    # verbatim trait copies if no endpoint is available.
     result = decompose(server, workflow_slug, instruction, params=params, traits=active_traits)
     main_meta = {
         "name": name, "slug": slug,
-        "materialized_from": {"slug": workflow_slug, "commit": commit, "version": meta.get("version", 0)},
+        "materialized_from": {"slug": workflow_slug, "commit": commit,
+                              "version": meta.get("version", 0)},
         "stages": sorted(result["stages"]),
         # the workflow's `tools:` allowlist rides along — the engine enforces it per turn
         **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {}),
         **({"tags": list(tags)} if tags else {}),
     }
-    # trait copies: the generator's adapted version, else the library text verbatim — either
-    # way the routine's OWN files from here on (self-refined, never toggled).
-    trait_summaries: dict[str, str] = {}
-    for slug_t in active_traits:
-        body = (result.get("traits") or {}).get(slug_t)
-        if not body:
-            raw = library_docs.read_doc(server.traits_home, slug_t)
-            body = library_docs.doc_body(raw).strip() if raw else ""
-        if not body:
-            continue
-        (routine_dir / "traits" / f"{slug_t}.md").write_text(body.rstrip() + "\n", encoding="utf-8")
-        m = library_docs.DOC_RE.search(body)
-        trait_summaries[slug_t] = m.group("summary").strip() if m else ""
+    trait_summaries = copy_traits(server.traits_home, routine_dir, active_traits,
+                                  adapted=result.get("traits"))
     for stage_name, stage_body in result["stages"].items():
-        (routine_dir / "stages" / f"{stage_name}.md").write_text(stage_body.rstrip() + "\n", encoding="utf-8")
+        (routine_dir / "stages" / f"{stage_name}.md").write_text(stage_body.rstrip() + "\n",
+                                                                 encoding="utf-8")
     # extra purpose-specific stage modules from the wizard also land in stages/
     for fname, fcontent in (stages or {}).items():
         safe = fname if fname.endswith(".md") else f"{fname}.md"
         (routine_dir / "stages" / Path(safe).name).write_text(fcontent, encoding="utf-8")
     # main.md last, over the now-complete stages/ — the stages are the sole source of truth
-    main_body = _with_practices_tail(result["main"], trait_summaries)
+    main_body = with_practices_tail(result["main"], trait_summaries)
     (routine_dir / "main.md").write_text(dump_markdown(main_meta, main_body), encoding="utf-8")
     (routine_dir / "LEDGER.md").write_text(
         f"# LEDGER — {name}\n\n### seed — scaffolded from workflow '{workflow_slug}' @ {commit}\n",
@@ -174,19 +193,22 @@ GIT_IDENTITY = (("user.name", "routine-scheduler"),
 
 
 def init_repo(repo_dir: Path, message: str) -> None:
-    """git init a managed repo with the neutral identity + best-effort push hook, then
-    make the first commit. Shared by routine and util-library scaffolding."""
+    """Git init a managed repo with the neutral identity + best-effort push hook, then
+    make the first commit. Shared by routine and util-library scaffolding.
+    """
     try:
         subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo_dir,
-                       capture_output=True, timeout=30)
+                       capture_output=True, timeout=30, check=False)
         for key, val in GIT_IDENTITY:
-            subprocess.run(["git", "config", key, val], cwd=repo_dir, capture_output=True, timeout=15)
+            subprocess.run(["git", "config", key, val], cwd=repo_dir,
+                           capture_output=True, timeout=15, check=False)
         hook = repo_dir / ".git" / "hooks" / "post-commit"
         hook.write_text(POST_COMMIT_HOOK, encoding="utf-8")
-        os.chmod(hook, 0o755)
-        subprocess.run(["git", "add", "-A"], cwd=repo_dir, capture_output=True, timeout=30)
+        hook.chmod(0o755)  # git hooks must be executable
+        subprocess.run(["git", "add", "-A"], cwd=repo_dir,
+                       capture_output=True, timeout=30, check=False)
         subprocess.run(["git", "commit", "-qm", message], cwd=repo_dir,
-                       capture_output=True, timeout=30)
+                       capture_output=True, timeout=30, check=False)
     except OSError:
         pass  # a routine without git still runs; the workflow can init later
 

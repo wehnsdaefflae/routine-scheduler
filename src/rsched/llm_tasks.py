@@ -61,13 +61,15 @@ class TaskCenter:
     # --- tasks ---------------------------------------------------------------
     def ingest(self, rec: dict) -> None:
         """Fold one lifecycle record into live state and broadcast it. Idempotent-ish: a
-        record for a known id updates that task (started → finished/failed)."""
+        record for a known id updates that task (started → finished/failed).
+        """
         tid = rec.get("id")
         if not tid:
             return
         entry = self.tasks.get(tid, {})
         entry.update(rec)
-        entry["status"] = _STATUS.get(rec.get("phase"), entry.get("status", "running"))
+        entry["status"] = _STATUS.get(str(rec.get("phase") or ""),
+                                      entry.get("status", "running"))
         if entry["status"] in ("done", "error"):
             entry["done_at"] = time.monotonic()
         self.tasks[tid] = entry
@@ -115,7 +117,8 @@ class TaskCenter:
 class DaemonSink:
     """The web/daemon process's sink: marshal each record onto the event loop, where the
     TaskCenter (and the non-thread-safe bus) live. `complete()` runs in threadpool / to_thread
-    workers, so a direct call would touch asyncio state from the wrong thread."""
+    workers, so a direct call would touch asyncio state from the wrong thread.
+    """
 
     def __init__(self, center: TaskCenter, loop: asyncio.AbstractEventLoop):
         self.center = center

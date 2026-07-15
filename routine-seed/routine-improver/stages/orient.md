@@ -19,5 +19,5 @@ Build the candidate list: every routine with runs you haven't processed yet.
    your last visit → drop it this sweep (nothing new to learn from).
 
 ## Next
-Write `state/phase.json = {step: "select-targets", cursor: {candidates: [{slug,
+Write `state/phase.json = {phase: "select-targets", cursor: {candidates: [{slug,
 newest_run}, ...]}}`. Read `stages/select-targets.md`.

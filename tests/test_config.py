@@ -6,8 +6,15 @@ from __future__ import annotations
 
 import yaml
 
-from rsched.config import (DEFAULT_BUDGETS, DEFAULT_PERMISSIONS, EndpointConfig, ModelConfig,
-                           RoutineConfig, ServerConfig, load_routine, load_server_config)
+from rsched.config import (
+    DEFAULT_BUDGETS,
+    DEFAULT_PERMISSIONS,
+    EndpointConfig,
+    ModelConfig,
+    ServerConfig,
+    load_routine,
+    load_server_config,
+)
 
 # ---------------------------------------------------------------- server config
 
@@ -22,7 +29,7 @@ def test_deployed_config_keys_load_exactly(tmp_path):
     """Precisely the keys a deployed ~/.config/routine-scheduler/config.yaml uses —
     this shape MUST keep loading with zero problems."""
     server, problems = _load_server(tmp_path, {
-        "bind": "0.0.0.0",
+        "bind": "0.0.0.0",  # noqa: S104 — fixture value, nothing binds in tests
         "port": 9000,
         "token": "s3cret",
         "routines_home": str(tmp_path / "routines"),
@@ -42,7 +49,7 @@ def test_deployed_config_keys_load_exactly(tmp_path):
         "library_sync": {"enabled": True, "cron": "0 6 * * *", "tz": "Europe/Berlin"},
     })
     assert problems == []
-    assert (server.bind, server.port, server.token) == ("0.0.0.0", 9000, "s3cret")
+    assert (server.bind, server.port, server.token) == ("0.0.0.0", 9000, "s3cret")  # noqa: S104
     assert server.routines_home == tmp_path / "routines"
     assert server.libraries_home == tmp_path / "libs"
     assert server.libraries_remote == "git@github.com:me/libs.git"
@@ -108,6 +115,31 @@ def test_server_unknown_system_model_and_model_endpoint_flagged(tmp_path):
     assert any("system_model" in p and "ghost" in p for p in problems)
     assert any("models.orphan" in p and "nope" in p for p in problems)
     assert server.system_model == "ghost"   # kept — the UI shows the problem
+
+
+def test_server_unknown_endpoint_and_model_keys_flagged(tmp_path):
+    """extra="ignore" drops unknown keys silently — the loader surfaces each mistyped
+    endpoint/model key as a problem line (a warning; the entry still loads)."""
+    server, problems = _load_server(tmp_path, {
+        "endpoints": {"e": {"kind": "openai", "base_url": "http://x", "multimodal": True}},
+        "models": {"m": {"endpoint": "e", "model": "id", "contxt_chars": 5}},
+        "system_model": "m",
+    })
+    text = " | ".join(problems)
+    assert "endpoints.e.multimodal: unknown key" in text
+    assert "models.m.contxt_chars: unknown key" in text
+    assert set(server.endpoints) == {"e"} and set(server.models) == {"m"}  # warn, never fail
+
+
+def test_endpoint_key_var_defaults_per_kind():
+    """key_var left unset falls to the KIND's own key variable — an openai endpoint must
+    never default to the Anthropic key; claude-cli auths via the subscription token."""
+    assert EndpointConfig(name="a", kind="anthropic").key_var == "ANTHROPIC_API_KEY"
+    assert EndpointConfig(name="o", kind="openai", base_url="http://x").key_var == "OPENAI_API_KEY"
+    assert EndpointConfig(name="c", kind="claude-cli").key_var == ""
+    # an explicit key_var always wins over the kind default
+    ep = EndpointConfig(name="o2", kind="openai", base_url="http://x", key_var="OPENROUTER_KEY")
+    assert ep.key_var == "OPENROUTER_KEY"
 
 
 def test_server_config_direct_construction_for_tests():
@@ -223,24 +255,15 @@ def test_routine_explicit_empty_permissions_wins(tmp_path):
     assert cfg.permissions == [] and problems == []
 
 
-def test_routine_legacy_ask_timeout_h_converts_to_minutes(tmp_path):
-    """routine.yaml written before the timeout moved to minutes keeps its meaning:
-    ask_timeout_h is converted (x60), never dropped as an unknown budget."""
-    d = _mk_routine(tmp_path, {"description": "Legacy timeout.",
-                               "budgets": {"ask_timeout_h": 2}})
+def test_routine_null_roots_and_models_get_their_own_defaults(tmp_path):
+    """A bare `fs_read_roots:` / `fs_write_roots:` / `models:` key (YAML null) reads as the
+    FIELD'S OWN empty default — regression: the list fields used to borrow the models
+    field's {} and fail list validation."""
+    d = _mk_routine(tmp_path, {"description": "Nulls.", "fs_read_roots": None,
+                               "fs_write_roots": None, "models": None})
     cfg, problems = load_routine(d)
     assert problems == []
-    assert cfg.budgets["ask_timeout_min"] == 120
-    assert "ask_timeout_h" not in cfg.budgets
-
-
-def test_routine_explicit_ask_timeout_min_beats_legacy(tmp_path):
-    """When both keys appear, the new one wins; the legacy key is discarded silently."""
-    d = _mk_routine(tmp_path, {"description": "Both timeouts.",
-                               "budgets": {"ask_timeout_h": 2, "ask_timeout_min": 7}})
-    cfg, problems = load_routine(d)
-    assert problems == []
-    assert cfg.budgets["ask_timeout_min"] == 7
+    assert cfg.fs_read_roots == [] and cfg.fs_write_roots == [] and cfg.models == {}
 
 
 def test_bare_serverconfig_is_hermetic_under_pytest(tmp_path):

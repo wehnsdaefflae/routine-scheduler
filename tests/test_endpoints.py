@@ -12,8 +12,16 @@ from rsched.config import EndpointConfig
 from rsched.endpoints import EndpointRegistry, make_endpoint
 from rsched.endpoints.anthropic_api import AnthropicEndpoint, merge_consecutive
 from rsched.endpoints.base import EndpointError, split_system, with_retries
-from rsched.endpoints.claude_cli import (STRIP_VARS, TOKEN_VAR, ClaudeCliEndpoint, build_cmd,
-                                         parse_result, render_prompt, resolve_token, scrub_env)
+from rsched.endpoints.claude_cli import (
+    STRIP_VARS,
+    TOKEN_VAR,
+    ClaudeCliEndpoint,
+    build_cmd,
+    parse_result,
+    render_prompt,
+    resolve_token,
+    scrub_env,
+)
 from rsched.endpoints.openai_compat import OpenAICompatEndpoint
 
 MESSAGES = [
@@ -92,15 +100,18 @@ def test_openai_request_and_usage(monkeypatch):
     assert c.usage == {"in": 10, "out": 5} and "finish" in c.text
 
 
-def test_openai_cached_tokens_captured(monkeypatch):
-    """Implicit prompt caching (OpenAI/OpenRouter style): cached_tokens is surfaced as
-    usage cached_in so per-run cache hit rates are visible; "in" stays the full count."""
+def test_openai_cached_tokens_kept_out_of_in(monkeypatch):
+    """Implicit prompt caching (OpenAI/OpenRouter style): cached_tokens arrives as a subset
+    of prompt_tokens — the adapter subtracts it so "in" is fresh input only. This pins the
+    CROSS-ADAPTER invariant (cached_in kept OUT of "in", token budgets keep their meaning);
+    the anthropic/claude-cli cache tests pin the same shape for the other two adapters."""
     monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
         "choices": [{"message": {"content": "x"}}],
         "usage": {"prompt_tokens": 1000, "completion_tokens": 5,
                   "prompt_tokens_details": {"cached_tokens": 896}}}))
     c = _oai().complete(MESSAGES, model="m")
-    assert c.usage == {"in": 1000, "out": 5, "cached_in": 896}
+    assert c.usage == {"in": 104, "out": 5, "cached_in": 896}
+    assert c.usage["in"] + c.usage["cached_in"] == 1000   # fresh + cached = the full prompt
 
 
 def test_openai_schema_mode_degradation(monkeypatch):
@@ -118,7 +129,7 @@ def test_openai_schema_mode_degradation(monkeypatch):
 
 
 def test_openai_key_from_env_file(monkeypatch, tmp_path):
-    monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {})   # hermetic: ignore the machine's real secrets store
+    monkeypatch.setattr("rsched.secrets.load_secrets", dict)   # hermetic: ignore the machine's real secrets store
     keyfile = tmp_path / "openrouter.env"
     keyfile.write_text("# key\nOPENROUTER_API_KEY='sk-or-test'\n")
     ep = OpenAICompatEndpoint(EndpointConfig(
@@ -316,7 +327,7 @@ _ANTH_OK = {"content": [{"type": "tool_use", "name": "action", "input": {"say": 
             "usage": {"input_tokens": 1, "output_tokens": 1}}
 
 
-@pytest.mark.parametrize("status,attr,attempts", [
+@pytest.mark.parametrize(("status", "attr", "attempts"), [
     (401, "auth", 1),        # auth errors fail fast
     (429, "retryable", 3),   # rate limit → retried
     (529, "retryable", 3),   # overloaded → retried
@@ -367,6 +378,8 @@ def test_anthropic_effort_wiring(monkeypatch):
 
 
 def test_anthropic_cache_usage_captured(monkeypatch):
+    """input_tokens excludes cache traffic on this API — the adapter surfaces it as
+    cached_in/cache_write, never folded into "in" (the cross-adapter invariant)."""
     monkeypatch.setattr(anth_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
         "content": [{"type": "text", "text": "hi"}],
         "usage": {"input_tokens": 12, "output_tokens": 3,
@@ -473,7 +486,7 @@ def _cli_endpoint(monkeypatch, tmp_path):
     credfile.write_text(f"{TOKEN_VAR}=tok\n")
     monkeypatch.delenv(TOKEN_VAR, raising=False)
     monkeypatch.setattr("rsched.endpoints.claude_cli.find_cli", lambda: "/bin/claude")
-    monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {})
+    monkeypatch.setattr("rsched.secrets.load_secrets", dict)
     return ClaudeCliEndpoint(EndpointConfig(
         name="claude-cli", kind="claude-cli", credentials_env=str(credfile), context_chars=400000))
 
@@ -487,13 +500,14 @@ def test_claude_cli_complete(monkeypatch, tmp_path):
     monkeypatch.setattr("rsched.endpoints.claude_cli.find_cli", lambda: "/bin/claude")
     seen = {}
 
-    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None, env=None, cwd=None):
+    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None,
+                 env=None, cwd=None, check=False):
         seen.update(cmd=cmd, input=input, env=env)
         return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(
             {"is_error": False, "result": "ok", "usage": {"input_tokens": 3, "output_tokens": 4}}), stderr="")
 
     monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
-    monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {})   # hermetic: ignore the machine's real secrets store
+    monkeypatch.setattr("rsched.secrets.load_secrets", dict)   # hermetic: ignore the machine's real secrets store
     c = ep.complete(MESSAGES, model="opus", effort="medium")
     assert c.text == "ok" and c.usage == {"in": 3, "out": 4}
     assert seen["env"][TOKEN_VAR] == "tok" and "<<USER>>" in seen["input"]
@@ -535,6 +549,8 @@ def test_claude_cli_timeout_is_retryable(monkeypatch, tmp_path):
 
 
 def test_claude_cli_cache_usage_captured():
+    """Same cross-adapter invariant as the API adapters: cache traffic rides
+    cached_in/cache_write, kept out of "in"."""
     _, _, usage = parse_result(json.dumps(
         {"is_error": False, "result": "hi",
          "usage": {"input_tokens": 4, "output_tokens": 2,
@@ -557,7 +573,8 @@ def test_claude_cli_session_opens_then_resumes_with_delta(monkeypatch, tmp_path)
                         lambda p: tmp_path / "cache" if str(p).startswith("~") else Path(p))
     calls = []
 
-    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None, env=None, cwd=None):
+    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None,
+                 env=None, cwd=None, check=False):
         calls.append({"cmd": list(cmd), "input": input, "cwd": cwd})
         return _ok_cli_result(cmd)
 
@@ -568,8 +585,8 @@ def test_claude_cli_session_opens_then_resumes_with_delta(monkeypatch, tmp_path)
     assert "<<USER>>" in first["input"]                    # full conversation seeds the session
     sid = first["cmd"][first["cmd"].index("--session-id") + 1]
 
-    grown = MESSAGES + [{"role": "assistant", "content": '{"kind":"util"}'},
-                        {"role": "user", "content": "OBSERVATION (util x, exit 0): fine"}]
+    grown = [*MESSAGES, {"role": "assistant", "content": '{"kind":"util"}'},
+             {"role": "user", "content": "OBSERVATION (util x, exit 0): fine"}]
     ep.complete(grown, model="opus", session="run-A")
     second = calls[1]
     assert second["cmd"][second["cmd"].index("--resume") + 1] == sid
@@ -593,7 +610,8 @@ def test_claude_cli_resume_failure_reseeds_fresh_session(monkeypatch, tmp_path):
                         lambda p: tmp_path / "cache" if str(p).startswith("~") else Path(p))
     calls = []
 
-    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None, env=None, cwd=None):
+    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None,
+                 env=None, cwd=None, check=False):
         calls.append(list(cmd))
         if "--resume" in cmd:
             return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="No conversation found")
@@ -601,7 +619,7 @@ def test_claude_cli_resume_failure_reseeds_fresh_session(monkeypatch, tmp_path):
 
     monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
     ep.complete(MESSAGES, model="opus", session="run-B")
-    grown = MESSAGES + [{"role": "assistant", "content": "a"}, {"role": "user", "content": "o"}]
+    grown = [*MESSAGES, {"role": "assistant", "content": "a"}, {"role": "user", "content": "o"}]
     c = ep.complete(grown, model="opus", session="run-B")
     assert c.text == "ok"
     assert ["--resume" in c_ for c_ in calls].count(True) == 1     # one failed resume …
@@ -612,7 +630,8 @@ def test_claude_cli_no_session_stays_stateless(monkeypatch, tmp_path):
     ep = _cli_endpoint(monkeypatch, tmp_path)
     seen = {}
 
-    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None, env=None, cwd=None):
+    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None,
+                 env=None, cwd=None, check=False):
         seen.update(cmd=list(cmd))
         return _ok_cli_result(cmd)
 
@@ -646,12 +665,12 @@ def test_registry_model_resolution():
     server.system_model = "sys"
     reg = EndpointRegistry(server)
     # a role the routine didn't set falls back to system_model (by name)
-    ep, ref = reg.for_model("main", {})
+    _, ref = reg.for_model("main", {})
     assert ref.model == "sys-id" and ref.name == "sys"
     # resolved attrs inherit the endpoint defaults (openai → text-only; endpoint's window)
     assert ref.multimodal is False and ref.context_chars == 250_000
     # a routine's own model (by catalog name) wins, carrying its per-model attrs
-    ep, ref = reg.for_model("main", {"main": "override"})
+    _, ref = reg.for_model("main", {"main": "override"})
     assert ref.model == "override-id" and ref.multimodal is True and ref.context_chars == 500_000
     # for_system returns the system_model
     _, sref = reg.for_system()
@@ -679,7 +698,7 @@ def test_registry_for_uncensored():
     assert reg.for_uncensored({}) is None
     assert reg.for_uncensored({"main": "sys"}) is None
     # explicitly named → resolves the endpoint + ref
-    ep, ref = reg.for_uncensored({"uncensored": "abliterated"})
+    _, ref = reg.for_uncensored({"uncensored": "abliterated"})
     assert ref.model == "ablit-id" and ref.endpoint == "e1"
 
 

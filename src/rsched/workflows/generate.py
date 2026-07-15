@@ -1,8 +1,8 @@
 """Create a library workflow on demand: one LLM draft, lint-gated with one repair round,
-committed and immediately in circulation. Workflows are Python-pattern files (`.py`)."""
+committed and immediately in circulation. Workflows are Python-pattern files (`.py`).
+"""
 
 from __future__ import annotations
-
 
 from ..config import ServerConfig
 from ..endpoints import EndpointRegistry
@@ -13,7 +13,8 @@ from .lint import lint_workflow_py
 FORMAT_SPEC = '''A library workflow is a single self-contained Python file (.py) that DEPICTS a
 routine's control flow — it is NEVER executed. Structure:
 
-"""<module docstring: what the workflow does, and that it is a PATTERN acted out one action per turn>"""
+"""<module docstring: what the workflow does, and that it is a PATTERN acted out one action \
+per turn>"""
 
 # Dummy parameter imports — each NAMES one piece of information the clarifier fixes for the concrete
 # task; the trailing comment gives its type and meaning. They never resolve at run time.
@@ -21,7 +22,8 @@ from routine.params import (
     PARAM_ONE,    # <type> — <what it means>
     PARAM_TWO,    # <type> — <what it means>
 )
-from routine.actions import read_file, write_file, util, write_util, llm, spawn, wait, ask_user, finish
+from routine.actions import read_file, write_file, util, write_util, llm, spawn, wait, \
+ask_user, finish
 from routine.state import phase, ledger
 
 META = {
@@ -30,8 +32,10 @@ META = {
     "when_to_use": "<2-4 sentences a matcher uses to pair instructions with this workflow>",
     "version": 1,
     "tags": [<at least 3 tags>],
-    "includes": [<trait slugs from the available list — the practice modules this pattern suggests>],
-    "tools": None,      # or a list of allowed action kinds, e.g. ["read_file", "write_file", "finish"]
+    "includes": [<trait slugs from the available list — the practice modules this pattern \
+suggests>],
+    "tools": None,      # or a list of allowed action kinds, e.g. ["read_file", "write_file", \
+"finish"]
 }
 PHASES = [<cross-run phases>]       # or ["steady"] when there are no cross-run milestones
 COMPLETION = "<done-for-this-run; done-overall>"
@@ -51,11 +55,13 @@ META / PHASES / COMPLETION must be plain literals (they are parsed statically wi
 Use the full range of Python control flow wherever it makes the process clearer.'''
 
 
-def generate(server: ServerConfig, instruction: str, hint: str = "", on_usage=None) -> tuple[str, str]:
+def generate(server: ServerConfig, instruction: str, hint: str = "",
+             on_usage=None) -> tuple[str, str]:
     """Draft a new Python workflow for the instruction. Returns (slug, problems_note); the file is
     written + committed on success. Raises RuntimeError when the draft can't be made valid.
     `on_usage(usage)` is called with each completion's usage — the seam that lets an IN-RUN
-    generation (a subtask drafting a pattern) fold its system-model spend into the run's budget."""
+    generation (a subtask drafting a pattern) fold its system-model spend into the run's budget.
+    """
     home = server.library_home
     traits = list_traits(home)
     _, _, example_raw = read_workflow(home, "general-task")   # a good Python workflow to imitate

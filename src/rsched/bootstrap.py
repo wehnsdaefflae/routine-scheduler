@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from .paths import config_file
+from .paths import atomic_write, config_file
 
 log = logging.getLogger("rsched.bootstrap")
 
@@ -26,14 +26,16 @@ def repo_root() -> Path:
 
 def ensure_config() -> bool:
     """Create config.yaml with a random token if it's missing. Returns True if it generated one.
-    Without this a fresh deploy has an empty token → auth is disabled → an open API on the LAN."""
+    Without this a fresh deploy has an empty token → auth is disabled → an open API on the LAN.
+    """
     path = config_file()
     if path.exists():
         return False
     token = secrets.token_urlsafe(24)
     example = repo_root() / "config" / "config.example.yaml"
     if example.exists():
-        text = re.sub(r'token:\s*"change-me".*', f'token: "{token}"', example.read_text(encoding="utf-8"))
+        text = re.sub(r'token:\s*"change-me".*', f'token: "{token}"',
+                      example.read_text(encoding="utf-8"))
     else:
         text = f'bind: 127.0.0.1\nport: 8321\ntoken: "{token}"\n'
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -43,7 +45,7 @@ def ensure_config() -> bool:
 
 
 def _git(home: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(home), *args], capture_output=True)
+    subprocess.run(["git", "-C", str(home), *args], capture_output=True, check=False)
 
 
 def install_push_hook(home: Path) -> None:
@@ -69,7 +71,8 @@ def _install_seed_routine(src: Path, dst: Path) -> None:
 def adopt_seed_routine(routines_home: Path, slug: str) -> bool:
     """Install ONE bundled meta routine into an EXISTING instance — how a seed added
     after first boot reaches deployments (seed_routines runs only on fresh installs).
-    Idempotent, and an archived copy is respected: the user removed it on purpose."""
+    Idempotent, and an archived copy is respected: the user removed it on purpose.
+    """
     seed = repo_root() / "routine-seed" / slug
     dst = routines_home / slug
     if not seed.is_dir() or not routines_home.is_dir() or dst.exists():
@@ -85,7 +88,8 @@ def adopt_seed_routine(routines_home: Path, slug: str) -> bool:
 
 def seed_routines(routines_home: Path) -> int:
     """On a fresh install (no routines yet), install the bundled meta routines — disabled, so they
-    show up under the 'meta' tag for the user to enable, but don't run anything on their own."""
+    show up under the 'meta' tag for the user to enable, but don't run anything on their own.
+    """
     routines_home.mkdir(parents=True, exist_ok=True)
     if any(d.is_dir() and not d.name.startswith(".") for d in routines_home.iterdir()):
         return 0                                    # not a fresh install — never clobber
@@ -111,7 +115,8 @@ _ADOPTED_MARKER = ".permissions-adopted.json"
 def _ensure_library_permission(permissions_home: Path, slug: str) -> str | None:
     """An existing library repo predates a new seed permission (seed_libraries only runs at
     repo creation): copy the repo seed in — never overwriting — and commit, so the permission
-    exists as the grants authority. Returns the library copy's content, or None."""
+    exists as the grants authority. Returns the library copy's content, or None.
+    """
     dst = permissions_home / f"{slug}.md"
     if dst.exists():
         return dst.read_text(encoding="utf-8")
@@ -127,9 +132,10 @@ def _ensure_library_permission(permissions_home: Path, slug: str) -> str | None:
 def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
     """One-time propagation of new default permissions into EXISTING routines: append the
     slug to routine.yaml `permissions:`. A slug is marked adopted only once the library copy
-    exists (an unseeded library retries next boot). Returns routine × permission additions."""
-    if not routines_home.is_dir():
-        return 0
+    exists (an unseeded library retries next boot). Returns routine × permission additions.
+    """
+    if not ADOPT_PERMISSIONS or not routines_home.is_dir():
+        return 0   # nothing pending adoption — skip the marker read and routine walk entirely
     marker = routines_home / _ADOPTED_MARKER
     try:
         done = set(json.loads(marker.read_text(encoding="utf-8")))
@@ -159,8 +165,8 @@ def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
 
                 _merge_caps(raw["capabilities"],
                             read_library_requires(permissions_home).get(slug) or {})
-            (rdir / "routine.yaml").write_text(
-                yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+            atomic_write(rdir / "routine.yaml",
+                         yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
             _git(rdir, "add", "-A")
             _git(rdir, "commit", "-qm", f"adopt default permission: {slug}")
             touched += 1
@@ -185,7 +191,8 @@ def _merge_caps(caps: dict, extra: dict) -> None:
     for key in ("actions", "utils"):
         caps.setdefault(key, [])
         caps[key] += [v for v in extra.get(key) or [] if v not in caps[key]]
-    if _RUNS_RANK.get(extra.get("runs") or "none", 0) > _RUNS_RANK.get(caps.get("runs") or "none", 0):
+    if _RUNS_RANK.get(extra.get("runs") or "none", 0) \
+            > _RUNS_RANK.get(caps.get("runs") or "none", 0):
         caps["runs"] = extra["runs"]
     if _CONFIRM_RANK.get(extra.get("confirm") or "always", 0) \
             > _CONFIRM_RANK.get(caps.get("confirm") or "always", 0):
@@ -195,7 +202,8 @@ def _merge_caps(caps: dict, extra: dict) -> None:
 def seed_libraries(home: Path) -> None:
     """Populate an empty library repo (workflows/ + traits/ + permissions/ + utils/) from the
     built-in seeds + git-init it (matches deploy/install.sh). The `gu` dispatcher is installed
-    by utils_lib.ensure_library on first use."""
+    by utils_lib.ensure_library on first use.
+    """
     root = repo_root()
     home.mkdir(parents=True, exist_ok=True)
     if (root / "library-seed" / "workflows").is_dir():
@@ -225,7 +233,8 @@ def sync_seed_library_docs(libraries_home: Path) -> int:
     every daemon boot, like sync_seed_utils). seed_libraries only runs at repo creation,
     so a pattern or trait added to library-seed/ later — e.g. the `converse` workflow the
     Conversations tab materializes — would never reach an existing instance. Copies each
-    absent file verbatim; NEVER overwrites (local edits win). Returns how many landed."""
+    absent file verbatim; NEVER overwrites (local edits win). Returns how many landed.
+    """
     root = repo_root() / "library-seed"
     installed: list[str] = []
     for kind, pattern in (("workflows", "*.py"), ("traits", "*.md"), ("permissions", "*.md")):
@@ -261,7 +270,8 @@ def sync_seed_utils(libraries_home: Path) -> int:
     created never reached it — a permission could point at a util that doesn't exist
     (the reserved 'shell' util did exactly that). Copies each absent
     util-seed/utils/<name> verbatim; NEVER touches an existing util dir (local
-    modifications stay untouched). Returns how many were installed."""
+    modifications stay untouched). Returns how many were installed.
+    """
     src = repo_root() / "util-seed" / "utils"
     dest = libraries_home / "utils"
     if not src.is_dir() or not dest.is_dir():

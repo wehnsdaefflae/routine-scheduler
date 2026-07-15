@@ -21,7 +21,7 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["answer"
           "properties": {"answer": {"type": "integer", "description": "the numeric result"}}}
 
 
-@pytest.mark.parametrize("endpoint,model", [
+@pytest.mark.parametrize(("endpoint", "model"), [
     ("openrouter", "z-ai/glm-5.2"),
     ("ollama-local", "gemma4:latest"),
     ("anthropic", "claude-sonnet-5"),

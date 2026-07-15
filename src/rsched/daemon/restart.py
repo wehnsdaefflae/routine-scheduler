@@ -77,6 +77,7 @@ def restart_action(requested: bool, active_states: list[str], draining: bool,
 def trigger_shutdown() -> None:
     """Signal uvicorn to shut down gracefully (it handles SIGTERM); the process then exits and
     the supervisor relaunches with the new code. Isolated so tests patch it rather than
-    signalling the test runner."""
+    signalling the test runner.
+    """
     log.warning("self-update: drained — signalling graceful shutdown to restart on new code")
     signal.raise_signal(signal.SIGTERM)

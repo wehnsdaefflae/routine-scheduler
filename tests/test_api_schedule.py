@@ -4,32 +4,12 @@ from datetime import datetime
 
 import pytest
 import yaml
-from fastapi.testclient import TestClient
-
-from rsched.config import load_server_config
-from rsched.web.app import create_app
-
-TOKEN = "test-token"
 
 
 @pytest.fixture
-def client(tmp_path, make_routine):
+def client(api_client, make_routine):
     make_routine(slug="weekly")  # cron "0 7 * * 1" via the shared fixture
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "libraries_home": str(tmp_path / "library"),
-        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "models": {"m": {"endpoint": "dummy", "model": "m"}},
-        "system_model": "m",
-    }))
-    server, problems = load_server_config(cfg_path)
-    assert not problems
-    app = create_app(server, with_scheduler=False)
-    with TestClient(app) as c:
-        c.headers["Authorization"] = f"Bearer {TOKEN}"
-        yield c, tmp_path
+    return api_client
 
 
 def _set_schedule(routines, slug, **schedule):
