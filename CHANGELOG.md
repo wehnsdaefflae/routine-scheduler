@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.22.0] — 2026-07-15
+
+### Changed
+- **The graceful self-restart now DRAINS in-flight new-routine wizard builds** instead of only
+  cleaning up their fallout (complements 0.20.1's boot-time `recover_orphan_builds`). A wizard
+  build (`api_wizard._build_routine`) is an unpersisted web-process background task; restarting
+  mid-build stranded a half-scaffolded routine. Now the scheduler tracks in-flight builds
+  (`Scheduler.wizard_builds`, registered by `finalize`, cleared when the build ends) and the
+  restart state machine treats a build as finishable work: `restart_action` gained a
+  `builds_active` count, so a pending restart stays in **drain** (fires nothing new) until both
+  active runs **and** builds have finished before it exits. While draining, `finalize` refuses a
+  new build with **503** so the drain converges. A build is never "parked", so it can only hold
+  the restart in drain, never defer it. (AUDIT follow-up: "drain builds as well instead of just
+  dealing with the fallout.")
+
 ## [0.21.0] — 2026-07-15
 
 ### Added

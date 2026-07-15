@@ -116,3 +116,35 @@ def test_scheduler_resumes_when_request_withdrawn(tmp_path, monkeypatch):
     # no sentinel present → idle: draining cleared, scheduling resumes
     assert sched._maybe_restart() is False
     assert runner.draining is False
+
+
+def test_restart_action_waits_for_in_flight_builds():
+    ra = restart.restart_action
+    assert ra(True, [], False, 0) == "restart"              # no runs, no builds → go
+    assert ra(True, [], False, 1) == "drain"                # a build in flight → wait, don't restart
+    assert ra(True, ["running"], False, 2) == "drain"       # runs and builds → drain
+    assert ra(True, [], True, 3) == "drain"                 # already draining, builds remain → wait
+    assert ra(True, [], True, 0) == "restart"               # drained, builds done → go
+    assert ra(True, ["waiting_user"], False, 1) == "defer"  # a parked run still defers (a build isn't parked)
+    assert ra(False, [], False, 5) == "idle"                # no request → idle regardless of builds
+
+
+def test_scheduler_waits_for_wizard_build(tmp_path, monkeypatch):
+    """A self-restart must drain in-flight wizard builds too (they are unpersisted web-process
+    tasks) — do not exit while one is still scaffolding, or it would be stranded half-built."""
+    server = _server(tmp_path)
+    runner = Runner(server, EventBus())
+    sched = Scheduler(server, runner, EventBus())
+    triggered = []
+    monkeypatch.setattr(restart, "trigger_shutdown", lambda: triggered.append(True))
+    p = restart.sentinel_path(server)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("{}")
+    monkeypatch.setattr(runner, "active_states", lambda: [])   # no engine runs active...
+    sched.wizard_builds.add(".wizard-x")                        # ...but a build is in flight
+    assert sched._maybe_restart() is True                       # → drain, not restart
+    assert runner.draining is True and triggered == []
+    sched.wizard_builds.discard(".wizard-x")                    # the build finishes
+    assert sched._maybe_restart() is True
+    assert triggered == [True]                                  # now it restarts
+    assert restart.restart_requested(server) is False

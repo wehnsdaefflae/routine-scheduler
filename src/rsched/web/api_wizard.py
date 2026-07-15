@@ -243,11 +243,28 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
         schedule.friendly_to_cron(body.friendly or {"frequency": "manual"})
     except (ValueError, KeyError) as exc:
         raise HTTPException(400, f"invalid schedule: {exc}") from exc
+    # Don't start a build while the daemon is draining for a self-restart — the restart waits for
+    # in-flight builds, but a NEW build accepted mid-drain would never converge. Retry once it's back.
+    if request.app.state.scheduler.runner.draining:
+        raise HTTPException(503, "the server is restarting — please retry the build in a moment")
     atomic_write_json(d / "state" / "finalize.json", {"state": "building", "slug": body.slug})
     # the clarify process is done — stop its sidecar tailer (the create process stays open until build)
     _stop_tailer(wizard_store.sessions(request.app.state).pop(wid, None))
-    asyncio.create_task(_build_routine(request.app.state, wid, d, body, result))
+    # register the build so a concurrent self-restart drains it instead of stranding it half-built
+    request.app.state.scheduler.wizard_builds.add(wid)
+    asyncio.create_task(_run_build(request.app.state, wid, d, body, result))
     return {"building": True, "slug": body.slug, "wid": wid}
+
+
+async def _run_build(app_state, wid: str, d: Path, body: "FinalizeBody", result: dict) -> None:
+    """Thin wrapper around _build_routine that GUARANTEES the build is deregistered from the
+    scheduler's in-flight set on every exit (success, handled error, or crash), so the restart
+    drain can converge. Kept separate so _build_routine's body stays untouched."""
+    try:
+        await _build_routine(app_state, wid, d, body, result)
+    finally:
+        with contextlib.suppress(Exception):
+            app_state.scheduler.wizard_builds.discard(wid)
 
 
 async def _build_routine(app_state, wid: str, d: Path, body: "FinalizeBody", result: dict) -> None:

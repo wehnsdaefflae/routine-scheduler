@@ -766,6 +766,26 @@ def test_finalize_launches_background_build(client):
     assert c.post(f"/api/wizard/{wid}/finalize", json={**body, "slug": "taken"}).status_code == 409
 
 
+def test_finalize_refused_while_draining(client):
+    """While the daemon is draining for a self-restart, new wizard builds are refused (503) so the
+    drain converges — the restart waits for in-flight builds but must not keep accepting new ones."""
+    c, tmp = client
+    wid = ".wizard-20260101-000001"
+    d = tmp / "routines" / wid
+    (d / "state").mkdir(parents=True)
+    atomic_write_json(d / "state" / "wizard_result.json",
+                      {"refined_instruction": "do the thing", "suggested_slug": "x"})
+    body = {"slug": "drainr", "name": "Drain R", "workflow_slug": "general-task",
+            "friendly": {"frequency": "manual"}, "tags": ["a", "b", "c"], "run_now": False}
+    c.app.state.runner.draining = True
+    try:
+        assert c.post(f"/api/wizard/{wid}/finalize", json=body).status_code == 503
+        assert not (d / "state" / "finalize.json").exists()    # nothing started
+        assert wid not in c.app.state.scheduler.wizard_builds
+    finally:
+        c.app.state.runner.draining = False
+
+
 def test_wizard_list_detail_and_stage(client):
     """In-flight sessions are discoverable + resumable from disk; the stage is derived from what
     the clarify run has actually produced (chat → still clarifying, suggest → result ready)."""
