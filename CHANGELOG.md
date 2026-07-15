@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.45.1] — 2026-07-16
+
+### Fixed
+- **Command autocomplete was unreadable**: the dropdown referenced a CSS token that
+  doesn't exist (`--panel`), rendering transparent over the chat. It now uses the theme's
+  raised surface (help panel likewise), the harness pins an opaque computed background so
+  an undefined token can't slip through again, and a sweep confirmed every `var(--…)` in
+  both stylesheets resolves.
+
 ## [0.45.0] — 2026-07-16
 
 ### Added

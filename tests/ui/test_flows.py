@@ -235,6 +235,10 @@ def test_conversation_slash_commands(ui, ui_page):
     composer_input.fill("/re")
     suggest = ui_page.locator(".cmd-suggest")
     expect(suggest).to_be_visible()
+    # the dropdown floats over the chat — an undefined CSS token here once rendered it
+    # transparent (unreadable), so pin an OPAQUE background
+    bg = suggest.evaluate("el => getComputedStyle(el).backgroundColor")
+    assert bg not in ("rgba(0, 0, 0, 0)", "transparent"), f"dropdown background is {bg}"
     suggest.locator(".cs-item", has_text="/read_file").click()
     expect(composer_input).to_have_value("/read_file ")
     composer_input.fill("/util dir")
