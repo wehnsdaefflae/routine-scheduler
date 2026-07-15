@@ -12,7 +12,7 @@ import time
 
 from ..paths import read_json
 from . import executor, inbox
-from .composer import truncate
+from .observations import truncate
 
 _ABORT = {"flag": False}
 

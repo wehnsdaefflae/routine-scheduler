@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.32.0] — 2026-07-15
+
+### Changed
+- **`engine/loop.py` and `engine/composer.py` split under the ≤~350-line standard**,
+  behavior-preserving (every prompt string byte-identical; `test_prompt_anatomy` pins them).
+  New modules, each one responsibility: `engine/completion.py` (get ONE valid action —
+  schema retries, repeat-streak shedding, refusal referral, media fallback, the compaction
+  gate), `engine/boot.py` (kickoff / resume rehydration of the message list),
+  `engine/observations.py` (observation → next user message + truncation),
+  `engine/capabilities.py` (the CAPABILITIES prompt section). `loop.py` keeps only the
+  turn cycle; `composer.py` the system-prompt assembly and state digest.
+
 ## [0.31.0] — 2026-07-15
 
 ### Added

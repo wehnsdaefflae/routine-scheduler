@@ -1,0 +1,117 @@
+"""Compose the initial message list — a fresh kickoff, or a resume that rehydrates the
+prior transcript (replayed messages, cumulative usage base, orphaned-children notes, the
+ended-run follow-up note). Called once per run by loop.run(); the system prompt itself is
+composed in composer.py.
+"""
+
+from __future__ import annotations
+
+from ..paths import read_json
+from ..statemap import current_phase
+from . import executor, inbox
+from .composer import build_system_prompt, kickoff_message, state_digest
+from .control import inject_user_message
+from .history import orphaned_children, prior_usage, replay_messages
+
+
+def boot(loop) -> None:
+    ctx = loop.ctx
+    ctx.write_status("starting")
+    if ctx.depth == 0:
+        deferred_qa = inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir)
+        open_qs = inbox.open_questions(ctx.routine.dir)
+        msgs = inbox.drain_messages(ctx.routine.dir, loop.consumed_dir)
+        digest = state_digest(ctx.routine.dir, deferred_qa, open_qs)
+    else:
+        msgs = []
+        digest = "(subrun — no routine state digest; everything you need is in the instruction)"
+    if phase := current_phase(ctx.routine.dir):
+        ctx.phase = phase
+    resuming = loop.resume and ctx.depth == 0
+    system = build_system_prompt(ctx, loop.workflow_body, loop.instruction, digest,
+                                 [] if resuming else [m["text"] for m in msgs],
+                                 allowed_kinds=loop.allowed_tools)
+    if resuming:
+        from .transcript import read_events
+        events, _ = read_events(ctx.run_dir / "transcript.jsonl", 0)
+        replayed, last_turn, records = replay_messages(events)
+        loop.messages = [{"role": "system", "content": system}, *replayed]
+        loop.turn_records = records
+        ctx.turn = last_turn
+        ctx.budget_base_turn = last_turn        # a fresh budget window from the resume point
+        # reporting stays cumulative even though the budget window is fresh — without
+        # this base, status.json shows only the last leg of a resumed run
+        ctx.usage_base = prior_usage(events)
+        # replayed observations ground the fabrication guard — a continued conversation
+        # may legitimately answer and re-finish as its very first action
+        loop.executed_actions = sum(1 for e in events if e.get("type") == "observation"
+                                    and not (e.get("payload") or {}).get("rejected"))
+        # Children that were RUNNING at the interruption are dead (threads don't survive a
+        # restart). Mark each aborted in the transcript (so the tree is honest and a re-resume
+        # doesn't re-detect it) and tell the model below — otherwise it would `wait` forever
+        # for a child that can never finish.
+        orphans = orphaned_children(events)
+        for o in orphans:
+            ctx.transcript.event("subrun_end", {
+                "n": o["n"], "label": o["label"], "mode": o["mode"], "status": "aborted",
+                "summary": "did not survive the run's interruption",
+                "turns": 0, "usage": {}})
+        if orphans:
+            names = ", ".join(f"#{o['n']} {o['label']!r} ({o['mode']})" for o in orphans)
+            loop.messages.append({"role": "user", "content":
+                f"ENGINE NOTE: these child tasks were RUNNING when the run was interrupted "
+                f"and did NOT survive the restart (results lost): {names}. Re-issue any you "
+                "still need."})
+        fin = next((e for e in reversed(events) if e.get("type") == "finish"), None)
+        fin_payload = (fin.get("payload") or {}) if fin else {}
+        if fin_payload.get("authored"):
+            # the model itself concluded this run (web converse on a finished run):
+            # a follow-up conversation, not crash recovery
+            status = fin_payload.get("status", "?")
+            ctx.transcript.event("user_injection", {
+                "text": "the user continued the conversation after the run ended",
+                "source": "engine"})
+            loop.messages.append({"role": "user", "content":
+                f"ENGINE NOTE: this run already ENDED (status {status}) — the user is "
+                "continuing the conversation; their message follows. This is a follow-up, "
+                "NOT a new run: do not restart the workflow and do not redo work that is "
+                "already done. Respond to the user's message — do new work only if it asks "
+                "for some — then finish again with an updated summary (the previous result "
+                "plus what this follow-up changed)."})
+        else:
+            ctx.transcript.event("user_injection", {"text": "run resumed after interruption",
+                                                    "source": "engine"})
+            loop.messages.append({"role": "user", "content":
+                "ENGINE NOTE: this run was interrupted (budget/error) and is now RESUMED. The "
+                "conversation above is the run so far — continue from the last observation; "
+                "do NOT restart from step 1. Re-orient briefly, then proceed."})
+        if loop.util_reminder:   # one-shot, on the resume note (the kickoff's counterpart)
+            loop.messages[-1] = {"role": "user",
+                                 "content": loop.messages[-1]["content"] + loop.util_reminder}
+        for m in msgs:   # boot-drained messages: visible injections AFTER the note,
+            inject_user_message(loop, m)     # not a prompt section
+    else:
+        kickoff = {"role": "user", "content": kickoff_message(ctx) + loop.util_reminder}
+        attach_first_message_media(loop, kickoff)  # conversation: images the user attached
+        loop.messages = [{"role": "system", "content": system}, kickoff]
+    ctx.write_status("running")
+
+
+def attach_first_message_media(loop, kickoff: dict) -> None:
+    """A conversation records its first message's attachments in state/pending-media.json;
+    auto-attach the image/PDF ones the main endpoint can show to the kickoff, then clear
+    the file (later replies carry attachments through the inbox instead).
+    """
+    ctx = loop.ctx
+    if ctx.depth > 0:
+        return
+    pend = ctx.routine.dir / "state" / "pending-media.json"
+    data = read_json(pend)
+    rels = data.get("attachments") if isinstance(data, dict) else None
+    if rels and (media := executor.media_from_paths(ctx, [str(r) for r in rels])):
+        kickoff["media"] = media
+    if pend.exists():
+        try:
+            pend.unlink()
+        except OSError:
+            pass

@@ -16,7 +16,7 @@ import shutil
 from pathlib import Path
 
 from .actions import BRIEF_FIELD
-from .composer import format_observation
+from .observations import format_observation
 
 COMPACT_AT_FRACTION = 0.6
 # Once the endpoint demonstrably serves cache hits, carrying context is ~10x cheaper than

@@ -2,7 +2,7 @@
 
 from rsched.config import ServerConfig, load_routine
 from rsched.engine import executor
-from rsched.engine.composer import format_observation
+from rsched.engine.observations import format_observation
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
 

@@ -123,7 +123,7 @@ def test_catalog_text_includes_usage_and_call_shape(tmp_path):
 
 def test_failed_util_observation_teaches_usage(tmp_path):
 
-    from rsched.engine.composer import format_observation
+    from rsched.engine.observations import format_observation
     obs = {"kind": "util", "name": "demo", "args": [], "exit": 2,
            "stdout": "", "stderr": "usage error",
            "usage": "usage: gu demo TARGET [--json]",
@@ -139,8 +139,8 @@ def _ctx(home, grants=None):
 
 def test_util_show_returns_source(tmp_path):
     """`util show <name>` is write_util's read counterpart — repair needs the source."""
-    from rsched.engine.composer import format_observation
     from rsched.engine.executor import do_util
+    from rsched.engine.observations import format_observation
 
     utils_lib.ensure_library(tmp_path)
     utils_lib.write_util_file(tmp_path, "demo", '"""demo — demo.\n\nusage: gu demo\n"""\nX = 1\n')

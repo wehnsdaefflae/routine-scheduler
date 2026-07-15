@@ -1505,11 +1505,13 @@ def test_no_health_event_on_ok_finish(make_routine, scripted, tmp_path):
 
 def test_compaction_antithrash(make_routine, monkeypatch):
     """Head + tail are an incompressible floor: once the middle is a handful of messages, or
-    the prompt hasn't grown since the last archive, _compact_if_needed must SKIP — each attempt
+    the prompt hasn't grown since the last archive, compact_if_needed must SKIP — each attempt
     costs a full-prompt LLM call (seen live: 4 compactions/run, the last saving 5k chars)."""
-    import rsched.engine.loop as loop_mod
+    import rsched.engine.completion as completion_mod
     from rsched.config import load_routine
-    from rsched.engine.loop import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, EngineLoop
+    from rsched.engine.completion import compact_if_needed
+    from rsched.engine.history import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
+    from rsched.engine.loop import EngineLoop
     from rsched.engine.run_context import Budgets, RunContext
     from rsched.engine.transcript import Transcript
 
@@ -1522,7 +1524,7 @@ def test_compaction_antithrash(make_routine, monkeypatch):
                      budgets=Budgets.from_config(cfg.budgets))
     loop = EngineLoop(ctx, "## Run flow", "instr")
     attempts = []
-    monkeypatch.setattr(loop_mod, "compact_to_history",
+    monkeypatch.setattr(completion_mod, "compact_to_history",
                         lambda *a, **k: attempts.append(1) or None)   # None → digest fallback
 
     class _Tiny:   # a resolved ModelRef stand-in: context_chars drives the compaction cap
@@ -1530,19 +1532,19 @@ def test_compaction_antithrash(make_routine, monkeypatch):
 
     msg = {"role": "user", "content": "x" * 500}
     loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]
-    loop._compact_if_needed(None, _Tiny())
+    compact_if_needed(loop, None, _Tiny())
     assert attempts, "a large middle over the cap must compact"
     assert len(loop.messages) == KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 1   # head + digest + tail
     assert loop._last_compact_after > 0
 
     attempts.clear()
     loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 3)]  # middle = 3
-    loop._compact_if_needed(None, _Tiny())
+    compact_if_needed(loop, None, _Tiny())
     assert not attempts, "a tiny middle must not re-trigger compaction"
 
     loop._last_compact_after = 10**9   # as if the last archive already left us this size
     loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]
-    loop._compact_if_needed(None, _Tiny())
+    compact_if_needed(loop, None, _Tiny())
     assert not attempts, "no meaningful growth since the last archive → skip"
 
 

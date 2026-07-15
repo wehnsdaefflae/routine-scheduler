@@ -15,7 +15,7 @@ from .. import utils_lib
 from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, EndpointError, guess_media_type
 from ..ids import is_slug
 from ..paths import resolve_rel
-from .composer import truncate
+from .observations import truncate
 from .run_context import RunContext
 
 READ_DEFAULT_MAX_LINES = 200

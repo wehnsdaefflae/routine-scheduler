@@ -17,7 +17,7 @@ import time
 
 from . import inbox
 from .childrun import Subrun, build_child
-from .composer import truncate
+from .observations import truncate
 
 MAX_PARALLEL = 4
 KILL_JOIN_S = 12.0

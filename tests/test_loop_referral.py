@@ -1,11 +1,12 @@
 """D8 scope C: the main/subroutine turn loop refers a free-text refusal to the routine's
 optional `uncensored` model. Subroutines run the same EngineLoop, so this one path covers both.
-Drives EngineLoop._next_action directly with fake endpoints (no network)."""
+Drives completion.next_action directly with fake endpoints (no network)."""
 
 from __future__ import annotations
 
 from rsched.config import ModelRef, load_routine
 from rsched.endpoints.base import Completion, EndpointError
+from rsched.engine.completion import next_action
 from rsched.engine.loop import EngineLoop
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
@@ -64,7 +65,7 @@ def _loop(make_routine, registry) -> EngineLoop:
 def test_refers_refusal_to_uncensored_when_configured(make_routine):
     main, unc = _FakeEndpoint([REFUSAL]), _FakeEndpoint([VALID])
     loop = _loop(make_routine, _FakeRegistry(main, unc))
-    action, usage = loop._next_action()
+    action, usage = next_action(loop)
     assert action["kind"] == "read_file"          # the uncensored model's action won the turn
     assert loop._referred_turn is True
     assert main.calls == 1 and unc.calls == 1
@@ -74,7 +75,7 @@ def test_refers_refusal_to_uncensored_when_configured(make_routine):
 def test_no_referral_when_uncensored_unset(make_routine):
     main = _FakeEndpoint([REFUSAL])               # keeps refusing every attempt
     loop = _loop(make_routine, _FakeRegistry(main, None))
-    action, _ = loop._next_action()
+    action, _ = next_action(loop)
     assert action is None                          # inert: falls through to schema forcefail
     assert loop._referred_turn is False
     assert main.calls == 3                         # MAX_SCHEMA_ATTEMPTS, no referral tried
@@ -83,7 +84,7 @@ def test_no_referral_when_uncensored_unset(make_routine):
 def test_malformed_non_refusal_is_not_referred(make_routine):
     main, unc = _FakeEndpoint([JUNK]), _FakeEndpoint([VALID])
     loop = _loop(make_routine, _FakeRegistry(main, unc))
-    action, _ = loop._next_action()
+    action, _ = next_action(loop)
     assert action is None
     assert unc.calls == 0                          # not a refusal → the uncensored model is untouched
 
@@ -92,7 +93,7 @@ def test_uncensored_failure_falls_back_to_normal_retry(make_routine):
     main = _FakeEndpoint([REFUSAL])
     unc = _FakeEndpoint([EndpointError("boom")])
     loop = _loop(make_routine, _FakeRegistry(main, unc))
-    action, _ = loop._next_action()
+    action, _ = next_action(loop)
     assert action is None
     assert loop._referred_turn is False
     assert unc.calls == 1                          # tried once, not retried (referral_tried latch)
@@ -103,7 +104,7 @@ def test_uncensored_also_refuses_falls_back(make_routine):
     main = _FakeEndpoint([REFUSAL])
     unc = _FakeEndpoint([REFUSAL])                 # uncensored gives non-action text too
     loop = _loop(make_routine, _FakeRegistry(main, unc))
-    action, _ = loop._next_action()
+    action, _ = next_action(loop)
     assert action is None
     assert loop._referred_turn is False
     assert unc.calls == 1

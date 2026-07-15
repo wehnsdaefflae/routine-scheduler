@@ -1,17 +1,13 @@
-"""System prompt assembly, state digest, observation formatting (composer.py) and
-compaction / on-disk history / transcript replay (history.py)."""
+"""System prompt assembly + state digest (composer.py), the CAPABILITIES section
+(capabilities.py), observation formatting (observations.py), and compaction / on-disk
+history / transcript replay (history.py)."""
 
 import json
 
 from rsched.config import ServerConfig, load_routine
-from rsched.engine.composer import (
-    build_system_prompt,
-    format_observation,
-    harness_contract,
-    state_digest,
-    truncate,
-)
+from rsched.engine.composer import build_system_prompt, harness_contract, state_digest
 from rsched.engine.history import maybe_compact, messages_size
+from rsched.engine.observations import format_observation, truncate
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
 
@@ -173,7 +169,7 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     """The CAPABILITIES section names every util (one line each), the action kinds this run
     may use, and marks reserved-but-ungranted utils — so a run (or the clarify wizard,
     which cannot even call `util name=list`) plans against reality."""
-    from rsched.engine.composer import capabilities_digest
+    from rsched.engine.capabilities import capabilities_digest
     from rsched.grants import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="caps")

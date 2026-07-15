@@ -35,8 +35,11 @@ routine config (`routine.yaml` / UI).
 ## How a run works (engine/)
 
 The turn loop (`engine/loop.py`) is the heart; `engine/runtime.py` is the entry above it
-(`run_routine`, workflow loading/decomposition), `engine/control.py` the between-turns control plane
-(abort, pause gate, `control.json` model switch, injection drain, subrun announcements), and
+(`run_routine`, workflow loading/decomposition), `engine/boot.py` the initial message list
+(kickoff or resume rehydration), `engine/completion.py` the get-one-valid-action side (schema
+retries, refusal referral, media fallback, the compaction gate), `engine/control.py` the
+between-turns control plane (abort, pause gate, `control.json` model switch, injection drain,
+subrun announcements), and
 `engine/interact.py` the user-conversing handlers (`ask_user`, grant-gated `write_util`). Each turn:
 check budgets → pause gate → drain injected user messages (`inbox.py`) → announce finished subruns →
 get ONE valid action from the model (up to 3 schema-retries) → dispatch → append the observation →
@@ -56,7 +59,9 @@ the limits (single-writer status.json preserved).
   and scopes `runs: last`).
   A disallowed/switched-off call is corrected inside the schema-retry cycle with an error naming the
   covering permission, and never becomes a turn.
-- **The system prompt is composed once at boot** (`engine/composer.py`): harness contract → action schema
+- **The system prompt is composed once at boot** (`engine/composer.py`; the CAPABILITIES
+  section in `engine/capabilities.py`, observation rendering in `engine/observations.py`):
+  harness contract → action schema
   + example → workflow body (the routine's own `main.md`, ending in a `## Standing practices` tail that
   references `traits/*.md` — practice prose is NEVER inlined; a SUBRUN inserts its INSTRUCTION brief
   here, a top-level routine does NOT — its task is baked into the recipe) → **capabilities** (model +

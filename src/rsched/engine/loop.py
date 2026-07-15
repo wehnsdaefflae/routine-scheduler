@@ -1,12 +1,13 @@
 """The engine turn loop — the workflow-as-harness core.
 
 Turn cycle: budget check → pause gate → inbox drain → sub-workflow exit notifications →
-compaction → one completion (schema-validated, ≤2 retries) → dispatch → observation.
-Control-flow kinds (spawn/subruns/kill/wait) are handled here; ask_user and write_util in
-interact.py; effect kinds go through executor.dispatch. Between-turn concerns (pause,
-model switch, injections, subrun announcements) live in control.py; the top-level entry
-(run_routine) in runtime.py. Sub-workflows run in parallel threads (subruns.py) and never
-outlive the parent.
+one completion (schema-validated, ≤2 retries — completion.py, which also owns the
+compaction gate) → dispatch → observation. Control-flow kinds (spawn/subruns/kill/wait)
+are handled here; ask_user and write_util in interact.py; effect kinds go through
+executor.dispatch. The initial message list (kickoff or resume rehydration) is composed
+in boot.py; between-turn concerns (pause, model switch, injections, subrun announcements)
+live in control.py; the top-level entry (run_routine) in runtime.py. Sub-workflows run in
+parallel threads (subruns.py) and never outlive the parent.
 """
 
 from __future__ import annotations
@@ -14,47 +15,30 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
-import time
 from collections import deque
-from pathlib import Path
 
 from ..endpoints.base import EndpointError
 from ..grants import load_policy
 from ..health_events import log_health_event
-from ..paths import read_json
-from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from ..statemap import current_phase
-from . import detach, executor, inbox, interact
-from .actions import ACTION_SCHEMA, BRIEF_FIELD, KIND_EXAMPLES, normalize_action, validate_action
+from . import detach, executor, interact
+from .actions import BRIEF_FIELD
 from .autocommit import autocommit as _autocommit
-from .composer import build_system_prompt, format_observation, kickoff_message, state_digest
+from .boot import boot
+from .completion import MAX_SCHEMA_ATTEMPTS, next_action
 from .control import (
     _ABORT,
     RunAborted,
     announce_finished_subruns,
     apply_model_switch,
     drain_injections,
-    inject_user_message,
     pause_gate,
     request_abort,
 )
-from .history import (
-    COMPACT_AT_FRACTION,
-    COMPACT_AT_FRACTION_CACHED,
-    KEEP_HEAD_MSGS,
-    KEEP_TAIL_MSGS,
-    compact_to_history,
-    maybe_compact,
-    messages_size,
-    orphaned_children,
-    prior_usage,
-    replay_messages,
-)
+from .observations import format_observation
 from .run_context import RunContext
 from .subruns import SubrunManager
 
 POLL_S = 2.0
-MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
 REPEAT_WARN = 3
 REPEAT_FAIL = 5
 
@@ -67,23 +51,6 @@ __all__ = [
     "RunAborted",
     "request_abort",
 ]
-
-
-def _fold_usage(usage_sum: dict, completion) -> None:
-    """Fold one completion's usage into this turn's running sum: in/out, prompt-cache
-    traffic (kept out of `in` so token budgets keep their meaning), metered cost, and the
-    serving provider — aggregators route per request, and attribution is what lets an
-    audit correlate malformed actions with the provider, not the model.
-    """
-    usage_sum["in"] += completion.usage["in"]
-    usage_sum["out"] += completion.usage["out"]
-    for cache_key in ("cached_in", "cache_write"):
-        if completion.usage.get(cache_key):
-            usage_sum[cache_key] = usage_sum.get(cache_key, 0) + int(completion.usage[cache_key])
-    if completion.usage.get("cost"):
-        usage_sum["cost"] = round(usage_sum.get("cost", 0.0) + float(completion.usage["cost"]), 6)
-    if completion.provider:
-        usage_sum["provider"] = completion.provider
 
 
 class EngineLoop:
@@ -183,7 +150,7 @@ class EngineLoop:
     def run(self) -> str:  # noqa: C901, PLR0912, PLR0915
         ctx = self.ctx
         try:
-            self._boot()
+            boot(self)
             while True:
                 if self._aborted():
                     raise RunAborted
@@ -195,7 +162,7 @@ class EngineLoop:
                 apply_model_switch(self)
                 drain_injections(self)
                 announce_finished_subruns(self)
-                action, usage = self._next_action()
+                action, usage = next_action(self)
                 if self._aborted():
                     raise RunAborted  # a kill during the completion preempts the action
                 if action is None:
@@ -293,107 +260,6 @@ class EngineLoop:
             if self.ctx.depth == 0:
                 self.ctx.transcript.close()
 
-    def _boot(self) -> None:
-        ctx = self.ctx
-        ctx.write_status("starting")
-        if ctx.depth == 0:
-            deferred_qa = inbox.collect_deferred_answers(ctx.routine.dir, self.consumed_dir)
-            open_qs = inbox.open_questions(ctx.routine.dir)
-            msgs = inbox.drain_messages(ctx.routine.dir, self.consumed_dir)
-            digest = state_digest(ctx.routine.dir, deferred_qa, open_qs)
-        else:
-            msgs = []
-            digest = "(subrun — no routine state digest; everything you need is in the instruction)"
-        if phase := current_phase(ctx.routine.dir):
-            ctx.phase = phase
-        resuming = self.resume and ctx.depth == 0
-        system = build_system_prompt(ctx, self.workflow_body, self.instruction, digest,
-                                     [] if resuming else [m["text"] for m in msgs],
-                                     allowed_kinds=self.allowed_tools)
-        if resuming:
-            from .transcript import read_events
-            events, _ = read_events(ctx.run_dir / "transcript.jsonl", 0)
-            replayed, last_turn, records = replay_messages(events)
-            self.messages = [{"role": "system", "content": system}, *replayed]
-            self.turn_records = records
-            ctx.turn = last_turn
-            ctx.budget_base_turn = last_turn        # a fresh budget window from the resume point
-            # reporting stays cumulative even though the budget window is fresh — without
-            # this base, status.json shows only the last leg of a resumed run
-            ctx.usage_base = prior_usage(events)
-            # replayed observations ground the fabrication guard — a continued conversation
-            # may legitimately answer and re-finish as its very first action
-            self.executed_actions = sum(1 for e in events if e.get("type") == "observation"
-                                        and not (e.get("payload") or {}).get("rejected"))
-            # Children that were RUNNING at the interruption are dead (threads don't survive a
-            # restart). Mark each aborted in the transcript (so the tree is honest and a re-resume
-            # doesn't re-detect it) and tell the model below — otherwise it would `wait` forever
-            # for a child that can never finish.
-            orphans = orphaned_children(events)
-            for o in orphans:
-                ctx.transcript.event("subrun_end", {
-                    "n": o["n"], "label": o["label"], "mode": o["mode"], "status": "aborted",
-                    "summary": "did not survive the run's interruption",
-                    "turns": 0, "usage": {}})
-            if orphans:
-                names = ", ".join(f"#{o['n']} {o['label']!r} ({o['mode']})" for o in orphans)
-                self.messages.append({"role": "user", "content":
-                    f"ENGINE NOTE: these child tasks were RUNNING when the run was interrupted "
-                    f"and did NOT survive the restart (results lost): {names}. Re-issue any you "
-                    "still need."})
-            fin = next((e for e in reversed(events) if e.get("type") == "finish"), None)
-            fin_payload = (fin.get("payload") or {}) if fin else {}
-            if fin_payload.get("authored"):
-                # the model itself concluded this run (web converse on a finished run):
-                # a follow-up conversation, not crash recovery
-                status = fin_payload.get("status", "?")
-                ctx.transcript.event("user_injection", {
-                    "text": "the user continued the conversation after the run ended",
-                    "source": "engine"})
-                self.messages.append({"role": "user", "content":
-                    f"ENGINE NOTE: this run already ENDED (status {status}) — the user is "
-                    "continuing the conversation; their message follows. This is a follow-up, "
-                    "NOT a new run: do not restart the workflow and do not redo work that is "
-                    "already done. Respond to the user's message — do new work only if it asks "
-                    "for some — then finish again with an updated summary (the previous result "
-                    "plus what this follow-up changed)."})
-            else:
-                ctx.transcript.event("user_injection", {"text": "run resumed after interruption",
-                                                        "source": "engine"})
-                self.messages.append({"role": "user", "content":
-                    "ENGINE NOTE: this run was interrupted (budget/error) and is now RESUMED. The "
-                    "conversation above is the run so far — continue from the last observation; "
-                    "do NOT restart from step 1. Re-orient briefly, then proceed."})
-            if self.util_reminder:   # one-shot, on the resume note (the kickoff's counterpart)
-                self.messages[-1] = {"role": "user",
-                                     "content": self.messages[-1]["content"] + self.util_reminder}
-            for m in msgs:   # boot-drained messages: visible injections AFTER the note,
-                inject_user_message(self, m)     # not a prompt section
-        else:
-            kickoff = {"role": "user", "content": kickoff_message(ctx) + self.util_reminder}
-            self._attach_first_message_media(kickoff)  # conversation: images the user attached
-            self.messages = [{"role": "system", "content": system}, kickoff]
-        ctx.write_status("running")
-
-    def _attach_first_message_media(self, kickoff: dict) -> None:
-        """A conversation records its first message's attachments in state/pending-media.json;
-        auto-attach the image/PDF ones the main endpoint can show to the kickoff, then clear
-        the file (later replies carry attachments through the inbox instead).
-        """
-        ctx = self.ctx
-        if ctx.depth > 0:
-            return
-        pend = ctx.routine.dir / "state" / "pending-media.json"
-        data = read_json(pend)
-        rels = data.get("attachments") if isinstance(data, dict) else None
-        if rels and (media := executor.media_from_paths(ctx, [str(r) for r in rels])):
-            kickoff["media"] = media
-        if pend.exists():
-            try:
-                pend.unlink()
-            except OSError:
-                pass
-
     def _finish_run(self, status: str, summary: str, *, authored: bool = False) -> str:
         ctx = self.ctx
         killed = self.subruns.kill_all(reason=f"parent run finished ({status})")
@@ -415,244 +281,11 @@ class EngineLoop:
             ctx.write_status(state, question=None)
         return status
 
-    # --- turn pieces -------------------------------------------------------------
-
-    def _next_action(self) -> tuple[dict | None, dict]:
-        ctx = self.ctx
-        self._referred_turn = False   # set when the uncensored model produced THIS turn's action
-        endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
-        ctx.main_model = f"{ref.endpoint}/{ref.model}"     # in status.json; updates on a switch
-        self._compact_if_needed(endpoint, ref)
-        usage_sum = {"in": 0, "out": 0}
-        schema = None if self._schema_off else ACTION_SCHEMA
-        if self._shed_schema_turns > 0:
-            self._shed_schema_turns -= 1
-            schema = None
-        prev_raw: str | None = None
-        referral_tried = False   # refer a free-text refusal to the uncensored model once (D8 C)
-        base_len = len(self.messages)   # schema-retry debris beyond this is dropped on success
-        for attempt in range(1, MAX_SCHEMA_ATTEMPTS + 1):
-            # Generous output cap: reasoning models need room to think AND answer — a
-            # provider's small default can swallow the content entirely.
-            try:
-                completion = endpoint.complete(self.messages, model=ref.model,
-                                               schema=schema, effort=ref.effort,
-                                               temperature=ref.temperature,
-                                               max_tokens=16_384,
-                                               session=str(ctx.run_dir),
-                                               # bookkeeping only — the wrapper consumes
-                                               # these; they never reach the transport, so
-                                               # the prompt is untouched
-                                               purpose=f"turn {ctx.turn + 1}"
-                                                       + ("" if attempt == 1
-                                                          else f" · retry {attempt}"),
-                                               kind="turn")
-            except EndpointError as exc:
-                # Runtime net: if the failure is on a turn whose tail carries an image the
-                # endpoint couldn't show, convert it to vision-util text and retry text-only;
-                # otherwise it's a real endpoint failure — let it propagate.
-                if self._apply_media_fallback(exc):
-                    continue
-                raise
-            _fold_usage(usage_sum, completion)
-            if completion.parsed is None and not completion.text.strip():
-                # Empty reply = provider hiccup, not a model mistake: retry cleanly (no
-                # poisoned context); the last attempt drops the provider-side format
-                # constraint entirely — the contract in the system prompt still demands JSON.
-                ctx.transcript.event("error", {
-                    "where": "endpoint", "attempt": attempt,
-                    "message": "empty completion (no content/reasoning)"})
-                if attempt == MAX_SCHEMA_ATTEMPTS - 1:
-                    schema = None
-                time.sleep(1.5 * attempt)
-                continue
-            kind_hint: str | None = None
-            try:
-                candidate, problems = self._action_candidate(completion)
-                if isinstance(candidate, dict) and candidate.get("kind") in KIND_EXAMPLES:
-                    kind_hint = candidate["kind"]
-                if problems:
-                    raise SchemaViolation(problems)
-                if len(self.messages) > base_len:
-                    # Drop the failed-attempt/correction pairs from the live prompt — they
-                    # earned their keep eliciting THIS reply and would otherwise be re-read
-                    # every remaining turn. The transcript's error events keep the record.
-                    del self.messages[base_len:]
-                return candidate, usage_sum
-            except SchemaViolation as exc:
-                raw = completion.text or json.dumps(completion.parsed or {})
-                repeated = prev_raw is not None and raw.strip() == prev_raw.strip()
-                prev_raw = raw
-                ctx.transcript.event("error", {"where": "schema", "attempt": attempt,
-                                               "message": str(exc)[:500], "raw": raw[:1500],
-                                               **({"provider": completion.provider}
-                                                  if completion.provider else {})})
-                ctx.note_schema_retry()
-                # Refusal referral (opt-in, D8 scope C): a free-text reply that reads as a
-                # content refusal — not a malformed action — means the main/subroutine model
-                # DECLINED the turn. If the routine configured an `uncensored` model, re-issue
-                # this turn to it once; a schema-valid action from it continues the loop
-                # untouched. Inert when the role is unset (for_uncensored → None).
-                if (not referral_tried and completion.parsed is None
-                        and executor._looks_like_refusal(completion.text)):
-                    referral_tried = True
-                    referred_action = self._refer_turn_to_uncensored(usage_sum, base_len)
-                    if referred_action is not None:
-                        self._referred_turn = True
-                        return referred_action, usage_sum
-                self.messages.append({"role": "assistant", "content": raw[:4000]})
-                self.messages.append({"role": "user", "content": retry_message(
-                    exc.problems, example=KIND_EXAMPLES.get(kind_hint or ""), repeated=repeated)})
-                if attempt == MAX_SCHEMA_ATTEMPTS - 1:
-                    # Persistent violations under a provider-enforced grammar are often the
-                    # grammar's fault (empty-string debris fields are its signature) — give
-                    # the final attempt free-form JSON; the contract still demands one object.
-                    schema = None
-        ctx.note_schema_forcefail()
-        return None, usage_sum
-
-    def _refer_turn_to_uncensored(self, usage_sum: dict, base_len: int) -> dict | None:
-        """D8 scope C: the routine's main/subroutine model refused the turn in free text. If an
-        `uncensored` model is configured, re-issue the CURRENT turn to it once and return a
-        schema-valid action if it produces one (else None → fall back to normal schema retry).
-        Opt-in and inert: no `uncensored` role (for_uncensored → None) means no-op. Usage from the
-        referred completion is folded into this turn's usage; on success the schema-retry debris
-        is dropped like the primary success path. Best-effort — any endpoint/parse failure returns
-        None so the loop keeps its existing retry behaviour.
-        """
-        ctx = self.ctx
-        target = ctx.registry.for_uncensored(ctx.routine.models)
-        if target is None:
-            return None
-        u_endpoint, u_ref = target
-        try:
-            completion = u_endpoint.complete(self.messages, model=u_ref.model,
-                                             schema=ACTION_SCHEMA, effort=u_ref.effort,
-                                             temperature=u_ref.temperature,
-                                             max_tokens=16_384, session=str(ctx.run_dir),
-                                             purpose=f"turn {ctx.turn + 1} · referred", kind="turn")
-        except EndpointError:
-            return None
-        _fold_usage(usage_sum, completion)
-        try:
-            candidate, problems = self._action_candidate(completion)
-        except Exception:   # best-effort: a bad referred reply just falls through to normal retry
-            return None
-        if problems:
-            return None
-        if len(self.messages) > base_len:
-            del self.messages[base_len:]
-        return candidate
-
-    def _action_candidate(self, completion) -> tuple[dict, list]:
-        """Parse a completion into a normalized action candidate plus validation problems
-        (schema first, then per-kind/permission checks). Raises on unparseable text —
-        callers decide whether that is a retry or a silent fallback.
-        """
-        candidate = (completion.parsed if completion.parsed is not None
-                     else extract_json(completion.text))
-        candidate = normalize_action(candidate)
-        problems = (validate(candidate, ACTION_SCHEMA)
-                    or validate_action(candidate, allowed_kinds=self.allowed_tools,
-                                       grants=self.grants))
-        return candidate, problems
-
-    def _compact_if_needed(self, endpoint, ref) -> None:
-        """When the prompt exceeds ~60% of context, archive the middle to a navigable on-disk
-        history via the LLM (compact_to_history); fall back to the deterministic one-line digest if
-        that fails, so a run never stalls on compaction.
-        """
-        ctx = self.ctx
-        size = messages_size(self.messages)
-        # Observed cache hits flip the economics: re-reading carried context costs ~0.1x,
-        # while compacting rewrites the prefix and invalidates the whole cache — so compact
-        # later (0.8) once the provider demonstrably serves from cache, earlier (0.6) when
-        # every turn re-reads at full price.
-        fraction = (COMPACT_AT_FRACTION_CACHED if ctx.usage.get("cached_in")
-                    else COMPACT_AT_FRACTION)
-        context_cap = fraction * ref.context_chars   # the MODEL's window, not the endpoint default
-        # Long prompts also burn the token BUDGET — every turn re-sends everything, so a
-        # bloated prompt taxes each remaining turn. Once the prompt would eat >10% of the
-        # remaining token budget per turn, archive it: the one compaction call costs what
-        # the bloat would keep costing every single turn. Floored so a small prompt near
-        # budget exhaustion doesn't thrash (compaction itself spends tokens).
-        remaining = ctx.tokens_remaining()   # None = unlimited → only the context cap applies
-        budget_cap = (float("inf") if remaining is None
-                      else max(40_000.0, 0.10 * 4 * remaining))
-        if (size <= min(context_cap, budget_cap)
-                or len(self.messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS):
-            return
-        # Anti-thrash: head + tail are an incompressible floor (large observations in the last
-        # 24 messages stay verbatim), so once the middle is a handful of messages — or the size
-        # hasn't grown meaningfully since the last archive — another pass can't win. Each
-        # attempt costs a full-prompt LLM call; wait until there is enough new middle to pay
-        # for one. (Seen live: 4 compactions in one run, the last archiving 3 messages for a
-        # 5k-char gain.)
-        middle_n = len(self.messages) - KEEP_HEAD_MSGS - KEEP_TAIL_MSGS
-        if middle_n < 8 or size < self._last_compact_after + 20_000:
-            return
-        # Archival is machine work — route it to the (usually cheaper) tool-call model
-        # whenever its window can hold the middle being archived; the main model is the
-        # fallback, never the default.
-        c_endpoint, c_ref = endpoint, ref
-        try:
-            t_endpoint, t_ref = ctx.registry.for_model("tool_call", ctx.routine.models)
-            middle_size = messages_size(
-                self.messages[KEEP_HEAD_MSGS:len(self.messages) - KEEP_TAIL_MSGS])
-            if t_ref.context_chars * 0.7 >= middle_size:
-                c_endpoint, c_ref = t_endpoint, t_ref
-        except Exception:
-            pass
-        cinfo = None
-        try:
-            result = compact_to_history(self.messages, self.turn_records, c_endpoint, c_ref,
-                                        ctx.run_dir, self._hist_rel)
-        except Exception as exc:
-            ctx.transcript.event("error", {"where": "compaction", "message": str(exc)[:300]})
-            result = None
-        if result is not None:
-            self.messages, cinfo = result
-            self._history_active = True
-            self._hist_note_countdown = 0   # the next observation carries the history pointer
-        else:
-            self.messages, cinfo = maybe_compact(self.messages, self.turn_records,
-                                                 ref.context_chars)
-        if cinfo:
-            if cinfo.get("usage"):
-                ctx.add_usage(cinfo["usage"])   # the archival call itself now hits the books
-            self._last_compact_after = messages_size(self.messages)
-            ctx.transcript.event("compaction", cinfo)
-
     def _record_turn(self, action: dict) -> None:
         brief = str(action.get(BRIEF_FIELD.get(action["kind"], ""), ""))[:80]
         self.turn_records.append({"turn": self.ctx.turn, "kind": action["kind"],
                                   "brief": json.dumps(brief, ensure_ascii=False),
                                   "say": action.get("say", "")})
-
-    def _apply_media_fallback(self, exc: EndpointError) -> bool:
-        """The main endpoint failed on a turn whose tail user message carries image `media`
-        (it rejected the file, or claude-cli's stream-json path is unavailable). Convert that
-        media to vision-util text IN PLACE and drop it, so the retried completion is text-only
-        and the model still gets the content. False when the tail has no media — then the
-        failure is a genuine endpoint error that must propagate.
-        """
-        if not self.messages:
-            return False
-        last = self.messages[-1]
-        media = last.get("media")
-        if not media:
-            return False
-        notes = []
-        for item in media:
-            desc = executor.vision_describe(self.ctx, item["path"], "")
-            notes.append(f"[{Path(item['path']).name}: this run's model could not display it — "
-                         f"description from the vision util]\n{desc}")
-        last.pop("media", None)
-        last["content"] = last["content"] + "\n\n" + "\n\n".join(notes)
-        self.ctx.transcript.event("error", {"where": "media",
-            "message": f"main endpoint could not show {len(media)} file(s) "
-                       f"({str(exc)[:120]}); fell back to the vision util"})
-        return True
 
     def _repeat_streak(self, action: dict) -> int:
         key = {k: v for k, v in action.items() if k != "say"}

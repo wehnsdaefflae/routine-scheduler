@@ -7,9 +7,12 @@ else the engine ever wants to tell the model arrives as extra *user* messages in
 turn boundaries.** There is no hidden channel, no tool-call protocol, no second agent
 loop: `messages = [system, kickoff, action₁, obs₁, action₂, obs₂, …]`.
 
-Code: `engine/composer.py` (all composition), `engine/loop.py` (what gets appended when),
-`engine/control.py` (between-turn feeds), `engine/history.py` (compaction pointer, resume
-replay), `schema_guard.py` (retry messages). **This page is contract documentation: when
+Code: `engine/composer.py` (system-prompt composition; the CAPABILITIES section in
+`engine/capabilities.py`), `engine/observations.py` (observation → next user message),
+`engine/loop.py` (what gets appended when), `engine/boot.py` (kickoff / resume rehydration),
+`engine/completion.py` (schema retries, referral, the compaction gate), `engine/control.py`
+(between-turn feeds), `engine/history.py` (compaction pointer, resume replay),
+`schema_guard.py` (retry messages). **This page is contract documentation: when
 any of those change the prompt surface, revise it** — `tests/test_prompt_anatomy.py` pins
 the load-bearing strings and fails until the page matches.
 

@@ -172,12 +172,13 @@ def test_apply_media_fallback(make_routine, tmp_path, monkeypatch):
     loop = _loop(make_routine, tmp_path)
     loop.messages = [{"role": "user", "content": "OBS",
                       "media": [{"path": str(tmp_path / "x.png"), "media_type": "image/png"}]}]
-    assert loop._apply_media_fallback(EndpointError("nope")) is True
+    from rsched.engine.completion import apply_media_fallback
+    assert apply_media_fallback(loop, EndpointError("nope")) is True
     assert "media" not in loop.messages[-1]
     assert "DESCRIBED" in loop.messages[-1]["content"]
     # a tail with no media → False: a genuine endpoint error must propagate
     loop.messages = [{"role": "user", "content": "plain"}]
-    assert loop._apply_media_fallback(EndpointError("x")) is False
+    assert apply_media_fallback(loop, EndpointError("x")) is False
 
 
 def test_view_image_native_end_to_end(make_routine, scripted, tmp_path):
