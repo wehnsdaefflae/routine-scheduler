@@ -13,6 +13,7 @@ import { forgetField } from "/static/formpersist.js";
 import { createChat } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createStateGraph } from "/static/components/stategraph.js";
+import { createTaskTree } from "/static/components/tasktree.js";
 import { permissionsPanel } from "/static/components/permissions.js";
 import { busy, chip, el, emptyState, relTime, storage, tagChip, toast } from "/static/util.js";
 
@@ -312,12 +313,49 @@ export async function render(view, slug, _query = {}) {
     // the state graph rides at the top of the artifact rail: current phase lit up,
     // re-highlighted live on the SSE state events below
     const graphBody = el("div", {});
-    artBody.append(el("div", { class: "rail-cap" }, "state"), graphBody,
-                   el("div", { class: "rail-cap" }, "artifacts"));
+    const treeBody = el("div", {});
+    artBody.append(el("div", { class: "rail-cap" }, "state"), graphBody);
+    if (detail.run_id) artBody.append(el("div", { class: "rail-cap" }, "tasks"), treeBody);
+    // detached background tasks the assistant launched (the `detach` action): a flat cross-run
+    // list with a cancel affordance. Hidden until there is at least one.
+    const bgCap = el("div", { class: "rail-cap", hidden: true }, "background");
+    const bgBody = el("div", { class: "bg-tasks" });
+    artBody.append(bgCap, bgBody);
+    artBody.append(el("div", { class: "rail-cap" }, "artifacts"));
     const stateGraph = createStateGraph(graphBody, {
       graphUrl: `/api/conversations/${slug}/stategraph` });
+    const taskTree = detail.run_id ? createTaskTree(treeBody, {
+      treeUrl: `/api/runs/${detail.run_id}/tree`, isLive: () => !TERMINAL.has(curState) }) : null;
     const artifacts = createArtifacts(artBody, { slug });
-    cleanup.push(() => artifacts.destroy());
+
+    const BG_LIVE = new Set(["queued", "starting", "running", "waiting_user", "paused"]);
+    function paintBackground(rows) {
+      bgBody.replaceChildren();
+      bgCap.hidden = !rows.length;
+      for (const t of rows) {
+        const row = el("div", { class: "bg-task" },
+          chip(t.state, t.state),
+          el("span", { class: "bg-task-label", title: t.summary || "" }, t.label));
+        if (BG_LIVE.has(t.state)) {
+          const btn = el("button", { class: "bg-cancel", title: "cancel this background task" }, "✕");
+          btn.onclick = async () => {
+            btn.disabled = true;
+            try { await api(`/api/conversations/${slug}/background/${t.taskid}/cancel`, { method: "POST" }); }
+            catch (e) { toast(e.message); btn.disabled = false; return; }
+            toast("cancelling background task…");
+            setTimeout(refreshBackground, 800);
+          };
+          row.append(btn);
+        }
+        bgBody.append(row);
+      }
+    }
+    async function refreshBackground() {
+      try { paintBackground(await api(`/api/conversations/${slug}/background`)); } catch { /* transient */ }
+    }
+    paintBackground(detail.background || []);
+    const bgTimer = setInterval(refreshBackground, 15000);
+    cleanup.push(() => { clearInterval(bgTimer); artifacts.destroy(); taskTree?.stop(); });
 
     const chat = createChat(chatBox, {
       answer: (qid, text) => api(`/api/questions/${qid}/answer`, { method: "POST", body: { text } }),
@@ -349,7 +387,8 @@ export async function render(view, slug, _query = {}) {
       // (a conversation loops — it has no single workflow phase to highlight)
       stateGraph.setPhase(WORKING.has(s) ? "working" : "waiting for you");
       composer.setLive(!TERMINAL.has(s));
-      if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); }
+      if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); taskTree?.refresh(); }
+      refreshBackground();   // a finished detached task wakes the conversation → catch it here
     };
     setState(detail.state);
 
@@ -358,7 +397,8 @@ export async function render(view, slug, _query = {}) {
       page: (o) => `/api/runs/${detail.run_id}/transcript?offset=${o}`,
       events: (o) => `/api/runs/${detail.run_id}/events?offset=${o}`,
       offset: 0,
-      onEvent: (ev) => { chat.add(ev); scrollDown(); },
+      onEvent: (ev) => { chat.add(ev); scrollDown();
+                         if (ev.type === "subrun_start" || ev.type === "subrun_end") taskTree?.refresh(); },
       onState: (s) => { setState(s.state);   // setState re-lights the state diagram
                         showQuestion(questionBox, s.question); },
       onGone: () => setState("finished"),

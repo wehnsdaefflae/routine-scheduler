@@ -20,7 +20,8 @@ from routine.params import (
 
 # The engine actions the orchestrator may take — exactly one per turn, each answered by an
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
-from routine.actions import read_file, write_file, util, write_util, llm, spawn, wait, ask_user, finish
+from routine.actions import (read_file, write_file, util, write_util, llm,
+                             spawn, subtask, wait, ask_user, finish)
 from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
 
 META = {
@@ -32,7 +33,7 @@ META = {
                    "/ maintain something on a schedule, tend a long-running goal, run a periodic "
                    "check. Use it when the instruction says WHAT to deliver and the HOW is "
                    "ordinary tool work.",
-    "version": 8,
+    "version": 9,
     "tags": ["general", "research", "tool-use"],
     "includes": ["ask-policy", "global-utils", "web-research", "ledger-discipline"],
     "tools": None,          # None = every action kind is allowed
@@ -67,12 +68,20 @@ def main():
     if not work:
         return finish("ok", "Nothing due this run; standing obligations guarded.")
 
-    if len(work) > PARALLEL_THRESHOLD:
-        # Separable bulk work → parallel children, each with a self-contained prompt + disjoint
-        # outputs. Keep working, then fold in their results.
+    mode = decompose_decision(work)             # inline | sequential | parallel — the DECOMPOSITION GATE
+    if mode == "parallel":
+        # Many INDEPENDENT items with disjoint outputs → fan out parallel children; keep working,
+        # then fold in their results.
         children = [spawn(chunk) for chunk in batches(work)]
         while children:
             children = wait(children)           # blocks until the next child finishes; returns the rest
+    elif mode == "sequential":
+        # ONE large task that splits into ORDERED steps, each depending on the previous →
+        # run each as a subtask (a fresh-context child run with its own pattern + budget), in
+        # order, folding each result into the next step's brief.
+        result = None
+        for step in ordered_subtasks(work):
+            result = subtask(brief_for(step, result))   # BLOCKS until this step finishes
     else:
         for item in work:
             try:
@@ -114,6 +123,34 @@ def execute(item):
 def verify(result):
     """Confirm what was produced — read it back, check the util's exit code, count the results.
     A claimed-but-unverified outcome is the worst failure this system knows."""
+
+
+def decompose_decision(work):
+    """The DECOMPOSITION GATE — decide HOW to tackle this run's work before doing it. Return one of:
+    - "inline": do it directly in this run's own turns. The default; most runs are small enough.
+    - "sequential": ONE large task that splits into ORDERED steps where each depends on the previous
+      (e.g. research -> draft -> review, or scrape -> normalize -> report). Each step runs as a
+      `subtask`: a fresh-context child with its OWN pattern + budget, executed in order, its finish
+      summary folded into the next step's brief. Prefer this when a single run's context would get
+      bloated carrying every stage, or a stage clearly wants a different workflow pattern.
+    - "parallel": many INDEPENDENT items with disjoint outputs (PARALLEL_THRESHOLD is a rough size
+      cue) → fan them out as concurrent `spawn` children.
+    Decompose only when it EARNS the coordination cost; a handful of steps you can verify inline
+    should stay inline. Decomposition is recursive — a child may hit its own gate."""
+
+
+def ordered_subtasks(work):
+    """The ORDERED list of sequential steps this task decomposes into — each a self-contained unit
+    that consumes the previous step's result. Keep it short (2-5 steps): over-decomposing spends
+    child budgets on hand-offs instead of work."""
+
+
+def brief_for(step, prior_result):
+    """Compose one subtask's self-contained `prompt`: what THIS step must produce and where, plus
+    the concrete facts it needs from `prior_result` (the previous subtask's finish summary — the
+    child sees nothing else of this run). Pick the `workflow` pattern that fits the step's purpose
+    (or omit for the default, or 'generate' when none fits and that capability is on) and a `turns`
+    budget proportional to the step."""
 
 
 def batches(work):

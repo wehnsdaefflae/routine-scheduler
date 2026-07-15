@@ -19,6 +19,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.26.0] — 2026-07-15
+
+### Added
+- **Detached background tasks — long fire-and-forget in conversations (`detach`).** A conversation can
+  now kick off a LONG job (a 20-minute scrape, a bulk conversion), keep chatting about other things, and
+  be told when it lands. Unlike a within-reply `subtask`/`spawn` (a thread that dies when the reply's
+  process exits), a detached task runs as its OWN daemon-managed `engine-run` process and survives across
+  reply-finishes, reporting its result back into the conversation on completion. The new `detach` action
+  (fields `prompt` / optional `workflow` + `label`) is deliberately tiny on the engine side — it drops an
+  intent file in a new `background_home` (a config peer to `routines_home`/`conversations_home`) and
+  returns, so the assistant `finish`es the reply ("started it — I'll report back") and the conversation
+  continues normally. See `docs/background-tasks.md`.
+- **The `DetachedManager` (`daemon/detached.py`) owns the whole lifecycle, all on disk (restart-safe).**
+  Ticked from the scheduler after the cron-fire loop (+ a boot reconcile), it: materializes each task dir
+  (`childrun.materialize_to_disk`, `routine.yaml` carrying `owner: {slug, dir}`, permissions/models/fs-
+  roots copied from the owner but a background-sized budget of its own) and `runner.fire`s it on a third
+  `BACKGROUND_SLOTS` pool; polls `status.json` for completion (the `EventBus` is lossy); on terminal
+  DELIVERS (exactly-once via a `delivered.json` marker + a deterministic message filename) — copies the
+  task's artifacts into `<owner>/artifacts/from-bg-<taskid>/` and writes a durable inbox message — then
+  WAKES the conversation (`runner.resume` if idle, else the live reply drains it) with an optional Discord
+  ping when the owner holds `communication`; rebuilds `<owner>/state/background.json` (inlined into the
+  reply's state digest so the assistant can answer "how's the scrape going?"); and gc's delivered tasks.
+- **Monitor + cancel.** `GET /api/conversations/{slug}/background` lists a conversation's tasks,
+  `POST …/background` drops an intent (the human/test analog of the engine action), and
+  `POST …/background/{id}/cancel` aborts one (`runner.abort` + a pid fallback for a task that outlived a
+  restart). The conversation rail renders a **background** card (label · state · cancel);
+  `web/api_runs.py`'s run resolution now searches `background_home`, so a detached run's transcript /
+  task-tree resolve on the generic `/api/runs` endpoints for free. Deleting a conversation tears down its
+  detached tasks.
+- **New `background-tasks` permission** (`requires: {actions: [detach]}`) — default-ON for conversations,
+  opt-in for routines; `detach` joined `GATED_KINDS`.
+
+### Changed
+- Detached runs are **excluded from the self-update drain gate** (`ActiveRun.background` →
+  `Runner.active_states` skips them): the engine child survives the daemon's SIGTERM via
+  `start_new_session`, so a long background job never blocks a deploy, and the manager's disk-poll delivers
+  it after the restart. Detached tasks also use **deferred asks only** (coerced in `interact.handle_ask`)
+  so one can never park in `waiting_user` and hold a restart. `RoutineConfig` gained an `owner` field.
+- The `converse` seed workflow's decompose guidance learned a `detach` branch (long/independent →
+  detach; short/interactive → inline or `subtask`).
+
+## [0.25.0] — 2026-07-15
+
+### Added
+- **Sequential subtasks — recursive task decomposition as a first-class concept.** A run can now
+  decompose its work into an ORDERED sequence of subtasks, each run to completion before the next —
+  distinct from the existing PARALLEL subruns (`spawn`). The realization: a subtask and a subroutine
+  are the SAME thing — a child task materialized from a workflow pattern and run recursively — so the
+  new `subtask` action and `spawn` are two schedulers over one child-task executor (`engine/childrun.py`,
+  generalized from `subruns.py`). `subtask` is NON-BLOCKING: it starts a sequential child in the
+  background (its own thread + context + pattern) and the parent keeps sequential order by `wait`-ing
+  for it before the next; the completion is delivered by the turn-boundary hook, and `wait` is
+  RESPONSIVE — it yields to a waiting user message so the conversation stays live while children run.
+  Fields: `prompt` (self-contained brief), optional `workflow` (a library pattern for the step's
+  purpose), `label`, `turns` (its budget). Decomposition is recursive (a child hits its own gate; depth
+  ≤ `max_subrun_depth`). See `docs/subtasks.md`.
+- **The decompose-decision gate in the seed workflows.** Concrete subtasks are never known statically,
+  so the `general-task` (v9) and `converse` (v2) patterns now carry a standardized `decompose_decision()`
+  step that decides inline | sequential (subtasks) | parallel (subruns) — reaching existing routines on
+  recompile, new ones at creation.
+- **In-run workflow generation (gated).** A subtask with `workflow: "generate"` DRAFTS a new library
+  pattern for its brief (`workflows/generate.py`, lint-gated, committed) when the routine holds the new
+  `workflows: generate` capability — covered by the `workflow-generation` permission, off by default,
+  skipped when the token budget is nearly spent. The generation call's system-model spend folds into the
+  run's budget.
+- **The recursive task-tree visualization.** The run and conversation rails carry a live task-tree card
+  (`static/components/tasktree.js`, fed by the `web/tasktree.py` read-model over the on-disk `sub/`
+  transcripts): sequential subtasks (→) and parallel subruns (⇉), each a node with a state icon, its
+  workflow pattern, and a per-node turn-budget meter (amber ≥85%, red over), children nested. `run-once`
+  prints the same tree.
+
+### Changed
+- **Budgets are now one unified primitive** (`engine/budget.py`): a `Budget` is a stop condition over a
+  resource, a `BudgetLedger` is an ordered set of them, and `allocate()` slices a child's ledger from
+  the parent's remainder. The run, a conversation reply window, a subtask, and a subrun all share it —
+  `RunContext` holds the live meter, the ledger holds the limits (single-writer `status.json` preserved;
+  wording and status shape unchanged). Per-subtask budgets are SOFT at the parent: a child that overruns
+  its own turn cap force-finishes `partial` and the parent re-plans; only run-level budgets hard-stop.
+- `subrun_start`/`subrun_end` transcript events gained a `mode` (sequential/parallel) and the child's
+  allotted budget — payload EXTENSIONS, so every existing consumer keeps working. Children are threads
+  that die with the process, so a resume marks any still-running child aborted and notes it
+  (`history.orphaned_children`) rather than letting the parent `wait` forever. `wait` also became
+  responsive to pending user messages (`inbox.has_pending_messages`).
+
 ## [0.23.0] — 2026-07-15
 
 ### Fixed

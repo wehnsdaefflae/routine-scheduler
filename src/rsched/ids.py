@@ -50,5 +50,15 @@ def question_id(ts: str, n: int) -> str:
     return f"q-{ts}-{n}"
 
 
+def background_task_id(owner_slug: str) -> str:
+    """A unique slug for a detached background task, tagged with its owner conversation for
+    readability. Uniqueness (a random suffix) is load-bearing: the DetachedManager keys task
+    dirs by this id, so a collision would silently drop a task."""
+    import uuid
+
+    base = owner_slug if is_slug(owner_slug) else slugify(owner_slug)
+    return f"bg-{base}-{uuid.uuid4().hex[:8]}"
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")

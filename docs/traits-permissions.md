@@ -98,6 +98,7 @@ capabilities:
   utils: [discord]              # reserved utils switched on
   confirm: always               # write_util approval: always | creations | never
   runs: none                    # previous-run read depth: none | last | all
+  workflows: catalog            # subtask pattern sourcing: catalog | generate
 ```
 
 A new routine's default: `write_util` (confirm `always`) + the memory pair, no reserved
@@ -134,6 +135,8 @@ The shipped set:
 | `communication` | the reserved `discord` util — a second decision surface | opt-in |
 | `run-history` | previous-run reads (the depth — last / all — is the capability's setting) | opt-in |
 | `shell` | the reserved `shell` util — arbitrary host commands | opt-in |
+| `workflow-generation` | `workflows: generate` — a subtask may DRAFT a new pattern when none fits | opt-in |
+| `background-tasks` | the `detach` action — launch a long job that outlives a reply and reports back | ✅ conversations; opt-in for routines |
 
 ### What enforcement looks like
 

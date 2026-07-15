@@ -119,6 +119,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.state.bus = bus
     app.state.runner = runner
     app.state.scheduler = scheduler
+    app.state.detached = scheduler.detached   # detached-background-task manager (Phase 2 API)
     app.state.llm_tasks = task_center
 
     from . import (api_audit, api_conversations, api_llm_tasks, api_playbooks, api_push,

@@ -14,6 +14,7 @@ from ..config import RoutineConfig, ServerConfig
 from ..endpoints import EndpointRegistry
 from ..ids import now_iso, run_id as make_run_id
 from ..paths import atomic_write_json
+from .budget import Budget, BudgetLedger
 from .transcript import Transcript
 
 
@@ -35,6 +36,20 @@ class Budgets:
     @classmethod
     def from_config(cls, budgets: dict) -> "Budgets":
         return cls(**budgets)
+
+    def ledger(self) -> BudgetLedger:
+        """This run's stop conditions as the unified primitive (engine/budget.py). The ONE
+        place the run/window/subtask/subrun checks all share — turns, the conversation-life
+        cap, wall clock, tokens, cost — in the order they are checked. The structural knobs
+        (max_subruns/max_subrun_depth/ask_timeout_min) are not stop-over-time budgets and stay
+        plain fields."""
+        return BudgetLedger([
+            Budget("turns", self.max_turns),
+            Budget("total_turns", self.max_total_turns),
+            Budget("wall_clock", self.max_wall_clock_min),
+            Budget("tokens", self.max_total_tokens),
+            Budget("cost", self.max_cost),
+        ])
 
 
 @dataclass
@@ -124,59 +139,49 @@ class RunContext:
         """Telemetry: a turn exhausted every schema attempt and force-failed."""
         self.schema_forcefails += 1
 
+    def meter(self) -> dict:
+        """A snapshot of live consumption per budgeted resource, in each limit's own unit —
+        the input to every ledger check. Consumption lives HERE (single writer), never in the
+        ledger. `turns` is window-scoped (a resume gets a fresh window via budget_base_turn);
+        `total_turns` is the cumulative whole-conversation count."""
+        return {
+            "turns": self.turn - self.budget_base_turn,
+            "total_turns": self.turn,
+            "wall_clock": self.elapsed_s() / 60.0,
+            "tokens": self.usage["in"] + self.usage["out"],
+            "cost": self.usage.get("cost", 0.0),
+        }
+
     def budget_violation(self) -> str | None:
-        b = self.budgets
-        if b.max_turns >= 0 and self.turn - self.budget_base_turn >= b.max_turns:
-            return f"turn budget exhausted ({b.max_turns})"
-        # cumulative across every resume window (a conversation's whole life): self.turn is
-        # restored to the prior total on resume, so it counts the entire conversation.
-        if b.max_total_turns >= 0 and self.turn >= b.max_total_turns:
-            return f"conversation turn budget exhausted ({b.max_total_turns} total turns)"
-        if b.max_wall_clock_min >= 0 and self.elapsed_s() > b.max_wall_clock_min * 60:
-            return f"wall-clock budget exhausted ({b.max_wall_clock_min} min)"
-        if b.max_total_tokens >= 0 and self.usage["in"] + self.usage["out"] >= b.max_total_tokens:
-            return f"token budget exhausted ({b.max_total_tokens})"
-        if b.max_cost >= 0 and self.usage.get("cost", 0.0) >= b.max_cost:
-            return f"cost budget exhausted (${b.max_cost})"
-        return None
+        return self.budgets.ledger().violation(self.meter())
 
     def budget_warning(self) -> str | None:
         """The 85% line on any budget — the run's cue to wind down DELIBERATELY (record, then
         an authored finish) instead of being cut off mid-work by budget_violation."""
-        b = self.budgets
-        if b.max_turns >= 0 and self.turn - self.budget_base_turn >= 0.85 * b.max_turns:
-            return f"~{b.max_turns - (self.turn - self.budget_base_turn)} turns left"
-        if b.max_total_turns >= 0 and self.turn >= 0.85 * b.max_total_turns:
-            return f"~{b.max_total_turns - self.turn} turns left in this conversation"
-        if b.max_wall_clock_min >= 0 and self.elapsed_s() > 0.85 * b.max_wall_clock_min * 60:
-            return f"~{max(0, int(b.max_wall_clock_min - self.elapsed_s() / 60))} minutes left"
-        spent = self.usage["in"] + self.usage["out"]
-        if b.max_total_tokens >= 0 and spent >= 0.85 * b.max_total_tokens:
-            return f"~{b.max_total_tokens - spent} tokens left"
-        if b.max_cost >= 0 and self.usage.get("cost", 0.0) >= 0.85 * b.max_cost:
-            return f"~${max(0, round(b.max_cost - self.usage.get('cost', 0.0), 2))} of budget left"
-        return None
+        return self.budgets.ledger().warning(self.meter())
 
     def tokens_remaining(self) -> int | None:
         """Tokens left in the budget; None = unlimited."""
-        if self.budgets.max_total_tokens < 0:
-            return None
-        return max(0, self.budgets.max_total_tokens - self.usage["in"] - self.usage["out"])
+        left = self.budgets.ledger().remaining("tokens", self.meter())
+        return None if left is None else int(left)
 
-    def child_budgets(self) -> Budgets:
-        """Remaining budgets ÷ 2 for a subrun (an unlimited time/token/cost budget stays unlimited)."""
+    def child_budgets(self, *, overrides: dict | None = None) -> Budgets:
+        """A subrun/subtask's budgets: each consumable resource is HALF the parent's remainder
+        (an unlimited time/token/cost budget stays unlimited); the conversation-life cap
+        (max_total_turns) is NOT inherited, structural knobs are copied. `overrides` pins a
+        resource to an absolute limit — a subtask's explicit `turns` cap. Uses the unified
+        allocator (BudgetLedger.allocate)."""
+        alloc = self.budgets.ledger().allocate(self.meter(), fraction=0.5, overrides=overrides)
+        lim = {b.resource: int(b.limit) for b in alloc.budgets}
         b = self.budgets
         return Budgets(
-            max_turns=(-1 if b.max_turns < 0 else max(1, (b.max_turns - self.turn) // 2)),
-            max_wall_clock_min=(-1 if b.max_wall_clock_min < 0 else
-                                max(1, int((b.max_wall_clock_min - self.elapsed_s() / 60) // 2))),
-            max_total_tokens=(-1 if b.max_total_tokens < 0 else
-                              max(1000, (b.max_total_tokens - self.usage["in"] - self.usage["out"]) // 2)),
+            max_turns=lim["turns"],
+            max_wall_clock_min=lim["wall_clock"],
+            max_total_tokens=lim["tokens"],
             max_subruns=b.max_subruns,
             max_subrun_depth=b.max_subrun_depth,
             ask_timeout_min=b.ask_timeout_min,
-            max_cost=(-1 if b.max_cost < 0 else
-                      max(1, (b.max_cost - int(self.usage.get("cost", 0.0))) // 2)),
+            max_cost=lim["cost"],
         )
 
     def write_status(self, state: str | None = None, question: dict | None = "\0") -> None:
@@ -187,7 +192,9 @@ class RunContext:
             self.question = question
         if self.depth > 0:
             return
-        b = self.budgets
+        ledger, meter = self.budgets.ledger(), self.meter()
+        turns_left = ledger.remaining("turns", meter)
+        wall_left_min = ledger.remaining("wall_clock", meter)
         atomic_write_json(self.run_dir / "status.json", {
             "run_id": self.run_id,
             "pid": __import__("os").getpid(),
@@ -205,9 +212,7 @@ class RunContext:
             "schema_retries": self.schema_retries,
             "schema_forcefails": self.schema_forcefails,
             "budgets": {
-                "turns_left": (None if b.max_turns < 0 else
-                               max(0, b.max_turns - (self.turn - self.budget_base_turn))),
-                "wall_clock_left_s": (None if b.max_wall_clock_min < 0 else
-                                      max(0, int(b.max_wall_clock_min * 60 - self.elapsed_s()))),
+                "turns_left": None if turns_left is None else int(turns_left),
+                "wall_clock_left_s": None if wall_left_min is None else int(wall_left_min * 60),
             },
         })

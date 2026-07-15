@@ -14,8 +14,8 @@ from __future__ import annotations
 from ..ids import is_slug
 
 KINDS = ("util", "write_util", "read_file", "view_image", "write_file", "edit_file",
-         "memory_read", "memory_write", "llm", "spawn", "subruns", "kill", "wait",
-         "ask_user", "finish")
+         "memory_read", "memory_write", "llm", "spawn", "subtask", "detach", "subruns", "kill",
+         "wait", "ask_user", "finish")
 
 READ_PATHS_MAX = 8
 
@@ -85,16 +85,21 @@ ACTION_SCHEMA: dict = {
                                  "consult it (the engine maintains .memory/INDEX.md from it)"},
         "delete": {"type": "boolean",
                    "description": "memory_write: remove the note and its INDEX line (content/about not needed)"},
-        # llm / spawn / view_image
+        # llm / spawn / subtask / detach / view_image
         "prompt": {"type": "string",
-                   "description": "llm: the prompt · spawn: the sub-workflow's full self-contained "
-                                  "instruction · view_image: what to look for (used only if the "
-                                  "file falls back to the vision util)"},
+                   "description": "llm: the prompt · spawn/subtask/detach: the child's full "
+                                  "self-contained instruction (subtask: fold in the previous "
+                                  "subtask's result) · view_image: what to look for (used only if "
+                                  "the file falls back to the vision util)"},
         "system": {"type": "string", "description": "llm: optional system prompt"},
         "response_schema": {"type": "object", "description": "llm: optional JSON schema constraining the reply"},
         "workflow": {"type": "string",
-                     "description": "spawn: library workflow slug for the child (default general-task)"},
-        "label": {"type": "string", "description": "spawn: short name shown in the run tree"},
+                     "description": "spawn/subtask/detach: library workflow slug for the child "
+                                    "(default general-task) — pick the pattern matching its purpose"},
+        "label": {"type": "string", "description": "spawn/subtask/detach: short name shown in the run tree"},
+        "turns": {"type": "integer", "minimum": 1,
+                  "description": "subtask: turn budget for this sequential child (default: half "
+                                 "your remaining turns)"},
         # subruns / kill / wait
         "n": {"type": "integer", "minimum": 1, "description": "kill/wait: the sub-workflow number"},
         "all": {"type": "boolean",
@@ -135,8 +140,9 @@ ACTION_SCHEMA: dict = {
 # turn records, compaction digests, and transcript replay.
 BRIEF_FIELD = {"util": "name", "write_util": "name", "read_file": "path", "view_image": "path",
                "write_file": "path", "edit_file": "path", "memory_read": "name",
-               "memory_write": "name", "llm": "prompt", "spawn": "label", "kill": "n",
-               "wait": "n", "ask_user": "question", "finish": "status"}
+               "memory_write": "name", "llm": "prompt", "spawn": "label", "subtask": "label",
+               "detach": "label", "kill": "n", "wait": "n", "ask_user": "question",
+               "finish": "status"}
 
 # kind → a minimal VALID action, shown to the model when a reply fails validation. Weak
 # models merge payload keys into the action object (file bodies, finish fields at top
@@ -162,6 +168,11 @@ KIND_EXAMPLES: dict[str, dict] = {
     "llm": {"say": "<why delegate>", "kind": "llm", "prompt": "<the subtask prompt>"},
     "spawn": {"say": "<why a child>", "kind": "spawn",
               "prompt": "<self-contained instruction>", "label": "child-1"},
+    "subtask": {"say": "<why this sequential step>", "kind": "subtask",
+                "prompt": "<self-contained brief; fold in the previous subtask's result>",
+                "label": "step-1"},
+    "detach": {"say": "<why detach this long job>", "kind": "detach",
+               "prompt": "<self-contained brief for the background task>", "label": "scrape"},
     "subruns": {"say": "<why check children>", "kind": "subruns"},
     "kill": {"say": "<why stop it>", "kind": "kill", "n": 1},
     "wait": {"say": "<why block>", "kind": "wait"},
@@ -183,6 +194,8 @@ _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "memory_write": (("name",), ("content", "about", "delete")),
     "llm": (("prompt",), ("system", "response_schema")),
     "spawn": (("prompt",), ("workflow", "label")),
+    "subtask": (("prompt",), ("workflow", "label", "turns")),
+    "detach": (("prompt",), ("workflow", "label")),
     "subruns": ((), ()),
     "kill": (("n",), ()),
     "wait": ((), ("n", "all", "timeout_s")),

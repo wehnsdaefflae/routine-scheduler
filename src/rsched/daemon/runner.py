@@ -32,6 +32,9 @@ STATUS_POLL_S = 2.0
 # Conversations (interactive replies) get their own slot pool: cron load can never queue a
 # chat reply, and a long agentic reply never starves the schedule.
 INTERACTIVE_SLOTS = 3
+# Detached background tasks (dirs under background_home) get a THIRD pool so a couple of
+# long fire-and-forget jobs starve neither the schedule nor chat replies.
+BACKGROUND_SLOTS = 2
 
 
 def engine_cmd(target: str, run_ts: str, *, resume: bool = False) -> list[str]:
@@ -55,6 +58,7 @@ class ActiveRun:
     proc: asyncio.subprocess.Process | None = None  # None while queued for a slot
     holds_slot: bool = False
     sem: asyncio.Semaphore | None = None  # the pool this run draws from (cron vs interactive)
+    background: bool = False  # a detached background task — excluded from the self-update drain gate
 
 
 class Runner:
@@ -69,18 +73,31 @@ class Runner:
         self.center = center   # llm_tasks.TaskCenter — each run is a process; its calls are children
         self.semaphore = asyncio.Semaphore(server.max_concurrent_runs)
         self.interactive_semaphore = asyncio.Semaphore(INTERACTIVE_SLOTS)
+        self.background_semaphore = asyncio.Semaphore(BACKGROUND_SLOTS)
         self.active: dict[str, ActiveRun] = {}  # slug → run
         self.reserved: set[str] = set()  # slugs held by a non-run op (recompile) — no run may fire
         self.draining = False  # set while quiescing for a self-update restart: no new runs fire
 
-    def _sem_for(self, cfg: RoutineConfig) -> asyncio.Semaphore:
-        """Conversations (dirs under conversations_home) use the reserved interactive pool."""
-        home = getattr(self.server, "conversations_home", None)
+    def _under_home(self, cfg: RoutineConfig, home_attr: str) -> bool:
+        """True if the run's dir is a direct child of the named server home. Run kind is
+        discriminated by HOME everywhere (cfg.kind is dropped by pydantic)."""
+        home = getattr(self.server, home_attr, None)
         try:
-            if home is not None and cfg.dir.resolve().parent == Path(home).resolve():
-                return self.interactive_semaphore
+            return home is not None and cfg.dir.resolve().parent == Path(home).resolve()
         except OSError:
-            pass
+            return False
+
+    def is_background(self, cfg: RoutineConfig) -> bool:
+        """A detached background task — its dir sits directly under background_home."""
+        return self._under_home(cfg, "background_home")
+
+    def _sem_for(self, cfg: RoutineConfig) -> asyncio.Semaphore:
+        """Detached background tasks draw from their own pool; conversations (dirs under
+        conversations_home) from the reserved interactive pool; everything else from cron."""
+        if self.is_background(cfg):
+            return self.background_semaphore
+        if self._under_home(cfg, "conversations_home"):
+            return self.interactive_semaphore
         return self.semaphore
 
     def is_active(self, slug: str) -> bool:
@@ -92,9 +109,15 @@ class Runner:
         return slug in self.active or slug in self.reserved
 
     def active_states(self) -> list[str]:
-        """Current state of each active run (read from status.json) — for the drain check."""
+        """Current state of each active run (read from status.json) — for the drain check.
+        Detached background tasks are EXCLUDED: a self-update restart must not block on a
+        long fire-and-forget job. Its engine child spawns start_new_session=True, so it
+        survives the daemon's SIGTERM regardless; the DetachedManager's disk-poll delivers
+        it after the restart."""
         states: list[str] = []
         for run in self.active.values():
+            if run.background:
+                continue
             st = read_json(run.run_dir / "status.json")
             states.append(st.get("state", "unknown") if isinstance(st, dict) else "unknown")
         return states
@@ -112,7 +135,7 @@ class Runner:
         run_dir = cfg.dir / "runs" / ts
         run_dir.mkdir(parents=True, exist_ok=True)
         run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir,
-                        sem=self._sem_for(cfg))
+                        sem=self._sem_for(cfg), background=self.is_background(cfg))
         atomic_write_json(run_dir / "status.json",
                           {"run_id": run.run_id, "state": "queued", "started": ts,
                            "updated": now_iso(), "turn": 0, "question": None,
@@ -131,7 +154,7 @@ class Runner:
         if not run_dir.is_dir():
             return None
         run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir,
-                        sem=self._sem_for(cfg))
+                        sem=self._sem_for(cfg), background=self.is_background(cfg))
         atomic_write_json(run_dir / "status.json",
                           {"run_id": run.run_id, "state": "queued", "started": ts,
                            "updated": now_iso(), "turn": 0, "question": None, "usage": {"in": 0, "out": 0}})

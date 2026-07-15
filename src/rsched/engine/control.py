@@ -90,9 +90,17 @@ def drain_injections(loop) -> None:
 
 
 def announce_finished_subruns(loop) -> None:
-    """Turn-boundary notification: children that exited since the last boundary."""
+    """Turn-boundary notification: children that exited since the last boundary — the
+    "child finished" hook. A SEQUENTIAL subtask's completion prompts result-forwarding; a
+    PARALLEL subrun's is informational (keeps `SUB-WORKFLOW FINISHED`, pinned in the docs)."""
     for sub in loop.subruns.take_finished_unannounced():
         summary, _ = truncate(sub.summary, cap=4000)
-        loop.messages.append({"role": "user", "content":
-            f"SUB-WORKFLOW FINISHED — #{sub.n} {sub.label!r} (workflow {sub.workflow}, "
-            f"status {sub.status}, {sub.ctx.turn} turns):\n{summary}"})
+        if getattr(sub, "mode", "parallel") == "sequential":
+            loop.messages.append({"role": "user", "content":
+                f"SUBTASK FINISHED — #{sub.n} {sub.label!r} (workflow {sub.workflow}, status "
+                f"{sub.status}, {sub.ctx.turn} turns). Fold this result into your next subtask's "
+                f"brief, or finish:\n{summary}"})
+        else:
+            loop.messages.append({"role": "user", "content":
+                f"SUB-WORKFLOW FINISHED — #{sub.n} {sub.label!r} (workflow {sub.workflow}, "
+                f"status {sub.status}, {sub.ctx.turn} turns):\n{summary}"})

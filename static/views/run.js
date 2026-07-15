@@ -8,6 +8,7 @@ import { setQuery } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createStateGraph } from "/static/components/stategraph.js";
+import { createTaskTree } from "/static/components/tasktree.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtDur, fmtTokens, fmtTs, skeleton, streamStatus,
          toDate, toast, when } from "/static/util.js";
@@ -52,13 +53,17 @@ export async function render(view, runId, query = {}) {
   // transitions) + its artifacts. Fixed in the right margin on wide screens (CSS), an
   // ordinary collapsible block above the transcript otherwise.
   const graphBody = el("div", {});
+  const treeBody = el("div", {});
   const artBody = el("div", {});
   view.append(el("details", { class: "run-rail", open: true },
     el("summary", { class: "small" }, "state & artifacts"),
     el("div", { class: "rail-cap" }, "state"), graphBody,
+    el("div", { class: "rail-cap" }, "tasks"), treeBody,
     el("div", { class: "rail-cap" }, "artifacts"), artBody));
   const stateGraph = createStateGraph(graphBody, {
     graphUrl: `/api/routines/${slug}/stategraph` });
+  const taskTree = createTaskTree(treeBody, {
+    treeUrl: `/api/runs/${runId}/tree`, isLive: () => !TERMINAL.has(curState) });
   const artifacts = createArtifacts(artBody, { slug, base: "routines" });
 
   // sub-run selector (main + each spawned child); hidden until there is at least one sub-run
@@ -343,7 +348,8 @@ export async function render(view, runId, query = {}) {
     events: (o) => `/api/runs/${runId}/events?offset=${o}`,
     offset: viewingSub == null ? initialOffset : 0,
     onEvent: (ev) => {
-      if (ev.type === "subrun_start") addSubTab(ev.payload.n, ev.payload.label);
+      if (ev.type === "subrun_start") { addSubTab(ev.payload.n, ev.payload.label); taskTree.refresh(); }
+      if (ev.type === "subrun_end") taskTree.refresh();
       // a deliverable landed — the rail refreshes without waiting for run end
       if (ev.type === "observation" && !ev.payload?.error
           && (ev.payload?.kind === "write_file" || ev.payload?.kind === "edit_file")
@@ -358,7 +364,7 @@ export async function render(view, runId, query = {}) {
       if (s.usage) usageSpan.textContent = fmtTokens(s.usage);
       if (s.model) setModel(s.model);
       showQuestion(s.question);
-      if (TERMINAL.has(s.state)) artifacts.refresh();
+      if (TERMINAL.has(s.state)) { artifacts.refresh(); taskTree.refresh(); }
     },
     onStatus: (s) => stream.set(s),
     onGone: () => stream.set("ended"),

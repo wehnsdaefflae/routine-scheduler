@@ -77,6 +77,19 @@ def test_state_digest_contents(make_routine, tmp_path):
         assert needle in digest, needle
 
 
+def test_state_digest_inlines_background_tasks(make_routine):
+    d = make_routine(slug="bgdig")
+    assert "Background tasks you launched" not in state_digest(d, [], [])   # no file → no section
+    (d / "state" / "background.json").write_text(
+        '[{"taskid": "bg-x-1", "label": "scrape", "state": "finished", "delivered": false},'
+        ' {"taskid": "bg-x-2", "label": "convert", "state": "running", "delivered": false}]',
+        encoding="utf-8")
+    digest = state_digest(d, [], [])
+    assert "Background tasks you launched" in digest
+    assert "scrape" in digest and "bg-x-1" in digest and "[finished]" in digest
+    assert "convert" in digest and "still running" in digest
+
+
 def test_state_digest_lists_traits_without_lens_gating(make_routine):
     # Improvement moved to the routine-improver meta routine: the digest lists the trait
     # files plainly and carries NO improve-* lens/authorization block anymore.

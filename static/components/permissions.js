@@ -19,9 +19,14 @@ const RUNS_OPTIONS = [
   ["all", "all previous runs"],
 ];
 const RUNS_RANK = { none: 0, last: 1, all: 2 };
+const WF_OPTIONS = [
+  ["catalog", "catalog — pick existing patterns only"],
+  ["generate", "generate — also draft a new pattern when none fits"],
+];
+const WF_RANK = { catalog: 0, generate: 1 };
 
 // permissions: [{slug, summary, requires, active, routine_only?}]
-// capabilities: {active: {actions, utils, confirm, runs}, vocabulary: {actions, utils}}
+// capabilities: {active: {actions, utils, confirm, runs, workflows}, vocabulary: {actions, utils}}
 // opts: {onSave(payload), disableRuns?: string (reason), saveLabel?}
 export function permissionsPanel(permissions, capabilities, opts = {}) {
   const docs = permissions || [];
@@ -32,6 +37,7 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
     utils: new Set(capabilities?.active?.utils || []),
     confirm: capabilities?.active?.confirm || "always",
     runs: capabilities?.active?.runs || "none",
+    workflows: capabilities?.active?.workflows || "catalog",
   };
 
   const needs = (p) => p.requires || {};
@@ -46,7 +52,8 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
       const r = needs(docs.find((d) => d.slug === slug) || {});
       const ok = (r.actions || []).every((a) => caps.actions.has(a))
         && (r.utils || []).every((u) => caps.utils.has(u))
-        && (!r.runs || RUNS_RANK[caps.runs] >= RUNS_RANK[r.runs]);
+        && (!r.runs || RUNS_RANK[caps.runs] >= RUNS_RANK[r.runs])
+        && (!r.workflows || WF_RANK[caps.workflows] >= WF_RANK[r.workflows]);
       if (!ok) { held.delete(slug); dropped.push(slug); }
     }
     if (dropped.length) toast(`also deactivated: ${dropped.join(", ")} (their instructions need that capability)`);
@@ -56,6 +63,7 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
     (r.actions || []).forEach((a) => caps.actions.add(a));
     (r.utils || []).forEach((u) => caps.utils.add(u));
     if (r.runs && RUNS_RANK[caps.runs] < RUNS_RANK[r.runs]) caps.runs = r.runs;
+    if (r.workflows && WF_RANK[caps.workflows] < WF_RANK[r.workflows]) caps.workflows = r.workflows;
   };
   // the inverse of the deactivation cascade (D8): a capability is only ever the MEANS of a
   // held permission, so enabling one holds the permission(s) that grant it. The two layers
@@ -155,6 +163,18 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
     capsCol.append(capRow(runsSel, "previous runs — read depth",
       opts.disableRuns || "read_file on earlier runs' transcripts and results under runs/",
       badge(requiredBy((r) => !!r.runs))));
+    const wfSel = el("select", {},
+      ...WF_OPTIONS.map(([v, label]) =>
+        el("option", { value: v, selected: caps.workflows === v ? "" : null }, label)));
+    wfSel.onchange = () => {
+      caps.workflows = wfSel.value;
+      if (caps.workflows !== "catalog") holdCovering((r) => !!r.workflows);
+      dropUnsatisfied();
+      render();
+    };
+    capsCol.append(capRow(wfSel, "subtask patterns — sourcing",
+      "how a subtask sources its workflow: pick from the catalog, or DRAFT a new one when none fits",
+      badge(requiredBy((r) => !!r.workflows))));
   }
 
   function render() { renderDocs(); renderCaps(); }
@@ -167,7 +187,7 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
       await opts.onSave({
         active: docs.filter((p) => p.routine_only ? p.active : held.has(p.slug)).map((p) => p.slug),
         capabilities: { actions: [...caps.actions], utils: [...caps.utils],
-                        confirm: caps.confirm, runs: caps.runs },
+                        confirm: caps.confirm, runs: caps.runs, workflows: caps.workflows },
       });
     } finally { saveBtn.disabled = false; }
   };

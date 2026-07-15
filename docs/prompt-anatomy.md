@@ -29,7 +29,7 @@ Eight sections, in this order:
 
 | # | Section | Source | What the model learns |
 |---|---|---|---|
-| 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a TERSE `say` (one short sentence — words are spent on decisions and surprises, not routine steps), "the run starts NOW", steps-on-demand, working dir + extra fs roots, **no shell**, capability-aware `write_util` and memory-action glosses, the traits-vs-capabilities prose ownership rule, the concrete budgets, a prose gloss of every action kind (including `read_file` batching via `paths`, in-place `edit_file` instead of whole-file rewrites, and `view_image` to SEE an image/PDF — natively when the model is multimodal, else via the vision util), the injection warning. |
+| 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a TERSE `say` (one short sentence — words are spent on decisions and surprises, not routine steps), "the run starts NOW", steps-on-demand, working dir + extra fs roots, **no shell**, capability-aware `write_util` and memory-action glosses, the traits-vs-capabilities prose ownership rule, the concrete budgets, a prose gloss of every action kind (including `read_file` batching via `paths`, in-place `edit_file` instead of whole-file rewrites, and `view_image` to SEE an image/PDF — natively when the model is multimodal, else via the vision util), sequential `subtask` decomposition (a background child the parent starts then WAITS for, its own context + pattern + budget) alongside parallel `spawn`, the injection warning. |
 | 2 | `# ACTION SCHEMA (your every reply matches this)` | `ACTION_SCHEMA` | The exact reply grammar; field descriptions double as micro-docs (`say`/`question`/`summary` say that simple Markdown renders in the UI; `say` demands ONE short sentence; `summary` demands a DETAILED 8-20 lines). |
 | 3 | `# EXAMPLE of a valid reply` | `example_action()` | One few-shot example (`read_file steps/scan.md`) that models on-demand step reading and a terse `say` — deliberately NOT `util name=list`: the catalog already sits in CAPABILITIES, so opening a run by re-listing it just re-buys known information. |
 | 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow **and the task**: a top-level routine's recipe is self-contained — goal, deliverable, constraints and completion criteria are compiled into `main.md` + `steps/*.md` (step detail read on demand), practice detail in `traits/*.md`. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
@@ -109,6 +109,7 @@ back — `format_observation(obs)`, always starting `OBSERVATION (<kind>…)`:
 - `OBSERVATION (ask_user): question filed as deferred (q-…). … Continue.` / `…the user answered (via discord):\n<text>` / `…no answer within 8h — question stays open as deferred (q-…). Proceed on your stated default: …`
 - `OBSERVATION (write_util 'x': selftest passed, created and committed).` / `…approval requested from the user (q-…)…` / header problems (the doc standard: a `tags:` line, every credential env var declared on `secrets:`) are rejected before the approval ask, naming the fix.
 - `OBSERVATION (spawn): sub-workflow 1 'child' started … keep going.`
+- `OBSERVATION (subtask): sequential child 2 'draft' started (workflow general-task) — it runs in the BACKGROUND. To keep sequential order, wait for it (n=2) …` — subtask is NON-blocking; its completion arrives via the `wait` observation or the `SUBTASK FINISHED` hook (§3c), not here. `subtask REJECTED: …` when a cap is hit
 - `OBSERVATION (wait):\nSUB-WORKFLOW 1 'child' FINISHED (status ok, 12 turns):\n<summary>`
 - `OBSERVATION (finish REJECTED): you have not executed a single action this run…` — the fabrication guard, if a fresh run's very first action is a `finish(ok)` (a resume seeds the guard from the replayed observations, so a continued conversation may re-finish immediately)
 
@@ -125,7 +126,7 @@ The **util reminder** — `[tools: the CAPABILITIES catalog lists the global uti
 ### 3c · Between-turn feed messages (separate user messages)
 
 - `USER MESSAGE (injected mid-run):\n<text>`
-- `SUB-WORKFLOW FINISHED — #1 'child' (workflow general-task, status ok, 12 turns):\n<summary, capped 4k>`
+- `SUB-WORKFLOW FINISHED — #1 'child' (workflow general-task, status ok, 12 turns):\n<summary, capped 4k>` (a parallel `spawn` child); a SEQUENTIAL subtask's is `SUBTASK FINISHED — #N … Fold this result into your next subtask's brief, or finish:\n<summary>` — the "child finished" hook that keeps the run responsive while children run
 - `ENGINE NOTE: model switched mid-run: main → <endpoint>/<model>. Continue the run on the new model.`
 
 ### 3d · Schema-retry micro-dialogue (does NOT consume a turn)
@@ -238,6 +239,8 @@ doesn't teach the correct call wastes every future caller's turn). The engine ru
 - memory_read / memory_write: your persistent topic notes under .memory/ — for what was EXPENSIVE to find out (environment quirks, working solutions, constraints nobody wrote down), not what the instruction or a plain look at the data would tell anyone. memory_write(name, content, about) writes ONE kebab-named note of at most 100 lines and the engine maintains .memory/INDEX.md from `about`; delete: true removes a note. memory_read(name) returns one. The state digest shows the INDEX at run start — consult it before re-discovering anything; revise notes that turned out wrong instead of appending contradictions. read_file / write_file are rejected on .memory/ paths.
 - llm: one scoped, stateless LLM subcall (runs on this routine's tool-call model). It sees ONLY your prompt/system — include everything it needs; set response_schema for structured replies.
 - spawn: start a SUB-WORKFLOW that runs IN PARALLEL with you — pick its "workflow" for the child's PURPOSE from the patterns listed under CAPABILITIES (default general-task) and give it a fully self-contained "prompt" as its instruction; it sees nothing else and returns only its finish summary. You keep working while it runs; you are notified automatically when it exits. Give parallel children disjoint outputs (they share your working directory); they must not write LEDGER.md or state/phase.json.
+- subtask: start a child sub-workflow that runs SEQUENTIALLY in the background — decompose a large task into ordered steps, each a fresh-context child run with its OWN budget and pattern. It does NOT block you: to keep sequential order, wait for it (n=N) before starting the next subtask and fold its result into that brief — the wait YIELDS if the user writes (so the conversation stays live) and you are notified when it finishes. Pick its "workflow" for that step's purpose (or omit for the default, or "generate" to DRAFT one when none fits — only if that capability is enabled); "turns" bounds it (default: half your remaining).
+- detach: start a LONG background task that OUTLIVES this reply — for a big self-contained job (a large scrape, a bulk conversion) you kick off then keep chatting around. Unlike spawn/subtask (children that die when this reply's process ends), a detached task runs as its OWN daemon-managed process; when it finishes the engine delivers its result back into this conversation and you relay it. Give a complete self-contained "prompt" (it CANNOT ask blocking questions) and pick its "workflow", then finish the reply — do NOT wait; its status lives in state/background.json. CONVERSATIONS ONLY (gated by the background-tasks permission).
 - subruns: a status table of your sub-workflows (state, turns, elapsed).
 - kill: terminate sub-workflow "n". wait: block until sub-workflow "n" / "all": true / any unreported exit (timeout_s, default 600) — it returns AT ONCE when a finished child hasn't been reported to you yet, or when nothing is running. Children never outlive you — your finish kills them.
 - ask_user: mode "deferred" (default) files the question and CONTINUES — plan around the missing answer. Mode "blocking" pauses the run until answered; after 8h without an answer the run CONTINUES on your stated `default` (set it on every blocking ask) and the question stays open for a future run. Ask sparingly; batch what can wait until run end.
@@ -270,6 +273,8 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
     "memory_write",
     "llm",
     "spawn",
+    "subtask",
+    "detach",
     "subruns",
     "kill",
     "wait",
@@ -359,11 +364,16 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   },
   "workflow": {
    "type": "string",
-   "description": "spawn: library workflow slug for the child (default general-task)"
+   "description": "spawn/subtask: library workflow slug for the child (default general-task) — pick the pattern matching the child's purpose"
   },
   "label": {
    "type": "string",
-   "description": "spawn: short name shown in the run tree"
+   "description": "spawn/subtask: short name shown in the run tree"
+  },
+  "turns": {
+   "type": "integer",
+   "minimum": 1,
+   "description": "subtask: turn budget for this sequential child (default: half your remaining turns)"
   },
   "n": {
    "type": "integer",

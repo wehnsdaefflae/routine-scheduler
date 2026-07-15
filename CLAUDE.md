@@ -33,7 +33,10 @@ The turn loop (`engine/loop.py`) is the heart; `engine/runtime.py` is the entry 
 `engine/interact.py` the user-conversing handlers (`ask_user`, grant-gated `write_util`). Each turn:
 check budgets → pause gate → drain injected user messages (`inbox.py`) → announce finished subruns →
 get ONE valid action from the model (up to 3 schema-retries) → dispatch → append the observation →
-repeat until `finish`.
+repeat until `finish`. **Budgets are one unified primitive** (`engine/budget.py`: a `Budget` = a stop
+condition over a resource, a `BudgetLedger` over them, `allocate()` for child slices) shared by the run,
+a conversation reply window, a subtask, and a subrun — `RunContext` holds the live meter, the ledger holds
+the limits (single-writer status.json preserved).
 - **One action per turn** is enforced: the model returns a single JSON object matching `ACTION_SCHEMA`;
   `normalize_action` + `validate_action` (`engine/actions.py`) repair grammar debris from weak/constrained
   models and return precise per-kind errors. `actions.py` is the single source of truth for what a turn
@@ -84,11 +87,13 @@ repeat until `finish`.
 ## Core contracts — extend, never repurpose
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
-  far better than `oneOf`): `util, write_util, read_file, write_file, edit_file, memory_read,
-  memory_write, llm, spawn, subruns, kill, wait, ask_user, finish`. Every action carries `say` (ONE
+  far better than `oneOf`): `util, write_util, read_file, view_image, write_file, edit_file, memory_read,
+  memory_write, llm, spawn, subtask, detach, subruns, kill, wait, ask_user, finish`. Every action carries `say` (ONE
   terse sentence of narration) + `kind`. `read_file` batches related reads via `paths` (one turn, one
   observation section per file); `edit_file` anchor-replaces in place so revisions cost the diff, not
-  the document.
+  the document. `subtask` runs a child sub-workflow SEQUENTIALLY and blocks (the parallel `spawn`'s
+  sibling — one child-task executor, `engine/childrun.py`); a `subtask` with `workflow: "generate"`
+  drafts a new pattern when the `workflows: generate` capability is held (see docs/subtasks.md).
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out.
   `memory_*` are the ONLY way into `.memory/` (generic file actions are rejected there); the engine
   owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line note cap.
@@ -106,7 +111,8 @@ retryable `EndpointError`s; a 200 with an unparseable body is one of them). All 
 `ModelRef.effort` and report prompt-cache traffic as usage `cached_in`/`cache_write` (kept out of `in`).
 `complete()` takes an optional `session` caching hint (a stable key per run) adapters may ignore. Three kinds:
 - **openai** — any OpenAI-compatible API (OpenRouter, vLLM, Ollama). Schema via json_schema / json_object
-  / ollama-native; degrades gracefully (retries without `response_format`/`reasoning` on a 400). Caching
+  / ollama-native; degrades gracefully (retries without `response_format`/`reasoning` on a 400, and without
+  `response_format` on a 503 that hides a schema-incapable backend). Caching
   is the provider's implicit prefix caching; `cached_tokens` is surfaced from usage details.
 - **anthropic** — Messages API, METERED per-token billing. Schema via a single forced tool-use; effort via
   `output_config`, degraded on a 400 that names it. Always sets `cache_control` breakpoints (tools +
@@ -132,8 +138,8 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (main / subroutine / tool_call),
   `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: {actions, utils,
-  confirm, runs} — both user-changeable only, side by side on the routine page with cascades between
-  them),
+  confirm, runs, workflows} — both user-changeable only, side by side on the routine page with cascades between
+  them; `workflows: catalog|generate` gates in-run pattern drafting for subtasks),
   `budgets:` (max_turns / wall_clock_min / total_tokens (-1 = unlimited, the default) / subruns /
   subrun_depth / ask_timeout_min — all editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
   budgets/fs-roots/schedules are resources, never capabilities; `improve: false` opts the routine
@@ -148,12 +154,47 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   per-routine stats; gitignored, keep-last-N with gzip). The engine commits the working dir
   automatically — routines never run git themselves.
 
-## Subruns, questions, injection
+## Child tasks (subtasks + subruns), questions, injection
 
-- **spawn** materializes a child routine on disk and runs its `EngineLoop` in a **thread** (not a
-  subprocess); children get half the parent's remaining budget, a cap of 4 parallel, and are killed at
-  parent finish (they never outlive the parent). Monitor via `subruns` / `wait` / `kill`; exits
-  auto-announce at the next turn boundary and fold usage into the parent.
+- **A subtask and a subroutine are the same thing** — a child task materialized from a workflow
+  pattern and run recursively (`engine/childrun.py` `build_child`, tree on disk under
+  `runs/<ts>/sub/<n>/`), differing only in SCHEDULING and budget. Both are NON-BLOCKING background
+  threads — the turn loop never monopolizes on a child, so the conversation stays responsive.
+  **spawn** = PARALLEL (≤4 parallel; you keep working). **subtask** = SEQUENTIAL (start it, then
+  `wait n=N` before the next so you can fold its result in; `turns` pins its budget, else half the
+  parent's remainder). A child's completion is delivered by the turn-boundary hook
+  (`announce_finished_subruns` — `SUBTASK FINISHED` / `SUB-WORKFLOW FINISHED`); `wait` is RESPONSIVE
+  (it yields the moment a user message is pending — `inbox.has_pending_messages` — so the loop drains
+  it and the parent replies, then waits again). Children are threads, so they die with the process:
+  a resume marks any still-running child aborted and notes it (`history.orphaned_children`), and a
+  subtask does NOT survive a conversation reply-finish — a job that must outlive a reply is the
+  separate **`detach`** capability below, not a subtask.
+  Decomposition is recursive (a child hits its own decompose gate; depth ≤ `max_subrun_depth`) and
+  the seed workflows carry a standardized `decompose_decision()` gate (inline | sequential | parallel).
+  Children are killed at parent finish (never outlive it); exits fold usage into the parent. The
+  recursive tree is visualized live in the run/conversation rail (`web/tasktree.py` read-model →
+  `static/components/tasktree.js`). `subrun_start`/`subrun_end` events carry `mode` (sequential/parallel)
+  + the child's allotted budget — payload EXTENSIONS, not new event types. A run interrupted mid-block
+  on a subtask resumes with a synthesized "did not complete" observation (`history.dangling_subtask`).
+  Pattern per child: pick a library slug, or `workflow: "generate"` to draft one (gated — see below).
+- **A detached background task (`detach`) is the CROSS-REPLY counterpart** — for a long fire-and-forget
+  job (a 20-min scrape) that must OUTLIVE a conversation reply. Unlike a subtask/spawn thread (dies with
+  the reply's process), it runs as its OWN daemon-managed `engine-run` under a NEW `background_home`
+  (config peer to routines/conversations), `routine.yaml` carrying `owner: {slug, dir}`. The engine
+  handler is tiny — reject unless a root conversation (depth 0, under `conversations_home`), else drop an
+  intent in `background_home/.requests/`; the daemon's **`DetachedManager`** (`daemon/detached.py`, single
+  writer of `background_home`, ticked from `scheduler.run_forever` after the cron loop + a boot reconcile)
+  owns the lifecycle — materialize (`childrun.materialize_to_disk`) + `runner.fire` on a third
+  `BACKGROUND_SLOTS` pool → poll `status.json` (the `EventBus` is lossy) → on terminal, DELIVER
+  (idempotent via `delivered.json` + a deterministic msg filename): copy `artifacts/` → owner, write a
+  durable `<owner>/inbox/` message, then WAKE (`runner.resume` if idle, else the live reply drains it) +
+  optional Discord ping (`communication`) → rebuild `<owner>/state/background.json` → gc past a grace
+  window. Detached runs are excluded from the restart drain gate (the child survives SIGTERM via
+  `start_new_session`; disk-poll delivers post-restart) and use deferred asks only. Gated by the
+  `background-tasks` permission (default-ON for conversations); action = `detach` (never call it
+  "background" — that means the within-reply subtask). Monitor/cancel via `web/api_conversations.py`
+  (`GET/POST …/background`, `…/background/{id}/cancel`); the rail renders the tasks. See
+  docs/background-tasks.md.
 - **ask_user** is `blocking` (poll `inbox/answer-<qid>.json` up to `ask_timeout_min`, then the run
   CONTINUES on the action's stated `default` and the record stays open as deferred) or `deferred`
   (filed to `questions/pending/`, surfaced in a later run's state digest). Blocking asks are durable
@@ -188,8 +229,9 @@ chat message; the next user message resumes the SAME run in place (fresh budget 
   picker (`GET /api/playbooks`); the composer carries **Save as playbook** (`POST …/playbook` →
   distil a new one) and, when the conversation was seeded from a playbook, **Update playbook**
   (`PUT …/playbook` → revise that one) — both distil from the transcript via the `system_model`.
-- Defaults: routine default permissions+capabilities, shell OFF (one-click grant; run-history +
-  the previous-runs depth greyed — routine-only); traits = ask-policy/global-utils/web-research/ledger-discipline/**git-checkpoint**
+- Defaults: routine default permissions+capabilities PLUS **`background-tasks`** (the `detach` action —
+  conversation-shaped, since a finished task reports back into the chat), shell OFF (one-click grant;
+  run-history + the previous-runs depth greyed — routine-only); traits = ask-policy/global-utils/web-research/ledger-discipline/**git-checkpoint**
   (checkpoint commits in external project repos — the conversation dir itself is unversioned).
   Conversations feed workflow-usage + health events; they are EXCLUDED from the dashboard,
   scheduler, and instance-export. `bootstrap.sync_seed_library_docs` (every boot) lands new seed
@@ -240,8 +282,8 @@ first boot; `deploy/install.sh` for host installs.
   them and sweeps every routine (honoring `improve: false`). `DEFAULT_TRAITS` (config) is the no-LLM
   fallback selection.
 - **Permissions** (`library-seed/permissions/`, `# permission:` heading + machine-read `requires:` —
-  {actions, utils, runs}, no confirm): CONDUCT docs of the two-layer permission set. The routine's
-  enforced surface is its own routine.yaml `capabilities:` ({actions, utils, confirm, runs} —
+  {actions, utils, runs, workflows}, no confirm): CONDUCT docs of the two-layer permission set. The routine's
+  enforced surface is its own routine.yaml `capabilities:` ({actions, utils, confirm, runs, workflows} —
   grants.py builds the run policy from it alone, so a doc-without-capability config fails closed);
   a doc's `requires:` names what its instructions presume and drives the UI cascades (activating a
   doc switches its requirements on; switching a capability off deactivates the docs requiring it —
@@ -251,9 +293,13 @@ first boot; `deploy/install.sh` for host installs.
   indexed ≤100-line notes in `.memory/`; INDEX.md engine-maintained, surfaced in the state digest;
   default), `communication` (requires `discord`; the enabled capability also turns on engine-side
   Discord mirroring of blocking decisions), `run-history` (previous-run reads; depth last/all is the
-  capability), `shell` (requires the `shell` util — the escape hatch). Reservable utils =
+  capability), `shell` (requires the `shell` util — the escape hatch), `workflow-generation`
+  (requires `workflows: generate` — a subtask may DRAFT a new library pattern when none fits, folding
+  the system-model spend into the run; off by default), `background-tasks` (requires the `detach`
+  action — launch a long fire-and-forget task that outlives a reply and reports back; default-ON for
+  conversations, opt-in for routines). Reservable utils =
   the union of all docs' `requires.utils` (library-defined); gateable kinds = GATED_KINDS
-  (engine-defined). Permission bodies are SHORT (≤14 lines reach the prompt's CAPABILITIES section
+  (engine-defined); `runs`/`workflows` are level capabilities. Permission bodies are SHORT (≤14 lines reach the prompt's CAPABILITIES section
   when held); the Library tab's permission editor has a prefilled, authoritative `requires:` panel.
   Any future permission-ish lever becomes a capability + a `requires:` entry, not a new yaml key.
   See docs/traits-permissions.md. `DEFAULT_PERMISSIONS`/`DEFAULT_CAPABILITIES` (config) are the

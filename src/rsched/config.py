@@ -51,7 +51,8 @@ DEFAULT_BUDGETS = {
 # exist reach them via bootstrap.ADOPT_PERMISSIONS (one-time, at boot).
 DEFAULT_PERMISSIONS = ["util-authoring", "memory"]
 DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write"],
-                        "utils": [], "confirm": "always", "runs": "none"}
+                        "utils": [], "confirm": "always", "runs": "none",
+                        "workflows": "catalog"}
 # TRAITS a new routine gets when creation picks none explicitly (the wizard normally
 # preselects per task): reusable practice prose, adapted into the routine's own traits/
 # at creation and referenced from the end of its main.md. Not toggleable afterwards —
@@ -162,6 +163,10 @@ class ServerConfig(_Config):
     # Conversations (interactive, Claude-Code-like sessions) are routine-shaped dirs under
     # their OWN home: schedule-less, un-versioned, one continuous run continued in place.
     conversations_home: HomePath = Field(default_factory=lambda: expand("~/conversations"))
+    # Detached background tasks (long fire-and-forget jobs a conversation launches with the
+    # `detach` action) are routine-shaped dirs under their OWN home too: daemon-managed,
+    # each `routine.yaml` records its `owner` conversation, deleted after delivery.
+    background_home: HomePath = Field(default_factory=lambda: expand("~/background"))
     # ONE git repo holding workflows/, traits/, permissions/, playbooks/, utils/ (+ gu, README) — the library.
     libraries_home: HomePath = Field(
         default_factory=lambda: expand("~/.local/share/routine-scheduler-libraries"))
@@ -276,6 +281,10 @@ class RoutineConfig(_Config):
     # `playbook: {slug, commit}` binding). Empty = a fresh conversation. Drives the
     # Update-playbook button; a Save-as-playbook always creates a new one regardless.
     playbook_slug: BlankableStr = Field("", validation_alias=AliasPath("playbook", "slug"))
+    # Detached background tasks only: the spawning conversation ({slug, dir}). The
+    # DetachedManager reads this to deliver the finished result back. None for every
+    # normal routine/conversation (a declared field, so it survives the extra="ignore" drop).
+    owner: dict | None = None
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
     models: dict[str, ModelRef] = Field(default_factory=dict)  # main/subroutine/tool_call/uncensored
     budgets: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_BUDGETS))

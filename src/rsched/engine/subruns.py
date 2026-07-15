@@ -1,165 +1,149 @@
-"""Parallel sub-routines: a parent routine spawns child routines that run concurrently.
-
-Each sub-routine is a REAL routine materialized on disk while it runs — its own main.md + steps/
-+ instruction under runs/<ts>/sub/<n>/ — so its module reads resolve under its own dir. The parent
-controls the lifecycle: `spawn` starts a child (non-blocking), `subruns` monitors, `kill`
-terminates, `wait` blocks for completion — and every child that exits is announced to the parent at
-the next turn boundary. Children never outlive the parent: its finish/abort kills them.
+"""Child-task scheduling: a parent routine runs child routines materialized from workflow
+patterns — PARALLEL subroutines (`spawn`, non-blocking) and SEQUENTIAL subtasks (`subtask`,
+blocking). Both are built by the shared executor (childrun.build_child); this module owns their
+LIFECYCLE: start each in a thread, monitor (`subruns`), block on a subtask or `wait` for
+parallel children, `kill`, and announce every exit to the parent at a turn boundary. Children
+never outlive the parent: its finish/abort kills them.
 
 Threading model: each child EngineLoop runs in its own thread and writes ONLY its own transcript
-under sub/<n>/; all parent-transcript events are emitted from the parent thread (single writer per
-file). Children carry a per-loop abort Event so one can be killed without touching its siblings.
+under sub/<n>/; all parent-transcript events are emitted from the parent thread (single writer
+per file). Children carry a per-loop abort Event so one can be killed without touching siblings.
 """
 
 from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
 
+from . import inbox
+from .childrun import Subrun, build_child
 from .composer import truncate
-from .run_context import RunContext
-from .transcript import Transcript
 
 MAX_PARALLEL = 4
 KILL_JOIN_S = 12.0
-
-# Fallback body when the library (or the requested recipe) is unavailable — keeps
-# sub-routines functional on library-less installs and in tests.
-FALLBACK_SUB_BODY = """## Run flow
-1. Read your instruction carefully; orient with the cheapest possible looks.
-2. Do the work it describes, step by step. Prefer `gu` utils; verify what you produce.
-3. If something the instruction assumes is missing or broken, say so in your summary.
-## Phases
-- **only** — single phase.
-## Completion criteria
-- Finish as soon as the instruction is fulfilled (status ok) or precisely blocked
-  (partial/failed). Your finish summary is the ONLY thing the parent sees — pack the
-  result, key facts, and file paths into it."""
-
-
-@dataclass
-class Subrun:
-    """One spawned child: its own RunContext + EngineLoop running in a thread, tracked
-    until its exit is announced to the parent and its usage folded in."""
-
-    n: int
-    label: str
-    workflow: str
-    ctx: RunContext
-    loop: object                       # the child EngineLoop
-    abort_event: threading.Event
-    started_mono: float
-    thread: threading.Thread | None = None   # attached by spawn() just before start
-    status: str = "running"            # running | ok | partial | failed | aborted
-    summary: str = ""
-    announced: bool = False            # parent notified of exit?
-    collected: bool = False            # usage folded into the parent?
-    done: threading.Event = field(default_factory=threading.Event)
+POLL_S = 2.0
+# Below this many tokens left, skip in-run workflow generation (≈2 full-context system-model
+# calls) and fall back to the default pattern — generation must not tip a run over its budget.
+GEN_FLOOR_TOKENS = 20_000
 
 
 class SubrunManager:
-    """The parent loop's window onto its children: spawn (materialize a child routine on
-    disk, budget-halved, ≤4 parallel), monitor (`subruns`/`wait`), `kill`, auto-announce
-    exits at turn boundaries — children never outlive the parent."""
+    """The parent loop's window onto its children: `spawn` (a parallel subroutine), `subtask` (a
+    sequential subtask the parent blocks on), monitor (`subruns`/`wait`), `kill`, auto-announce
+    exits at turn boundaries. Both schedulers share the budget/depth/parallel caps and the
+    child-run executor — a subtask and a subroutine differ only in scheduling."""
 
     def __init__(self, parent_loop):
         self.parent = parent_loop
         self.subruns: dict[int, Subrun] = {}
-        # Completion hook: every child exit sets this, so a parent blocked in `wait`
-        # wakes IMMEDIATELY instead of sleeping out a poll interval (or a whole timeout).
+        # Completion hook: every child exit sets this, so a parent blocked in `wait` or on a
+        # `subtask` wakes IMMEDIATELY instead of sleeping out a poll interval (or a whole timeout).
         self.exit_event = threading.Event()
 
-    # -- spawn ----------------------------------------------------------------------
+    # -- caps + start (shared by both schedulers) -----------------------------------
 
-    def spawn(self, action: dict) -> dict:
-        ctx: RunContext = self.parent.ctx
-        label = action.get("label") or f"sub-{ctx.sub_counter[0] + 1}"
-        recipe_slug = action.get("workflow") or "general-task"
+    def _cap_reason(self, *, noun: str) -> str | None:
+        """Why a new child cannot start now, or None. Budget + depth bound the WHOLE tree
+        (parallel and sequential children alike); the parallel cap bounds concurrency."""
+        ctx = self.parent.ctx
         if ctx.sub_counter[0] >= ctx.budgets.max_subruns:
-            return {"kind": "spawn", "rejected": True, "label": label,
-                    "reason": f"sub-routine budget ({ctx.budgets.max_subruns}) exhausted"}
+            return f"{noun} budget ({ctx.budgets.max_subruns}) exhausted"
         if ctx.depth + 1 > ctx.budgets.max_subrun_depth:
-            return {"kind": "spawn", "rejected": True, "label": label,
-                    "reason": f"max sub-routine depth ({ctx.budgets.max_subrun_depth}) reached"}
+            return f"max {noun} depth ({ctx.budgets.max_subrun_depth}) reached"
         running = sum(1 for s in self.subruns.values() if s.status == "running")
         if running >= MAX_PARALLEL:
-            return {"kind": "spawn", "rejected": True, "label": label,
-                    "reason": f"{running} sub-routines already running (parallel cap "
-                              f"{MAX_PARALLEL}) — wait for or kill one first"}
+            return (f"{running} child-tasks already running (parallel cap {MAX_PARALLEL}) — "
+                    "wait for or kill one first")
+        return None
 
-        ctx.sub_counter[0] += 1
-        n = ctx.sub_counter[0]
-        sub_dir = ctx.run_dir / "sub" / str(n)
-        sub_dir.mkdir(parents=True, exist_ok=True)
-        # materialize the recipe into the sub-routine ON DISK — a real routine (main.md + steps/ +
-        # instruction) that exists while it runs, so its module reads resolve under its own dir.
-        recipe_slug, note = self._materialize_to_disk(recipe_slug, sub_dir, action["prompt"])
-        transcript = Transcript(sub_dir / "transcript.jsonl")
-        _, sub_ref = ctx.registry.for_model("subroutine", ctx.routine.models)
-        child_ctx = RunContext(
-            routine=_sub_routine(ctx.routine, sub_dir, sub_ref),
-            server=ctx.server, registry=ctx.registry, run_ts=ctx.run_ts,
-            run_dir=sub_dir, transcript=transcript, budgets=ctx.child_budgets(),
-            depth=ctx.depth + 1, parent_run_id=ctx.run_id, sub_counter=ctx.sub_counter,
-        )
-        transcript.header(run_id=f"{ctx.run_id}#sub{n}", routine=ctx.routine.slug,
-                          workflow={"slug": recipe_slug, "commit": "", "version": 0},
-                          orchestrator={"endpoint": sub_ref.endpoint, "model": sub_ref.model},
-                          depth=ctx.depth + 1, parent=ctx.run_id)
-        from .loop import EngineLoop          # local import: loop imports this module
-        from .runtime import load_workflow
-
-        body, _prov, _tools = load_workflow(sub_dir, child_ctx.routine)
-        abort_event = threading.Event()
-        child_loop = EngineLoop(child_ctx, body, action["prompt"], abort_event=abort_event)
-        sub = Subrun(n=n, label=label, workflow=recipe_slug,
-                     ctx=child_ctx, loop=child_loop, abort_event=abort_event,
-                     started_mono=time.monotonic())
-
+    def _start(self, sub: Subrun) -> None:
+        """Register the child and run its EngineLoop in a daemon thread; its exit sets the
+        completion events so a blocked parent wakes at once."""
         def run_child() -> None:
             try:
-                sub.status = child_loop.run()
-                sub.summary = child_loop.final_summary
+                sub.status = sub.loop.run()
+                sub.summary = sub.loop.final_summary
             except Exception as exc:  # noqa: BLE001 — a child crash must never kill the parent
                 sub.status = "failed"
                 sub.summary = f"sub-routine crashed: {exc}"
             finally:
-                transcript.close()
+                sub.ctx.transcript.close()
                 sub.done.set()
                 self.exit_event.set()
 
-        thread = threading.Thread(target=run_child, name=f"subrun-{n}", daemon=True)
+        thread = threading.Thread(target=run_child, name=f"child-{sub.n}", daemon=True)
         sub.thread = thread
-        self.subruns[n] = sub
-        ctx.transcript.event("subrun_start", {"n": n, "label": label, "workflow": recipe_slug,
-                                              "depth": ctx.depth + 1,
-                                              "transcript": f"sub/{n}/transcript.jsonl"})
+        self.subruns[sub.n] = sub
         thread.start()
-        return {"kind": "spawn", "n": n, "label": label, "workflow": recipe_slug,
-                "note": note, "running": running + 1}
 
-    def _materialize_to_disk(self, slug: str, sub_dir, prompt: str) -> tuple[str, str]:
-        """Write the sub-routine's files into sub_dir (main.md + steps/ + instruction.md) so it is
-        a real on-disk routine while it runs. Returns (effective slug, note). Permissions stay OFF —
-        a sub-routine reports through its finish summary; it keeps no LEDGER/audit of its own."""
+    # -- spawn (parallel) -----------------------------------------------------------
+
+    def spawn(self, action: dict) -> dict:
+        ctx = self.parent.ctx
+        default_label = f"sub-{ctx.sub_counter[0] + 1}"
+        if reason := self._cap_reason(noun="child-task"):
+            return {"kind": "spawn", "rejected": True,
+                    "label": action.get("label") or default_label, "reason": reason}
+        running = sum(1 for s in self.subruns.values() if s.status == "running")
+        sub = build_child(ctx, action, mode="parallel", default_label=default_label,
+                          emit=ctx.transcript.event)
+        self._start(sub)
+        return {"kind": "spawn", "n": sub.n, "label": sub.label, "workflow": sub.workflow,
+                "note": sub.note, "running": running + 1}
+
+    # -- subtask (sequential, blocking) ---------------------------------------------
+
+    def subtask(self, action: dict) -> dict:
+        """Start ONE SEQUENTIAL child — NON-BLOCKING, so the conversation stays live while it
+        runs. Mechanically a subrun tagged `sequential` + a `turns` budget: it runs in its own
+        thread and its finish is delivered by the turn-boundary hook (`announce_finished_subruns`),
+        never by monopolizing this turn. The parent keeps sequential order by WAITING for it (a
+        responsive `wait n=N`, which yields to user input) before starting the next subtask, and
+        folds the announced result into that next brief. `turns` pins its budget (else half the
+        parent's remainder)."""
+        ctx = self.parent.ctx
+        default_label = f"task-{ctx.sub_counter[0] + 1}"
+        if reason := self._cap_reason(noun="child-task"):
+            return {"kind": "subtask", "rejected": True,
+                    "label": action.get("label") or default_label, "reason": reason}
+        action, gen_note = self._maybe_generate(dict(action))
+        turns = action.get("turns")
+        overrides = {"turns": int(turns)} if isinstance(turns, int) and turns > 0 else None
+        sub = build_child(ctx, action, mode="sequential", default_label=default_label,
+                          alloc_overrides=overrides, emit=ctx.transcript.event)
+        self._start(sub)
+        return {"kind": "subtask", "n": sub.n, "label": sub.label, "workflow": sub.workflow,
+                "note": gen_note, "started": True}
+
+    def _maybe_generate(self, action: dict) -> tuple[dict, str]:
+        """Resolve a `workflow: "generate"` request into a concrete library slug. When the
+        routine holds the `workflows: generate` capability and the budget allows, DRAFT a new
+        pattern for the subtask's brief (folding the generation call's spend into the run via
+        ctx.add_usage); otherwise fall back to the default pattern with a note. Returns
+        (action, note)."""
+        if action.get("workflow") != "generate":
+            return action, ""
+        ctx = self.parent.ctx
+        grants = getattr(self.parent, "grants", None)
+        if grants is None or not grants.may_generate_workflow():
+            action["workflow"] = None
+            return action, ("workflow generation is off for this routine (capability "
+                            "'workflows: generate') — used the default pattern")
+        remaining = ctx.tokens_remaining()
+        if remaining is not None and remaining < GEN_FLOOR_TOKENS:
+            action["workflow"] = None
+            return action, "skipped workflow generation — token budget nearly spent; used the default pattern"
         try:
-            from ..workflows.adapt import materialize
+            from ..workflows.generate import generate
 
-            # a sub-routine is not decomposed (no per-spawn LLM) — the whole workflow is its main.md
-            main_content, _ = materialize(self.parent.ctx.server.library_home, slug)
-            (sub_dir / "main.md").write_text(main_content, encoding="utf-8")
-            (sub_dir / "instruction.md").write_text(prompt, encoding="utf-8")
-            return slug, ""
-        except Exception as exc:  # missing library/recipe/params → degrade, don't fail
-            (sub_dir / "main.md").write_text(
-                "---\nname: Fallback\nslug: fallback\nstatus: stable\n"
-                "materialized_from: {slug: fallback, commit: '', version: 0}\n---\n\n"
-                + FALLBACK_SUB_BODY + "\n", encoding="utf-8")
-            (sub_dir / "instruction.md").write_text(prompt, encoding="utf-8")
-            return "(builtin-fallback)", f"recipe {slug!r} unavailable ({exc}) — builtin fallback"
+            slug, _ = generate(ctx.server, action["prompt"], on_usage=ctx.add_usage)
+            action["workflow"] = slug
+            return action, f"generated a new pattern '{slug}' for this subtask"
+        except Exception as exc:  # noqa: BLE001 — generation is best-effort; never fail the subtask
+            action["workflow"] = None
+            return action, f"workflow generation failed ({exc}) — used the default pattern"
 
-    # -- lifecycle ------------------------------------------------------------------
+    # -- lifecycle (shared) ---------------------------------------------------------
 
     def take_finished_unannounced(self) -> list[Subrun]:
         out = []
@@ -175,10 +159,10 @@ class SubrunManager:
             sub.collected = True
             self.parent.ctx.add_usage(sub.ctx.usage)
             self.parent.ctx.transcript.event("subrun_end", {
-                "n": sub.n, "label": sub.label, "workflow": sub.workflow,
+                "n": sub.n, "label": sub.label, "workflow": sub.workflow, "mode": sub.mode,
                 "status": sub.status, "summary": sub.summary,
                 "turns": sub.ctx.turn, "usage": dict(sub.ctx.usage)})
-            # subruns feed workflow-library optimization like any other run
+            # children feed workflow-library optimization like any other run
             from ..health_events import log_workflow_usage
 
             pctx = self.parent.ctx
@@ -193,6 +177,7 @@ class SubrunManager:
         rows = []
         for sub in self.subruns.values():
             rows.append({"n": sub.n, "label": sub.label, "workflow": sub.workflow,
+                         "mode": sub.mode,
                          "state": sub.status if sub.done.is_set() else "running",
                          "turns": sub.ctx.turn,
                          "elapsed_s": round(time.monotonic() - sub.started_mono, 1),
@@ -202,7 +187,7 @@ class SubrunManager:
     def kill(self, n: int) -> dict:
         sub = self.subruns.get(int(n))
         if sub is None:
-            return {"kind": "kill", "n": n, "error": f"no sub-routine {n}"}
+            return {"kind": "kill", "n": n, "error": f"no sub-workflow {n}"}
         if sub.done.is_set():
             return {"kind": "kill", "n": n, "already_finished": True, "status": sub.status}
         sub.abort_event.set()
@@ -220,8 +205,8 @@ class SubrunManager:
         timeout = float(action.get("timeout_s") or 600)
         deadline = time.monotonic() + timeout
         if not self.subruns or (n is not None and int(n) not in self.subruns):
-            return {"kind": "wait", "error": "no such sub-routine to wait for"
-                    if n is not None else "no sub-routines have been spawned"}
+            return {"kind": "wait", "error": "no such sub-workflow to wait for"
+                    if n is not None else "no sub-workflows have been spawned"}
 
         def satisfied() -> bool:
             if n is not None:
@@ -236,6 +221,15 @@ class SubrunManager:
         while time.monotonic() < deadline:
             if aborted():
                 break
+            # RESPONSIVE: a user message arriving mid-wait must not be starved. Yield control
+            # back to the turn loop (which drains it and lets the parent reply) instead of
+            # freezing the conversation until the child finishes — the child keeps running and
+            # is announced when it exits. Root runs only (children don't drain the routine inbox).
+            if self.parent.ctx.depth == 0 and inbox.has_pending_messages(self.parent.ctx.routine.dir):
+                finished = self.take_finished_unannounced()
+                return {"kind": "wait", "interrupted_by_user": True, "timed_out": False,
+                        "finished": self._finished_rows(finished),
+                        "still_running": [s.n for s in self.subruns.values() if not s.done.is_set()]}
             self.exit_event.clear()
             if satisfied():   # re-check after clear: an exit between check and wait must not be lost
                 break
@@ -243,10 +237,13 @@ class SubrunManager:
         sat = satisfied()   # before collection below flips `announced` on the exits we report
         finished = self.take_finished_unannounced()
         return {"kind": "wait", "timed_out": not sat,
-                "finished": [{"n": s.n, "label": s.label, "status": s.status,
-                              "turns": s.ctx.turn,
-                              "summary": truncate(s.summary, cap=3000)[0]} for s in finished],
+                "finished": self._finished_rows(finished),
                 "still_running": [s.n for s in self.subruns.values() if not s.done.is_set()]}
+
+    @staticmethod
+    def _finished_rows(finished: list) -> list[dict]:
+        return [{"n": s.n, "label": s.label, "status": s.status, "turns": s.ctx.turn,
+                 "mode": s.mode, "summary": truncate(s.summary, cap=3000)[0]} for s in finished]
 
     def kill_all(self, *, reason: str) -> int:
         """Parent is exiting — children never outlive it."""
@@ -264,20 +261,3 @@ class SubrunManager:
                     sub.summary = f"killed: {reason} (did not stop in time)"
                 self._collect(sub)
         return killed
-
-
-def _sub_routine(routine, sub_dir, ref):
-    """A child sub-routine config: its OWN dir (so main.md + read_file/write_file resolve under
-    sub_dir), the parent's fs roots inherited, the parent's SUBROUTINE model as the child's MAIN
-    model (subroutine/tool_call inherited so the child can spawn/llm too), permissions and
-    capabilities off (a sub-routine holds nothing gated: it reports through its finish
-    summary and keeps no LEDGER/audit)."""
-    import copy
-
-    r = copy.copy(routine)
-    r.dir = sub_dir
-    r.models = dict(routine.models)
-    r.models["main"] = ref
-    r.permissions = []
-    r.capabilities = {}
-    return r

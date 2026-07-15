@@ -3,7 +3,7 @@
 import json
 import time
 
-from conftest import finish, spawn, util, wait_, write_file
+from conftest import finish, spawn, subtask, util, wait_, write_file
 
 from rsched.config import ServerConfig
 from rsched.endpoints.base import EndpointError
@@ -279,6 +279,50 @@ def test_resume_after_engine_forced_end_keeps_interruption_framing(make_routine,
     inj = [e["payload"]["text"] for e in events if e["type"] == "user_injection"]
     assert any("interruption" in t for t in inj)
     assert not any("continued the conversation" in t for t in inj)
+
+
+def test_orphaned_children_detection():
+    from rsched.engine.history import orphaned_children
+
+    events = [
+        {"type": "subrun_start", "payload": {"n": 1, "label": "seq", "mode": "sequential"}},
+        {"type": "subrun_start", "payload": {"n": 2, "label": "par", "mode": "parallel"}},
+        {"type": "subrun_end", "payload": {"n": 1, "status": "ok"}},   # #1 finished; #2 still running
+    ]
+    orphans = orphaned_children(events)
+    assert [o["n"] for o in orphans] == [2] and orphans[0]["mode"] == "parallel"
+    # everything ended → no orphans
+    assert orphaned_children(events + [{"type": "subrun_end", "payload": {"n": 2}}]) == []
+
+
+def test_resume_marks_orphaned_children_dead(make_routine, scripted):
+    """A run killed with a child RUNNING (a thread that dies with the process) resumes with the
+    child marked aborted in the transcript and an ENGINE NOTE, so the model doesn't `wait` forever
+    for a child that will never finish."""
+    d = make_routine(slug="orph")
+    scripted([probe("did initial work"), finish(summary="pass one")])
+    _, run_dir = run_routine(d, _server(d), run_ts=TS)
+    # rewrite history: keep header + turn-1 pair, then a subtask's started pair + its subrun_start
+    # with NO subrun_end (as if the process died while the child thread was still running)
+    keep = [ln for ln in (run_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
+            if json.loads(ln).get("type") == "header" or json.loads(ln).get("turn") == 1]
+    keep.append(json.dumps({"ts": "2026-07-08T07:01:00+00:00", "type": "assistant_action",
+                            "turn": 2, "payload": subtask("CHILD: the tail.", label="tail")}))
+    keep.append(json.dumps({"ts": "2026-07-08T07:01:01+00:00", "type": "subrun_start",
+                            "payload": {"n": 1, "label": "tail", "mode": "sequential", "depth": 1,
+                                        "transcript": "sub/1/transcript.jsonl"}}))
+    keep.append(json.dumps({"ts": "2026-07-08T07:01:02+00:00", "type": "observation", "turn": 2,
+                            "payload": {"kind": "subtask", "n": 1, "label": "tail", "started": True}}))
+    (run_dir / "transcript.jsonl").write_text("\n".join(keep) + "\n", encoding="utf-8")
+
+    ep2 = scripted([finish(summary="picked up, re-issued nothing")])
+    status, _ = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    assert status == "ok"
+    assert "did NOT survive the restart" in json.dumps(ep2.calls[0]["messages"])
+    # the orphan was closed out in the transcript (aborted) so a re-resume won't re-detect it
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    end = next(e for e in events if e["type"] == "subrun_end" and e["payload"].get("n") == 1)
+    assert end["payload"]["status"] == "aborted"
 
 
 def test_happy_path(make_routine, scripted):
@@ -800,6 +844,159 @@ def test_spawn_picks_library_workflow(make_routine, scripted, tmp_path):
     events, _ = read_events(run_dir / "transcript.jsonl")
     start = next(e for e in events if e["type"] == "subrun_start")
     assert start["payload"]["workflow"] == "echo-task"
+
+
+def test_subtask_starts_nonblocking_and_is_awaited(make_routine, scripted):
+    """A subtask starts a SEQUENTIAL child NON-BLOCKING (its observation is a 'started' note, not
+    the summary); the parent WAITS for it and the result reaches the parent (via the wait or the
+    finished-hook). Tree events carry mode=sequential; usage folds in."""
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        (PARENT, subtask("CHILD-A: compute step one.", label="step1")),
+        ("CHILD-A", finish(summary="step one result: 7, verified.")),
+        (PARENT, wait_(n=1)),
+        (PARENT, finish(summary="Done via one sequential subtask.")),
+    ], slug="seq")
+    assert status == "ok"
+    start = next(e for e in events if e["type"] == "subrun_start")
+    end = next(e for e in events if e["type"] == "subrun_end")
+    assert start["payload"]["mode"] == "sequential" and end["payload"]["mode"] == "sequential"
+    # the subtask observation is a non-blocking 'started' note — NOT the summary
+    sub_obs = next(e for e in events if e["type"] == "observation"
+                   and e["payload"].get("kind") == "subtask")
+    assert sub_obs["payload"].get("started") and not sub_obs["payload"].get("summary")
+    # the child's summary reached the parent (via the wait or the SUBTASK FINISHED hook)
+    assert "step one result: 7" in json.dumps(ep.calls[-1]["messages"])
+    child_system = next(c for c in ep.calls if "CHILD-A" in c["messages"][0]["content"])
+    assert "no routine state digest" in child_system["messages"][0]["content"]
+    assert events[-1]["usage_total"]["in"] >= 30   # child tokens folded into the parent
+
+
+def test_subtasks_run_in_order_and_forward_results(make_routine, scripted):
+    """Two subtasks, each awaited before the next; the first's result is in the parent's context
+    before it composes the second (the parent forwards it)."""
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        (PARENT, subtask("CHILD-A: find the seed number.", label="s1")),
+        ("CHILD-A", finish(summary="the seed number is 42")),
+        (PARENT, wait_(n=1)),
+        (PARENT, subtask("CHILD-B: double the seed 42.", label="s2")),
+        ("CHILD-B", finish(summary="doubled to 84")),
+        (PARENT, wait_(n=2)),
+        (PARENT, finish(summary="pipeline done: 42 -> 84")),
+    ], slug="pipe")
+    assert status == "ok"
+    ends = [e for e in events if e["type"] == "subrun_end"]
+    assert [e["payload"]["label"] for e in ends] == ["s1", "s2"]   # sequential, in order
+    # when the parent composed subtask 2, subtask 1's result was already in its context
+    call_s2 = next(c for c in ep.calls
+                   if "(no previous runs)" in c["messages"][0]["content"]
+                   and "the seed number is 42" in json.dumps(c["messages"]))
+    assert call_s2 is not None
+
+
+def test_subtask_explicit_turn_budget(make_routine, scripted):
+    """`turns` pins the child's turn budget (not the naive half-of-remainder default)."""
+    d, ep, status, run_dir, events = _run(make_routine, scripted, [
+        (PARENT, subtask("CHILD-T: bounded work.", label="bt", turns=3)),
+        ("CHILD-T", finish(summary="did it in one")),
+        (PARENT, wait_(n=1)),
+        (PARENT, finish(summary="bounded subtask done")),
+    ], slug="btask")
+    assert status == "ok"
+    start = next(e for e in events if e["type"] == "subrun_start")
+    assert start["payload"]["budget"]["turns"] == 3
+
+
+def test_wait_yields_to_a_pending_user_message(make_routine, scripted):
+    """A responsive wait YIELDS (returns interrupted_by_user) when a user message is waiting, so
+    the loop drains it and the parent replies instead of freezing while the child runs."""
+    d = make_routine(slug="respwait")
+
+    def slow_child():
+        time.sleep(0.5)
+        return finish(summary="eventually done")
+
+    def inject_then_wait():
+        # drop a user message, THEN park — the wait must yield to it, not freeze
+        atomic_write_json(d / "inbox" / "msg-1.json", {"text": "quick question while you work"})
+        return wait_(n=1, timeout_s=30)
+
+    ep = scripted([
+        (PARENT, subtask("CHILD-SLOW: a long job.", label="slow")),
+        ("CHILD-SLOW", slow_child),
+        (PARENT, inject_then_wait),
+        (PARENT, finish(summary="handled the interjection while the child ran")),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    wait_obs = next(e for e in events if e["type"] == "observation"
+                    and e["payload"].get("kind") == "wait")
+    assert wait_obs["payload"].get("interrupted_by_user") is True
+    # the user message was then drained into the conversation (the parent got to respond)
+    assert any(e["type"] == "user_injection" and "quick question" in (e["payload"].get("text") or "")
+               for e in events)
+
+
+def test_subtask_generate_gate(monkeypatch):
+    """`workflow: "generate"` drafts a new pattern only when the routine holds the
+    `workflows: generate` capability AND the budget allows; otherwise it falls back to the
+    default pattern with an explanatory note. The generation call's spend folds into the run."""
+    import rsched.workflows.generate as gen_mod
+    from rsched.engine.subruns import SubrunManager
+    from rsched.grants import GrantPolicy
+
+    seen = []
+
+    def fake_generate(server, instruction, hint="", on_usage=None):
+        seen.append(instruction)
+        if on_usage:
+            on_usage({"in": 100, "out": 50})
+        return "drafted-x", ""
+
+    monkeypatch.setattr(gen_mod, "generate", fake_generate)
+
+    class Ctx:
+        server = "SRV"
+
+        def __init__(self, tokens):
+            self._t = tokens
+            self.added = []
+
+        def tokens_remaining(self):
+            return self._t
+
+        def add_usage(self, u):
+            self.added.append(u)
+
+    class Parent:
+        def __init__(self, grants, ctx):
+            self.grants, self.ctx = grants, ctx
+
+    on = GrantPolicy(workflows="generate")
+    off = GrantPolicy(workflows="catalog")
+
+    # capability ON, budget fine → generates, spend folded into the run
+    ctx = Ctx(100_000)
+    action, note = SubrunManager(Parent(on, ctx))._maybe_generate(
+        {"kind": "subtask", "prompt": "P", "workflow": "generate"})
+    assert action["workflow"] == "drafted-x" and "generated a new pattern 'drafted-x'" in note
+    assert seen == ["P"] and ctx.added == [{"in": 100, "out": 50}]
+
+    # capability OFF → falls back to default, no generate call
+    seen.clear()
+    action2, note2 = SubrunManager(Parent(off, Ctx(100_000)))._maybe_generate(
+        {"kind": "subtask", "prompt": "P", "workflow": "generate"})
+    assert action2["workflow"] is None and "generation is off" in note2 and seen == []
+
+    # capability ON but budget nearly spent → skip generation
+    action3, note3 = SubrunManager(Parent(on, Ctx(5_000)))._maybe_generate(
+        {"kind": "subtask", "prompt": "P", "workflow": "generate"})
+    assert action3["workflow"] is None and "budget nearly spent" in note3
+
+    # a named workflow is left untouched (pick-from-catalog is always on)
+    action4, note4 = SubrunManager(Parent(on, ctx))._maybe_generate(
+        {"kind": "subtask", "prompt": "P", "workflow": "general-task"})
+    assert action4["workflow"] == "general-task" and note4 == ""
 
 
 def test_llm_subcall(make_routine, scripted):

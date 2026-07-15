@@ -47,6 +47,15 @@ requires:
 body
 """
 
+WORKFLOW_GEN = """---
+tags: [decomposition, workflows, self-management]
+requires:
+  workflows: generate
+---
+# permission: workflow generation — draft a new pattern when none fits
+body
+"""
+
 
 # ------------------------------------------------------------- normalize_capabilities
 
@@ -120,7 +129,7 @@ def test_capabilities_for_raises_the_base_to_cover_active_docs(tmp_path):
     lib = read_library_requires(home)
     caps = capabilities_for(["util-authoring", "communication", "run-history"], lib)
     assert caps == {"actions": ["write_util"], "utils": ["discord"],
-                    "confirm": "always", "runs": "last"}
+                    "confirm": "always", "runs": "last", "workflows": "catalog"}
     # base values survive and only rise: runs stays at the deeper level, confirm untouched
     base = {"actions": ["memory_read"], "utils": [], "confirm": "never", "runs": "all"}
     caps2 = capabilities_for(["run-history"], lib, base)
@@ -139,17 +148,43 @@ def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_pat
     orphan = {"actions": ["write_util"], "utils": ["discord"], "confirm": "never", "runs": "all"}
     # nothing held → every gated capability is floored away (confirm dial preserved)
     assert floor_capabilities([], lib, orphan) == {
-        "actions": [], "utils": [], "confirm": "never", "runs": "none"}
+        "actions": [], "utils": [], "confirm": "never", "runs": "none", "workflows": "catalog"}
     # util-authoring held → write_util survives (with its policy); discord + runs still floored
     assert floor_capabilities(["util-authoring"], lib, orphan) == {
-        "actions": ["write_util"], "utils": [], "confirm": "never", "runs": "none"}
+        "actions": ["write_util"], "utils": [], "confirm": "never", "runs": "none",
+        "workflows": "catalog"}
     # run-history held → run DEPTH (a user dial) is kept above none; actions/utils floored
     kept = floor_capabilities(["run-history"], lib, orphan)
     assert kept["runs"] == "all" and kept["actions"] == [] and kept["utils"] == []
     # raise THEN floor == exactly the held docs' requires + policy dials, no contradiction
     active = ["util-authoring", "communication", "run-history"]
     assert floor_capabilities(active, lib, capabilities_for(active, lib)) == {
-        "actions": ["write_util"], "utils": ["discord"], "confirm": "always", "runs": "last"}
+        "actions": ["write_util"], "utils": ["discord"], "confirm": "always", "runs": "last",
+        "workflows": "catalog"}
+
+
+def test_workflows_generate_capability_binds_to_its_permission(tmp_path):
+    """`workflows: generate` (draft a pattern for a subtask when none fits) rides the same
+    cascade as `runs`: off by default, raised by its doc, floored away without it, and
+    surfaced as GrantPolicy.may_generate_workflow()."""
+    home = _lib(tmp_path, {"workflow-generation": WORKFLOW_GEN})
+    lib = read_library_requires(home)
+    assert lib["workflow-generation"] == {"workflows": "generate"}
+    # raise: holding the doc lifts workflows to generate
+    assert capabilities_for(["workflow-generation"], lib)["workflows"] == "generate"
+    # floor: an orphan generate capability with no held doc falls back to catalog
+    orphan = {"workflows": "generate"}
+    assert floor_capabilities([], lib, orphan)["workflows"] == "catalog"
+    assert floor_capabilities(["workflow-generation"], lib, orphan)["workflows"] == "generate"
+    # unsatisfied: the doc's requirement is named when the mapping doesn't cover it
+    assert unsatisfied_requires(["workflow-generation"], {}, lib) == {
+        "workflow-generation": ["workflows:generate"]}
+    # policy: the run-facing switch
+    assert load_policy(home, [], {"workflows": "generate"}).may_generate_workflow() is True
+    assert load_policy(home, [], {}).may_generate_workflow() is False
+    # requires-mode rejects the no-op level (catalog is the absence of a requirement)
+    _, probs = normalize_capabilities({"workflows": "catalog"}, label="requires", requires=True)
+    assert any("workflows must be generate" in p for p in probs)
 
 
 def test_unsatisfied_requires_names_the_missing_capabilities(tmp_path):
@@ -206,6 +241,25 @@ def test_needs_confirm_semantics():
 
 
 # ------------------------------------------------------------------ denial messages
+
+
+BACKGROUND_TASKS = """---
+tags: [conversation, background, delegation]
+requires:
+  actions: [detach]
+---
+# permission: background tasks — launch long jobs that outlive a reply
+body
+"""
+
+
+def test_detach_is_gated_and_denial_names_background_tasks(tmp_path):
+    home = _lib(tmp_path, {"background-tasks": BACKGROUND_TASKS})
+    none = load_policy(home, [], {})
+    denial = none.deny({"kind": "detach", "prompt": "scrape"})
+    assert denial and "background-tasks" in denial
+    granted = load_policy(home, ["background-tasks"], {"actions": ["detach"]})
+    assert granted.deny({"kind": "detach", "prompt": "scrape"}) is None
 
 
 def test_deny_names_the_covering_permission(tmp_path):

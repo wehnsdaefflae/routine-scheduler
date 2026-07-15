@@ -29,8 +29,10 @@ CONVERSE_WORKFLOW = "converse"
 # conversation edits — the conversation dir itself is unversioned).
 CONVERSATION_TRAITS = ["ask-policy", "global-utils", "web-research", "ledger-discipline",
                        "git-checkpoint"]
-# Same default permission surface as routines — shell stays a one-click opt-in.
-CONVERSATION_PERMISSIONS = list(DEFAULT_PERMISSIONS)
+# Same default permission surface as routines, plus background-tasks (the `detach` action):
+# launching long fire-and-forget jobs that outlive a reply is a conversation-shaped capability
+# (the finished task reports back into the chat). Shell stays a one-click opt-in.
+CONVERSATION_PERMISSIONS = [*DEFAULT_PERMISSIONS, "background-tasks"]
 # ~10 turns per REPLY: each user message resumes the run with a fresh budget window, so
 # these are per-reply ceilings, not per-conversation ones. The engine's 85% warning cues
 # the model to wrap up with progress and offer to continue. Tokens ride the default

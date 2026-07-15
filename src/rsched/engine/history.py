@@ -196,6 +196,26 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
     return messages, last_turn, records
 
 
+def orphaned_children(events: list[dict]) -> list[dict]:
+    """Children that were RUNNING when the run was interrupted — a `subrun_start` (subtask or
+    subrun) with no matching `subrun_end`. Children are threads in the parent process, so they do
+    NOT survive a restart: on resume these are dead. Returns [{n, label, mode}] so the engine can
+    mark them aborted and tell the model, instead of leaving it to `wait` forever for a child that
+    will never finish."""
+    started: dict[int, dict] = {}
+    ended: set[int] = set()
+    for ev in events:
+        p = ev.get("payload") or {}
+        n = p.get("n")
+        if not isinstance(n, int):
+            continue
+        if ev.get("type") == "subrun_start":
+            started[n] = {"n": n, "label": p.get("label"), "mode": p.get("mode", "parallel")}
+        elif ev.get("type") == "subrun_end":
+            ended.add(n)
+    return [info for n, info in started.items() if n not in ended]
+
+
 def prior_usage(events: list[dict]) -> dict:
     """Token spend recorded across ALL prior legs of a run's transcript. A resume starts a
     fresh budget window (ctx.usage), so without this base status.json under-reports resumed

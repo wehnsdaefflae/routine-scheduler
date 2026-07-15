@@ -87,7 +87,8 @@ def test_routine_cards_and_detail(client):
     assert detail["workflow_ref"]["slug"] == "test-flow"   # workflow is REFERENCED, not a routine file
     assert isinstance(detail["permissions"], list)   # hermetic test library → may be empty
     assert all("requires" in p and "active" in p for p in detail["permissions"])
-    assert set(detail["capabilities"]["active"]) == {"actions", "utils", "confirm", "runs"}
+    assert set(detail["capabilities"]["active"]) == {"actions", "utils", "confirm", "runs",
+                                                      "workflows"}
     assert detail["runs"][0]["state"] == "finished"
     assert c.get("/api/routines/nope").status_code == 404
 

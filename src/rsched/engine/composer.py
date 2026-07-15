@@ -150,6 +150,22 @@ a fully self-contained "prompt" as its instruction; it sees nothing else and ret
 finish summary. You keep working while it runs; you are notified automatically when it exits. \
 Give parallel children disjoint outputs (they share your working directory); they must not \
 write LEDGER.md or state/phase.json.
+- subtask: start a child sub-workflow that runs SEQUENTIALLY in the background — decompose a large \
+task into ordered steps, each a fresh-context child run with its OWN budget and pattern. It does \
+NOT block you: to keep sequential order, `wait` for it (n=N) before starting the next subtask and \
+fold its result into that brief — the wait YIELDS if the user writes (so the conversation stays \
+live) and you are notified when it finishes; or do other work meanwhile. Pick its "workflow" for \
+that step's purpose (or omit for the default, or "generate" to DRAFT one when none fits — only if \
+that capability is enabled); give a self-contained "prompt"; "turns" bounds it (default: half your \
+remaining). Unlike a plain workflow step it runs on its own context window + pattern.
+- detach: start a LONG background task that OUTLIVES this reply — for a big, self-contained job (a \
+large scrape, a bulk conversion, a slow build) you want to kick off and keep chatting around. Unlike \
+spawn/subtask (children that die when this reply's process ends), a detached task runs as its OWN \
+process; when it finishes the engine delivers its result back into this conversation and you relay \
+it to the user. Give a complete self-contained "prompt" (it CANNOT ask you blocking questions) and \
+pick its "workflow"; then `finish` the reply ("started it — I'll report back") and do NOT wait. Its \
+status is in state/background.json. Only from a conversation, only for jobs too long to finish in \
+this reply — otherwise do the work directly or use subtask.
 - subruns: a status table of your sub-workflows (state, turns, elapsed).
 - kill: terminate sub-workflow "n". wait: block until sub-workflow "n" / "all": true / any \
 unreported exit (timeout_s, default 600) — it returns AT ONCE when a finished child hasn't \
@@ -236,6 +252,9 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             cap_bits.append("read previous runs under runs/ "
                             + ("(the last run only)" if g.run_history == "last"
                                else "(all of them)"))
+        if getattr(g, "workflows", "catalog") == "generate":
+            cap_bits.append("generate a NEW workflow pattern for a subtask when none in the "
+                            "catalog fits (set that subtask's workflow to 'generate')")
         parts.append("Capabilities enabled (user-set, engine-enforced): "
                      + ("; ".join(cap_bits) if cap_bits else "(none beyond the base kinds)")
                      + ". Held permissions (conduct notes below): "
@@ -287,6 +306,15 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     if state_dir.is_dir():
         entries = [f"{p.name} ({p.stat().st_size}B)" for p in sorted(state_dir.iterdir()) if p.is_file()]
         parts.append("state/: " + (", ".join(entries) if entries else "(empty)"))
+    background = read_json(routine_dir / "state" / "background.json")
+    if isinstance(background, list) and background:
+        blines = "\n".join(
+            f"- [{t.get('state', '?')}] {t.get('label', '?')} (id {t.get('taskid', '?')})"
+            + (" — result already delivered" if t.get("delivered") else " — still running")
+            for t in background)
+        parts.append("Background tasks you launched (detached; each reports its result back HERE "
+                     "as a message when it finishes — relay any newly-finished result to the user, "
+                     "and answer 'how's it going?' from this list):\n" + blines)
     steps_dir = routine_dir / "steps"
     if steps_dir.is_dir():
         names = [p.name for p in sorted(steps_dir.iterdir()) if p.is_file() and p.suffix == ".md"]
@@ -466,6 +494,23 @@ def format_observation(obs: dict) -> str:
         return (f"OBSERVATION (spawn): sub-workflow {obs['n']} {obs.get('label')!r} started "
                 f"(workflow {obs.get('workflow')}, now {obs.get('running')} running).{note} "
                 "It works in parallel — you will be notified when it finishes; keep going.")
+    if kind == "subtask":
+        if obs.get("rejected"):
+            return f"OBSERVATION (subtask REJECTED): {obs['reason']}"
+        note = f" [{obs['note']}]" if obs.get("note") else ""
+        return (f"OBSERVATION (subtask): sequential child {obs['n']} {obs.get('label')!r} started "
+                f"(workflow {obs.get('workflow')}){note} — it runs in the BACKGROUND. To keep "
+                f"sequential order, `wait` for it (n={obs['n']}) before starting the next subtask "
+                "and fold its result into that brief; the wait yields if the user writes, and you "
+                "are notified when it finishes. Or do other work meanwhile.")
+    if kind == "detach":
+        if obs.get("rejected"):
+            return f"OBSERVATION (detach REJECTED): {obs['reason']}"
+        return (f"OBSERVATION (detach): background task {obs.get('label')!r} started "
+                f"(id {obs.get('taskid')}, workflow {obs.get('workflow')}). It runs as its OWN "
+                "process, independent of this reply — you will be notified HERE when it finishes "
+                "and can then relay its result. Do NOT wait: finish this reply now (tell the user "
+                "you started it and will report back).")
     if kind == "subruns":
         if not obs.get("rows"):
             return "OBSERVATION (subruns): no sub-workflows spawned this run."
@@ -485,9 +530,14 @@ def format_observation(obs: dict) -> str:
             return f"OBSERVATION (wait FAILED): {obs['error']}"
         parts = []
         for f in obs.get("finished", []):
-            parts.append(f"SUB-WORKFLOW {f['n']} {f['label']!r} FINISHED "
+            noun = "SUBTASK" if f.get("mode") == "sequential" else "SUB-WORKFLOW"
+            parts.append(f"{noun} {f['n']} {f['label']!r} FINISHED "
                          f"(status {f['status']}, {f['turns']} turns):\n{f['summary']}")
-        if obs.get("timed_out"):
+        if obs.get("interrupted_by_user"):
+            parts.append("Wait PAUSED — a user message just arrived (delivered next). Handle it, "
+                         f"then `wait` again for the still-running child(ren) {obs.get('still_running')} "
+                         "when you are ready to continue the sequence.")
+        elif obs.get("timed_out"):
             parts.append(f"wait timed out; still running: {obs.get('still_running')}")
         elif not parts:
             parts.append("nothing new finished")

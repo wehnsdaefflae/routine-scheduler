@@ -22,14 +22,14 @@ from ..endpoints.base import EndpointError
 from ..grants import load_policy
 from ..paths import read_json
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import executor, inbox, interact
+from . import detach, executor, inbox, interact
 from .actions import ACTION_SCHEMA, BRIEF_FIELD, KIND_EXAMPLES, normalize_action, validate_action
 from .composer import build_system_prompt, format_observation, kickoff_message, state_digest
 from .control import (_ABORT, RunAborted, announce_finished_subruns, apply_model_switch,
                       drain_injections, pause_gate, request_abort)
 from .history import (COMPACT_AT_FRACTION, COMPACT_AT_FRACTION_CACHED, KEEP_HEAD_MSGS,
                       KEEP_TAIL_MSGS, compact_to_history, maybe_compact, messages_size,
-                      prior_usage, replay_messages)
+                      orphaned_children, prior_usage, replay_messages)
 from .autocommit import autocommit as _autocommit
 from ..health_events import log_health_event
 from .run_context import RunContext
@@ -189,6 +189,10 @@ class EngineLoop:
                     obs = interact.handle_write_util(self, action, poll_s=POLL_S)
                 elif action["kind"] == "spawn":
                     obs = self.subruns.spawn(action)
+                elif action["kind"] == "subtask":
+                    obs = self.subruns.subtask(action)
+                elif action["kind"] == "detach":
+                    obs = detach.handle_detach(ctx, action)
                 elif action["kind"] == "subruns":
                     obs = self.subruns.status_table()
                 elif action["kind"] == "kill":
@@ -272,6 +276,21 @@ class EngineLoop:
             # may legitimately answer and re-finish as its very first action
             self.executed_actions = sum(1 for e in events if e.get("type") == "observation"
                                         and not (e.get("payload") or {}).get("rejected"))
+            # Children that were RUNNING at the interruption are dead (threads don't survive a
+            # restart). Mark each aborted in the transcript (so the tree is honest and a re-resume
+            # doesn't re-detect it) and tell the model below — otherwise it would `wait` forever
+            # for a child that can never finish.
+            orphans = orphaned_children(events)
+            for o in orphans:
+                ctx.transcript.event("subrun_end", {"n": o["n"], "label": o["label"],
+                                                    "mode": o["mode"], "status": "aborted",
+                                                    "summary": "did not survive the run's interruption",
+                                                    "turns": 0, "usage": {}})
+            if orphans:
+                names = ", ".join(f"#{o['n']} {o['label']!r} ({o['mode']})" for o in orphans)
+                self.messages.append({"role": "user", "content":
+                    f"ENGINE NOTE: these child tasks were RUNNING when the run was interrupted and "
+                    f"did NOT survive the restart (results lost): {names}. Re-issue any you still need."})
             fin = next((e for e in reversed(events) if e.get("type") == "finish"), None)
             fin_payload = (fin.get("payload") or {}) if fin else {}
             if fin_payload.get("authored"):

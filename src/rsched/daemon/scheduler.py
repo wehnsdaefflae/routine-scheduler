@@ -16,6 +16,7 @@ from .. import library_sync
 from ..config import ServerConfig
 from ..ids import now_iso
 from . import registry, restart
+from .detached import DetachedManager
 from .events import EventBus
 from .runner import Runner
 
@@ -37,6 +38,10 @@ class Scheduler:
         self.server = server
         self.runner = runner
         self.bus = bus
+        # Detached background tasks (the `detach` action): daemon-managed processes that outlive
+        # a conversation reply and report back on completion. The manager is the single writer of
+        # background_home; it is ticked after the cron-fire loop (paused during a restart drain).
+        self.detached = DetachedManager(server, runner)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
         # In-flight new-routine wizard builds (wids), registered by api_wizard.finalize and
@@ -80,6 +85,9 @@ class Scheduler:
         fixed = self.runner.recover_orphans(self.catalog)
         # conversations live outside the schedule but their runs can be orphaned all the same
         self.runner.recover_orphans(registry.scan(self.server, self.server.conversations_home))
+        # detached background tasks too — then the manager re-attempts any undelivered results
+        self.runner.recover_orphans(registry.scan(self.server, self.server.background_home))
+        await self.detached.reconcile()
         if fixed:
             self.rescan()
         await self.boot_catchup()
@@ -107,6 +115,8 @@ class Scheduler:
             if self.sync_next is not None and now >= self.sync_next:
                 self.sync_next = registry.next_fire(self.server.library_sync, now)  # type: ignore[arg-type]
                 self._fire_library_sync()
+            # detached background tasks: intake new requests, deliver finished ones, wake owners
+            await self.detached.tick(now)
 
     def _fire_library_sync(self) -> None:
         """Run the sync off-loop (git talks to the network); one at a time — an overrun

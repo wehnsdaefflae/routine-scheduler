@@ -428,6 +428,19 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   font-size: 10px; color: var(--faint); letter-spacing: 0.14em; text-transform: uppercase;
   margin: 10px 0 4px;
 }
+/* detached background tasks (the `detach` action): a flat list in the conversation rail */
+.bg-tasks { display: flex; flex-direction: column; gap: 4px; font-family: var(--sans); }
+.bg-task { display: flex; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
+.bg-task-label {
+  color: var(--muted); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bg-cancel {
+  flex: none; border: 1px solid var(--line-2); background: transparent; color: var(--faint);
+  border-radius: 5px; font-size: 11px; line-height: 1; padding: 2px 5px; cursor: pointer;
+}
+.bg-cancel:hover { color: var(--err); border-color: rgba(230, 90, 90, 0.4); }
+.bg-cancel:disabled { opacity: 0.5; cursor: default; }
 .stategraph { display: flex; flex-direction: column; font-family: var(--sans); }
 .sg-node {
   display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted);
@@ -443,6 +456,32 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .sg-node.current .sg-dot { color: var(--amber); }
 .sg-link { width: 1px; height: 10px; background: var(--line-2); margin-left: 10px; }
 .sg-link.done { background: var(--live); opacity: 0.5; }
+
+/* the recursive task tree: sequential subtasks (→) + parallel subruns (⇉), each with a
+   per-node turn-budget meter (amber ≥85%, red over) and its children nested */
+.tasktree { display: flex; flex-direction: column; gap: 1px; font-family: var(--sans); }
+.tt-row {
+  display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted);
+  padding: 2px 4px; border-radius: 6px;
+}
+.tt-icon, .tt-mode { width: 12px; text-align: center; flex: none; }
+.tt-mode { color: var(--faint); }
+.tt-mode.tt-sequential { color: var(--amber); }
+.tt-label { flex: 1 1 auto; min-width: 0; color: var(--text); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.tt-wf { flex: none; }
+.tt-meter {
+  flex: none; width: 40px; height: 5px; border-radius: 3px;
+  background: var(--surface-2); overflow: hidden;
+}
+.tt-bar { display: block; height: 100%; background: var(--live); }
+.tt-bar.warn { background: var(--amber); }
+.tt-bar.over { background: var(--warn); }
+.tt-turns { flex: none; width: 40px; text-align: right; }
+.tt-s-running > .tt-icon { color: var(--amber); }
+.tt-s-ok > .tt-icon { color: var(--live); }
+.tt-s-failed > .tt-icon, .tt-s-aborted > .tt-icon { color: var(--warn); }
+.tt-children { margin-left: 11px; border-left: 1px solid var(--line-2); padding-left: 6px; }
 
 /* the run view's side rail: normal collapsible block; parked in the right margin on
    screens wide enough that the 1180px main column leaves room for it */

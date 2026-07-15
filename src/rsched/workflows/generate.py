@@ -51,9 +51,11 @@ META / PHASES / COMPLETION must be plain literals (they are parsed statically wi
 Use the full range of Python control flow wherever it makes the process clearer.'''
 
 
-def generate(server: ServerConfig, instruction: str, hint: str = "") -> tuple[str, str]:
+def generate(server: ServerConfig, instruction: str, hint: str = "", on_usage=None) -> tuple[str, str]:
     """Draft a new Python workflow for the instruction. Returns (slug, problems_note); the file is
-    written + committed on success. Raises RuntimeError when the draft can't be made valid."""
+    written + committed on success. Raises RuntimeError when the draft can't be made valid.
+    `on_usage(usage)` is called with each completion's usage — the seam that lets an IN-RUN
+    generation (a subtask drafting a pattern) fold its system-model spend into the run's budget."""
     home = server.library_home
     traits = list_traits(home)
     _, _, example_raw = read_workflow(home, "general-task")   # a good Python workflow to imitate
@@ -68,9 +70,15 @@ def generate(server: ServerConfig, instruction: str, hint: str = "") -> tuple[st
         "Reply with ONLY the complete .py file content."
     )
     endpoint, ref = EndpointRegistry(server).for_system()
-    draft = _strip_fence(endpoint.complete([{"role": "user", "content": prompt}],
-                                           model=ref.model, timeout=180,
-                                           purpose="Draft workflow", kind="generate").text)
+
+    def _complete(messages, purpose):
+        comp = endpoint.complete(messages, model=ref.model, timeout=180,
+                                 purpose=purpose, kind="generate")
+        if on_usage is not None and getattr(comp, "usage", None):
+            on_usage(comp.usage)
+        return comp
+
+    draft = _strip_fence(_complete([{"role": "user", "content": prompt}], "Draft workflow").text)
 
     problems: list[str] = []
     for attempt in range(2):
@@ -85,12 +93,11 @@ def generate(server: ServerConfig, instruction: str, hint: str = "") -> tuple[st
             git_commit(home, f"draft workflow {slug} (generated on demand)")
             return slug, ""
         if attempt == 0:
-            fix = endpoint.complete([{"role": "user", "content":
+            fix = _complete([{"role": "user", "content":
                 f"This Python workflow file failed lint:\n{draft}\n\nProblems:\n"
                 + "\n".join(f"- {p}" for p in problems)
                 + "\n\nReply with ONLY the corrected complete .py file content."}],
-                model=ref.model, timeout=180,
-                purpose="Fix drafted workflow", kind="generate")
+                "Fix drafted workflow")
             draft = _strip_fence(fix.text)
     raise RuntimeError(f"generated workflow failed lint twice: {problems}")
 

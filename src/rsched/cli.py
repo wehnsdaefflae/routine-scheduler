@@ -29,6 +29,7 @@ def _render_event(obj: dict) -> str | None:
                  "memory_write": f"{p.get('name')}{' (delete)' if p.get('delete') else ''}",
                  "llm": (p.get("prompt") or "")[:60],
                  "spawn": f"{p.get('label') or ''} [{p.get('workflow') or 'general-task'}]",
+                 "subtask": f"{p.get('label') or ''} [{p.get('workflow') or 'general-task'}]",
                  "kill": f"#{p.get('n')}", "wait": "all" if p.get("all") else
                  (f"#{p.get('n')}" if p.get("n") else "any"),
                  "ask_user": (p.get("question") or "")[:60],
@@ -49,6 +50,10 @@ def _render_event(obj: dict) -> str | None:
         if kind == "spawn":
             return (f"    ← spawn REJECTED: {p.get('reason')}" if p.get("rejected")
                     else f"    ← sub-workflow #{p.get('n')} started")
+        if kind == "subtask":
+            if p.get("rejected"):
+                return f"    ← subtask REJECTED: {p.get('reason')}"
+            return f"    ← subtask #{p.get('n')} started (sequential, background)"
         if kind == "wait":
             done = ", ".join(f"#{f['n']}:{f['status']}" for f in p.get("finished", []))
             return f"    ← wait → {done or ('timeout' if p.get('timed_out') else 'nothing new')}"
@@ -63,6 +68,11 @@ def _render_event(obj: dict) -> str | None:
         return f"    ✗ error ({p.get('where')}): {p.get('message', '')[:120]}"
     if t == "compaction":
         return f"    ⇣ compacted context ({p.get('before_chars')} → {p.get('after_chars')} chars)"
+    if t in ("subrun_start", "subrun_end"):
+        label = "subtask" if p.get("mode") == "sequential" else "subrun"
+        if t == "subrun_start":
+            return f"    ↳ {label} #{p.get('n')} \"{p.get('label')}\" started ({p.get('workflow')})"
+        return f"    ↰ {label} #{p.get('n')} {p.get('status')} — {p.get('turns')} turns"
     if t == "finish":
         return f"── finish: {p.get('status')} ──\n{p.get('summary', '')}"
     return None

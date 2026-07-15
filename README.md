@@ -16,10 +16,12 @@ default — the active set is per-routine config in `routine.yaml`.
 orchestrator LLM follows the workflow document and acts only by returning one JSON action
 per turn. Routines have **no shell** — the only way to run code is a global util (the `util`
 action); if none fits, the routine writes one (`write_util`, selftest-gated, optionally
-requiring your approval). Other actions: read/write a file, a scoped `llm` subcall, `spawn`
-parallel sub-workflows from the library (monitor with `subruns`, `kill`, `wait`; exits are
-announced automatically and children never outlive the parent), ask the user (blocking or
-deferred), or finish. The engine commits each routine's working dir automatically. Endpoints
+requiring your approval). Other actions: read/write a file, a scoped `llm` subcall, decompose the
+work into child tasks — `spawn` parallel sub-workflows (monitor with `subruns`, `kill`, `wait`) or
+run ordered `subtask` steps sequentially (each a fresh-context child on its own pattern + budget) —
+ask the user (blocking or deferred), or finish. Children never outlive the parent; the recursive
+task tree is shown live in the run rail. A conversation can also `detach` a LONG job that OUTLIVES a
+reply (its own daemon-managed process, reporting back on completion). The engine commits each routine's working dir automatically. Endpoints
 are model **transports** only: any OpenAI-compatible API (OpenRouter, Featherless, vLLM,
 local Ollama), the Anthropic Messages API — or the Claude Code CLI in fully stripped print
 mode (`--tools ""`, no settings/MCP/session, our system prompt replacing its own) as a

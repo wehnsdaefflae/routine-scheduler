@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 
 from .. import utils_lib
 from ..ids import question_id
-from . import decisions, inbox
+from . import decisions, detach, inbox
 from .control import RunAborted
 
 _APPROVE_WORDS = ("approve", "approved", "yes", "y", "ok", "okay", "go", "accept", "confirm")
@@ -31,8 +31,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     ctx = loop.ctx
     qid = question_id(ctx.run_ts, ctx.turn)
     mode = action.get("mode") or "deferred"
-    if ctx.depth > 0:
-        mode = "deferred"  # subruns cannot block the run on the user
+    if ctx.depth > 0 or detach.is_detached_run(ctx):
+        mode = "deferred"  # subruns / detached tasks cannot block the run on the user
     options = list(action.get("options") or [])
     default = str(action.get("default") or "").strip()
     question = action["question"]

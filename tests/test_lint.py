@@ -51,7 +51,7 @@ def test_materialize_carries_workflow_and_provenance():
     # materialize = the un-decomposed baseline: the Python workflow rendered into main.md (the
     # orchestrator acts the pattern out; the pattern is fenced in the body).
     content, prov = materialize(SEED, "general-task")
-    assert prov["slug"] == "general-task" and prov["version"] == 8
+    assert prov["slug"] == "general-task" and prov["version"] == 9
     meta, body = frontmatter.parse(content)
     assert meta["materialized_from"]["slug"] == "general-task" and meta["name"] == "General task"
     assert "## Run flow" in body and "## Completion criteria" in body
@@ -99,8 +99,8 @@ def test_tags_on_library_elements():
         assert len(d["tags"]) >= 3, (d["slug"], d["tags"])
     assert set(traits["web-research"]["tags"]) >= {"web", "research"}
     perms = {d["slug"]: d for d in library_docs.list_docs(SEED / "permissions")}
-    assert set(perms) == {"util-authoring", "memory", "communication",
-                          "run-history", "shell"}   # variants collapsed: level = capability
+    assert set(perms) == {"util-authoring", "memory", "communication", "run-history",
+                          "shell", "workflow-generation", "background-tasks"}   # variants collapsed: level = capability
     assert "self-modification" not in perms          # retired: a fixed engine rule now
     # a doc's frontmatter is stripped before its body is shown/inlined
     raw = (SEED / "traits" / "web-research.md").read_text()

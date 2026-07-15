@@ -15,7 +15,8 @@ from routine.params import (
     WORKDIR,     # str — optional project directory among the fs roots ("" = none)
 )
 
-from routine.actions import read_file, write_file, util, write_util, llm, spawn, wait, ask_user, finish
+from routine.actions import (read_file, write_file, util, write_util, llm,
+                             spawn, subtask, detach, wait, ask_user, finish)
 
 META = {
     "name": "Converse",
@@ -26,7 +27,7 @@ META = {
     "when_to_use": "Conversations only — the Conversations tab materializes this pattern into "
                    "each new conversation. Not for scheduled routines: there is no schedule, "
                    "and the reply cycle assumes a user who reads the answer and writes back.",
-    "version": 1,
+    "version": 2,
     # "meta" keeps it out of spawn-pattern lists and wizard suggestions — a conversation
     # harness assumes a present user; it is materialized ONLY by the Conversations tab.
     "tags": ["conversation", "interactive", "assistant", "meta"],
@@ -93,8 +94,20 @@ def work(message):
       STOP starting new work — write down where you are (LEDGER.md), then reply with honest
       progress and end with: say 'continue' and I will pick up right here. The user's
       'continue' opens a fresh window in this same conversation.
-    - A genuinely big, parallelizable job may spawn sub-workflows — but prefer doing the
-      work directly; a conversation is interactive, not a batch scheduler.
+    - Decompose a genuinely LARGE request instead of cramming it into one reply's context:
+      an ORDERED, multi-stage job (e.g. research -> draft -> review) → run each stage as a
+      sequential `subtask` (a fresh-context child run with its own pattern + budget, blocking,
+      each result folded into the next brief); many INDEPENDENT parts → fan out parallel
+      `spawn` children. Prefer doing small work directly; a conversation is interactive, not a
+      batch scheduler — decompose only when a single reply's context or budget can't hold it.
+    - A LONG, self-contained job you want to kick off and then keep chatting around — a 20-minute
+      scrape, a bulk conversion, a slow build — is different: `detach` it. Unlike subtask/spawn
+      (children that die when this reply's process ends), a detached task runs as its OWN
+      background process, survives your reply-finishes, and delivers its result back HERE when it
+      completes (you relay it then). Give it a COMPLETE self-contained brief — it can't ask you
+      blocking questions — then finish the reply ("started it — I'll report back") and do NOT
+      wait. Its live status is in state/background.json; reach for it only for jobs too long to
+      finish within a reply.
     - Ask (ask_user, blocking) when a decision is genuinely the user's — they are usually
       present in a conversation; still, batch what can wait into the reply itself."""
 

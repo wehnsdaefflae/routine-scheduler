@@ -182,6 +182,17 @@ def spawn(prompt, label=None, workflow=None, say="Delegating."):
     return action
 
 
+def subtask(prompt, label=None, workflow=None, turns=None, say="Running a subtask."):
+    action = {"say": say, "kind": "subtask", "prompt": prompt}
+    if label:
+        action["label"] = label
+    if workflow:
+        action["workflow"] = workflow
+    if turns is not None:
+        action["turns"] = turns
+    return action
+
+
 def wait_(n=None, all_=False, timeout_s=None, say="Waiting for children."):
     action = {"say": say, "kind": "wait"}
     if n is not None:

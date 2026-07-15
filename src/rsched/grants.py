@@ -51,11 +51,12 @@ import yaml
 from .engine.actions import KINDS
 from .ids import is_slug
 
-GATED_KINDS = ("write_util", "memory_read", "memory_write")
+GATED_KINDS = ("write_util", "memory_read", "memory_write", "detach")
 # When no library permission doc requires a gated kind (e.g. the library predates it),
 # denials still name the doc that canonically covers its conduct.
 _DEFAULT_KIND_SOURCE = {"write_util": "util-authoring",
-                        "memory_read": "memory", "memory_write": "memory"}
+                        "memory_read": "memory", "memory_write": "memory",
+                        "detach": "background-tasks"}
 _DEFAULT_RUNS_SOURCE = ("run-history",)
 # write_util approval policy, least → most permissive. The legacy vocabulary still maps:
 # true → "always" (user approves create AND revise), "revisions-only" → "creations"
@@ -65,13 +66,20 @@ _RAW_CONFIRM = {True: "always", "revisions-only": "creations", False: "never",
                 "always": "always", "creations": "creations", "never": "never"}
 # runs: access to previous runs, none → last (only the previous run) → all
 RUN_HISTORY_LEVELS = ("none", "last", "all")
+# workflows: how a run may source a child's pattern at decomposition. catalog = pick an
+# existing library pattern only (the always-on baseline); generate = also DRAFT a new one
+# on demand (workflows/generate.py, a system-model call) when none fits. A `requires:` doc
+# demanding it names only "generate" (catalog is the absence of the requirement).
+WORKFLOW_LEVELS = ("catalog", "generate")
+_WORKFLOW_SOURCE = ("workflow-generation",)
 # The routine's own recipe + config files — never writable by the owning run unless a
 # user-granted fs_write_root covers the routine dir (see the module docstring). traits/
 # holds the routine's adapted practice copies; steps/ + main.md the materialized workflow;
 # routine.yaml is the user's config (permissions, capabilities, budgets, roots).
 RECIPE_PREFIXES = ("main.md", "instruction.md", "steps/", "traits/", "routine.yaml")
 # An all-off capabilities mapping — the base for cascades and the subrun/clarify default.
-EMPTY_CAPABILITIES = {"actions": [], "utils": [], "confirm": "always", "runs": "none"}
+EMPTY_CAPABILITIES = {"actions": [], "utils": [], "confirm": "always", "runs": "none",
+                      "workflows": "catalog"}
 
 
 def normalize_capabilities(raw: object, *, label: str = "capabilities",
@@ -86,7 +94,8 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
     if not isinstance(raw, dict):
         return {}, [f"{label} must be a mapping (actions / utils"
                     + (" / runs)" if requires else " / confirm / runs)")]
-    known = ("actions", "utils", "runs") if requires else ("actions", "utils", "confirm", "runs")
+    known = (("actions", "utils", "runs", "workflows") if requires
+             else ("actions", "utils", "confirm", "runs", "workflows"))
     problems = [f"{label}.{k}: unknown key (expected {' / '.join(known)})"
                 + (" — the approval level is a capability the user sets, not a requirement"
                    if requires and k == "confirm" else "")
@@ -114,6 +123,12 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
             out["runs"] = raw["runs"]
         else:
             problems.append(f"{label}.runs must be {' or '.join(runs_ok)}")
+    wf_ok = ("generate",) if requires else ("catalog", "generate")
+    if "workflows" in raw:
+        if raw["workflows"] in wf_ok:
+            out["workflows"] = raw["workflows"]
+        else:
+            problems.append(f"{label}.workflows must be {' or '.join(wf_ok)}")
     return out, problems
 
 
@@ -146,6 +161,7 @@ def read_library_requires(permissions_home: Path) -> dict[str, dict]:
 
 _PERMISSIVENESS = {level: n for n, level in enumerate(CONFIRM_LEVELS)}
 _RUNS_RANK = {level: n for n, level in enumerate(RUN_HISTORY_LEVELS)}
+_WORKFLOW_RANK = {level: n for n, level in enumerate(WORKFLOW_LEVELS)}
 
 
 def capabilities_for(active: list[str], lib: dict[str, dict],
@@ -157,6 +173,7 @@ def capabilities_for(active: list[str], lib: dict[str, dict],
     actions = list(dict.fromkeys(caps.get("actions") or []))
     utils = list(dict.fromkeys(caps.get("utils") or []))
     runs = caps.get("runs") or "none"
+    workflows = caps.get("workflows") or "catalog"
     for slug in active:
         req = lib.get(slug) or {}
         actions += [a for a in req.get("actions") or [] if a not in actions]
@@ -164,8 +181,11 @@ def capabilities_for(active: list[str], lib: dict[str, dict],
         need = req.get("runs") or "none"
         if _RUNS_RANK.get(need, 0) > _RUNS_RANK.get(runs, 0):
             runs = need
+        need_wf = req.get("workflows") or "catalog"
+        if _WORKFLOW_RANK.get(need_wf, 0) > _WORKFLOW_RANK.get(workflows, 0):
+            workflows = need_wf
     return {"actions": actions, "utils": utils,
-            "confirm": caps.get("confirm") or "always", "runs": runs}
+            "confirm": caps.get("confirm") or "always", "runs": runs, "workflows": workflows}
 
 
 def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> dict:
@@ -185,17 +205,21 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
     req_actions: set[str] = set()
     req_utils: set[str] = set()
     grants_runs = False
+    grants_wf = False
     for slug in active:
         req = lib.get(slug) or {}
         req_actions.update(a for a in req.get("actions") or [] if a in GATED_KINDS)
         req_utils.update(req.get("utils") or [])
         if req.get("runs"):
             grants_runs = True
+        if req.get("workflows"):
+            grants_wf = True
     actions = [a for a in caps.get("actions") or [] if a in req_actions]
     utils = [u for u in caps.get("utils") or [] if u in req_utils]
     runs = (caps.get("runs") or "none") if grants_runs else "none"
+    workflows = (caps.get("workflows") or "catalog") if grants_wf else "catalog"
     return {"actions": actions, "utils": utils,
-            "confirm": caps.get("confirm") or "always", "runs": runs}
+            "confirm": caps.get("confirm") or "always", "runs": runs, "workflows": workflows}
 
 
 def unsatisfied_requires(active: list[str], capabilities: dict,
@@ -207,6 +231,7 @@ def unsatisfied_requires(active: list[str], capabilities: dict,
     actions = set(caps.get("actions") or [])
     utils = set(caps.get("utils") or [])
     runs = caps.get("runs") or "none"
+    workflows = caps.get("workflows") or "catalog"
     out: dict[str, list[str]] = {}
     for slug in active:
         req = lib.get(slug) or {}
@@ -215,6 +240,9 @@ def unsatisfied_requires(active: list[str], capabilities: dict,
         need = req.get("runs")
         if need and _RUNS_RANK.get(runs, 0) < _RUNS_RANK.get(need, 0):
             missing.append(f"runs:{need}")
+        need_wf = req.get("workflows")
+        if need_wf and _WORKFLOW_RANK.get(workflows, 0) < _WORKFLOW_RANK.get(need_wf, 0):
+            missing.append(f"workflows:{need_wf}")
         if missing:
             out[slug] = missing
     return out
@@ -250,6 +278,8 @@ class GrantPolicy:
     kind_sources: dict = field(default_factory=dict)  # gated kind → library docs requiring it
     confirm: str = "always"                    # write_util approval policy
     run_history: str = "none"                  # previous-runs read access: none | last | all
+    workflows: str = "catalog"                 # child-pattern sourcing: catalog | generate
+    workflows_sources: tuple = _WORKFLOW_SOURCE          # docs covering workflow generation
     # own recipe/config writable? True only when a user fs_write_root covers the routine
     # dir (the routine-improver's case) — computed at policy load, never a capability.
     recipe_unlocked: bool = False
@@ -261,6 +291,11 @@ class GrantPolicy:
 
     def allows_kind(self, kind: str) -> bool:
         return kind not in GATED_KINDS or kind in self.actions
+
+    def may_generate_workflow(self) -> bool:
+        """May a subtask DRAFT a new library pattern when none fits (vs pick from the catalog)?
+        Off by default — a user-set capability, covered by the workflow-generation permission."""
+        return self.workflows == "generate"
 
     def needs_confirm(self, creating: bool) -> bool:
         """Must the user approve this write_util? (creating=False → revising an existing util)"""
@@ -327,6 +362,7 @@ def load_policy(permissions_home: Path, active: list[str] | None,
     gated_utils: dict[str, list[str]] = {}
     kind_sources: dict[str, list[str]] = {}
     runs_sources: list[str] = []
+    workflows_sources: list[str] = []
     for slug, req in lib.items():
         for kind in req.get("actions") or []:
             if kind in GATED_KINDS:
@@ -335,6 +371,8 @@ def load_policy(permissions_home: Path, active: list[str] | None,
             gated_utils.setdefault(util, []).append(slug)
         if req.get("runs"):
             runs_sources.append(slug)
+        if req.get("workflows"):
+            workflows_sources.append(slug)
     caps, _ = normalize_capabilities(capabilities)
     return GrantPolicy(active=tuple(active or []),
                        actions=frozenset(k for k in caps.get("actions") or []
@@ -344,6 +382,8 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                        kind_sources={k: tuple(v) for k, v in kind_sources.items()},
                        confirm=caps.get("confirm") or "always",
                        run_history=caps.get("runs") or "none",
+                       workflows=caps.get("workflows") or "catalog",
+                       workflows_sources=tuple(workflows_sources) or _WORKFLOW_SOURCE,
                        recipe_unlocked=recipe_unlocked,
                        runs_sources=tuple(runs_sources) or _DEFAULT_RUNS_SOURCE,
                        current_run_ts=current_run_ts)

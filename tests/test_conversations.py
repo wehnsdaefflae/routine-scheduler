@@ -319,6 +319,98 @@ def test_conversation_questions_reach_decisions(client):
     assert (conv_dir / "inbox" / "answer-q-1.json").exists()
 
 
+# ---- detached background tasks ------------------------------------------------------------------
+
+
+def _bg_task(server, taskid, owner_slug, *, state="running", pid=999999):
+    """A detached task dir under background_home owned by owner_slug (a dead pid by default)."""
+    d = server.background_home / taskid
+    (d / "state").mkdir(parents=True, exist_ok=True)
+    (d / "routine.yaml").write_text(yaml.safe_dump({
+        "slug": taskid, "name": "scrape", "enabled": True,
+        "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
+        "workflow": {"library_slug": "general-task", "library_commit": ""},
+        "owner": {"slug": owner_slug, "dir": str(server.conversations_home / owner_slug)},
+    }))
+    ts = "20260712-130000"
+    rd = d / "runs" / ts
+    rd.mkdir(parents=True)
+    atomic_write_json(rd / "status.json", {"run_id": f"{taskid}:{ts}", "state": state, "pid": pid})
+    (rd / "result.md").write_text("scrape done")
+    return d
+
+
+def test_launch_background_writes_request(client):
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    r = c.post(f"/api/conversations/{slug}/background",
+               data={"prompt": "scrape 200 pages", "workflow": "general-task", "label": "scrape"})
+    assert r.status_code == 200, r.text
+    taskid = r.json()["taskid"]
+    req = server.background_home / ".requests" / f"{taskid}.json"
+    body = yaml.safe_load(req.read_text())   # json is valid yaml
+    assert body["owner"] == {"slug": slug, "dir": str(server.conversations_home / slug)}
+    assert body["prompt"] == "scrape 200 pages" and body["workflow"] == "general-task"
+    assert c.post(f"/api/conversations/{slug}/background", data={"prompt": "  "}).status_code == 400
+
+
+def test_list_background(client):
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    _bg_task(server, f"bg-{slug}-aaaa", slug)
+    _bg_task(server, "bg-other-bbbb", "someone-else")   # not owned by this conversation
+    items = c.get(f"/api/conversations/{slug}/background").json()
+    assert [i["taskid"] for i in items] == [f"bg-{slug}-aaaa"]
+    assert items[0]["state"] == "running" and items[0]["label"] == "scrape"
+
+
+def test_cancel_background(client, monkeypatch):
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    _bg_task(server, f"bg-{slug}-cccc", slug)
+    aborted = []
+
+    async def fake_abort(taskid):
+        aborted.append(taskid)
+        return True
+
+    c.app.state.runner.abort = fake_abort
+    r = c.post(f"/api/conversations/{slug}/background/bg-{slug}-cccc/cancel")
+    assert r.status_code == 200 and r.json()["cancelled"] is True
+    assert aborted == [f"bg-{slug}-cccc"]
+    # a task the conversation does not own → 404
+    _bg_task(server, "bg-foreign-dddd", "other-conv")
+    assert c.post(f"/api/conversations/{slug}/background/bg-foreign-dddd/cancel").status_code == 404
+    assert c.post(f"/api/conversations/{slug}/background/nope/cancel").status_code == 404
+
+
+def test_background_run_resolves_on_runs_endpoint(client):
+    """The _run_dir search tuple includes background_home, so a detached run's transcript/tree
+    resolve on the generic /api/runs endpoints (what the rail's task tree fetches)."""
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    task = _bg_task(server, f"bg-{slug}-ffff", slug)
+    (task / "runs" / "20260712-130000" / "transcript.jsonl").write_text("")
+    rid = f"bg-{slug}-ffff:20260712-130000"
+    assert c.get(f"/api/runs/{rid}").status_code == 200
+    assert c.get(f"/api/runs/{rid}/tree").status_code == 200
+    # the conversation detail carries its background list for the rail's first paint
+    detail = c.get(f"/api/conversations/{slug}").json()
+    assert [t["taskid"] for t in detail["background"]] == [f"bg-{slug}-ffff"]
+
+
+def test_delete_conversation_tears_down_background(client):
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    conv_dir = server.conversations_home / slug
+    ts = "20260712-120000"
+    atomic_write_json(conv_dir / "runs" / ts / "status.json",   # finish the reply so delete isn't 409
+                      {"run_id": f"{slug}:{ts}", "state": "finished", "turn": 1})
+    task = _bg_task(server, f"bg-{slug}-eeee", slug)   # dead pid → abort falls through, then rmtree
+    assert c.delete(f"/api/conversations/{slug}").status_code == 200
+    assert not task.exists() and not conv_dir.exists()
+
+
 # ---- runner + registry + bootstrap ---------------------------------------------------------------
 
 def test_runner_reserved_interactive_slots(server):
@@ -386,6 +478,29 @@ def test_conversation_runs_end_to_end(server, scripted):
     assert not (d / ".git").exists()          # the finish autocommit no-ops: unversioned
     usage = (server.routines_home / ".control" / "workflow-usage.jsonl").read_text()
     assert '"converse"' in usage and "c-run" in usage   # conversations feed the evidence stream
+
+
+def test_conversation_detach_writes_intent(server, scripted):
+    """End-to-end gating: a conversation holds background-tasks by default, so a `detach` action
+    passes the grant layer and drops an intent file for the DetachedManager."""
+    from rsched.engine.runtime import run_routine
+
+    d = conv_mod.create_conversation(server, slug="c-bg",
+                                     first_message="scrape the whole site in the background")
+    scripted([
+        {"say": "Kicking off the scrape.", "kind": "detach", "workflow": "general-task",
+         "label": "scrape", "prompt": "Scrape all 200 pages of example.com and summarize them."},
+        {"say": "Replying.", "kind": "finish", "status": "ok",
+         "summary": "Started the scrape in the background — I'll report back when it lands."},
+    ])
+    status, _ = run_routine(d, server)
+    assert status == "ok"
+    reqs = list((server.background_home / ".requests").glob("*.json"))
+    assert len(reqs) == 1
+    import json
+    body = json.loads(reqs[0].read_text())
+    assert body["owner"]["slug"] == "c-bg" and body["prompt"].startswith("Scrape all 200")
+    assert body["workflow"] == "general-task" and body["label"] == "scrape"
 
 
 def test_autolabel_fallback_never_raises(server):

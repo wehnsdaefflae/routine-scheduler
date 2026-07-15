@@ -28,7 +28,7 @@ def _run_dir(request: Request, run_id: str) -> tuple[str, Path]:
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     server = request.app.state.server
-    for home in (server.routines_home, server.conversations_home):
+    for home in (server.routines_home, server.conversations_home, server.background_home):
         run_dir = home / slug / "runs" / ts
         if run_dir.is_dir():
             return slug, run_dir
@@ -81,6 +81,17 @@ def run_transcript(request: Request, run_id: str, offset: int = 0, sub: str | No
 async def run_events(request: Request, run_id: str, offset: int = 0):
     _, run_dir = _run_dir(request, run_id)
     return EventSourceResponse(run_stream(run_dir, offset))
+
+
+@router.get("/runs/{run_id}/tree")
+def run_tree(request: Request, run_id: str) -> dict:
+    """The recursive task tree: this run's sequential subtasks + parallel subruns, each a node
+    with mode / state / live turns / allotted budget and its own children nested. A read-model
+    over the on-disk sub/ transcripts (nothing is written) — the rail's decomposition view."""
+    from .tasktree import build_tree
+
+    _, run_dir = _run_dir(request, run_id)
+    return {"tree": build_tree(run_dir)}
 
 
 class Inject(BaseModel):

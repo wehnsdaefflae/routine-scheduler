@@ -55,6 +55,17 @@ def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
     return out
 
 
+def has_pending_messages(routine_dir: Path) -> bool:
+    """True if an unconsumed injected user message (a `msg-*` file, not an `answer-*`) is
+    waiting. A responsive `wait` polls this so a child-wait YIELDS to the user — hands control
+    back to the turn loop, which drains the message and lets the parent respond — instead of
+    freezing the conversation while a subtask/subrun runs."""
+    inbox = routine_dir / "inbox"
+    if not inbox.is_dir():
+        return False
+    return any(p.is_file() and not p.name.startswith("answer-") for p in inbox.iterdir())
+
+
 def take_answer(routine_dir: Path, qid: str, consumed_dir: Path) -> dict | None:
     """The answer file for a specific question, if present (consumed on read)."""
     path = routine_dir / "inbox" / f"answer-{qid}.json"
