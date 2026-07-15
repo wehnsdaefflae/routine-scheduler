@@ -45,7 +45,7 @@ def test_migration_code_declares_expiry_and_expires():
 def test_version_bump_has_changelog_entry():
     changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
     headers = re.findall(r"^## \[(\d+\.\d+\.\d+)\] — (\d{4}-\d{2}-\d{2})$",
-                         changelog, flags=re.M)
+                         changelog, flags=re.MULTILINE)
     assert headers, "CHANGELOG.md has no '## [x.y.z] — YYYY-MM-DD' release header"
     assert headers[0][0] == rsched.__version__, (
         f"__version__ is {rsched.__version__} but the newest CHANGELOG.md header is "

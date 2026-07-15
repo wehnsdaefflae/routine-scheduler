@@ -76,9 +76,10 @@ def test_routine_seed_stage_references_resolve(seed):
     problems = []
     for src in sources:
         body = src.read_text(encoding="utf-8")
-        for name in set(re.findall(r"stages/([a-z0-9-]+\.md)", body)):
-            if not (seed / "stages" / name).is_file():
-                problems.append(f"{src.relative_to(REPO)} references stages/{name} (missing)")
+        problems.extend(
+            f"{src.relative_to(REPO)} references stages/{name} (missing)"
+            for name in sorted(set(re.findall(r"stages/([a-z0-9-]+\.md)", body)))
+            if not (seed / "stages" / name).is_file())
     assert not problems, "\n".join(problems)
 
 
