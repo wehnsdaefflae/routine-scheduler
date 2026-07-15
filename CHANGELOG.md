@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.20.1] — 2026-07-15
+
+### Fixed
+- **Wizard builds orphaned by a server restart/crash no longer hang forever.** A new-routine
+  build (`api_wizard._build_routine`) runs as a web-process background task with no
+  persistence; if the process dies between `finalize.json` = `building` and the terminal
+  `done`/`error` write — e.g. a self-restart, which drains engine **runs** but not in-flight
+  **builds**, or a crash/SIGKILL — the setup was stranded: `finalize.json` stuck at
+  `building`, a half-scaffolded routine dir with no `routine.yaml`, and nothing to complete
+  it (`Runner.recover_orphans` reconciles engine runs only). The user saw a setup that "never
+  finishes" with no LLM call in flight. Boot now runs `wizard_store.recover_orphan_builds`:
+  any `building` state in a fresh process is by definition orphaned, so it is marked a
+  recoverable `error` (retry/cancel from the wizard) and its half-built dir (no `routine.yaml`)
+  is removed — mirroring `_build_routine`'s own exception handler. (AUDIT note.)
+
 ## [0.20.0] — 2026-07-15
 
 ### Added

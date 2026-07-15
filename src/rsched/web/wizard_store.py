@@ -109,6 +109,41 @@ def list_sessions(app_state) -> list[dict]:
     return out
 
 
+def recover_orphan_builds(server) -> list[str]:
+    """Reconcile wizard BUILDS orphaned by a server restart/crash. api_wizard._build_routine runs
+    as a web-process background task (asyncio.create_task) with NO persistence: if the process dies
+    between finalize.json='building' and the terminal 'done'/'error' write (a self-restart drains
+    engine runs but not in-flight builds, plus crashes/SIGKILL), the build is stranded forever —
+    finalize.json stuck at 'building', a half-scaffolded routine dir that never got its routine.yaml,
+    and nothing to finish it (Runner.recover_orphans covers engine RUNS only, never builds). The
+    setup then 'never finishes' with no error surfaced.
+
+    Called once at boot: a fresh process owns no build task, so ANY 'building' state is by definition
+    orphaned. Mark each 'error' (recoverable — the user retries or cancels from the wizard) and
+    remove a half-built routine dir that lacks routine.yaml (mirrors _build_routine's except handler).
+    Returns the recovered wids."""
+    home = server.routines_home
+    recovered: list[str] = []
+    if not home.is_dir():
+        return recovered
+    for d in sorted(home.glob(".wizard-*")):
+        if not d.is_dir():
+            continue
+        fin = read_json(d / "state" / "finalize.json")
+        if not (isinstance(fin, dict) and fin.get("state") == "building"):
+            continue
+        slug = fin.get("slug")
+        if slug:
+            partial = home / str(slug)
+            if partial.is_dir() and not (partial / "routine.yaml").exists():
+                shutil.rmtree(partial, ignore_errors=True)
+        atomic_write_json(d / "state" / "finalize.json",
+                          {"state": "error", "slug": slug,
+                           "error": "build interrupted by a server restart — please retry"})
+        recovered.append(d.name)
+    return recovered
+
+
 def create_session(server, draft: str) -> tuple[str, str, Path]:
     """Materialize a session dir on disk (blocking I/O — call via to_thread) and return
     (wid, run_ts, dir), ready for the engine subprocess to take over.
