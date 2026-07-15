@@ -616,6 +616,20 @@ def test_registry_model_resolution():
         EndpointRegistry(ServerConfig()).get("nope")
 
 
+def test_registry_for_uncensored():
+    from rsched.config import ModelRef, ServerConfig
+    server = ServerConfig()
+    server.endpoints = {"e1": EndpointConfig(name="e1", kind="openai", base_url="http://x")}
+    server.system_model = ModelRef("e1", "sys")
+    reg = EndpointRegistry(server)
+    # unset uncensored role → None (NO system_model fallback: referral off)
+    assert reg.for_uncensored({}) is None
+    assert reg.for_uncensored({"main": ModelRef("e1", "m")}) is None
+    # explicitly configured → resolves the endpoint + ref
+    ep, ref = reg.for_uncensored({"uncensored": ModelRef("e1", "abliterated")})
+    assert ref.model == "abliterated" and ref.endpoint == "e1"
+
+
 def test_make_endpoint_kinds():
     assert isinstance(make_endpoint(EndpointConfig(name="a", kind="openai", base_url="x")),
                       OpenAICompatEndpoint)

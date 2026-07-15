@@ -59,9 +59,13 @@ DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write"]
 # routine's own traits: the routine-improver meta routine runs them across all routines
 # and conversations (honoring each one's `improve: false` opt-out).
 DEFAULT_TRAITS = ["ask-policy", "global-utils", "ledger-discipline", "web-research"]
-# Each routine picks its own three models: the MAIN orchestrator loop, the model spawned
-# SUBROUTINEs run their main loop on, and the model TOOL_CALLs (the `llm` action) use.
-MODEL_KINDS = ("main", "subroutine", "tool_call")
+# Each routine picks its own models: the MAIN orchestrator loop, the model spawned
+# SUBROUTINEs run their main loop on, the model TOOL_CALLs (the `llm` action) use, and an
+# OPTIONAL UNCENSORED model a refused `llm` tool-call is re-referred to. The uncensored role
+# is opt-in and has NO system_model fallback: a routine refers a refusal ONLY when it has
+# explicitly configured this role (e.g. to a Nano-GPT abliterated model). Leaving it unset
+# preserves the previous behaviour exactly.
+MODEL_KINDS = ("main", "subroutine", "tool_call", "uncensored")
 # Endpoints are model TRANSPORTS, never a second harness. "claude-cli" is the Claude Code
 # CLI in fully stripped print mode (tools off, our system prompt replaces its own) — a
 # subscription-billed completion function; the engine remains the only agent loop.
@@ -251,7 +255,7 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
 
 
 class RoutineConfig(_Config):
-    """One routine's `routine.yaml`: schedule, models (main/subroutine/tool_call),
+    """One routine's `routine.yaml`: schedule, models (main/subroutine/tool_call/uncensored),
     budgets, held permissions, filesystem roots, and retention. The instruction and
     workflow live next to it as `instruction.md` / `main.md`; its adapted practice
     prose under `traits/`."""
@@ -273,7 +277,7 @@ class RoutineConfig(_Config):
     # Update-playbook button; a Save-as-playbook always creates a new one regardless.
     playbook_slug: BlankableStr = Field("", validation_alias=AliasPath("playbook", "slug"))
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
-    models: dict[str, ModelRef] = Field(default_factory=dict)  # main/subroutine/tool_call
+    models: dict[str, ModelRef] = Field(default_factory=dict)  # main/subroutine/tool_call/uncensored
     budgets: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_BUDGETS))
     # The two permission layers (user-changeable only; explicit values win, otherwise a
     # new routine holds the defaults). `permissions` names the held CONDUCT docs (library

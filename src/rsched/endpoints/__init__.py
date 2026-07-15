@@ -60,6 +60,17 @@ class EndpointRegistry:
             raise EndpointError(f"no model configured for {kind!r} (and no system_model fallback)")
         return self.get(ref.endpoint), ref
 
+    def for_uncensored(self, models: dict[str, ModelRef]) -> tuple[ChatEndpoint, ModelRef] | None:
+        """The routine's OPTIONAL uncensored model — the target a refused `llm` tool-call is
+        re-referred to. Unlike for_model, this has NO system_model fallback: an unset role
+        returns None, which means "referral off" (referring a refusal to the same censored
+        default model would be pointless). Only routines that explicitly configure
+        `models.uncensored` opt into referral."""
+        ref = models.get("uncensored")
+        if ref is None:
+            return None
+        return self.get(ref.endpoint), ref
+
     def for_system(self) -> tuple[ChatEndpoint, ModelRef]:
         """The one model for pre-routine machine work (workflow generation/suggestion, the
         clarify wizard)."""

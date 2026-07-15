@@ -31,9 +31,11 @@ OpenAI chat-completions dialect, cloud or local.
    Fix problems here, not mid-run.
 4. **Point models at it.** Set the server-wide **system model** (used only for
    setup-time work: the new-routine wizard and workflow generation), and per routine the
-   three roles — **main** (the orchestrator loop), **subroutine** (spawned children),
-   **tool_call** (the `llm` action) — on the routine's page. A role a routine leaves unset
-   falls back to the system model.
+   model roles — **main** (the orchestrator loop), **subroutine** (spawned children),
+   **tool_call** (the `llm` action), and the optional **uncensored** (a refused `llm`
+   tool-call is re-referred here) — on the routine's page. main/subroutine/tool_call fall
+   back to the system model when left unset; **uncensored has no fallback** — leave it unset
+   and the routine never refers (referral is strictly opt-in). See *Refusal referral* below.
 
 ## Adding an endpoint (config file)
 
@@ -159,6 +161,40 @@ The configured **Featherless** endpoint is the closest cloud path:
 
 Set the finished endpoint + model as a routine's `main` model (or the system model) like
 any other — abliterated models are ordinary models to the scheduler.
+
+**Nano-GPT** (`kind: openai`) is the turnkey cloud path today: it serves abliterated models
+directly (e.g. `huihui-ai/DeepSeek-R1-Distill-Llama-70B-abliterated`), so no self-hosting.
+
+```yaml
+endpoints:
+  NanoGPT:
+    kind: openai
+    base_url: https://nano-gpt.com/api/v1
+    key_var: NANO_GPT_API_KEY     # value goes in Settings → Secrets
+    schema_mode: json_schema
+    context_chars: 400000
+```
+
+## Refusal referral (the `uncensored` model role)
+
+A routine may configure a fourth model role, **`uncensored`**, alongside main / subroutine /
+tool_call. When the routine's **tool_call** model (the `llm` action) replies with a *content
+refusal* (it declines the request in free text — "I can't help with that…"), the engine
+re-issues the **same** prompt to the routine's `uncensored` model and returns that answer
+instead, with `referred: true` on the observation.
+
+- **Opt-in and inert by default.** Referral fires ONLY when `models.uncensored` is set — and
+  that role has no system-model fallback, so leaving it blank means "never refer". Every
+  routine that doesn't configure it behaves exactly as before.
+- **Only free-text tool-call replies are considered** — a schema-constrained (`response_schema`)
+  reply is an answer, not a refusal, and is never rerouted. The refusal detector is
+  deliberately conservative (matches a decline only at the head of the reply) to avoid
+  rerouting genuine answers.
+- **Typical wiring:** point `uncensored` at a Nano-GPT abliterated model (above), keep
+  `tool_call` on your normal model. Requests the normal model refuses get answered by the
+  abliterated one; everything else stays on the normal model.
+- Scope today is the `llm` tool-call only (not the main orchestrator loop or subroutine
+  loops, where a refusal has no clean free-text signal).
 
 ## Troubleshooting
 

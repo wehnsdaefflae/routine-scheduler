@@ -191,9 +191,10 @@ export async function render(view, slug, query = {}) {
           catch (err) { toast(err.message, 4000, { error: true }); }
         } }, "save budgets"))));
 
-  // -- models (per routine: main / subroutine / tool_call) -----------------------
+  // -- models (per routine: main / subroutine / tool_call / uncensored) ----------
   const MODEL_KINDS = [["main", "the orchestrator loop"], ["subroutine", "spawned sub-workflows"],
-                       ["tool_call", "the llm action"]];
+                       ["tool_call", "the llm action"],
+                       ["uncensored", "a refused llm call is referred here (opt-in)"]];
   const endpointNames = d.endpoints || [];
   const sysM = d.system_model;
   const modelInputs = {};

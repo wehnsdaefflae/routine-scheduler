@@ -387,27 +387,81 @@ def do_memory_write(action: dict, ctx: RunContext) -> dict:
             "lines": len(data.splitlines())}
 
 
+# Openers a content refusal almost always leads with. Kept conservative and matched only
+# against the HEAD of a free-text reply (see _looks_like_refusal) so a genuine answer that
+# merely mentions a caveat deep in its body is never misread as a refusal.
+_REFUSAL_MARKERS = (
+    "i can't help with that", "i cannot help with that",
+    "i can't assist with that", "i cannot assist with that",
+    "i can't help you with that", "i cannot help you with that",
+    "i'm unable to help with that", "i am unable to help with that",
+    "i'm not able to help with that", "i am not able to help with that",
+    "i can't provide", "i cannot provide",
+    "i can't comply with", "i cannot comply with",
+    "i can't fulfill", "i cannot fulfill", "i can't fulfil", "i cannot fulfil",
+    "i can't create", "i cannot create",
+    "i'm sorry, but i can't", "i'm sorry, but i cannot",
+    "i'm sorry, i can't", "i'm sorry, i cannot",
+    "i won't be able to help with that", "i must decline",
+    "it goes against my guidelines", "against my programming",
+)
+
+
+def _looks_like_refusal(text: str) -> bool:
+    """Heuristic: does a free-text tool-call reply read as a content refusal rather than an
+    answer? Conservative on purpose — only a marker in the reply's HEAD (first ~200 chars)
+    counts, since real refusals open with the decline; this trades recall for precision so we
+    don't reroute genuine answers to the uncensored model."""
+    head = (text or "").strip().lower()[:200]
+    return bool(head) and any(m in head for m in _REFUSAL_MARKERS)
+
+
 def do_llm(action: dict, ctx: RunContext) -> dict:
+    messages = []
+    if action.get("system"):
+        messages.append({"role": "system", "content": action["system"]})
+    messages.append({"role": "user", "content": action["prompt"]})
+    schema = action.get("response_schema")
+    purpose = ("llm · " + str(action.get("say") or "sub-call"))[:80]
     try:
         endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models)
-        messages = []
-        if action.get("system"):
-            messages.append({"role": "system", "content": action["system"]})
-        messages.append({"role": "user", "content": action["prompt"]})
-        completion = endpoint.complete(
-            messages, model=ref.model, schema=action.get("response_schema"),
-            effort=ref.effort, max_tokens=16_384,
-            purpose=("llm · " + str(action.get("say") or "sub-call"))[:80], kind="llm_action",
-        )
+        completion = endpoint.complete(messages, model=ref.model, schema=schema,
+                                       effort=ref.effort, max_tokens=16_384,
+                                       purpose=purpose, kind="llm_action")
     except EndpointError as exc:
         return {"kind": "llm", "error": str(exc)}
     ctx.add_usage(completion.usage)
+
+    # Refusal referral (opt-in): the tool-call model declined a free-text request and the
+    # routine configured an `uncensored` model — re-issue the SAME prompt to it. Only
+    # free-text replies (parsed is None) are considered; a schema'd/structured reply is an
+    # answer, not a refusal. Referral is silent for routines that leave the role unset.
+    endpoint_name, model_name, referred = ref.endpoint, ref.model, False
+    if completion.parsed is None and _looks_like_refusal(completion.text):
+        target = ctx.registry.for_uncensored(ctx.routine.models)
+        if target is not None:
+            u_endpoint, u_ref = target
+            try:
+                u_completion = u_endpoint.complete(messages, model=u_ref.model, schema=schema,
+                                                   effort=u_ref.effort, max_tokens=16_384,
+                                                   purpose=(purpose + " · referred")[:80],
+                                                   kind="llm_action")
+            except EndpointError:
+                u_completion = None
+            if u_completion is not None:
+                ctx.add_usage(u_completion.usage)
+                completion, referred = u_completion, True
+                endpoint_name, model_name = u_ref.endpoint, u_ref.model
+
     reply = completion.text
     if completion.parsed is not None:
         reply = json.dumps(completion.parsed, ensure_ascii=False, indent=1)
     reply, truncated = truncate(reply)
-    return {"kind": "llm", "endpoint": ref.endpoint, "model": ref.model,
-            "reply": reply, "usage": completion.usage, "truncated": truncated}
+    out = {"kind": "llm", "endpoint": endpoint_name, "model": model_name,
+           "reply": reply, "usage": completion.usage, "truncated": truncated}
+    if referred:
+        out["referred"] = True
+    return out
 
 
 DISPATCH = {

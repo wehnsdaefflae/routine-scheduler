@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.20.0] — 2026-07-15
+
+### Added
+- **Optional `uncensored` model role + refusal referral for the `llm` tool-call.** A routine
+  can now assign a fourth model role — **`uncensored`** — alongside main/subroutine/tool_call
+  (`MODEL_KINDS`, the per-routine model editor in `routine.js`, `docs/endpoints.md`). When the
+  routine's `tool_call` model answers a **free-text** `llm` action with a content refusal
+  ("I can't help with that…"), the engine re-issues the **same** prompt to the `uncensored`
+  model and returns that answer with `referred: true` on the observation. Strictly **opt-in
+  and inert by default**: the `uncensored` role has **no system-model fallback**, so any
+  routine that leaves it unset behaves exactly as before. Only free-text replies are
+  considered — a schema-constrained (`response_schema`) reply is an answer, never a refusal —
+  and the refusal detector (`executor._looks_like_refusal`) matches a decline only at the
+  head of the reply, trading recall for precision so genuine answers are not rerouted. Scope
+  today is the `llm` tool-call only (the orchestrator/subroutine loops have no clean
+  free-text refusal signal). `docs/endpoints.md` gains a turnkey **Nano-GPT** (`kind: openai`,
+  `base_url: https://nano-gpt.com/api/v1`) endpoint example that serves abliterated models
+  directly. (AUDIT note.)
+
 ## [0.19.0] — 2026-07-15
 
 ### Fixed

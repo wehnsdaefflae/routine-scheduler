@@ -172,6 +172,19 @@ def test_routine_bad_values_reported_and_defaulted(tmp_path):
     assert not any("missing" in p for p in problems)
 
 
+def test_routine_accepts_uncensored_model_role(tmp_path):
+    from rsched.config import MODEL_KINDS
+    assert "uncensored" in MODEL_KINDS      # the optional 4th role
+    d = _mk_routine(tmp_path, {
+        "description": "Has an uncensored referral target.",
+        "models": {"tool_call": {"endpoint": "e", "model": "m"},
+                   "uncensored": {"endpoint": "e", "model": "abliterated"}},
+    })
+    cfg, problems = load_routine(d)
+    assert not any("uncensored" in p for p in problems)
+    assert cfg.models["uncensored"].model == "abliterated"
+
+
 def test_routine_structural_problems(tmp_path):
     d = _mk_routine(tmp_path, {"slug": "Wrong_Name", "description": "x"}, files=False)
     cfg, problems = load_routine(d)
