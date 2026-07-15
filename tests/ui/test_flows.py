@@ -213,6 +213,43 @@ def test_conversation_composer(ui, ui_page):
     assert "gym" in messages[0].read_text(encoding="utf-8")
 
 
+def test_conversation_slash_commands(ui, ui_page):
+    """The chat composer's command surface: the reference panel lists actions + utils,
+    typing / opens autocomplete, accepting fills the input, and a sent command is flagged
+    for engine execution instead of going to the model as prose."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill("Command playground.")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    slug = ui_page.url.rsplit("/", 1)[-1]
+
+    # the reference panel next to the input
+    ui_page.get_by_role("button", name="/ commands").click()
+    help_panel = ui_page.locator(".cmd-help")
+    expect(help_panel).to_be_visible()
+    expect(help_panel).to_contain_text("/read_file <path>")
+    expect(help_panel).to_contain_text("dir-tree")          # a seed util made the list
+
+    # autocomplete on "/": filter, click to accept, util names complete after "/util "
+    composer_input = ui_page.locator(".conv-composer textarea")
+    composer_input.fill("/re")
+    suggest = ui_page.locator(".cmd-suggest")
+    expect(suggest).to_be_visible()
+    suggest.locator(".cs-item", has_text="/read_file").click()
+    expect(composer_input).to_have_value("/read_file ")
+    composer_input.fill("/util dir")
+    expect(suggest.locator(".cs-item", has_text="/util dir-tree")).to_be_visible()
+
+    # a sent command is marked for the engine to EXECUTE
+    composer_input.fill("/read_file instruction.md")
+    ui_page.locator(".conv-composer").get_by_role("button", name="send", exact=True).click()
+    expect(_toast(ui_page)).to_be_visible()
+    flagged = [json.loads(m.read_text(encoding="utf-8"))
+               for m in (ui.conversations / slug / "inbox").glob("msg-*.json")]
+    command = next(d for d in flagged if d.get("command"))
+    assert command["text"] == "/read_file instruction.md"
+
+
 # ---- 3. Routine page saves ---------------------------------------------------------------
 
 

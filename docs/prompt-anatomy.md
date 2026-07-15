@@ -129,6 +129,7 @@ The **util reminder** — `[tools: the CAPABILITIES catalog lists the global uti
 ### 3c · Between-turn feed messages (separate user messages)
 
 - `USER MESSAGE (injected mid-run):\n<text>`
+- `USER COMMAND (the user executed this action directly):\n/<kind> …\nOBSERVATION (…)` — a chat slash command the ENGINE executed at the turn boundary (no model turn); the observation (or `COMMAND ERROR: <usage>` for a malformed/disallowed one) rides the same message so the model knows exactly what the user did
 - `SUB-WORKFLOW FINISHED — #1 'child' (workflow general-task, status ok, 12 turns):\n<summary, capped 4k>` (a parallel `spawn` child); a SEQUENTIAL subtask's is `SUBTASK FINISHED — #N … Fold this result into your next subtask's brief, or finish:\n<summary>` — the "child finished" hook that keeps the run responsive while children run
 - `ENGINE NOTE: model switched mid-run: main → <endpoint>/<model>. Continue the run on the new model.`
 

@@ -1241,6 +1241,58 @@ def test_assistant_actions_carry_the_active_phase(make_routine, scripted):
     assert acts[2]["phase"] == "only"
 
 
+def test_user_command_executes_without_a_model_turn(make_routine, scripted):
+    """A slash command queued while no run was live EXECUTES at boot: the observation
+    lands in the transcript (the chat renders it) AND in the model's context, and no
+    model turn is consumed — the user ran the action, not the model."""
+    d = make_routine(slug="cmdr")
+    atomic_write_json(d / "inbox" / "msg-1.json",
+                      {"text": "/read_file LEDGER.md", "command": True, "ts": "t"})
+    ep = scripted([probe(), finish()])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    injection = next(e for e in events if e["type"] == "user_injection")
+    assert injection["payload"]["command"] is True
+    obs = next(e for e in events if e["type"] == "observation"
+               and (e.get("payload") or {}).get("user_command"))
+    assert obs["payload"]["kind"] == "read_file"
+    # the model sees command + result as ONE user message; no extra model turn happened
+    cmd_msg = next(m for m in ep.calls[0]["messages"] if "USER COMMAND" in m.get("content", ""))
+    assert "/read_file LEDGER.md" in cmd_msg["content"]
+    assert "routine created for tests" in cmd_msg["content"]   # the LEDGER content came back
+    assert len([e for e in events if e["type"] == "assistant_action"]) == 2
+
+
+def test_user_command_rides_the_same_enforcement_as_model_actions(make_routine, scripted):
+    """A command outside the workflow's tools allowlist fails CLOSED with a teaching
+    observation — the exact validate_action path a model action gets. An unknown command
+    teaches its vocabulary the same way."""
+    d = make_routine(slug="cmdg", workflow_md="""---
+materialized_from: {slug: test-flow, commit: abc123, version: 1}
+tools: [read_file, write_file]
+---
+
+## Run flow
+1. Do the minimal thing, then finish.
+""")
+    atomic_write_json(d / "inbox" / "msg-1.json",
+                      {"text": "/llm say hi", "command": True, "ts": "t1"})
+    atomic_write_json(d / "inbox" / "msg-2.json",
+                      {"text": "/spawn a child", "command": True, "ts": "t2"})
+    ep = scripted([probe(), finish()])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    errors = [e["payload"] for e in events if e["type"] == "observation"
+              and (e.get("payload") or {}).get("user_command")]
+    assert len(errors) == 2 and all(p.get("error") for p in errors)
+    cmd_msgs = [m["content"] for m in ep.calls[0]["messages"]
+                if "USER COMMAND" in m.get("content", "")]
+    assert any("COMMAND ERROR" in m and "/llm say hi" in m for m in cmd_msgs)
+    assert any("unknown command /spawn" in m for m in cmd_msgs)
+
+
 def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):
     """Every finished run — and every finished sub-workflow — appends one line to
     .control/workflow-usage.jsonl, the meta-workflows routine's evidence stream."""

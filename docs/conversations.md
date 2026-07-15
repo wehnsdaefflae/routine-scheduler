@@ -82,6 +82,33 @@ it's attached automatically.
   for another look.)
 - **Spreadsheets and other binaries** are handled by a fitting util.
 
+## Slash commands — run actions yourself
+
+You can run the SAME effect actions and global utils the assistant uses, straight from the
+message box. Type `/` and the composer autocompletes; the **/ commands** button next to the
+input opens the full reference (the actions your conversation's capabilities allow, plus
+every global util with its usage line).
+
+```
+/util websearch "rust web frameworks" --json
+/read_file notes/draft.md
+/write_file notes/todo.md - call the bank
+/edit_file notes/todo.md anchor="call the bank" replacement="called ✓"
+/view_image shots/screen.png what changed here?
+/llm summarize the pasted text in two lines
+/memory_read env-quirks
+/memory_write env-quirks about="server quirks" the NAS mounts read-only after backup
+```
+
+A command executes through the engine's normal action path — the same capability
+enforcement, the same working-directory rules — at the next turn boundary (immediately if
+a reply is live, at wake-up otherwise). It costs **no model turn**: the result appears in
+the chat as a command block, and the assistant sees exactly what you ran and what came
+back, so you can hand work off mid-thought ("I already fetched it — take it from there").
+A malformed or disallowed command answers with its usage line instead of failing silently.
+Loop-control actions (`spawn`, `subtask`, `wait`, `ask_user`, `finish`, …) are deliberately
+not commands — they steer the assistant's run; ask for them in plain words.
+
 ## Artifacts — deliverables in the side panel
 
 When the agent produces something that's more than a chat answer — a report, a generated page, a

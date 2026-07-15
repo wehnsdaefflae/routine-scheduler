@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.45.0] — 2026-07-16
+
+### Added
+- **Chat slash commands — the user can run the same actions and utils as the assistant.**
+  Type `/` in the conversation composer for autocomplete (kinds first, util names after
+  `/util `); the **/ commands** button beside the input opens the full reference — the
+  effect actions the conversation's capabilities allow plus every global util with its
+  usage line (`GET /api/conversations/{slug}/commands`). A sent command executes through
+  the engine's normal action path (`engine/commands.py` parse → the model action's exact
+  schema + `validate_action` gates → `executor.dispatch`) at the next turn boundary —
+  costing **no model turn**. The result renders in the chat as a command block, and the
+  assistant sees exactly what the user ran and what came back; malformed or disallowed
+  commands answer with their usage line. Grammar:
+  `/util <name> [arg …]`, `/read_file <path> [path …]`, `/write_file <path> <content…>`,
+  `/edit_file <path> anchor="…" replacement="…"`, `/view_image <path> [prompt…]`,
+  `/llm <prompt…>`, `/memory_read <name>`, `/memory_write <name> about="…" <content…>`.
+  Loop-control actions (`spawn`, `subtask`, `wait`, `ask_user`, `finish`, …) are
+  deliberately not commands — they steer the assistant's run.
+
 ## [0.44.0] — 2026-07-16
 
 ### Added

@@ -167,11 +167,31 @@ async def create_conversation(request: Request, text: Annotated[str, Form()] = "
     return {"slug": slug, "run_id": rid}
 
 
+@router.get("/conversations/{slug}/commands")
+def commands(request: Request, slug: str) -> dict:
+    """The chat composer's command reference + autocomplete feed: the slash-command kinds
+    this conversation's capability surface allows (the engine still enforces exactly at
+    execution) and the util catalog (name + summary + usage).
+    """
+    from .. import utils_lib
+    from ..engine.commands import command_catalog
+    from ..grants import load_policy
+
+    info = conversation_info(request, slug)
+    server = request.app.state.server
+    policy = load_policy(server.permissions_home, info.cfg.permissions,
+                         info.cfg.capabilities)
+    return command_catalog(policy, utils_lib.list_utils(server.utils_home))
+
+
 @router.post("/conversations/{slug}/message")
 async def message(request: Request, slug: str, text: Annotated[str, Form()],
+                  command: Annotated[str, Form()] = "",
                   files: Annotated[list[UploadFile] | None, File()] = None) -> dict:
     """Append a user message (with optional attachments): a live reply picks it up at the
-    next turn boundary; a finished conversation is resumed in place.
+    next turn boundary; a finished conversation is resumed in place. `command` marks a
+    slash command — the engine EXECUTES it as a user-authored action instead of handing
+    it to the model as prose.
     """
     info = conversation_info(request, slug)
     if not text.strip():
@@ -181,6 +201,7 @@ async def message(request: Request, slug: str, text: Annotated[str, Form()],
     full = text.rstrip() + conv_mod.attachment_note(rels)
     atomic_write_json(conv_dir / "inbox" / f"msg-{now_iso().replace(':', '')}.json",
                       {"text": full, "ts": now_iso(), "via": "conversation",
+                       **({"command": True} if command.strip() else {}),
                        **({"attachments": rels} if rels else {})})
     last = info.last_run
     if last and last.state not in registry.TERMINAL_STATES:

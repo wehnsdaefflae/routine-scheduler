@@ -265,6 +265,13 @@ chat message; the next user message resumes the SAME run in place (fresh budget 
 - Runner: conversation replies draw from a **reserved interactive slot pool** (`INTERACTIVE_SLOTS`,
   3) — cron can't queue a chat reply and vice versa; `engine_cmd` targets `cfg.dir` (a path),
   which `_routine_dir` accepts. Run resolution in `api_runs`/`api_questions` is home-aware.
+- **Slash commands**: the user can run the SAME effect actions/utils the model can, from the chat
+  input (`/util …`, `/read_file …`, … — autocomplete + a reference panel fed by
+  `GET …/commands`). A command-flagged inbox message EXECUTES at the turn boundary via
+  `control.run_user_command` — parse (`engine/commands.py`) → the model action's exact
+  validate_action gates → executor.dispatch — costing NO model turn; the observation lands in the
+  transcript (`user_injection {command}` + `observation {user_command}` payload extensions) and in
+  the model's context as one USER COMMAND message. Loop-control kinds are not commands.
 - Web: `web/api_conversations.py` (create/message are multipart — **attachments** land in
   `<conv>/attachments/` and ride the message text as an `[attached files]` block; vision util for
   images). **Artifacts**: deliverables the model `write_file`s into `<conv>/artifacts/` are

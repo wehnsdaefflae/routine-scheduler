@@ -526,3 +526,23 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .recipe-ta { width: 100%; min-height: 340px; color: var(--text); background: var(--ink-2);
   font-family: var(--mono); font-size: 12px; line-height: 1.55; resize: vertical; }
 .recipe-preview { max-height: 520px; overflow-y: auto; padding: 4px 2px; }
+
+/* ---------- chat slash commands (conversations composer) ---------- */
+.cmd-anchor { position: relative; }
+.cmd-suggest {
+  position: absolute; bottom: calc(100% + 4px); left: 0; right: 0; z-index: 60;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  max-height: 260px; overflow: auto; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+.cmd-suggest .cs-item { display: flex; gap: 10px; padding: 6px 10px; cursor: pointer; font-size: 12px; align-items: baseline; }
+.cmd-suggest .cs-item.on, .cmd-suggest .cs-item:hover { background: rgba(255, 180, 84, 0.08); }
+.cmd-suggest code { color: var(--amber); white-space: nowrap; }
+.cmd-suggest .cs-hint { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-help { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px 10px; margin-bottom: 8px; max-height: 300px; overflow: auto; }
+.cmd-help .cmd-cap { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 8px 0 4px; }
+.cmd-help .cmd-row { display: flex; gap: 10px; padding: 2px 0; font-size: 12px; align-items: baseline; }
+.cmd-help code { color: var(--amber); white-space: nowrap; }
+.msg.user.cmd .msg-body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.ev.cmd-result { border-left: 2px solid var(--line); padding-left: 10px; margin: 6px 0 10px; }
+.ev.cmd-result pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 320px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ev.cmd-result.err pre { color: var(--err); }

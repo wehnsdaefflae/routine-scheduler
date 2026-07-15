@@ -10,7 +10,7 @@ from ..paths import read_json
 from ..statemap import current_phase
 from . import executor, inbox
 from .composer import build_system_prompt, kickoff_message, state_digest
-from .control import inject_user_message
+from .control import inject_user_message, run_user_command
 from .history import orphaned_children, prior_usage, replay_messages
 
 
@@ -28,8 +28,11 @@ def boot(loop) -> None:
     if phase := current_phase(ctx.routine.dir):
         ctx.phase = phase
     resuming = loop.resume and ctx.depth == 0
+    # slash commands queued while no run was live EXECUTE at boot (below) — only prose
+    # messages become the prompt's MESSAGES section
     system = build_system_prompt(ctx, loop.workflow_body, loop.instruction, digest,
-                                 [] if resuming else [m["text"] for m in msgs],
+                                 [] if resuming
+                                 else [m["text"] for m in msgs if not m.get("command")],
                                  allowed_kinds=loop.allowed_tools)
     if resuming:
         from .transcript import read_events
@@ -94,6 +97,9 @@ def boot(loop) -> None:
         kickoff = {"role": "user", "content": kickoff_message(ctx) + loop.util_reminder}
         attach_first_message_media(loop, kickoff)  # conversation: images the user attached
         loop.messages = [{"role": "system", "content": system}, kickoff]
+        for m in msgs:               # commands queued while idle execute now, after kickoff
+            if m.get("command"):
+                run_user_command(loop, m)
     ctx.write_status("running")
 
 

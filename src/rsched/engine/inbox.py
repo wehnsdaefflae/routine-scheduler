@@ -29,8 +29,9 @@ def _consume(path: Path, consumed_dir: Path) -> None:
 
 def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
     """Injected user messages, oldest first; answer-* files are left alone. Each item is
-    {"text": str, "attachments": [rel, ...]} — the attachments (recorded by the web layer for
-    a conversation message) drive auto-attach of images/PDFs to the injected message.
+    {"text": str, "attachments": [rel, ...], "command": bool} — attachments (recorded by
+    the web layer for a conversation message) drive auto-attach of images/PDFs; `command`
+    marks a slash command the engine EXECUTES instead of injecting as prose.
     """
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
@@ -41,7 +42,8 @@ def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
         obj = read_json(path)
         if isinstance(obj, dict) and obj.get("text"):
             out.append({"text": str(obj["text"]),
-                        "attachments": [str(a) for a in (obj.get("attachments") or [])]})
+                        "attachments": [str(a) for a in (obj.get("attachments") or [])],
+                        **({"command": True} if obj.get("command") else {})})
         else:
             try:
                 text = path.read_text(encoding="utf-8").strip()

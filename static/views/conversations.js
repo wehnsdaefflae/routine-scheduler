@@ -411,10 +411,74 @@ export async function render(view, slug, _query = {}) {
     }));
 
     function buildComposer() {
-      const input = el("textarea", { rows: 2, placeholder: "message…" });
+      const input = el("textarea", { rows: 2, placeholder: "message…  ( / for commands )" });
       const { picker, files, clearFiles, wirePaste } = filePicker();
       wirePaste(input);
       const send = el("button", { class: "btn primary" }, "send");
+
+      // ---- slash commands: the user runs the SAME actions/utils the assistant can ----
+      let catalog = null;
+      const loadCatalog = async () => {
+        if (!catalog) {
+          catalog = await api(`/api/conversations/${slug}/commands`)
+            .catch(() => ({ kinds: [], utils: [] }));
+        }
+        return catalog;
+      };
+      // autocomplete dropdown, anchored above the input
+      const suggests = el("div", { class: "cmd-suggest", hidden: true });
+      let items = [];
+      let selIdx = 0;
+      function paintSuggest() {
+        suggests.replaceChildren(...items.map((it, i) => el("div",
+          { class: `cs-item${i === selIdx ? " on" : ""}`,
+            onclick: () => { acceptSuggest(i); } },
+          el("code", {}, it.label), el("span", { class: "cs-hint" }, it.hint || ""))));
+        suggests.hidden = !items.length;
+      }
+      function acceptSuggest(i = selIdx) {
+        input.value = items[i].insert;
+        items = [];
+        paintSuggest();
+        input.focus();
+        updateSuggest();
+      }
+      async function updateSuggest() {
+        const v = input.value;
+        if (!v.startsWith("/") || v.includes("\n")) { items = []; paintSuggest(); return; }
+        await loadCatalog();
+        const utilArg = v.match(/^\/util\s+(\S*)$/);
+        if (utilArg) {
+          items = catalog.utils.filter((u) => u.name.startsWith(utilArg[1]))
+            .slice(0, 10).map((u) => ({ label: `/util ${u.name}`, hint: u.summary,
+                                        insert: `/util ${u.name} ` }));
+        } else if (!v.includes(" ")) {
+          items = catalog.kinds.filter((k) => k.kind.startsWith(v.slice(1)))
+            .map((k) => ({ label: k.usage, hint: k.summary, insert: `/${k.kind} ` }));
+        } else items = [];
+        selIdx = 0;
+        paintSuggest();
+      }
+      input.addEventListener("input", () => { updateSuggest(); });
+      // help panel: the full command + util reference, next to the input
+      const helpPanel = el("div", { class: "cmd-help", hidden: true });
+      const helpBtn = el("button", { class: "btn small ghost",
+        title: "slash commands — run the same actions and utils the assistant uses" },
+        "/ commands");
+      helpBtn.onclick = async () => {
+        if (helpPanel.hidden) {
+          await loadCatalog();
+          const row = (usage, summary) => el("div", { class: "cmd-row" },
+            el("code", {}, usage), el("span", { class: "muted small" }, summary));
+          helpPanel.replaceChildren(
+            el("div", { class: "cmd-cap" },
+              "actions — type / in the message box to autocomplete; the result shows here and the assistant sees it too"),
+            ...catalog.kinds.map((k) => row(k.usage, k.summary)),
+            el("div", { class: "cmd-cap" }, `global utils — /util <name> [args]`),
+            ...catalog.utils.map((u) => row(u.usage || `/util ${u.name}`, u.summary)));
+        }
+        helpPanel.hidden = !helpPanel.hidden;
+      };
       // Save this conversation as a reusable playbook (the save-instruction analog); when it was
       // itself seeded from a playbook, also offer to fold these deltas back into that playbook.
       const savePb = el("button", { class: "btn small ghost",
@@ -455,14 +519,20 @@ export async function render(view, slug, _query = {}) {
         try { await api(`/api/runs/${detail.run_id}/abort`, { method: "POST" }); toast("stopping the reply…"); }
         catch (err) { toast(err.message, 4000, { error: true }); stopBtn.disabled = false; }
       };
-      const node = el("div", { class: "conv-composer" }, input,
-        el("div", { class: "row", style: "gap:8px" }, picker, send, stopBtn), pbRow);
+      const node = el("div", { class: "conv-composer" }, helpPanel,
+        el("div", { class: "cmd-anchor" }, suggests, input),
+        el("div", { class: "row", style: "gap:8px" }, picker, helpBtn, send, stopBtn), pbRow);
       const submit = async () => {
         if (!input.value.trim()) return;
         send.disabled = true;
         try {
           const fd = new FormData();
           fd.append("text", input.value);
+          // a known /<kind> head marks the message as a COMMAND the engine executes
+          const head = input.value.trimStart().match(/^\/([a-z_]+)/);
+          if (head && (await loadCatalog()).kinds.some((k) => k.kind === head[1])) {
+            fd.append("command", "1");
+          }
           for (const f of files()) fd.append("files", f);
           const r = await apiUpload(`/api/conversations/${slug}/message`, fd);
           input.value = "";
@@ -475,6 +545,12 @@ export async function render(view, slug, _query = {}) {
       };
       send.onclick = submit;
       input.onkeydown = (e) => {
+        if (!suggests.hidden) {           // the dropdown owns the keys while it is open
+          if (e.key === "ArrowDown") { e.preventDefault(); selIdx = Math.min(items.length - 1, selIdx + 1); paintSuggest(); return; }
+          if (e.key === "ArrowUp") { e.preventDefault(); selIdx = Math.max(0, selIdx - 1); paintSuggest(); return; }
+          if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); acceptSuggest(); return; }
+          if (e.key === "Escape") { items = []; paintSuggest(); return; }
+        }
         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
       };
       return { node, setLive: (live) => { stopBtn.hidden = !live; if (live) stopBtn.disabled = false; } };

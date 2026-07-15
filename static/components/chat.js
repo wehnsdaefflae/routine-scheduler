@@ -81,6 +81,32 @@ export function createChat(container, opts = {}) {
     return node;
   }
 
+  // One visible block per executed user command — compact per-kind rendering of the
+  // observation payload (the transcript keeps the full record).
+  function commandResult(p) {
+    let body;
+    if (p.error) body = `✕ ${p.error}`;
+    else if (p.kind === "util") {
+      body = (p.stdout || "(no stdout)") + (p.stderr ? `\n[stderr]\n${p.stderr}` : "");
+      if (p.listing != null) body = p.listing;
+      if (p.source != null) body = p.source;
+    } else if (p.kind === "read_file") {
+      body = p.files
+        ? p.files.map((f) => `--- ${f.path}\n${f.error || f.content || ""}`).join("\n\n")
+        : (p.content ?? "");
+    } else if (p.kind === "view_image") {
+      body = (p.files || []).map((f) => f.error ? `${f.path}: ${f.error}`
+        : f.text ? `${f.path}:\n${f.text}` : `${f.path} — attached for the assistant`).join("\n\n");
+    } else if (p.kind === "write_file") body = `wrote ${p.bytes} bytes to ${p.path}`;
+    else if (p.kind === "edit_file") body = `replaced ${p.replacements} occurrence(s) in ${p.path}`;
+    else if (p.kind === "llm") body = p.reply || "";
+    else if (p.kind === "memory_read") body = p.missing ? `no note ${p.name}` : (p.content || "");
+    else if (p.kind === "memory_write") body = `note ${p.name}.md ${p.deleted ? "deleted" : p.created ? "created" : "revised"}`;
+    else body = JSON.stringify(p, null, 1);
+    return el("div", { class: `ev cmd-result${p.error ? " err" : ""}` },
+      el("pre", {}, String(body)));
+  }
+
   function questionInline(ev) {
     const p = ev.payload;
     const head = el("div", { class: "msg-body" }, "❓ ", mdInline(p.question || ""),
@@ -105,6 +131,11 @@ export function createChat(container, opts = {}) {
           if (p.source === "engine") {
             closeFold("ok");
             root.append(el("div", { class: "ev system" }, `— ${p.text} —`));
+          } else if (p.command) {
+            // a slash command the user executed directly — mono bubble, result follows
+            closeFold("ok");
+            root.append(el("div", { class: "msg user cmd" },
+              el("div", { class: "msg-body" }, p.text || "")));
           } else {
             closeFold("ok");
             lastUser = (p.text || "").replace(ATTACH_BLOCK, "").trim();
@@ -130,6 +161,11 @@ export function createChat(container, opts = {}) {
           if ((p.kind === "write_file" || p.kind === "edit_file") && !p.error
               && String(p.path || "").includes("artifacts/") && opts.onArtifact) {
             opts.onArtifact(p.path);
+          }
+          if (p.user_command) {         // the user asked for this result — show it, don't fold it
+            closeFold("ok");
+            root.append(commandResult(p));
+            return;
           }
           if (fold) fold.transcript.add(ev);
           return;

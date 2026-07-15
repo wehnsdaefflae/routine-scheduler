@@ -538,3 +538,27 @@ def test_autolabel_rewrites_config_atomically(server, monkeypatch):
     untouched = {k: v for k, v in before.items() if k not in ("name", "description", "tags")}
     assert {k: raw[k] for k in untouched} == untouched       # the rest of the config survives
     assert not list(d.glob("*.tmp"))                         # tmp file was renamed, not left
+
+
+def test_commands_catalog_and_command_flagged_message(client):
+    """The chat composer's slash-command surface: /commands serves the capability-filtered
+    kinds + util catalog, and a command-flagged message lands in the inbox with the flag
+    the engine executes on."""
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "hi there"}).json()["slug"]
+
+    catalog = c.get(f"/api/conversations/{slug}/commands").json()
+    kinds = {k["kind"] for k in catalog["kinds"]}
+    assert {"util", "read_file", "write_file", "llm"} <= kinds
+    assert all(k["usage"].startswith("/") for k in catalog["kinds"])
+    # conversations hold the memory permission by default → memory commands offered
+    assert "memory_read" in kinds
+
+    r = c.post(f"/api/conversations/{slug}/message",
+               data={"text": "/read_file instruction.md", "command": "1"})
+    assert r.status_code == 200
+    from rsched.paths import read_json as _rj
+    msgs = sorted((server.conversations_home / slug / "inbox").glob("msg-*.json"))
+    flagged = [m for m in msgs if (_rj(m) or {}).get("command")]
+    assert len(flagged) == 1
+    assert _rj(flagged[0])["text"] == "/read_file instruction.md"

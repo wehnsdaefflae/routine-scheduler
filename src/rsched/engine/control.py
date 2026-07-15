@@ -11,8 +11,11 @@ from __future__ import annotations
 import time
 
 from ..paths import read_json
+from ..schema_guard import validate
 from . import executor, inbox
-from .observations import truncate
+from .actions import ACTION_SCHEMA, validate_action
+from .commands import CommandError, parse_command
+from .observations import format_observation, truncate
 
 _ABORT = {"flag": False}
 
@@ -77,14 +80,53 @@ def apply_model_switch(loop) -> None:
 def inject_user_message(loop, m: dict) -> None:
     """Append ONE inbox message to the conversation as a visible mid-run injection,
     auto-attaching image/PDF media the main endpoint can show — the single place the
-    injected-message shape is built (turn-boundary drain and boot-drain alike).
+    injected-message shape is built (turn-boundary drain and boot-drain alike). A
+    message flagged `command` is not prose for the model: it is a user-authored ACTION
+    and executes instead.
     """
+    if m.get("command"):
+        run_user_command(loop, m)
+        return
     ctx = loop.ctx
     ctx.transcript.event("user_injection", {"text": m["text"]})
     msg: dict = {"role": "user", "content": f"USER MESSAGE (injected mid-run):\n{m['text']}"}
     if m.get("attachments") and (media := executor.media_from_paths(ctx, m["attachments"])):
         msg["media"] = media
     loop.messages.append(msg)
+
+
+def run_user_command(loop, m: dict) -> None:
+    """Execute ONE user-authored action (a chat slash command) at the turn boundary —
+    the model action's exact path (parse → schema validate → validate_action against the
+    same workflow tools ∩ capabilities → executor.dispatch) minus the model, so it costs
+    no turn. The observation lands in the transcript (the chat renders it) AND in the
+    message list (the assistant sees exactly what the user did); a parse/validation/
+    dispatch failure becomes a teaching observation instead of killing the run.
+    """
+    ctx = loop.ctx
+    text = str(m.get("text") or "")
+    ctx.transcript.event("user_injection", {"text": text, "command": True})
+    try:
+        action = parse_command(text)
+        problems = (validate(action, ACTION_SCHEMA)
+                    or validate_action(action, allowed_kinds=loop.allowed_tools,
+                                       grants=loop.grants))
+        if problems:
+            raise CommandError("; ".join(problems))
+        obs = executor.dispatch(action, ctx)
+    except CommandError as exc:
+        obs = {"kind": "user_command", "error": str(exc)}
+    except Exception as exc:  # a failing command must never kill the run
+        obs = {"kind": "user_command", "error": f"command failed: {exc}"}
+    ctx.transcript.event("observation", {**obs, "user_command": True})
+    rendered = (f"COMMAND ERROR: {obs['error']}" if obs.get("kind") == "user_command"
+                else format_observation(obs))
+    msg: dict = {"role": "user", "content":
+                 f"USER COMMAND (the user executed this action directly):\n{text}\n{rendered}"}
+    if obs.get("media"):  # a /view_image the model can show natively
+        msg["media"] = obs["media"]
+    loop.messages.append(msg)
+    ctx.write_status()
 
 
 def drain_injections(loop) -> None:
