@@ -354,11 +354,15 @@ def _put_doc(request: Request, slug: str, filename: str, content: str) -> dict:
 
 
 @router.post("/routines/{slug}/recompile")
-async def recompile(request: Request, slug: str) -> dict:
+async def recompile(request: Request, slug: str, force: bool = False) -> dict:
     """Re-derive main.md + steps/ from the CURRENT instruction (the seed) × the routine's workflow —
     the slow decompose runs in the BACKGROUND (state/recompile.json: building | done | error, plus a
     bus event), mirroring the new-routine wizard. The slug is RESERVED so no scheduled run fires
-    mid-recompile. 400 if there's no source workflow to re-derive from; 409 if the routine is busy."""
+    mid-recompile. 400 if there's no source workflow to re-derive from; 409 if the routine is busy.
+
+    By default recompile REFUSES when the routine's step modules have hand-edits not reflected in the
+    seed (it would silently discard them — recorded as state=error, reason=steps_drift); pass
+    ?force=true to overwrite them (a backup is kept under state/recompile-backups/)."""
     info = _info(request, slug)
     _guard_not_active(request, info)
     server = _state(request).server
@@ -379,15 +383,15 @@ async def recompile(request: Request, slug: str) -> dict:
                       {"state": "building", "started": now_iso()})
     if (c := getattr(request.app.state, "llm_tasks", None)) is not None:
         c.open_process(f"recompile:{slug}", kind="recompile", label=f"Recompile {slug}")
-    asyncio.create_task(_run_recompile(request.app.state, info.cfg.dir, slug))
+    asyncio.create_task(_run_recompile(request.app.state, info.cfg.dir, slug, force))
     return {"recompiling": True, "slug": slug}
 
 
-async def _run_recompile(app_state, routine_dir: Path, slug: str) -> None:
+async def _run_recompile(app_state, routine_dir: Path, slug: str, force: bool = False) -> None:
     """Background: run the (blocking) recompile off the loop, record the outcome to
     state/recompile.json + a bus event, and ALWAYS release the reservation."""
     from ..config import load_routine
-    from ..workflows.recompile import recompile_routine
+    from ..workflows.recompile import RecompileDriftError, recompile_routine
 
     server, bus, runner = app_state.server, app_state.bus, app_state.runner
     center = getattr(app_state, "llm_tasks", None)
@@ -397,10 +401,15 @@ async def _run_recompile(app_state, routine_dir: Path, slug: str) -> None:
         if cfg is None:
             raise RuntimeError("routine config is invalid")
         with process_scope(f"recompile:{slug}"):   # the decompose call attaches to this process
-            summary = await asyncio.to_thread(recompile_routine, server, routine_dir, cfg)
+            summary = await asyncio.to_thread(recompile_routine, server, routine_dir, cfg, force=force)
         await asyncio.to_thread(_git_commit, routine_dir, "recompile main.md + steps from the seed")
         atomic_write_json(status_path, {"state": "done", "finished": now_iso(), **summary})
         bus.publish({"event": "routine_recompiled", "slug": slug, **summary})
+    except RecompileDriftError as exc:  # refused: hand-edits would be lost — offer force to the UI
+        atomic_write_json(status_path, {"state": "error", "finished": now_iso(),
+                                        "reason": "steps_drift", "error": str(exc)[:300]})
+        bus.publish({"event": "routine_recompile_failed", "slug": slug,
+                     "reason": "steps_drift", "error": str(exc)[:300]})
     except Exception as exc:  # noqa: BLE001 — any failure leaves the routine's files untouched-enough
         atomic_write_json(status_path, {"state": "error", "finished": now_iso(), "error": str(exc)[:300]})
         bus.publish({"event": "routine_recompile_failed", "slug": slug, "error": str(exc)[:300]})
@@ -420,7 +429,7 @@ def recompile_status(request: Request, slug: str) -> dict:
     if state == "building" and not _state(request).runner.is_busy(slug):
         state = "stale"   # the daemon restarted mid-recompile — never completed
     return {"state": state, "error": st.get("error"),
-            **{k: st[k] for k in ("modules", "removed") if k in st}}
+            **{k: st[k] for k in ("modules", "removed", "reason", "steps_drift", "backup") if k in st}}
 
 
 @router.post("/routines/{slug}/run")

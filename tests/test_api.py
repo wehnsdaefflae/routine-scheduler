@@ -153,7 +153,7 @@ def test_run_recompile_worker_records_done_and_releases(client, monkeypatch):
     d = tmp / "routines" / "apir"
     c.app.state.runner.reserved.add("apir")
     monkeypatch.setattr("rsched.workflows.recompile.recompile_routine",
-                        lambda server, routine_dir, cfg: {"modules": ["x"], "removed": ["old"]})
+                        lambda server, routine_dir, cfg, *, force=False: {"modules": ["x"], "removed": ["old"]})
     asyncio.run(api_routines._run_recompile(c.app.state, d, "apir"))
     st = read_json(d / "state" / "recompile.json")
     assert st["state"] == "done" and st["modules"] == ["x"] and st["removed"] == ["old"]
@@ -171,7 +171,7 @@ def test_run_recompile_worker_records_error_and_releases(client, monkeypatch):
     d = tmp / "routines" / "apir"
     c.app.state.runner.reserved.add("apir")
 
-    def boom(server, routine_dir, cfg):
+    def boom(server, routine_dir, cfg, *, force=False):
         raise RuntimeError("decompose blew up")
     monkeypatch.setattr("rsched.workflows.recompile.recompile_routine", boom)
     asyncio.run(api_routines._run_recompile(c.app.state, d, "apir"))

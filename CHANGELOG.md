@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.23.0] — 2026-07-15
+
+### Fixed
+- **Recompile no longer silently reverts routine hand-edits (the "rematerialization" bug).**
+  `recompile_routine` re-derives a routine's `steps/` from its instruction × workflow; it used to
+  do so unconditionally, discarding any hand-edits (the routine-improver's or a person's) that the
+  routine page's drift banner already reported but the action ignored. This is what kept reverting
+  newsletter-digest's fixes back to the library pattern's design. Recompile now consults
+  `provenance.drift()` first: when the steps have drifted from the compile baseline and the edits
+  are not in the seed, it **refuses** (`RecompileDriftError`; surfaced as `state=error`,
+  `reason=steps_drift`) so nothing is lost silently. Pass `?force=true` to overwrite — and even
+  then the pre-recompile `main.md` + `steps/` are backed up to `state/recompile-backups/<ts>/`
+  first. Routines with no provenance baseline (`tracked=false`) are unaffected — fully backward
+  compatible.
+
 ## [0.22.0] — 2026-07-15
 
 ### Changed

@@ -22,10 +22,39 @@ from .adapt import decompose, dump_markdown
 from .scaffold import _with_practices_tail
 
 
-def recompile_routine(server, routine_dir: Path, cfg) -> dict:
+class RecompileDriftError(ValueError):
+    """Recompile refused because the routine's step modules carry hand-edits (from the
+    routine-improver or a person) that are NOT reflected in its instruction (the seed).
+    Recompiling would silently re-derive the steps from the seed and discard those edits.
+    Caller must fold the edits into instruction.md first, or pass force=True (a backup is kept)."""
+
+
+def _backup_current(routine_dir: Path) -> str:
+    """Copy the routine's current main.md + steps/*.md into state/recompile-backups/<ts>/ so a
+    forced recompile can never irrecoverably lose hand-edits. Returns the backup dir relative to
+    routine_dir."""
+    from datetime import datetime, timezone
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    dest = routine_dir / "state" / "recompile-backups" / ts
+    (dest / "steps").mkdir(parents=True, exist_ok=True)
+    main = routine_dir / "main.md"
+    if main.exists():
+        (dest / "main.md").write_text(main.read_text(encoding="utf-8"), encoding="utf-8")
+    steps_src = routine_dir / "steps"
+    if steps_src.is_dir():
+        for p in sorted(steps_src.glob("*.md")):
+            (dest / "steps" / p.name).write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
+    return str(dest.relative_to(routine_dir))
+
+
+def recompile_routine(server, routine_dir: Path, cfg, *, force: bool = False) -> dict:
     """Rewrite main.md + steps/ from `routine_dir`'s instruction × its workflow. Returns
-    {'modules': [...], 'removed': [...]}. Raises ValueError if the routine has no source workflow
-    (hand-authored) or that workflow is gone from the library; RuntimeError on a degraded decompose."""
+    {'modules': [...], 'removed': [...], 'steps_drift': bool, 'forced': bool, 'backup': str|None}.
+    Raises ValueError if the routine has no source workflow (hand-authored) or that workflow is gone
+    from the library; RecompileDriftError (a ValueError) if the routine's steps have hand-edits not
+    in the seed and force is False; RuntimeError on a degraded decompose. When force overwrites
+    drifted steps, the pre-recompile main.md + steps/ are backed up first (see 'backup')."""
     if not cfg.workflow_slug:
         raise ValueError("this routine was written directly (no source workflow) — edit main.md/steps")
     try:
@@ -35,6 +64,21 @@ def recompile_routine(server, routine_dir: Path, cfg) -> dict:
 
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8") \
         if (routine_dir / "instruction.md").exists() else ""
+
+    # Refuse to SILENTLY revert hand-edits: if the routine's steps drifted from the compile
+    # baseline (the routine-improver or a person edited a generated module) and those edits are not
+    # captured in the seed, a plain recompile would re-derive the steps and discard them. Refuse
+    # unless forced. Checked BEFORE the (expensive) decompose call. Routines with no provenance
+    # baseline report tracked=False and are unaffected (backward compatible).
+    pre_drift = provenance.drift(routine_dir, instruction)
+    steps_drifted = bool(pre_drift.get("tracked") and pre_drift.get("steps"))
+    if steps_drifted and not force:
+        raise RecompileDriftError(
+            "this routine's step modules have hand-edits that are not reflected in its instruction "
+            "(the seed); recompiling would re-derive the steps and discard those edits. Fold them "
+            "into instruction.md and recompile, or force the recompile to overwrite (a backup of "
+            "the current main.md + steps/ is kept under state/recompile-backups/).")
+
     main_path = routine_dir / "main.md"
     old_meta: dict = {}
     if main_path.exists():
@@ -50,6 +94,9 @@ def recompile_routine(server, routine_dir: Path, cfg) -> dict:
         # routine that had real step modules; leave every file as-is.
         raise RuntimeError("recompile produced no step modules — the model call likely failed; "
                            "steps were left unchanged")
+
+    # A forced overwrite of drifted steps keeps a backup so the hand-edits are recoverable.
+    backup = _backup_current(routine_dir) if steps_drifted else None
 
     steps_dir = routine_dir / "steps"
     steps_dir.mkdir(exist_ok=True)
@@ -83,4 +130,5 @@ def recompile_routine(server, routine_dir: Path, cfg) -> dict:
         dump_markdown(provenance.stamp(main_meta, routine_dir=routine_dir,
                                        main_body=main_body, instruction=instruction), main_body),
         encoding="utf-8")
-    return {"modules": sorted(modules), "removed": removed}
+    return {"modules": sorted(modules), "removed": removed,
+            "steps_drift": steps_drifted, "forced": bool(force), "backup": backup}

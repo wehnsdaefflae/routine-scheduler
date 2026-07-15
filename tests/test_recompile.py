@@ -12,7 +12,7 @@ from rsched.config import ModelRef, ServerConfig
 from rsched.endpoints.base import Completion
 from rsched.workflows import provenance
 from rsched.workflows.adapt import dump_markdown
-from rsched.workflows.recompile import recompile_routine
+from rsched.workflows.recompile import RecompileDriftError, recompile_routine
 
 SEED = Path(__file__).resolve().parents[1] / "library-seed"
 
@@ -119,3 +119,55 @@ def test_hand_authored_routine_has_nothing_to_recompile(tmp_path):
     d = _routine(tmp_path, workflow="")
     with pytest.raises(ValueError):
         recompile_routine(server, d, _cfg(workflow=""))
+
+
+# --- the "rematerialization" guard: recompile must not silently revert hand-edits to steps ---
+
+def _recompile_once_to_stamp_baseline(monkeypatch, tmp_path):
+    """Fixture main.md carries no provenance; the first recompile stamps the drift baseline and
+    lands steps/new-a.md. Returns (server, routine_dir)."""
+    server = _server(tmp_path)
+    d = _routine(tmp_path)
+    _wire(monkeypatch, _FakeEndpoint(["new-a"]))
+    recompile_routine(server, d, _cfg())
+    assert provenance.drift(d, "Collect papers.")["steps"] is False   # baseline is clean
+    return server, d
+
+
+def test_recompile_refuses_when_steps_hand_edited(monkeypatch, tmp_path):
+    server, d = _recompile_once_to_stamp_baseline(monkeypatch, tmp_path)
+    # a person / the routine-improver hand-edits a generated module — now the steps drift the seed
+    (d / "steps" / "new-a.md").write_text("HAND-EDITED behavioural fix", encoding="utf-8")
+    assert provenance.drift(d, "Collect papers.")["steps"] is True
+
+    with pytest.raises(RecompileDriftError):
+        recompile_routine(server, d, _cfg())
+
+    # the hand-edit is untouched and no backup was taken (refusal happens before any write)
+    assert (d / "steps" / "new-a.md").read_text() == "HAND-EDITED behavioural fix"
+    assert not (d / "state" / "recompile-backups").exists()
+
+
+def test_recompile_force_backs_up_then_overwrites(monkeypatch, tmp_path):
+    server, d = _recompile_once_to_stamp_baseline(monkeypatch, tmp_path)
+    (d / "steps" / "new-a.md").write_text("HAND-EDITED behavioural fix", encoding="utf-8")
+
+    result = recompile_routine(server, d, _cfg(), force=True)
+
+    assert result["steps_drift"] is True and result["forced"] is True
+    assert result["backup"]                                  # a backup path was returned
+    # the module was re-derived from the seed (hand-edit overwritten)…
+    assert (d / "steps" / "new-a.md").read_text().startswith("NEW body")
+    # …but the hand-edit survives in the backup, recoverable
+    backup = d / result["backup"]
+    assert (backup / "steps" / "new-a.md").read_text() == "HAND-EDITED behavioural fix"
+    assert (backup / "main.md").exists()
+
+
+def test_recompile_no_drift_proceeds_without_backup(monkeypatch, tmp_path):
+    server, d = _recompile_once_to_stamp_baseline(monkeypatch, tmp_path)
+    # no hand-edit → recompiling again is a clean no-op re-derive, no refusal, no backup
+    result = recompile_routine(server, d, _cfg())
+    assert result["steps_drift"] is False
+    assert result["backup"] is None
+    assert not (d / "state" / "recompile-backups").exists()
