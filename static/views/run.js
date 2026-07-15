@@ -81,12 +81,31 @@ export async function render(view, runId, query = {}) {
   const waitingBox = el("div", { class: "mt" });
   view.append(waitingBox);
 
-  const injectInput = el("input", { type: "text", placeholder: "inject a message into the run…", style: "flex:1" });
-  const injectBtn = el("button", { class: "btn" }, "send");
-  // Terminal runs only: wake THIS run back up with the message — the transcript is rehydrated
-  // and the conversation continues in place, as often as you like.
-  const converseBtn = el("button", { class: "btn primary", hidden: true }, "continue conversation");
-  view.append(el("div", { class: "row mt" }, injectInput, converseBtn, injectBtn));
+  // ONE input, ONE send — where the message goes is an EXPLICIT, visible mode, never
+  // guessed from button placement: a live run injects (picked up at the next turn
+  // boundary); a terminal run either continues THIS run in place (rehydrated, as often
+  // as you like) or queues the message for the routine's next run.
+  const MODES = {
+    inject: "→ live run",
+    converse: "→ continue this run",
+    queue: "→ queue for next run",
+  };
+  const modeSel = el("select", { class: "small", "data-nopersist": true,
+    title: "where this message goes" });
+  const msgInput = el("input", { type: "text", placeholder: "message…", style: "flex:1" });
+  const sendBtn = el("button", { class: "btn primary" }, "send");
+  function setModes(terminal) {
+    const keys = terminal ? ["converse", "queue"] : ["inject"];
+    if (![...modeSel.options].some((o) => keys.includes(o.value)) || modeSel.options.length !== keys.length) {
+      modeSel.replaceChildren(...keys.map((k) => el("option", { value: k }, MODES[k])));
+    }
+    modeSel.disabled = keys.length === 1;
+    msgInput.placeholder = terminal
+      ? "message… (the mode selector says where it goes)"
+      : "inject a message into the run…";
+  }
+  setModes(false);
+  view.append(el("div", { class: "row mt" }, modeSel, msgInput, sendBtn));
 
   // Auto-scroll ("follow"): on by default; the user can toggle it, and scrolling up pauses it.
   let autoscroll = true;
@@ -205,11 +224,7 @@ export async function render(view, runId, query = {}) {
     pauseBtn.hidden = abortBtn.hidden = terminal;   // controls for a live run
     resumeBtn.hidden = !terminal;                   // resume only a terminal run
     switchBox.hidden = terminal;                    // no mid-run switch once the run has ended
-    injectBtn.textContent = terminal ? "queue for next run" : "send";
-    converseBtn.hidden = !terminal;
-    injectInput.placeholder = terminal
-      ? "continue this conversation — or queue the message for the next run…"
-      : "inject a message into the run…";
+    setModes(terminal);
     tickDur();
     if (state === "paused") { paused = true; pauseBtn.textContent = "▶ resume"; }
     else if (paused && state !== "paused") { paused = false; pauseBtn.textContent = "⏸ pause"; }
@@ -247,31 +262,27 @@ export async function render(view, runId, query = {}) {
     try { await api(`/api/runs/${runId}/abort`, { method: "POST" }); }
     catch (err) { toast(err.message, 4000, { error: true }); }
   };
-  const doInject = async () => {
-    if (!injectInput.value.trim()) return;
+  const doSend = async () => {
+    if (!msgInput.value.trim()) return;
+    const mode = modeSel.value;
+    sendBtn.disabled = true;
     try {
-      const r = await api(`/api/runs/${runId}/inject`, { method: "POST", body: { text: injectInput.value } });
+      if (mode === "converse") {
+        await api(`/api/runs/${runId}/converse`, { method: "POST", body: { text: msgInput.value } });
+        forgetField(msgInput);   // delivered — must not refill after the reload below
+        toast("message delivered — waking the run to continue the conversation…");
+        setTimeout(() => location.reload(), 800);   // reattach the tail to the now-live run
+        return;                  // keep the button disabled until the reload lands
+      }
+      const r = await api(`/api/runs/${runId}/inject`, { method: "POST", body: { text: msgInput.value } });
       toast(r.delivery === "mid-run" ? "injected — picked up at the next turn" : "queued for the next run");
-      injectInput.value = "";
-      forgetField(injectInput);   // sent — the draft must not refill on reload
+      msgInput.value = "";
+      forgetField(msgInput);   // sent — the draft must not refill on reload
     } catch (err) { toast(err.message, 4000, { error: true }); }
+    sendBtn.disabled = false;
   };
-  injectBtn.onclick = doInject;
-  const doConverse = async () => {
-    if (!injectInput.value.trim()) return;
-    converseBtn.disabled = true;
-    try {
-      await api(`/api/runs/${runId}/converse`, { method: "POST", body: { text: injectInput.value } });
-      forgetField(injectInput);   // delivered — must not refill after the reload below
-      toast("message delivered — waking the run to continue the conversation…");
-      setTimeout(() => location.reload(), 800);   // reattach the tail to the now-live run
-    } catch (err) { toast(err.message, 5000, { error: true }); converseBtn.disabled = false; }
-  };
-  converseBtn.onclick = doConverse;
-  // Enter = the primary action for the run's state: converse when terminal, inject when live.
-  injectInput.onkeydown = (e) => {
-    if (e.key === "Enter") (converseBtn.hidden ? doInject : doConverse)();
-  };
+  sendBtn.onclick = doSend;
+  msgInput.onkeydown = (e) => { if (e.key === "Enter") doSend(); };
 
   // ---- boot -----------------------------------------------------------------------------------
   let detail;

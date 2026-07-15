@@ -113,6 +113,34 @@ def test_run_view_question_form(ui, ui_page):
     assert answer["text"] == "thinking out loud: why not both?"
 
 
+def test_run_view_message_modes(ui, ui_page):
+    """ONE input with an explicit mode: a live run fixes it to inject; a terminal run
+    offers continue-this-run vs queue-for-next-run."""
+    ui.seed_run("uir", "20260715-110000", "running")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-110000")
+    mode = ui_page.locator('select[title="where this message goes"]')
+    expect(mode).to_have_value("inject")
+    expect(mode).to_be_disabled()
+    ui_page.locator('input[placeholder="inject a message into the run…"]').fill("mid-run note")
+    ui_page.get_by_role("button", name="send", exact=True).click()
+    expect(_toast(ui_page)).to_be_visible()
+    inbox = ui.routine_dir("uir") / "inbox"
+    assert any("mid-run note" in m.read_text(encoding="utf-8")
+               for m in inbox.glob("msg-*.json"))
+
+    ui.seed_run("uir", "20260715-120000", "finished", summary="done")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-120000")
+    mode = ui_page.locator('select[title="where this message goes"]')
+    expect(mode).to_be_enabled()
+    expect(mode).to_have_value("converse")          # continuing this run is the default
+    mode.select_option("queue")
+    ui_page.locator('input[placeholder^="message…"]').fill("for next time")
+    ui_page.get_by_role("button", name="send", exact=True).click()
+    expect(_toast(ui_page)).to_contain_text("queued for the next run")
+    assert any("for next time" in m.read_text(encoding="utf-8")
+               for m in inbox.glob("msg-*.json"))
+
+
 # ---- 2. Conversation composer ------------------------------------------------------------
 
 

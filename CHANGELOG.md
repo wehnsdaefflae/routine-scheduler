@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.40.0] — 2026-07-15
+
+### Changed
+- **Run view: one message input with an explicit mode selector** replacing the shifting
+  two-button arrangement. Where a message goes is stated, not implied: a live run fixes
+  the mode to "→ live run" (inject, picked up at the next turn boundary); a terminal run
+  offers "→ continue this run" (rehydrate and converse, the default) or "→ queue for next
+  run". Enter always sends in the visible mode.
+
 ## [0.39.0] — 2026-07-15
 
 ### Changed
