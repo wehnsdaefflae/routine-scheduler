@@ -7,6 +7,7 @@
 // finished one resumes it in place, so the view remounts its tail after every send.
 
 import { api, apiUpload } from "/static/api.js";
+import { answerForm } from "/static/components/answerform.js";
 import { confirmDialog, promptDialog } from "/static/components/dialog.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
@@ -481,32 +482,16 @@ export async function render(view, slug, _query = {}) {
   function showQuestion(box, q) {
     box.replaceChildren();
     if (!q) return;
-    // data-persist keyed by qid: this question's draft is its own — never another's.
-    const input = el("textarea", { rows: 1, placeholder: "your answer… (Shift+Enter for a new line)",
-      "data-persist": `answer-${q.qid}`, style: "flex:1;resize:vertical" });
-    const send = el("button", { class: "btn primary" }, "answer");
-    const discuss = el("button", { class: "btn",
-      title: "send as a follow-up question / thought — the model replies and the question stays open" },
-      "ask back");
-    const submit = async (intermediate) => {
-      if (!input.value.trim()) return;
-      try {
-        await api(`/api/questions/${q.qid}/answer`, { method: "POST",
-          body: { text: input.value, intermediate } });
-        forgetField(input);   // answered — the draft must never refill
-        toast(intermediate ? "sent — the model will reply and re-ask" : "answer sent");
-        box.replaceChildren();
-      } catch (err) { toast(err.message, 4000, { error: true }); }
-    };
-    send.onclick = () => submit(false);
-    discuss.onclick = () => submit(true);
-    input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(false); } };
+    const form = answerForm(q, {
+      submitText: (text, intermediate) => api(`/api/questions/${q.qid}/answer`,
+        { method: "POST", body: { text, intermediate } }),
+      askBack: true,
+      toastText: (i) => (i ? "sent — the model will reply and re-ask" : "answer sent"),
+      onSuccess: () => box.replaceChildren(),
+    });
     box.append(el("div", { class: "panel warn mt" },
-      el("div", { class: "prose" }, "❓ ", q.question || ""),
-      q.default ? el("div", { class: "faint small mt" }, `↪ without an answer: ${q.default}`) : null,
-      q.options?.length ? el("div", { class: "row mt" },
-        q.options.map((o) => el("button", { class: "btn small", onclick: () => { input.value = o; } }, o))) : null,
-      el("div", { class: "row mt" }, input, send, discuss)));
+      el("div", { class: "prose" }, "❓ ", mdInline(q.question || "")),
+      form.node));
   }
 
   // The model line at the top of a conversation: shows the EFFECTIVE model (override or

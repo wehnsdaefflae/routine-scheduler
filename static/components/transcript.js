@@ -11,8 +11,8 @@
 //   isLive()           — true while the run is live; expanded subruns keep polling.
 
 import { md, mdInline } from "/static/md.js";
-import { el, fmtTime, fmtTokens, toast } from "/static/util.js";
-import { forgetField } from "/static/formpersist.js";
+import { answerForm } from "/static/components/answerform.js";
+import { el, fmtTime, fmtTokens } from "/static/util.js";
 
 const BRIEF_FIELD = { util: "name", write_util: "name", read_file: "path", write_file: "path",
                       edit_file: "path", memory_read: "name", memory_write: "name",
@@ -42,27 +42,14 @@ export function createTranscript(container, opts = {}) {
     // Inline answering: deferred questions used to be dead text here, answerable only on
     // the Decisions page. Blocking ones stay with the run view's panel (it handles dialog).
     if (!opts.answer || !p.qid || p.mode !== "deferred") return el("div", { class: "ev question" }, head);
-    // data-persist keyed by qid: this question's draft is its own — never another's.
-    const input = el("textarea", { rows: 1, placeholder: "answer here — or on the Decisions page… (Shift+Enter for a new line)",
-                                "data-persist": `answer-${p.qid}`, style: "flex:1;resize:vertical" });
-    const send = el("button", { class: "btn small primary" }, "answer");
-    const controls = el("div", { class: "row mt", style: "gap:6px" },
-      p.options?.length ? p.options.map((o) =>
-        el("button", { class: "btn small", onclick: () => { input.value = o; input.focus(); } }, o)) : null,
-      input, send);
-    const submit = async () => {
-      if (!input.value.trim()) return;
-      send.disabled = true;
-      try {
-        await opts.answer(p.qid, input.value.trim());
-        forgetField(input);   // answered — the draft must never refill
-        closeQuestion(p.qid, `✅ answered: ${input.value.trim()} (queued for the next run)`);
-      } catch (err) { send.disabled = false; toast(err.message, 4000, { error: true }); }
-    };
-    send.onclick = submit;
-    input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } };
-    qforms.set(p.qid, { controls, created: Date.now() });
-    return el("div", { class: "ev question" }, el("div", {}, head), controls);
+    const form = answerForm(p, {
+      placeholder: "answer here — or on the Decisions page… (Shift+Enter for a new line)",
+      defaultLine: false,   // the head already states the default inline
+      submitText: (text) => opts.answer(p.qid, text),
+      onSuccess: (text) => closeQuestion(p.qid, `✅ answered: ${text} (queued for the next run)`),
+    });
+    qforms.set(p.qid, { controls: form.node, created: Date.now() });
+    return el("div", { class: "ev question" }, el("div", {}, head), form.node);
   }
 
   // A subrun line that can unfold into the child's own conversation, fetched on first

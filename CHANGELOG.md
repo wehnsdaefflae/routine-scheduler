@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.38.0] — 2026-07-15
+
+### Changed
+- **One shared answer form** (`components/answerform.js`) replaces the six hand-rolled
+  copies (Decisions page, run view, conversation panel, wizard, transcript inline, chat
+  inline). The component owns the core — input/textarea, option buttons (numbered + digit
+  keys where wanted), default line, ask-back, Enter-to-submit, draft persistence, error
+  toast — while each host keeps its chrome (meta chips, expires/mirrored notes,
+  snooze/defer lifecycle, settled states) via `{ node, input, submit, setSettled }`.
+  Accidental drift fixed in passing: the chat inline form no longer swallows errors
+  silently, option buttons focus the input everywhere, and the conversation question
+  panel renders markdown like every other surface.
+
 ## [0.37.0] — 2026-07-15
 
 ### Changed

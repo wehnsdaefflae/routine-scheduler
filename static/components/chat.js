@@ -10,9 +10,9 @@
 //   onFork(title, qt) — the user clicked the [new-topic] fork button
 
 import { createTranscript } from "/static/components/transcript.js";
+import { answerForm } from "/static/components/answerform.js";
 import { md, mdInline } from "/static/md.js";
 import { el, fmtTime, fmtTokens } from "/static/util.js";
-import { forgetField } from "/static/formpersist.js";
 
 const NEW_TOPIC = /^\s*\[new-topic\]\s*(.*)$/;
 const ATTACH_BLOCK = /\n?\n?\[attached files[^\]]*\]\n((?:- .*\n?)+)/;
@@ -86,26 +86,13 @@ export function createChat(container, opts = {}) {
     const head = el("div", { class: "msg-body" }, "❓ ", mdInline(p.question || ""),
       p.default ? el("div", { class: "faint small" }, `↪ without an answer: ${p.default}`) : null);
     if (!opts.answer || !p.qid) return head;
-    // data-persist keyed by qid: this question's draft is its own — never another's.
-    const input = el("textarea", { rows: 1, placeholder: "answer… (Shift+Enter for a new line)",
-      "data-persist": `answer-${p.qid}`, style: "flex:1;resize:vertical" });
-    const send = el("button", { class: "btn small primary" }, "answer");
-    const row = el("div", { class: "row mt", style: "gap:6px" },
-      (p.options || []).map((o) => el("button", { class: "btn small",
-        onclick: () => { input.value = o; input.focus(); } }, o)),
-      input, send);
-    const submit = async () => {
-      if (!input.value.trim()) return;
-      send.disabled = true;
-      try {
-        await opts.answer(p.qid, input.value.trim());
-        forgetField(input);   // answered — the draft must never refill
-        row.replaceChildren(el("span", { class: "faint small" }, `✅ answered: ${input.value.trim()}`));
-      } catch (err) { send.disabled = false; }
-    };
-    send.onclick = submit;
-    input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } };
-    return el("div", {}, head, row);
+    const form = answerForm(p, {
+      placeholder: "answer… (Shift+Enter for a new line)",
+      defaultLine: false,   // the head already shows the default
+      submitText: (text) => opts.answer(p.qid, text),
+      onSuccess: (text) => form.setSettled(`✅ answered: ${text}`),
+    });
+    return el("div", {}, head, form.node);
   }
 
   return {

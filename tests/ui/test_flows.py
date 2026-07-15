@@ -90,6 +90,29 @@ def test_decisions_snooze_and_defer(ui, ui_page):
     assert marker["defer"] is True
 
 
+def test_run_view_question_form(ui, ui_page):
+    """The run view's blocking-question panel rides the shared answerForm: option buttons
+    prefill, the mirrored/Discord note renders, and ask-back sends an intermediate reply."""
+    ui.seed_run("uir", "20260715-100000", "waiting_user",
+                question={"qid": "q-rv", "question": "Which path?", "options": ["a", "b"],
+                          "default": "a", "expires": "2026-07-15T13:00:00+00:00",
+                          "mirrored": True, "asked": "20260715-100000"})
+    ui.seed_question("uir", "q-rv", "Which path?", mode="blocking", default="a")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-100000")
+    box = ui_page.locator(".panel.warn", has_text="Which path?")
+    expect(box).to_contain_text("and on Discord")
+    expect(box).to_contain_text("without an answer: a")
+    box.get_by_role("button", name="a", exact=True).click()
+    expect(box.locator("textarea")).to_have_value("a")
+    box.locator("textarea").fill("thinking out loud: why not both?")
+    box.get_by_role("button", name="ask back").click()
+    expect(_toast(ui_page)).to_contain_text("the model will reply and re-ask")
+    answer = json.loads(
+        (ui.routine_dir("uir") / "inbox" / "answer-q-rv.json").read_text(encoding="utf-8"))
+    assert answer["intermediate"] is True
+    assert answer["text"] == "thinking out loud: why not both?"
+
+
 # ---- 2. Conversation composer ------------------------------------------------------------
 
 

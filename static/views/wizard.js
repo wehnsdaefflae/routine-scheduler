@@ -9,11 +9,11 @@
 // wizard-create.js.
 
 import { api } from "/static/api.js";
+import { answerForm } from "/static/components/answerform.js";
 import { mdInline } from "/static/md.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
-import { forgetField } from "/static/formpersist.js";
 import { busy, el, skeleton, streamStatus, toast } from "/static/util.js";
 import { stageSuggest, stageBuilding } from "/static/views/wizard-create.js";
 
@@ -144,35 +144,22 @@ export async function render(view, resumeWid) {
     function showQuestion(q) {
       setThinking(null);                // a question is on screen → no longer waiting on the model
       qBox.replaceChildren();
-      // data-persist keyed by qid: this question's draft is its own — never another's.
-      const input = el("input", { type: "text", placeholder: "your answer…",
-        "data-persist": `answer-${q.qid}`, style: "flex:1" });
-      const send = el("button", { class: "btn primary" }, "answer");
-      // A dialog reply: the model responds and re-asks — for when you need to ask back
-      // (or think out loud) before you can actually answer.
-      const discuss = el("button", { class: "btn",
-        title: "send as a follow-up question / thought — the model replies and the question stays open" },
-        "ask back");
-      const submit = async (intermediate) => {
-        if (!input.value.trim()) return;
-        try {
-          await api(`/api/wizard/${encodeURIComponent(wid)}/answer`, { method: "POST",
-            body: { qid: q.qid, text: input.value, intermediate } });
-          forgetField(input);   // sent — the draft must never refill
+      const form = answerForm(q, {
+        control: "input",
+        placeholder: "your answer…",
+        askBack: true,
+        submitText: (text, intermediate) => api(`/api/wizard/${encodeURIComponent(wid)}/answer`,
+          { method: "POST", body: { qid: q.qid, text, intermediate } }),
+        onSuccess: (_text, intermediate) => {
           qBox.replaceChildren();
           setThinking(intermediate ? "Waiting for the model — replying in the dialog…"
                                    : "Waiting for the model — considering your answer…");
-        } catch (err) { toast(err.message, 4000, { error: true }); }
-      };
-      send.onclick = () => submit(false);
-      discuss.onclick = () => submit(true);
-      input.onkeydown = (e) => { if (e.key === "Enter") submit(false); };
+        },
+      });
       qBox.append(el("div", { class: "panel warn mt" },
         el("div", { class: "prose" }, "❓ ", mdInline(q.question)),
-        q.options?.length ? el("div", { class: "row mt" },
-          q.options.map((o) => el("button", { class: "btn small", onclick: () => { input.value = o; } }, o))) : null,
-        el("div", { class: "row mt" }, input, send, discuss)));
-      input.focus();
+        form.node));
+      form.input.focus();
       scrollDown();
     }
 

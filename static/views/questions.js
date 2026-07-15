@@ -5,7 +5,7 @@
 // Priority rank: blocking (a run is waiting) > meta (system-level) > deferred.
 
 import { api } from "/static/api.js";
-import { forgetField } from "/static/formpersist.js";
+import { answerForm } from "/static/components/answerform.js";
 import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, skeleton, toast, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
@@ -131,43 +131,6 @@ export async function render(view) {
         el("div", { class: "flow-note mt" },
           el("span", {}, `“${q.answer}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run" : "next run"}`)));
     }
-    // data-persist keyed by qid: each question's draft is its own — never another question's.
-    const input = el("input", { type: "text", placeholder: "your answer…  (↵ to send)",
-      "data-persist": `answer-${q.qid}`, style: "flex:1" });
-    inputs.push(input);
-    const send = el("button", { class: "btn primary" }, "answer");
-    const options = q.options || [];
-    const submit = async () => {
-      if (!input.value.trim()) return;
-      send.disabled = true;
-      try {
-        await api(`/api/questions/${q.qid}/answer`, { method: "POST", body: { text: input.value } });
-        forgetField(input);   // submitted — the draft must never refill this or any later question
-        toast(q.mode === "blocking" ? "answered — the run resumes"
-          : q.meta ? "recorded — the next self-audit run acts on it"
-          : "answered — the next run picks it up");
-        // Mark answered in place: a deferred question's pending file is only consumed when its
-        // routine next runs, so a reload would still list it — that would read as "didn't work".
-        panel.classList.remove("warn");
-        controls.replaceChildren(el("div", { class: "flow-note" },
-          chip("answered · queued", "ok"),
-          el("span", {}, `“${input.value.trim()}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run" : "next run"}`)));
-        state.items = state.items.filter((x) => x.qid !== q.qid);
-        syncToolbar();
-        inputs.splice(inputs.indexOf(input), 1);
-        focusAt(index);          // move on to the next open question
-      } catch (err) { toast(err.message, 4000, { error: true }); send.disabled = false; }
-    };
-    send.onclick = submit;
-    input.onkeydown = (e) => {
-      if (e.key === "Enter") { e.preventDefault(); submit(); }
-      else if (e.key === "ArrowDown") { e.preventDefault(); focusAt(index + 1); }
-      else if (e.key === "ArrowUp") { e.preventDefault(); focusAt(index - 1); }
-      else if (/^[1-9]$/.test(e.key) && !input.value && options[+e.key - 1]) {
-        e.preventDefault();
-        input.value = options[+e.key - 1];
-      }
-    };
     const runBits = q.run_id ? [
       el("a", { class: "btn small", href: `#/run/${q.run_id}` }, "view run"),
       q.run_state ? chip(q.run_state, q.run_state) : null,
@@ -226,11 +189,34 @@ export async function render(view) {
         };
       }
     }
-    const controls = el("div", {},
-      options.length ? el("div", { class: "row mt", style: "gap:8px" },
-        options.map((o, i) => el("button", { class: "btn small", title: `press ${i + 1}`,
-          onclick: () => { input.value = o; input.focus(); } }, `${i + 1} · ${o}`))) : null,
-      el("div", { class: "row mt" }, input, send, lifecycle));
+    const form = answerForm(q, {
+      control: "input",
+      placeholder: "your answer…  (↵ to send)",
+      numbered: true,
+      defaultLine: false,          // the panel body renders the default line below
+      onArrow: (d) => focusAt(index + d),
+      submitText: (text) => api(`/api/questions/${q.qid}/answer`,
+        { method: "POST", body: { text } }),
+      toastText: () => (q.mode === "blocking" ? "answered — the run resumes"
+        : q.meta ? "recorded — the next self-audit run acts on it"
+        : "answered — the next run picks it up"),
+      // Mark answered in place: a deferred question's pending file is only consumed when
+      // its routine next runs, so a reload would still list it — that would read as
+      // "didn't work".
+      onSuccess: (text) => {
+        panel.classList.remove("warn");
+        controls.replaceChildren(el("div", { class: "flow-note" },
+          chip("answered · queued", "ok"),
+          el("span", {}, `“${text}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run" : "next run"}`)));
+        state.items = state.items.filter((x) => x.qid !== q.qid);
+        syncToolbar();
+        inputs.splice(inputs.indexOf(form.input), 1);
+        focusAt(index);          // move on to the next open question
+      },
+      extraControls: lifecycle,
+    });
+    inputs.push(form.input);
+    const controls = el("div", {}, form.node);
     const panel = el("div", { class: `panel question-item${q.mode === "blocking" ? " warn" : ""}` },
       el("div", { class: "q-meta" },
         q.wizard ? chip("wizard", "meta") : q.meta ? chip("meta", "meta") : null,
