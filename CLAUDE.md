@@ -338,7 +338,9 @@ first boot; `deploy/install.sh` for host installs.
   source of truth; defaults added after routines exist reach them once via
   `bootstrap.adopt_permissions` at daemon boot. Historical data migrations are NOT kept:
   each runs once on the production instance and is deleted after convergence — a pre-0.8
-  backup converts by booting the matching older tag first.
+  backup converts by booting the matching older tag first. MACHINE-CHECKED: migration code
+  must carry a `MIGRATION(expires=YYYY-MM-DD)` marker comment; `tests/test_policy.py` fails
+  once the date passes (and on migration-shaped code without a marker).
 - **Playbooks** (`library-seed/playbooks/<slug>/`, `MAIN.md` + optional on-demand detail files):
   reusable, generalized **conversation briefs** — the in-app analog of the save-instruction /
   use-instruction pattern. A playbook is NOT a workflow (the `converse` workflow stays the harness);
@@ -403,6 +405,8 @@ first boot; `deploy/install.sh` for host installs.
 `src/rsched/__init__.py` `__version__` is the single source (pyproject reads it via hatch's
 version hook) — bump the minor on every user-facing revision. `/api/status` pairs it with the
 running checkout's git commit stamp; the header's brand shows `v<version>` (tooltip = commit).
+A bump MUST land with a matching `## [x.y.z]` CHANGELOG.md header in the same commit —
+`tests/test_policy.py` (also a pre-commit hook) fails on a mismatch.
 
 ## Deploy
 

@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.33.0] — 2026-07-15
+
+### Added
+- **Policy gates as tests** (`tests/test_policy.py`, wired into pre-commit): (1) the
+  delete-after-convergence rule is machine-checked — one-shot migration code must carry a
+  `MIGRATION(expires=YYYY-MM-DD)` marker and the suite fails once the date passes (or on
+  migration-shaped code without a marker); (2) a `__version__` bump without a matching
+  `## [x.y.z]` CHANGELOG header at the top fails the suite (0.27 shipped without notes once).
+- **Seed contracts pinned** (`tests/test_seeds.py`): every `routine-seed/` loads clean via
+  `load_routine` (permissions exist, capabilities normalize, Standing-practices tail +
+  bundled traits present, all `stages/*.md` references resolve), every seed markdown's
+  `state/phase.json` assignment uses the canonical `{"phase": ...}` shape and names only
+  live action kinds, `library-seed/` workflows parse via pyworkflow with slug/tools checks
+  and the whole tree lints clean, and `util-seed/` docstring headers pass the engine's own
+  `write_util` gate. Seed drift is now a test failure in the commit that causes it.
+
 ## [0.32.0] — 2026-07-15
 
 ### Changed

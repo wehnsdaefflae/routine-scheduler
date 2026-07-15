@@ -15,3 +15,9 @@ repos:
         language: system
         pass_filenames: false
         files: ^(src/|pyproject\.toml)
+      - id: policy
+        name: policy — version bump has CHANGELOG entry, no expired migrations
+        entry: uv run pytest tests/test_policy.py -q
+        language: system
+        pass_filenames: false
+        files: ^(src/rsched/|CHANGELOG\.md)
