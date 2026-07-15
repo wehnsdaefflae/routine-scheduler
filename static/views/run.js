@@ -62,7 +62,8 @@ export async function render(view, runId, query = {}) {
     el("div", { class: "rail-cap" }, "tasks"), treeBody,
     el("div", { class: "rail-cap" }, "artifacts"), artBody));
   const stateGraph = createStateGraph(graphBody, {
-    graphUrl: `/api/routines/${slug}/stategraph` });
+    graphUrl: `/api/routines/${slug}/stategraph`,
+    statsUrl: `/api/runs/${runId}/phases` });
   const taskTree = createTaskTree(treeBody, {
     treeUrl: `/api/runs/${runId}/tree`, isLive: () => !TERMINAL.has(curState) });
   const artifacts = createArtifacts(artBody, { slug, base: "routines" });

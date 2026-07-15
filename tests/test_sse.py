@@ -14,7 +14,6 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import TEST_TOKEN as TOKEN
 from rsched.daemon.events import EventBus
 from rsched.paths import atomic_write_json
 from rsched.web import sse

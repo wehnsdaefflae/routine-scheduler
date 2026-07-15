@@ -1226,6 +1226,21 @@ def test_own_recipe_writes_blocked_unless_write_root_covers_dir(make_routine, sc
     assert (d2 / "stages" / "collect.md").read_text().strip() == "rewritten"
 
 
+def test_assistant_actions_carry_the_active_phase(make_routine, scripted):
+    """Each assistant_action event is stamped with the phase that was active while it was
+    produced — the state-graph rail's per-phase instrumentation derives from this."""
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
+        write_file("state/phase.json", content='{"phase": "only"}', say="enter the phase"),
+        probe(),
+        finish(),
+    ], slug="phased")
+    assert status == "ok"
+    acts = [e for e in events if e["type"] == "assistant_action"]
+    assert "phase" not in acts[0]                  # produced before any phase existed
+    assert acts[1]["phase"] == "only"              # stamped from the write onward
+    assert acts[2]["phase"] == "only"
+
+
 def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):
     """Every finished run — and every finished sub-workflow — appends one line to
     .control/workflow-usage.jsonl, the meta-workflows routine's evidence stream."""

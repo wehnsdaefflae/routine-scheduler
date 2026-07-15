@@ -96,6 +96,17 @@ async def run_events(request: Request, run_id: str, offset: int = 0):
     return EventSourceResponse(run_stream(run_dir, offset))
 
 
+@router.get("/runs/{run_id}/phases")
+def run_phases(request: Request, run_id: str) -> dict:
+    """Per-phase instrumentation (turns / tokens / cost / wall-clock) derived from the
+    run's transcript — the state-graph rail's numbers.
+    """
+    from ..statemap import phase_stats
+
+    _, run_dir = _run_dir(request, run_id)
+    return {"phases": phase_stats(run_dir)}
+
+
 @router.get("/runs/{run_id}/tree")
 def run_tree(request: Request, run_id: str) -> dict:
     """The recursive task tree: this run's sequential subtasks + parallel subruns, each a node

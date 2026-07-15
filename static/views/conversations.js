@@ -321,7 +321,8 @@ export async function render(view, slug, _query = {}) {
     artBody.append(bgCap, bgBody);
     artBody.append(el("div", { class: "rail-cap" }, "artifacts"));
     const stateGraph = createStateGraph(graphBody, {
-      graphUrl: `/api/conversations/${slug}/stategraph` });
+      graphUrl: `/api/conversations/${slug}/stategraph`,
+      ...(detail.run_id ? { statsUrl: `/api/runs/${detail.run_id}/phases` } : {}) });
     const taskTree = detail.run_id ? createTaskTree(treeBody, {
       treeUrl: `/api/runs/${detail.run_id}/tree`, isLive: () => !TERMINAL.has(curState) }) : null;
     const artifacts = createArtifacts(artBody, { slug });

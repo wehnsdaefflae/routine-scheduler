@@ -441,6 +441,8 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   padding: 2px 4px; border-radius: 6px;
 }
 .sg-node .sg-dot { width: 14px; text-align: center; flex: none; color: var(--faint); }
+.sg-node .sg-stats { margin-left: auto; padding-left: 10px; color: var(--muted); font-size: 10.5px; white-space: nowrap; }
+.sg-foot { margin-top: 6px; color: var(--faint); font-size: 10.5px; }
 .sg-node.done { color: var(--faint); }
 .sg-node.done .sg-dot { color: var(--live); }
 .sg-node.current {

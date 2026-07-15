@@ -79,6 +79,50 @@ def current_phase(routine_dir: Path) -> str:
             if isinstance(data, dict) else "")
 
 
+def phase_stats(run_dir: Path) -> list[dict]:
+    """Per-phase instrumentation from ONE run's transcript — turns, tokens (in+out),
+    provider-reported cost, wall-clock seconds — in first-seen order. Each
+    assistant_action event carries the phase that was active while it was produced
+    (the engine stamps it); a turn's wall-clock is the gap from the previous event,
+    and the tail after the last action (its dispatch) lands on the last phase. The
+    empty-string phase collects turns from before any state/phase.json write.
+    """
+    from datetime import datetime
+
+    from .engine.transcript import read_events
+
+    events, _ = read_events(run_dir / "transcript.jsonl")
+
+    def ts_of(ev) -> datetime | None:
+        try:
+            return datetime.fromisoformat(str(ev.get("ts") or ""))
+        except ValueError:
+            return None
+
+    stats: dict[str, dict] = {}
+    prev_ts = None
+    last_cell = None
+    for ev in events:
+        t = ts_of(ev)
+        if ev.get("type") == "assistant_action":
+            name = str(ev.get("phase") or "")
+            cell = stats.setdefault(name, {"phase": name, "turns": 0, "tokens": 0,
+                                           "cost": 0.0, "elapsed_s": 0})
+            usage = ev.get("usage") or {}
+            cell["turns"] += 1
+            cell["tokens"] += int(usage.get("in") or 0) + int(usage.get("out") or 0)
+            cell["cost"] = round(cell["cost"] + float(usage.get("cost") or 0.0), 6)
+            if t is not None and prev_ts is not None:
+                cell["elapsed_s"] += max(0, int((t - prev_ts).total_seconds()))
+            last_cell = cell
+        elif last_cell is not None and t is not None and prev_ts is not None:
+            # the gap after the last action (its dispatch) belongs to that action's phase
+            last_cell["elapsed_s"] += max(0, int((t - prev_ts).total_seconds()))
+        if t is not None:
+            prev_ts = t
+    return list(stats.values())
+
+
 def state_graph(routine_dir: Path) -> dict:
     """{states: [{name, desc}], current: str} for one routine/conversation dir. `current`
     is the raw recorded phase — the client matches it against states via norm().

@@ -117,3 +117,38 @@ def test_recipe_tree_orders_stages_by_run_flow(tmp_path):
     assert [s["name"] for s in tree["stages"]] == ["collect", "draft", "extra"]
     assert [h["text"] for h in tree["stages"][1]["outline"]] == ["How"]
     assert [t["name"] for t in tree["traits"]] == ["ask-policy"]
+
+
+def test_phase_stats_aggregates_turns_tokens_time(tmp_path):
+    """Per-phase instrumentation from a transcript: dispatch time lands on the acting
+    phase, completion time on the phase that produced the next action, the tail after
+    the last action on the last phase; tokens/cost sum per phase; unphased turns keep
+    their own bucket."""
+    import json
+
+    from rsched.statemap import phase_stats
+
+    lines = [
+        {"ts": "2026-07-15T10:00:00+00:00", "type": "header", "payload": {}},
+        {"ts": "2026-07-15T10:00:10+00:00", "type": "assistant_action",
+         "usage": {"in": 100, "out": 10}, "payload": {}},
+        {"ts": "2026-07-15T10:00:15+00:00", "type": "observation", "payload": {}},
+        {"ts": "2026-07-15T10:00:30+00:00", "type": "assistant_action", "phase": "gather",
+         "usage": {"in": 200, "out": 20, "cost": 0.5}, "payload": {}},
+        {"ts": "2026-07-15T10:00:40+00:00", "type": "observation", "payload": {}},
+        {"ts": "2026-07-15T10:01:00+00:00", "type": "assistant_action", "phase": "gather",
+         "usage": {"in": 50, "out": 5}, "payload": {}},
+        {"ts": "2026-07-15T10:01:05+00:00", "type": "finish", "payload": {}},
+    ]
+    (tmp_path / "transcript.jsonl").write_text(
+        "".join(json.dumps(ln) + "\n" for ln in lines), encoding="utf-8")
+    assert phase_stats(tmp_path) == [
+        {"phase": "", "turns": 1, "tokens": 110, "cost": 0.0, "elapsed_s": 15},
+        {"phase": "gather", "turns": 2, "tokens": 275, "cost": 0.5, "elapsed_s": 50},
+    ]
+
+
+def test_phase_stats_empty_without_transcript(tmp_path):
+    from rsched.statemap import phase_stats
+
+    assert phase_stats(tmp_path) == []

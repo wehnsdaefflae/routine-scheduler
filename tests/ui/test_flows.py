@@ -111,6 +111,31 @@ def test_decisions_inbox_groups(ui, ui_page):
     assert ui_page.evaluate("document.activeElement.dataset.persist") == "answer-q-b1"
 
 
+def test_state_graph_shows_phase_instrumentation(ui, ui_page):
+    """The run view's state-graph rail shows per-phase turns/tokens/time from the
+    transcript — the instrument panel, not just a highlighted chain."""
+    run_dir = ui.seed_run("uir", "20260715-130000", "finished", summary="done")
+    events = [
+        {"ts": "2026-07-15T10:00:00+00:00", "type": "header",
+         "payload": {}, "run_id": "uir:20260715-130000"},
+        {"ts": "2026-07-15T10:00:30+00:00", "type": "assistant_action", "phase": "only",
+         "usage": {"in": 900, "out": 100}, "turn": 1, "payload": {"kind": "util", "say": "x"}},
+        {"ts": "2026-07-15T10:02:00+00:00", "type": "assistant_action", "phase": "only",
+         "usage": {"in": 500, "out": 100}, "turn": 2,
+         "payload": {"kind": "finish", "say": "done", "status": "ok", "summary": "done"}},
+    ]
+    (run_dir / "transcript.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    state_dir = ui.routine_dir("uir") / "state"
+    state_dir.mkdir(exist_ok=True)
+    (state_dir / "phase.json").write_text('{"phase": "only"}', encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-130000")
+    node = ui_page.locator(".sg-node", has_text="only")
+    expect(node.locator(".sg-stats")).to_contain_text("2 turns")
+    expect(node.locator(".sg-stats")).to_contain_text("1.6k tok")
+
+
 def test_run_view_question_form(ui, ui_page):
     """The run view's blocking-question panel rides the shared answerForm: option buttons
     prefill, the mirrored/Discord note renders, and ask-back sends an intermediate reply."""
@@ -341,5 +366,5 @@ def test_settings_endpoints_crud(ui, ui_page):
     _confirm_modal(ui_page, "delete")
     expect(ui_page.locator("strong", has_text="vllm")).to_have_count(0)
     cfg = _server_yaml(ui)
-    assert "vllm" not in cfg["endpoints"]
-    assert "llama" not in cfg.get("models", {})
+    assert "vllm" not in (cfg.get("endpoints") or {})
+    assert "llama" not in (cfg.get("models") or {})   # deleting the last model may null the key

@@ -92,6 +92,10 @@ the limits (single-writer status.json preserved).
   change. `statemap.py` parses the routine's own main.md (`## Run flow` bold leads — the TASK-SPECIFIC state names decompose emits; stages/ filenames as fallback)
   into the UI's state-graph diagram (`/stategraph` endpoints, `static/components/stategraph.js` —
   rendered in the run view's rail and the conversation artifact rail, current phase highlighted live).
+  Every `assistant_action` transcript event is stamped with the ACTIVE phase, so the rail is also an
+  instrument panel: `statemap.phase_stats` (served at `/api/runs/<id>/phases`) derives per-phase
+  turns / tokens / cost / wall-clock from the transcript — dispatch time lands on the acting phase,
+  completion time on the phase that produced the next action.
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →

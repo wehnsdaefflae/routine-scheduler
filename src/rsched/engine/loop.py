@@ -171,6 +171,7 @@ class EngineLoop:
                                   f"after {MAX_SCHEMA_ATTEMPTS} attempts.")
                 ctx.turn += 1
                 ctx.transcript.event("assistant_action", dict(action), turn=ctx.turn, usage=usage,
+                                     **({"phase": ctx.phase} if ctx.phase else {}),
                                      **({"referred": True} if getattr(self, "_referred_turn", False)
                                         else {}))
                 ctx.add_usage(usage)

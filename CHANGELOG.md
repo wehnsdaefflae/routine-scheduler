@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.43.0] — 2026-07-15
+
+### Added
+- **The state-graph rail is an instrument panel**: every `assistant_action` transcript
+  event now carries the phase that was active while it was produced, and
+  `statemap.phase_stats` (served at `GET /api/runs/{id}/phases`) derives per-phase
+  turns · tokens · wall-clock · cost from the transcript — dispatch time attributed to
+  the acting phase, completion time to the phase that produced the next action, the
+  tail after the last action to the last phase. The run-view and conversation rails
+  render the numbers on each visited node, refreshed on every phase transition; turns
+  from before any `phase.json` write show as a "before any phase" foot line.
+
 ## [0.42.0] — 2026-07-15
 
 ### Security
