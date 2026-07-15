@@ -31,6 +31,7 @@ dev = [
     "types-croniter",
     "types-jsonschema",
     "types-pyyaml",
+    "pytest-playwright>=0.8.0",
 ]
 
 [build-system]

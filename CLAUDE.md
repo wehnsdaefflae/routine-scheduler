@@ -18,7 +18,11 @@ routine config (`routine.yaml` / UI).
 
 - `uv sync` — install/refresh the venv
 - `uv run pytest -q` — full suite (fast, no network). Single test: `uv run pytest tests/test_loop.py -q`
-  or `-k <name>`. Live endpoint smoke tests run only with `RSCHED_LIVE_TESTS=1`.
+  or `-k <name>`. Live endpoint smoke tests run only with `RSCHED_LIVE_TESTS=1`. The suite
+  includes the browser UI tests in `tests/ui/` (Playwright driving the REAL console over a
+  stub runner — no scheduler, no engine, no LLM; see `tests/ui/conftest.py`). One-time per
+  machine: `uv run playwright install chromium`. EVERY UI change gets exercised here — it is
+  the safety net that lets the frontend be reworked boldly.
 - `uv run ruff check` + `uv run mypy` — the strict quality gates (ruff runs `select = ALL`;
   every ignore in pyproject.toml carries its house-style reason). Both MUST be green in every
   commit; `uv run pre-commit install` wires them into git.

@@ -124,7 +124,9 @@ adds live endpoint smoke tests). Quality gates are strict and enforced:
   the deliberate house-style reason. Zero findings is the only passing state.
 - `uv run mypy` — type check of `src/rsched`.
 - `uv run pre-commit install` once — both gates then run on every commit.
-- `uv run pytest --cov` — coverage report (branch coverage on).
+- `uv run pytest --cov` — coverage report (branch coverage on; `fail_under` is a ratchet).
+- `tests/ui/` — Playwright browser tests that drive the real console against fixture
+  state and a stub runner (no LLM). One-time setup: `uv run playwright install chromium`.
 
 Working conventions, the action/transcript contracts, and the module standards live in
 `CLAUDE.md`; the Help tab's API reference regenerates from docstrings at every daemon

@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.31.0] — 2026-07-15
+
+### Added
+- **Browser UI test harness** (`tests/ui/`): Playwright drives the REAL console — the
+  FastAPI app + static frontend served by uvicorn on an ephemeral port over fixture homes
+  and a stub runner (no scheduler, no engine subprocess, no LLM). Covers the four
+  load-bearing flows: Decisions answering (options, default, Enter-to-submit, blocking
+  from a live run), the conversation composer (create + follow-up message), routine-page
+  saves (description, budgets), and Settings endpoints/models CRUD (create, edit, delete
+  behind confirm dialogs). Every test also fails on any uncaught JS error, and asserts
+  what landed **on disk**, not just what the toast claimed. One-time setup:
+  `uv run playwright install chromium`.
+
 ## [0.30.0] — 2026-07-15
 
 ### Added
