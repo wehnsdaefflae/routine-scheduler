@@ -112,3 +112,62 @@ def test_parse_run_ts_reads_utc():
     assert d is not None and d.utcoffset() == timedelta(0)
     assert (d.year, d.hour, d.minute, d.second) == (2026, 3, 0, 3)
     assert registry.parse_run_ts("not-a-ts") is None
+
+
+# ---- the stat-validated memo: freshness beats reuse, callers get copies ----------------
+
+
+def test_scan_memo_freshness_and_isolation(make_routine, tmp_path):
+    d = make_routine(slug="memo")
+    run_dir = _mk_run(d, "20260707-070000", "running")
+    server = _server(tmp_path)
+
+    first = registry.scan(server)["memo"]
+    # returned objects are copies — mutating them must not poison later scans
+    first.runs[0].usage["out"] = 999_999
+    first.cfg.name = "clobbered"
+    again = registry.scan(server)["memo"]
+    assert again.runs[0].usage == {"in": 5, "out": 2}
+    assert again.cfg.name == "Test memo"
+
+    # an atomic rewrite (tmp+rename, the engine's write path) shows up on the very next scan
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": "memo:20260707-070000", "state": "finished",
+                       "turn": 9, "usage": {"in": 7, "out": 3}})
+    (run_dir / "result.md").write_text("done")
+    updated = registry.scan(server)["memo"].runs[0]
+    assert (updated.state, updated.turn, updated.summary) == ("finished", 9, "done")
+
+
+def test_scan_memo_sees_config_and_question_changes(make_routine, tmp_path):
+    d = make_routine(slug="memoq")
+    server = _server(tmp_path)
+    assert registry.scan(server)["memoq"].open_questions == []
+
+    # a question appears → listed; its answer arrives in inbox/ → flagged answered
+    qdir = d / "questions" / "pending"
+    qdir.mkdir(parents=True)
+    atomic_write_json(qdir / "q-1.json", {"qid": "q-1", "question": "carry on?"})
+    assert registry.scan(server)["memoq"].open_questions[0]["qid"] == "q-1"
+    atomic_write_json(d / "inbox" / "answer-q-1.json", {"answer": "yes"})
+    assert registry.scan(server)["memoq"].open_questions[0]["answered"] is True
+
+    # routine.yaml edited → the catalog reflects it next scan
+    raw = (d / "routine.yaml").read_text(encoding="utf-8")
+    (d / "routine.yaml").write_text(raw.replace("enabled: true", "enabled: false"),
+                                    encoding="utf-8")
+    assert registry.scan(server)["memoq"].cfg.enabled is False
+
+
+def test_scan_memo_prunes_deleted_dirs(make_routine, tmp_path):
+    import shutil as sh
+
+    d = make_routine(slug="gone")
+    _mk_run(d, "20260707-070000", "finished")
+    server = _server(tmp_path)
+    registry.scan(server)
+    assert str(d) in registry._cfg_memo
+    sh.rmtree(d)
+    assert "gone" not in registry.scan(server)
+    assert str(d) not in registry._cfg_memo
+    assert all(not k.startswith(str(d)) for k in registry._run_memo)

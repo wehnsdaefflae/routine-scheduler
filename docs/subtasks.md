@@ -91,3 +91,43 @@ process, a subtask does **not** survive across conversation reply-finishes — a
 outlive a reply (a long, fire-and-forget scrape) is a different capability, the **`detach`** action
 (a detached background task that runs as its own daemon process and reports back to the conversation
 on completion). See [background-tasks.md](background-tasks.md).
+
+## Process model — why children are threads (decision record, 2026-07)
+
+We evaluated moving `spawn`/`subtask` children onto the daemon-subprocess pattern the detached
+machinery uses, with the goal of deleting the resume-orphan handling (the aborted-on-resume
+notes and the synthesized dangling-subtask observation). **Decision: children stay in-process
+threads.** The two models are complementary by design, not rivals:
+
+|                | in-process child (`spawn`/`subtask`)         | detached task (`detach`)                    |
+|----------------|----------------------------------------------|---------------------------------------------|
+| start latency  | milliseconds (a thread)                      | seconds (intent file → daemon tick → boot)  |
+| budget         | sliced live from the parent's remainder; usage folds back at exit | its own background budget; never folds back |
+| lifetime       | dies with the parent — an invariant, not a bug | must outlive the reply — its whole purpose |
+| conversation   | parent yields to a user message instantly (in-memory events) | reports back asynchronously via the inbox |
+
+Why the subprocess trade-off fails for within-run children:
+
+- **Latency.** A subprocess child either routes through the daemon (intent file + scheduler tick
+  + interpreter boot: seconds per child, against milliseconds today, over a recursive tree with
+  up to 4 parallel children per node — subtasks are usually a handful of turns, so the overhead
+  would often exceed the work) or the engine spawns processes itself, creating a second
+  process-owner beside the daemon — a deeper invariant break than the one being fixed.
+- **Budget folding.** Budgets are one live in-memory primitive: `child_budgets()` slices half
+  the parent's *remainder* at spawn, and the child's usage folds back into the parent's meter
+  and per-turn `status.json` (single writer) at exit. Across processes, both directions become
+  disk-polling protocols, and the single-writer status contract needs a merge layer.
+- **Responsiveness is a feature, not an orphan workaround.** The wait-loop's inbox yield keeps
+  the conversation live while a child runs. It survives any process model — with subprocesses
+  the wake signals just get slower (disk polling; the event bus is lossy by design).
+- **The orphan code is smaller than its replacement.** Aborted-on-resume plus the
+  dangling-subtask note are ~60 lines with tests. Subprocess children would need intake,
+  reattach-on-resume, cross-process kill, usage reconciliation, registry/retention visibility,
+  and a reaper for children whose parent died without a finish — threads make "children never
+  outlive the parent" free; subprocesses violate it on every parent crash. That is the detached
+  manager's ~370 lines again, justified there by the one thing threads cannot do: outlive the
+  process.
+
+The escape hatch already exists: work that must survive a restart or a reply-finish is
+`detach`, not a subtask. Revisit only if cross-restart subtask survival becomes a concrete
+need — and then by widening `detach`, not by migrating `spawn`/`subtask`.

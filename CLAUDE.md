@@ -183,10 +183,11 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   parent's remainder). A child's completion is delivered by the turn-boundary hook
   (`announce_finished_subruns` — `SUBTASK FINISHED` / `SUB-WORKFLOW FINISHED`); `wait` is RESPONSIVE
   (it yields the moment a user message is pending — `inbox.has_pending_messages` — so the loop drains
-  it and the parent replies, then waits again). Children are threads, so they die with the process:
-  a resume marks any still-running child aborted and notes it (`history.orphaned_children`), and a
-  subtask does NOT survive a conversation reply-finish — a job that must outlive a reply is the
-  separate **`detach`** capability below, not a subtask.
+  it and the parent replies, then waits again). Children are threads, so they die with the process
+  (DELIBERATE — the subprocess alternative was evaluated and rejected, docs/subtasks.md § Process
+  model): a resume marks any still-running child aborted and notes it (`history.orphaned_children`),
+  and a subtask does NOT survive a conversation reply-finish — a job that must outlive a reply is
+  the separate **`detach`** capability below, not a subtask.
   Decomposition is recursive (a child hits its own decompose gate; depth ≤ `max_subrun_depth`) and
   the `general-task` seed workflow carries a standardized `decompose_decision()` gate
   (inline | sequential | parallel); `converse` handles decomposition as inline prose.
@@ -363,7 +364,9 @@ first boot; `deploy/install.sh` for host installs.
 - The daemon (`scheduler.py` + `runner.py`) fires cron via croniter and spawns one `engine-run` subprocess
   per routine (never two of the same at once) under `max_concurrent_runs`; a run that blocks on a user
   question **releases its slot**. `registry.py` derives the catalog and run-index live from the filesystem
-  every rescan — no cache, no database; indexes are in-memory.
+  every rescan — no database, no cache files; parsing is memoized per file behind a stat()
+  fingerprint (inode+mtime+size, so atomic rewrites always miss), pruned for deleted dirs,
+  copies returned — the disk stays the source of truth on every lookup.
 - **Self-update restart** (`restart.py`): a sentinel triggers a drain (parked `waiting_user`/`paused` runs
   don't block it), then a clean exit; systemd `Restart=always` relaunches on the committed code (`uv run`
   re-syncs deps). Orphaned runs claiming to be alive are closed out at boot.

@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.30.0] — 2026-07-15
+
+### Added
+- **Child-task process-model decision record** (docs/subtasks.md § Process model): evaluated
+  migrating `spawn`/`subtask` threads onto the detached-subprocess pattern (to delete the
+  resume-orphan handling) and rejected it with reasons — start latency, live budget folding,
+  the responsive wait being a feature not a workaround, and the replacement lifecycle
+  dwarfing the ~60 lines it would remove. Threads stay; `detach` remains the cross-process
+  escape hatch.
+
+### Changed
+- **Registry scans are memoized behind stat() fingerprints** (`daemon/registry.py`): each
+  parsed `status.json`/`result.md`/`routine.yaml`/question set is reused only while its
+  (inode, mtime, size) fingerprint matches — freshness is re-decided from the filesystem on
+  every lookup, callers get copies, entries for deleted dirs are pruned. Warm scan on the
+  production instance: 77 ms → 9 ms, with no database and no invalidation protocol.
+
 ## [0.29.0] — 2026-07-15
 
 The whole-codebase overhaul: every subsystem audited (engine, endpoints, daemon, web,

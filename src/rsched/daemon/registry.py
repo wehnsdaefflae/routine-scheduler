@@ -1,15 +1,18 @@
 """Derived routine catalog + run index — the filesystem is the source of truth.
 
-scan() reads ~/routines/*/routine.yaml fresh (never executes anything); the run index is
-rebuilt from runs/ directories. No database, no cache files: a routine dropped into the
-directory appears on the next rescan, one deleted disappears.
+scan() reads ~/routines/*/routine.yaml (never executes anything); the run index is rebuilt
+from runs/ directories. No database, no cache files: a routine dropped into the directory
+appears on the next rescan, one deleted disappears. Parsing is memoized per file behind a
+stat() check (see the memo block below) — freshness is re-decided from the filesystem on
+every lookup, so the memo can never serve state the disk no longer holds.
 """
 
 from __future__ import annotations
 
+import copy
 import gzip
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -72,7 +75,50 @@ class RoutineInfo:
         return r if r and r.state in ACTIVE_STATES else None
 
 
+# Stat-validated memos: scan() runs on every web request and scheduler tick, yet most of what
+# it parses (terminal runs, an unchanged routine.yaml) never changes between calls. Each entry
+# is keyed on the (inode, mtime_ns, size) of the files behind it and reused only while that
+# fingerprint still matches — a stat() per lookup, so the filesystem stays the source of truth
+# and there is no invalidation protocol to get wrong. atomic_write renames a fresh tmp file
+# into place (new inode), so every cross-process rewrite is caught even inside one mtime tick.
+# Callers get COPIES, never the cached objects. scan() prunes entries for dirs gone from disk.
+_run_memo: dict[str, tuple[tuple, RunInfo]] = {}
+_cfg_memo: dict[str, tuple[tuple, tuple[RoutineConfig | None, list[str]]]] = {}
+_questions_memo: dict[str, tuple[tuple, list[dict]]] = {}
+
+
+def _fingerprint(*paths: Path) -> tuple:
+    out: list[tuple[int, int, int] | None] = []
+    for p in paths:
+        try:
+            st = p.stat()
+            out.append((st.st_ino, st.st_mtime_ns, st.st_size))
+        except OSError:
+            out.append(None)
+    return tuple(out)
+
+
+def _prune(memo: dict, home: Path, visited: set[str]) -> None:
+    prefix = f"{home}/"
+    for key in [k for k in memo if k.startswith(prefix) and k not in visited]:
+        del memo[key]
+
+
 def read_run(run_dir: Path, slug: str) -> RunInfo:
+    fp = _fingerprint(run_dir / "status.json", run_dir / "result.md")
+    hit = _run_memo.get(str(run_dir))
+    if hit is not None and hit[0] == fp:
+        return _copy_run(hit[1])
+    info = _read_run_fresh(run_dir, slug)
+    _run_memo[str(run_dir)] = (fp, info)
+    return _copy_run(info)
+
+
+def _copy_run(info: RunInfo) -> RunInfo:
+    return replace(info, usage=dict(info.usage), question=copy.deepcopy(info.question))
+
+
+def _read_run_fresh(run_dir: Path, slug: str) -> RunInfo:
     info = RunInfo(run_id=f"{slug}:{run_dir.name}", ts=run_dir.name, dir=run_dir)
     st = read_json(run_dir / "status.json")
     if isinstance(st, dict):
@@ -120,19 +166,46 @@ def scan(server: ServerConfig, home: Path | None = None) -> dict[str, RoutineInf
     catalog: dict[str, RoutineInfo] = {}
     if not home.is_dir():
         return catalog
+    visited: set[str] = set()
     for d in sorted(home.iterdir()):
         if not d.is_dir() or d.name.startswith("."):
             continue
         if not (d / "routine.yaml").exists():
             continue
-        cfg, problems = load_routine(d)
+        visited.add(str(d))
+        cfg, problems = _load_routine_memo(d)
         if cfg is None:
             cfg = RoutineConfig(slug=d.name, dir=d, enabled=False)
             problems = [*problems, "unloadable routine.yaml — treated as disabled"]
         catalog[cfg.slug] = RoutineInfo(cfg=cfg, problems=problems,
                                         runs=run_index(d, cfg.slug),
-                                        open_questions=open_questions(d))
+                                        open_questions=_open_questions_memo(d))
+    _prune(_cfg_memo, home, visited)
+    _prune(_questions_memo, home, visited)
+    _prune(_run_memo, home,
+           {str(r.dir) for info in catalog.values() for r in info.runs})
     return catalog
+
+
+def _load_routine_memo(d: Path) -> tuple[RoutineConfig | None, list[str]]:
+    fp = _fingerprint(d / "routine.yaml")
+    hit = _cfg_memo.get(str(d))
+    if hit is None or hit[0] != fp:
+        hit = (fp, load_routine(d))
+        _cfg_memo[str(d)] = hit
+    cfg, problems = hit[1]
+    return (cfg.model_copy(deep=True) if cfg is not None else None), list(problems)
+
+
+def _open_questions_memo(d: Path) -> list[dict]:
+    # keyed on BOTH dirs: a new/rewritten question touches questions/pending, an answer
+    # (which flips a question's `answered` flag) lands in inbox/ — either changes the result.
+    fp = _fingerprint(d / "questions" / "pending", d / "inbox")
+    hit = _questions_memo.get(str(d))
+    if hit is None or hit[0] != fp:
+        hit = (fp, open_questions(d))
+        _questions_memo[str(d)] = hit
+    return copy.deepcopy(hit[1])
 
 
 def next_fire(cfg: RoutineConfig, after: datetime) -> datetime | None:
