@@ -68,10 +68,10 @@ def recompile_routine(server, routine_dir: Path, cfg, *, force: bool = False) ->
     # Refuse to SILENTLY revert hand-edits: if the routine's steps drifted from the compile
     # baseline (the routine-improver or a person edited a generated module) and those edits are not
     # captured in the seed, a plain recompile would re-derive the steps and discard them. Refuse
-    # unless forced. Checked BEFORE the (expensive) decompose call. Routines with no provenance
-    # baseline report tracked=False and are unaffected (backward compatible).
+    # unless forced. Checked BEFORE the (expensive) decompose call. `drift()` reports steps=False
+    # for a routine with no compile baseline, so only a drifted-from-baseline routine trips this.
     pre_drift = provenance.drift(routine_dir, instruction)
-    steps_drifted = bool(pre_drift.get("tracked") and pre_drift.get("steps"))
+    steps_drifted = bool(pre_drift.get("steps"))
     if steps_drifted and not force:
         raise RecompileDriftError(
             "this routine's step modules have hand-edits that are not reflected in its instruction "

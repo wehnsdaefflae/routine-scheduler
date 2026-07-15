@@ -31,8 +31,8 @@ _Nothing yet._
   are not in the seed, it **refuses** (`RecompileDriftError`; surfaced as `state=error`,
   `reason=steps_drift`) so nothing is lost silently. Pass `?force=true` to overwrite — and even
   then the pre-recompile `main.md` + `steps/` are backed up to `state/recompile-backups/<ts>/`
-  first. Routines with no provenance baseline (`tracked=false`) are unaffected — fully backward
-  compatible.
+  first. The refusal keys off `provenance.drift()`, which reports no steps-drift for a routine that
+  has no compile baseline, so only a routine whose steps drifted from its baseline trips the guard.
 
 ## [0.22.0] — 2026-07-15
 
