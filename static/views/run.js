@@ -3,6 +3,7 @@
 // live in the URL (#/run/{id}?sub=N&offset=M), so a deep link reopens the exact view.
 
 import { api } from "/static/api.js";
+import { confirmDialog } from "/static/components/dialog.js";
 import { mdInline } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
@@ -258,7 +259,7 @@ export async function render(view, runId, query = {}) {
     catch (err) { toast(err.message, 4000, { error: true }); }
   };
   abortBtn.onclick = async () => {
-    if (!confirm(`Abort ${runId}?`)) return;
+    if (!(await confirmDialog(`Abort ${runId}?`, { confirmLabel: "abort" }))) return;
     try { await api(`/api/runs/${runId}/abort`, { method: "POST" }); }
     catch (err) { toast(err.message, 4000, { error: true }); }
   };

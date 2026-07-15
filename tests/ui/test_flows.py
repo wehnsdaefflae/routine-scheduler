@@ -177,8 +177,13 @@ def _server_yaml(ui) -> dict:
     return yaml.safe_load((ui.tmp / "config.yaml").read_text(encoding="utf-8"))
 
 
+def _confirm_modal(page, label):
+    """Answer the themed confirm dialog (components/dialog.js) — native dialogs are gone;
+    one appearing anywhere would block and fail the test, which is the point."""
+    page.locator(".modal-overlay").get_by_role("button", name=label, exact=True).click()
+
+
 def test_settings_endpoints_crud(ui, ui_page):
-    ui_page.on("dialog", lambda d: d.accept())   # the delete confirms
     ui_page.goto(f"{ui.url}/#/settings?section=endpoints")
 
     # CREATE an endpoint
@@ -210,15 +215,21 @@ def test_settings_endpoints_crud(ui, ui_page):
     assert models["llama"] == {"endpoint": "vllm", "model": "meta/llama-3"} \
         or models["llama"]["endpoint"] == "vllm"
 
-    # DELETE the model, then the endpoint (each behind a confirm dialog).
+    # DELETE the model, then the endpoint (each behind the themed confirm dialog).
     # .last = the INNERMOST matching panel (the card), not the section wrapper around it.
     model_card = ui_page.locator(".panel",
                                  has=ui_page.locator("strong", has_text="llama")).last
     model_card.get_by_role("button", name="delete").click()
+    _confirm_modal(ui_page, "cancel")            # cancelling keeps the model
+    expect(ui_page.locator("strong", has_text="llama").first).to_be_visible()
+    assert "llama" in _server_yaml(ui)["models"]
+    model_card.get_by_role("button", name="delete").click()
+    _confirm_modal(ui_page, "delete")
     expect(ui_page.locator("strong", has_text="llama")).to_have_count(0)
     endpoint_card = ui_page.locator(".panel",
                                     has=ui_page.locator("strong", has_text="vllm")).first
     endpoint_card.get_by_role("button", name="delete").click()
+    _confirm_modal(ui_page, "delete")
     expect(ui_page.locator("strong", has_text="vllm")).to_have_count(0)
     cfg = _server_yaml(ui)
     assert "vllm" not in cfg["endpoints"]

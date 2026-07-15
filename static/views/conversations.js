@@ -7,6 +7,7 @@
 // finished one resumes it in place, so the view remounts its tail after every send.
 
 import { api, apiUpload } from "/static/api.js";
+import { confirmDialog, promptDialog } from "/static/components/dialog.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
@@ -556,9 +557,9 @@ export async function render(view, slug, _query = {}) {
             .then(() => { drawTags(next); loadList(); }).catch((e) => toast(e.message, 3000, { error: true }));
         } })),
         el("button", { class: "btn small ghost", title: "add tag", onclick: async () => {
-          const t = prompt("new tag");
-          if (!t?.trim()) return;
-          const next = [...tags, t.trim().toLowerCase()];
+          const t = await promptDialog("new tag", { placeholder: "e.g. research" });
+          if (!t) return;
+          const next = [...tags, t.toLowerCase()];
           await api(`/api/conversations/${slug}`, { method: "PATCH", body: { tags: next } })
             .then(() => { drawTags(next); loadList(); }).catch((e) => toast(e.message, 3000, { error: true }));
         } }, "+"));
@@ -566,7 +567,7 @@ export async function render(view, slug, _query = {}) {
     drawTags(detail.tags || []);
     const del = el("button", { class: "btn small danger" }, "delete");
     del.onclick = async () => {
-      if (!confirm(`Delete this conversation? It is unversioned — this cannot be undone.`)) return;
+      if (!(await confirmDialog("Delete this conversation? It is unversioned — this cannot be undone.", { confirmLabel: "delete" }))) return;
       try { await api(`/api/conversations/${slug}`, { method: "DELETE" }); navigate("#/conversations"); }
       catch (err) { toast(err.message, 4000, { error: true }); }
     };

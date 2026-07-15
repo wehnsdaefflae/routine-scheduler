@@ -5,6 +5,7 @@
 // surfaced — latency, schema verdict, parsed answer, and the raw error detail (auth hint) on fail.
 
 import { api } from "/static/api.js";
+import { confirmDialog } from "/static/components/dialog.js";
 import { el, toast } from "/static/util.js";
 
 // Each kind needs a DIFFERENT credential — spelled out per endpoint so the subscription token
@@ -119,7 +120,7 @@ export async function renderEndpoints(view) {
     };
     const delBtn = el("button", { class: "btn small danger" }, "delete");
     delBtn.onclick = async () => {
-      if (!confirm(`Delete model "${m.name}"?`)) return;
+      if (!(await confirmDialog(`Delete model "${m.name}"?`, { confirmLabel: "delete" }))) return;
       try { await api(`/api/settings/models/${encodeURIComponent(m.name)}`, { method: "DELETE" }); await load(); }
       catch (err) { toast(err.message, 4000, { error: true }); }
     };
@@ -226,7 +227,7 @@ export async function renderEndpoints(view) {
     };
     const delBtn = el("button", { class: "btn small danger" }, "delete");
     delBtn.onclick = async () => {
-      if (!confirm(`Delete endpoint "${ep.name}"?`)) return;
+      if (!(await confirmDialog(`Delete endpoint "${ep.name}"?`, { confirmLabel: "delete" }))) return;
       try { await api(`/api/settings/endpoints/${ep.name}`, { method: "DELETE" }); await load(); }
       catch (err) { toast(err.message, 4000, { error: true }); }
     };

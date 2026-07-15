@@ -4,6 +4,7 @@
 // decisions update in place — no page reloads.
 
 import { api } from "/static/api.js";
+import { confirmDialog } from "/static/components/dialog.js";
 import { codeEditor } from "/static/components/code.js";
 import { replaceHash } from "/static/router.js";
 import { el, emptyState, requiresSummary, skeleton, tagChip, toast, when } from "/static/util.js";
@@ -103,8 +104,9 @@ export async function render(view, sub, query = {}) {
     showEditor(`workflow: ${slug}`, d.content, d.log, async (content) =>
       api(`/api/workflows/${slug}`, { method: "PUT", body: { content } }), "python",
       async () => {
-        if (!confirm(`Delete workflow "${slug}"? Routines born from it keep their own `
-                     + "recipes. A seed pattern returns at the next daemon boot.")) return false;
+        if (!(await confirmDialog(`Delete workflow "${slug}"? Routines born from it keep their own `
+                     + "recipes. A seed pattern returns at the next daemon boot.",
+                     { confirmLabel: "delete" }))) return false;
         await api(`/api/workflows/${slug}`, { method: "DELETE" });
         return true;
       });
@@ -219,7 +221,7 @@ export async function render(view, sub, query = {}) {
     showEditor(`playbook: ${slug} (MAIN.md)`, d.content, d.log, async (content) =>
       api(`/api/playbooks/${slug}`, { method: "PUT", body: { content } }), undefined,
       async () => {
-        if (!confirm(`Delete playbook "${slug}"? It is git-versioned — recoverable from history.`)) return false;
+        if (!(await confirmDialog(`Delete playbook "${slug}"? It is git-versioned — recoverable from history.`, { confirmLabel: "delete" }))) return false;
         await api(`/api/playbooks/${slug}`, { method: "DELETE" });
         return true;
       }, extra);

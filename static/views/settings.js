@@ -2,6 +2,7 @@
 // The LLM endpoints section (CRUD + system model + live test) lives in settings-endpoints.js.
 
 import { api } from "/static/api.js";
+import { confirmDialog } from "/static/components/dialog.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { setQuery } from "/static/router.js";
 import { el, skeleton, toast, when } from "/static/util.js";
@@ -166,7 +167,7 @@ export async function render(view, query = {}) {
     const delBtn = (k) => {
       const b = el("button", { class: "btn small danger" }, "delete");
       b.onclick = async () => {
-        if (!confirm(`Delete secret ${k}?`)) return;
+        if (!(await confirmDialog(`Delete secret ${k}?`, { confirmLabel: "delete" }))) return;
         try { await api(`/api/settings/secrets/${encodeURIComponent(k)}`, { method: "DELETE" }); renderSecrets(); }
         catch (err) { toast(err.message, 4000, { error: true }); }
       };

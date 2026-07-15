@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.37.0] — 2026-07-15
+
+### Changed
+- **Every native `confirm()`/`prompt()` replaced with themed dialogs**
+  (`components/dialog.js` — the token gate's overlay language, keyboard-first: Enter
+  confirms, Esc/overlay-click cancels, promise-based call sites). Covers routine archive,
+  run abort, conversation delete + add-tag, workflow/playbook delete, endpoint/model/secret
+  delete. Destructive confirms carry an action-named red button ("delete", "abort",
+  "archive") instead of a generic OK.
+
 ## [0.36.0] — 2026-07-15
 
 ### Added

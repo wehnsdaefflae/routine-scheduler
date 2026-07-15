@@ -2,6 +2,7 @@
 // navigable recipe (main.md + stage modules + trait modules), then state & runs.
 
 import { api } from "/static/api.js";
+import { confirmDialog } from "/static/components/dialog.js";
 import { md, mdInline } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
@@ -42,7 +43,7 @@ export async function render(view, slug, query = {}) {
     catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
   }
   async function archive() {
-    if (!confirm(`Archive "${slug}"? It leaves the scheduler (dir moves to .archive).`)) return;
+    if (!(await confirmDialog(`Archive "${slug}"? It leaves the scheduler (dir moves to .archive).`, { confirmLabel: "archive" }))) return;
     try { await api(`/api/routines/${slug}/archive`, { method: "POST" }); location.hash = "#/"; }
     catch (err) { toast(err.message, 4000, { error: true }); }
   }
