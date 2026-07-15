@@ -130,4 +130,4 @@ branch = true
 [tool.coverage.report]
 skip_covered = true
 show_missing = true
-fail_under = 83  # ratchet: current suite delivers 84% branch coverage — never drop below
+fail_under = 84  # ratchet: current suite delivers 84.8% branch coverage — never drop below
