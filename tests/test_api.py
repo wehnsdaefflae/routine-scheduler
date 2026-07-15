@@ -22,7 +22,8 @@ def client(tmp_path, make_routine):
         "routines_home": str(tmp_path / "routines"),
         "libraries_home": str(tmp_path / "library"),
         "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "system_model": {"endpoint": "dummy", "model": "m"},
+        "models": {"m": {"endpoint": "dummy", "model": "m"}},
+        "system_model": "m",
     }))
     server, problems = load_server_config(cfg_path)
     assert not problems
@@ -265,19 +266,19 @@ def test_intervention_endpoints(client):
 
 def test_model_switch_endpoint(client):
     """Switching a live run's model writes control.json.switch_model (keeping any pause); unknown
-    endpoints and terminal runs are refused."""
+    catalog models and terminal runs are refused."""
     c, tmp = client
     run_dir = _mk_run(tmp / "routines", "apir", "20260710-150000", "running")
     rid = "apir:20260710-150000"
-    assert c.post(f"/api/runs/{rid}/model", json={"endpoint": "nope", "model": "m"}).status_code == 400
+    assert c.post(f"/api/runs/{rid}/model", json={"model": "nope"}).status_code == 400
     assert c.post(f"/api/runs/{rid}/pause").json()["pause"] is True
-    r = c.post(f"/api/runs/{rid}/model", json={"endpoint": "dummy", "model": "big", "effort": "high"})
+    r = c.post(f"/api/runs/{rid}/model", json={"model": "m"})   # a catalog model name
     assert r.status_code == 200
     ctrl = read_json(run_dir / "control.json")
     assert ctrl["pause"] is True                                   # pause preserved
-    assert ctrl["switch_model"]["main"]["model"] == "big" and ctrl["switch_model"]["ts"]
+    assert ctrl["switch_model"]["main"] == "m" and ctrl["switch_model"]["ts"]
     atomic_write_json(run_dir / "status.json", {"run_id": rid, "state": "finished"})
-    assert c.post(f"/api/runs/{rid}/model", json={"endpoint": "dummy", "model": "m"}).status_code == 409
+    assert c.post(f"/api/runs/{rid}/model", json={"model": "m"}).status_code == 409
 
 
 def test_resume_run_endpoint(client, monkeypatch):
@@ -520,17 +521,24 @@ def test_routine_tags(client):
 
 
 def test_system_model_and_llm_ready(client):
-    """Setting the system_model to a live endpoint is what flips llm_ready true."""
+    """The system_model is a catalog model NAME; the API keeps it from dangling."""
     c, tmp = client
-    assert c.get("/api/status").json()["llm_ready"] is True          # fixture: system_model → dummy
-    # the system_model must point at a real endpoint
-    assert c.put("/api/settings/system-model", json={"endpoint": "nope", "model": "m"}).status_code == 400
-    r = c.put("/api/settings/system-model", json={"endpoint": "dummy", "model": "x"})
-    assert r.status_code == 200 and r.json()["system_model"]["endpoint"] == "dummy"
-    assert yaml.safe_load((tmp / "config.yaml").read_text())["system_model"]["endpoint"] == "dummy"
-    # remove the only endpoint → the system_model dangles → no longer ready
-    c.delete("/api/settings/endpoints/dummy")
-    assert c.get("/api/status").json()["llm_ready"] is False
+    assert c.get("/api/status").json()["llm_ready"] is True          # fixture: system_model → m
+    # the system_model must name a catalog model
+    assert c.put("/api/settings/system-model", json={"name": "nope"}).status_code == 400
+    # add a second catalog model and point the system model at it
+    assert c.post("/api/settings/models",
+                  json={"name": "x", "endpoint": "dummy", "model": "x-id"}).status_code == 200
+    r = c.put("/api/settings/system-model", json={"name": "x"})
+    assert r.status_code == 200 and r.json()["system_model"] == "x"
+    assert yaml.safe_load((tmp / "config.yaml").read_text())["system_model"] == "x"
+    # the current system model can't be deleted, nor its endpoint while catalog models use it
+    assert c.delete("/api/settings/models/x").status_code == 400
+    assert c.delete("/api/settings/endpoints/dummy").status_code == 400
+    # reassign, then the freed model deletes cleanly and the instance stays ready
+    assert c.put("/api/settings/system-model", json={"name": "m"}).status_code == 200
+    assert c.delete("/api/settings/models/x").status_code == 200
+    assert c.get("/api/status").json()["llm_ready"] is True
 
 
 def test_settings_endpoints_crud(client):
@@ -552,6 +560,33 @@ def test_settings_endpoints_crud(client):
     assert r.status_code == 200
     assert c.delete("/api/settings/endpoints/vllm").status_code == 200
     assert c.delete("/api/settings/endpoints/vllm").status_code == 404
+
+
+def test_settings_models_crud(client):
+    c, tmp = client
+    # the fixture seeds one catalog model "m" on endpoint "dummy", and it's the system model
+    listing = c.get("/api/settings/endpoints").json()
+    assert [m["name"] for m in listing["models"]] == ["m"] and listing["system_model"] == "m"
+    # add a multimodal model with an explicit context window + effort
+    r = c.post("/api/settings/models", json={
+        "name": "gpt4o", "endpoint": "dummy", "model": "openai/gpt-4o",
+        "multimodal": True, "context_chars": 512_000, "effort": "high"})
+    assert r.status_code == 200
+    raw = yaml.safe_load((tmp / "config.yaml").read_text())["models"]["gpt4o"]
+    assert raw == {"endpoint": "dummy", "model": "openai/gpt-4o",
+                   "multimodal": True, "context_chars": 512_000, "effort": "high"}
+    gv = next(m for m in c.get("/api/settings/models").json()["models"] if m["name"] == "gpt4o")
+    assert gv["multimodal_effective"] is True and gv["context_effective"] == 512_000
+    # a model on an unknown endpoint is rejected
+    assert c.post("/api/settings/models",
+                  json={"name": "bad", "endpoint": "ghost", "model": "x"}).status_code == 400
+    # unset attrs inherit the endpoint kind default: a plain openai model is text-only
+    c.post("/api/settings/models", json={"name": "plain", "endpoint": "dummy", "model": "glm"})
+    pv = next(m for m in c.get("/api/settings/models").json()["models"] if m["name"] == "plain")
+    assert pv["multimodal"] is None and pv["multimodal_effective"] is False
+    # delete a non-system model cleanly
+    assert c.delete("/api/settings/models/gpt4o").status_code == 200
+    assert "gpt4o" not in {m["name"] for m in c.get("/api/settings/models").json()["models"]}
 
 
 def test_endpoint_inline_key_saved_and_preserved(client):

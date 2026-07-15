@@ -70,12 +70,11 @@ class OpenAICompatEndpoint:
         # decoding to the schema (the OpenAI-compat response_format is not enforced by Ollama).
         self.native = cfg.schema_mode == "ollama_native"
         self.native_url = self.base_url.removesuffix("/v1") + "/api/chat"
-        self._multimodal = cfg.native_multimodal()
 
-    def supports_media(self, media_type: str) -> bool:
-        """OpenAI-compatible vision models take images natively when this endpoint is
+    def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
+        """OpenAI-compatible vision models take images natively when the resolved model is
         multimodal; PDF support is spotty across providers, so PDFs route to the vision util."""
-        return supports_media_type(media_type, multimodal=self._multimodal, pdf=False)
+        return supports_media_type(media_type, multimodal=multimodal, pdf=False)
 
     def _resolve_key(self) -> str:
         if self.api_key:                                  # inline key (UI-set) wins over a file
@@ -106,20 +105,22 @@ class OpenAICompatEndpoint:
 
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
-                 timeout: int = DEFAULT_TIMEOUT, session: str | None = None) -> Completion:
+                 timeout: int = DEFAULT_TIMEOUT, session: str | None = None,
+                 temperature: float | None = None) -> Completion:
         # `session` is unused here: OpenAI-style providers cache implicitly on byte-stable
         # prefixes, which the engine's append-only message list already gives them; the
         # cached share shows up as usage "cached_in" (see _parse).
+        temp = temperature if temperature is not None else self.temperature  # model wins, endpoint default
         if self.native and schema is not None:
-            return self._complete_native(messages, model, schema, max_tokens, timeout)
+            return self._complete_native(messages, model, schema, max_tokens, timeout, temp)
         if any(m.get("media") for m in messages):  # only touched when an image rides a turn
             messages = _render_media(messages)
         body: dict = {"model": model, "messages": messages, **self.extra_body}
         if "openrouter" in self.base_url:
             # usage accounting: the response's usage block then carries the real $ cost
             body.setdefault("usage", {"include": True})
-        if self.temperature is not None:
-            body["temperature"] = self.temperature
+        if temp is not None:
+            body["temperature"] = temp
         if max_tokens:
             body["max_tokens"] = max_tokens
         if effort:
@@ -159,13 +160,16 @@ class OpenAICompatEndpoint:
 
         return with_retries(call)
 
-    def _complete_native(self, messages, model, schema, max_tokens, timeout) -> Completion:
+    def _complete_native(self, messages, model, schema, max_tokens, timeout,
+                         temperature=None) -> Completion:
         """Ollama native /api/chat with `format` = the JSON schema → constrained decoding."""
         # num_ctx MUST be set: Ollama's default context is tiny, so a large prompt gets
         # silently truncated and schema enforcement degrades (the model emits stray keys).
+        # It uses the endpoint's context_chars default — the per-model window drives the
+        # engine's compaction budget, not this local decode ceiling.
         options = {"num_ctx": max(8192, self.context_chars // 4)}
-        if self.temperature is not None:
-            options["temperature"] = self.temperature
+        if temperature is not None:
+            options["temperature"] = temperature
         if max_tokens:
             options["num_predict"] = max_tokens
         body = {"model": model, "messages": messages, "format": schema, "stream": False,

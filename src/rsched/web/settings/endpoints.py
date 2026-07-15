@@ -9,7 +9,8 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...config import ENDPOINT_KINDS, EndpointConfig, load_server_config
+from ...config import (ENDPOINT_KINDS, NATIVE_MM_KINDS, EndpointConfig, ModelConfig,
+                       load_server_config)
 from ...endpoints import EndpointRegistry
 from ...endpoints.base import EndpointError
 from ...schema_guard import SchemaViolation, parse_reply
@@ -25,16 +26,36 @@ def _endpoint_view(name: str, ep: EndpointConfig) -> dict:
     return {"name": name, "kind": ep.kind, "base_url": ep.base_url,
             "key_env_file": ep.key_env_file, "key_var": ep.key_var,
             "schema_mode": ep.schema_mode, "context_chars": ep.context_chars,
-            "temperature": ep.temperature, "multimodal": ep.native_multimodal(),
-            "has_inline_key": bool(ep.api_key)}
+            "temperature": ep.temperature, "has_inline_key": bool(ep.api_key)}
+
+
+def _model_view(mc: ModelConfig, endpoints: dict) -> dict:
+    """A catalog model's raw config PLUS the effective multimodal/context (endpoint-kind or
+    endpoint default filled in) so the list can label it and the editor can show what's set."""
+    ep = endpoints.get(mc.endpoint)
+    kind = ep.kind if ep else ""
+    return {"name": mc.name, "endpoint": mc.endpoint, "model": mc.model,
+            "multimodal": mc.multimodal, "effort": mc.effort, "temperature": mc.temperature,
+            "context_chars": mc.context_chars,
+            "multimodal_effective": mc.multimodal if mc.multimodal is not None
+            else (kind in NATIVE_MM_KINDS),
+            "context_effective": mc.context_chars or (ep.context_chars if ep else 0)}
 
 
 @router.get("/settings/endpoints")
 def list_endpoints(request: Request) -> dict:
     server = server_of(request)
-    sm = server.system_model
     return {"endpoints": [_endpoint_view(n, e) for n, e in server.endpoints.items()],
-            "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None}
+            "models": [_model_view(m, server.endpoints) for m in server.models.values()],
+            "system_model": server.system_model or None}
+
+
+@router.get("/settings/models")
+def list_models(request: Request) -> dict:
+    """The model catalog alone — for the routine/conversation model pickers (name → attrs)."""
+    server = server_of(request)
+    return {"models": [_model_view(m, server.endpoints) for m in server.models.values()],
+            "system_model": server.system_model or None}
 
 
 def _rewrite_endpoints(request: Request, mutate) -> dict:
@@ -59,9 +80,8 @@ class EndpointBody(BaseModel):
     key_env_file: str = ""
     key_var: str = ""
     schema_mode: str = "json_schema"
-    context_chars: int = 100_000
-    temperature: float | None = None
-    multimodal: bool | None = None   # None = default by kind (on for anthropic/claude-cli)
+    context_chars: int = 100_000     # a DEFAULT catalog models inherit (per-model window wins)
+    temperature: float | None = None  # a DEFAULT catalog models inherit
 
 
 @router.post("/settings/endpoints")
@@ -79,9 +99,9 @@ def upsert_endpoint(request: Request, body: EndpointBody, name: str | None = Non
         if not spec.get("api_key") and prev.get("api_key"):
             spec["api_key"] = prev["api_key"]
         # A PUT is a full replace, but the credential-save form sends only a subset — preserve
-        # config-only / omitted fields (temperature, extra_body, multimodal) so saving a key
-        # never silently drops them (e.g. reverting an OpenAI endpoint's native vision).
-        for field in ("temperature", "extra_body", "multimodal"):
+        # config-only / omitted fields (temperature, extra_body) so saving a key never silently
+        # drops them.
+        for field in ("temperature", "extra_body"):
             if field not in spec and field in prev:
                 spec[field] = prev[field]
         endpoints[key] = spec
@@ -91,8 +111,13 @@ def upsert_endpoint(request: Request, body: EndpointBody, name: str | None = Non
 
 @router.delete("/settings/endpoints/{name}")
 def delete_endpoint(request: Request, name: str) -> dict:
-    if name not in server_of(request).endpoints:
+    server = server_of(request)
+    if name not in server.endpoints:
         raise HTTPException(404, f"no endpoint {name!r}")
+    used = [m.name for m in server.models.values() if m.endpoint == name]
+    if used:
+        raise HTTPException(400, f"{name!r} still serves catalog model(s) {used} — reassign or "
+                                 "delete them first")
 
     def mutate(endpoints: dict) -> None:
         endpoints.pop(name, None)
@@ -100,28 +125,75 @@ def delete_endpoint(request: Request, name: str) -> dict:
     return _rewrite_endpoints(request, mutate)
 
 
-class SystemModelBody(BaseModel):
+# --- the model catalog: named models bound to an endpoint, carrying per-model attrs ----------
+def _rewrite_models(request: Request, mutate) -> dict:
+    def apply(raw: dict) -> None:
+        models = raw.get("models") or {}
+        mutate(models)
+        raw["models"] = models
+
+    path = update_config(request, apply)
+    fresh, problems = load_server_config(path)
+    server = server_of(request)
+    server.models = fresh.models
+    return {"ok": True, "problems": problems}
+
+
+class ModelBody(BaseModel):
+    name: str
     endpoint: str
     model: str
+    multimodal: bool | None = None    # None = default by the endpoint kind
+    context_chars: int | None = None  # None = inherit the endpoint's context_chars
     effort: str | None = None
+    temperature: float | None = None  # None = inherit the endpoint's temperature
+
+
+@router.post("/settings/models")
+@router.put("/settings/models/{name}")
+def upsert_model(request: Request, body: ModelBody, name: str | None = None) -> dict:
+    if body.endpoint not in server_of(request).endpoints:
+        raise HTTPException(400, f"unknown endpoint {body.endpoint!r} — add it first")
+    key = name or body.name
+
+    def mutate(models: dict) -> None:
+        # drop empty/None so an unset attribute means "inherit the endpoint default"
+        models[key] = {k: v for k, v in body.model_dump().items()
+                       if k != "name" and v not in ("", None)}
+
+    return _rewrite_models(request, mutate)
+
+
+@router.delete("/settings/models/{name}")
+def delete_model(request: Request, name: str) -> dict:
+    server = server_of(request)
+    if name not in server.models:
+        raise HTTPException(404, f"no model {name!r}")
+    if server.system_model == name:
+        raise HTTPException(400, f"{name!r} is the system model — reassign the system model first")
+
+    def mutate(models: dict) -> None:
+        models.pop(name, None)
+
+    return _rewrite_models(request, mutate)
+
+
+class SystemModelBody(BaseModel):
+    name: str   # a catalog model name
 
 
 @router.put("/settings/system-model")
 def set_system_model(request: Request, body: SystemModelBody) -> dict:
     """Set the ONE fallback model for machine work that isn't a routine yet — workflow
     generation/suggestion and the new-routine clarify wizard. Setting it is what makes the
-    instance 'llm_ready'; routines otherwise pick their own models."""
+    instance 'llm_ready'; routines otherwise pick their own (also by catalog name)."""
     s = server_of(request)
-    if body.endpoint not in s.endpoints:
-        raise HTTPException(400, f"unknown endpoint {body.endpoint!r} — add it first")
-    spec = {"endpoint": body.endpoint, "model": body.model}
-    if body.effort:
-        spec["effort"] = body.effort
-    path = update_config(request, lambda raw: raw.update(system_model=spec))
+    if body.name not in s.models:
+        raise HTTPException(400, f"unknown model {body.name!r} — add it to the catalog first")
+    path = update_config(request, lambda raw: raw.update(system_model=body.name))
     fresh, _ = load_server_config(path)
     s.system_model = fresh.system_model
-    sm = s.system_model
-    return {"ok": True, "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None}
+    return {"ok": True, "system_model": s.system_model or None}
 
 
 @router.get("/settings/endpoints/{name}/credits")

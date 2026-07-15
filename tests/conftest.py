@@ -62,14 +62,16 @@ class ScriptedEndpoint:
         self.lock = threading.Lock()
         self.name = "scripted"
         self.context_chars = 200_000
-        self.multimodal = multimodal   # drives supports_media (default off: view_image → vision util)
+        # the resolved model's multimodal flag flows in via supports_media(multimodal=…); this
+        # per-instance flag is what ScriptedRegistry.resolve puts on the ModelRef it carries.
+        self.multimodal = multimodal
 
-    def supports_media(self, media_type: str) -> bool:
+    def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
         from rsched.endpoints.base import supports_media_type
-        return supports_media_type(media_type, multimodal=self.multimodal, pdf=True)
+        return supports_media_type(media_type, multimodal=multimodal, pdf=True)
 
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None,
-                 timeout=600, session=None):
+                 timeout=600, session=None, temperature=None):
         system = messages[0]["content"] if messages else ""
         with self.lock:
             self.calls.append({"messages": [dict(m) for m in messages], "model": model,
@@ -100,9 +102,7 @@ class ScriptedEndpoint:
 
 class ScriptedRegistry(EndpointRegistry):
     def __init__(self, endpoint: ScriptedEndpoint):
-        server = ServerConfig()
-        server.system_model = ModelRef("scripted", "test-model")
-        super().__init__(server)
+        super().__init__(ServerConfig())
         self.endpoint = endpoint
 
     def get(self, name: str):
@@ -110,6 +110,25 @@ class ScriptedRegistry(EndpointRegistry):
         # default sink (None) the wrapper is a pure passthrough — existing tests are unaffected.
         from rsched.endpoints.instrument import InstrumentedEndpoint
         return InstrumentedEndpoint(self.endpoint)
+
+    def resolve(self, name):
+        # Every catalog name resolves to the one scripted endpoint. Carry the endpoint's
+        # multimodal flag + context window onto the ModelRef the engine reads (supports_media /
+        # compaction), bypassing the real catalog lookup (tests configure no catalog).
+        return self.get(name), ModelRef(endpoint="scripted", model="test-model",
+                                        multimodal=self.endpoint.multimodal,
+                                        context_chars=self.endpoint.context_chars,
+                                        name=name or "system")
+
+    def for_model(self, kind, models):
+        return self.resolve((models or {}).get(kind) or "system")
+
+    def for_uncensored(self, models):
+        name = (models or {}).get("uncensored")
+        return self.resolve(name) if name else None
+
+    def for_system(self):
+        return self.resolve("system")
 
 
 @pytest.fixture

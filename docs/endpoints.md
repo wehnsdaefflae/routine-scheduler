@@ -2,9 +2,12 @@
 
 An **endpoint** is a model *transport*: one place the scheduler can send a chat completion
 and get an answer back. Endpoints never act on their own — the scheduler's engine is the
-only agent loop. You configure endpoints once (Settings → Endpoints, or
-`~/.config/routine-scheduler/config.yaml`), then every routine picks *models* served
-through them.
+only agent loop. A **model** is a named entry in the *catalog* that binds a provider model id
+to an endpoint and carries the per-model attributes — multimodality, context window, effort,
+temperature. One endpoint serves many models, so those attributes live on the model, not the
+endpoint. You configure endpoints and models once (Settings → Endpoints, or
+`~/.config/routine-scheduler/config.yaml`), then every routine and the system model **picks a
+model by name**.
 
 ## The three kinds
 
@@ -29,17 +32,23 @@ OpenAI chat-completions dialect, cloud or local.
 3. **Test it.** Enter a model id on the card and hit *test* — you get latency, whether the
    model respected a JSON schema, and the raw error (with an auth hint) if the call failed.
    Fix problems here, not mid-run.
-4. **Point models at it.** Set the server-wide **system model** (used only for
-   setup-time work: the new-routine wizard and workflow generation), and per routine the
-   model roles — **main** (the orchestrator loop), **subroutine** (spawned children),
-   **tool_call** (the `llm` action), and the optional **uncensored** (a refused `llm`
-   tool-call is re-referred here) — on the routine's page. main/subroutine/tool_call fall
-   back to the system model when left unset; **uncensored has no fallback** — leave it unset
-   and the routine never refers (referral is strictly opt-in). See *Refusal referral* below.
+4. **Add the models it serves.** In the endpoint list's **Models** section → *+ add model*.
+   Name it (the name is what routines reference — e.g. `gpt-4o`, `glm`, `opus`), pick the
+   endpoint, enter the provider's model id, and set its attributes: **multimodal** (default by
+   the endpoint kind), **context window**, **effort**, **temperature**. One endpoint can serve
+   many models with different windows and vision support — add one catalog entry per model.
+5. **Point roles at models.** Set the server-wide **system model** (used only for setup-time
+   work: the new-routine wizard and workflow generation) by picking a catalog model, and per
+   routine the model roles — **main** (the orchestrator loop), **subroutine** (spawned
+   children), **tool_call** (the `llm` action), and the optional **uncensored** (a refused
+   `llm` tool-call is re-referred here) — on the routine's page, each a catalog model name.
+   main/subroutine/tool_call fall back to the system model when left unset; **uncensored has no
+   fallback** — leave it unset and the routine never refers. See *Refusal referral* below.
 
-## Adding an endpoint (config file)
+## Adding endpoints + models (config file)
 
-Same fields, YAML under `endpoints:` in `~/.config/routine-scheduler/config.yaml`:
+Endpoints go under `endpoints:`; the model catalog under `models:` (name → a model bound to an
+endpoint); the system model is a catalog name. In `~/.config/routine-scheduler/config.yaml`:
 
 ```yaml
 endpoints:
@@ -48,14 +57,22 @@ endpoints:
     base_url: https://openrouter.ai/api/v1
     key_var: OPENROUTER_API_KEY   # name in the Secrets store (or use api_key: inline)
     schema_mode: json_schema
-    context_chars: 2000000
+    context_chars: 400000         # a DEFAULT models on this endpoint inherit
 
-system_model:
-  endpoint: OpenRouter
-  model: z-ai/glm-5.2
+models:                           # the catalog: each entry binds a model id to an endpoint
+  glm:
+    endpoint: OpenRouter
+    model: z-ai/glm-5.2           # text-only → inherits openai's multimodal default (off)
+  gpt-4o:
+    endpoint: OpenRouter
+    model: openai/gpt-4o
+    multimodal: true              # this model sees images/PDFs; glm above doesn't
+    context_chars: 512000         # overrides the endpoint default for this model
+
+system_model: glm                 # the fallback model for setup-time work — a catalog NAME
 ```
 
-### Field reference
+### Endpoint fields (the transport)
 
 - `base_url` — everything before `/chat/completions`. Local Ollama:
   `http://127.0.0.1:11434/v1`. Self-hosted vLLM: `http://host:8000/v1`.
@@ -71,21 +88,10 @@ system_model:
   - `ollama_native`: Ollama's own `format` field — REAL constrained decoding; best for
     small local models that otherwise drift off-schema.
   - `none`: nothing requested; the code-level validate-and-retry loop does all the work.
-- `context_chars` — the prompt size (in characters, ≈ 4 × tokens) at which the engine
-  compacts run history to disk. **Default `100_000`** (≈25k tokens — deliberately small).
-  Set it to roughly 4 × the model's context window in tokens, and lower it if a provider
-  serves the model with a reduced window.
-- `temperature` — optional; forwarded verbatim when set (`openai` kind only — silently
-  ignored by `anthropic` / `claude-cli`).
-- `multimodal` — whether the endpoint takes image/PDF input natively. Default is **by
-  kind**: on for `anthropic` (images + PDFs) and `claude-cli` (images), off for `openai`
-  (most OpenAI-compatible models are text-only). When off, images and PDFs a routine views
-  route to the `vision` util instead — so vision still works, just indirectly. The endpoint
-  card has a toggle; turn it on for an `openai` vision model.
-- `effort` — a reasoning-effort hint that rides the *model assignment*, not the endpoint:
-  `low | medium | high | xhigh | max`, set on the system model or a routine's model roles.
-  Each kind maps it to its own reasoning knob (`openai` collapses `xhigh` / `max` → `high`);
-  lower it if a reasoning model spends its whole output budget thinking instead of answering.
+- `context_chars` — a **default** prompt-size window (in characters, ≈ 4 × tokens) that catalog
+  models on this endpoint inherit when they don't set their own. **Default `100_000`** (≈25k
+  tokens — deliberately small). Prefer setting the real window per model (below).
+- `temperature` — optional **default** temperature catalog models inherit when unset.
 - `credentials_env` — `claude-cli` only: the file the OAuth token is read from when it isn't
   in Secrets (default `~/.credentials/claude-code-oauth.env`).
 - `extra_body` — merged into every request body (`openai` kind only). This is where
@@ -98,6 +104,28 @@ system_model:
       allow_fallbacks: true
       ignore: [SomeProvider]   # e.g. providers whose constrained decoding corrupts output
   ```
+
+### Model fields (the catalog)
+
+A catalog model binds a provider `model` id to an `endpoint` and carries the attributes that
+vary *per model*. Leave an attribute unset (or blank in the UI) to inherit the endpoint's
+default. Routines and the system model reference a model by its catalog **name**.
+
+- `endpoint` — the configured endpoint that transports this model (required).
+- `model` — the provider's model id (required), e.g. `openai/gpt-4o`, `z-ai/glm-5.2`.
+- `multimodal` — whether this model takes image/PDF input natively. **Default by the endpoint
+  kind**: on for `anthropic` (images + PDFs) and `claude-cli` (images), off for `openai`. Set
+  it explicitly to turn native vision *on* for an `openai` vision model (GPT-4o, Gemini) or
+  *off* for a text-only one. When off, images/PDFs a routine views route to the `vision` util
+  instead — vision still works, just indirectly.
+- `context_chars` — the prompt size (≈ 4 × tokens) at which the engine compacts run history to
+  disk, for THIS model. Inherits the endpoint's `context_chars` when unset. Different models on
+  one endpoint have very different windows — set the real one here.
+- `effort` — a reasoning-effort hint: `low | medium | high | xhigh | max`. Each kind maps it to
+  its own reasoning knob (`openai` collapses `xhigh` / `max` → `high`); lower it if a reasoning
+  model spends its whole output budget thinking instead of answering.
+- `temperature` — sampling temperature; inherits the endpoint's when unset (`openai` and
+  `anthropic` apply it, `claude-cli` ignores it).
 
 ### Prompt caching (automatic — no config)
 
@@ -160,8 +188,9 @@ The configured **Featherless** endpoint is the closest cloud path:
 - Guaranteed alternative: rent GPUs and self-host `zandenAI/GLM-5.2-FP8-Uncensored` on
   vLLM (~4 large GPUs for the FP8), then add it as a vLLM recipe above.
 
-Set the finished endpoint + model as a routine's `main` model (or the system model) like
-any other — abliterated models are ordinary models to the scheduler.
+Add the finished model to the catalog (its `endpoint` + provider `model` id) and set it as a
+routine's `main` model (or the system model) like any other — abliterated models are ordinary
+models to the scheduler.
 
 **Nano-GPT** (`kind: openai`) is the turnkey cloud path today: it serves abliterated models
 directly (e.g. `huihui-ai/DeepSeek-R1-Distill-Llama-70B-abliterated`), so no self-hosting.

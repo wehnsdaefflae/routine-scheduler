@@ -21,7 +21,8 @@ def client(tmp_path, make_routine):
         "routines_home": str(tmp_path / "routines"),
         "libraries_home": str(tmp_path / "library"),
         "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "system_model": {"endpoint": "dummy", "model": "m"},
+        "models": {"m": {"endpoint": "dummy", "model": "m"}},
+        "system_model": "m",
     }))
     server, problems = load_server_config(cfg_path)
     assert not problems

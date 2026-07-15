@@ -115,7 +115,7 @@ def _seed_instruction(pb: dict | None, first_message: str, conv_dir: Path) -> st
 
 
 def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
-                        workdir: str = "", models: dict[str, dict] | None = None,
+                        workdir: str = "", models: dict[str, str] | None = None,
                         permissions: list[str] | None = None, playbook_slug: str = "",
                         budgets: dict | None = None) -> Path:
     """Create <conversations_home>/<slug> ready to run: materialized converse main.md with
@@ -218,7 +218,8 @@ def autolabel(server: ServerConfig, conv_dir: Path, text: str) -> None:
             [{"role": "user", "content":
               "Title this new conversation with an agent, and tag it. First message:\n---\n"
               + text[:2000] + "\n---\nReturn ONLY the JSON object {title, tags}."}],
-            model=ref.model, schema=_LABEL_SCHEMA, effort=ref.effort, timeout=60,
+            model=ref.model, schema=_LABEL_SCHEMA, effort=ref.effort,
+            temperature=ref.temperature, timeout=60,
             purpose="Conversation title & tags", kind="autolabel")
         import json
 

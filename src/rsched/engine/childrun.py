@@ -138,8 +138,8 @@ def _sub_routine(routine, sub_dir, ref):
 
     r = copy.copy(routine)
     r.dir = sub_dir
-    r.models = dict(routine.models)
-    r.models["main"] = ref
+    r.models = dict(routine.models)   # role → catalog NAME (subroutine/tool_call inherited)
+    r.models["main"] = ref.name       # the resolved subroutine catalog name becomes the child's main
     r.permissions = []
     r.capabilities = {}
     return r

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import time
 
-from ..config import ModelRef
 from ..paths import read_json
 from . import executor, inbox
 from .composer import truncate
@@ -61,12 +60,10 @@ def apply_model_switch(loop) -> None:
     loop._last_switch_ts = str(sw["ts"])
     applied = []
     for kind in ("main", "subroutine", "tool_call"):
-        spec = sw.get(kind)
-        if (isinstance(spec, dict) and spec.get("endpoint") in ctx.server.endpoints
-                and spec.get("model")):
-            ctx.routine.models[kind] = ModelRef(endpoint=str(spec["endpoint"]),
-                                                model=str(spec["model"]), effort=spec.get("effort"))
-            applied.append(f"{kind} → {spec['endpoint']}/{spec['model']}")
+        name = sw.get(kind)   # a catalog model NAME; roles re-resolve every turn via for_model
+        if isinstance(name, str) and name in ctx.server.models:
+            ctx.routine.models[kind] = name
+            applied.append(f"{kind} → {name}")
     if applied:
         note = "model switched mid-run: " + "; ".join(applied)
         ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})

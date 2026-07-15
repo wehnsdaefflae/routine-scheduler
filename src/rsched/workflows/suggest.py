@@ -56,8 +56,8 @@ def suggest(server: ServerConfig, instruction: str) -> dict:
     obj = None
     for _attempt in range(2):
         completion = endpoint.complete(messages, model=ref.model,
-                                       schema=SUGGEST_SCHEMA, timeout=120,
-                                       purpose="Rank library workflows", kind="suggest")
+                                       schema=SUGGEST_SCHEMA, temperature=ref.temperature,
+                                       timeout=120, purpose="Rank library workflows", kind="suggest")
         try:
             obj = completion.parsed if completion.parsed is not None else parse_reply(
                 completion.text, SUGGEST_SCHEMA)
@@ -170,7 +170,8 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
     for _attempt in range(2):
         try:
             completion = endpoint.complete(messages, model=ref.model,
-                                           schema=TRAITS_PERMS_SCHEMA, timeout=120,
+                                           schema=TRAITS_PERMS_SCHEMA, temperature=ref.temperature,
+                                           timeout=120,
                                            purpose="Suggest traits & permissions", kind="suggest")
         except Exception:
             return fallback
@@ -209,7 +210,8 @@ def suggest_tags(server: ServerConfig, instruction: str) -> list[str]:
     messages = [{"role": "user", "content": prompt}]
     for _attempt in range(2):
         try:
-            completion = endpoint.complete(messages, model=ref.model, schema=TAGS_SCHEMA, timeout=120,
+            completion = endpoint.complete(messages, model=ref.model, schema=TAGS_SCHEMA,
+                                           temperature=ref.temperature, timeout=120,
                                            purpose="Suggest tags", kind="suggest")
         except Exception:
             return []

@@ -390,6 +390,7 @@ class EngineLoop:
             try:
                 completion = endpoint.complete(self.messages, model=ref.model,
                                                schema=schema, effort=ref.effort,
+                                               temperature=ref.temperature,
                                                max_tokens=16_384,
                                                session=str(ctx.run_dir),
                                                # bookkeeping only — the wrapper consumes these; they
@@ -493,6 +494,7 @@ class EngineLoop:
         try:
             completion = u_endpoint.complete(self.messages, model=u_ref.model,
                                              schema=ACTION_SCHEMA, effort=u_ref.effort,
+                                             temperature=u_ref.temperature,
                                              max_tokens=16_384, session=str(ctx.run_dir),
                                              purpose=f"turn {ctx.turn + 1} · referred", kind="turn")
         except EndpointError:
@@ -531,7 +533,7 @@ class EngineLoop:
         # every turn re-reads at full price.
         fraction = (COMPACT_AT_FRACTION_CACHED if ctx.usage.get("cached_in")
                     else COMPACT_AT_FRACTION)
-        context_cap = fraction * endpoint.context_chars
+        context_cap = fraction * ref.context_chars   # the resolved MODEL's window, not the endpoint default
         # Long prompts also burn the token BUDGET — every turn re-sends everything, so a
         # bloated prompt taxes each remaining turn. Once the prompt would eat >10% of the
         # remaining token budget per turn, archive it: the one compaction call costs what
@@ -560,7 +562,7 @@ class EngineLoop:
             t_endpoint, t_ref = ctx.registry.for_model("tool_call", ctx.routine.models)
             middle_size = messages_size(
                 self.messages[KEEP_HEAD_MSGS:len(self.messages) - KEEP_TAIL_MSGS])
-            if t_endpoint.context_chars * 0.7 >= middle_size:
+            if t_ref.context_chars * 0.7 >= middle_size:
                 c_endpoint, c_ref = t_endpoint, t_ref
         except Exception:  # noqa: BLE001 — no registry/role in bare test contexts
             pass
@@ -576,7 +578,7 @@ class EngineLoop:
             self._history_active = True
             self._hist_note_countdown = 0   # the next observation carries the history pointer
         else:
-            self.messages, cinfo = maybe_compact(self.messages, self.turn_records, endpoint.context_chars)
+            self.messages, cinfo = maybe_compact(self.messages, self.turn_records, ref.context_chars)
         if cinfo:
             if cinfo.get("usage"):
                 ctx.add_usage(cinfo["usage"])   # the archival call itself now hits the books

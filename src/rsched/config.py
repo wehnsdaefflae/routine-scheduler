@@ -74,10 +74,11 @@ EndpointKind = Literal["openai", "anthropic", "claude-cli"]
 SchemaMode = Literal["json_schema", "json_object", "ollama_native", "none"]
 ENDPOINT_KINDS = get_args(EndpointKind)
 SCHEMA_MODES = get_args(SchemaMode)
-# Kinds that are multimodal by construction, so an endpoint of this kind defaults to native
-# image/PDF input unless the user says otherwise (the `anthropic` Messages API and the
-# subscription CLI both take image blocks). `openai` varies per model (GLM 5.2 is text-only,
-# most vision models aren't) so it defaults OFF — the user flips it on per endpoint.
+# Kinds whose models are multimodal by construction, so a catalog model on an endpoint of this
+# kind defaults to native image/PDF input unless the model says otherwise (the `anthropic`
+# Messages API and the subscription CLI only ever serve Claude, which takes image blocks).
+# `openai` varies per model (GLM is text-only, GPT-4o/Gemini aren't) so it defaults OFF — the
+# user flips `multimodal` on for the specific catalog model (see ModelConfig).
 NATIVE_MM_KINDS = {"anthropic", "claude-cli"}
 
 # YAML-friendly coercions: a bare `key:` (null) reads as the empty string; path strings
@@ -102,31 +103,51 @@ class EndpointConfig(_Config):
     key_var: str = "ANTHROPIC_API_KEY"
     credentials_env: str = "~/.credentials/claude-code-oauth.env"  # claude-cli kind
     schema_mode: SchemaMode = "json_schema"  # openai kind only
+    # DEFAULTS a catalog model inherits when it leaves the field unset. Per-model attributes
+    # live on ModelConfig now — one endpoint serves many models with different windows,
+    # vision support, and sampling. context_chars ≈ 4 × the token window.
     context_chars: int = 100_000
     temperature: float | None = None
-    # Native image/PDF input: None = default by kind (see NATIVE_MM_KINDS — on for
-    # anthropic/claude-cli, off for openai); a bool overrides. When off, images/PDFs the
-    # orchestrator views route to the `vision` util instead of the endpoint itself.
-    multimodal: bool | None = None
     # openai kind only: merged verbatim into every request body. This is where aggregator
     # routing lives — e.g. OpenRouter {"provider": {"ignore": [...]}} to exclude serving
     # providers whose constrained decoding measurably corrupts output (drops declared
     # fields, leaks foreign keys through "strict" mode).
     extra_body: dict = Field(default_factory=dict)
 
-    def native_multimodal(self) -> bool:
-        """Effective multimodal capability: the explicit flag, else the kind default."""
-        return self.multimodal if self.multimodal is not None else (self.kind in NATIVE_MM_KINDS)
+
+class ModelConfig(_Config):
+    """One catalog model: a provider model id BOUND to a configured endpoint, plus the
+    per-model attributes that used to (wrongly) sit on the endpoint. One endpoint serves
+    many models, so multimodality, context window, effort, and temperature belong here.
+    A None attribute inherits the serving endpoint's default (multimodal → the endpoint
+    kind's NATIVE_MM_KINDS default; context_chars/temperature → the endpoint's own).
+    Routines/conversations reference a model by its catalog NAME (see RoutineConfig.models)."""
+
+    name: str = ""  # filled from the `models:` mapping key
+    endpoint: str   # which configured endpoint transports this model
+    model: str      # the provider's model id (e.g. "openai/gpt-4o")
+    # None = inherit the endpoint kind default (anthropic/claude-cli on, openai off).
+    multimodal: bool | None = None
+    # None = inherit the endpoint's context_chars. ≈ 4 × the token window.
+    context_chars: int | None = None
+    effort: str | None = None          # reasoning-effort hint (low|medium|high|xhigh|max)
+    temperature: float | None = None   # None = inherit the endpoint's temperature default
 
 
 @dataclass
 class ModelRef:
-    """A model assignment: which endpoint serves it, the provider's model id, and an
-    optional reasoning-effort hint the adapters map to their provider's knob."""
+    """A RESOLVED model handle produced by EndpointRegistry from a catalog entry + its
+    endpoint — no longer parsed from yaml. Carries the provider model id and every
+    per-model attribute the run needs: reasoning effort, native multimodality, the
+    context-window budget, sampling temperature, and the catalog name it came from."""
 
     endpoint: str
     model: str
     effort: str | None = None
+    multimodal: bool = False
+    context_chars: int = 100_000
+    temperature: float | None = None
+    name: str = ""
 
 
 class LibrarySyncConfig(_Config):
@@ -177,9 +198,14 @@ class ServerConfig(_Config):
     max_concurrent_runs: int = 2
     registry_rescan_s: int = 30
     endpoints: dict[str, EndpointConfig] = Field(default_factory=dict)
+    # The model CATALOG: name → a provider model bound to an endpoint, carrying its own
+    # multimodality / context window / effort / temperature. Routines, conversations, and
+    # the system model all reference an entry by NAME.
+    models: dict[str, ModelConfig] = Field(default_factory=dict)
     # The ONE fallback model for machine work that isn't a routine yet: workflow
-    # generation/suggestion and the new-routine clarify wizard. Routines set their own models.
-    system_model: ModelRef | None = None
+    # generation/suggestion and the new-routine clarify wizard. A catalog model NAME;
+    # routines set their own (also by name), falling back to this when a role is unset.
+    system_model: str = ""
     # The scheduled instance→library sync job (Settings → Library sync).
     library_sync: LibrarySyncConfig = Field(default_factory=LibrarySyncConfig)
     source: Path | None = None
@@ -254,8 +280,12 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
         or ServerConfig(source=path)
     for name, ep in cfg.endpoints.items():
         ep.name = name
-    if cfg.system_model and cfg.system_model.endpoint not in cfg.endpoints:
-        problems.append(f"system_model: endpoint {cfg.system_model.endpoint!r} is not configured")
+    for name, mc in cfg.models.items():
+        mc.name = name
+        if mc.endpoint not in cfg.endpoints:
+            problems.append(f"models.{name}: endpoint {mc.endpoint!r} is not configured")
+    if cfg.system_model and cfg.system_model not in cfg.models:
+        problems.append(f"system_model: {cfg.system_model!r} is not a catalog model")
     return cfg, problems
 
 
@@ -286,7 +316,10 @@ class RoutineConfig(_Config):
     # normal routine/conversation (a declared field, so it survives the extra="ignore" drop).
     owner: dict | None = None
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
-    models: dict[str, ModelRef] = Field(default_factory=dict)  # main/subroutine/tool_call/uncensored
+    # Role → catalog model NAME (main/subroutine/tool_call/uncensored). A role left unset
+    # falls back to the server system_model. Resolved live via EndpointRegistry, so editing
+    # a catalog model updates every routine that names it.
+    models: dict[str, str] = Field(default_factory=dict)
     budgets: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_BUDGETS))
     # The two permission layers (user-changeable only; explicit values win, otherwise a
     # new routine holds the defaults). `permissions` names the held CONDUCT docs (library

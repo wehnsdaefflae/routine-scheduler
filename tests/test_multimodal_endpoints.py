@@ -48,21 +48,40 @@ def test_supports_media_type_matrix():
     assert not supports_media_type("text/plain", multimodal=True, pdf=True)
 
 
-def test_native_multimodal_defaults_by_kind():
-    assert EndpointConfig(kind="anthropic").native_multimodal() is True
-    assert EndpointConfig(kind="claude-cli").native_multimodal() is True
-    assert EndpointConfig(kind="openai").native_multimodal() is False
-    assert EndpointConfig(kind="openai", multimodal=True).native_multimodal() is True
-    assert EndpointConfig(kind="anthropic", multimodal=False).native_multimodal() is False
+def test_catalog_multimodal_defaults_by_kind():
+    """multimodal lives on the catalog MODEL now: unset → the endpoint kind default
+    (anthropic/claude-cli on, openai off); an explicit per-model value overrides."""
+    from rsched.config import ModelConfig, ServerConfig
+    from rsched.endpoints import EndpointRegistry
+    server = ServerConfig()
+    server.endpoints = {
+        "anth": EndpointConfig(name="anth", kind="anthropic"),
+        "cli": EndpointConfig(name="cli", kind="claude-cli"),
+        "or": EndpointConfig(name="or", kind="openai", base_url="http://x"),
+    }
+    server.models = {
+        "a": ModelConfig(name="a", endpoint="anth", model="claude"),            # → default True
+        "c": ModelConfig(name="c", endpoint="cli", model="claude"),             # → default True
+        "o": ModelConfig(name="o", endpoint="or", model="glm"),                 # → default False
+        "ov": ModelConfig(name="ov", endpoint="or", model="gpt-4o", multimodal=True),    # explicit on
+        "ax": ModelConfig(name="ax", endpoint="anth", model="claude", multimodal=False),  # explicit off
+    }
+    reg = EndpointRegistry(server)
+    assert reg.resolve("a")[1].multimodal is True
+    assert reg.resolve("c")[1].multimodal is True
+    assert reg.resolve("o")[1].multimodal is False
+    assert reg.resolve("ov")[1].multimodal is True
+    assert reg.resolve("ax")[1].multimodal is False
 
 
 # --- anthropic ---------------------------------------------------------------
 
 def test_anthropic_supports_media():
+    # the resolved model's multimodal flag is passed in; anthropic takes images AND PDFs
     ep = anthropic_api.AnthropicEndpoint(EndpointConfig(kind="anthropic", name="a"))
-    assert ep.supports_media("image/png") and ep.supports_media("application/pdf")
-    off = anthropic_api.AnthropicEndpoint(EndpointConfig(kind="anthropic", name="a", multimodal=False))
-    assert not off.supports_media("image/png")
+    assert ep.supports_media("image/png", multimodal=True)
+    assert ep.supports_media("application/pdf", multimodal=True)
+    assert not ep.supports_media("image/png", multimodal=False)
 
 
 def test_anthropic_render_media_image_and_pdf(tmp_path):
@@ -100,11 +119,10 @@ def test_anthropic_mark_tail_handles_both_shapes():
 # --- openai ------------------------------------------------------------------
 
 def test_openai_supports_media():
-    ep = openai_compat.OpenAICompatEndpoint(EndpointConfig(kind="openai", name="o", multimodal=True))
-    assert ep.supports_media("image/png")
-    assert not ep.supports_media("application/pdf")   # PDFs route to the vision util
-    assert not openai_compat.OpenAICompatEndpoint(
-        EndpointConfig(kind="openai", name="o")).supports_media("image/png")
+    ep = openai_compat.OpenAICompatEndpoint(EndpointConfig(kind="openai", name="o"))
+    assert ep.supports_media("image/png", multimodal=True)
+    assert not ep.supports_media("application/pdf", multimodal=True)   # PDFs route to the vision util
+    assert not ep.supports_media("image/png", multimodal=False)       # a text-only model
 
 
 def test_openai_render_media_image(tmp_path):
@@ -120,10 +138,10 @@ def test_openai_render_media_image(tmp_path):
 
 def test_claude_cli_supports_media_and_probe():
     ep = claude_cli.ClaudeCliEndpoint(EndpointConfig(kind="claude-cli", name="c"))
-    assert ep.supports_media("image/png")
-    assert not ep.supports_media("application/pdf")   # stream-json is images-only
-    ep._media_capable = False                         # probe learned the CLI can't take images
-    assert not ep.supports_media("image/png")
+    assert ep.supports_media("image/png", multimodal=True)
+    assert not ep.supports_media("application/pdf", multimodal=True)   # stream-json is images-only
+    ep._media_capable = False                                          # probe learned the CLI can't take images
+    assert not ep.supports_media("image/png", multimodal=True)
 
 
 def test_claude_cli_stream_json_stdin(tmp_path):

@@ -111,8 +111,9 @@ stays the only channel otherwise.
 ## CLI
 
 `uv run rsched --help` — `daemon` (what the service/container runs: scheduler + web in one
-process), `run-once` (`--model kind=endpoint:model` overrides a model role), `engine-run`
-(internal), `validate`, `lint`, `suggest`, `scaffold`, `abort`.
+process), `run-once` (`--model kind=name` overrides a model role with a catalog model),
+`engine-run` (internal), `validate`, `lint`, `suggest`, `scaffold`, `abort`,
+`migrate-model-catalog` (one-shot pre-0.27 config migration).
 
 ## Development
 

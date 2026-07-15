@@ -141,10 +141,12 @@ class InstrumentedEndpoint:
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
                  timeout: int = DEFAULT_TIMEOUT, session: str | None = None,
+                 temperature: float | None = None,
                  purpose: str | None = None, process: str | None = None,
                  kind: str | None = None) -> Completion:
         inner_kwargs = dict(model=model, schema=schema, effort=effort,
-                            max_tokens=max_tokens, timeout=timeout, session=session)
+                            max_tokens=max_tokens, timeout=timeout, session=session,
+                            temperature=temperature)
         sink = _sink
         if sink is None:                       # fast path: nothing observing
             return self._inner.complete(messages, **inner_kwargs)

@@ -112,23 +112,20 @@ export async function render(view, runId, query = {}) {
   const switchBox = el("details", { class: "small" },
     el("summary", { style: "cursor:pointer;color:var(--muted)" }, "⚙ switch model"));
   const setModel = (m) => { modelSpan.textContent = m ? `model ${m}` : ""; };
-  api("/api/settings/endpoints").then((d) => {
-    const eps = d.endpoints || [];
-    if (!eps.length) return;
-    const epSel = el("select", { style: "width:auto;font-size:11.5px;padding:3px 6px" },
-      eps.map((e) => el("option", {}, e.name)));
-    const mIn = el("input", { type: "text", placeholder: "model id",
-      style: "width:150px;font-size:11.5px;padding:3px 6px" });
+  api("/api/settings/models").then((d) => {
+    const models = d.models || [];
+    if (!models.length) return;
+    const mSel = el("select", { style: "width:auto;font-size:11.5px;padding:3px 6px" },
+      models.map((m) => el("option", {}, m.name)));
     const go = el("button", { class: "btn small primary" }, "switch");
     go.onclick = async () => {
-      if (!mIn.value.trim()) { toast("enter a model id"); return; }
       try {
         const r = await api(`/api/runs/${runId}/model`, { method: "POST",
-          body: { endpoint: epSel.value, model: mIn.value.trim() } });
+          body: { model: mSel.value } });
         toast(`${r.switch} — takes effect next turn`);
       } catch (err) { toast(err.message, 4000, { error: true }); }
     };
-    switchBox.append(el("div", { class: "row mt", style: "gap:5px" }, epSel, mIn, go));
+    switchBox.append(el("div", { class: "row mt", style: "gap:5px" }, mSel, go));
   }).catch(() => {});
   controls.append(switchBox);
 

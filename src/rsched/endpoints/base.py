@@ -102,12 +102,16 @@ class ChatEndpoint(Protocol):
         max_tokens: int | None = None,
         timeout: int = DEFAULT_TIMEOUT,
         session: str | None = None,
+        temperature: float | None = None,
     ) -> Completion: ...
 
-    def supports_media(self, media_type: str) -> bool:
-        """Whether this endpoint can take a file of `media_type` (an IMAGE_MIMES entry or
-        PDF_MIME) NATIVELY in a message's `media` list. False → the engine routes that file
-        through the `vision` util instead. Depends on the endpoint's `multimodal` config."""
+    def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
+        """Whether a file of `media_type` (an IMAGE_MIMES entry or PDF_MIME) can ride a
+        message's `media` list NATIVELY — given the resolved model's `multimodal` flag (the
+        caller passes it; one endpoint serves many models). False → the engine routes that
+        file through the `vision` util instead. The adapter contributes only kind/runtime
+        facts on top: PDFs are anthropic-only, and claude-cli drops to False once a
+        stream-json image send has proven the CLI can't take them."""
         ...
 
 

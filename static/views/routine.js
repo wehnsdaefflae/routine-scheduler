@@ -195,37 +195,33 @@ export async function render(view, slug, query = {}) {
   const MODEL_KINDS = [["main", "the orchestrator loop"], ["subroutine", "spawned sub-workflows"],
                        ["tool_call", "the llm action"],
                        ["uncensored", "a refused llm call is referred here (opt-in)"]];
-  const endpointNames = d.endpoints || [];
-  const sysM = d.system_model;
-  const modelInputs = {};
+  const catalog = d.catalog || [];      // catalog model names (see Settings → Models)
+  const sysM = d.system_model;          // the system model's catalog name (or null)
+  const modelSelects = {};
   const modelRows = MODEL_KINDS.map(([kind, desc]) => {
-    const cur = (d.models && d.models[kind]) || null;
-    const epSel = el("select", {}, [el("option", { value: "" }, "— system default —"),
-      ...endpointNames.map((n) => el("option", { value: n }, n))]);
-    if (cur?.endpoint) epSel.value = cur.endpoint;
-    const modelIn = el("input", { type: "text", value: cur?.model || "",
-      placeholder: sysM ? `${sysM.endpoint} / ${sysM.model}` : "model id", style: "width:200px" });
-    modelInputs[kind] = { epSel, modelIn };
+    const cur = (d.models && d.models[kind]) || "";   // a catalog model NAME, or "" = fallback
+    const sel = el("select", {}, [
+      el("option", { value: "" }, sysM ? `— system default (${sysM}) —` : "— system default —"),
+      ...catalog.map((n) => el("option", { value: n }, n))]);
+    sel.value = cur || "";
+    modelSelects[kind] = sel;
     return el("div", { class: "row", style: "margin:5px 0" },
       el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, kind),
       el("span", { class: "muted small", style: "min-width:150px" }, desc),
-      epSel, modelIn);
+      sel);
   });
   view.append(el("h2", {}, "Models"),
     el("div", { class: "panel" },
       el("div", { class: "muted small", style: "margin-bottom:8px" },
-        endpointNames.length
-          ? "which endpoint + model this routine uses for each role — leave blank to fall back to the system model"
-          : "add an endpoint in Settings first"),
+        catalog.length
+          ? "which catalog model this routine uses for each role — leave on system default to fall back to the system model"
+          : "add a model in Settings first"),
       ...modelRows,
       el("div", { class: "row mt" }, el("button", { class: "btn primary",
         onclick: async () => {
           const models = {};
-          for (const [kind, { epSel, modelIn }] of Object.entries(modelInputs)) {
-            const ep = epSel.value.trim(), m = modelIn.value.trim();
-            if (ep && m) models[kind] = { endpoint: ep, model: m };
-            else if (ep || m) { toast(`${kind}: set both endpoint and model, or clear both`); return; }
-          }
+          for (const [kind, sel] of Object.entries(modelSelects))
+            if (sel.value) models[kind] = sel.value;
           try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { models } });
             toast("models saved"); setTimeout(() => location.reload(), 400); }
           catch (err) { toast(err.message, 4000, { error: true }); }

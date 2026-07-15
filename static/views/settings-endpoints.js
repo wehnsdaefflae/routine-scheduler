@@ -1,6 +1,8 @@
-// Settings → LLM endpoints: list, add/edit, delete, system model, and a live test call whose
-// FULL outcome is surfaced — latency, schema verdict, parsed answer, and the raw error detail
-// (with an auth hint) on failure. Endpoints are model transports only.
+// Settings → LLM endpoints + the model catalog. Endpoints are transports (how to reach a
+// provider: kind, base_url, auth); MODELS are named entries bound to an endpoint carrying the
+// per-model attributes (multimodal, context window, effort, temperature). Routines/conversations
+// and the system model reference a model by NAME. Also a live test call whose FULL outcome is
+// surfaced — latency, schema verdict, parsed answer, and the raw error detail (auth hint) on fail.
 
 import { api } from "/static/api.js";
 import { el, toast } from "/static/util.js";
@@ -17,6 +19,8 @@ const KIND = {
 };
 const KINDS = ["openai", "anthropic", "claude-cli"];
 const SCHEMA_MODES = ["json_schema", "json_object", "ollama_native", "none"];
+const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"];   // "" = inherit / provider default
+const NATIVE_MM = ["anthropic", "claude-cli"];   // mirrors config.NATIVE_MM_KINDS
 
 export async function renderEndpoints(view) {
   view.append(el("div", { class: "muted small", style: "margin-bottom:8px" },
@@ -33,15 +37,132 @@ export async function renderEndpoints(view) {
     listBox.replaceChildren();
     if (!data.endpoints.length)
       listBox.append(el("div", { class: "muted small" }, "no endpoints yet — add one below."));
-    for (const ep of data.endpoints) listBox.append(item(ep, data.system_model, secrets.keys || []));
+    for (const ep of data.endpoints) listBox.append(item(ep, secrets.keys || []));
     listBox.append(addForm());
-    listBox.append(systemModelEditor(data.endpoints, data.system_model));
+    listBox.append(modelsSection(data.endpoints, data.models || []));
+    listBox.append(systemModelEditor(data.models || [], data.system_model));
+  }
+
+  // ---- the model catalog: named models bound to an endpoint -----------------------------------
+  function modelsSection(endpoints, models) {
+    const box = el("div", { class: "panel mt" });
+    box.append(
+      el("div", { class: "small", style: "font-weight:600" }, "Models"),
+      el("div", { class: "muted small", style: "margin:2px 0 6px" },
+        "Named models bound to an endpoint. Each carries its OWN multimodality, context window, ",
+        "effort and temperature — one endpoint serves many models. Routines and conversations ",
+        "pick a model by name."));
+    if (!endpoints.length) {
+      box.append(el("div", { class: "muted small" }, "add an endpoint above first"));
+      return box;
+    }
+    if (!models.length)
+      box.append(el("div", { class: "muted small" }, "no models yet — add one below."));
+    for (const m of models) box.append(modelItem(m, endpoints));
+    box.append(addModelForm(endpoints));
+    return box;
+  }
+
+  // multimodal is tri-state: default (by endpoint kind) | on | off. Stored null/true/false.
+  function mmSelect(cur) {
+    const sel = el("select", {}, ["default", "on", "off"].map((o) => el("option", {}, o)));
+    sel.value = cur === true ? "on" : cur === false ? "off" : "default";
+    return sel;
+  }
+  const mmValue = (sel) => (sel.value === "on" ? true : sel.value === "off" ? false : null);
+
+  function modelBody(nameIn, epSel, modelIn, mmSel, ctxIn, effSel, tempIn) {
+    return {
+      name: nameIn, endpoint: epSel.value, model: modelIn.value.trim(),
+      multimodal: mmValue(mmSel),
+      context_chars: ctxIn.value.trim() ? Number(ctxIn.value) : null,
+      effort: effSel.value || null,
+      temperature: tempIn.value.trim() ? Number(tempIn.value) : null,
+    };
+  }
+
+  function modelFields(m, endpoints) {
+    const epSel = el("select", {}, endpoints.map((e) => el("option", {}, e.name)));
+    if (m.endpoint) epSel.value = m.endpoint;
+    const modelIn = el("input", { type: "text", value: m.model || "", placeholder: "model id (e.g. openai/gpt-4o)", style: "width:220px" });
+    const mmSel = mmSelect(m.multimodal);
+    const ctxIn = el("input", { type: "number", value: m.context_chars ?? "",
+      placeholder: `inherit (${(m.context_effective || 0).toLocaleString()})` });
+    const effSel = el("select", {}, EFFORTS.map((e) => el("option", { value: e }, e || "default")));
+    effSel.value = m.effort || "";
+    const tempIn = el("input", { type: "number", step: "0.1", value: m.temperature ?? "", placeholder: "inherit" });
+    return { epSel, modelIn, mmSel, ctxIn, effSel, tempIn };
+  }
+
+  function modelFieldRows(f) {
+    return el("div", {},
+      el("div", { class: "field-row mt" },
+        el("label", { class: "field" }, el("span", {}, "endpoint"), f.epSel),
+        el("label", { class: "field" }, el("span", {}, "model id"), f.modelIn)),
+      el("div", { class: "field-row" },
+        el("label", { class: "field" }, el("span", {}, "multimodal"), f.mmSel),
+        el("label", { class: "field" }, el("span", {}, "context_chars"), f.ctxIn),
+        el("label", { class: "field" }, el("span", {}, "effort"), f.effSel),
+        el("label", { class: "field" }, el("span", {}, "temperature"), f.tempIn)));
+  }
+
+  function modelItem(m, endpoints) {
+    const f = modelFields(m, endpoints);
+    const saveBtn = el("button", { class: "btn small primary" }, "save changes");
+    saveBtn.onclick = async () => {
+      if (!f.modelIn.value.trim()) { toast("enter a model id"); return; }
+      try {
+        await api(`/api/settings/models/${encodeURIComponent(m.name)}`, { method: "PUT",
+          body: modelBody(m.name, f.epSel, f.modelIn, f.mmSel, f.ctxIn, f.effSel, f.tempIn) });
+        toast(`${m.name}: updated`); await load();
+      } catch (err) { toast(err.message, 5000, { error: true }); }
+    };
+    const delBtn = el("button", { class: "btn small danger" }, "delete");
+    delBtn.onclick = async () => {
+      if (!confirm(`Delete model "${m.name}"?`)) return;
+      try { await api(`/api/settings/models/${encodeURIComponent(m.name)}`, { method: "DELETE" }); await load(); }
+      catch (err) { toast(err.message, 4000, { error: true }); }
+    };
+    return el("div", { class: "panel mt", style: "background:var(--bg)" },
+      el("div", { class: "row spread" },
+        el("div", {}, el("strong", {}, m.name), " ",
+          el("span", { class: "muted small" }, `${m.endpoint} / ${m.model}`), " ",
+          m.multimodal_effective ? el("span", { class: "chip bare", title: "sees images/PDFs natively" }, "👁") : ""),
+        delBtn),
+      el("details", { class: "mt" },
+        el("summary", { style: "cursor:pointer;font-size:12px" }, "edit fields"),
+        modelFieldRows(f),
+        el("div", { class: "row mt" }, saveBtn)));
+  }
+
+  function addModelForm(endpoints) {
+    const nameIn = el("input", { type: "text", placeholder: "name (e.g. gpt-4o)" });
+    const f = modelFields({ context_effective: 0 }, endpoints);
+    const save = el("button", { class: "btn primary" }, "add model");
+    save.onclick = async () => {
+      if (!nameIn.value.trim()) { toast("name it"); return; }
+      if (!f.modelIn.value.trim()) { toast("enter a model id"); return; }
+      try {
+        await api("/api/settings/models", { method: "POST",
+          body: modelBody(nameIn.value.trim(), f.epSel, f.modelIn, f.mmSel, f.ctxIn, f.effSel, f.tempIn) });
+        toast(`model ${nameIn.value.trim()} added`); await load();
+      } catch (err) { toast(err.message, 4000, { error: true }); }
+    };
+    return el("details", { class: "panel mt" },
+      el("summary", { style: "cursor:pointer;font-weight:600" }, "+ add model"),
+      el("div", { class: "field-row mt" },
+        el("label", { class: "field" }, el("span", {}, "name"), nameIn)),
+      modelFieldRows(f),
+      el("div", { class: "muted small", style: "margin-top:4px" },
+        "multimodal = default lets the endpoint kind decide (on for anthropic/claude-cli, off for openai). ",
+        "Blank context/temperature inherit the endpoint's."),
+      el("div", { class: "row mt" }, save));
   }
 
   // The ONE fallback model for machine work that isn't a routine yet (the new-routine clarify
-  // wizard + workflow generation). Setting it is what makes the instance "llm_ready". Each
-  // routine picks its own three models (main / subroutine / tool-call) on its own page.
-  function systemModelEditor(endpoints, systemModel) {
+  // wizard + workflow generation). Setting it is what makes the instance "llm_ready". Pick a
+  // catalog model by NAME; each routine then picks its own roles on its own page.
+  function systemModelEditor(models, systemModel) {
     const box = el("div", { class: "panel mt" });
     box.append(
       el("div", { class: "small", style: "font-weight:600" }, "System model"),
@@ -50,24 +171,21 @@ export async function renderEndpoints(view) {
         "clarify wizard and workflow generation. Required before you can create routines. ",
         "Each routine then picks its own ", el("strong", {}, "main"), " / ",
         el("strong", {}, "subroutine"), " / ", el("strong", {}, "tool-call"), " models on its page."));
-    if (!endpoints.length) {
-      box.append(el("div", { class: "muted small" }, "add an endpoint above first"));
+    if (!models.length) {
+      box.append(el("div", { class: "muted small" }, "add a model above first"));
       return box;
     }
-    const cur = systemModel || {};
-    const epSel = el("select", {}, endpoints.map((e) => el("option", {}, e.name)));
-    if (cur.endpoint) epSel.value = cur.endpoint;
-    const modelIn = el("input", { type: "text", value: cur.model || "", placeholder: "model id (e.g. z-ai/glm-5.2)", style: "width:220px" });
-    const save = el("button", { class: "btn small primary" }, cur.endpoint ? "update" : "set");
+    const sel = el("select", {}, models.map((m) => el("option", {}, m.name)));
+    if (systemModel) sel.value = systemModel;
+    const save = el("button", { class: "btn small primary" }, systemModel ? "update" : "set");
     save.onclick = async () => {
-      if (!modelIn.value.trim()) { toast("enter a model id"); return; }
       try {
-        await api("/api/settings/system-model", { method: "PUT", body: { endpoint: epSel.value, model: modelIn.value.trim() } });
-        toast(`system model → ${epSel.value} / ${modelIn.value.trim()}`); await load();
+        await api("/api/settings/system-model", { method: "PUT", body: { name: sel.value } });
+        toast(`system model → ${sel.value}`); await load();
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
     box.append(el("div", { class: "row", style: "margin:5px 0" },
-      el("span", { class: "ref-tag", style: "min-width:100px;text-align:center" }, "system"), epSel, modelIn, save));
+      el("span", { class: "ref-tag", style: "min-width:100px;text-align:center" }, "system"), sel, save));
     return box;
   }
 
@@ -89,10 +207,9 @@ export async function renderEndpoints(view) {
     return node;
   }
 
-  function item(ep, systemModel, secretKeys) {
+  function item(ep, secretKeys) {
     const info = KIND[ep.kind] || { title: ep.kind, keyLabel: "key", subscription: false, hint: "" };
-    const modelGuess = (systemModel && systemModel.endpoint === ep.name) ? systemModel.model : "";
-    const modelInput = el("input", { type: "text", value: modelGuess, placeholder: "model id (e.g. opus)", style: "width:220px" });
+    const modelInput = el("input", { type: "text", placeholder: "model id (e.g. opus)", style: "width:220px" });
     const resultBox = el("div", {});
     const testBtn = el("button", { class: "btn small" }, "test");
     testBtn.onclick = async () => {
@@ -145,20 +262,19 @@ export async function renderEndpoints(view) {
       keyRow = el("div", { class: "row mt" }, keyInput, saveKey);
     }
 
-    // editable fields (name is the identity, immutable)
+    // editable fields (name is the identity, immutable). context_chars/temperature are DEFAULTS
+    // catalog models inherit when they leave the field unset.
     const kindSel = el("select", {}, KINDS.map((k) => el("option", {}, k))); kindSel.value = ep.kind;
     const schemaSel = el("select", {}, SCHEMA_MODES.map((m) => el("option", {}, m))); schemaSel.value = ep.schema_mode || "json_schema";
     const baseIn = el("input", { type: "text", value: ep.base_url || "", placeholder: "https://host/v1" });
     const keyVarIn = el("input", { type: "text", value: ep.key_var || "", placeholder: "KEY_VAR in Secrets (optional)" });
     const ctxIn = el("input", { type: "number", value: ep.context_chars });
-    const mmChk = el("input", { type: "checkbox" }); mmChk.checked = !!ep.multimodal;
     const saveEdit = el("button", { class: "btn small primary" }, "save changes");
     saveEdit.onclick = async () => {
       try {
         await api(`/api/settings/endpoints/${ep.name}`, { method: "PUT", body: {
           name: ep.name, kind: kindSel.value, base_url: baseIn.value.trim(), key_env_file: ep.key_env_file || "",
-          key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 100000,
-          multimodal: mmChk.checked } });
+          key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 100000 } });
         toast(`${ep.name}: updated`); await load();
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
@@ -170,9 +286,7 @@ export async function renderEndpoints(view) {
       el("div", { class: "field-row" },
         el("label", { class: "field" }, el("span", {}, "key_var (Secrets)"), keyVarIn),
         el("label", { class: "field" }, el("span", {}, "schema_mode"), schemaSel),
-        el("label", { class: "field" }, el("span", {}, "context_chars"), ctxIn)),
-      el("label", { class: "field row", style: "gap:6px;align-items:center" }, mmChk,
-        el("span", {}, "multimodal — show images/PDFs to this model natively (off → the vision util)")),
+        el("label", { class: "field" }, el("span", {}, "context_chars (default)"), ctxIn)),
       el("div", { class: "row" }, saveEdit));
 
     // Account balance, for providers that expose one (OpenRouter) — loaded lazily per card.
@@ -195,7 +309,6 @@ export async function renderEndpoints(view) {
     return el("div", { class: "panel mt" },
       el("div", { class: "row spread" },
         el("div", {}, el("strong", {}, ep.name), " ", el("span", { class: "chip bare" }, ep.kind), " ",
-          ep.multimodal ? el("span", { class: "chip bare", title: "sees images/PDFs natively" }, "👁 multimodal") : "", " ",
           el("span", { class: "muted small" }, ep.base_url || "")),
         delBtn),
       el("div", { class: "small" }, info.title),
@@ -214,12 +327,9 @@ export async function renderEndpoints(view) {
     const keyVarIn = el("input", { type: "text", placeholder: "KEY_VAR in Secrets (optional)" });
     const schemaSel = el("select", {}, SCHEMA_MODES.map((m) => el("option", {}, m)));
     const ctxIn = el("input", { type: "number", value: "200000" });
-    const mmChk = el("input", { type: "checkbox" });
-    const NATIVE_MM = ["anthropic", "claude-cli"];   // mirrors config.NATIVE_MM_KINDS
     const hint = el("div", { class: "muted small" });
     const onKind = () => {
       const k = KIND[kindSel.value]; hint.textContent = k ? `${k.title} — ${k.hint}` : "";
-      mmChk.checked = NATIVE_MM.includes(kindSel.value);   // default native vision by kind
     };
     kindSel.onchange = onKind; onKind();
     const save = el("button", { class: "btn primary" }, "add endpoint");
@@ -229,8 +339,8 @@ export async function renderEndpoints(view) {
         await api("/api/settings/endpoints", { method: "POST", body: {
           name: nameIn.value.trim(), kind: kindSel.value, base_url: baseIn.value.trim(),
           key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value,
-          context_chars: Number(ctxIn.value) || 200000, multimodal: mmChk.checked } });
-        toast(`endpoint ${nameIn.value.trim()} added — set its ${KIND[kindSel.value]?.keyLabel || "key"} on its card`); await load();
+          context_chars: Number(ctxIn.value) || 200000 } });
+        toast(`endpoint ${nameIn.value.trim()} added — set its ${KIND[kindSel.value]?.keyLabel || "key"} on its card, then add a model`); await load();
       } catch (err) { toast(err.message, 4000, { error: true }); }
     };
     return el("details", { class: "panel mt" },
@@ -243,9 +353,7 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "base_url"), baseIn),
         el("label", { class: "field" }, el("span", {}, "key_var (Secrets)"), keyVarIn),
         el("label", { class: "field" }, el("span", {}, "schema_mode"), schemaSel),
-        el("label", { class: "field" }, el("span", {}, "context_chars"), ctxIn)),
-      el("label", { class: "field row", style: "gap:6px;align-items:center" }, mmChk,
-        el("span", {}, "multimodal — sees images/PDFs natively (default on for anthropic/claude-cli)")),
+        el("label", { class: "field" }, el("span", {}, "context_chars (default)"), ctxIn)),
       el("div", { class: "row" }, save));
   }
 

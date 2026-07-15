@@ -160,7 +160,8 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
         prompt = _DECOMPOSE_PROMPT.format(workflow=raw, instruction=instruction) \
             + param_note + trait_note
         comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
-                                 schema=DECOMPOSE_SCHEMA, effort=ref.effort, timeout=180,
+                                 schema=DECOMPOSE_SCHEMA, effort=ref.effort,
+                                 temperature=ref.temperature, timeout=180,
                                  purpose=f"Decompose workflow → {slug}", kind="decompose")
         data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
         modules = {m["name"]: m["body"] for m in (data.get("modules") or [])

@@ -118,7 +118,6 @@ def routine_detail(request: Request, slug: str) -> dict:
                         | set(own_caps.get("utils") or []))
     capabilities = {"active": {**EMPTY_CAPABILITIES, **own_caps},
                     "vocabulary": {"actions": list(GATED_KINDS), "utils": reservable}}
-    sm = server.system_model
     in_library = bool(info.cfg.workflow_slug) and \
         (server.library_home / "workflows" / f"{info.cfg.workflow_slug}.py").exists()
     return {
@@ -135,12 +134,12 @@ def routine_detail(request: Request, slug: str) -> dict:
         # workflow is actually present to re-derive from.
         "seed": provenance.drift(d, instruction),
         "recompilable": in_library,
-        # Per-routine models (main/subroutine/tool_call). A kind left null falls back to the
-        # server system_model, shown so the UI can label the effective model.
-        "models": {k: ({"endpoint": r.endpoint, "model": r.model, "effort": r.effort}
-                       if (r := info.cfg.models.get(k)) else None) for k in MODEL_KINDS},
+        # Per-routine model roles (main/subroutine/tool_call/uncensored) — each a catalog model
+        # NAME, or null to fall back to the server system_model. `catalog` populates the picker.
+        "models": {k: (info.cfg.models.get(k) or None) for k in MODEL_KINDS},
+        "catalog": list(server.models.keys()),
         "endpoints": list(server.endpoints.keys()),
-        "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None,
+        "system_model": server.system_model or None,
         "permissions": permissions,
         "capabilities": capabilities,
         "instruction": instruction,
@@ -292,7 +291,7 @@ class RoutinePatch(BaseModel):
     enabled: bool | None = None
     schedule: dict | None = None            # {"friendly": {...}} — converted to cron server-side
     budgets: dict | None = None
-    models: dict | None = None              # {main|subroutine|tool_call: {endpoint, model, effort?}}
+    models: dict | None = None              # {main|subroutine|tool_call|uncensored: "<catalog model name>"}
     name: str | None = None
     description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
@@ -306,15 +305,15 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     updates = patch.model_dump(exclude_none=True)
-    # Validate per-routine models: known kinds, pointing at configured endpoints. Models REPLACE
+    # Validate per-routine models: known kinds, each a catalog model NAME. Models REPLACE
     # wholesale (not merge) so blanking a kind clears it back to the system_model fallback.
     if "models" in updates:
         server = _state(request).server
-        for kind, spec in (updates["models"] or {}).items():
+        for kind, name in (updates["models"] or {}).items():
             if kind not in MODEL_KINDS:
                 raise HTTPException(400, f"unknown model kind {kind!r} (expected one of {MODEL_KINDS})")
-            if not isinstance(spec, dict) or spec.get("endpoint") not in server.endpoints:
-                raise HTTPException(400, f"models.{kind}: 'endpoint' must be a configured endpoint")
+            if not isinstance(name, str) or name not in server.models:
+                raise HTTPException(400, f"models.{kind}: must be a catalog model name")
         raw["models"] = updates.pop("models")
     # Translate the friendly schedule → cron + the server's own timezone (never asked of the user).
     if "schedule" in updates and "friendly" in updates["schedule"]:

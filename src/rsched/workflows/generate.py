@@ -72,8 +72,8 @@ def generate(server: ServerConfig, instruction: str, hint: str = "", on_usage=No
     endpoint, ref = EndpointRegistry(server).for_system()
 
     def _complete(messages, purpose):
-        comp = endpoint.complete(messages, model=ref.model, timeout=180,
-                                 purpose=purpose, kind="generate")
+        comp = endpoint.complete(messages, model=ref.model, temperature=ref.temperature,
+                                 timeout=180, purpose=purpose, kind="generate")
         if on_usage is not None and getattr(comp, "usage", None):
             on_usage(comp.usage)
         return comp

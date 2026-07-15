@@ -225,18 +225,13 @@ export async function render(view, slug, _query = {}) {
       style: "width:80px", title: "max turns per reply (-1 = unlimited)" });
     const totalTurnsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "∞",
       style: "width:80px", title: "max turns for the whole conversation (blank or -1 = unlimited)" });
-    // Pre-start model picker: the create endpoint already accepts endpoint+model — this
-    // just surfaces it, so a conversation can start on the right model instead of
-    // system-default-then-switch.
-    const epSel = el("select", { "data-nopersist": "" },
+    // Pre-start model picker: pick a catalog model by NAME (or fall back to the system model),
+    // so a conversation can start on the right model instead of system-default-then-switch.
+    const modelSel = el("select", { "data-nopersist": "" },
       el("option", { value: "" }, "default · system model"));
-    const modelIn = el("input", { type: "text", placeholder: "model id", hidden: true,
-      style: "width:220px" });
-    epSel.onchange = () => { modelIn.hidden = !epSel.value; if (epSel.value) modelIn.focus(); };
-    api("/api/settings/endpoints").then((r) => {
-      if (r.system_model) epSel.options[0].textContent =
-        `default · ${r.system_model.endpoint}/${r.system_model.model}`;
-      (r.endpoints || []).forEach((e) => epSel.append(el("option", { value: e.name }, e.name)));
+    api("/api/settings/models").then((r) => {
+      if (r.system_model) modelSel.options[0].textContent = `default · ${r.system_model}`;
+      (r.models || []).forEach((m) => modelSel.append(el("option", { value: m.name }, m.name)));
     }).catch(() => { /* settings unreachable — the default option still works */ });
     const shellChk = el("input", { type: "checkbox" });
     const { picker, files, clearFiles, wirePaste } = filePicker();
@@ -244,13 +239,12 @@ export async function render(view, slug, _query = {}) {
     const send = el("button", { class: "btn primary" }, "start conversation");
     send.onclick = async () => {
       if (!text.value.trim() && !pbSel.value) { toast("write the first message or pick a playbook"); return; }
-      if (epSel.value && !modelIn.value.trim()) { toast("enter a model id for the picked endpoint"); return; }
       send.disabled = true;
       try {
         const fd = new FormData();
         fd.append("text", text.value);
         if (pbSel.value) fd.append("playbook", pbSel.value);
-        if (epSel.value) { fd.append("endpoint", epSel.value); fd.append("model", modelIn.value.trim()); }
+        if (modelSel.value) fd.append("model", modelSel.value);
         if (workdir.value.trim()) fd.append("workdir", workdir.value.trim());
         if (turnsIn.value.trim()) fd.append("max_turns", turnsIn.value.trim());
         if (totalTurnsIn.value.trim()) fd.append("max_total_turns", totalTurnsIn.value.trim());
@@ -273,7 +267,7 @@ export async function render(view, slug, _query = {}) {
         pbHint,
         el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, send),
         el("div", { class: "row mt", style: "gap:8px;align-items:center" },
-          el("span", { class: "faint small" }, "model"), epSel, modelIn),
+          el("span", { class: "faint small" }, "model"), modelSel),
         el("div", { class: "row mt", style: "gap:12px;align-items:center;flex-wrap:wrap" },
           el("span", { class: "faint small" }, "budget"),
           el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
@@ -519,36 +513,30 @@ export async function render(view, slug, _query = {}) {
   // system default) and switches it at any point — routine.yaml is patched (each reply
   // boots on it), and a live reply additionally gets the mid-run control.json switch.
   function modelControl(detail, isLive) {
-    const cur = detail.models?.main;
-    const sysLabel = detail.system_model
-      ? `${detail.system_model.endpoint}/${detail.system_model.model}` : "system model";
+    const cur = detail.models?.main || "";        // a catalog model NAME, or "" = system default
+    const sysLabel = detail.system_model || "system model";
     const sel = el("select", { style: "width:auto;font-size:11.5px;padding:3px 6px" },
       el("option", { value: "" }, `default · ${sysLabel}`),
-      (detail.endpoints || []).map((e) =>
-        el("option", { value: e, selected: cur?.endpoint === e || null }, e)));
-    const modelIn = el("input", { type: "text", placeholder: "model id", value: cur?.model || "",
-      hidden: !cur, style: "width:170px;font-size:11.5px;padding:3px 6px" });
+      (detail.catalog || []).map((n) =>
+        el("option", { value: n, selected: cur === n || null }, n)));
     const apply = el("button", { class: "btn small primary", hidden: true }, "apply");
-    sel.onchange = () => { modelIn.hidden = !sel.value; apply.hidden = false; if (sel.value) modelIn.focus(); };
-    modelIn.oninput = () => { apply.hidden = false; };
+    sel.onchange = () => { apply.hidden = false; };
     apply.onclick = async () => {
-      if (sel.value && !modelIn.value.trim()) { toast("enter a model id"); return; }
-      const ref = { endpoint: sel.value, model: modelIn.value.trim() };
-      const models = sel.value
-        ? { main: ref, subroutine: { ...ref }, tool_call: { ...ref } } : {};
+      const name = sel.value;
+      const models = name ? { main: name, subroutine: name, tool_call: name } : {};
       try {
         await api(`/api/conversations/${slug}`, { method: "PATCH", body: { models } });
-        if (sel.value && isLive() && detail.run_id) {
-          // the current reply switches too, at its next turn boundary
+        if (name && isLive() && detail.run_id) {
+          // the current reply switches its main too, at its next turn boundary
           await api(`/api/runs/${detail.run_id}/model`,
-            { method: "POST", body: ref }).catch(() => {});
+            { method: "POST", body: { model: name } }).catch(() => {});
         }
-        toast(sel.value ? `model → ${ref.endpoint}/${ref.model}` : `model → ${sysLabel}`);
+        toast(name ? `model → ${name}` : `model → ${sysLabel}`);
         apply.hidden = true;
       } catch (err) { toast(err.message, 4000, { error: true }); }
     };
     return el("span", { class: "conv-model" },
-      el("span", { class: "faint small" }, "model"), sel, modelIn, apply);
+      el("span", { class: "faint small" }, "model"), sel, apply);
   }
 
   function renderHead(head, detail, stateChip, isLive) {

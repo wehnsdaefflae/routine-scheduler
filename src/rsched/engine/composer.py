@@ -225,9 +225,9 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
 
     parts: list[str] = []
     try:
-        endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
+        _endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
         parts.append(f"Model: {ref.endpoint}/{ref.model} — context window ≈ "
-                     f"{endpoint.context_chars:,} chars; the engine archives the middle of "
+                     f"{ref.context_chars:,} chars; the engine archives the middle of "
                      "the conversation to on-disk history at ~60-80% of that, so budget your "
                      "reads (large files via read_file ranges, not whole).")
     except Exception:  # noqa: BLE001 — a bare test context has no registry; degrade silently

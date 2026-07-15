@@ -66,7 +66,7 @@ the limits (single-writer status.json preserved).
   token budgets keep their meaning); the loop hands every completion a stable `session` key (str(run_dir))
   that adapters may use as a cache hint.
 - **Compaction archives context to a navigable on-disk history** (`history.compact_to_history`): when
-  the prompt exceeds ~60% of the endpoint's `context_chars` — ~80% once cache hits are observed
+  the prompt exceeds ~60% of the resolved model's `context_chars` — ~80% once cache hits are observed
   (compaction rewrites the prefix and invalidates the cache, so carried context is cheaper than
   re-archiving) — the middle turns are reorganized into markdown files (~≤100 lines each) under
   `runs/<ts>/history/` + `INDEX.md`; the prompt keeps only a pointer. The archival call runs on the
@@ -126,17 +126,29 @@ retryable `EndpointError`s; a 200 with an unparseable body is one of them). All 
   new process) or resume failure reseeds a fresh session from the full conversation. Without a session
   key: one-shot, temp cwd, `--no-session-persistence` (unchanged).
 
-Each **routine sets its own three models** (`routine.yaml` `models:`): `main` (the loop),
-`subroutine` (a spawned child's main model), `tool_call` (the `llm` action). A model a routine
-leaves unset falls back to the server's single `system_model` — the ONE model for pre-routine
-machine work (the clarify wizard + workflow generation/suggestion). There is no server "roles"
-concept. `EndpointRegistry.for_model(kind, routine.models)` / `.for_system()` resolve them.
+The **model catalog** (`config.ModelConfig`, `ServerConfig.models`) binds a provider model id to
+an endpoint and owns the PER-MODEL attributes — `multimodal`, `context_chars`, `effort`,
+`temperature` (each None inherits the endpoint kind default / the endpoint's own value).
+Endpoints hold only transport + auth + those DEFAULTS; `multimodal` is NOT on the endpoint (one
+endpoint serves many models with different windows and vision support). Each **routine
+references models BY NAME** (`routine.yaml` `models:` maps a role → catalog name): `main` (the
+loop), `subroutine` (a spawned child's main), `tool_call` (the `llm` action), optional
+`uncensored`. A role left unset falls back to the server's single `system_model` (also a catalog
+name) — the ONE model for pre-routine machine work (the clarify wizard + workflow
+generation/suggestion). `EndpointRegistry.resolve(name)` /
+`.for_model(kind, routine.models)` / `.for_system()` produce a RESOLVED `ModelRef` (endpoint,
+model id, effort + the filled-in multimodal/context_chars/temperature) — the runtime handle, no
+longer parsed from yaml. `supports_media(mime, *, multimodal)` and compaction (`ref.context_chars`)
+take the resolved model's values; `complete()` gains a `temperature` kwarg. Editing a catalog
+model updates every routine that names it; a one-shot `rsched migrate-model-catalog` converts a
+pre-0.27 endpoint-attribute config.
 
 ## Routines on disk
 
 A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is NEVER read at run time:
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
-  `workflow: {library_slug, library_commit}` (provenance only), `models:` (main / subroutine / tool_call),
+  `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
+  main / subroutine / tool_call / uncensored),
   `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: {actions, utils,
   confirm, runs, workflows} — both user-changeable only, side by side on the routine page with cascades between
   them; `workflows: catalog|generate` gates in-run pattern drafting for subtasks),

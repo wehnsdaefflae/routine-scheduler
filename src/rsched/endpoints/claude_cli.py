@@ -234,7 +234,6 @@ class ClaudeCliEndpoint:
         self.credentials_env = cfg.credentials_env
         self.oauth_token = cfg.api_key            # inline token pasted in Settings (optional)
         self.context_chars = cfg.context_chars
-        self._multimodal = cfg.native_multimodal()
         # None = untested; True/False set on the first stream-json send. Once False (a
         # send failed → the CLI likely lacks stream-json image input), supports_media returns
         # False so further images route to the vision util instead of re-failing.
@@ -244,16 +243,20 @@ class ClaudeCliEndpoint:
         self._sessions: dict[str, dict] = {}
         self._lock = threading.Lock()
 
-    def supports_media(self, media_type: str) -> bool:
-        """Images only, and only until a stream-json send has proven the CLI can't take them
-        (then everything routes to the vision util). PDFs always route to the vision util."""
+    def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
+        """Images only (when the resolved model is multimodal), and only until a stream-json
+        send has proven the CLI can't take them (then everything routes to the vision util).
+        PDFs always route to the vision util."""
         if self._media_capable is False:
             return False
-        return supports_media_type(media_type, multimodal=self._multimodal, pdf=False)
+        return supports_media_type(media_type, multimodal=multimodal, pdf=False)
 
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
-                 timeout: int = DEFAULT_TIMEOUT, session: str | None = None) -> Completion:
+                 timeout: int = DEFAULT_TIMEOUT, session: str | None = None,
+                 temperature: float | None = None) -> Completion:
+        # temperature is accepted for protocol conformance but ignored: the stripped `claude -p`
+        # subscription CLI exposes no sampling knob.
         cli = find_cli()
         if not cli:
             raise EndpointError("claude-cli: claude CLI not found on PATH (or set $CLAUDE_CLI)")

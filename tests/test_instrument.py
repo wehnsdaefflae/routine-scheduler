@@ -26,9 +26,10 @@ class StubEndpoint:
         self._boom = boom
 
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None,
-                 timeout=600, session=None):
+                 timeout=600, session=None, temperature=None):
         self.calls.append(dict(messages=messages, model=model, schema=schema, effort=effort,
-                               max_tokens=max_tokens, timeout=timeout, session=session))
+                               max_tokens=max_tokens, timeout=timeout, session=session,
+                               temperature=temperature))
         if self._boom is not None:
             raise self._boom
         return self._reply
@@ -58,7 +59,7 @@ def test_passthrough_when_no_sink():
     # every standard kwarg forwarded verbatim; instrumentation kwargs never reach the adapter
     assert stub.calls == [dict(messages=[{"role": "user", "content": "hi"}], model="m",
                                schema={"x": 1}, effort="high", max_tokens=42, timeout=90,
-                               session="sess")]
+                               session="sess", temperature=None)]
 
 
 def test_proxies_name_context_and_adapter_attrs():
@@ -89,7 +90,7 @@ def test_purpose_and_kind_not_forwarded_to_adapter():
     InstrumentedEndpoint(stub).complete([], model="m", purpose="p", process="proc-1", kind="k")
     assert "purpose" not in stub.calls[0] and "process" not in stub.calls[0]
     assert set(stub.calls[0]) == {"messages", "model", "schema", "effort", "max_tokens",
-                                  "timeout", "session"}
+                                  "timeout", "session", "temperature"}
 
 
 def test_exception_emits_failed_and_reraises():

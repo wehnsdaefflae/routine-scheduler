@@ -39,13 +39,16 @@ class _Endpoint:
     def __init__(self, multimodal):
         self.multimodal = multimodal
 
-    def supports_media(self, mime):
-        return supports_media_type(mime, multimodal=self.multimodal, pdf=True)
+    def supports_media(self, mime, *, multimodal):
+        return supports_media_type(mime, multimodal=multimodal, pdf=True)
 
 
 def _ctx(tmp_path, endpoint):
     routine = SimpleNamespace(dir=tmp_path, fs_read_roots=[], models={})
-    registry = SimpleNamespace(for_model=lambda k, m: (endpoint, None)) if endpoint else None
+    # for_model returns (endpoint, resolved ModelRef): the model's multimodal flag is what the
+    # executor passes into supports_media (one endpoint serves many models).
+    ref = SimpleNamespace(multimodal=endpoint.multimodal, context_chars=200_000) if endpoint else None
+    registry = SimpleNamespace(for_model=lambda k, m: (endpoint, ref)) if endpoint else None
     return SimpleNamespace(routine=routine, grants=None, root_run_dir=tmp_path / "runs" / "x",
                            server=SimpleNamespace(utils_home=tmp_path / "utils"), registry=registry)
 

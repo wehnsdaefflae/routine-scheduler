@@ -176,9 +176,10 @@ def _view_via_vision(rel_path: str, abspath: str, prompt: str, ctx: RunContext) 
     return {"path": rel_path, "via": "vision-util", "text": text, "truncated": truncated}
 
 
-def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext) -> dict:
+def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal: bool) -> dict:
     """Route one file: native (return a media entry for the endpoint to see) when the main
-    endpoint supports the type and it's within the native size cap, else the vision util."""
+    MODEL is multimodal, the endpoint supports the type, and it's within the native size cap,
+    else the vision util."""
     try:
         path = resolve_rel(ctx.routine.dir, rel_path, ctx.routine.fs_read_roots)
         if err := _runs_read_gate(ctx, path):
@@ -193,7 +194,7 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext) -> dict:
                                            "read text files with read_file instead"}
     supports = getattr(endpoint, "supports_media", None)
     native = (supports is not None and path.stat().st_size <= NATIVE_MEDIA_MAX_BYTES
-              and supports(mime))
+              and supports(mime, multimodal=multimodal))
     if native:
         return {"path": rel_path, "media_type": mime, "native": True, "abspath": str(path)}
     return _view_via_vision(rel_path, str(path), prompt, ctx)
@@ -205,7 +206,7 @@ def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
     type, too big, or a text-only endpoint) are skipped: the model can still view_image them,
     which then routes through the vision util."""
     try:
-        endpoint, _ = ctx.registry.for_model("main", ctx.routine.models)
+        endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
     except Exception:  # noqa: BLE001 — bare/degraded contexts: no registry
         return []
     supports = getattr(endpoint, "supports_media", None)
@@ -219,22 +220,23 @@ def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
             continue
         mime = guess_media_type(path)
         if (mime and path.is_file() and path.stat().st_size <= NATIVE_MEDIA_MAX_BYTES
-                and supports(mime)):
+                and supports(mime, multimodal=ref.multimodal)):
             out.append({"path": str(path), "media_type": mime})
     return out
 
 
 def do_view_image(action: dict, ctx: RunContext) -> dict:
-    """Let the orchestrator SEE an image/PDF: natively when the main endpoint is multimodal
+    """Let the orchestrator SEE an image/PDF: natively when the main MODEL is multimodal
     (the file rides the next message as a `media` block), else via the vision util (text back
     now). Path resolution and gating mirror read_file."""
     prompt = str(action.get("prompt") or "")
     try:
-        endpoint, _ = ctx.registry.for_model("main", ctx.routine.models)
+        endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
     except Exception:  # noqa: BLE001 — bare/degraded contexts: no registry → vision util only
-        endpoint = None
+        endpoint, ref = None, None
+    multimodal = bool(ref.multimodal) if ref else False
     raw = action.get("paths") or ([action["path"]] if action.get("path") else [])
-    files = [_view_one(str(p), prompt, endpoint, ctx) for p in raw]
+    files = [_view_one(str(p), prompt, endpoint, ctx, multimodal) for p in raw]
     media = [{"path": f.pop("abspath"), "media_type": f["media_type"]}
              for f in files if f.get("native")]
     obs = {"kind": "view_image", "files": files}
@@ -426,8 +428,8 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
     try:
         endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models)
         completion = endpoint.complete(messages, model=ref.model, schema=schema,
-                                       effort=ref.effort, max_tokens=16_384,
-                                       purpose=purpose, kind="llm_action")
+                                       effort=ref.effort, temperature=ref.temperature,
+                                       max_tokens=16_384, purpose=purpose, kind="llm_action")
     except EndpointError as exc:
         return {"kind": "llm", "error": str(exc)}
     ctx.add_usage(completion.usage)
@@ -443,7 +445,8 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
             u_endpoint, u_ref = target
             try:
                 u_completion = u_endpoint.complete(messages, model=u_ref.model, schema=schema,
-                                                   effort=u_ref.effort, max_tokens=16_384,
+                                                   effort=u_ref.effort, temperature=u_ref.temperature,
+                                                   max_tokens=16_384,
                                                    purpose=(purpose + " · referred")[:80],
                                                    kind="llm_action")
             except EndpointError:

@@ -47,7 +47,7 @@ exit 0
 
 def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
              workflow_slug: str, cron: str = "", tz: str = "Europe/Berlin",
-             description: str = "", models: dict[str, dict] | None = None,
+             description: str = "", models: dict[str, str] | None = None,
              params: dict | None = None, budgets: dict | None = None,
              traits: list[str] | None = None,
              permissions: list[str] | None = None,
@@ -59,8 +59,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,
     the routine gets ADAPTED trait copies under traits/ (referenced from main.md's Standing
     practices tail — the routine's own files from then on) + steps/ modules + instruction.
     `permissions` (engine-enforced, user-changeable) go into routine.yaml. A one-line
-    `description` (for the UI) is always written, falling back to the name; `models` sets the
-    routine's own main/subroutine/tool_call models (else they fall back to the server system_model)."""
+    `description` (for the UI) is always written, falling back to the name; `models` maps a role
+    to a catalog model NAME (else the role falls back to the server system_model)."""
     from .. import library_docs
     from ..config import DEFAULT_TRAITS
     from . import library

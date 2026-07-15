@@ -155,11 +155,11 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
 
         marker = _setup_marker()
         needs_setup = not (marker and marker.exists())
-        # llm_ready: the system_model (used by the clarify wizard + workflow generation) is
-        # assigned to a configured endpoint. Until then nothing that needs an LLM to CREATE a
-        # routine works — the UI disables those. (Routines pick their own models to run.)
-        sm = server.system_model
-        llm_ready = bool(sm and sm.endpoint in server.endpoints)
+        # llm_ready: the system_model (used by the clarify wizard + workflow generation) names a
+        # catalog model whose endpoint is configured. Until then nothing that needs an LLM to
+        # CREATE a routine works — the UI disables those. (Routines pick their own models to run.)
+        mc = server.models.get(server.system_model) if server.system_model else None
+        llm_ready = bool(mc and mc.endpoint in server.endpoints)
         # the seeded meta routines install disabled and carry the "meta" tag — the UI uses this
         # to notice that self-improvement is off on a fresh instance
         meta_routines = [{"slug": info.slug, "enabled": info.cfg.enabled}

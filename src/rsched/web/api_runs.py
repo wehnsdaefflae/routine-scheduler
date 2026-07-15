@@ -164,9 +164,7 @@ def _set_pause(request: Request, run_id: str, value: bool) -> dict:
 
 
 class ModelSwitch(BaseModel):
-    endpoint: str
-    model: str
-    effort: str | None = None
+    model: str           # a catalog model name
     kind: str = "main"   # main | subroutine | tool_call
 
 
@@ -176,8 +174,8 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
     at the next turn boundary, where for_model already re-resolves the model every turn."""
     _, run_dir = _run_dir(request, run_id)
     server = request.app.state.server
-    if body.endpoint not in server.endpoints:
-        raise HTTPException(400, f"unknown endpoint {body.endpoint!r}")
+    if body.model not in server.models:
+        raise HTTPException(400, f"unknown model {body.model!r} — add it to the catalog first")
     if body.kind not in ("main", "subroutine", "tool_call"):
         raise HTTPException(400, "kind must be main|subroutine|tool_call")
     st = read_json(run_dir / "status.json")
@@ -185,10 +183,9 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
         raise HTTPException(409, "run is not active; nothing to switch")
     ctrl = read_json(run_dir / "control.json")
     ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}       # keep pause
-    ctrl["switch_model"] = {body.kind: {"endpoint": body.endpoint, "model": body.model,
-                                        "effort": body.effort}, "ts": now_iso()}
+    ctrl["switch_model"] = {body.kind: body.model, "ts": now_iso()}
     atomic_write_json(run_dir / "control.json", ctrl)
-    return {"ok": True, "switch": f"{body.kind} → {body.endpoint}/{body.model}"}
+    return {"ok": True, "switch": f"{body.kind} → {body.model}"}
 
 
 @router.post("/runs/{run_id}/resume-run")

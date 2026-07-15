@@ -634,39 +634,53 @@ def test_merge_consecutive_same_role():
 
 
 def test_registry_model_resolution():
-    from rsched.config import ModelRef, ServerConfig
+    from rsched.config import ModelConfig, ServerConfig
     server = ServerConfig()
-    server.endpoints = {"e1": EndpointConfig(name="e1", kind="openai", base_url="http://x")}
-    server.system_model = ModelRef("e1", "sys")
+    server.endpoints = {"e1": EndpointConfig(name="e1", kind="openai", base_url="http://x",
+                                             context_chars=250_000)}
+    server.models = {
+        "sys": ModelConfig(name="sys", endpoint="e1", model="sys-id"),
+        "override": ModelConfig(name="override", endpoint="e1", model="override-id",
+                                multimodal=True, context_chars=500_000),
+    }
+    server.system_model = "sys"
     reg = EndpointRegistry(server)
-    # a kind the routine didn't set falls back to system_model
+    # a role the routine didn't set falls back to system_model (by name)
     ep, ref = reg.for_model("main", {})
-    assert ref.model == "sys"
-    # a routine's own model wins
-    ep, ref = reg.for_model("main", {"main": ModelRef("e1", "override")})
-    assert ref.model == "override"
+    assert ref.model == "sys-id" and ref.name == "sys"
+    # resolved attrs inherit the endpoint defaults (openai → text-only; endpoint's window)
+    assert ref.multimodal is False and ref.context_chars == 250_000
+    # a routine's own model (by catalog name) wins, carrying its per-model attrs
+    ep, ref = reg.for_model("main", {"main": "override"})
+    assert ref.model == "override-id" and ref.multimodal is True and ref.context_chars == 500_000
     # for_system returns the system_model
     _, sref = reg.for_system()
-    assert sref.model == "sys"
-    # no system_model and no routine model → error
+    assert sref.model == "sys-id"
+    # no system_model + no routine model → error; unknown catalog name → error; unknown endpoint → error
     with pytest.raises(EndpointError):
         EndpointRegistry(ServerConfig()).for_model("main", {})
     with pytest.raises(EndpointError):
-        EndpointRegistry(ServerConfig()).get("nope")
+        reg.resolve("ghost")
+    with pytest.raises(EndpointError):
+        reg.get("nope")
 
 
 def test_registry_for_uncensored():
-    from rsched.config import ModelRef, ServerConfig
+    from rsched.config import ModelConfig, ServerConfig
     server = ServerConfig()
     server.endpoints = {"e1": EndpointConfig(name="e1", kind="openai", base_url="http://x")}
-    server.system_model = ModelRef("e1", "sys")
+    server.models = {
+        "sys": ModelConfig(name="sys", endpoint="e1", model="sys-id"),
+        "abliterated": ModelConfig(name="abliterated", endpoint="e1", model="ablit-id"),
+    }
+    server.system_model = "sys"
     reg = EndpointRegistry(server)
     # unset uncensored role → None (NO system_model fallback: referral off)
     assert reg.for_uncensored({}) is None
-    assert reg.for_uncensored({"main": ModelRef("e1", "m")}) is None
-    # explicitly configured → resolves the endpoint + ref
-    ep, ref = reg.for_uncensored({"uncensored": ModelRef("e1", "abliterated")})
-    assert ref.model == "abliterated" and ref.endpoint == "e1"
+    assert reg.for_uncensored({"main": "sys"}) is None
+    # explicitly named → resolves the endpoint + ref
+    ep, ref = reg.for_uncensored({"uncensored": "abliterated"})
+    assert ref.model == "ablit-id" and ref.endpoint == "e1"
 
 
 def test_make_endpoint_kinds():

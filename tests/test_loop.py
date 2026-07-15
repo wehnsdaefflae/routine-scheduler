@@ -76,7 +76,7 @@ def types(events):
 def test_apply_model_switch(make_routine):
     """The engine applies a mid-run model switch from control.json, edge-triggered on its ts, and
     ignores an unknown endpoint. for_model re-resolves every turn, so the next turn uses it."""
-    from rsched.config import ModelRef, load_routine
+    from rsched.config import ModelConfig, load_routine
     from rsched.engine.control import apply_model_switch
     from rsched.engine.loop import EngineLoop
     from rsched.engine.run_context import Budgets, RunContext
@@ -84,7 +84,7 @@ def test_apply_model_switch(make_routine):
 
     d = make_routine(slug="sw")
     server = _server(d)
-    server.endpoints = {"fast": None, "slow": None}          # only key membership is checked
+    server.models = {"big": ModelConfig(name="big", endpoint="slow", model="big-id")}  # only name membership is checked
     run_dir = d / "runs" / TS
     run_dir.mkdir(parents=True)
     cfg, _ = load_routine(d)
@@ -95,17 +95,16 @@ def test_apply_model_switch(make_routine):
 
     apply_model_switch(loop)                                  # no signal → no-op
     assert "main" not in ctx.routine.models
+    atomic_write_json(run_dir / "control.json", {"switch_model": {"main": "big", "ts": "t1"}})
+    apply_model_switch(loop)
+    assert ctx.routine.models["main"] == "big"                # a catalog model NAME
+    ctx.routine.models["main"] = "other"                      # same ts → not re-applied
+    apply_model_switch(loop)
+    assert ctx.routine.models["main"] == "other"
     atomic_write_json(run_dir / "control.json", {"switch_model": {
-        "main": {"endpoint": "slow", "model": "big", "effort": "high"}, "ts": "t1"}})
+        "main": "ghost", "ts": "t2"}})                        # unknown catalog name ignored
     apply_model_switch(loop)
-    assert ctx.routine.models["main"] == ModelRef("slow", "big", "high")
-    ctx.routine.models["main"] = ModelRef("x", "y")           # same ts → not re-applied
-    apply_model_switch(loop)
-    assert ctx.routine.models["main"] == ModelRef("x", "y")
-    atomic_write_json(run_dir / "control.json", {"switch_model": {
-        "main": {"endpoint": "ghost", "model": "z"}, "ts": "t2"}})   # unknown endpoint ignored
-    apply_model_switch(loop)
-    assert ctx.routine.models["main"] == ModelRef("x", "y")
+    assert ctx.routine.models["main"] == "other"
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert any(e["type"] == "user_injection" and "model switched" in e["payload"]["text"] for e in events)
 
@@ -1527,24 +1526,24 @@ def test_compaction_antithrash(make_routine, monkeypatch):
     monkeypatch.setattr(loop_mod, "compact_to_history",
                         lambda *a, **k: attempts.append(1) or None)   # None → digest fallback
 
-    class _Tiny:
+    class _Tiny:   # a resolved ModelRef stand-in: context_chars drives the compaction cap
         context_chars = 1000   # so the 60% size trigger always fires for our messages
 
     msg = {"role": "user", "content": "x" * 500}
     loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]
-    loop._compact_if_needed(_Tiny(), None)
+    loop._compact_if_needed(None, _Tiny())
     assert attempts, "a large middle over the cap must compact"
     assert len(loop.messages) == KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 1   # head + digest + tail
     assert loop._last_compact_after > 0
 
     attempts.clear()
     loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 3)]  # middle = 3
-    loop._compact_if_needed(_Tiny(), None)
+    loop._compact_if_needed(None, _Tiny())
     assert not attempts, "a tiny middle must not re-trigger compaction"
 
     loop._last_compact_after = 10**9   # as if the last archive already left us this size
     loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]
-    loop._compact_if_needed(_Tiny(), None)
+    loop._compact_if_needed(None, _Tiny())
     assert not attempts, "no meaningful growth since the last archive → skip"
 
 

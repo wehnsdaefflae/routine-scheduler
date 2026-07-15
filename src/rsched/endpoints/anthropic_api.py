@@ -125,12 +125,12 @@ class AnthropicEndpoint:
         self.key_env_file = cfg.key_env_file
         self.key_var = cfg.key_var
         self.context_chars = cfg.context_chars
-        self._multimodal = cfg.native_multimodal()
+        self.temperature = cfg.temperature
 
-    def supports_media(self, media_type: str) -> bool:
-        """The Messages API takes images AND PDFs (document blocks) natively when this
-        endpoint is multimodal."""
-        return supports_media_type(media_type, multimodal=self._multimodal, pdf=True)
+    def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
+        """The Messages API takes images AND PDFs (document blocks) natively when the resolved
+        model is multimodal."""
+        return supports_media_type(media_type, multimodal=multimodal, pdf=True)
 
     def _api_key(self) -> str:
         if self.api_key:                                  # inline key (UI-set) wins over a file
@@ -148,13 +148,17 @@ class AnthropicEndpoint:
 
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
-                 timeout: int = DEFAULT_TIMEOUT, session: str | None = None) -> Completion:
+                 timeout: int = DEFAULT_TIMEOUT, session: str | None = None,
+                 temperature: float | None = None) -> Completion:
         system, rest = split_system(messages)
         body: dict = {
             "model": model,
             "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
             "messages": _mark_tail(_render_media(merge_consecutive(rest))),
         }
+        temp = temperature if temperature is not None else self.temperature  # model wins, endpoint default
+        if temp is not None:
+            body["temperature"] = temp
         if system:
             # static per run → a cache breakpoint; block form is what cache_control needs
             body["system"] = [{"type": "text", "text": system,

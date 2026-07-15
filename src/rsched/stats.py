@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 from .config import ServerConfig
 from .daemon import registry
+from .endpoints import EndpointError, EndpointRegistry
 from .paths import read_json
 
 # run-state buckets rolled into a single success/failure health read for the tab
@@ -71,13 +72,19 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
     by_state: dict[str, int] = defaultdict(int)
 
     runs: list[dict] = []   # per-run records — the raw series the configurable charts slice
+    reg = EndpointRegistry(server)
 
     for kind, home in homes:
         catalog = registry.scan(server, home)
         for slug, info in catalog.items():
-            # the engine's role resolution (EndpointRegistry.for_model): a routine that
-            # leaves models.main unset runs on the server's system_model
-            main_ref = (info.cfg.models or {}).get("main") or server.system_model
+            # the engine's role resolution (EndpointRegistry.for_model): a routine that leaves
+            # models.main unset runs on the server's system_model. Resolve the catalog NAME to a
+            # ModelRef so _run_ref can attribute legacy runs whose status.json lacks the model.
+            main_name = (info.cfg.models or {}).get("main") or server.system_model
+            try:
+                main_ref = reg.resolve(main_name)[1] if main_name else None
+            except EndpointError:
+                main_ref = None
             racc = _empty()
             for r in info.runs:
                 st = read_json(r.dir / "status.json")

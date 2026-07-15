@@ -152,7 +152,8 @@ def _infer(server, prompt: str, *, purpose: str, kind: str) -> dict:
 
     endpoint, ref = EndpointRegistry(server).for_system()
     comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
-                             schema=PLAYBOOK_SCHEMA, effort=ref.effort, timeout=180,
+                             schema=PLAYBOOK_SCHEMA, effort=ref.effort,
+                             temperature=ref.temperature, timeout=180,
                              purpose=purpose, kind=kind)
     data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
     return _normalize(data)

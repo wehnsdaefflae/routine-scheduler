@@ -69,7 +69,7 @@ def _owner(server, slug="c-1", *, last_state="finished",
         "permissions": list(permissions),
         "capabilities": {"actions": ["write_util", "memory_read", "memory_write"],
                          "utils": [], "confirm": "creations", "runs": "last"},
-        "models": {"main": {"kind": "scripted", "model": "m"}},
+        "models": {"main": "scripted-model"},
         "budgets": {"max_turns": 10},
         "fs_read_roots": ["/proj"], "fs_write_roots": ["/proj"],
     }), encoding="utf-8")

@@ -9,7 +9,7 @@ import signal
 import sys
 from pathlib import Path
 
-from .config import MODEL_KINDS, ModelRef, load_server_config
+from .config import MODEL_KINDS, load_server_config
 from .paths import expand
 
 
@@ -78,17 +78,16 @@ def _render_event(obj: dict) -> str | None:
     return None
 
 
-def _parse_model_overrides(values: list[str]) -> dict[str, ModelRef]:
-    """--model main=ollama-local:gemma4:latest (model may itself contain colons)."""
-    out: dict[str, ModelRef] = {}
+def _parse_model_overrides(values: list[str]) -> dict[str, str]:
+    """--model main=gpt-4o (a catalog model NAME; repeatable per role)."""
+    out: dict[str, str] = {}
     for val in values or []:
-        kind, _, rest = val.partition("=")
-        endpoint, _, model = rest.partition(":")
-        if not (kind and endpoint and model):
-            raise SystemExit(f"--model expects kind=endpoint:model, got {val!r}")
+        kind, _, name = val.partition("=")
+        if not (kind and name):
+            raise SystemExit(f"--model expects kind=name (a catalog model), got {val!r}")
         if kind not in MODEL_KINDS:
             raise SystemExit(f"--model kind must be one of {MODEL_KINDS}, got {kind!r}")
-        out[kind] = ModelRef(endpoint=endpoint, model=model)
+        out[kind] = name
     return out
 
 
@@ -285,6 +284,86 @@ def cmd_scaffold(args) -> int:
     return 0
 
 
+def cmd_migrate_model_catalog(args) -> int:
+    """One-shot: migrate a pre-0.27 endpoint-attribute config to the model catalog. Synthesizes a
+    `models:` catalog from every (endpoint, model, effort) referenced by the system_model and each
+    routine/conversation/background routine.yaml, rewrites those references to catalog NAMES, and
+    strips the now-per-model `multimodal` off endpoints (context_chars stays as their default,
+    inherited by models). Safe to re-run — it only adds what's missing. DELETE this command once the
+    production instance has converged (migrations are never kept; see bootstrap.py)."""
+    import re
+
+    import yaml
+
+    from .paths import config_file
+
+    server, _ = load_server_config()   # for the homes; the raw yaml below is what we edit
+    cfg_path = config_file()
+    raw = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+    endpoints = raw.get("endpoints") or {}
+    catalog: dict = dict(raw.get("models") or {})
+    used, seen = set(catalog.keys()), {}
+
+    def _slug(model_id: str) -> str:
+        base = re.sub(r"[^a-zA-Z0-9._-]+", "-", model_id.split("/")[-1]).strip("-").lower()
+        return base or "model"
+
+    def register(endpoint: str, model: str, effort) -> str:
+        key = (endpoint, model, effort or None)
+        if key in seen:
+            return seen[key]
+        base = _slug(model) + (f"-{effort}" if effort else "")
+        name, i = base, 2
+        while name in used:
+            name, i = f"{base}-{i}", i + 1
+        used.add(name)
+        entry: dict = {"endpoint": endpoint, "model": model}
+        if effort:
+            entry["effort"] = effort
+        ep = endpoints.get(endpoint) or {}
+        if "multimodal" in ep:               # preserve the old per-endpoint vision flag on the model
+            entry["multimodal"] = ep["multimodal"]
+        catalog[name] = entry
+        seen[key] = name
+        return name
+
+    def _ref(spec):
+        return (register(spec["endpoint"], spec["model"], spec.get("effort"))
+                if isinstance(spec, dict) and spec.get("endpoint") and spec.get("model") else None)
+
+    if isinstance(raw.get("system_model"), dict) and (nm := _ref(raw["system_model"])):
+        raw["system_model"] = nm
+
+    changed = 0
+    for home in (server.routines_home, server.conversations_home, server.background_home):
+        if not home.exists():
+            continue
+        for rdir in sorted(home.iterdir()):
+            ry = rdir / "routine.yaml"
+            if not ry.exists():
+                continue
+            rraw = yaml.safe_load(ry.read_text(encoding="utf-8")) or {}
+            models = rraw.get("models")
+            if not isinstance(models, dict):
+                continue
+            hit = False
+            for role, spec in list(models.items()):
+                if nm := _ref(spec):
+                    models[role], hit = nm, True
+            if hit:
+                ry.write_text(yaml.safe_dump(rraw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+                changed += 1
+
+    for ep in endpoints.values():
+        if isinstance(ep, dict):
+            ep.pop("multimodal", None)
+    raw["endpoints"], raw["models"] = endpoints, catalog
+    cfg_path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    print(f"migrated: {len(catalog)} catalog model(s); rewrote {changed} routine.yaml file(s); "
+          f"stripped endpoint `multimodal`. edited {cfg_path}", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="rsched", description="LLM agent routine scheduler")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -292,7 +371,7 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("run-once", help="execute one routine run now, streaming events")
     r.add_argument("routine", help="routine slug (under routines_home) or a directory path")
     r.add_argument("--model", action="append",
-                   help="override a routine model: kind=endpoint:model (kind: main|subroutine|tool_call, repeatable)")
+                   help="override a routine model role: kind=name (a catalog model; kind: main|subroutine|tool_call, repeatable)")
     r.add_argument("--quiet", action="store_true", help="no event stream on stdout")
     r.set_defaults(fn=cmd_run_once)
 
@@ -333,6 +412,10 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("--read-root", action="append", help="extra fs read root (repeatable)")
     sc.add_argument("--write-root", action="append", help="extra fs write root (repeatable)")
     sc.set_defaults(fn=cmd_scaffold)
+
+    mm = sub.add_parser("migrate-model-catalog",
+                        help="one-shot: migrate pre-0.27 endpoint attributes → the model catalog")
+    mm.set_defaults(fn=cmd_migrate_model_catalog)
 
     args = p.parse_args(argv)
     return args.fn(args)

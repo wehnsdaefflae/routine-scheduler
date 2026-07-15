@@ -143,7 +143,8 @@ def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint,
     convo = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in middle)
     comp = endpoint.complete([{"role": "user", "content":
                                _HISTORY_PROMPT.format(existing_note=existing_note, convo=convo)}],
-                             model=ref.model, schema=_HISTORY_SCHEMA, effort=ref.effort, timeout=180,
+                             model=ref.model, schema=_HISTORY_SCHEMA, effort=ref.effort,
+                             temperature=ref.temperature, timeout=180,
                              purpose="Compaction · archival", kind="compaction")
     data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
     files = [f for f in (data.get("files") or []) if isinstance(f, dict) and str(f.get("content", "")).strip()]

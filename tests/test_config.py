@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import yaml
 
-from rsched.config import (DEFAULT_BUDGETS, DEFAULT_PERMISSIONS, EndpointConfig, ModelRef,
+from rsched.config import (DEFAULT_BUDGETS, DEFAULT_PERMISSIONS, EndpointConfig, ModelConfig,
                            RoutineConfig, ServerConfig, load_routine, load_server_config)
 
 # ---------------------------------------------------------------- server config
@@ -36,7 +36,9 @@ def test_deployed_config_keys_load_exactly(tmp_path):
                            "schema_mode": "json_object", "context_chars": 180_000},
             "cc": {"kind": "claude-cli"},
         },
-        "system_model": {"endpoint": "openrouter", "model": "deepseek/deepseek-chat"},
+        "models": {"ds": {"endpoint": "openrouter", "model": "deepseek/deepseek-chat",
+                          "multimodal": False, "context_chars": 200_000, "effort": "high"}},
+        "system_model": "ds",
         "library_sync": {"enabled": True, "cron": "0 6 * * *", "tz": "Europe/Berlin"},
     })
     assert problems == []
@@ -51,7 +53,10 @@ def test_deployed_config_keys_load_exactly(tmp_path):
     assert ep.key_var == "OPENROUTER_KEY" and ep.schema_mode == "json_object"
     assert ep.context_chars == 180_000
     assert server.endpoints["cc"].kind == "claude-cli"
-    assert server.system_model == ModelRef("openrouter", "deepseek/deepseek-chat")
+    mc = server.models["ds"]
+    assert mc.name == "ds" and mc.endpoint == "openrouter" and mc.model == "deepseek/deepseek-chat"
+    assert mc.multimodal is False and mc.context_chars == 200_000 and mc.effort == "high"
+    assert server.system_model == "ds"
     # derived properties hang off libraries_home
     assert server.library_home == server.libraries_home == server.utils_home
     assert server.traits_home == server.libraries_home / "traits"
@@ -74,7 +79,8 @@ def test_library_sync_defaults_and_bad_cron_degrades(tmp_path):
 def test_server_defaults_and_missing_file(tmp_path):
     server, problems = load_server_config(tmp_path / "nope.yaml")
     assert len(problems) == 1 and "not found" in problems[0]
-    assert server.port == 8321 and server.endpoints == {} and server.system_model is None
+    assert server.port == 8321 and server.endpoints == {}
+    assert server.models == {} and server.system_model == ""
 
 
 def test_server_bad_keys_degrade_per_key(tmp_path):
@@ -83,29 +89,35 @@ def test_server_bad_keys_degrade_per_key(tmp_path):
         "port": "not-a-port", "bind": "10.0.0.1",
         "endpoints": {"good": {"kind": "openai", "base_url": "http://x"},
                       "bad": {"kind": "smtp"}},
-        "system_model": {"endpoint": "good", "model": "m"},
+        "models": {"m": {"endpoint": "good", "model": "m"}},
+        "system_model": "m",
     })
     text = " | ".join(problems)
     assert "port" in text and "endpoints.bad.kind" in text
     assert server.port == 8321                      # bad key → default
     assert server.bind == "10.0.0.1"                # good key survives
     assert set(server.endpoints) == {"good"}        # bad endpoint skipped, good one kept
-    assert server.system_model == ModelRef("good", "m")
+    assert server.system_model == "m" and server.models["m"].endpoint == "good"
 
 
-def test_server_unknown_system_model_endpoint_flagged(tmp_path):
+def test_server_unknown_system_model_and_model_endpoint_flagged(tmp_path):
+    # system_model must name a catalog model; a catalog model's endpoint must be configured
     server, problems = _load_server(tmp_path, {
-        "system_model": {"endpoint": "ghost", "model": "m"}})
+        "system_model": "ghost",
+        "models": {"orphan": {"endpoint": "nope", "model": "m"}}})
     assert any("system_model" in p and "ghost" in p for p in problems)
-    assert server.system_model == ModelRef("ghost", "m")  # kept — the UI shows the problem
+    assert any("models.orphan" in p and "nope" in p for p in problems)
+    assert server.system_model == "ghost"   # kept — the UI shows the problem
 
 
 def test_server_config_direct_construction_for_tests():
     """The fixture pattern all engine tests rely on: bare construction + assignment."""
     s = ServerConfig()
-    s.system_model = ModelRef("scripted", "test-model")
+    s.models = {"sys": ModelConfig(name="sys", endpoint="e1", model="test-model")}
+    s.system_model = "sys"
     s.endpoints = {"e1": EndpointConfig(name="e1", kind="openai", base_url="http://x")}
-    assert s.system_model.model == "test-model" and s.endpoints["e1"].context_chars == 100_000
+    assert s.system_model == "sys" and s.models["sys"].model == "test-model"
+    assert s.endpoints["e1"].context_chars == 100_000
 
 
 # ---------------------------------------------------------------- routine.yaml
@@ -127,7 +139,7 @@ def test_routine_full_shape_loads(tmp_path):
         "enabled": True, "tags": ["meta", " demo "],
         "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin", "catchup": "run_once"},
         "workflow": {"library_slug": "test-flow", "library_commit": "abc123"},
-        "models": {"main": {"endpoint": "e", "model": "m", "effort": "high"}},
+        "models": {"main": "gpt"},
         "budgets": {"max_turns": 10},
         "permissions": ["util-authoring"],
         "fs_read_roots": ["~/data"],
@@ -138,7 +150,7 @@ def test_routine_full_shape_loads(tmp_path):
     assert cfg.slug == "testr" and cfg.name == "Test" and cfg.tags == ["meta", "demo"]
     assert (cfg.cron, cfg.tz, cfg.catchup) == ("0 7 * * 1", "Europe/Berlin", "run_once")
     assert (cfg.workflow_slug, cfg.workflow_commit) == ("test-flow", "abc123")
-    assert cfg.models["main"] == ModelRef("e", "m", "high")
+    assert cfg.models["main"] == "gpt"      # role → catalog model NAME
     assert cfg.budgets == {**DEFAULT_BUDGETS, "max_turns": 10}  # merged over defaults
     assert cfg.permissions == ["util-authoring"] and cfg.keep_runs == 5
     assert cfg.fs_read_roots[0].name == "data" and cfg.fs_read_roots[0].is_absolute()
@@ -159,7 +171,9 @@ def test_routine_bad_values_reported_and_defaulted(tmp_path):
         "description": "Bad bits.",
         "schedule": {"cron": "not a cron", "catchup": "sometimes"},
         "budgets": {"max_turns": "many", "max_lightyears": 3},
-        "models": {"main": {"endpoint": "e"}, "sidekick": {"endpoint": "e", "model": "m"}},
+        # main is a dict (invalid: model roles are catalog NAMES → per-key drop); sidekick is
+        # a valid string but an unknown role kind (deleted with a problem line).
+        "models": {"main": {"endpoint": "e"}, "sidekick": "x"},
     })
     cfg, problems = load_routine(d)
     text = " | ".join(problems)
@@ -177,12 +191,11 @@ def test_routine_accepts_uncensored_model_role(tmp_path):
     assert "uncensored" in MODEL_KINDS      # the optional 4th role
     d = _mk_routine(tmp_path, {
         "description": "Has an uncensored referral target.",
-        "models": {"tool_call": {"endpoint": "e", "model": "m"},
-                   "uncensored": {"endpoint": "e", "model": "abliterated"}},
+        "models": {"tool_call": "normal", "uncensored": "abliterated"},
     })
     cfg, problems = load_routine(d)
     assert not any("uncensored" in p for p in problems)
-    assert cfg.models["uncensored"].model == "abliterated"
+    assert cfg.models["uncensored"] == "abliterated"
 
 
 def test_routine_structural_problems(tmp_path):

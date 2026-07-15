@@ -35,7 +35,8 @@ def server(tmp_path):
         "conversations_home": str(tmp_path / "conversations"),
         "libraries_home": str(lib),
         "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "system_model": {"endpoint": "dummy", "model": "m"},
+        "models": {"m": {"endpoint": "dummy", "model": "m"}},
+        "system_model": "m",
     }))
     server, problems = load_server_config(cfg_path)
     assert not problems
@@ -87,12 +88,16 @@ def _patch_system_model(monkeypatch, reply):
 
     class _R(_RealRegistry):
         def __init__(self):
-            s = ServerConfig()
-            s.system_model = ModelRef("scripted", "m")
-            super().__init__(s)
+            super().__init__(ServerConfig())
 
         def get(self, name):
             return _ScriptedEndpoint(reply)
+
+        def resolve(self, name):   # every name resolves to the scripted endpoint (no catalog)
+            return self.get(name), ModelRef(endpoint="scripted", model="m", name=name or "system")
+
+        def for_system(self):
+            return self.resolve("system")
 
     monkeypatch.setattr("rsched.endpoints.EndpointRegistry", lambda server: _R())
 

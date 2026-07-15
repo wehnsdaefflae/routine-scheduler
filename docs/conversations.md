@@ -35,8 +35,8 @@ Optional, all on the same form:
   guide. With a playbook picked you can even leave the message empty.
 - **Project directory** — a folder the agent may read and edit. This is how a conversation works on
   a real codebase or document set.
-- **Model** — start on a specific endpoint + model, or the system default (switchable any time
-  later).
+- **Model** — start on a specific catalog model (picked by name), or the system default
+  (switchable any time later).
 - **Shell** — off by default (the agent works through selftested utils); flip it on for the rare
   session that needs the escape hatch.
 - **Attachments** — drop in files (or paste a screenshot straight into the box).

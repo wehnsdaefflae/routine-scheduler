@@ -107,8 +107,7 @@ def list_conversations(request: Request) -> list[dict]:
 
 @router.post("/conversations")
 async def create_conversation(request: Request, text: str = Form(""),
-                              workdir: str = Form(""), endpoint: str = Form(""),
-                              model: str = Form(""), effort: str = Form(""),
+                              workdir: str = Form(""), model: str = Form(""),
                               shell: str = Form(""), playbook: str = Form(""),
                               max_turns: str = Form(""), max_total_turns: str = Form(""),
                               files: list[UploadFile] = File(default=[])) -> dict:
@@ -126,13 +125,10 @@ async def create_conversation(request: Request, text: str = Form(""),
                 raise HTTPException(400, f"{key} must be a whole number (-1 = unlimited)") from None
     permissions = (conv_mod.CONVERSATION_PERMISSIONS + ["shell"]) if shell.strip() else None
     models = None
-    if endpoint or model:
-        if endpoint not in server.endpoints or not model.strip():
-            raise HTTPException(400, "model override needs a configured endpoint and a model id")
-        ref = {"endpoint": endpoint, "model": model.strip()}
-        if effort.strip():
-            ref["effort"] = effort.strip()
-        models = {"main": ref, "subroutine": dict(ref), "tool_call": dict(ref)}
+    if model.strip():   # a picked catalog model name → all three roles (else system_model fallback)
+        if model.strip() not in server.models:
+            raise HTTPException(400, f"unknown model {model.strip()!r} — add it to the catalog first")
+        models = {k: model.strip() for k in ("main", "subroutine", "tool_call")}
     server.conversations_home.mkdir(parents=True, exist_ok=True)
     slug = conv_mod.new_slug(server.conversations_home)
     try:
@@ -207,7 +203,6 @@ def detail(request: Request, slug: str) -> dict:
                     "vocabulary": {"actions": list(GATED_KINDS), "utils": reservable}}
     traits_dir = info.cfg.dir / "traits"
     traits = sorted(p.stem for p in traits_dir.glob("*.md")) if traits_dir.is_dir() else []
-    sm = server.system_model
     return {
         **_item(info),
         "description": info.cfg.description,
@@ -215,9 +210,10 @@ def detail(request: Request, slug: str) -> dict:
         if (info.cfg.dir / "instruction.md").exists() else "",
         "workdir": str(info.cfg.fs_write_roots[0]) if info.cfg.fs_write_roots else "",
         "playbook": info.cfg.playbook_slug or None,   # bound source playbook → Update-playbook button
-        "models": {k: ({"endpoint": r.endpoint, "model": r.model, "effort": r.effort}
-                       if (r := info.cfg.models.get(k)) else None) for k in MODEL_KINDS},
-        "system_model": {"endpoint": sm.endpoint, "model": sm.model} if sm else None,
+        # Model roles are catalog model NAMES (null → system_model fallback); `catalog` = the picker.
+        "models": {k: (info.cfg.models.get(k) or None) for k in MODEL_KINDS},
+        "system_model": server.system_model or None,
+        "catalog": list(server.models.keys()),
         "endpoints": list(server.endpoints.keys()),
         "permissions": permissions,
         "capabilities": capabilities,
@@ -258,11 +254,11 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
         raw.setdefault("budgets", {}).update({k: int(v) for k, v in updates["budgets"].items()})
     if "models" in updates:
         server = request.app.state.server
-        for kind, spec in (updates["models"] or {}).items():
+        for kind, name in (updates["models"] or {}).items():
             if kind not in MODEL_KINDS:
                 raise HTTPException(400, f"unknown model kind {kind!r}")
-            if not isinstance(spec, dict) or spec.get("endpoint") not in server.endpoints:
-                raise HTTPException(400, f"models.{kind}: 'endpoint' must be a configured endpoint")
+            if not isinstance(name, str) or name not in server.models:
+                raise HTTPException(400, f"models.{kind}: must be a catalog model name")
         raw["models"] = updates["models"]
     path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return {"ok": True, "updated": list(updates)}
