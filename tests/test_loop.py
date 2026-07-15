@@ -1161,6 +1161,42 @@ def test_unlimited_time_and_cost_budgets_honor_minus_one():
     assert "of budget left" in (ctx.budget_warning() or "")
 
 
+def test_conversation_total_turn_budget_caps_the_whole_conversation():
+    """max_total_turns bounds the CUMULATIVE turns across every resume window (a
+    conversation's whole life), independent of the per-reply max_turns window."""
+    import time as _t
+    from rsched.engine.run_context import Budgets, RunContext
+
+    ctx = RunContext.__new__(RunContext)
+    ctx.usage = {"in": 0, "out": 0}
+    ctx._started_mono = _t.monotonic()
+    ctx._suspended_s = 0.0
+
+    # -1 = unlimited: never trips however many total turns
+    ctx.budgets = Budgets(max_turns=10, max_wall_clock_min=-1, max_total_tokens=-1,
+                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5,
+                          max_total_turns=-1)
+    ctx.turn, ctx.budget_base_turn = 500, 498
+    assert ctx.budget_violation() is None
+
+    # finite cap: this reply's window is small (2 turns < max_turns=10) but the conversation
+    # has reached its total → the CUMULATIVE cap trips, not the per-reply window one
+    ctx.budgets = Budgets(max_turns=10, max_wall_clock_min=-1, max_total_tokens=-1,
+                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5,
+                          max_total_turns=40)
+    ctx.turn, ctx.budget_base_turn = 40, 38
+    v = ctx.budget_violation()
+    assert v is not None and "conversation turn budget exhausted" in v
+
+    # 85% cumulative → a wind-down warning even while the per-reply window is fresh
+    ctx.turn, ctx.budget_base_turn = 34, 34
+    assert "turns left in this conversation" in (ctx.budget_warning() or "")
+
+    # a subrun does NOT inherit the conversation-total cap
+    ctx.turn, ctx.budget_base_turn = 5, 0
+    assert ctx.child_budgets().max_total_turns == -1
+
+
 def test_unlimited_turn_budget_honors_minus_one():
     """max_turns = -1 means unlimited (a manual stop / abort is the backstop): no violation
     or warning however many turns pass, a child inherits unlimited turns (not 1), and a

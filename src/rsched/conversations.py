@@ -114,7 +114,8 @@ def _seed_instruction(pb: dict | None, first_message: str, conv_dir: Path) -> st
 
 def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
                         workdir: str = "", models: dict[str, dict] | None = None,
-                        permissions: list[str] | None = None, playbook_slug: str = "") -> Path:
+                        permissions: list[str] | None = None, playbook_slug: str = "",
+                        budgets: dict | None = None) -> Path:
     """Create <conversations_home>/<slug> ready to run: materialized converse main.md with
     a Standing-practices tail, verbatim trait copies, instruction.md = the first message,
     and a schedule-less routine.yaml marked `kind: conversation`. NO git init — a
@@ -180,7 +181,8 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
         **({"models": models} if models else {}),
         "permissions": active_perms,
         "capabilities": capabilities,
-        "budgets": dict(CONVERSATION_BUDGETS),
+        "budgets": {**CONVERSATION_BUDGETS,
+                    **{k: int(v) for k, v in (budgets or {}).items() if k in DEFAULT_BUDGETS}},
         "retention": {"keep_runs": 1000},   # one continuous run — retention never prunes it
     }
     if workdir.strip():

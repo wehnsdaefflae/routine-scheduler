@@ -218,6 +218,12 @@ export async function render(view, slug, _query = {}) {
         : "What should the agent do? The first message becomes the conversation's task…";
     };
     const workdir = el("input", { type: "text", placeholder: "~/path/to/project (optional)" });
+    // Pre-start budgets: turns per REPLY, and a cumulative cap over the WHOLE conversation
+    // (both optional — blank keeps the default; -1 = unlimited).
+    const turnsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "10",
+      style: "width:80px", title: "max turns per reply (-1 = unlimited)" });
+    const totalTurnsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "∞",
+      style: "width:80px", title: "max turns for the whole conversation (blank or -1 = unlimited)" });
     // Pre-start model picker: the create endpoint already accepts endpoint+model — this
     // just surfaces it, so a conversation can start on the right model instead of
     // system-default-then-switch.
@@ -245,6 +251,8 @@ export async function render(view, slug, _query = {}) {
         if (pbSel.value) fd.append("playbook", pbSel.value);
         if (epSel.value) { fd.append("endpoint", epSel.value); fd.append("model", modelIn.value.trim()); }
         if (workdir.value.trim()) fd.append("workdir", workdir.value.trim());
+        if (turnsIn.value.trim()) fd.append("max_turns", turnsIn.value.trim());
+        if (totalTurnsIn.value.trim()) fd.append("max_total_turns", totalTurnsIn.value.trim());
         if (shellChk.checked) fd.append("shell", "1");
         for (const f of files()) fd.append("files", f);
         const r = await apiUpload("/api/conversations", fd);
@@ -265,6 +273,12 @@ export async function render(view, slug, _query = {}) {
         el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, send),
         el("div", { class: "row mt", style: "gap:8px;align-items:center" },
           el("span", { class: "faint small" }, "model"), epSel, modelIn),
+        el("div", { class: "row mt", style: "gap:12px;align-items:center;flex-wrap:wrap" },
+          el("span", { class: "faint small" }, "budget"),
+          el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
+            "turns / reply", turnsIn),
+          el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
+            "whole conversation", totalTurnsIn)),
         el("details", { class: "mt small" },
           el("summary", { style: "cursor:pointer;color:var(--muted)" }, "⚙ options: project dir, shell"),
           el("div", { class: "conv-opts" },

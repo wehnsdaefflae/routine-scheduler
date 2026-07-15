@@ -22,3 +22,9 @@
   "summary": "Follow-up user order 'remove the orphans and implement the rest'. Implemented both filed recipe recommendations in ~/routines (outside the scheduler repo): q-152 — routine-improver/steps/study-target.md now reads each target's audit/report.json findings + settled/answered decisions (decisions-answered.json, inbox/answer-*.json) + open deferred questions, and scans the full LEDGER for recipe-change work orders (committed in the routine-improver git repo); q-144 — self-audit/steps/act-apply-fixes.md now requires a __version__ bump + CHANGELOG.md entry + (x.y.z) subject tag on every user-facing scheduler commit (auto-committed by the engine with self-audit's dir). Removed 2 orphaned decision artifacts (self-audit/inbox/answer-q-20260711-082732-35.json; runs/.../sub/2/questions/pending/q-...-31.json). This scheduler commit is audit/ bookkeeping only (report.json gains findings F45+F46, changelog.jsonl this line) — no code or version change.",
   "run_id": "self-audit:20260714-194518"
 }
+{
+  "ts": "2026-07-15T03:20:00+00:00",
+  "commit": "aa6c6fe138ad56e1f57a48f1526a0f75d1d384e6",
+  "summary": "Conversation state diagram now lights the current reply-cycle state (working/waiting for you) from the live run state; /conversations/{slug}/stategraph returns the lifecycle graph. AUDIT note 1.",
+  "run_id": "self-audit:20260715-030003"
+}

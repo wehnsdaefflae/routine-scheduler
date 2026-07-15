@@ -186,6 +186,22 @@ def test_artifacts_list_and_serving(client):
                  params={"path": "artifacts/../routine.yaml"}).status_code in (400, 404)
 
 
+def test_create_conversation_accepts_prestart_budgets(client):
+    c, server = client
+    r = c.post("/api/conversations",
+               data={"text": "bounded task", "max_turns": "5", "max_total_turns": "40"})
+    assert r.status_code == 200, r.text
+    slug = r.json()["slug"]
+    raw = yaml.safe_load((server.conversations_home / slug / "routine.yaml").read_text())
+    assert raw["budgets"]["max_turns"] == 5            # per-reply cap
+    assert raw["budgets"]["max_total_turns"] == 40     # whole-conversation cap
+    # blank fields keep the conversation defaults; a non-numeric budget is a 400
+    slug2 = c.post("/api/conversations", data={"text": "plain"}).json()["slug"]
+    raw2 = yaml.safe_load((server.conversations_home / slug2 / "routine.yaml").read_text())
+    assert raw2["budgets"]["max_turns"] == 10 and raw2["budgets"]["max_total_turns"] == -1
+    assert c.post("/api/conversations", data={"text": "x", "max_turns": "lots"}).status_code == 400
+
+
 def test_conversation_phase_mapping():
     for s in ("running", "queued", "starting"):
         assert conv_mod.conversation_phase(s) == "working"

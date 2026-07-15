@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.18.0] — 2026-07-15
+
+### Added
+- **Two conversation budgets, settable before the conversation starts.** The "New
+  conversation" view now exposes **turns / reply** (`max_turns`, the per-reply window) and
+  **whole conversation** (`max_total_turns`, a cumulative cap across every reply). The new
+  `max_total_turns` budget (in `DEFAULT_BUDGETS`, `-1` = unlimited default) is enforced in
+  `budget_violation`/`budget_warning` against the cumulative `ctx.turn` (restored across
+  resume windows), so a conversation can be bounded as a whole while each reply keeps its own
+  small window. `POST /api/conversations` accepts `max_turns`/`max_total_turns` form fields
+  (AUDIT note).
+
 ## [0.17.0] — 2026-07-15
 
 ### Fixed

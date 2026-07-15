@@ -29,6 +29,8 @@ class Budgets:
     max_subrun_depth: int
     ask_timeout_min: int
     max_cost: int = -1        # -1 = unlimited: whole-dollar ceiling on real provider $ spend
+    max_total_turns: int = -1  # -1 = unlimited: cumulative turn cap across ALL resume windows
+                               # (a conversation's whole life); max_turns bounds one window
 
     @classmethod
     def from_config(cls, budgets: dict) -> "Budgets":
@@ -126,6 +128,10 @@ class RunContext:
         b = self.budgets
         if b.max_turns >= 0 and self.turn - self.budget_base_turn >= b.max_turns:
             return f"turn budget exhausted ({b.max_turns})"
+        # cumulative across every resume window (a conversation's whole life): self.turn is
+        # restored to the prior total on resume, so it counts the entire conversation.
+        if b.max_total_turns >= 0 and self.turn >= b.max_total_turns:
+            return f"conversation turn budget exhausted ({b.max_total_turns} total turns)"
         if b.max_wall_clock_min >= 0 and self.elapsed_s() > b.max_wall_clock_min * 60:
             return f"wall-clock budget exhausted ({b.max_wall_clock_min} min)"
         if b.max_total_tokens >= 0 and self.usage["in"] + self.usage["out"] >= b.max_total_tokens:
@@ -140,6 +146,8 @@ class RunContext:
         b = self.budgets
         if b.max_turns >= 0 and self.turn - self.budget_base_turn >= 0.85 * b.max_turns:
             return f"~{b.max_turns - (self.turn - self.budget_base_turn)} turns left"
+        if b.max_total_turns >= 0 and self.turn >= 0.85 * b.max_total_turns:
+            return f"~{b.max_total_turns - self.turn} turns left in this conversation"
         if b.max_wall_clock_min >= 0 and self.elapsed_s() > 0.85 * b.max_wall_clock_min * 60:
             return f"~{max(0, int(b.max_wall_clock_min - self.elapsed_s() / 60))} minutes left"
         spent = self.usage["in"] + self.usage["out"]

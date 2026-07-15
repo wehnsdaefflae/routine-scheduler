@@ -109,10 +109,20 @@ async def create_conversation(request: Request, text: str = Form(""),
                               workdir: str = Form(""), endpoint: str = Form(""),
                               model: str = Form(""), effort: str = Form(""),
                               shell: str = Form(""), playbook: str = Form(""),
+                              max_turns: str = Form(""), max_total_turns: str = Form(""),
                               files: list[UploadFile] = File(default=[])) -> dict:
     server = request.app.state.server
     if not text.strip() and not playbook.strip():
         raise HTTPException(400, "empty message — write the first message or pick a playbook")
+    # Optional pre-start budgets: max_turns = turns per REPLY, max_total_turns = cumulative
+    # cap over the WHOLE conversation (both -1 = unlimited). Blank = leave the default.
+    budgets: dict[str, int] = {}
+    for key, raw_val in (("max_turns", max_turns), ("max_total_turns", max_total_turns)):
+        if raw_val.strip():
+            try:
+                budgets[key] = int(raw_val)
+            except ValueError:
+                raise HTTPException(400, f"{key} must be a whole number (-1 = unlimited)") from None
     permissions = (conv_mod.CONVERSATION_PERMISSIONS + ["shell"]) if shell.strip() else None
     models = None
     if endpoint or model:
@@ -128,7 +138,8 @@ async def create_conversation(request: Request, text: str = Form(""),
         conv_dir = conv_mod.create_conversation(server, slug=slug, first_message=text,
                                                 workdir=workdir, models=models,
                                                 permissions=permissions,
-                                                playbook_slug=playbook.strip())
+                                                playbook_slug=playbook.strip(),
+                                                budgets=budgets or None)
     except FileNotFoundError as exc:
         raise HTTPException(500, f"the library has no '{conv_mod.CONVERSE_WORKFLOW}' workflow "
                                  f"— restart the daemon to seed it ({exc})") from exc

@@ -20,6 +20,11 @@ from .paths import config_file, expand
 
 DEFAULT_BUDGETS = {
     "max_turns": 60,
+    # -1 = unlimited (default): a cumulative turn ceiling across ALL of a run's resume
+    # windows (a conversation's whole life is the sum of its replies). max_turns bounds ONE
+    # window (one reply); max_total_turns bounds the whole conversation. Scheduled routines
+    # run a single window, so this is inert for them unless explicitly set.
+    "max_total_turns": -1,
     "max_wall_clock_min": 45,
     # -1 = unlimited: for max_total_tokens this is the default (every finite cap we tried,
     # 500k then 1.5M, eventually cut off legitimate work). max_wall_clock_min and max_cost
