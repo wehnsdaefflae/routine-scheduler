@@ -134,6 +134,8 @@ export function createTranscript(container, opts = {}) {
         el("span", { class: "n" }, `turn ${ev.turn ?? "?"}`),
         ev.ts ? el("span", { class: "ts", title: ev.ts }, fmtTime(ev.ts)) : null,
         el("span", { class: "saytext" }, mdInline(a.say || ""))),
+      a.note ? el("div", { class: "note", title: "captured to state/notes.md" },
+        "📌 ", mdInline(a.note)) : null,
       el("div", { class: "act" },
         el("span", {}, a.kind),
         el("span", { class: "muted" }, brief),

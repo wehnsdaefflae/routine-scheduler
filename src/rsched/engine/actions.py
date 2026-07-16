@@ -33,6 +33,15 @@ ACTION_SCHEMA: dict = {
                            "sentences on decisions, direction changes, and surprises. "
                            "Simple Markdown (bold, `code`, links) renders in the UI.",
         },
+        "note": {
+            "type": "string",
+            "description": "OPTIONAL, on any action: 1-3 lines worth keeping beyond this context "
+                           "window — a confirmed finding, a dead end, a fallback plan, an "
+                           "unresolved doubt. SELF-CONTAINED: a reader with only this line must "
+                           "understand it (name things — never 'it' or 'that approach'). The "
+                           "engine files it to state/notes.md with a turn stamp, costing no "
+                           "turn; don't repeat it in say.",
+        },
         "kind": {"type": "string", "enum": list(KINDS)},
         # util / write_util (the ONLY way to run code — there is no shell)
         "name": {
@@ -264,7 +273,7 @@ def normalize_action(obj: dict) -> dict:
                        and not (isinstance(val, str) and not val.strip())
                        for f in req)
         if complete:
-            allowed = {"say", "kind", *req, *opt}
+            allowed = {"say", "kind", "note", *req, *opt}   # note rides ANY kind, like say
             out = {k: v for k, v in out.items() if k in allowed}
     return out
 
@@ -342,7 +351,7 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             if not str(obj.get("about") or "").strip():
                 problems.append("memory_write requires 'about' (the note's one-line INDEX "
                                 "entry) unless delete: true")
-    allowed = {"say", "kind", *required, *optional}
+    allowed = {"say", "kind", "note", *required, *optional}   # note rides ANY kind, like say
     stray = [k for k in obj if k not in allowed]
     if stray:
         problems.append(

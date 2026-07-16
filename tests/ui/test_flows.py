@@ -266,7 +266,8 @@ def test_run_transcript_story_and_refer(ui, ui_page):
         {"ts": "2026-07-15T10:00:30+00:00", "type": "assistant_action", "phase": "gather",
          "turn": 1, "usage": {"in": 10, "out": 5},
          "payload": {"kind": "util", "name": "websearch", "args": ["llm jobs"],
-                     "say": "Catalog fits — scanning portals."}},
+                     "say": "Catalog fits — scanning portals.",
+                     "note": "portal 1 needs the site: filter — plain queries return noise"}},
         {"type": "observation", "turn": 1,
          "payload": {"kind": "util", "name": "websearch", "exit": 0, "stdout": "3 hits"}},
         {"ts": "2026-07-15T10:01:30+00:00", "type": "assistant_action", "phase": "report",
@@ -285,6 +286,8 @@ def test_run_transcript_story_and_refer(ui, ui_page):
     expect(dividers).to_have_count(2)
     expect(dividers.nth(0)).to_have_text("gather")
     expect(dividers.nth(1)).to_have_text("report")
+    # a captured note renders as its own 📌 line inside the turn box
+    expect(ui_page.locator(".turn .note")).to_contain_text("portal 1 needs the site: filter")
     # the injected message renders its reference line as a chip, body clean
     injection = ui_page.locator(".ev.injection")
     expect(injection.locator(".reply-ref")).to_contain_text("turn 1 (util websearch)")

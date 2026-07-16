@@ -118,7 +118,11 @@ the limits (single-writer status.json preserved).
   far better than `oneOf`): `util, write_util, read_file, view_image, write_file, edit_file, memory_read,
   memory_write, llm, spawn, subtask, detach, subruns, kill, wait, ask_user, finish`. Every action carries `say` (finding-first narration:
   what the last observation taught you + why this action; terse for routine steps, 2-3 sentences
-  at decision points; worded per the routine's `deliberation` level) + `kind`. `read_file` batches
+  at decision points; worded per the routine's `deliberation` level) + `kind`, plus an optional
+  **`note`** — 1-3 SELF-CONTAINED lines worth keeping beyond the context window, engine-filed to
+  `state/notes.md` at no turn cost, stamped run·turn·phase·action (`engine/notes.py`; the stamp is
+  an address into the transcript archive; the digest carries the file's tail into the next run;
+  curation into `.memory/` stays memory_write's turn-priced job). `read_file` batches
   related reads via `paths` (one turn, one
   observation section per file); `edit_file` anchor-replaces in place so revisions cost the diff, not
   the document. `write_file` is GROUNDED: overwriting an existing file OUTSIDE the routine's own dir

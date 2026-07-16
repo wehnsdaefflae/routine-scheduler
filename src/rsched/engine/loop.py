@@ -20,7 +20,7 @@ from collections import deque
 from ..endpoints.base import EndpointError
 from ..grants import load_policy
 from ..health_events import log_health_event
-from . import detach, executor, interact
+from . import detach, executor, interact, notes
 from .actions import BRIEF_FIELD
 from .autocommit import autocommit as _autocommit
 from .boot import boot
@@ -190,6 +190,7 @@ class EngineLoop:
                                      **({"phase": ctx.phase} if ctx.phase else {}),
                                      **({"referred": True} if getattr(self, "_referred_turn", False)
                                         else {}))
+                notes.capture(ctx, action)   # the note channel: turn-free, stamped, best-effort
                 ctx.add_usage(usage)
                 self.messages.append({"role": "assistant",
                                       "content": json.dumps(action, ensure_ascii=False)})

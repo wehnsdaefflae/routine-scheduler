@@ -10,6 +10,9 @@ Cut waste in **how** the target works and keep its files clean:
   design; strip diff-narration ("previously…", stale counts) — that history lives in the
   LEDGER and git. Keep any `state/`/`stages/` file under ~350 lines (over → split along a
   read-together seam, or roll old material into `archive/` with a one-paragraph summary).
+  `state/notes.md` (the engine-captured `note` stream) gets the same treatment plus one
+  extra rule: a note a stranger can't understand from its line alone is BROKEN — rewrite
+  it self-contained or prune it; drop notes that stopped being true.
 - **Deliberation level** (`tuning.yaml: deliberation` — part of the recipe you may edit;
   see the autonomy gate). Judge it from the transcripts, both directions:
   - says that merely restate the action beside them ("Reading X", "Running Y") on a task

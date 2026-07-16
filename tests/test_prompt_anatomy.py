@@ -68,6 +68,8 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "OBSERVATION (finish REJECTED)",
         # the say contract (composer harness line + ACTION_SCHEMA description)
         "lead with what the last observation taught you",
+        # the note channel (ACTION_SCHEMA description + composer contract sentence)
+        "worth keeping beyond this context window",
     ]
     for needle in needles:
         assert needle in DOC, f"engine string {needle!r} missing from docs/prompt-anatomy.md"

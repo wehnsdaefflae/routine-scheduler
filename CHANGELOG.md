@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.57.0] — 2026-07-16
+
+### Added
+- **The note channel** (user order): any action may carry an optional `note` — 1-3
+  SELF-CONTAINED lines worth keeping beyond the context window (a confirmed finding, a
+  dead end, a fallback plan, an unresolved doubt). The engine (`engine/notes.py`) appends
+  it to `state/notes.md` at **no turn cost**, stamped `[run · turn · phase · action]` —
+  the stamp is an address into the transcript/history archive where the note's full
+  context permanently lives; the contract demands self-containment (the same boundary
+  discipline as subrun briefs and finish summaries). Rationale: the one-action-per-turn
+  contract priced every dedicated write at a full turn, so insights died with the window
+  (bookkeeping deferred under budget pressure, end-of-run writes as reconstructions);
+  this is the capture tier under the existing curation tier — `memory_write` keeps its
+  turn price as the memory INDEX's quality gate. The state digest carries the file's
+  tail into the next run (the full file stays on-demand); notes.md remains ordinary
+  prunable state (the improver's hygiene lens treats an un-understandable note as
+  broken). `think-on-paper`'s standing paragraph now rides this channel, so the top
+  deliberation stop no longer costs an extra turn per decision. The transcript renderer
+  shows captured notes as 📌 lines in the turn box.
+
 ## [0.56.1] — 2026-07-16
 
 Self-audit (first slice of the D11 wizard→run-page unification: backend structure).

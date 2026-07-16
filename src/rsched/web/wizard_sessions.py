@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import sys
-from pathlib import Path
 
 from fastapi import HTTPException, Request
 from pydantic import BaseModel

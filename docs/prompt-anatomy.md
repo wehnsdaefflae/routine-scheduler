@@ -33,7 +33,7 @@ Eight sections, in this order:
 | # | Section | Source | What the model learns |
 |---|---|---|---|
 | 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a finding-first `say`, worded per the routine's **deliberation level** (see below; the default `standard` reads: lead with what the last observation taught you, then why this action — a few words for routine steps, 2-3 sentences on decisions, direction changes, and surprises), "the run starts NOW", stages-on-demand, working dir + extra fs roots, **no shell**, capability-aware `write_util` and memory-action glosses, the traits-vs-capabilities prose ownership rule, the concrete budgets, a prose gloss of every action kind (including `read_file` batching via `paths`, in-place `edit_file` instead of whole-file rewrites, and `view_image` to SEE an image/PDF — natively when the model is multimodal, else via the vision util), sequential `subtask` decomposition (a background child the parent starts then WAITS for, its own context + pattern + budget) alongside parallel `spawn`, the injection warning. |
-| 2 | `# ACTION SCHEMA (your every reply matches this)` | `ACTION_SCHEMA` | The exact reply grammar; field descriptions double as micro-docs (`say`/`question`/`summary` say that simple Markdown renders in the UI; `say` demands the finding first, then the why; `summary` demands a DETAILED 8-20 lines). |
+| 2 | `# ACTION SCHEMA (your every reply matches this)` | `ACTION_SCHEMA` | The exact reply grammar; field descriptions double as micro-docs (`say`/`question`/`summary` say that simple Markdown renders in the UI; `say` demands the finding first, then the why; the optional `note` captures 1-3 self-contained lines to state/notes.md at no turn cost; `summary` demands a DETAILED 8-20 lines). |
 | 3 | `# EXAMPLE of a valid reply` | `example_action()` | One few-shot example (`read_file stages/scan.md`) that models on-demand stage reading and a finding-first `say` — deliberately NOT `util name=list`: the catalog already sits in CAPABILITIES, so opening a run by re-listing it just re-buys known information. |
 | 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow **and the task**: a top-level routine's recipe is self-contained — goal, deliverable, constraints and completion criteria are compiled into `main.md` + `stages/*.md` (stage detail read on demand), practice detail in `traits/*.md`. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
 | 5 | `# INSTRUCTION (your assigned task)` | the parent's spawn `prompt` — **subruns only** | SUBRUN-ONLY. A top-level routine has NO instruction section and no `instruction.md` on disk: its task is entirely its self-contained recipe (`main.md` + `stages/`). The clarified instruction was only a transient compile **SEED**, consumed when the recipe was generated at creation and never persisted. A subrun has no decomposed stages, so its self-contained brief (the parent's `prompt`) rides here instead. |
@@ -67,6 +67,21 @@ the parent's live level. The durable value lives in **`tuning.yaml`** — the ro
 machine-tunable behavior parameters, classed with the RECIPE (the routine-improver may edit
 it under its fs_write_root, like main.md/stages/traits); `routine.yaml` stays the user's
 sealed authority config, no exceptions.
+
+**The note channel** — the capture tier under the deliberation contract: ANY action may
+carry an optional `note`, 1-3 lines worth keeping beyond this context window, and the
+engine (`engine/notes.py`) appends it to `state/notes.md` at no turn cost, stamped
+`[run · turn · phase · action]`. The one-action-per-turn contract prices every dedicated
+write at a full turn — which is why insights historically died with the window (deferral
+under budget pressure, end-of-run reconstruction); the note field removes that tax. Notes
+must be SELF-CONTAINED (the same boundary discipline as subrun briefs and finish
+summaries); the stamp is an ADDRESS into the transcript/history archive where each note's
+full context permanently lives. The state digest carries the file's tail into the next
+run; the file itself stays ordinary prunable state (the improver's hygiene lens treats an
+un-understandable note as broken). Curation into the indexed cross-run `.memory/` store
+remains a deliberate `memory_write` — that turn price is the memory INDEX's quality gate.
+`think-on-paper`'s standing paragraph rides this channel (a `note` on every
+direction-shaping action), so the top deliberation stop no longer costs extra turns.
 
 **Subrun variant** (spawned children): same composer, but the workflow is the library
 pattern materialized under `runs/<ts>/sub/<n>/`, and — because a subrun has no decomposed
@@ -292,6 +307,10 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   "say": {
    "type": "string",
    "description": "Your narration: lead with what the last observation taught you, then why this action. A few words suffice for routine steps; spend 2-3 sentences on decisions, direction changes, and surprises. Simple Markdown (bold, `code`, links) renders in the UI."
+  },
+  "note": {
+   "type": "string",
+   "description": "OPTIONAL, on any action: 1-3 lines worth keeping beyond this context window — a confirmed finding, a dead end, a fallback plan, an unresolved doubt. SELF-CONTAINED: a reader with only this line must understand it (name things — never 'it' or 'that approach'). The engine files it to state/notes.md with a turn stamp, costing no turn; don't repeat it in say."
   },
   "kind": {
    "type": "string",

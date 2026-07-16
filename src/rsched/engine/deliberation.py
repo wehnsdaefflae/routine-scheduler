@@ -33,15 +33,15 @@ _SAY_CONTRACT = {
 }
 _SAY_CONTRACT["think-on-paper"] = _SAY_CONTRACT["deliberate"]
 
-# The standing paragraph only the top stop adds: materialized reasoning in state/notes.md
-# before direction-shaping actions. Costs ~1 extra turn per decision; survives compaction
-# and reaches the next run.
+# The standing paragraph only the top stop adds: materialized reasoning at every
+# direction-shaping action, via the turn-free `note` field (filed to state/notes.md —
+# survives compaction and reaches the next run).
 _STANDING_NOTE = (
-    "Deliberation is part of your work product: before an action that shapes the run's "
-    "direction (finish, spawn, subtask, ask_user, or entering a new stage), first write "
-    "your deliberation to state/notes.md — the options you see, the context and outside "
-    "knowledge you bring, your judgment and why — then act from what you wrote, not from "
-    "memory."
+    "Deliberation is part of your work product: give every action that shapes the run's "
+    "direction (finish, spawn, subtask, ask_user, entering a new stage) a `note` carrying "
+    "your deliberation — the options you saw, the context and outside knowledge you "
+    "brought, your judgment and why. It lands in state/notes.md; decide from what you "
+    "wrote, not from memory."
 )
 
 

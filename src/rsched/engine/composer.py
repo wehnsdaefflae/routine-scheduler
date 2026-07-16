@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import deliberation
+from . import deliberation, notes
 from .actions import ACTION_SCHEMA, example_action
 from .capabilities import capabilities_digest
 from .run_context import RunContext
@@ -72,7 +72,11 @@ contradictions. read_file / write_file are rejected on .memory/ paths.""")
     return f"""You are the orchestrator of the routine "{r.name}" ({r.slug}), run {ctx.run_id}\
 {f" (schedule: {r.cron})" if r.cron else ""}. This conversation IS the run: every turn you reply \
 with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. \
-{deliberation.say_contract(level)}{f"\n\n{standing}" if standing else ""}
+{deliberation.say_contract(level)} Any action may also carry an optional "note": 1-3 \
+SELF-CONTAINED lines worth keeping beyond this context window (a confirmed finding, a dead end, \
+a fallback plan, an unresolved doubt) — the engine files it to state/notes.md with a turn stamp, \
+costing no turn; before finishing, fold what still matters into your report or memory.\
+{f"\n\n{standing}" if standing else ""}
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \
 conversation, one per turn, each answered by an observation before your next reply. Never state or \
@@ -188,6 +192,10 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         entries = [f"{p.name} ({p.stat().st_size}B)"
                    for p in sorted(state_dir.iterdir()) if p.is_file()]
         parts.append("state/: " + (", ".join(entries) if entries else "(empty)"))
+    # captured notes reach the next run without a read; the full file stays on-demand
+    if noted := notes.tail(routine_dir):
+        parts.append("Recent notes (state/notes.md tail — findings captured via the note "
+                     "field; read_file the full file for older ones):\n" + noted)
     background = read_json(routine_dir / "state" / "background.json")
     if isinstance(background, list) and background:
         blines = "\n".join(

@@ -22,7 +22,7 @@ from ..workflows.suggest import normalize_tags, suggest_tags
 from . import wizard_sessions, wizard_store  # noqa: F401 — wizard_sessions registers its routes
 from .wizard_common import _center, _stop_tailer, _wizard_dir, _wizard_pid, router
 
-__all__ = ["router", "scaffold", "suggest_tags", "FinalizeBody", "_build_routine"]
+__all__ = ["FinalizeBody", "_build_routine", "router", "scaffold", "suggest_tags"]
 
 _build_tasks: set[asyncio.Task] = set()   # strong refs for in-flight background build tasks
 

@@ -12,8 +12,9 @@ DID before touching anything.
    level (how much thinking its runs put on paper; absent file = standard) — the
    efficiency lens judges it against the transcripts.
 2. Read its most recent run evidence, newest first, at most ~3 runs: `runs/<ts>/status.json`
-   for outcome/turns/tokens, and the transcript when the status raises questions (budget
-   exhaustion, failures, schema-retry storms). For a big transcript, `spawn` a sub-workflow
+   for outcome/turns/tokens, its `state/notes.md` tail (the captured findings — dead ends
+   and doubts earlier runs flagged), and the transcript when the status raises questions
+   (budget exhaustion, failures, schema-retry storms). For a big transcript, `spawn` a sub-workflow
    to summarize it against this rubric: outcome; wasted turns; questions asked vs answered;
    places the run contradicted its own workflow text.
 3. **Infer the routine's intention from that behaviour** — not only from a fresh reading of
