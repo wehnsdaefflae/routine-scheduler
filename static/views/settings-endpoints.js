@@ -290,20 +290,20 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "context_chars (default)"), ctxIn)),
       el("div", { class: "row" }, saveEdit));
 
-    // Account balance, for providers that expose one (OpenRouter) — loaded lazily per card.
+    // Account balance, for providers that expose one (OpenRouter, Nano-GPT) — lazy per card.
     const creditsRow = el("div", { class: "small muted", style: "margin-top:4px" });
-    if ((ep.base_url || "").includes("openrouter")) {
+    if (["openrouter", "nano-gpt.com"].some((p) => (ep.base_url || "").includes(p))) {
       creditsRow.textContent = "credits: checking…";
       api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}/credits`).then((c) => {
         if (!c.supported) { creditsRow.replaceChildren(); return; }
+        const detail = c.total != null
+          ? ` (used $${c.used.toFixed(2)} of $${c.total.toFixed(2)})` : "";
         creditsRow.replaceChildren(
           c.ok
-            ? el("span", { style: "color:var(--ok)" },
-                `$${c.remaining.toFixed(2)} remaining (used $${c.used.toFixed(2)} of $${c.total.toFixed(2)})`)
+            ? el("span", { style: "color:var(--ok)" }, `$${c.remaining.toFixed(2)} remaining${detail}`)
             : el("span", {}, `credits unavailable — ${c.error}`),
-          " · ",
-          el("a", { href: "https://openrouter.ai/settings/credits", target: "_blank",
-                    rel: "noopener" }, "manage credits ↗"));
+          ...(c.manage_url ? [" · ", el("a", { href: c.manage_url, target: "_blank",
+                                               rel: "noopener" }, "manage credits ↗")] : []));
       }).catch(() => creditsRow.replaceChildren());
     }
 

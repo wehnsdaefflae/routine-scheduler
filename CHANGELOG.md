@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.51.0] — 2026-07-16
+
+### Added
+- **Nano-GPT endpoint cards show the account balance** like OpenRouter ones (user order):
+  the credits route now sniffs the provider from `base_url` — OpenRouter keeps
+  `GET {base}/credits`, Nano-GPT uses `POST /api/check-balance` on the origin with
+  `x-api-key` auth (string `usd_balance`, verified live) — and returns a per-provider
+  `manage_url` the card links instead of a hardcoded OpenRouter URL.
+
+### Fixed
+- **The conversations rails persist at every desktop width** (user order: the conversation
+  list stays LEFT, state/artifacts stay RIGHT): at 1200–1559px the view now escapes the
+  1180px column and becomes a three-column grid with sticky rails beside the chat —
+  previously both rails collapsed into stacked blocks above the chat below 1560px. DOM
+  order is now list · chat · artifacts, so on narrow/stacked screens the artifacts drop
+  below the chat instead of pushing it down. `tests/test_static_layout.py` pins the
+  regime; new `tests/test_endpoint_credits.py` pins the credits provider sniff.
+
 ## [0.50.2] — 2026-07-16
 
 ### Fixed

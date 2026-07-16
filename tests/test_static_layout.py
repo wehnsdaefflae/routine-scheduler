@@ -1,14 +1,18 @@
-"""The conversations view uses the run page's layout (user order, 2026-07-16).
+"""The conversations view uses the run page's layout (user orders, 2026-07-16).
 
 Both conversations subpages (list + detail) mount the run view's .run-rail pattern:
-the chat owns the full main column, the conversation list parks in the LEFT margin
-rail and state/tasks/artifacts in the RIGHT one. The old three-pane grid
-(conv-layout + drag handles + fold rails) must stay gone, and views.css must style
-BOTH rail positions the views mount.
+the chat owns the main column, the conversation list parks in the LEFT rail and
+state/tasks/artifacts in the RIGHT one — and the rails PERSIST at every desktop
+width: fixed viewport margins >=1560px, sticky grid columns beside the chat at
+1200-1559px (the view escapes the 1180px column), stacked only below 1200px.
+The old three-pane grid (conv-layout + drag handles + fold rails) must stay gone,
+and views.css must style BOTH rail positions the views mount.
 """
 from pathlib import Path
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
+
+MID_QUERY = "@media (min-width: 1200px) and (max-width: 1559.9px)"
 
 
 def test_conversations_mounts_run_rails():
@@ -20,12 +24,31 @@ def test_conversations_mounts_run_rails():
         assert gone not in src, f"legacy three-pane grid resurfaced: {gone}"
 
 
+def test_dom_order_list_chat_artifacts():
+    """List left of the chat, artifacts right of it — in stacked mode the list lands
+    above the chat and the artifacts below, in grid mode the columns fall out naturally."""
+    src = (STATIC / "views" / "conversations.js").read_text(encoding="utf-8")
+    assert "view.append(sideRail, main, artRail)" in src, \
+        "rail DOM order must be list, chat, artifacts"
+
+
 def test_css_styles_both_rail_positions():
     css = (STATIC / "views.css").read_text(encoding="utf-8")
     assert ".run-rail {" in css
     assert ".run-rail.left" in css, "the left rail variant must be styled (fixed left margin)"
     for gone in (".conv-layout", ".pane-handle", ".pane-fold", ".pane-rail"):
         assert gone not in css, f"stale CSS for the removed grid: {gone}"
+
+
+def test_rails_persist_at_mid_widths():
+    """User order 2026-07-16: the rails must REMAIN beside the chat below 1560px too —
+    a sticky three-column grid regime, with the view freed from the 1180px column."""
+    css = (STATIC / "views.css").read_text(encoding="utf-8")
+    assert MID_QUERY in css, "mid-width grid regime missing"
+    block = css.split(MID_QUERY, 1)[1].split("@media", 1)[0]
+    assert "main.conv-view { max-width: none; }" in block, "view must escape the 1180px column"
+    assert "display: grid" in block, "mid widths must lay the rails out as grid columns"
+    assert "position: sticky" in block, "grid rails must stick (remain on scroll)"
 
 
 def test_no_view_references_undefined_conv_classes():

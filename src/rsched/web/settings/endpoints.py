@@ -204,18 +204,48 @@ def set_system_model(request: Request, body: SystemModelBody) -> dict:
     return {"ok": True, "system_model": s.system_model or None}
 
 
+# Providers whose account balance the endpoint card can show, sniffed from base_url.
+CREDIT_MANAGE_URLS = {
+    "openrouter": "https://openrouter.ai/settings/credits",
+    "nanogpt": "https://nano-gpt.com/balance",
+}
+
+
+def credits_provider(ep) -> str | None:
+    """Which balance API an endpoint speaks, from its base_url (None = no balance API)."""
+    if ep.kind != "openai":
+        return None
+    base = ep.base_url or ""
+    if "openrouter" in base:
+        return "openrouter"
+    if "nano-gpt.com" in base:
+        return "nanogpt"
+    return None
+
+
+def nanogpt_balance_url(base_url: str) -> str:
+    """Nano-GPT's check-balance lives at /api/check-balance on the ORIGIN — beside,
+    not under, the OpenAI-compatible /api/v1 the endpoint is configured with."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(base_url)
+    return f"{parts.scheme}://{parts.netloc}/api/check-balance"
+
+
 @router.get("/settings/endpoints/{name}/credits")
 async def endpoint_credits(request: Request, name: str) -> dict:
-    """Provider account balance, where the provider exposes one (OpenRouter today):
-    credits purchased minus usage → remaining. Never raises on provider trouble — the card
-    shows the error text instead.
+    """Provider account balance, where the provider exposes one (OpenRouter, Nano-GPT):
+    remaining $ (plus purchased/used where the API reports them). Never raises on provider
+    trouble — the card shows the error text instead.
     """
     server = server_of(request)
     ep = server.endpoints.get(name)
     if ep is None:
         raise HTTPException(404, f"no endpoint {name!r}")
-    if ep.kind != "openai" or "openrouter" not in ep.base_url:
+    provider = credits_provider(ep)
+    if provider is None:
         return {"supported": False}
+    manage = CREDIT_MANAGE_URLS[provider]
 
     def call() -> dict:
         import httpx
@@ -224,23 +254,32 @@ async def endpoint_credits(request: Request, name: str) -> dict:
 
         key = OpenAICompatEndpoint(ep)._resolve_key()
         try:
-            resp = httpx.get(f"{ep.base_url.rstrip('/')}/credits",
-                             headers={"Authorization": f"Bearer {key}"}, timeout=15)
+            if provider == "openrouter":
+                resp = httpx.get(f"{ep.base_url.rstrip('/')}/credits",
+                                 headers={"Authorization": f"Bearer {key}"}, timeout=15)
+            else:   # nanogpt — POST, x-api-key auth (docs.nano-gpt.com check-balance)
+                resp = httpx.post(nanogpt_balance_url(ep.base_url),
+                                  headers={"x-api-key": key}, timeout=15)
         except httpx.HTTPError as exc:
-            return {"supported": True, "ok": False, "error": str(exc)}
+            return {"supported": True, "ok": False, "error": str(exc), "manage_url": manage}
         if resp.status_code != 200:
-            return {"supported": True, "ok": False,
+            return {"supported": True, "ok": False, "manage_url": manage,
                     "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
-        data = resp.json().get("data") or {}
-        total = float(data.get("total_credits") or 0)
-        used = float(data.get("total_usage") or 0)
-        return {"supported": True, "ok": True, "total": round(total, 4),
-                "used": round(used, 4), "remaining": round(total - used, 4)}
+        if provider == "openrouter":
+            data = resp.json().get("data") or {}
+            total = float(data.get("total_credits") or 0)
+            used = float(data.get("total_usage") or 0)
+            return {"supported": True, "ok": True, "total": round(total, 4),
+                    "used": round(used, 4), "remaining": round(total - used, 4),
+                    "manage_url": manage}
+        # nanogpt shape: {"usd_balance": "9.91856570", "nano_balance": "..."} — strings
+        return {"supported": True, "ok": True, "manage_url": manage,
+                "remaining": round(float(resp.json().get("usd_balance") or 0), 4)}
 
     try:
         return await asyncio.to_thread(call)
     except EndpointError as exc:   # no key configured yet
-        return {"supported": True, "ok": False, "error": str(exc)}
+        return {"supported": True, "ok": False, "error": str(exc), "manage_url": manage}
 
 
 class TestBody(BaseModel):

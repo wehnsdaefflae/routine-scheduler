@@ -467,6 +467,20 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   .run-rail.left { right: auto; left: 18px; }
   .run-rail > summary { display: none; }
 }
+/* conversations, 1200–1559px: no viewport margins to park in, but the rails must still
+   PERSIST (user order 2026-07-16: list stays left, state/artifacts stay right). The view
+   escapes the 1180px column and becomes a three-column grid; the rails turn into sticky
+   columns beside the chat. Below 1200px they stack (list above the chat, artifacts below). */
+@media (min-width: 1200px) and (max-width: 1559.9px) {
+  main.conv-view { max-width: none; }
+  .conv-view { display: grid; grid-template-columns: 218px minmax(0, 1fr) 266px;
+               gap: 16px; align-items: start; }
+  .conv-view > .run-rail { position: sticky; top: 64px; margin-top: 12px;
+                           max-height: calc(100vh - 130px); overflow-y: auto; }
+  .conv-view > .run-rail > summary { display: none; }
+  /* list subpage: the artifact rail is [hidden] — give its column back to the chat */
+  .conv-view:has(> .run-rail[hidden]) { grid-template-columns: 218px minmax(0, 1fr); }
+}
 
 /* the routine page's recipe file-tree: main.md + stage modules (run-flow order) + trait
    modules, each expandable to its heading outline; a nav | editor two-column that stacks narrow */

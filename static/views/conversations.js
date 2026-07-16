@@ -40,15 +40,17 @@ export async function render(view, slug, _query = {}) {
   const main = el("section", { class: "conv-main" });
   const artBody = el("div", { class: "pane-body" });
 
-  // Run-page layout (the run view's .run-rail pattern): the chat owns the full main
-  // column; the conversation list parks in the LEFT margin rail, state/tasks/artifacts in
-  // the RIGHT margin rail on wide screens (CSS) — collapsible blocks above the chat otherwise.
+  // Run-page layout (the run view's .run-rail pattern): the chat owns the main column and
+  // the rails PERSIST at every desktop width (user order 2026-07-16) — the conversation
+  // list always LEFT, state/tasks/artifacts always RIGHT. ≥1560px they park fixed in the
+  // viewport margins; 1200–1559px they become sticky grid columns beside the chat (CSS);
+  // only below 1200px do they stack (list above the chat, artifacts below).
   const sideRail = el("details", { class: "run-rail left", open: true },
     el("summary", { class: "small" }, "conversations"), sideBody);
   const artRail = el("details", { class: "run-rail", open: true },
     el("summary", { class: "small" }, "state & artifacts"), artBody);
   artRail.hidden = !slug;
-  view.append(sideRail, artRail, main);
+  view.append(sideRail, main, artRail);
 
   let items = [], activeTag = "";
   let cleanup = [];   // per-mount teardowns (tail, timers, artifact blobs)
