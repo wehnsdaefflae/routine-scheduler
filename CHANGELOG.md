@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.47.0] — 2026-07-16
+
+### Changed
+- **Conversations view adopts the run page's layout** (user order): the chat owns the full
+  1180px main column; the conversation list parks in a LEFT margin rail and
+  state/tasks/artifacts in the RIGHT margin rail on wide screens (`.run-rail` /
+  `.run-rail.left`), ordinary collapsible blocks above the chat otherwise. The old
+  three-pane grid (drag handles, fold rails, persisted pane widths) is removed —
+  `views/conversations.js` −78 lines, plus the matching CSS. New
+  `tests/test_static_layout.py` pins the rail adoption and checks every mounted
+  `conv-*`/`pane-*` class is styled.
+
 ## [0.46.1] — 2026-07-16
 
 ### Fixed

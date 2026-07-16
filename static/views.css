@@ -224,44 +224,11 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 }
 
 /* ---------- conversations ---------- */
-.conv-layout {
-  display: grid; grid-template-columns: 250px 5px minmax(0, 1fr) 5px 320px; gap: 6px;
-  align-items: start;
-}
-.pane-handle {
-  align-self: stretch; cursor: col-resize; border-radius: 3px; min-height: 60vh;
-  background: transparent; touch-action: none;
-}
-.pane-handle:hover, .pane-handle.dragging { background: var(--line-2); }
-/* a handle beside a collapsed pane keeps its 0-width grid slot but stops interacting */
-.pane-handle.off { pointer-events: none; background: none; }
-.conv-side, .conv-art { position: sticky; top: 66px; display: flex; flex-direction: column; gap: 8px; }
-.conv-side input[type="search"] { flex: 1; min-width: 0; }
-.conv-tagsel { width: 100%; font-size: 11px; padding: 3px 6px; color: var(--muted); }
-/* pane chrome: a slim cap with a fold button; collapsed = only a vertical rail remains */
-.pane-cap { display: flex; align-items: center; gap: 8px; }
-.pane-cap-title { font-size: 10px; color: var(--faint); letter-spacing: 0.14em; text-transform: uppercase; margin-right: auto; }
-.pane-fold {
-  background: none; border: 1px solid var(--line); border-radius: 5px; color: var(--faint);
-  font-size: 9px; padding: 2px 5px; cursor: pointer; line-height: 1.4; font: inherit;
-}
-.pane-fold:hover { color: var(--text); border-color: var(--line-2); }
+/* the conversations view reuses the run view's .run-rail layout (defined below): the
+   conversation list rides the LEFT margin rail, state/tasks/artifacts the RIGHT one */
 .pane-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.pane-rail {
-  display: none; align-items: center; justify-content: flex-start;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
-  color: var(--faint); cursor: pointer; padding: 10px 0; min-height: 220px; width: 100%;
-  font: inherit;
-}
-.pane-rail:hover { color: var(--text); border-color: var(--line-2); }
-.pane-rail::before { content: "◂▸"; font-size: 9px; letter-spacing: -1px; }
-.pane-rail-label {
-  writing-mode: vertical-rl; text-orientation: mixed; margin-top: 10px;
-  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; white-space: nowrap;
-}
-.conv-side.collapsed .pane-cap, .conv-art.collapsed .pane-cap,
-.conv-side.collapsed .pane-body, .conv-art.collapsed .pane-body { display: none; }
-.conv-side.collapsed .pane-rail, .conv-art.collapsed .pane-rail { display: flex; flex-direction: column; }
+.pane-body input[type="search"] { flex: 1; min-width: 0; }
+.conv-tagsel { width: 100%; font-size: 11px; padding: 3px 6px; color: var(--muted); }
 .conv-list { display: flex; flex-direction: column; gap: 3px; max-height: calc(100vh - 230px); overflow: auto; }
 /* one line per conversation — details live in the hover card */
 .conv-item {
@@ -361,16 +328,6 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .art-table th, .art-table td { border: 1px solid var(--line); padding: 3px 7px; white-space: nowrap; }
 .art-table th { background: var(--surface-2); position: sticky; top: 0; }
 
-@media (max-width: 1100px) {
-  .conv-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 16px; }
-  .conv-art { grid-column: 1 / -1; position: static; }
-  .pane-fold, .pane-rail { display: none !important; }   /* stacked layout: no fold rails */
-  .pane-handle { display: none; }
-}
-@media (max-width: 860px) {
-  .conv-layout { grid-template-columns: minmax(0, 1fr); }
-  .conv-side { position: static; max-height: 300px; }
-}
 .attach-chip.removable { cursor: pointer; }
 .attach-chip.removable:hover { border-color: var(--err); color: var(--err); }
 
@@ -479,8 +436,9 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .tt-s-failed > .tt-icon, .tt-s-aborted > .tt-icon { color: var(--warn); }
 .tt-children { margin-left: 11px; border-left: 1px solid var(--line-2); padding-left: 6px; }
 
-/* the run view's side rail: normal collapsible block; parked in the right margin on
-   screens wide enough that the 1180px main column leaves room for it */
+/* the run + conversations views' side rails: normal collapsible blocks; parked in the
+   viewport margins on screens wide enough that the 1180px main column leaves room
+   (.run-rail = right margin, .run-rail.left = left margin) */
 .run-rail { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
 .run-rail > summary { cursor: pointer; color: var(--muted); }
 .run-rail .rail-cap:first-of-type { margin-top: 6px; }
@@ -490,6 +448,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
     width: calc((100vw - 1180px) / 2 - 40px); max-width: 330px;
     overflow-y: auto; background: var(--surface); z-index: 5;
   }
+  .run-rail.left { right: auto; left: 18px; }
   .run-rail > summary { display: none; }
 }
 

@@ -1,8 +1,9 @@
-// Conversations tab, chat-first: the center pane is the conversation; everything else is
-// a COLLAPSIBLE side pane. Left: a dense one-line-per-conversation list (state dot, title,
-// time — details live in a hover card, tags collapse into one filter select). Right: the
-// artifact panel (components/artifacts.js), wide enough to actually read a deliverable.
-// Both panes fold to a slim rail (persisted), giving the chat or an artifact the room.
+// Conversations tab, chat-first, in the RUN-PAGE layout: the conversation owns the full
+// main column; everything else lives in margin rails (the run view's .run-rail pattern).
+// Left rail: a dense one-line-per-conversation list (state dot, title, time — details in a
+// hover card, tags collapse into one filter select). Right rail: state graph, task tree,
+// and the artifact panel. On wide screens the rails park FIXED in the viewport margins
+// beside the 1180px column; otherwise they are ordinary collapsible blocks above the chat.
 // A conversation is one continuous run: sending into a live reply injects; sending into a
 // finished one resumes it in place, so the view remounts its tail after every send.
 
@@ -18,7 +19,7 @@ import { createArtifacts } from "/static/components/artifacts.js";
 import { createStateGraph } from "/static/components/stategraph.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { permissionsPanel } from "/static/components/permissions.js";
-import { busy, chip, el, emptyState, relTime, storage, toast } from "/static/util.js";
+import { busy, chip, el, emptyState, relTime, toast } from "/static/util.js";
 import { followScroll } from "/static/follow.js";
 import { enabled as notifyEnabled } from "/static/notify.js";
 import { TERMINAL, WORKING } from "/static/states.js";
@@ -38,78 +39,15 @@ export async function render(view, slug, _query = {}) {
   const main = el("section", { class: "conv-main" });
   const artBody = el("div", { class: "pane-body" });
 
-  // Pane chrome: widths (drag handles) AND a collapsed state both persist — either pane
-  // folds to a slim rail so the chat or an open artifact gets the full width.
-  const widths = { side: 250, art: 420, ...JSON.parse(storage.get("conv-pane-widths") || "{}") };
-  if (widths.art < 380) widths.art = 420;   // the old default was too small to read anything
-  const collapsed = { side: false, art: false,
-                      ...JSON.parse(storage.get("conv-pane-collapsed") || "{}") };
-  const saveCollapsed = () => storage.set("conv-pane-collapsed", JSON.stringify(collapsed));
-
-  const pane = (which, title, cls, body) => {
-    const fold = el("button", { class: "pane-fold", title: `collapse the ${title} pane` }, "◂▸");
-    fold.onclick = () => { collapsed[which] = true; saveCollapsed(); applyWidths(); };
-    const rail = el("button", { class: "pane-rail", title: `expand the ${title} pane` },
-      el("span", { class: "pane-rail-label" }, title));
-    rail.onclick = () => { collapsed[which] = false; saveCollapsed(); applyWidths(); };
-    const cap = el("div", { class: "pane-cap" },
-      el("span", { class: "pane-cap-title" }, title), fold);
-    const node = el("aside", { class: cls }, cap, body, rail);
-    return { node, rail };
-  };
-  const sideP = pane("side", "conversations", "conv-side", sideBody);
-  const artP = pane("art", "artifacts", "conv-art", artBody);
-  const side = sideP.node;
-  const art = artP.node;
-  art.hidden = !slug;
-
-  const layout = el("div", { class: "conv-layout" });
-  const applyWidths = () => {
-    if (window.innerWidth <= 1100) {   // stacked responsive layout: rails make no sense
-      layout.style.gridTemplateColumns = "";
-      side.classList.remove("collapsed");
-      art.classList.remove("collapsed");
-      return;
-    }
-    side.classList.toggle("collapsed", collapsed.side);
-    art.classList.toggle("collapsed", collapsed.art);
-    const sideCol = collapsed.side ? "34px" : `${widths.side}px`;
-    const artCol = !slug ? "0" : collapsed.art ? "34px" : `${widths.art}px`;
-    layout.style.gridTemplateColumns =
-      `${sideCol} ${collapsed.side ? 0 : 5}px minmax(0,1fr) `
-      + `${!slug || collapsed.art ? 0 : 5}px ${artCol}`;
-    // the handles must STAY in the grid (display:none would shift every pane one column
-    // left, squeezing the chat into a 0px track) — a collapsed handle just goes inert
-    handleL.classList.toggle("off", collapsed.side);
-    handleR.classList.toggle("off", !slug || collapsed.art);
-  };
-  const makeHandle = (which, grow) => {
-    const h = el("div", { class: "pane-handle", title: "drag to resize" });
-    h.onpointerdown = (e) => {
-      e.preventDefault();
-      h.setPointerCapture(e.pointerId);
-      const startX = e.clientX, start = widths[which];
-      h.classList.add("dragging");
-      h.onpointermove = (ev) => {
-        const d = (ev.clientX - startX) * grow;
-        widths[which] = Math.max(which === "side" ? 170 : 220,
-                                 Math.min(which === "side" ? 520 : 900, start + d));
-        applyWidths();
-      };
-      h.onpointerup = () => {
-        h.onpointermove = h.onpointerup = null;
-        h.classList.remove("dragging");
-        storage.set("conv-pane-widths", JSON.stringify(widths));
-      };
-    };
-    return h;
-  };
-  const handleL = makeHandle("side", 1);
-  const handleR = makeHandle("art", -1);
-  layout.append(side, handleL, main, handleR, art);
-  applyWidths();
-  window.addEventListener("resize", applyWidths);
-  view.append(layout);
+  // Run-page layout (the run view's .run-rail pattern): the chat owns the full main
+  // column; the conversation list parks in the LEFT margin rail, state/tasks/artifacts in
+  // the RIGHT margin rail on wide screens (CSS) — collapsible blocks above the chat otherwise.
+  const sideRail = el("details", { class: "run-rail left", open: true },
+    el("summary", { class: "small" }, "conversations"), sideBody);
+  const artRail = el("details", { class: "run-rail", open: true },
+    el("summary", { class: "small" }, "state & artifacts"), artBody);
+  artRail.hidden = !slug;
+  view.append(sideRail, artRail, main);
 
   let items = [], activeTag = "";
   let cleanup = [];   // per-mount teardowns (tail, timers, artifact blobs)
@@ -197,8 +135,7 @@ export async function render(view, slug, _query = {}) {
     }
   };
   window.addEventListener("rsched-bus", onBus);
-  return () => { unmount(); clearInterval(listTimer); window.removeEventListener("rsched-bus", onBus);
-                 window.removeEventListener("resize", applyWidths); };
+  return () => { unmount(); clearInterval(listTimer); window.removeEventListener("rsched-bus", onBus); };
 
   // ---- new-conversation composer ---------------------------------------------------------------
   function mountComposerOnly() {
