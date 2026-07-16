@@ -47,11 +47,11 @@ whatever is not in the prompt is reachable by an action (`util name=list`,
 `read_file stages/…`, `read_file traits/…`, `memory_read <topic>`).
 
 **Deliberation levels** — the `say` contract sentence is picked by the routine's
-`deliberation` config key (`engine/deliberation.py` owns the wording; the slider lives on
-the routine page, the wizard, the conversation header, and — mid-run, control.json-scoped —
-the run view). Prose the model does not write down does not exist for later turns (thinking
-tokens are ephemeral, the message list append-only), so this knob decides how much of its
-thinking lands ON PAPER:
+`deliberation` tuning key (`tuning.yaml`; `engine/deliberation.py` owns the wording; the
+slider lives on the routine page, the wizard, the conversation header, and — mid-run,
+control.json-scoped — the run view). Prose the model does not write down does not exist for
+later turns (thinking tokens are ephemeral, the message list append-only), so this knob
+decides how much of its thinking lands ON PAPER:
 
 | Level | The say contract | Extra |
 |---|---|---|
@@ -63,9 +63,10 @@ thinking lands ON PAPER:
 A mid-run switch (`POST /api/runs/{id}/deliberation` → control.json `set_deliberation`)
 cannot rewrite the composed prompt (append-only caching contract), so the engine applies it
 at the turn boundary as an ENGINE NOTE carrying the new contract sentence. Children inherit
-the parent's live level. `deliberation` is also the ONE routine.yaml key a run may edit —
-only under a user-granted fs_write_root (the routine-improver's grant), only that key,
-semantically verified by the executor.
+the parent's live level. The durable value lives in **`tuning.yaml`** — the routine's
+machine-tunable behavior parameters, classed with the RECIPE (the routine-improver may edit
+it under its fs_write_root, like main.md/stages/traits); `routine.yaml` stays the user's
+sealed authority config, no exceptions.
 
 **Subrun variant** (spawned children): same composer, but the workflow is the library
 pattern materialized under `runs/<ts>/sub/<n>/`, and — because a subrun has no decomposed

@@ -269,14 +269,13 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
         return None
     if resolved.is_relative_to(ctx.routine.dir / "runs"):
         return "runs/ is engine-owned and read-only for the run"
-    # routine.yaml is config — the user's. The ONE machine-tunable key is `deliberation`
-    # (how much thinking lands on paper): a run holding a user-granted fs_write_root may
-    # re-level it — the routine-improver's case — and the semantic diff is enforced at
-    # write time (_deliberation_only_change). Everything else stays a deferred ask_user.
-    if resolved.name == "routine.yaml" and not getattr(g, "config_tunable", False):
+    # routine.yaml is config — never writable by ANY run (even the improver, even when the
+    # recipe is unlocked): config is the user's, changed via the UI or a deferred ask_user.
+    # Machine-tunable behavior knobs (deliberation) live in tuning.yaml, which is RECIPE.
+    if resolved.name == "routine.yaml":
         return ("routine.yaml is config (permissions, capabilities, budgets, roots) — no run "
-                "edits it; the one exception, re-levelling `deliberation`, needs a "
-                "user-granted fs_write_root. File a deferred ask_user instead")
+                "edits it, not even the routine-improver (machine-tunable knobs live in "
+                "tuning.yaml); file a deferred ask_user instead")
     if not getattr(g, "recipe_unlocked", False):
         from ..grants import RECIPE_PREFIXES
 
@@ -286,38 +285,9 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
             return None
         rel_s = str(rel)
         if any(rel_s == p.rstrip("/") or rel_s.startswith(p) for p in RECIPE_PREFIXES):
-            return ("a run never edits its own recipe (main.md / stages/ / traits/) — the "
-                    "routine-improver refines recipes; file a deferred ask_user instead")
-    return None
-
-
-def _deliberation_only_change(path, proposed: str) -> str | None:
-    """The semantic gate behind the config_tunable carve-out: a routine.yaml write is
-    valid ONLY when it re-levels `deliberation` and leaves every other key byte-equal —
-    config stays the user's, this one prompt-shaping knob is delegated (the
-    routine-improver optimizes it from run evidence).
-    """
-    import yaml
-
-    from ..config import DELIBERATION_LEVELS
-
-    try:
-        current = yaml.safe_load(path.read_text(encoding="utf-8")) if path.is_file() else {}
-        new = yaml.safe_load(proposed)
-    except (OSError, yaml.YAMLError) as exc:
-        return f"routine.yaml change rejected — unparseable YAML: {exc}"
-    if not isinstance(new, dict) or not isinstance(current, dict):
-        return "routine.yaml change rejected — expected a top-level mapping"
-    if ({k: v for k, v in current.items() if k != "deliberation"}
-            != {k: v for k, v in new.items() if k != "deliberation"}):
-        touched = sorted(k for k in {*current, *new}
-                         if k != "deliberation" and current.get(k) != new.get(k))
-        return (f"routine.yaml is config — the ONE key a run may change is `deliberation`; "
-                f"this change also touches {', '.join(touched) or 'other keys'}. Config is "
-                f"the user's: file a deferred ask_user for anything else.")
-    if new.get("deliberation") not in DELIBERATION_LEVELS:
-        return (f"deliberation must be one of {DELIBERATION_LEVELS} "
-                f"(got {new.get('deliberation')!r})")
+            return ("a run never edits its own recipe (main.md / stages/ / traits/ / "
+                    "tuning.yaml) — the routine-improver refines it; file a deferred "
+                    "ask_user instead")
     return None
 
 
@@ -345,11 +315,6 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
             # Structured content arrives as a live JSON value — models need not escape
             # file bodies into strings; we serialize.
             data = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
-        if path.name == "routine.yaml":   # config_tunable passed the gate — semantic check
-            proposed = ((path.read_text(encoding="utf-8") if path.is_file() else "") + data
-                        if action.get("append") else data)
-            if err := _deliberation_only_change(path, proposed):
-                return {"kind": "write_file", "path": action["path"], "error": err}
         if action.get("append"):
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(data)
@@ -387,8 +352,6 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
                              "or set all: true to replace every occurrence"}
         new_text = text.replace(anchor, replacement) if action.get("all") \
             else text.replace(anchor, replacement, 1)
-        if path.name == "routine.yaml" and (err := _deliberation_only_change(path, new_text)):
-            return {"kind": "edit_file", "path": action["path"], "error": err}
         path.write_text(new_text, encoding="utf-8")
         ctx.seen_paths.add(str(path))   # an anchored edit is grounded by its verbatim anchor
     except (OSError, PermissionError) as exc:

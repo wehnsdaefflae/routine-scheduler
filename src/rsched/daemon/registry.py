@@ -188,7 +188,9 @@ def scan(server: ServerConfig, home: Path | None = None) -> dict[str, RoutineInf
 
 
 def _load_routine_memo(d: Path) -> tuple[RoutineConfig | None, list[str]]:
-    fp = _fingerprint(d / "routine.yaml")
+    # both config AND tuning feed the parsed RoutineConfig — a tuning-only edit (the
+    # slider, or the improver re-levelling deliberation) must miss the memo too
+    fp = _fingerprint(d / "routine.yaml", d / "tuning.yaml")
     hit = _cfg_memo.get(str(d))
     if hit is None or hit[0] != fp:
         hit = (fp, load_routine(d))

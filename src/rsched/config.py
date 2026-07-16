@@ -81,9 +81,10 @@ MODEL_KINDS = ("main", "subroutine", "tool_call", "uncensored")
 # plus a notes-file discipline at the top stop). Ordered stops, not a continuum: models
 # follow qualitatively distinct contracts, not "verbosity 0.7". Composer wording per stop
 # lives in engine/deliberation.py. Distinct from a model's `effort` (ephemeral thinking,
-# thrown away between turns); deliberation is ink, effort is scratch paper. User-set via
-# the routine page / wizard / conversation panel; mid-run via control.json; the ONE
-# routine.yaml key the routine-improver may tune (see grants.py carve-out).
+# thrown away between turns); deliberation is ink, effort is scratch paper. The value
+# lives in TUNING (tuning.yaml, recipe-classed: the improver may edit it under its
+# fs_write_root; routine.yaml stays the user's sealed authority config). User-set via
+# the routine page / wizard / conversation panel; mid-run via control.json.
 DELIBERATION_LEVELS = ("terse", "standard", "deliberate", "think-on-paper")
 DEFAULT_DELIBERATION = "standard"
 CONVERSATION_DELIBERATION = "deliberate"  # chat is judgment-heavy — context on paper by default
@@ -384,8 +385,9 @@ class RoutineConfig(_Config):
     # Whether the routine-improver meta routine visits this routine (default: yes; the
     # toggle on the routine page opts out with `improve: false`).
     improve: bool = True
-    # How much thinking lands on paper (see DELIBERATION_LEVELS). Unknown values are
-    # reported and coerced to the default in load_routine, like models/budgets.
+    # How much thinking lands on paper (see DELIBERATION_LEVELS). The runtime handle
+    # only: load_routine fills it from TUNING (tuning.yaml) — routine.yaml never carries
+    # it (config = authority, tuning = machine-tunable behavior).
     deliberation: str = DEFAULT_DELIBERATION
 
     @field_validator("cron")
@@ -443,6 +445,54 @@ class RoutineConfig(_Config):
         return factory()
 
 
+TUNING_FILE = "tuning.yaml"
+
+
+def load_tuning(routine_dir: Path) -> tuple[dict, list[str]]:
+    """<dir>/tuning.yaml — the routine's machine-tunable BEHAVIOR parameters (today:
+    `deliberation`), recipe-classed: the routine-improver may edit it under its
+    fs_write_root, while routine.yaml stays the user's sealed authority config. Absent
+    file = all defaults. Returns (values, problems); unknown keys/values are reported
+    and dropped, never applied.
+    """
+    path = routine_dir / TUNING_FILE
+    if not path.is_file():
+        return {}, []
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        return {}, [f"tuning.yaml: {exc}"]
+    if not isinstance(raw, dict):
+        return {}, ["tuning.yaml: expected a mapping at top level"]
+    problems: list[str] = []
+    out: dict = {}
+    level = raw.pop("deliberation", None)
+    if level is not None:
+        if level in DELIBERATION_LEVELS:
+            out["deliberation"] = level
+        else:
+            problems.append(f"tuning.yaml deliberation: unknown level {level!r} "
+                            f"(expected one of {DELIBERATION_LEVELS})")
+    problems += [f"tuning.yaml {key}: unknown tuning key" for key in raw]
+    return out, problems
+
+
+def write_tuning(routine_dir: Path, updates: dict) -> None:
+    """Merge updates into tuning.yaml (atomic). Callers validate values; the web layer's
+    slider and the creators (scaffold, conversations, clarify sessions) write through here.
+    """
+    from .paths import atomic_write
+
+    path = routine_dir / TUNING_FILE
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except (OSError, yaml.YAMLError):
+        raw = {}
+    raw = raw if isinstance(raw, dict) else {}
+    raw.update(updates)
+    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+
+
 def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     """Parse <dir>/routine.yaml. Returns (config, problems); config is None only when the
     file is missing/unreadable — otherwise problems may be non-empty but best-effort applies.
@@ -478,10 +528,13 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     for key in [k for k in cfg.budgets if k not in DEFAULT_BUDGETS]:
         problems.append(f"budgets.{key}: unknown budget")
         del cfg.budgets[key]
-    if cfg.deliberation not in DELIBERATION_LEVELS:
-        problems.append(f"deliberation: unknown level {cfg.deliberation!r} "
-                        f"(expected one of {DELIBERATION_LEVELS})")
-        cfg.deliberation = DEFAULT_DELIBERATION
+    # deliberation lives in TUNING, never in config — a routine.yaml key is stale data
+    if "deliberation" in raw:
+        problems.append("deliberation: belongs in tuning.yaml (machine-tunable behavior) "
+                        "— the routine.yaml key is ignored")
+    tuning, tuning_problems = load_tuning(routine_dir)
+    problems += tuning_problems
+    cfg.deliberation = tuning.get("deliberation", DEFAULT_DELIBERATION)
     from .grants import normalize_capabilities  # function-level: grants imports engine.actions
 
     cfg.capabilities, cap_problems = normalize_capabilities(cfg.capabilities)

@@ -1,13 +1,20 @@
 """The deliberation level — the user's knob over how much thinking lands on paper:
-config validation, the per-level say contracts, the mid-run control.json switch, and the
-ONE routine.yaml carve-out (a config_tunable run may re-level `deliberation`, nothing else).
+tuning.yaml loading (config = authority stays sealed; tuning = machine-tunable behavior,
+recipe-classed), the per-level say contracts, and the mid-run control.json switch.
 """
 
 from types import SimpleNamespace
 
 import yaml
 
-from rsched.config import DEFAULT_DELIBERATION, DELIBERATION_LEVELS, ServerConfig, load_routine
+from rsched.config import (
+    DEFAULT_DELIBERATION,
+    DELIBERATION_LEVELS,
+    ServerConfig,
+    load_routine,
+    load_tuning,
+    write_tuning,
+)
 from rsched.engine import deliberation
 from rsched.engine.composer import harness_contract
 from rsched.engine.control import apply_deliberation_switch
@@ -33,24 +40,98 @@ def _ctx(make_routine, tmp_path, **kwargs) -> RunContext:
     return ctx
 
 
-# ---- config ---------------------------------------------------------------------------
+# ---- tuning.yaml: the machine-tunable behavior file -------------------------------------
 
 
-def test_config_default_and_invalid_level(make_routine):
+def test_config_reads_the_level_from_tuning_yaml(make_routine):
     d = make_routine(slug="delib-cfg")
     cfg, problems = load_routine(d)
-    assert cfg.deliberation == DEFAULT_DELIBERATION   # silent yaml → default
-    assert not [p for p in problems if "deliberation" in p]
+    assert cfg.deliberation == DEFAULT_DELIBERATION   # no tuning.yaml → default
+    assert not problems
 
+    write_tuning(d, {"deliberation": "deliberate"})
+    cfg, problems = load_routine(d)
+    assert cfg.deliberation == "deliberate"
+    assert not problems
+
+    (d / "tuning.yaml").write_text("deliberation: verbose\nmystery: 1\n", encoding="utf-8")
+    cfg, problems = load_routine(d)
+    assert cfg.deliberation == DEFAULT_DELIBERATION   # bad value → reported, not applied
+    assert any("unknown level" in p for p in problems)
+    assert any("mystery" in p for p in problems)      # unknown tuning keys are reported
+
+
+def test_routine_yaml_never_carries_deliberation(make_routine):
+    """Canonical form: the key lives in tuning.yaml ONLY — a routine.yaml key is stale
+    data, reported and ignored (never read)."""
+    d = make_routine(slug="delib-stale")
     raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
-    raw["deliberation"] = "verbose"                   # not a level
+    raw["deliberation"] = "think-on-paper"
     (d / "routine.yaml").write_text(yaml.safe_dump(raw), encoding="utf-8")
     cfg, problems = load_routine(d)
-    assert cfg.deliberation == DEFAULT_DELIBERATION   # coerced, like unknown budgets
-    assert any("deliberation" in p for p in problems)
+    assert cfg.deliberation == DEFAULT_DELIBERATION
+    assert any("belongs in tuning.yaml" in p for p in problems)
 
 
-# ---- the wording module ---------------------------------------------------------------
+def test_load_tuning_survives_broken_yaml(make_routine):
+    d = make_routine(slug="delib-broken")
+    (d / "tuning.yaml").write_text(":: not yaml ::", encoding="utf-8")
+    values, problems = load_tuning(d)
+    assert values == {}
+    assert problems and "tuning.yaml" in problems[0]
+
+
+# ---- the write boundary: tuning is recipe, config stays sealed --------------------------
+
+
+def test_tuning_yaml_is_recipe_classed(make_routine, tmp_path):
+    # own tuning.yaml: sealed for an ordinary run, open under recipe_unlocked
+    locked = GrantPolicy()
+    denial = locked.deny({"kind": "write_file", "path": "tuning.yaml", "content": "x"})
+    assert denial and "recipe" in denial
+    assert GrantPolicy(recipe_unlocked=True).deny(
+        {"kind": "write_file", "path": "tuning.yaml", "content": "x"}) is None
+
+    ctx = _ctx(make_routine, tmp_path, slug="plain-run")
+    ctx.grants = GrantPolicy()
+    obs = do_write_file({"path": str(ctx.routine.dir / "tuning.yaml"),
+                         "content": "deliberation: terse\n"}, ctx)
+    assert "recipe" in obs["error"]
+
+
+def test_improver_tunes_a_target_through_tuning_yaml(make_routine, tmp_path):
+    """The improver's whole flow, no key-level machinery: fs_write_roots + recipe_unlocked
+    let it edit a target's tuning.yaml like any recipe file; the loader applies it."""
+    target = make_routine(slug="delib-target")
+    write_tuning(target, {"deliberation": "standard"})
+    ctx = _ctx(make_routine, tmp_path, slug="improver-like")
+    ctx.routine.fs_write_roots = [target.parent]
+    ctx.grants = GrantPolicy(recipe_unlocked=True)
+    obs = do_edit_file({"path": str(target / "tuning.yaml"),
+                        "anchor": "deliberation: standard",
+                        "replacement": "deliberation: deliberate"}, ctx)
+    assert "error" not in obs, obs
+    cfg, problems = load_routine(target)
+    assert cfg.deliberation == "deliberate"
+    assert not problems
+
+
+def test_routine_yaml_stays_sealed_for_everyone(make_routine, tmp_path):
+    """The invariant is absolute again: config is the user's — no run edits routine.yaml,
+    not even the improver, and the denials route to tuning.yaml for the knobs."""
+    target = make_routine(slug="delib-sealed")
+    ctx = _ctx(make_routine, tmp_path, slug="improver-like2")
+    ctx.routine.fs_write_roots = [target.parent]
+    ctx.grants = GrantPolicy(recipe_unlocked=True)
+    obs = do_edit_file({"path": str(target / "routine.yaml"),
+                        "anchor": "enabled: true", "replacement": "enabled: false"}, ctx)
+    assert "tuning.yaml" in obs["error"]              # the error teaches the right channel
+    denial = GrantPolicy(recipe_unlocked=True).deny(
+        {"kind": "write_file", "path": "routine.yaml", "content": "x"})
+    assert denial and "tuning.yaml" in denial
+
+
+# ---- the wording module ------------------------------------------------------------------
 
 
 def test_levels_have_distinct_contracts_and_only_top_adds_the_standing_note():
@@ -79,7 +160,7 @@ def test_composer_words_the_contract_by_level(make_routine, tmp_path):
         assert marker in harness_contract(ctx), level
 
 
-# ---- the mid-run switch (control.json → turn boundary) ---------------------------------
+# ---- the mid-run switch (control.json → turn boundary) ------------------------------------
 
 
 def test_control_switch_applies_once_and_notes_the_new_contract(make_routine, tmp_path):
@@ -104,83 +185,7 @@ def test_control_switch_applies_once_and_notes_the_new_contract(make_routine, tm
     assert len(loop.messages) == 1
 
 
-# ---- the routine.yaml carve-out ---------------------------------------------------------
-
-
-def _improver_ctx(make_routine, tmp_path, target_dir) -> RunContext:
-    """A run shaped like the improver: fs_write_roots cover the target, config_tunable on."""
-    ctx = _ctx(make_routine, tmp_path, slug="improver-like")
-    ctx.routine.fs_write_roots = [target_dir.parent]
-    ctx.grants = GrantPolicy(config_tunable=True, recipe_unlocked=False)
-    return ctx
-
-
-def test_carveout_allows_a_deliberation_only_edit(make_routine, tmp_path):
-    target = make_routine(slug="delib-target")
-    ctx = _improver_ctx(make_routine, tmp_path, target)
-    obs = do_edit_file({"path": str(target / "routine.yaml"),
-                        "anchor": "description: A test routine.",
-                        "replacement": "description: A test routine.\ndeliberation: deliberate"},
-                       ctx)
-    assert "error" not in obs, obs
-    cfg, problems = load_routine(target)
-    assert cfg.deliberation == "deliberate"
-    assert not problems
-
-
-def test_carveout_rejects_any_other_key_and_bad_levels(make_routine, tmp_path):
-    target = make_routine(slug="delib-target2")
-    ctx = _improver_ctx(make_routine, tmp_path, target)
-    before = (target / "routine.yaml").read_text(encoding="utf-8")
-
-    obs = do_edit_file({"path": str(target / "routine.yaml"),
-                        "anchor": "enabled: true", "replacement": "enabled: false"}, ctx)
-    assert "deliberation" in obs["error"]             # names the one tunable key
-
-    obs = do_edit_file({"path": str(target / "routine.yaml"),
-                        "anchor": "description: A test routine.",
-                        "replacement": "description: A test routine.\ndeliberation: max"},
-                       ctx)
-    assert "must be one of" in obs["error"]
-
-    # write_file (whole-document) passes only when the parsed diff is deliberation-only
-    ctx.seen_paths.add(str(target / "routine.yaml"))  # grounding: the improver read it first
-    raw = yaml.safe_load(before)
-    raw["deliberation"] = "terse"
-    raw["budgets"]["max_turns"] = 99                  # smuggled config change
-    obs = do_write_file({"path": str(target / "routine.yaml"),
-                         "content": yaml.safe_dump(raw)}, ctx)
-    assert "budgets" in obs["error"]
-    assert (target / "routine.yaml").read_text(encoding="utf-8") == before  # untouched
-
-    del raw["budgets"]["max_turns"]
-    raw["budgets"] = yaml.safe_load(before)["budgets"]
-    obs = do_write_file({"path": str(target / "routine.yaml"),
-                         "content": yaml.safe_dump(raw)}, ctx)
-    assert "error" not in obs, obs
-    assert load_routine(target)[0].deliberation == "terse"
-
-
-def test_without_the_grant_routine_yaml_stays_sealed(make_routine, tmp_path):
-    target = make_routine(slug="delib-sealed")
-    ctx = _ctx(make_routine, tmp_path, slug="plain-run")
-    ctx.routine.fs_write_roots = [target.parent]      # roots alone are not enough…
-    ctx.grants = GrantPolicy(config_tunable=False)    # …the policy flag gates the carve-out
-    obs = do_edit_file({"path": str(target / "routine.yaml"),
-                        "anchor": "description: A test routine.",
-                        "replacement": "description: A test routine.\ndeliberation: terse"},
-                       ctx)
-    assert "fs_write_root" in obs["error"]
-
-    policy = GrantPolicy(config_tunable=False)
-    denial = policy.deny({"kind": "edit_file", "path": "routine.yaml",
-                          "anchor": "x", "replacement": "y"})
-    assert denial and "deliberation" in denial        # the denial teaches the exception
-    assert GrantPolicy(config_tunable=True).deny(
-        {"kind": "edit_file", "path": "routine.yaml", "anchor": "x", "replacement": "y"}) is None
-
-
-# ---- wizard suggestion fallback ---------------------------------------------------------
+# ---- wizard suggestion fallback ------------------------------------------------------------
 
 
 def test_suggest_falls_back_to_default_level(tmp_path):

@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.56.0] — 2026-07-16
+
+### Changed
+- **`tuning.yaml` — the deliberation carve-out redesigned away** (user order, same-day
+  design review of 0.55.0): `deliberation` was behavior mis-filed in the authority file.
+  It now lives in `tuning.yaml`, a new per-routine document for machine-tunable BEHAVIOR
+  parameters, classed with the RECIPE — writable under the existing `recipe_unlocked` rule
+  (the improver's fs_write_root), so the FILE boundary is the permission boundary again.
+  Deleted: `GrantPolicy.config_tunable` and the executor's yaml semantic-diff gate; the
+  "routine.yaml is NEVER writable by any run" invariant is absolute once more (denials now
+  point knob changes at tuning.yaml). `config.load_tuning`/`write_tuning` are the one
+  reader/writer pair; scaffold and conversation creation always write the file; the
+  clarify-template copy reads it; the registry memo fingerprints both files so a
+  tuning-only edit is never served stale. Production data migrated in the same session
+  (routine.yaml `deliberation` keys moved into tuning.yaml; a leftover config key is
+  reported as a problem and ignored — never read).
+
 ## [0.55.0] — 2026-07-16
 
 ### Added

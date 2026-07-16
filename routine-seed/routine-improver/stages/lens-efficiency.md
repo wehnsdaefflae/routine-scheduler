@@ -10,7 +10,7 @@ Cut waste in **how** the target works and keep its files clean:
   design; strip diff-narration ("previously…", stale counts) — that history lives in the
   LEDGER and git. Keep any `state/`/`stages/` file under ~350 lines (over → split along a
   read-together seam, or roll old material into `archive/` with a one-paragraph summary).
-- **Deliberation level** (`routine.yaml: deliberation` — the ONE config key you may tune;
+- **Deliberation level** (`tuning.yaml: deliberation` — part of the recipe you may edit;
   see the autonomy gate). Judge it from the transcripts, both directions:
   - says that merely restate the action beside them ("Reading X", "Running Y") on a task
     full of judgment calls → the level is too LOW: decisions leave no reasoning on paper,

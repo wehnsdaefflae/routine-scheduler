@@ -380,22 +380,25 @@ def test_conversation_slash_commands(ui, ui_page):
 def test_conversation_deliberation_slider(ui, ui_page):
     """A conversation's deliberation is edited from the header panel: defaults to
     'deliberate' (chat is judgment-heavy), one arrow key saves the new level to the
-    conversation's routine.yaml (it applies from the next reply)."""
+    conversation's tuning.yaml — routine.yaml (config) stays untouched."""
     ui_page.goto(f"{ui.url}/#/conversations")
     ui_page.locator(".conv-new textarea").fill("Deliberation knob playground.")
     ui_page.get_by_role("button", name="start conversation").click()
     ui_page.wait_for_url("**/conversations/**")
     slug = ui_page.url.rsplit("/", 1)[-1]
-    raw = yaml.safe_load((ui.conversations / slug / "routine.yaml").read_text(encoding="utf-8"))
-    assert raw["deliberation"] == "deliberate"        # the conversation default
+    conv_dir = ui.conversations / slug
+    tuning = yaml.safe_load((conv_dir / "tuning.yaml").read_text(encoding="utf-8"))
+    assert tuning["deliberation"] == "deliberate"     # the conversation default
 
     ui_page.locator("summary", has_text="capabilities & budgets").click()
     slider = ui_page.locator('.delib input[type="range"]')
     slider.focus()
     slider.press("ArrowLeft")                         # deliberate → standard
     expect(_toast(ui_page)).to_contain_text("deliberation: standard")
-    raw = yaml.safe_load((ui.conversations / slug / "routine.yaml").read_text(encoding="utf-8"))
-    assert raw["deliberation"] == "standard"
+    tuning = yaml.safe_load((conv_dir / "tuning.yaml").read_text(encoding="utf-8"))
+    assert tuning["deliberation"] == "standard"
+    raw = yaml.safe_load((conv_dir / "routine.yaml").read_text(encoding="utf-8"))
+    assert "deliberation" not in raw                  # config never carries tuning
 
 
 def test_conversation_refer_to_message(ui, ui_page):
@@ -474,7 +477,10 @@ def test_routine_page_saves(ui, ui_page):
     assert raw["budgets"]["max_turns"] == 42
     assert raw["tags"] == ["nightly"]
     assert raw["enabled"] is False
-    assert raw["deliberation"] == "deliberate"
+    assert "deliberation" not in raw   # tuning, not config — it lands in tuning.yaml
+    tuning = yaml.safe_load(
+        (ui.routine_dir("uir") / "tuning.yaml").read_text(encoding="utf-8"))
+    assert tuning["deliberation"] == "deliberate"
     # removing the tag also saves immediately
     ui_page.locator(".tags .tag", has_text="nightly").locator(".x").click()
     expect(ui_page.locator(".tags .tag", has_text="nightly")).to_have_count(0)

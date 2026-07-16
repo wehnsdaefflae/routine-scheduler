@@ -75,7 +75,7 @@ WORKFLOW_LEVELS = ("catalog", "generate")
 # traits/ holds the routine's adapted practice copies; stages/ + main.md the materialized
 # workflow. routine.yaml (the user's config) is guarded separately: NEVER writable by any
 # run, even the improver — see CONFIG_FILE and GrantPolicy.deny.
-RECIPE_PREFIXES = ("main.md", "stages/", "traits/")
+RECIPE_PREFIXES = ("main.md", "stages/", "traits/", "tuning.yaml")
 CONFIG_FILE = "routine.yaml"
 # An all-off capabilities mapping — the base for cascades and the subrun/clarify default.
 EMPTY_CAPABILITIES = {"actions": [], "utils": [], "confirm": "always", "runs": "none",
@@ -288,12 +288,9 @@ class GrantPolicy:
     workflows: str = "catalog"                 # child-pattern sourcing: catalog | generate
     # own recipe/config writable? True only when a user fs_write_root covers the routine
     # dir (the routine-improver's case) — computed at policy load, never a capability.
+    # The recipe set includes tuning.yaml (machine-tunable behavior parameters, e.g.
+    # deliberation) — the file boundary IS the permission boundary, no key-level gates.
     recipe_unlocked: bool = False
-    # May this run re-level the ONE machine-tunable routine.yaml key (`deliberation`)?
-    # True when the run holds ANY user-granted fs_write_root: WHERE is still constrained
-    # by the normal root gates, and WHAT by the executor's semantic diff (only that key,
-    # a valid level). Everything else in routine.yaml stays the user's.
-    config_tunable: bool = False
     runs_sources: tuple = _DEFAULT_RUNS_SOURCE            # docs covering runs access
     # The live run's ts: paths under runs/<current_run_ts>/ are the run's OWN tree (status,
     # archived history) and stay readable regardless of run_history — the engine itself
@@ -355,25 +352,23 @@ class GrantPolicy:
                                 f"last run or all; the {srcs} permission covers the conduct). "
                                 f"The state digest already carries the last run's result; if "
                                 f"you need more, file a deferred ask_user.")
-                if (writes and _norm_rel(path).split("/")[-1] == CONFIG_FILE
-                        and not self.config_tunable):
+                if writes and _norm_rel(path).split("/")[-1] == CONFIG_FILE:
                     return (f"writing {_norm_rel(path)!r} would change routine config "
                             f"(routine.yaml — permissions, capabilities, budgets, roots). Config "
-                            f"is the user's: a run never edits it. The one exception — "
-                            f"re-levelling the `deliberation` key — needs a user-granted "
-                            f"fs_write_root covering the routine. File a deferred ask_user "
-                            f"describing the change you need.")
+                            f"is the user's: NO run edits it, not even the routine-improver "
+                            f"(machine-tunable knobs like deliberation live in tuning.yaml). "
+                            f"File a deferred ask_user describing the change you need.")
                 if writes and is_recipe_path(path) and not self.recipe_unlocked:
                     return (f"writing {_norm_rel(path)!r} would modify this routine's own recipe "
-                            f"(main.md / stages/ / traits/) — a run never edits its own recipe; "
-                            f"the routine-improver meta routine refines recipes. File a deferred "
-                            f"ask_user describing the change instead.")
+                            f"(main.md / stages/ / traits/ / tuning.yaml) — a run never edits its "
+                            f"own recipe; the routine-improver meta routine refines it. File a "
+                            f"deferred ask_user describing the change instead.")
         return None
 
 
 def load_policy(permissions_home: Path, active: list[str] | None,
                 capabilities: dict | None = None, current_run_ts: str = "",
-                recipe_unlocked: bool = False, config_tunable: bool = False) -> GrantPolicy:
+                recipe_unlocked: bool = False) -> GrantPolicy:
     """Build the run policy from the routine's OWN capabilities mapping; the library's
     `requires:` declarations contribute only the reserved-util vocabulary and the
     capability→doc index that lets denials name the covering permission. `active` (the
@@ -402,6 +397,5 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                        run_history=caps.get("runs") or "none",
                        workflows=caps.get("workflows") or "catalog",
                        recipe_unlocked=recipe_unlocked,
-                       config_tunable=config_tunable,
                        runs_sources=tuple(runs_sources) or _DEFAULT_RUNS_SOURCE,
                        current_run_ts=current_run_ts)

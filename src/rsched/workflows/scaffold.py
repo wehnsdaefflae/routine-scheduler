@@ -9,7 +9,14 @@ from pathlib import Path
 
 import yaml
 
-from ..config import DEFAULT_BUDGETS, DEFAULT_PERMISSIONS, DELIBERATION_LEVELS, ServerConfig
+from ..config import (
+    DEFAULT_BUDGETS,
+    DEFAULT_DELIBERATION,
+    DEFAULT_PERMISSIONS,
+    DELIBERATION_LEVELS,
+    ServerConfig,
+    write_tuning,
+)
 from ..ids import is_slug
 
 GITIGNORE = "runs/\ninbox/\nquestions/\n"
@@ -168,8 +175,6 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         "permissions": active_perms,
         "capabilities": capabilities,
         "budgets": {**DEFAULT_BUDGETS, **(budgets or {})},
-        # how much thinking lands on paper — wizard-suggested per task, user-adjustable
-        **({"deliberation": deliberation} if deliberation in DELIBERATION_LEVELS else {}),
         "retention": {"keep_runs": 30},
     }
     if fs_read_roots:
@@ -178,6 +183,11 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         cfg["fs_write_roots"] = [_tilde(p) for p in fs_write_roots]
     (routine_dir / "routine.yaml").write_text(
         yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    # tuning.yaml (recipe-classed, improver-editable): the deliberation level, wizard-
+    # suggested per task. Always written, so the file exists for later tuning edits.
+    write_tuning(routine_dir, {"deliberation": deliberation
+                               if deliberation in DELIBERATION_LEVELS
+                               else DEFAULT_DELIBERATION})
 
     _git_init(routine_dir, f"scaffold {slug} from workflow {workflow_slug}")
     return routine_dir

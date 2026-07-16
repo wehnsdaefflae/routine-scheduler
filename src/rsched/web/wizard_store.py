@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from ..config import DELIBERATION_LEVELS
+from ..config import load_tuning, write_tuning
 from ..daemon import registry
 from ..daemon.runner import _pid_alive
 from ..ids import now_iso
@@ -39,7 +39,8 @@ def template_defaults(server) -> tuple[dict, dict, str]:
     routine — the RAW yaml, not load_routine, because the loader backfills DEFAULT_BUDGETS
     (routine defaults, e.g. a 5-minute ask timeout) for omitted keys; here an omitted key
     must keep its WIZARD_BUDGETS value. Only known budget keys pass; models pass through
-    as-is (empty = system-model fallback); deliberation passes when valid ("" = default).
+    as-is (empty = system-model fallback); deliberation comes from the template's
+    tuning.yaml ("" = default).
     """
     d = template_dir(server)
     if d is not None:
@@ -54,9 +55,9 @@ def template_defaults(server) -> tuple[dict, dict, str]:
             models = raw_models if isinstance(raw_models, dict) else {}
             budgets = {k: v for k, v in budgets.items()
                        if k in WIZARD_BUDGETS and isinstance(v, int)}
-            level = raw.get("deliberation")
+            tuning, _problems = load_tuning(d)
             return ({**WIZARD_BUDGETS, **budgets}, dict(models),
-                    level if level in DELIBERATION_LEVELS else "")
+                    tuning.get("deliberation", ""))
     return dict(WIZARD_BUDGETS), {}, ""
 
 
@@ -227,10 +228,11 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
         "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
         "workflow": {"library_slug": "clarify-instruction", "library_commit": commit},
         "budgets": budgets, **({"models": models} if models else {}),
-        **({"deliberation": level} if level else {}),
         "permissions": [], "capabilities": {},   # the clarify session holds nothing gated;
         # its tools allowlist narrows further
     }, sort_keys=False))
+    if level:   # tuning rides its own file, mirroring the template
+        write_tuning(d, {"deliberation": level})
     # Persist the session's meta so it survives a daemon/container restart: /api/wizard can
     # list it without depending on the client or in-memory state.
     atomic_write_json(d / "state" / "wizard_meta.json",

@@ -23,7 +23,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from .. import conversations as conv_mod
-from ..config import DELIBERATION_LEVELS, MODEL_KINDS, load_routine
+from ..config import DELIBERATION_LEVELS, MODEL_KINDS, load_routine, write_tuning
 from ..daemon import registry
 from ..ids import now_iso, run_ts
 from ..paths import atomic_write, atomic_write_json
@@ -290,12 +290,13 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
             if not isinstance(name, str) or name not in server.models:
                 raise HTTPException(400, f"models.{kind}: must be a catalog model name")
         raw["models"] = updates["models"]
-    if "deliberation" in updates:
+    if "deliberation" in updates:   # tuning, not config — lands in tuning.yaml
         if updates["deliberation"] not in DELIBERATION_LEVELS:
             raise HTTPException(400, f"deliberation: unknown level "
                                      f"{updates['deliberation']!r}")
-        raw["deliberation"] = updates["deliberation"]
-    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+        write_tuning(info.cfg.dir, {"deliberation": updates["deliberation"]})
+    if set(updates) - {"deliberation"}:   # a tuning-only patch never rewrites routine.yaml
+        atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
     return {"ok": True, "updated": list(updates)}
 
 

@@ -8,9 +8,9 @@ DID before touching anything.
    — and its `LEDGER.md` tail (last ~40 lines — earlier improvement attempts and rejected
    candidates live there; never re-apply a known-bad change). A routine carries no
    `instruction.md`: the recipe IS the task. A conversation target additionally has its
-   seed `instruction.md` — read that too. Note the target's `routine.yaml` `deliberation`
-   level (how much thinking its runs put on paper) — the efficiency lens judges it against
-   the transcripts.
+   seed `instruction.md` — read that too. Note the target's `tuning.yaml` `deliberation`
+   level (how much thinking its runs put on paper; absent file = standard) — the
+   efficiency lens judges it against the transcripts.
 2. Read its most recent run evidence, newest first, at most ~3 runs: `runs/<ts>/status.json`
    for outcome/turns/tokens, and the transcript when the status raises questions (budget
    exhaustion, failures, schema-retry storms). For a big transcript, `spawn` a sub-workflow

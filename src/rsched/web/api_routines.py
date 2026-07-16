@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import schedule
-from ..config import DELIBERATION_LEVELS, MODEL_KINDS
+from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
 from ..daemon import registry
 from ..ids import now_iso, run_ts
 from ..paths import atomic_write, resolve_rel
@@ -366,9 +366,18 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
             if not isinstance(name, str) or name not in server.models:
                 raise HTTPException(400, f"models.{kind}: must be a catalog model name")
         raw["models"] = updates.pop("models")
-    if "deliberation" in updates and updates["deliberation"] not in DELIBERATION_LEVELS:
-        raise HTTPException(400, f"deliberation: unknown level {updates['deliberation']!r} "
-                                 f"(expected one of {DELIBERATION_LEVELS})")
+    # deliberation is TUNING, not config — it lands in tuning.yaml (recipe-classed), never
+    # in routine.yaml (the user's sealed authority surface).
+    if "deliberation" in updates:
+        level = updates.pop("deliberation")
+        if level not in DELIBERATION_LEVELS:
+            raise HTTPException(400, f"deliberation: unknown level {level!r} "
+                                     f"(expected one of {DELIBERATION_LEVELS})")
+        write_tuning(info.cfg.dir, {"deliberation": level})
+        if not updates:   # a tuning-only patch never rewrites routine.yaml
+            _git_commit(info.cfg.dir, "tuning.yaml edit via web (deliberation)")
+            _state(request).scheduler.rescan()
+            return {"ok": True, "updated": ["deliberation"]}
     # Translate the friendly schedule → cron + the server's own timezone (never asked of the user).
     if "schedule" in updates and "friendly" in updates["schedule"]:
         try:

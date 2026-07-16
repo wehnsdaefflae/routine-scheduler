@@ -18,7 +18,13 @@ from pathlib import Path
 
 import yaml
 
-from .config import CONVERSATION_DELIBERATION, DEFAULT_BUDGETS, DEFAULT_PERMISSIONS, ServerConfig
+from .config import (
+    CONVERSATION_DELIBERATION,
+    DEFAULT_BUDGETS,
+    DEFAULT_PERMISSIONS,
+    ServerConfig,
+    write_tuning,
+)
 from .ids import run_ts
 from .paths import atomic_write
 
@@ -181,8 +187,6 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
         "capabilities": capabilities,
         "budgets": {**CONVERSATION_BUDGETS,
                     **{k: int(v) for k, v in (budgets or {}).items() if k in DEFAULT_BUDGETS}},
-        # chat is judgment-heavy: context-on-paper by default (user-tunable in the header panel)
-        "deliberation": CONVERSATION_DELIBERATION,
         "retention": {"keep_runs": 1000},   # one continuous run — retention never prunes it
     }
     if workdir.strip():
@@ -190,6 +194,8 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
         cfg["fs_write_roots"] = [workdir.strip()]
     atomic_write(conv_dir / "routine.yaml",
                  yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
+    # tuning.yaml: chat is judgment-heavy — context-on-paper by default (header-panel slider)
+    write_tuning(conv_dir, {"deliberation": CONVERSATION_DELIBERATION})
     return conv_dir
 
 

@@ -53,12 +53,11 @@ the limits (single-writer status.json preserved).
   may do — adapters, UI, and the CLI event renderer all key off it. A workflow's `tools:` allowlist AND
   the routine's **capabilities** (`grants.py`) are enforced there too: allowed kinds = workflow tools
   ∩ (base ∪ enabled capabilities), plus path gates (runs/ needs the previous-runs depth; a run NEVER
-  writes its own recipe — main.md / stages/ / traits/ — a fixed rule unlocked only when a user-granted
-  fs_write_root covers the routine dir (the routine-improver's case); `routine.yaml` is NEVER writable
-  by any run — config is the user's — with ONE semantic exception: a run holding a user-granted
-  fs_write_root may re-level the `deliberation` key (`config_tunable` policy flag; the executor
-  parses the proposed yaml and rejects any other key change — how the improver optimizes the knob);
-  executor.py backstops absolute paths and scopes `runs: last`).
+  writes its own recipe — main.md / stages/ / traits/ / **tuning.yaml** — a fixed rule unlocked only
+  when a user-granted fs_write_root covers the routine dir (the routine-improver's case);
+  `routine.yaml` is NEVER writable by any run, even under an fs_write_root — config is the user's,
+  no exceptions; the machine-tunable knobs live in tuning.yaml, where the FILE boundary is the
+  permission boundary; executor.py backstops absolute paths and scopes `runs: last`).
   A disallowed/switched-off call is corrected inside the schema-retry cycle with an error naming the
   covering permission, and never becomes a turn.
 - **The system prompt is composed once at boot** (`engine/composer.py`; the CAPABILITIES
@@ -189,11 +188,14 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   `budgets:` (max_turns / wall_clock_min / total_tokens (-1 = unlimited, the default) / subruns /
   subrun_depth / ask_timeout_min — all editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
   budgets/fs-roots/schedules are resources, never capabilities; `improve: false` opts the routine
-  out of the routine-improver's passes (default: included); `deliberation:`
-  (terse|standard|deliberate|think-on-paper — how much thinking lands on paper: words the say
-  contract, `engine/deliberation.py`; wizard-suggested per task, slider on the routine page /
-  conversation header, mid-run via control.json `set_deliberation` from the run view, and the ONE
-  config key the improver may tune).
+  out of the routine-improver's passes (default: included).
+- `tuning.yaml` — the routine's machine-tunable BEHAVIOR parameters, classed with the RECIPE
+  (improver-editable under its fs_write_root; config stays sealed — the file boundary IS the
+  permission boundary). Today: `deliberation:` (terse|standard|deliberate|think-on-paper — how
+  much thinking lands on paper: words the say contract, `engine/deliberation.py`; wizard-suggested
+  per task, slider on the routine page / conversation header, mid-run via control.json
+  `set_deliberation` from the run view). Absent file = defaults; `config.load_tuning`/`write_tuning`
+  are the one reader/writer pair; future machine-tunable knobs land here, never in routine.yaml.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
   routes to `stages/<name>.md` modules, read on demand, and ends with a Standing practices tail
   referencing `traits/`). The clarified instruction is only a transient compile SEED — decomposed into
@@ -320,8 +322,8 @@ chat message; the next user message resumes the SAME run in place (fresh budget 
   distil a new one) and, when the conversation was seeded from a playbook, **Update playbook**
   (`PUT …/playbook` → revise that one) — both distil from the transcript via the `system_model`.
 - Defaults: routine default permissions+capabilities PLUS **`background-tasks`** (the `detach` action —
-  conversation-shaped, since a finished task reports back into the chat), `deliberation: deliberate`
-  (chat is judgment-heavy; slider in the header panel), shell OFF (one-click grant;
+  conversation-shaped, since a finished task reports back into the chat), tuning.yaml
+  `deliberation: deliberate` (chat is judgment-heavy; slider in the header panel), shell OFF (one-click grant;
   run-history + the previous-runs depth greyed — routine-only); traits = ask-policy/global-utils/web-research/ledger-discipline/**git-checkpoint**
   (checkpoint commits in external project repos — the conversation dir itself is unversioned).
   Conversations feed workflow-usage + health events; they are EXCLUDED from the dashboard,

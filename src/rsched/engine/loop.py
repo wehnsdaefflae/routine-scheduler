@@ -104,8 +104,7 @@ class EngineLoop:
                                                ctx.routine.permissions,
                                                ctx.routine.capabilities,
                                                current_run_ts=ctx.run_ts,
-                                               recipe_unlocked=unlocked,
-                                               config_tunable=bool(ctx.routine.fs_write_roots))
+                                               recipe_unlocked=unlocked)
         self.util_reminder = self._build_util_reminder()
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
         self._last_deliberation_ts = ""   # edge-trigger for mid-run deliberation switches
