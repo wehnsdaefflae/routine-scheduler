@@ -126,7 +126,9 @@ def _seed_instruction(pb: dict | None, first_message: str, conv_dir: Path) -> st
 
 def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
                         workdir: str = "", models: dict[str, str] | None = None,
-                        permissions: list[str] | None = None, playbook_slug: str = "",
+                        permissions: list[str] | None = None,
+                        capabilities: dict | None = None, deliberation: str = "",
+                        playbook_slug: str = "",
                         budgets: dict | None = None) -> Path:
     """Create <conversations_home>/<slug> ready to run: materialized converse main.md with
     a Standing-practices tail, verbatim trait copies, instruction.md = the first message,
@@ -172,7 +174,11 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
                                 else CONVERSATION_PERMISSIONS) if p in available_perms]
     from .grants import capabilities_for, read_library_requires
 
-    capabilities = capabilities_for(active_perms, read_library_requires(server.permissions_home))
+    # a caller-resolved mapping (the composer's ⚙ panel, already validated + floored by
+    # resolve_permission_layers) wins; otherwise derive it from the active docs
+    if capabilities is None:
+        capabilities = capabilities_for(active_perms,
+                                        read_library_requires(server.permissions_home))
     cfg = {
         "name": title,
         "slug": slug,
@@ -194,8 +200,9 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
         cfg["fs_write_roots"] = [workdir.strip()]
     atomic_write(conv_dir / "routine.yaml",
                  yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
-    # tuning.yaml: chat is judgment-heavy — context-on-paper by default (header-panel slider)
-    write_tuning(conv_dir, {"deliberation": CONVERSATION_DELIBERATION})
+    # tuning.yaml: chat is judgment-heavy — context-on-paper by default (composer +
+    # header-panel slider; a pre-start pick governs reply #1 already)
+    write_tuning(conv_dir, {"deliberation": deliberation or CONVERSATION_DELIBERATION})
     return conv_dir
 
 

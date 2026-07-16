@@ -249,6 +249,14 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 /* ---------- new-routine setup (run-page panel + draft view) ---------- */
 .pick-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 
+/* ---------- audit reference links (reflinks.js: F63/D14 -> the card they name) ---------- */
+.ref-link { text-decoration: underline dotted; text-underline-offset: 2px; }
+.ref-flash { animation: ref-flash 2.4s ease-out; }
+@keyframes ref-flash {
+  0%, 40% { outline: 2px solid var(--warn); outline-offset: 2px; }
+  100% { outline: 2px solid transparent; outline-offset: 2px; }
+}
+
 /* ---------- help (generated docs) ---------- */
 .help-frame {
   width: 100%; height: calc(100vh - 235px); min-height: 420px; margin-top: 12px;

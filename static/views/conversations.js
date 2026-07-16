@@ -165,12 +165,16 @@ export async function render(view, slug, _query = {}) {
         : "What should the agent do? The first message becomes the conversation's task…";
     };
     const workdir = el("input", { type: "text", placeholder: "~/path/to/project (optional)" });
-    // Pre-start budgets: turns per REPLY, and a cumulative cap over the WHOLE conversation
-    // (both optional — blank keeps the default; -1 = unlimited).
+    // Pre-start budgets: per-REPLY ceilings + a cumulative cap over the WHOLE conversation
+    // (all optional — blank keeps the default; -1 = unlimited).
     const turnsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "10",
       style: "width:80px", title: "max turns per reply (-1 = unlimited)" });
     const totalTurnsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "∞",
       style: "width:80px", title: "max turns for the whole conversation (blank or -1 = unlimited)" });
+    const minsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "30",
+      style: "width:80px", title: "max minutes per reply (-1 = unlimited)" });
+    const tokIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "400000",
+      style: "width:100px", title: "max tokens per reply (-1 = unlimited)" });
     // Pre-start model picker: pick a catalog model by NAME (or fall back to the system model),
     // so a conversation can start on the right model instead of system-default-then-switch.
     const modelSel = el("select", { "data-nopersist": "" },
@@ -179,7 +183,33 @@ export async function render(view, slug, _query = {}) {
       if (r.system_model) modelSel.options[0].textContent = `default · ${r.system_model}`;
       (r.models || []).forEach((m) => modelSel.append(el("option", { value: m.name }, m.name)));
     }).catch(() => { /* settings unreachable — the default option still works */ });
-    const shellChk = el("input", { type: "checkbox" });
+    // ⚙ capabilities & budgets — the SAME surface the conversation header offers, but
+    // BEFORE create: the first reply fires on create, so a permission, budget, or
+    // deliberation level that must govern reply #1 has to be set here (afterwards the
+    // header panel takes over). Fed by /api/conversations/defaults; the collected
+    // permission payload rides the create request.
+    const delib = deliberationControl("deliberate");
+    let permPanel = null;   // {node, value} once the defaults load
+    const capsBody = el("div", { class: "conv-opts" },
+      el("label", {}, "project directory — the agent may read & edit it", workdir),
+      el("div", { class: "row mt", style: "gap:10px;align-items:flex-start" },
+        el("span", { class: "faint small", style: "min-width:150px;padding-top:4px" },
+          "deliberation — thinking on paper"),
+        delib.node));
+    api("/api/conversations/defaults").then((d) => {
+      if (d.deliberation) delib.set(d.deliberation);
+      const b = d.budgets || {};
+      if (b.max_turns != null) turnsIn.placeholder = String(b.max_turns);
+      if (b.max_wall_clock_min != null) minsIn.placeholder = String(b.max_wall_clock_min);
+      if (b.max_total_tokens != null) tokIn.placeholder = String(b.max_total_tokens);
+      permPanel = permissionsPanel(d.permissions, d.capabilities, {
+        disableRuns: "a conversation is one continuous run — previous-run depth is routine-only" });
+      capsBody.append(el("div", { class: "mt" }), permPanel.node);
+    }).catch(() => {
+      capsBody.append(el("div", { class: "muted small mt" },
+        "permission defaults unavailable — the conversation starts with the standard set; ",
+        "tune it in the header panel afterwards"));
+    });
     const { picker, files, clearFiles, wirePaste } = filePicker();
     wirePaste(text);
     const send = el("button", { class: "btn primary" }, "start conversation");
@@ -194,7 +224,10 @@ export async function render(view, slug, _query = {}) {
         if (workdir.value.trim()) fd.append("workdir", workdir.value.trim());
         if (turnsIn.value.trim()) fd.append("max_turns", turnsIn.value.trim());
         if (totalTurnsIn.value.trim()) fd.append("max_total_turns", totalTurnsIn.value.trim());
-        if (shellChk.checked) fd.append("shell", "1");
+        if (minsIn.value.trim()) fd.append("max_wall_clock_min", minsIn.value.trim());
+        if (tokIn.value.trim()) fd.append("max_total_tokens", tokIn.value.trim());
+        fd.append("deliberation", delib.value);
+        if (permPanel) fd.append("permissions", JSON.stringify(permPanel.value()));
         for (const f of files()) fd.append("files", f);
         const r = await apiUpload("/api/conversations", fd);
         forgetField(text); forgetField(workdir);   // submitted — never refill the next composer
@@ -219,13 +252,15 @@ export async function render(view, slug, _query = {}) {
           el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
             "turns / reply", turnsIn),
           el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
-            "whole conversation", totalTurnsIn)),
+            "minutes / reply", minsIn),
+          el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
+            "tokens / reply", tokIn),
+          el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
+            "whole conversation (turns)", totalTurnsIn)),
         el("details", { class: "mt small" },
-          el("summary", { style: "cursor:pointer;color:var(--muted)" }, "⚙ options: project dir, shell"),
-          el("div", { class: "conv-opts" },
-            el("label", {}, "project directory — the agent may read & edit it", workdir),
-            el("label", { class: "row", style: "gap:8px" }, shellChk,
-              el("span", {}, "allow shell commands (the escape hatch — off by default)")))),
+          el("summary", { style: "cursor:pointer;color:var(--muted)" },
+            "⚙ capabilities & budgets · project dir, permissions, deliberation"),
+          capsBody),
         el("div", { class: "faint small mt" },
           "pick a model above or start on the system default — switch it any time at the top of the conversation")));
     text.focus();
@@ -649,7 +684,7 @@ export async function render(view, slug, _query = {}) {
           toast("permissions saved — they apply from the next reply");
         } catch (err) { toast(err.message, 4000, { error: true }); }
       },
-    }));
+    }).node);
     if (detail.traits?.length) {
       capBody.append(el("div", { class: "faint small mt" },
         "traits (its own practice files): ", detail.traits.join(", ")));

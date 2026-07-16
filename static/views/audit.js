@@ -8,11 +8,14 @@
 
 import { api } from "/static/api.js";
 import { chip, el, emptyState, fmtTs, skeleton, toast, when } from "/static/util.js";
+import { focusRef, linkifyRefs } from "/static/components/reflinks.js";
 import { forgetField } from "/static/formpersist.js";
 
 const SEV = ["problem", "systemic", "redundancy", "improvement", "info"];
+const isSettled = (d) => String(d.status || "").toLowerCase() === "settled"
+  || String(d.detail || "").trimStart().toUpperCase().startsWith("SETTLED");
 
-export async function render(view) {
+export async function render(view, query = {}) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
       el("div", { class: "kicker" }, "console / self-audit"),
@@ -125,7 +128,7 @@ export async function render(view) {
             try { await withdrawFeedback(queued.id); }
             catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
           } }, "withdraw");
-    return el("div", { class: "panel mt" },
+    return el("div", { class: "panel mt", id: `ref-${f.id}` },
       el("div", { class: "row spread" },
         el("div", { class: "row", style: "gap:9px" }, chip(sev, `sev-${sev}`),
           el("strong", { class: "prose" }, f.title || f.id)),
@@ -140,11 +143,9 @@ export async function render(view) {
         el("div", { style: "flex:1" }, note), saveBtn, dropBtn));
   }
 
-  // Decisions are ANSWERED on the Decisions page (one inbox, meta-badged) — here they
-  // only get a status line, since this page is the report, not the inbox.
+  // Decisions are ANSWERED on the Decisions page (one inbox, meta-badged) — here each
+  // gets a read-only card (the landing target for D-references) plus the status line.
   function decisionsSummary(decisions, queuedDecisions) {
-    const isSettled = (d) => String(d.status || "").toLowerCase() === "settled"
-      || String(d.detail || "").trimStart().toUpperCase().startsWith("SETTLED");
     const open = decisions.filter((d) => !queuedDecisions.has(d.id) && !isSettled(d)).length;
     const queued = decisions.filter((d) => queuedDecisions.has(d.id)).length;
     return el("div", {},
@@ -155,6 +156,20 @@ export async function render(view) {
           : el("span", {}, "nothing awaits you — settled and queued decisions are recorded in the report. "),
         open ? el("a", { class: "btn small", href: "#/questions" }, "answer on the Decisions page") : null,
         el("span", {}, " Answers flow back to the next run as settled work orders."))));
+  }
+
+  function decisionPanel(d, queuedDecisions) {
+    const [label, tone] = isSettled(d) ? ["settled", "ok"]
+      : queuedDecisions.has(d.id) ? ["answer queued", "partial"] : ["open", "waiting_user"];
+    return el("div", { class: "panel mt", id: `ref-${d.id}` },
+      el("div", { class: "row spread" },
+        el("div", { class: "row", style: "gap:9px" }, chip(label, tone),
+          el("strong", { class: "prose" }, d.title || d.id)),
+        el("span", { class: "faint small" }, d.id)),
+      d.detail ? el("div", { class: "muted mt prose", style: "white-space:pre-wrap" }, d.detail) : null,
+      (d.options || []).length && !isSettled(d)
+        ? el("div", { class: "faint small mt" }, `options: ${d.options.map(String).join("  ·  ")}`)
+        : null);
   }
 
   function generalSection(routineSlug) {
@@ -251,7 +266,10 @@ export async function render(view) {
         ? el("div", {}, ...findings.map((f) => findingPanel(f, queuedComments.get(f.id))))
         : el("div", { class: "muted small", style: "padding:6px 0" }, "No findings this run — all clear."));
       const decisions = r.decisions || [];
-      if (decisions.length) body.append(decisionsSummary(decisions, queuedDecisions));
+      if (decisions.length) {
+        body.append(decisionsSummary(decisions, queuedDecisions),
+          ...decisions.map((d) => decisionPanel(d, queuedDecisions)));
+      }
     } else {
       body.append(data.last_run
         ? emptyState("▢", "No report from the last run",
@@ -262,7 +280,11 @@ export async function render(view) {
 
     // The note field is always available while the routine exists — leave a prompt any time.
     body.append(generalSection(data.routine));
+    // every F63/D14 mention in the report's prose becomes a link to its card above
+    linkifyRefs(body);
   }
 
   await load();
+  // arriving via a ref link (#/audit?focus=F63): land on the named card and flash it
+  if (query.focus) focusRef(String(query.focus));
 }

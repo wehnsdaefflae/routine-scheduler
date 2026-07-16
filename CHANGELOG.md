@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.60.0] — 2026-07-17
+
+### Added
+- **⚙ capabilities & budgets on the new-conversation composer.** The same panel the
+  conversation header offers now exists BEFORE create — necessary because the first reply
+  fires on create, so a permission (e.g. shell), per-reply budget (minutes/tokens), or
+  deliberation level toggled post-hoc would miss reply #1. Fed by the new
+  `GET /api/conversations/defaults`; the collected `{active, capabilities}` payload rides
+  the create request through the same resolve + cascade + floor as the header save, and
+  `deliberation` lands in tuning.yaml. The old "⚙ options: project dir, shell" block (and
+  the `shell` create form field) is retired — shell is now just one toggle in the panel.
+  `permissionsPanel` returns `{node, value}` so it can collect without saving.
+- **Audit references are hyperlinks.** Every `F63`/`D14` mention in the audit report's
+  prose (summary, findings, decisions) and in the Decisions page's meta items links to the
+  card it names: `#/audit?focus=<id>` lands on, scrolls to, and flashes that card
+  (`static/components/reflinks.js`; decisions now render read-only cards on the Audit page
+  so D-references have a landing target).
+
 ## [0.59.0] — 2026-07-16
 
 ### Changed

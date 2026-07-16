@@ -751,3 +751,70 @@ def test_clarify_run_page_suggest_form_after_finish(ui, ui_page, monkeypatch):
     expect(ui_page.locator(".pick-row .btn").first).to_be_visible()   # library workflow picks
     expect(ui_page.get_by_role("button", name="create routine")).to_be_visible()
     expect(ui_page.locator('input[value="arxiv-watch"]')).to_be_visible()
+
+
+# ---- 6. Pre-start capabilities & budgets on the composer ----------------------------------
+
+
+def test_new_conversation_composer_offers_caps_and_budgets(ui, ui_page):
+    """The composer carries the SAME ⚙ capabilities & budgets surface as the conversation
+    header — a permission granted there (e.g. shell) and a budget set there govern reply #1,
+    which fires on create and would miss any post-hoc toggle."""
+    import re
+
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new summary", has_text="capabilities & budgets").click()
+    panel = ui_page.locator(".conv-new")
+    expect(panel).to_contain_text("deliberation — thinking on paper")
+    expect(panel).to_contain_text("conduct permissions")
+    shell_row = panel.locator(".toggle-row").filter(
+        has=ui_page.get_by_text("shell", exact=True))
+    shell_row.locator('input[type="checkbox"]').check()
+    panel.locator('input[title="max tokens per reply (-1 = unlimited)"]').fill("55000")
+    panel.locator("textarea").first.fill("Need a shell for this.")
+    ui_page.get_by_role("button", name="start conversation").click()
+    expect(ui_page).to_have_url(re.compile(r"#/conversations/"))
+    convs = [p for p in ui.conversations.iterdir() if (p / "routine.yaml").exists()]
+    assert len(convs) == 1
+    raw = yaml.safe_load((convs[0] / "routine.yaml").read_text(encoding="utf-8"))
+    assert "shell" in raw["permissions"]
+    assert "shell" in raw["capabilities"]["utils"]
+    assert raw["budgets"]["max_total_tokens"] == 55000
+    tuning = yaml.safe_load((convs[0] / "tuning.yaml").read_text(encoding="utf-8"))
+    assert tuning["deliberation"] == "deliberate"   # the untouched default rides along
+
+
+# ---- 7. Audit reference links (F63/D14 → the card they name) -------------------------------
+
+
+def test_audit_refs_link_and_flash(ui, ui_page):
+    """D[n]/F[n] mentions in the audit report are hyperlinks to the card they reference;
+    following one lands on (and flashes) that card, and the Decisions page's meta items
+    carry the same links."""
+    import re
+
+    rdir = ui.routines / "self-audit"
+    (rdir / "audit").mkdir(parents=True)
+    report = {
+        "generated": "2026-07-16T20:00:00+00:00",
+        "summary": "F1 is carried this run; D1 awaits you.",
+        "findings": [{"id": "F1", "severity": "info", "title": "Watch item",
+                      "detail": "Blocked on D1."}],
+        "decisions": [{"id": "D1", "status": "open", "title": "Pick a path",
+                       "detail": "See F1 for the evidence.",
+                       "options": ["do it", "leave as-is"]}],
+    }
+    (rdir / "audit" / "report.json").write_text(json.dumps(report), encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}/#/audit")
+    link = ui_page.locator(".panel.prose a.ref-link", has_text="D1")
+    expect(link).to_have_attribute("href", "#/audit?focus=D1")
+    expect(ui_page.locator("#ref-F1")).to_be_visible()      # findings AND decisions get cards
+    expect(ui_page.locator("#ref-D1")).to_contain_text("Pick a path")
+    link.click()                                            # follow the ref → land + flash
+    expect(ui_page.locator("#ref-D1")).to_have_class(re.compile(r"ref-flash"))
+
+    ui_page.goto(f"{ui.url}/#/questions")                   # the same ids link from the inbox
+    card = ui_page.locator(".question-item", has_text="Pick a path")
+    flink = card.locator("a.ref-link", has_text="F1")
+    expect(flink).to_have_attribute("href", "#/audit?focus=F1")

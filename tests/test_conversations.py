@@ -203,6 +203,52 @@ def test_create_conversation_accepts_prestart_budgets(client):
     assert c.post("/api/conversations", data={"text": "x", "max_turns": "lots"}).status_code == 400
 
 
+def test_conversation_defaults_endpoint(client):
+    """The composer's ⚙ capabilities & budgets panel is fed by /conversations/defaults —
+    the layers a NEW conversation gets, offered BEFORE create (the first reply fires on
+    create, so a post-hoc toggle would miss reply #1)."""
+    c, _server = client
+    d = c.get("/api/conversations/defaults").json()
+    perm = {p["slug"]: p for p in d["permissions"]}
+    assert perm["background-tasks"]["active"] is True        # a conversation default
+    assert perm["shell"]["active"] is False                  # off by default, one-click grant
+    assert perm["run-history"]["routine_only"] is True       # greyed in the composer too
+    assert d["budgets"]["max_turns"] == 10
+    assert d["deliberation"] == "deliberate"
+    assert "actions" in d["capabilities"]["active"]
+
+
+def test_create_conversation_accepts_prestart_layers(client):
+    """Pre-start permission layers ride the create request through the SAME resolve +
+    cascade + floor as the header panel's save; deliberation lands in tuning.yaml and the
+    per-reply minute/token ceilings in budgets — all governing reply #1 already."""
+    import json
+
+    c, server = client
+    defaults = c.get("/api/conversations/defaults").json()
+    active = [p["slug"] for p in defaults["permissions"]
+              if p["active"] and not p.get("routine_only")] + ["shell"]
+    r = c.post("/api/conversations", data={
+        "text": "shelly task", "deliberation": "terse",
+        "max_wall_clock_min": "45", "max_total_tokens": "123000",
+        "permissions": json.dumps({"active": active}),
+    })
+    assert r.status_code == 200, r.text
+    conv_dir = server.conversations_home / r.json()["slug"]
+    raw = yaml.safe_load((conv_dir / "routine.yaml").read_text())
+    assert "shell" in raw["permissions"]
+    assert "shell" in raw["capabilities"]["utils"]           # the requires cascade raised it
+    assert raw["budgets"]["max_wall_clock_min"] == 45
+    assert raw["budgets"]["max_total_tokens"] == 123000
+    tuning = yaml.safe_load((conv_dir / "tuning.yaml").read_text())
+    assert tuning["deliberation"] == "terse"
+    # junk is rejected up front, before anything lands on disk
+    assert c.post("/api/conversations",
+                  data={"text": "x", "deliberation": "extreme"}).status_code == 400
+    assert c.post("/api/conversations",
+                  data={"text": "x", "permissions": "{not json"}).status_code == 400
+
+
 def test_conversation_phase_mapping():
     for s in ("running", "queued", "starting"):
         assert conv_mod.conversation_phase(s) == "working"

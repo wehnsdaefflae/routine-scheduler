@@ -138,8 +138,10 @@ produced in its reply, so you always know what to look at.
 
 ## Capabilities, budgets, and model
 
-Open **⚙ capabilities & budgets** at the top of a conversation to tune it — changes apply from the
-next reply:
+The same **⚙ capabilities & budgets** panel is offered in two places: on the **new-conversation
+composer** (open it before you hit *start* — the first reply fires on create, so a permission,
+budget, or deliberation level that must govern reply #1 has to be set there) and at the top of a
+running conversation, where changes apply from the next reply:
 
 - **Budgets** are **per reply**: turns, minutes, and tokens for each message, not the whole session.
 - **Permissions** work exactly as they do for routines (see the *Traits & permissions* guide). A

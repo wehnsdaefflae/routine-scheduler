@@ -7,6 +7,7 @@
 
 import { api } from "/static/api.js";
 import { answerForm } from "/static/components/answerform.js";
+import { linkifyRefs } from "/static/components/reflinks.js";
 import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, skeleton, toast, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
@@ -27,6 +28,12 @@ const EXPIRING_MS = 30 * 60 * 1000;   // a blocking ask this close to its timeou
 const expiringSoon = (q) => q.mode === "blocking" && q.expires
   && new Date(q.expires).getTime() - Date.now() < EXPIRING_MS;
 const kindOf = (q) => (q.meta ? "meta" : q.mode);
+// audit decisions reference findings/decisions by id (F63, D14) — make those clickable,
+// but ONLY in the audit's own voice (meta items); elsewhere a bare "D1" is a false positive
+const qText = (q, content) => {
+  const node = el("div", { class: "q-text" }, content);
+  return q.meta ? linkifyRefs(node) : node;
+};
 const sourceLink = (q) => (q.wizard
   // a clarify session's surface is its run page (D11); a pre-D13 session has none
   ? (q.run_id ? el("a", { href: `#/run/${q.run_id}` }, "new-routine setup")
@@ -155,7 +162,7 @@ export async function render(view) {
           chip(`answered${q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : ""} · queued`, "ok"),
           sourceLink(q),
           q.asked ? el("span", {}, "asked ", when(q.asked)) : null),
-        el("div", { class: "q-text" }, mdInline(q.question)),
+        qText(q, mdInline(q.question)),
         el("div", { class: "flow-note mt" },
           el("span", {}, `“${q.answer}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run" : "next run"}`)));
     }
@@ -260,7 +267,7 @@ export async function render(view) {
           ? el("span", { class: "faint small", title: "when the run continues without an answer" },
               "continues without you ", when(q.expires, { mode: "rel" })) : null,
         ...runBits),
-      el("div", { class: "q-text" }, q.question),
+      qText(q, q.question),
       q.default ? el("div", { class: "faint small mt",
         title: "what the routine does if this stays unanswered" },
         `↪ without an answer: ${q.default}`) : null,

@@ -81,7 +81,8 @@ endpoints, the central Secrets store, GitHub, the library repo.
 - **Log** — a live, filterable activity feed across all routines; expand a row to tail
   that run's transcript inline.
 - **Audit** — the self-audit routine's report on the scheduler itself: changelog,
-  findings, and decisions, with a feedback loop into its next run.
+  findings, and decisions, with a feedback loop into its next run. Every `F63`/`D14`
+  mention in the report is a link to the card it references.
 - **Help** — documentation generated from this very source at every boot: hand-written
   guides (`docs/*.md`, e.g. endpoint setup) plus an API reference rendered from the
   code's docstrings by pdoc.

@@ -126,7 +126,7 @@ export async function render(view, slug, query = {}) {
         permHost.replaceChildren(buildPermPanel(nd.permissions, nd.capabilities));
       } catch (err) { toast(err.message, 4000, { error: true }); }
     },
-  });
+  }).node;
   permHost.append(buildPermPanel(d.permissions, d.capabilities));
   view.append(el("h2", {}, "Permissions & capabilities"),
     el("div", { class: "panel" },

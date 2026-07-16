@@ -109,28 +109,48 @@ def list_conversations(request: Request) -> list[dict]:
 
 
 @router.post("/conversations")
-async def create_conversation(request: Request, text: Annotated[str, Form()] = "",
+async def create_conversation(request: Request, text: Annotated[str, Form()] = "",  # noqa: PLR0913 — one Form field per composer knob
+
                               workdir: Annotated[str, Form()] = "",
                               model: Annotated[str, Form()] = "",
-                              shell: Annotated[str, Form()] = "",
                               playbook: Annotated[str, Form()] = "",
                               max_turns: Annotated[str, Form()] = "",
                               max_total_turns: Annotated[str, Form()] = "",
+                              max_wall_clock_min: Annotated[str, Form()] = "",
+                              max_total_tokens: Annotated[str, Form()] = "",
+                              deliberation: Annotated[str, Form()] = "",
+                              permissions: Annotated[str, Form()] = "",
                               files: Annotated[list[UploadFile] | None, File()] = None) -> dict:
     server = request.app.state.server
     text = text.replace("\r\n", "\n")   # multipart encodes newlines CRLF; \n is canonical
     if not text.strip() and not playbook.strip():
         raise HTTPException(400, "empty message — write the first message or pick a playbook")
-    # Optional pre-start budgets: max_turns = turns per REPLY, max_total_turns = cumulative
-    # cap over the WHOLE conversation (both -1 = unlimited). Blank = leave the default.
+    # Optional pre-start budgets: per-REPLY ceilings (turns / minutes / tokens) plus
+    # max_total_turns, the cumulative cap over the WHOLE conversation (-1 = unlimited
+    # where applicable). Blank = leave the default.
     budgets: dict[str, int] = {}
-    for key, raw_val in (("max_turns", max_turns), ("max_total_turns", max_total_turns)):
+    for key, raw_val in (("max_turns", max_turns), ("max_total_turns", max_total_turns),
+                         ("max_wall_clock_min", max_wall_clock_min),
+                         ("max_total_tokens", max_total_tokens)):
         if raw_val.strip():
             try:
                 budgets[key] = int(raw_val)
             except ValueError:
                 raise HTTPException(400, f"{key} must be a whole number (-1 = unlimited)") from None
-    permissions = [*conv_mod.CONVERSATION_PERMISSIONS, "shell"] if shell.strip() else None
+    if deliberation.strip() and deliberation.strip() not in DELIBERATION_LEVELS:
+        raise HTTPException(400, f"unknown deliberation level {deliberation.strip()!r} "
+                                 f"(expected one of {DELIBERATION_LEVELS})")
+    # Pre-start permission layers: the composer's ⚙ panel sends the same {active,
+    # capabilities} payload the header panel saves — resolved through the same
+    # validate + cascade + floor, so reply #1 already runs under the chosen surface.
+    active_perms: list[str] | None = None
+    caps_override: dict | None = None
+    if permissions.strip():
+        try:
+            body = PermissionsBody.model_validate_json(permissions)
+        except ValueError as exc:
+            raise HTTPException(400, f"invalid permissions payload: {exc}") from None
+        active_perms, caps_override = resolve_permission_layers(server, body, {})
     models = None
     if model.strip():   # a picked catalog model name → all three roles (else system_model fallback)
         if model.strip() not in server.models:
@@ -142,7 +162,9 @@ async def create_conversation(request: Request, text: Annotated[str, Form()] = "
     try:
         conv_dir = conv_mod.create_conversation(server, slug=slug, first_message=text,
                                                 workdir=workdir, models=models,
-                                                permissions=permissions,
+                                                permissions=active_perms,
+                                                capabilities=caps_override,
+                                                deliberation=deliberation.strip(),
                                                 playbook_slug=playbook.strip(),
                                                 budgets=budgets or None)
     except FileNotFoundError as exc:
@@ -166,6 +188,31 @@ async def create_conversation(request: Request, text: Annotated[str, Form()] = "
     _autolabel_tasks.add(task)
     task.add_done_callback(_autolabel_tasks.discard)
     return {"slug": slug, "run_id": rid}
+
+
+@router.get("/conversations/defaults")
+def conversation_defaults(request: Request) -> dict:
+    """What a NEW conversation starts with — the permission layers (conversation defaults
+    active, routine-only docs greyed), budgets, and deliberation. The composer renders the
+    same ⚙ capabilities & budgets surface as the header panel from this, BEFORE create:
+    the first reply fires on create, so a post-hoc toggle would miss it. Registered above
+    the /conversations/{slug} routes so "defaults" never resolves as a slug.
+    """
+    from types import SimpleNamespace
+
+    from .. import library_docs
+    from ..grants import capabilities_for, read_library_requires
+
+    server = request.app.state.server
+    available = set(library_docs.slugs(server.permissions_home))
+    active = [p for p in conv_mod.CONVERSATION_PERMISSIONS if p in available]
+    caps = capabilities_for(active, read_library_requires(server.permissions_home))
+    permissions, capabilities = permission_layers_detail(
+        server, SimpleNamespace(permissions=active, capabilities=caps),
+        routine_only=conv_mod.ROUTINE_ONLY_PERMISSIONS)
+    return {"permissions": permissions, "capabilities": capabilities,
+            "budgets": dict(conv_mod.CONVERSATION_BUDGETS),
+            "deliberation": conv_mod.CONVERSATION_DELIBERATION}
 
 
 @router.get("/conversations/{slug}/commands")

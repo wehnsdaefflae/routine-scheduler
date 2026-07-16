@@ -28,6 +28,9 @@ const WF_RANK = { catalog: 0, generate: 1 };
 // permissions: [{slug, summary, requires, active, routine_only?}]
 // capabilities: {active: {actions, utils, confirm, runs, workflows}, vocabulary: {actions, utils}}
 // opts: {onSave(payload), disableRuns?: string (reason), saveLabel?}
+// Returns {node, value}: with onSave the panel renders its own save button; without it the
+// panel is a COLLECTOR — the caller reads value() when it commits (the new-conversation
+// composer, where the payload rides the create request).
 export function permissionsPanel(permissions, capabilities, opts = {}) {
   const docs = permissions || [];
   const vocab = capabilities?.vocabulary || { actions: [], utils: [] };
@@ -180,20 +183,25 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
   function render() { renderDocs(); renderCaps(); }
   render();
 
-  const saveBtn = el("button", { class: "btn primary" }, opts.saveLabel || "save permissions");
-  saveBtn.onclick = async () => {
-    saveBtn.disabled = true;
-    try {
-      await opts.onSave({
-        active: docs.filter((p) => p.routine_only ? p.active : held.has(p.slug)).map((p) => p.slug),
-        capabilities: { actions: [...caps.actions], utils: [...caps.utils],
-                        confirm: caps.confirm, runs: caps.runs, workflows: caps.workflows },
-      });
-    } finally { saveBtn.disabled = false; }
-  };
+  const value = () => ({
+    active: docs.filter((p) => p.routine_only ? p.active : held.has(p.slug)).map((p) => p.slug),
+    capabilities: { actions: [...caps.actions], utils: [...caps.utils],
+                    confirm: caps.confirm, runs: caps.runs, workflows: caps.workflows },
+  });
 
-  return el("div", {},
+  let footer = null;
+  if (opts.onSave) {
+    const saveBtn = el("button", { class: "btn primary" }, opts.saveLabel || "save permissions");
+    saveBtn.onclick = async () => {
+      saveBtn.disabled = true;
+      try { await opts.onSave(value()); } finally { saveBtn.disabled = false; }
+    };
+    footer = el("div", { class: "row mt" }, saveBtn);
+  }
+
+  const node = el("div", {},
     el("div", { style: "display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px" },
       docsCol, capsCol),
-    el("div", { class: "row mt" }, saveBtn));
+    footer);
+  return { node, value };
 }
