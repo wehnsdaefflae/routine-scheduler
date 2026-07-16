@@ -375,7 +375,13 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   ask/read/write/finish. `workflows/lint.py` gates every change; `suggest`/`generate` rank/draft via the
   `system_model`. The **new-routine wizard** runs `clarify-instruction`, which now SUGGESTS a pattern (or
   asks to generate one) and MARRIES the task to it — asking questions that overlay the task on the pattern's
-  control flow + parameters (candidates written to the session's `state/candidates.md`).
+  control flow + parameters (candidates written to the session's `state/candidates.md`). A session is a
+  REAL run of the protected `clarification` template routine (`clarification/runs/<ts>`, executing in the
+  hidden `.wizard-<ts>` workspace) and its ONLY UI surface is the **standard run page** —
+  `#/run/clarification:<ts>` mounts `components/setuppanel.js` (chat frame while live; suggest → create →
+  build panels once finished); `#/new-routine` (`views/new-routine.js`) owns just the draft form. There is
+  NO bespoke wizard view (D11) — decision answers/defers, inject and converse for a clarify run all route
+  to the polled workspace inbox (`wizard_store.session_inbox_dir` / `api_questions._record_dir`).
 - **Traits** (`library-seed/traits/`, `# trait:` heading, NO requires — lint-enforced): reusable practice
   prose. Selected at creation (the wizard preselects via `suggest_traits_permissions` — which also
   suggests the routine's `deliberation` level — from the refined

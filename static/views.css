@@ -1,4 +1,4 @@
-/* rsched — view-specific styling (dashboard bays, log feed, transcript, decisions, wizard…).
+/* rsched — view-specific styling (dashboard bays, log feed, transcript, decisions, setup…).
    Design tokens + primitives live in base.css. */
 
 /* ---------- dashboard: routine bays ---------- */
@@ -246,8 +246,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .test-result.bad { color: var(--err); }
 .test-result .dim { color: var(--muted); }
 
-/* ---------- wizard ---------- */
-.chatwrap { margin-top: 14px; }
+/* ---------- new-routine setup (run-page panel + draft view) ---------- */
 .pick-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 
 /* ---------- help (generated docs) ---------- */

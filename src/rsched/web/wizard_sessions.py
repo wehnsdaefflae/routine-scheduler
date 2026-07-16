@@ -101,7 +101,9 @@ async def start(request: Request, body: StartBody) -> dict:
         sess["tailer"] = asyncio.create_task(tail_llm_sidecar(
             run_dir, _wizard_recorder(c, _wizard_pid(wid), f"{wid}:{ts}")))
     wizard_store.sessions(request.app.state)[wid] = sess
-    return {"wid": wid, "run_ts": ts}
+    # the run page IS the session surface (D11): the client navigates straight to it
+    return {"wid": wid, "run_ts": ts,
+            "run_id": wizard_store.clarify_run_id(server, d, ts)}
 
 
 @router.get("/wizard/{wid}/events")

@@ -19,6 +19,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.59.0] — 2026-07-16
+
+### Changed
+- **The run page is the whole new-routine setup surface (D11 UI half, completing the
+  wizard unification).** The bespoke wizard views (`static/views/wizard.js`,
+  `static/views/wizard-create.js`, the `#/wizard` route) are retired. A clarify session —
+  a real run of the protected `clarification` routine since 0.58.0 — now renders at
+  `#/run/clarification:<ts>` like any other run, with a new setup panel
+  (`static/components/setuppanel.js`) mounted on top: a slim chat frame (cancel setup)
+  while the clarify run is live, then the suggest → create → build stages as run-page
+  panels once it finishes. `#/new-routine` (`static/views/new-routine.js`) keeps only the
+  draft form plus the in-flight-session resume list; the setup banner, the Decisions
+  page's wizard items, and the resume links all point at the run page. `/api/wizard/start`
+  and session snapshots return the session's `clarify_run_id` for that navigation.
+
+### Fixed
+- **Decision answers for a live clarify run now reach the session** (the missing sibling
+  of 0.58.1's inject/converse fix). Answering a clarify ask through
+  `POST /api/questions/{qid}/answer` (run page, Decisions page) — and deferring it — wrote
+  to `clarification/inbox`, which the live session never polls; both now route to the
+  `.wizard-<ts>` workspace inbox via `api_questions._record_dir`, and the answered-state
+  derivation reads the same dir.
+- **A clarify ask no longer lists twice on the Decisions page.** Since 0.58.0 the same
+  blocking question surfaced once via the clarification routine's active run and once via
+  the workspace's durable pending record; the wizard scan now dedupes against the real
+  run (and stamps items with the clarify `run_id`, badged `wizard`, linking the run page).
+
 ## [0.58.1] — 2026-07-16
 
 ### Fixed

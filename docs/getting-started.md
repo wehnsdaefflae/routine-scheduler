@@ -76,7 +76,9 @@ later and live elsewhere. Example draft:
 
 **3 · Answer the clarifier.** A short chat sharpens the draft into a precise instruction
 and marries it to a workflow pattern from the library. It asks only what it cannot infer —
-scope, deliverable shape, hard constraints.
+scope, deliverable shape, hard constraints. The chat is a real run of the protected
+`clarification` routine and lives on the standard run page — leave and come back any time
+(the setup banner up top brings you back); its questions also appear on the Decisions page.
 
 **4 · Review the create page.** Everything is preselected from your task, everything is
 editable before anything is created:

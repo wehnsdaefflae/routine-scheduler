@@ -28,7 +28,9 @@ const expiringSoon = (q) => q.mode === "blocking" && q.expires
   && new Date(q.expires).getTime() - Date.now() < EXPIRING_MS;
 const kindOf = (q) => (q.meta ? "meta" : q.mode);
 const sourceLink = (q) => (q.wizard
-  ? el("a", { href: `#/wizard/${q.routine}` }, "new-routine wizard")
+  // a clarify session's surface is its run page (D11); a pre-D13 session has none
+  ? (q.run_id ? el("a", { href: `#/run/${q.run_id}` }, "new-routine setup")
+              : el("span", { class: "muted" }, "new-routine setup"))
   : el("a", { href: `#/routine/${q.routine}` }, q.routine));
 
 export async function render(view) {

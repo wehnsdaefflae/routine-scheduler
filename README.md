@@ -88,9 +88,11 @@ endpoints, the central Secrets store, GitHub, the library repo.
 
 ## Creating a routine
 
-Click **+ New routine**: the wizard interrogates your draft (a real engine run of the
-`clarify-instruction` workflow), suggests a library workflow (or generates a draft one),
-and scaffolds the routine — its own git repo, materialized workflow with the standard
+Click **+ New routine**: describe the task, and the clarifier interrogates your draft — a
+real run of the protected `clarification` routine, living on the **standard run page**
+(`#/run/clarification:<ts>`, resumable from the setup banner). When the chat finishes, the
+same page becomes the create form: it suggests a library workflow (or generates a draft
+one) and scaffolds the routine — its own git repo, materialized workflow with the standard
 traits adapted in, seeded LEDGER, chosen cron. Or from the shell:
 
 ```bash

@@ -658,3 +658,96 @@ def test_settings_endpoints_crud(ui, ui_page):
     cfg = _server_yaml(ui)
     assert "vllm" not in (cfg.get("endpoints") or {})
     assert "llama" not in (cfg.get("models") or {})   # deleting the last model may null the key
+
+
+# ---- 5. New-routine setup on the run page (D11) -------------------------------------------
+
+
+def _seed_clarify_session(ui, draft="Watch arxiv for new agent papers."):
+    """A clarification template + one in-flight session, exactly as /api/wizard/start lays
+    them down (minus the engine subprocess): the run lives at clarification/runs/<ts>, the
+    session recipe in the hidden .wizard-<ts> workspace.
+    """
+    from rsched.web import wizard_store
+
+    tpl = ui.routines / wizard_store.TEMPLATE_SLUG
+    (tpl / "state").mkdir(parents=True, exist_ok=True)
+    (tpl / "routine.yaml").write_text(yaml.safe_dump(
+        {"name": "Routine clarification", "slug": wizard_store.TEMPLATE_SLUG,
+         "enabled": False,
+         "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"}}),
+        encoding="utf-8")
+    wid, ts, d = wizard_store.create_session(ui.server_cfg, draft)
+    run_dir = ui.routines / wizard_store.TEMPLATE_SLUG / "runs" / ts
+    (run_dir / "transcript.jsonl").write_text(
+        f'{{"type": "header", "run_id": "clarification:{ts}"}}\n', encoding="utf-8")
+    return wid, ts, d, run_dir
+
+
+def _set_run_status(run_dir, **patch):
+    st = json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
+    st.update(patch)
+    (run_dir / "status.json").write_text(json.dumps(st), encoding="utf-8")
+
+
+def test_new_routine_page_and_setup_banner_link_the_run_page(ui, ui_page):
+    """The draft page lists the in-flight session and both it and the global setup banner
+    resume onto the clarify run's page — the session surface since D11."""
+    _wid, ts, _d, _run_dir = _seed_clarify_session(ui)
+    ui_page.goto(f"{ui.url}/#/new-routine")
+    expect(ui_page.get_by_role("button", name="start clarification")).to_be_visible()
+    inflight = ui_page.locator(".panel.warn", has_text="Setup already in progress")
+    expect(inflight).to_contain_text("Watch arxiv")
+    expect(inflight.locator("a.btn", has_text="resume"))\
+        .to_have_attribute("href", f"#/run/clarification:{ts}")
+    banner = ui_page.locator("#setup-banner")
+    expect(banner).to_be_visible()
+    expect(banner).to_contain_text("Routine setup in progress")
+    expect(banner.locator("a.btn", has_text="resume"))\
+        .to_have_attribute("href", f"#/run/clarification:{ts}")
+
+
+def test_clarify_run_page_chat_frame_and_question_answer(ui, ui_page):
+    """A live clarify run renders on the STANDARD run page with the setup frame mounted,
+    and the run page's own question form answers into the .wizard-<ts> workspace inbox —
+    the dir the live session polls."""
+    _wid, ts, d, run_dir = _seed_clarify_session(ui)
+    _set_run_status(run_dir, state="waiting_user", pid=4242,
+                    question={"qid": "q-w1", "question": "Daily or weekly?", "type": "text",
+                              "options": [], "default": "", "asked": ts})
+    ui_page.goto(f"{ui.url}/#/run/clarification:{ts}")
+    expect(ui_page.locator(".panel", has_text="New-routine setup")).to_be_visible()
+    expect(ui_page.get_by_role("button", name="cancel setup")).to_be_visible()
+    field = ui_page.locator('textarea[data-persist="answer-q-w1"]')
+    field.fill("weekly")
+    field.press("Enter")
+    expect(_toast(ui_page)).to_contain_text("answer sent")
+    answer = json.loads((d / "inbox" / "answer-q-w1.json").read_text(encoding="utf-8"))
+    assert answer["text"] == "weekly"
+    assert not (ui.routines / "clarification" / "inbox" / "answer-q-w1.json").exists()
+
+
+def test_clarify_run_page_suggest_form_after_finish(ui, ui_page, monkeypatch):
+    """A finished clarify run with a result flips the panel to the create form — refined
+    instruction, workflow picks from the library, and the create button, all on the run
+    page (the retired wizard view's suggest stage)."""
+    from rsched.web import api_wizard
+    from rsched.workflows import suggest as suggest_mod
+
+    monkeypatch.setattr(api_wizard, "suggest_tags",
+                        lambda *a, **k: ["papers", "arxiv", "watch"])
+    monkeypatch.setattr(suggest_mod, "suggest_traits_permissions",
+                        lambda *a, **k: {"traits": [], "permissions": [],
+                                         "deliberation": "standard"})
+    _wid, ts, d, run_dir = _seed_clarify_session(ui)
+    _set_run_status(run_dir, state="finished")
+    (d / "state" / "wizard_result.json").write_text(json.dumps({
+        "refined_instruction": "Track arxiv agent papers weekly.",
+        "suggested_slug": "arxiv-watch", "suggested_name": "Arxiv watch"}), encoding="utf-8")
+    ui_page.goto(f"{ui.url}/#/run/clarification:{ts}")
+    expect(ui_page.locator("h2", has_text="Refined instruction")).to_be_visible()
+    expect(ui_page.locator("textarea.code").first)\
+        .to_have_value("Track arxiv agent papers weekly.")
+    expect(ui_page.locator(".pick-row .btn").first).to_be_visible()   # library workflow picks
+    expect(ui_page.get_by_role("button", name="create routine")).to_be_visible()
+    expect(ui_page.locator('input[value="arxiv-watch"]')).to_be_visible()

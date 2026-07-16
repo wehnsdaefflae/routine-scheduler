@@ -69,9 +69,22 @@ def test_no_view_references_undefined_conv_classes():
 def test_wizard_recovery_affordances_present():
     """Pins the affordances shipped for the 2026-07-16 wizard incidents: the setup banner
     names the session by its draft preview (an abandoned session must not read as if it were
-    the routine just created), and the clarify error screen offers a draft-preserving retry."""
+    the routine just created), and the clarify error panel offers a draft-preserving retry."""
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     assert "cur.draft" in app, "setup banner must quote the session's draft preview"
-    wiz = (STATIC / "views" / "wizard.js").read_text(encoding="utf-8")
-    assert "retry with the same draft" in wiz, "error screen must offer a draft-preserving retry"
-    assert "draft_full" in wiz, "the retry needs the snapshot's full draft"
+    panel = (STATIC / "components" / "setuppanel.js").read_text(encoding="utf-8")
+    assert "retry with the same draft" in panel, "error panel must offer a draft-preserving retry"
+    assert "draft_full" in panel, "the retry needs the snapshot's full draft"
+
+
+def test_bespoke_wizard_views_stay_retired():
+    """D11 (2026-07-16): the run page IS the setup surface — clarify sessions render at
+    #/run/clarification:<ts> with the setup panel; the bespoke wizard views and the
+    #/wizard route must not resurface."""
+    assert not (STATIC / "views" / "wizard.js").exists()
+    assert not (STATIC / "views" / "wizard-create.js").exists()
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "#/wizard" not in app, "the #/wizard route is retired — sessions live on run pages"
+    assert "/static/views/new-routine.js" in app, "the draft stage lives at #/new-routine"
+    run = (STATIC / "views" / "run.js").read_text(encoding="utf-8")
+    assert "createSetupPanel" in run, "the run view must mount the setup panel on clarify runs"

@@ -86,10 +86,30 @@ def _mark_answered(routine_dir, item: dict) -> dict:
     return item
 
 
+def _record_dir(server, match: dict):
+    """The dir whose inbox/ and questions/pending/ the engine behind a decision actually
+    polls. A clarify session's run lives under the clarification template (D13=B) but
+    EXECUTES in the hidden .wizard-<ts> workspace — its answers and defer markers must
+    land there, or the live session never sees them. Every other decision belongs to its
+    routine/conversation dir itself.
+    """
+    from . import wizard_store
+
+    if not match.get("conversation") and match.get("routine") == wizard_store.TEMPLATE_SLUG:
+        ts = str(match.get("run_id") or "").partition(":")[2]
+        workspace = server.routines_home / f".wizard-{ts}"
+        if ts and workspace.is_dir():
+            return workspace
+    home = server.conversations_home if match.get("conversation") else server.routines_home
+    return home / match["routine"]
+
+
 def _all_questions(server, *, conversations: bool = False) -> list[dict]:
     """Open questions of one home's catalog. Conversation questions carry
     `conversation: True` so the answer endpoint (and the UI) can tell the homes apart.
     """
+    from . import wizard_store
+
     home = server.conversations_home if conversations else None
     out: list[dict] = []
     for info in registry.scan(server, home).values():
@@ -98,11 +118,13 @@ def _all_questions(server, *, conversations: bool = False) -> list[dict]:
         active = info.active_run
         if active and active.question:
             seen.add(str(active.question.get("qid")))
-            out.append(_mark_answered(info.cfg.dir,
-                       {**active.question, "routine": info.slug, "mode": "blocking",
-                        "run_id": active.run_id, "run_state": active.state,
-                        "asked": active.question.get("asked") or active.ts,
-                        **({"conversation": True} if conversations else {})}))
+            item = {**active.question, "routine": info.slug, "mode": "blocking",
+                    "run_id": active.run_id, "run_state": active.state,
+                    "asked": active.question.get("asked") or active.ts,
+                    **({"conversation": True} if conversations else {})}
+            if not conversations and info.slug == wizard_store.TEMPLATE_SLUG:
+                item["wizard"] = True   # a clarify session's ask — badged like one
+            out.append(_mark_answered(_record_dir(server, item), item))
         for q in info.open_questions:
             if str(q.get("qid")) in seen:
                 continue   # a live blocking question also has a durable pending record
@@ -122,9 +144,11 @@ def _all_questions(server, *, conversations: bool = False) -> list[dict]:
 
 
 def _wizard_questions(server) -> list[dict]:
-    """Clarify-session questions. Wizard sessions are dot-hidden pseudo-routines the
-    registry deliberately skips — but their questions belong in the same inbox as every
-    other decision, answerable from either surface.
+    """Clarify-session questions the registry cannot see (the sessions are dot-hidden).
+    A D13=B session's LIVE blocking ask already surfaces through the clarification
+    routine's active run in _all_questions — here it only feeds the dedup set; what this
+    adds is the workspace's durable pending records (stamped with the clarify run id so
+    the UI links the run page) and, for legacy session-local runs, the live ask itself.
     """
     from . import wizard_store
 
@@ -133,22 +157,31 @@ def _wizard_questions(server) -> list[dict]:
     for d in sorted(home.glob(".wizard-*")) if home.is_dir() else []:
         if not d.is_dir():
             continue
-        ts = wizard_store.latest_run_ts(d)
-        run = (registry.read_run(d / "runs" / ts, d.name)
-               if ts and (d / "runs" / ts).is_dir() else None)
+        ts = wizard_store.read_meta(d).get("run_ts") or wizard_store.latest_run_ts(d)
+        rid = wizard_store.clarify_run_id(server, d, ts)
+        rd = wizard_store.clarify_run_dir(server, d, ts) if ts else None
+        run = registry.read_run(rd, d.name) if rd is not None and rd.is_dir() else None
         seen: set[str] = set()
-        if run and run.question and run.state == "waiting_user":
+        waiting = False
+        if run is not None and run.question and run.state == "waiting_user":
+            waiting = True
             seen.add(str(run.question.get("qid")))
-            out.append(_mark_answered(d, {**run.question, "routine": d.name, "wizard": True,
-                                          "mode": "blocking", "run_state": run.state,
-                                          "asked": run.question.get("asked") or run.ts}))
+            if not rid:   # template-backed asks list via the clarification routine itself
+                out.append(_mark_answered(d, {**run.question, "routine": d.name,
+                                              "wizard": True, "mode": "blocking",
+                                              "run_state": run.state,
+                                              "asked": run.question.get("asked") or run.ts}))
         pending = d / "questions" / "pending"
         for path in sorted(pending.glob("*.json")) if pending.is_dir() else []:
             q = read_json(path)
             # a live blocking question also has a durable pending record — list it once
             if isinstance(q, dict) and q.get("question") and str(q.get("qid")) not in seen:
+                # a blocking record with no live run behind it is just deferred now
+                mode = q.get("mode", "deferred")
                 out.append(_mark_answered(d, {**q, "routine": d.name, "wizard": True,
-                                              "mode": q.get("mode", "deferred")}))
+                                              "mode": "deferred" if mode == "blocking"
+                                              and not waiting else mode,
+                                              **({"run_id": rid} if rid else {})}))
     return out
 
 
@@ -214,8 +247,7 @@ async def answer(request: Request, qid: str, body: Answer) -> dict:
                   if q.get("qid") == qid), None)
     if match is None:
         raise HTTPException(404, f"no open question {qid!r}")
-    home = server.conversations_home if match.get("conversation") else server.routines_home
-    routine_dir = home / match["routine"]
+    routine_dir = _record_dir(server, match)
     atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json",
                       {"qid": qid, "text": body.text, "source": "web",
                        "intermediate": body.intermediate and match["mode"] == "blocking",
@@ -272,11 +304,6 @@ def _record_match(server, qid: str) -> dict:
     if match is None:
         raise HTTPException(404, f"no open question {qid!r}")
     return match
-
-
-def _record_dir(server, match: dict):
-    home = server.conversations_home if match.get("conversation") else server.routines_home
-    return home / match["routine"]
 
 
 class Snooze(BaseModel):

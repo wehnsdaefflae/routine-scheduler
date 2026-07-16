@@ -41,7 +41,7 @@ def _template(server):
 def test_create_session_places_run_under_clarification(tmp_path):
     server = _server(tmp_path)
     _template(server)
-    wid, ts, d = wizard_store.create_session(server, "Watch arxiv for new agent papers.")
+    _wid, ts, d = wizard_store.create_session(server, "Watch arxiv for new agent papers.")
     real = server.routines_home / wizard_store.TEMPLATE_SLUG / "runs" / ts
     assert real.is_dir()
     st = json.loads((real / "status.json").read_text(encoding="utf-8"))
@@ -119,6 +119,82 @@ def test_session_inbox_falls_through_for_ordinary_and_legacy_runs(tmp_path):
     _wid, ts, d = wizard_store.create_session(server, "Digest my newsletters.")
     local = d / "runs" / ts
     assert wizard_store.session_inbox_dir(server, local) == d / "inbox"
+
+
+def test_snapshot_carries_clarify_run_id(tmp_path):
+    """Every session snapshot names its clarify run page (D11: the run page IS the session
+    surface) — template-backed sessions get clarification:<ts>, legacy ones an empty id,
+    and the finalize branch keeps carrying it (the building panel lives on that page too).
+    """
+    from types import SimpleNamespace
+
+    from rsched.paths import atomic_write_json
+
+    server = _server(tmp_path)
+    _template(server)
+    _wid, ts, d = wizard_store.create_session(server, "Watch arxiv for new agent papers.")
+    state = SimpleNamespace(server=server, wizards={})
+    assert (wizard_store.snapshot(state, d)["clarify_run_id"]
+            == f"{wizard_store.TEMPLATE_SLUG}:{ts}")
+    atomic_write_json(d / "state" / "finalize.json", {"state": "building", "slug": "arxiv"})
+    snap = wizard_store.snapshot(state, d)
+    assert snap["stage"] == "building"
+    assert snap["clarify_run_id"] == f"{wizard_store.TEMPLATE_SLUG}:{ts}"
+    # legacy session-local runs have no navigable run page
+    server2 = _server(tmp_path / "legacy")
+    _wid2, _ts2, d2 = wizard_store.create_session(server2, "Watch arxiv.")
+    assert wizard_store.snapshot(SimpleNamespace(server=server2, wizards={}),
+                                 d2)["clarify_run_id"] == ""
+
+
+def test_clarify_question_lists_once_and_answers_to_workspace(tmp_path):
+    """A clarify run's blocking ask surfaces ONCE (via the clarification routine's active
+    run — wizard-badged, run-linked — deduped against the workspace's durable pending
+    record), and its answer plus the answered-state derivation ride the .wizard-<ts>
+    workspace inbox: the dir the live session actually polls. Without the redirect the
+    answer would land in clarification/inbox and the session would wait forever.
+    """
+    server0 = _server(tmp_path)
+    _template(server0)
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.safe_dump({
+        "token": TOKEN,
+        "routines_home": str(tmp_path / "routines"),
+        "libraries_home": str(tmp_path / "library"),
+        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
+        "models": {"m": {"endpoint": "dummy", "model": "m"}},
+        "system_model": "m",
+    }), encoding="utf-8")
+    server, problems = load_server_config(cfg_path)
+    assert not problems
+    _wid, ts, _d = wizard_store.create_session(server, "Digest my newsletters every morning.")
+    run_dir = server.routines_home / wizard_store.TEMPLATE_SLUG / "runs" / ts
+    q = {"qid": "q-scope", "question": "Daily or weekly?", "mode": "blocking",
+         "type": "text", "options": [], "default": "daily", "asked": ts}
+    st = json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
+    st.update({"state": "waiting_user", "question": q})
+    (run_dir / "status.json").write_text(json.dumps(st), encoding="utf-8")
+    pending = server.routines_home / f".wizard-{ts}" / "questions" / "pending"
+    pending.mkdir(parents=True)
+    (pending / "q-scope.json").write_text(json.dumps(q), encoding="utf-8")
+    app = create_app(server, with_scheduler=False)
+    with TestClient(app) as client:
+        client.headers["Authorization"] = f"Bearer {TOKEN}"
+        items = [i for i in client.get("/api/questions").json() if i.get("qid") == "q-scope"]
+        assert len(items) == 1                    # active-run + pending record dedup to ONE
+        assert items[0]["wizard"] is True
+        assert items[0]["run_id"] == f"{wizard_store.TEMPLATE_SLUG}:{ts}"
+        assert items[0]["routine"] == wizard_store.TEMPLATE_SLUG
+        r = client.post("/api/questions/q-scope/answer", json={"text": "weekly"})
+        assert r.status_code == 200
+        ws_inbox = server.routines_home / f".wizard-{ts}" / "inbox"
+        answer = json.loads((ws_inbox / "answer-q-scope.json").read_text(encoding="utf-8"))
+        assert answer["text"] == "weekly"
+        template_inbox = server.routines_home / wizard_store.TEMPLATE_SLUG / "inbox"
+        assert not (template_inbox / "answer-q-scope.json").exists()
+        # the answered state derives from the SAME workspace inbox
+        again = [i for i in client.get("/api/questions").json() if i.get("qid") == "q-scope"]
+        assert again and again[0].get("answered") is True
 
 
 def test_inject_endpoint_reaches_the_clarify_session_workspace(tmp_path):

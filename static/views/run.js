@@ -11,6 +11,7 @@ import { setQuery } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
+import { createSetupPanel } from "/static/components/setuppanel.js";
 import { createStateGraph } from "/static/components/stategraph.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { createTranscript } from "/static/components/transcript.js";
@@ -51,6 +52,12 @@ export async function render(view, runId, query = {}) {
 
   const questionBox = el("div", {});
   view.append(questionBox);
+
+  // New-routine setup: a clarification run with a live session behind it gets the setup
+  // panel (components/setuppanel.js) — chat frame while live, the create form once done.
+  const setupBox = el("div", {});
+  view.append(setupBox);
+  let setup = null;
 
   // Side rail: the routine's state graph (current phase lit, updates on SSE phase
   // transitions) + its artifacts. Fixed in the right margin on wide screens (CSS), an
@@ -263,6 +270,7 @@ export async function render(view, runId, query = {}) {
     switchBox.hidden = terminal;                    // no mid-run switch once the run has ended
     delibBox.hidden = terminal;                     // deliberation re-level is mid-run only
     setModes(terminal);
+    if (setup) setup.onRunState(state);
     tickDur();
     if (state === "paused") { paused = true; pauseBtn.textContent = "▶ resume"; }
     else if (paused && state !== "paused") { paused = false; pauseBtn.textContent = "⏸ pause"; }
@@ -334,6 +342,7 @@ export async function render(view, runId, query = {}) {
       `${err.message} — it may have been pruned by retention.`));
     return;
   }
+  if (slug === "clarification") setup = await createSetupPanel(setupBox, { ts });
   mainBox.replaceChildren();
   const transcript = createTranscript(mainBox, {
     // deferred questions become answerable right in the conversation…
@@ -421,6 +430,7 @@ export async function render(view, runId, query = {}) {
 
   return () => { if (tail) tail.stop(); stopSubPoll(); clearInterval(durTimer);
                  artifacts.destroy();
+                 setup?.destroy();
                  stopFollow();
                  window.removeEventListener("rsched-bus", onBus); };
 }

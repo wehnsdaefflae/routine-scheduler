@@ -100,6 +100,17 @@ def clarify_run_dir(server, d: Path, ts: str) -> Path:
     return real if real.is_dir() else d / "runs" / ts
 
 
+def clarify_run_id(server, d: Path, ts: str | None) -> str:
+    """`clarification:<ts>` when this session's run lives under the template (D13=B) — the
+    standard run page renders it, so every surface links there. Empty for a legacy
+    session-local run (no navigable run page; the session can only be canceled).
+    """
+    if not ts:
+        return ""
+    rd = clarify_run_dir(server, d, ts)
+    return f"{TEMPLATE_SLUG}:{ts}" if rd.parent.parent.name == TEMPLATE_SLUG else ""
+
+
 def session_inbox_dir(server, run_dir: Path) -> Path:
     """The inbox a run-page message (inject/converse) must land in so a LIVE run actually
     polls it. For a D13=B clarify run the artifact dir is `clarification/runs/<ts>` but the
@@ -139,8 +150,11 @@ def snapshot(app_state, d: Path) -> dict:
     meta = read_meta(d)
     fin = read_json(d / "state" / "finalize.json")
     if isinstance(fin, dict) and fin.get("state"):        # finalize started → its state wins
+        # `run_id` is the NEW routine's first run (run_now); `clarify_run_id` stays the
+        # session's own clarify run — the run page the setup panel lives on.
         return {"wid": d.name, "run_ts": meta.get("run_ts", ""), "created": meta.get("created", ""),
                 "draft": draft_preview(d),
+                "clarify_run_id": clarify_run_id(app_state.server, d, meta.get("run_ts")),
                 "stage": fin["state"], "state": fin["state"], "has_result": True,
                 "slug": fin.get("slug"), "run_id": fin.get("run_id"), "error": fin.get("error"),
                 "question": None, "alive": None}
@@ -159,6 +173,7 @@ def snapshot(app_state, d: Path) -> dict:
     alive = _pid_alive(run.pid) if (stage == "chat" and run is not None and run.pid) else None
     snap = {"wid": d.name, "run_ts": ts, "created": meta.get("created", ""),
             "draft": draft_preview(d),
+            "clarify_run_id": clarify_run_id(app_state.server, d, ts),
             "stage": stage, "state": state, "has_result": has_result,
             "question": run.question if run else None, "alive": alive}
     if stage == "error":

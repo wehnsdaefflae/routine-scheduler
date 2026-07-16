@@ -32,7 +32,7 @@
     <a href="#/help" data-nav="help">Help</a>
   </nav>
   <div class="topbar-right">
-    <a class="btn primary small" id="nav-new-routine" href="#/wizard">+ new routine</a>
+    <a class="btn primary small" id="nav-new-routine" href="#/new-routine">+ new routine</a>
     <span class="clock" id="clock" aria-label="local time"></span>
     <span id="daemon-dot" class="lamp" title="daemon link"></span>
   </div>
@@ -40,8 +40,8 @@
 <!-- First-launch notice: the seeded self-improvement routines ship disabled (no hidden costs);
      populated by app.js from /api/status.meta_routines, dismissible via localStorage. -->
 <div id="meta-banner" class="notice-banner" hidden></div>
-<!-- In-flight new-routine setup: a persistent, always-visible way back to the live wizard,
-     shown on every view while a session exists (populated by app.js from /api/wizard). -->
+<!-- In-flight new-routine setup: a persistent, always-visible way back to the live clarify
+     run's page, shown on every view while a session exists (app.js, from /api/wizard). -->
 <div id="setup-banner" class="setup-banner" hidden></div>
 <!-- Location indicator: where you are in the console, reflecting the deep path in the URL. -->
 <nav id="crumbs" class="crumbs" aria-label="breadcrumb"></nav>

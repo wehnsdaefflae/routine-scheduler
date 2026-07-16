@@ -23,7 +23,7 @@ const routes = [
   [/^#\/run\/([a-z0-9-]+:[0-9-]+)$/, () => import("/static/views/run.js")],
   [/^#\/questions$/, () => import("/static/views/questions.js")],
   [/^#\/library(?:\/(.*))?$/, () => import("/static/views/library.js")],
-  [/^#\/wizard(?:\/(.+))?$/, () => import("/static/views/wizard.js")],
+  [/^#\/new-routine$/, () => import("/static/views/new-routine.js")],
   [/^#\/settings$/, () => import("/static/views/settings.js")],
   [/^#\/help(?:\/(.*))?$/, () => import("/static/views/help.js")],
 ];
@@ -78,7 +78,7 @@ function updateLocation(path) {
     : path.startsWith("#/library") ? "library"
     : path.startsWith("#/settings") ? "settings"
     : path.startsWith("#/help") ? "help"
-    : path.startsWith("#/wizard") ? "wizard"
+    : path.startsWith("#/new-routine") ? "new-routine"
     : "dashboard";
   document.querySelectorAll("[data-nav]").forEach((a) =>
     a.classList.toggle("active", a.dataset.nav === key));
@@ -119,7 +119,7 @@ function crumbsFor(path) {
         { label: slug || "run", href: slug ? `#/routine/${slug}` : null },
         { label: ts ? `run ${fmtTs(ts)}` : "run" }];
     }
-    case "wizard": return [{ label: "Routines", href: "#/" }, { label: "New routine" }];
+    case "new-routine": return [{ label: "Routines", href: "#/" }, { label: "New routine" }];
     default: return [{ label: "Routines" }];
   }
 }
@@ -138,8 +138,9 @@ function renderCrumbs(path) {
 }
 
 // ---- in-flight setup banner ------------------------------------------------------------------
-// While any new-routine wizard session is live, show a persistent, always-visible way back to it
-// on every view. Driven by /api/wizard so it is correct across reloads, tabs, and daemon restarts.
+// While any new-routine setup session is live, show a persistent, always-visible way back to it
+// on every view — the clarify run's page, where the setup panel lives (D11). Driven by
+// /api/wizard so it is correct across reloads, tabs, and daemon restarts.
 const STAGE_LABEL = { chat: "clarifying", suggest: "choosing a workflow",
                       building: "building the routine", error: "needs attention" };
 
@@ -159,7 +160,9 @@ async function refreshSetupBanner() {
     el("span", { class: "sb-text" },
       el("b", {}, "Routine setup in progress"),
       ` — ${STAGE_LABEL[cur.stage] || "working"}${what}${more}. The backend is still running; pick up where you left off.`),
-    el("a", { class: "btn small primary", href: `#/wizard/${cur.wid}` }, "resume"));
+    // a pre-D13 session has no run page — the new-routine view offers what's left (cancel)
+    el("a", { class: "btn small primary",
+      href: cur.clarify_run_id ? `#/run/${cur.clarify_run_id}` : "#/new-routine" }, "resume"));
   banner.hidden = false;
 }
 
@@ -260,12 +263,12 @@ function startClock() {
 }
 
 window.addEventListener("hashchange", route);
-// The wizard view fires this when a session starts / is canceled / finalized, so the banner
-// updates immediately instead of waiting for the next poll.
+// The new-routine view and the run page's setup panel fire this when a session starts / is
+// canceled / finalized, so the banner updates immediately instead of waiting for the next poll.
 window.addEventListener("rsched-wizard-changed", () => refreshSetupBanner());
 
 function gateNav(ready) {
-  const a = document.getElementById("nav-new-routine");   // dim (but keep clickable → gated wizard)
+  const a = document.getElementById("nav-new-routine");   // dim (but keep clickable → gated view)
   if (a) { a.style.opacity = ready ? "" : "0.55"; a.title = ready ? "" : "connect an LLM endpoint in Settings first"; }
 }
 
