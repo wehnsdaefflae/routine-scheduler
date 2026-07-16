@@ -1,94 +1,74 @@
-"""statemap: state-graph parsing from a routine's own main.md — tolerant by design."""
+"""statemap: the state graph derived from a routine's stage modules — nothing parsed
+from prose, so every routine with stage modules has a diagram, unconditionally."""
 
 import json
 
 from rsched import statemap
 
-RUN_FLOW = """---
-name: X
----
-# Something
 
-## How to run this state machine
-1. read the phase.
-
-## Run flow
-1. **orient** — read the backlog and pick a focus.
-2. **measure** — refresh the baseline from real data.
-3. **record-close** — append the LEDGER and finish.
-
-## Completion criteria
-- done.
-"""
-
-PHASES = """# T
-
-## Phases
-- **scan** — gather fresh postings.
-- **score**: rate against the profile
-- **report** — ping when warranted.
-"""
-
-
-def test_parse_run_flow_bold_items():
-    states = statemap.parse_states(RUN_FLOW)
-    assert [s["name"] for s in states] == ["orient", "measure", "record-close"]
-    assert states[0]["desc"] == "read the backlog and pick a focus"
-
-
-def test_parse_phases_section_and_separators():
-    states = statemap.parse_states(PHASES)
-    assert [s["name"] for s in states] == ["scan", "score", "report"]
-    assert states[1]["desc"] == "rate against the profile"
-
-
-def test_parse_plain_numbered_fallback_and_dedup():
-    md = "## Run flow\n1. gather — collect the data.\n2. gather — again.\n3. write — emit."
-    states = statemap.parse_states(md)
-    assert [s["name"] for s in states] == ["gather", "write"]   # duplicate name collapses
-
-
-def test_state_graph_reads_current_phase_and_stages_fallback(tmp_path):
+def test_stage_states_ordered_by_main_md_mention(tmp_path):
+    """The stage modules ARE the states; node order follows where main.md first mentions
+    each module (its Run-flow routing), never-mentioned extras append alphabetically; the
+    desc is the module's leading heading."""
     d = tmp_path / "r"
-    (d / "state").mkdir(parents=True)
-    (d / "stages").mkdir()
-    (d / "stages" / "b-two.md").write_text("x", encoding="utf-8")
+    (d / "stages").mkdir(parents=True)
+    (d / "stages" / "act.md").write_text("# Step: apply the fixes\n…\n", encoding="utf-8")
+    (d / "stages" / "gather.md").write_text("prose without a heading\n", encoding="utf-8")
+    (d / "stages" / "extra.md").write_text("# leftover\n", encoding="utf-8")
+    (d / "main.md").write_text(
+        # the frontmatter's ALPHABETICAL module list must not pose as a first mention
+        "---\nname: R\nmodules:\n- act\n- extra\n- gather\n---\n"
+        "## Standing practices come first in prose\n\n## Run flow\n"
+        "1. `stages/gather.md` — collect.\n2. `stages/act.md` — apply.\n", encoding="utf-8")
+    states = statemap.stage_states(d)
+    assert [s["name"] for s in states] == ["gather", "act", "extra"]
+    assert states[1]["desc"] == "Step: apply the fixes"
+    assert states[0]["desc"] == ""   # no heading — no description
+    # 'act' matched its own mention, not the 'practices' substring (word-ish boundaries)
+    assert statemap.module_rank((d / "main.md").read_text(encoding="utf-8"), "act") \
+        > statemap.module_rank((d / "main.md").read_text(encoding="utf-8"), "gather")
+
+
+def test_stage_states_accepts_older_steps_dir(tmp_path):
+    """Older recipes on disk keep their modules under steps/ (the config-optimizer /
+    self-audit generation) — the graph derives from them all the same."""
+    d = tmp_path / "r"
+    (d / "steps").mkdir(parents=True)
+    (d / "steps" / "orient.md").write_text("# Step: orient\n", encoding="utf-8")
+    (d / "steps" / "record.md").write_text("# Step: record\n", encoding="utf-8")
+    (d / "main.md").write_text(
+        "## Run flow\n1. `steps/orient.md` — look around.\n2. `steps/record.md` — close.\n",
+        encoding="utf-8")
+    assert [s["name"] for s in statemap.stage_states(d)] == ["orient", "record"]
+
+
+def test_state_graph_current_from_latest_run_status(tmp_path):
+    """`current` is the LATEST run's recorded phase (status.json — the stage module the
+    run last read, stamped by the executor); state/phase.json is recipe-private and does
+    not drive the diagram."""
+    d = tmp_path / "r"
+    (d / "stages").mkdir(parents=True)
     (d / "stages" / "a-one.md").write_text("x", encoding="utf-8")
-    (d / "main.md").write_text("# no flow section here", encoding="utf-8")
-    (d / "state" / "phase.json").write_text(json.dumps({"phase": "a-one"}), encoding="utf-8")
+    (d / "stages" / "b-two.md").write_text("x", encoding="utf-8")
+    (d / "main.md").write_text("# no flow prose needed", encoding="utf-8")
+    (d / "state").mkdir()
+    (d / "state" / "phase.json").write_text(json.dumps({"phase": "ignored"}), encoding="utf-8")
+    old = d / "runs" / "20260701-070000"
+    new = d / "runs" / "20260716-070000"
+    for run, phase in ((old, "a-one"), (new, "b-two")):
+        run.mkdir(parents=True)
+        (run / "status.json").write_text(json.dumps({"phase": phase}), encoding="utf-8")
     g = statemap.state_graph(d)
-    assert [s["name"] for s in g["states"]] == ["a-one", "b-two"]   # stages/ fallback
-    assert g["current"] == "a-one"
+    assert [s["name"] for s in g["states"]] == ["a-one", "b-two"]   # alphabetical: unmentioned
+    assert g["current"] == "b-two"
     # missing/broken pieces degrade to empty, never raise
     assert statemap.state_graph(tmp_path / "absent") == {"states": [], "current": ""}
-    (d / "state" / "phase.json").write_text("not json", encoding="utf-8")
+    (new / "status.json").write_text("not json", encoding="utf-8")
     assert statemap.state_graph(d)["current"] == ""
-
-
-def test_state_graph_accepts_state_key(tmp_path):
-    """Recipes that name the current-phase field 'state' (e.g. self-audit) still light up
-    the live diagram — statemap accepts 'phase' OR 'state'."""
-    d = tmp_path / "r"
-    (d / "state").mkdir(parents=True)
-    (d / "main.md").write_text(
-        "## Run flow\n1. **gather** — collect.\n2. **write** — emit.", encoding="utf-8")
-    (d / "state" / "phase.json").write_text(json.dumps({"state": "write"}), encoding="utf-8")
-    assert statemap.state_graph(d)["current"] == "write"
 
 
 def test_norm_matches_loosely():
     assert statemap.norm("Gather Evidence") == statemap.norm("gather-evidence")
-
-
-def test_state_graph_accepts_step_key(tmp_path):
-    """Recipes that name the pointer field 'step' (routine-improver / workflow-curator) light up
-    the diagram too — statemap accepts phase / state / step."""
-    d = tmp_path / "r"
-    (d / "state").mkdir(parents=True)
-    (d / "main.md").write_text(
-        "## Run flow\n1. **orient** — go.\n2. **record** — done.", encoding="utf-8")
-    (d / "state" / "phase.json").write_text(json.dumps({"step": "record"}), encoding="utf-8")
-    assert statemap.state_graph(d)["current"] == "record"
 
 
 def test_outline_extracts_headings_skipping_fences():

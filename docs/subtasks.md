@@ -2,8 +2,8 @@
 
 A run structures its work three ways, and they are deliberately different:
 
-- **Phases** — the milestone states from the routine's own workflow (`state/phase.json`,
-  shown in the state-graph rail). Cross-run, coarse.
+- **Phases** — the routine's own stage modules (`stages/*.md`); the engine tracks which
+  one the run is in from its stage-module reads (shown in the state-graph rail). Coarse.
 - **Subtasks** — a *sequential* decomposition of THIS run's work into ordered steps, each run
   to completion before the next. New in this feature.
 - **Subruns** — *parallel* child routines (`spawn`), running concurrently.

@@ -113,8 +113,10 @@ def test_decisions_inbox_groups(ui, ui_page):
 
 def test_state_graph_shows_phase_instrumentation(ui, ui_page):
     """The run view's state-graph rail shows per-phase turns/tokens/time from the
-    transcript — the instrument panel, not just a highlighted chain."""
-    run_dir = ui.seed_run("uir", "20260715-130000", "finished", summary="done")
+    transcript — the instrument panel, not just a highlighted chain. The current phase
+    is the run's recorded one (status.json), appended as its own node when the routine
+    has no matching stage module."""
+    run_dir = ui.seed_run("uir", "20260715-130000", "finished", summary="done", phase="only")
     events = [
         {"ts": "2026-07-15T10:00:00+00:00", "type": "header",
          "payload": {}, "run_id": "uir:20260715-130000"},
@@ -126,9 +128,6 @@ def test_state_graph_shows_phase_instrumentation(ui, ui_page):
     ]
     (run_dir / "transcript.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-    state_dir = ui.routine_dir("uir") / "state"
-    state_dir.mkdir(exist_ok=True)
-    (state_dir / "phase.json").write_text('{"phase": "only"}', encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-130000")
     node = ui_page.locator(".sg-node", has_text="only")
@@ -137,12 +136,17 @@ def test_state_graph_shows_phase_instrumentation(ui, ui_page):
 
 
 def test_state_graph_marks_skipped_phases(ui, ui_page):
-    """A state the run's phase.json jumped over (no turn ever ran under it) reads
-    'skipped', not checked-off — the diagram never claims work that didn't happen."""
-    run_dir = ui.seed_run("uir", "20260715-133000", "running")
+    """A stage the run jumped over (no turn ever ran under its module) reads 'skipped',
+    not checked-off — the diagram never claims work that didn't happen. Nodes come from
+    the routine's stage modules, in main.md mention order."""
+    run_dir = ui.seed_run("uir", "20260715-133000", "running", phase="act")
+    stages = ui.routine_dir("uir") / "stages"
+    stages.mkdir(exist_ok=True)
+    for name in ("gather", "analyse", "act"):
+        (stages / f"{name}.md").write_text(f"# Step: {name}\n", encoding="utf-8")
     (ui.routine_dir("uir") / "main.md").write_text(
-        "## Run flow\n1. **gather** — g.\n2. **analyse** — a.\n3. **act** — x.\n",
-        encoding="utf-8")
+        "## Run flow\n1. `stages/gather.md` — g.\n2. `stages/analyse.md` — a.\n"
+        "3. `stages/act.md` — x.\n", encoding="utf-8")
     events = [
         {"ts": "2026-07-15T10:00:30+00:00", "type": "assistant_action", "phase": "gather",
          "usage": {"in": 900, "out": 100}, "turn": 1, "payload": {"kind": "util", "say": "x"}},
@@ -151,9 +155,6 @@ def test_state_graph_marks_skipped_phases(ui, ui_page):
     ]
     (run_dir / "transcript.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-    state_dir = ui.routine_dir("uir") / "state"
-    state_dir.mkdir(exist_ok=True)
-    (state_dir / "phase.json").write_text('{"phase": "act"}', encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-133000")
     expect(ui_page.locator(".sg-node", has_text="gather")).to_have_class("sg-node done")

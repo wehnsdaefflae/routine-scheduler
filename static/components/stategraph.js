@@ -1,13 +1,14 @@
-// A routine's state graph as a simple highlighted chain: one node per state parsed from
-// the routine's own main.md (server-side, /stategraph), the CURRENT phase lit up, states
-// before it dimmed as done. setPhase() re-highlights live — the run SSE `state` events
-// carry phase transitions (the engine mirrors state/phase.json writes into status.json).
-// A recorded phase that matches no parsed state is appended as its own node: the diagram
+// A routine's state graph as a simple highlighted chain: one node per stage module
+// (server-side, /stategraph — the modules ARE the states, nothing parsed from prose),
+// the CURRENT phase lit up, states before it dimmed as done. setPhase() re-highlights
+// live — the run SSE `state` events carry phase transitions (the engine stamps the
+// stage module each read_file enters into status.json).
+// A recorded phase that matches no stage module is appended as its own node: the diagram
 // never lies about where the run says it is. With a `statsUrl` (/api/runs/…/phases) each
 // visited node also shows its instrumentation — turns · tokens · wall-clock · cost —
 // refreshed on every phase transition: the rail is the run's instrument panel. A state
-// BEFORE the current one that no turn ever ran under (the run's phase.json jumped over
-// it) is marked "skipped" rather than checked off — passed, not done.
+// BEFORE the current one that no turn ever ran under (the run never read its module)
+// is marked "skipped" rather than checked off — passed, not done.
 
 import { api } from "/static/api.js";
 import { el, fmtCost, fmtDur, fmtNum } from "/static/util.js";
@@ -21,7 +22,7 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
   let phase = "";
   let stats = {};        // norm(phase) → {turns, tokens, cost, elapsed_s}
   let statsLoaded = false;  // only a LOADED stats map can prove a state was skipped
-  let unphased = null;   // turns from before any phase.json write
+  let unphased = null;   // turns from before the run entered any stage
 
   function statsLine(st) {
     const parts = [`${st.turns} turn${st.turns === 1 ? "" : "s"}`];
@@ -35,14 +36,14 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
   function renderInto() {
     box.replaceChildren();
     if (!states.length && !phase) {
-      box.append(el("div", { class: "faint small" }, "no state graph — main.md has no parseable run flow"));
+      box.append(el("div", { class: "faint small" }, "no state graph — this routine has no stage modules"));
       return;
     }
     const cur = norm(phase);
     let idx = states.findIndex((s) => norm(s.name) === cur);
     const rows = [...states];
     if (phase && idx < 0) {          // a phase outside the parsed flow — show it anyway
-      rows.push({ name: phase, desc: "(recorded phase — not in main.md's run flow)" });
+      rows.push({ name: phase, desc: "(recorded phase — not one of the stage modules)" });
       idx = rows.length - 1;
     }
     // Skip detection needs proof the run stamps phases at all — a diagram highlighted
@@ -51,7 +52,7 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
     rows.forEach((s, i) => {
       const st = stats[norm(s.name)];
       // a phase before the current one with no recorded turns was never entered —
-      // the run's phase.json jumped over it (every visited phase stamps ≥1 turn)
+      // the run jumped over its module (every visited phase stamps ≥1 turn)
       const skipped = anyPhased && phase && i < idx && !st;
       const cls = !phase ? "todo" : skipped ? "done skipped"
         : i < idx ? "done" : i === idx ? "current" : "todo";

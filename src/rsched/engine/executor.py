@@ -15,6 +15,7 @@ from .. import utils_lib
 from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, EndpointError, guess_media_type
 from ..ids import is_slug
 from ..paths import resolve_rel
+from ..statemap import MODULE_DIRS
 from .observations import truncate
 from .run_context import RunContext
 
@@ -135,6 +136,13 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
         text = path.read_text(encoding="utf-8", errors="replace")
     except (OSError, PermissionError) as exc:
         return {"path": rel_path, "error": str(exc)}
+    # Reading a stage module IS the run's state transition — every recipe routes by
+    # "read the module for where you are" — so the engine tracks the live phase right
+    # here (→ status.json → the SSE state event) with zero recipe cooperation; the
+    # stage modules are the state graph's nodes (statemap), so the names always match.
+    if (path.suffix == ".md" and path.parent.name in MODULE_DIRS
+            and path.parent.parent == ctx.routine.dir):
+        ctx.phase = path.stem
     lines = text.splitlines()
     start = max(1, int(action.get("start_line") or 1))
     max_lines = min(int(action.get("max_lines") or READ_DEFAULT_MAX_LINES), 500)
@@ -278,19 +286,6 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
     return None
 
 
-def _track_phase(ctx: RunContext, path) -> None:
-    """A write to state/phase.json IS the run's state transition — mirror it into
-    ctx.phase so status.json (written every turn) and the SSE state event carry the
-    live phase; the UI's state-graph diagram updates on it.
-    """
-    if path != ctx.routine.dir / "state" / "phase.json":
-        return
-    from ..statemap import current_phase
-    # a malformed phase file never fails the write that produced it (current_phase → "")
-    if phase := current_phase(ctx.routine.dir):
-        ctx.phase = phase
-
-
 def do_write_file(action: dict, ctx: RunContext) -> dict:
     try:
         roots = ctx.routine.fs_write_roots
@@ -308,7 +303,6 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
                 fh.write(data)
         else:
             path.write_text(data, encoding="utf-8")
-        _track_phase(ctx, path)
     except (OSError, PermissionError) as exc:
         return {"kind": "write_file", "path": action["path"], "error": str(exc)}
     return {"kind": "write_file", "path": action["path"], "bytes": len(data.encode("utf-8")),
@@ -341,7 +335,6 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
         new_text = text.replace(anchor, replacement) if action.get("all") \
             else text.replace(anchor, replacement, 1)
         path.write_text(new_text, encoding="utf-8")
-        _track_phase(ctx, path)
     except (OSError, PermissionError) as exc:
         return {"kind": "edit_file", "path": action["path"], "error": str(exc)}
     return {"kind": "edit_file", "path": action["path"],

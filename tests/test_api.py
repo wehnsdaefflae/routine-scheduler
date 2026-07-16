@@ -139,17 +139,23 @@ def test_file_read_guarded(client):
 
 
 def test_stategraph_endpoint(client):
-    """The routine's state graph parsed from its own main.md + the current phase — what
-    the UI's live diagram renders. Tolerant: the test fixture's flow has no bold names,
-    so states come from wherever the parser can find them."""
+    """The routine's stage modules ARE its state graph — nodes in main.md mention order,
+    the current phase from the latest run's status.json (the stage module the run last
+    read; the executor stamps it)."""
     c, tmp = client
     d = tmp / "routines" / "apir"
+    (d / "stages").mkdir(exist_ok=True)
+    (d / "stages" / "write.md").write_text("# Step: emit\n", encoding="utf-8")
+    (d / "stages" / "gather.md").write_text("collect things\n", encoding="utf-8")
     d.joinpath("main.md").write_text(
-        "## Run flow\n1. **gather** — collect.\n2. **write** — emit.\n", encoding="utf-8")
-    (d / "state").mkdir(exist_ok=True)
-    (d / "state" / "phase.json").write_text('{"phase": "gather"}', encoding="utf-8")
+        "## Run flow\n1. `stages/gather.md` — collect.\n2. `stages/write.md` — emit.\n",
+        encoding="utf-8")
+    run = d / "runs" / "20991231-070000"          # lexically latest, whatever else exists
+    run.mkdir(parents=True, exist_ok=True)
+    (run / "status.json").write_text('{"phase": "gather"}', encoding="utf-8")
     g = c.get("/api/routines/apir/stategraph").json()
     assert [s["name"] for s in g["states"]] == ["gather", "write"]
+    assert g["states"][1]["desc"] == "Step: emit"
     assert g["current"] == "gather"
 
 

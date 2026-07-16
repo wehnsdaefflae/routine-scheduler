@@ -1228,16 +1228,23 @@ def test_own_recipe_writes_blocked_unless_write_root_covers_dir(make_routine, sc
 
 def test_assistant_actions_carry_the_active_phase(make_routine, scripted):
     """Each assistant_action event is stamped with the phase that was active while it was
-    produced — the state-graph rail's per-phase instrumentation derives from this."""
-    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
-        write_file("state/phase.json", content='{"phase": "only"}', say="enter the phase"),
+    produced — reading a stage module IS the transition (the executor stamps it; no
+    recipe bookkeeping) — the state-graph rail's per-phase instrumentation derives from
+    these stamps."""
+    d = make_routine(slug="phased")
+    (d / "stages").mkdir()
+    (d / "stages" / "only.md").write_text("# Step: only\ndo the thing\n", encoding="utf-8")
+    scripted([
+        {"say": "Entering the stage.", "kind": "read_file", "path": "stages/only.md"},
         probe(),
         finish(),
-    ], slug="phased")
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
     assert status == "ok"
+    events, _ = read_events(run_dir / "transcript.jsonl")
     acts = [e for e in events if e["type"] == "assistant_action"]
-    assert "phase" not in acts[0]                  # produced before any phase existed
-    assert acts[1]["phase"] == "only"              # stamped from the write onward
+    assert "phase" not in acts[0]                  # produced before any stage was entered
+    assert acts[1]["phase"] == "only"              # stamped from the read onward
     assert acts[2]["phase"] == "only"
 
 
@@ -1799,15 +1806,20 @@ def test_schema_retry_debris_dropped_after_recovery(make_routine, scripted):
     assert "was not a valid action" not in joined
 
 
-def test_phase_write_tracked_live_in_status(make_routine, scripted):
-    """Writing state/phase.json IS the run's state transition: ctx.phase follows it and
+def test_stage_read_tracked_live_in_status(make_routine, scripted):
+    """Reading a stage module IS the run's state transition: ctx.phase follows it and
     status.json (written every turn) carries the live phase — the state-graph diagram's
-    data path."""
-    _d, _ep, status, run_dir, _ = _run(make_routine, scripted, [
-        write_file("state/phase.json", content={"phase": "measure"}),
+    data path. A phase.json write is recipe-private state and moves nothing."""
+    d = make_routine(slug="statusd")
+    (d / "stages").mkdir()
+    (d / "stages" / "measure.md").write_text("# Step: measure\n", encoding="utf-8")
+    scripted([
+        write_file("state/phase.json", content={"phase": "not-the-signal"}),
+        {"say": "Entering the stage.", "kind": "read_file", "path": "stages/measure.md"},
         probe(),
         finish(),
     ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
     assert status == "ok"
     st = read_json(run_dir / "status.json")
     assert st["phase"] == "measure"

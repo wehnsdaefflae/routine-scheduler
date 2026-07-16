@@ -91,18 +91,19 @@ INSTRUCTION (the task this routine runs):
 
 Translate the workflow's control flow, tailored to the instruction, into markdown files a fresh
 agent will follow one action per turn:
-- "main": the routine's ENTRY (main.md body). A state machine — it tells the run to read
-  `state/phase.json`, then read + follow the current stage's module with read_file, and to RECORD
-  progress by writing the current stage's name into `state/phase.json` (write_file
-  {{"phase": "<stage-name>"}}) as it advances from stage to stage. It keeps a `## Run flow` section
-  and a `## Completion criteria` section. `## Run flow` is a NUMBERED list; every item LEADS with a
-  **bold** stage name that is SPECIFIC to this task (never a generic workflow or function name) and
-  MATCHES a stage filename exactly — these bold names are the live progress diagram the user
-  watches, so make them read as this task's real steps. It names each stage file as
-  `stages/<name>.md`.
+- "main": the routine's ENTRY (main.md body). A state machine — it tells the run to read + follow
+  the current stage's module with read_file, working through the stages in order (the engine
+  derives the run's live position from those reads: reading `stages/<name>.md` marks the run as IN
+  that stage — no progress bookkeeping is needed). Durable state a FUTURE run needs (a lifecycle
+  marker, a cursor) lives in its own `state/` file the stages define. It keeps a `## Run flow`
+  section and a `## Completion criteria` section. `## Run flow` is a NUMBERED list; every item
+  LEADS with a **bold** stage name matching the stage filename and names its file as
+  `stages/<name>.md` — the UI's progress diagram shows the stage modules in the order main.md
+  first mentions them.
 - "stages": one entry per step/state of the workflow (kebab-case `name` + markdown `body`),
-  concrete and specific to THIS task. main.md must reference every stage you create by its name,
-  and its `## Run flow` must list them in order with matching bold names.
+  concrete and specific to THIS task. The FILENAMES are the live progress diagram the user
+  watches, so each must read as this task's real step (never a generic workflow or function
+  name). main.md must reference every stage you create by its `stages/<name>.md` path, in order.
 
 Turn each of the pattern's steps (the `main()` control flow and the functions it calls) into
 concrete prose for THIS task — never leave Python in the output.

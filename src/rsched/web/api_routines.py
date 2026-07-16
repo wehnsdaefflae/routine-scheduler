@@ -194,8 +194,9 @@ def routine_detail(request: Request, slug: str) -> dict:
 
 @router.get("/routines/{slug}/stategraph")
 def stategraph(request: Request, slug: str) -> dict:
-    """The routine's state graph (parsed from its own main.md) + the current phase — the
-    UI's live diagram; phase transitions arrive over the run SSE `state` events.
+    """The routine's state graph (its stage modules, in main.md mention order) + the
+    current phase (the stage module the latest run last read) — the UI's live diagram;
+    phase transitions arrive over the run SSE `state` events.
     """
     from .. import statemap
 

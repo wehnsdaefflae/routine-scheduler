@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.49.0] — 2026-07-16
+
+### Changed
+- **The stage modules ARE the state graph — nothing inferred from prose.** `statemap.py` no
+  longer parses main.md's `## Run flow` for bold state names; the diagram's nodes are the
+  routine's own `stages/*.md` modules (older recipes' `steps/` accepted too), ordered by
+  where main.md first mentions each one, with the module's leading heading as the tooltip.
+  "no parseable run flow" can no longer happen — every routine has stage modules with
+  task-specific names (this fixes the config-optimizer's empty rail).
+- **The live phase is derived from stage-module reads, not phase.json.** Reading
+  `stages/<name>.md` IS the state transition: the executor stamps it into `ctx.phase` →
+  status.json → the SSE `state` event; a resumed run rehydrates the phase from its replayed
+  transcript. `state/phase.json` stays recipe-private state (the digest still shows it) but
+  no longer drives the diagram, and decompose no longer asks recipes to bookkeep it per
+  stage. The routine `/stategraph` endpoint's `current` now comes from the latest run's
+  status.json.
+
 ## [0.48.1] — 2026-07-16
 
 ### Fixed

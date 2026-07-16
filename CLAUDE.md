@@ -87,16 +87,20 @@ the limits (single-writer status.json preserved).
   routine's `tool_call` model when its window fits (machine work; main model is the fallback) and its
   spend is folded into the run's usage. Falls back to the deterministic one-line digest
   (`history.maybe_compact`) on any failure. The on-disk transcript keeps everything regardless.
-- **Phase is live state**: a run's write to `state/phase.json` (write_file or edit_file) is mirrored
-  into `ctx.phase` → status.json (every turn) → the run SSE `state` event, which also fires on phase
-  change. `statemap.py` parses the routine's own main.md (`## Run flow` bold leads — the TASK-SPECIFIC state names decompose emits; stages/ filenames as fallback)
-  into the UI's state-graph diagram (`/stategraph` endpoints, `static/components/stategraph.js` —
-  rendered in the run view's rail and the conversation artifact rail, current phase highlighted live).
-  Every `assistant_action` transcript event is stamped with the ACTIVE phase, so the rail is also an
-  instrument panel: `statemap.phase_stats` (served at `/api/runs/<id>/phases`) derives per-phase
-  turns / tokens / cost / wall-clock from the transcript — dispatch time lands on the acting phase,
-  completion time on the phase that produced the next action; a state the run's phase.json jumped
-  over (zero recorded turns) renders as `skipped`, never a positional ✓. The sibling read-model
+- **Phase is derived, never bookkept**: the stage modules ARE the states — `statemap.py` builds the
+  UI's state-graph diagram from the routine's own `stages/*.md` (older recipes on disk: `steps/`),
+  in main.md first-mention order (nothing parsed from prose, so every routine has a diagram), and
+  the engine tracks the run's live position from its stage-module READS: a `read_file` of
+  `stages/<name>.md` stamps `ctx.phase` (executor) → status.json (every turn) → the run SSE `state`
+  event, which also fires on phase change (`/stategraph` endpoints,
+  `static/components/stategraph.js` — rendered in the run view's rail and the conversation artifact
+  rail, current phase highlighted live). `state/phase.json` stays recipe-private state (the digest
+  shows it); it does NOT drive the diagram. Every `assistant_action` transcript event is stamped
+  with the ACTIVE phase, so the rail is also an instrument panel: `statemap.phase_stats` (served at
+  `/api/runs/<id>/phases`) derives per-phase turns / tokens / cost / wall-clock from the
+  transcript — dispatch time lands on the acting phase, completion time on the phase that produced
+  the next action; a stage the run jumped over (zero recorded turns) renders as `skipped`, never a
+  positional ✓. The sibling read-model
   `fileactivity.py` (`/api/runs/<id>/files` → `components/fileactivity.js`) derives per-file
   read/write/edit counts from the same transcript's OBSERVATION events — so subruns and user slash
   commands count — feeding the rail's files card on the run view and the conversation.

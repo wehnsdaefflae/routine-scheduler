@@ -7,7 +7,6 @@ composed in composer.py.
 from __future__ import annotations
 
 from ..paths import read_json
-from ..statemap import current_phase
 from . import executor, inbox
 from .composer import build_system_prompt, kickoff_message, state_digest
 from .control import inject_user_message, run_user_command
@@ -25,8 +24,6 @@ def boot(loop) -> None:
     else:
         msgs = []
         digest = "(subrun — no routine state digest; everything you need is in the instruction)"
-    if phase := current_phase(ctx.routine.dir):
-        ctx.phase = phase
     resuming = loop.resume and ctx.depth == 0
     # slash commands queued while no run was live EXECUTE at boot (below) — only prose
     # messages become the prompt's MESSAGES section
@@ -41,6 +38,9 @@ def boot(loop) -> None:
         loop.messages = [{"role": "system", "content": system}, *replayed]
         loop.turn_records = records
         ctx.turn = last_turn
+        # rehydrate the live phase: the last phased action's stamp is the stage module
+        # the run was in when it left off (the executor stamps stage-module reads)
+        ctx.phase = next((str(e["phase"]) for e in reversed(events) if e.get("phase")), "")
         ctx.budget_base_turn = last_turn        # a fresh budget window from the resume point
         # reporting stays cumulative even though the budget window is fresh — without
         # this base, status.json shows only the last leg of a resumed run

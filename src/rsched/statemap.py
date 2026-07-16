@@ -1,13 +1,14 @@
-"""The routine's state graph, derived from its own recipe — for the UI's live diagram.
+"""The routine's state graph, derived from its stage modules — for the UI's live diagram.
 
-A materialized main.md carries its control flow as a `## Run flow` numbered list (older
-recipes may use a `## Phases` bullet list) whose items lead with a **bold** state name.
-`state_graph` parses those states and pairs them with the routine's CURRENT phase
-(`state/phase.json`, mirrored live into status.json by the engine) so the web layer can
-render a simple highlighted chain. Parsing is tolerant by design: recipes are prose owned
-by the routine, not a schema — a flow with no parseable state names yields the stages/
-module names (each stage IS a node), and an unknown current phase is simply appended as
-its own node client-side.
+A routine's stages/ modules (older recipes on disk: steps/) ARE its states: decompose
+already maps the abstract workflow onto task-specific module names at creation, so there
+is nothing to infer from prose — every routine with stage modules has a diagram,
+unconditionally. Node order is main.md's own routing: modules sort by where main.md first
+mentions them (its `## Run flow` list references each one); unmentioned extras sort last,
+alphabetically. The CURRENT node is the engine's live phase — the stage module the run
+last read (the executor stamps it into ctx.phase → status.json → the run SSE `state`
+event) — so a recipe owes the diagram nothing; its state/phase.json remains a private
+state file (the digest shows it), not a UI contract.
 """
 
 from __future__ import annotations
@@ -17,14 +18,11 @@ import re
 from pathlib import Path
 
 MAX_STATES = 16
+MODULE_DIRS = ("stages", "steps")   # canonical name + the older generation still on disk
 
-# "1. **name** — desc" / "- **name**: desc" / "2) **name**" … — the canonical shape.
-_BOLD_ITEM = re.compile(r"^\s*(?:\d+[.)]|[-*])\s+\*\*(.+?)\*\*\s*[—:–-]?\s*(.*)$")
-# plain "1. name — desc" (no bold), the fallback shape inside a Run flow list. The name is
-# held to a short word-ish token (letters/digits/space/underscore/hyphen) so a line of PROSE
-# — "1. Read `state/phase.json` (…)" — never scrapes into a junk node; such recipes fall
-# through to the stages/ listing instead.
-_PLAIN_ITEM = re.compile(r"^\s*\d+[.)]\s+([A-Za-z][A-Za-z0-9 _-]{0,40}?)\s*[—:]\s*(.*)$")
+# main.md's YAML frontmatter carries an ALPHABETICAL module list (scaffold provenance) —
+# strip it before ranking mentions, or it would pose as every module's first mention.
+_FRONTMATTER = re.compile(r"\A---\s*\n.*?\n---\s*\n", re.DOTALL)
 
 
 def norm(name: str) -> str:
@@ -32,51 +30,77 @@ def norm(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", str(name).lower()).strip("-")
 
 
-def _section(md: str, *titles: str) -> list[str]:
-    """Lines of the first `## <title>` section that exists (case-insensitive)."""
-    lines = md.splitlines()
-    for title in titles:
-        out: list[str] | None = None
-        for line in lines:
-            if re.match(rf"^##\s+{re.escape(title)}\s*$", line.strip(), re.IGNORECASE):
-                out = []
-                continue
-            if out is not None:
-                if line.startswith("## "):
-                    break
-                out.append(line)
-        if out:
-            return out
-    return []
+def module_dir(routine_dir: Path) -> Path | None:
+    """The routine's stage-module dir — stages/ (canonical) or steps/ (older recipes)."""
+    for name in MODULE_DIRS:
+        d = routine_dir / name
+        if d.is_dir():
+            return d
+    return None
 
 
-def parse_states(main_md: str) -> list[dict]:
-    """[{name, desc}] in flow order — from ## Run flow (or ## Phases) item leads."""
-    states: list[dict] = []
-    seen: set[str] = set()
-    for line in _section(main_md, "Run flow", "Phases"):
-        m = _BOLD_ITEM.match(line) or _PLAIN_ITEM.match(line)
-        if not m:
-            continue
-        name = m.group(1).strip().strip("`")
-        key = norm(name)
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        states.append({"name": name, "desc": m.group(2).strip().rstrip(".")[:160]})
-        if len(states) >= MAX_STATES:
-            break
-    return states
+def module_rank(main_md: str, stem: str) -> tuple[int, int]:
+    """Where main.md first references the module — the flow order without parsing any
+    prose shape. Its `<stem>.md` FILE reference is the strongest signal (recipes route
+    by file; intro prose only name-drops bare names), so it outranks the first word-ish
+    plain mention. Word-ish boundaries keep a short stem from matching inside a longer
+    one (`act` never matches `practices` or `act-apply-fixes`). Never-mentioned modules
+    sort after every mentioned one.
+    """
+    body = _FRONTMATTER.sub("", main_md, count=1).lower()
+    esc = re.escape(stem.lower())
+    if m := re.search(rf"(?<![a-z0-9-]){esc}\.md", body):
+        return (0, m.start())
+    if m := re.search(rf"(?<![a-z0-9-]){esc}(?![a-z0-9-])", body):
+        return (1, m.start())
+    return (2, 0)
+
+
+def _first_heading(path: Path) -> str:
+    """The module's leading `# …` heading — the node's tooltip description."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        if m := _HEADING.match(line):
+            return m.group(2).strip().strip("`")[:160]
+        if line.strip():
+            return ""   # prose before any heading — no description
+    return ""
+
+
+def stage_states(routine_dir: Path) -> list[dict]:
+    """[{name, desc}] — one node per stage module, in main.md first-mention order."""
+    d = module_dir(routine_dir)
+    if d is None:
+        return []
+    try:
+        main_md = (routine_dir / "main.md").read_text(encoding="utf-8")
+    except OSError:
+        main_md = ""
+    files = sorted(d.glob("*.md"), key=lambda p: (module_rank(main_md, p.stem), p.stem))
+    return [{"name": p.stem, "desc": _first_heading(p)} for p in files[:MAX_STATES]]
 
 
 def current_phase(routine_dir: Path) -> str:
+    """The latest run's recorded phase (status.json `phase` — the stage module the run
+    last read). The routine-level graph's initial highlight; live transitions ride the
+    run SSE `state` events, which carry the same field.
+    """
+    runs = routine_dir / "runs"
     try:
-        data = json.loads((routine_dir / "state" / "phase.json").read_text(encoding="utf-8"))
+        latest = max((p for p in runs.iterdir()
+                      if p.is_dir() and (p / "status.json").is_file()), default=None)
+    except OSError:
+        return ""
+    if latest is None:
+        return ""
+    try:
+        data = json.loads((latest / "status.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return ""
-    # recipes name the current-phase field "phase" (canonical), "state", or "step" — accept any
-    return (str(data.get("phase") or data.get("state") or data.get("step") or "")
-            if isinstance(data, dict) else "")
+    return str(data.get("phase") or "") if isinstance(data, dict) else ""
 
 
 def phase_stats(run_dir: Path) -> list[dict]:
@@ -124,20 +148,11 @@ def phase_stats(run_dir: Path) -> list[dict]:
 
 
 def state_graph(routine_dir: Path) -> dict:
-    """{states: [{name, desc}], current: str} for one routine/conversation dir. `current`
-    is the raw recorded phase — the client matches it against states via norm().
+    """{states: [{name, desc}], current: str} for one routine dir — the stage modules +
+    the live phase. `current` is the raw recorded phase — the client matches it against
+    states via norm().
     """
-    try:
-        md = (routine_dir / "main.md").read_text(encoding="utf-8")
-    except OSError:
-        md = ""
-    states = parse_states(md)
-    if not states:  # no parseable flow leads → the stage modules ARE the map (each a node)
-        stages = routine_dir / "stages"
-        if stages.is_dir():
-            states = [{"name": p.stem, "desc": ""}
-                      for p in sorted(stages.glob("*.md"))][:MAX_STATES]
-    return {"states": states, "current": current_phase(routine_dir)}
+    return {"states": stage_states(routine_dir), "current": current_phase(routine_dir)}
 
 
 _HEADING = re.compile(r"^(#{1,4})\s+(.+?)\s*$")
@@ -164,8 +179,8 @@ def outline(md_text: str) -> list[dict]:
 
 def recipe_tree(routine_dir: Path) -> dict:
     """The routine's recipe as a navigable tree for the routine page: main.md + its stage modules
-    (in ## Run flow order, any extras appended alphabetically) + trait modules, each with its
-    heading outline. Purely a read-model over the routine's own files.
+    (in main.md first-mention order, unmentioned extras appended alphabetically) + trait modules,
+    each with its heading outline. Purely a read-model over the routine's own files.
     """
     def _read(p: Path) -> str:
         try:
@@ -174,13 +189,6 @@ def recipe_tree(routine_dir: Path) -> dict:
             return ""
 
     main_md = _read(routine_dir / "main.md")
-    order = [norm(s["name"]) for s in parse_states(main_md)]
-
-    def _rank(p: Path) -> int:
-        try:
-            return order.index(norm(p.stem))
-        except ValueError:
-            return len(order) + 1  # extras (no flow entry) sort after the flow, then alphabetically
 
     def _entry(p: Path) -> dict:
         return {"path": str(p.relative_to(routine_dir)), "name": p.stem,
@@ -190,7 +198,9 @@ def recipe_tree(routine_dir: Path) -> dict:
         d = routine_dir / sub
         return sorted(d.glob("*.md")) if d.is_dir() else []
 
-    stage_files = sorted(_files("stages"), key=lambda p: (_rank(p), p.stem))
+    stages = module_dir(routine_dir)
+    stage_files = sorted(stages.glob("*.md") if stages else [],
+                         key=lambda p: (module_rank(main_md, p.stem), p.stem))
     return {
         "main": {"path": "main.md", "name": "main", "outline": outline(main_md)},
         "stages": [_entry(p) for p in stage_files],

@@ -81,7 +81,7 @@ META = {
     "tools": None,   # or a list restricting action kinds ("finish" is always allowed)
 }
 
-PHASES = ["bootstrap", "steady", "wrap-up"]       # tracked in state/phase.json
+PHASES = ["bootstrap", "steady", "wrap-up"]       # the cross-run progression
 COMPLETION = "per run: a concrete increment, a LEDGER entry, everything committed"
 
 def main():
@@ -95,7 +95,9 @@ Rules of the form:
   They resolve to nothing; they are the pattern's parameter contract.
 - **`META`** must be a literal dict; `tools:` restricts which action kinds materialized
   routines may use (how `clarify-instruction` is held to ask/read/write/finish).
-- **`PHASES` / `COMPLETION`** are literals; phases become the state-graph the UI renders.
+- **`PHASES` / `COMPLETION`** are literals; PHASES names the cross-run progression (the
+  UI's state graph itself comes from the materialized routine's stage modules — the
+  engine tracks the run's live position from its stage-module reads).
 - One top-level `main()` whose body is the per-run control flow; one function per step.
 
 `workflows/lint.py` gates every save (the Library editor shows the findings inline). A

@@ -89,7 +89,8 @@ def test_routine_seed_stage_references_resolve(seed):
 @pytest.mark.parametrize("md", SEED_MD, ids=_ids(SEED_MD))
 def test_seed_phase_instructions_use_canonical_shape(md):
     """A recipe telling the run to write state/phase.json must show the canonical
-    {"phase": ...} shape (or {} to reset) — statemap and the live rail key off it."""
+    {"phase": ...} shape (or {} to reset) — the state digest's Current-phase line keys
+    off it (the LIVE diagram doesn't: the engine tracks stage-module reads instead)."""
     problems = []
     for i, line in enumerate(md.read_text(encoding="utf-8").splitlines(), 1):
         # only whole-file assignments count: `state/phase.json = {...}` (subkey updates and
