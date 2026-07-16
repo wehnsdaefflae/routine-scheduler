@@ -191,10 +191,11 @@ async def _build_routine(app_state, wid: str, d: Path, body: FinalizeBody, resul
         # so this runs off-loop)
         provenance = routine_dir / "state" / "wizard"
         provenance.mkdir(parents=True, exist_ok=True)
-        ts = wizard_store.latest_run_ts(d)
-        if ts and (d / "runs" / ts / "transcript.jsonl").exists():
+        ts = wizard_store.read_meta(d).get("run_ts") or wizard_store.latest_run_ts(d)
+        rd = wizard_store.clarify_run_dir(server, d, ts) if ts else None
+        if rd is not None and (rd / "transcript.jsonl").exists():
             (provenance / "clarify-transcript.jsonl").write_bytes(
-                (d / "runs" / ts / "transcript.jsonl").read_bytes())
+                (rd / "transcript.jsonl").read_bytes())
 
     await asyncio.to_thread(keep_provenance)
     scheduler.rescan()

@@ -56,11 +56,12 @@ async def wizard_cancel(request: Request, wid: str) -> dict:
     if proc is not None and proc.returncode is None:
         with contextlib.suppress(ProcessLookupError):
             proc.terminate()
-    ts = (sess or {}).get("run_ts") or wizard_store.latest_run_ts(d)
-    if ts and (d / "runs" / ts).is_dir():
-        st = read_json(d / "runs" / ts / "status.json")
-        await abort_process(st.get("pid") if isinstance(st, dict) else None,
-                            d / "runs" / ts, f"{wid}:{ts}")
+    ts = ((sess or {}).get("run_ts") or wizard_store.read_meta(d).get("run_ts")
+          or wizard_store.latest_run_ts(d))
+    rd = wizard_store.clarify_run_dir(request.app.state.server, d, ts) if ts else None
+    if rd is not None and rd.is_dir():
+        st = read_json(rd / "status.json")
+        await abort_process(st.get("pid") if isinstance(st, dict) else None, rd, f"{wid}:{ts}")
     await asyncio.to_thread(wizard_store.archive_session, request.app.state.server.routines_home,
                             d, f"{wid.lstrip('.')}-canceled")
     if (c := _center(request.app.state)) is not None:
@@ -84,8 +85,12 @@ async def start(request: Request, body: StartBody) -> dict:
     server = request.app.state.server
     # session creation is all disk writes plus a full library read (candidates) — off the loop
     wid, ts, d = await asyncio.to_thread(wizard_store.create_session, server, body.draft)
+    run_dir = wizard_store.clarify_run_dir(server, d, ts)
+    cmd = [sys.executable, "-m", "rsched.cli", "engine-run", str(d), "--run-ts", ts]
+    if run_dir != d / "runs" / ts:   # a REAL clarification run (D13=B): artifacts live there
+        cmd += ["--run-dir", str(run_dir)]
     proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "rsched.cli", "engine-run", str(d), "--run-ts", ts,
+        *cmd,
         stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
         start_new_session=True, cwd=str(d))
     sess = {"proc": proc, "run_ts": ts, "dir": d}
@@ -94,7 +99,7 @@ async def start(request: Request, body: StartBody) -> dict:
                        label=f"Create routine: {body.draft.strip()[:50]}")
         # tail the clarify subprocess's sidecar → its turns become children of the create process
         sess["tailer"] = asyncio.create_task(tail_llm_sidecar(
-            d / "runs" / ts, _wizard_recorder(c, _wizard_pid(wid), f"{wid}:{ts}")))
+            run_dir, _wizard_recorder(c, _wizard_pid(wid), f"{wid}:{ts}")))
     wizard_store.sessions(request.app.state)[wid] = sess
     return {"wid": wid, "run_ts": ts}
 

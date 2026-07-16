@@ -89,6 +89,17 @@ def latest_run_ts(d: Path) -> str | None:
     return runs[-1].name if runs else None
 
 
+def clarify_run_dir(server, d: Path, ts: str) -> Path:
+    """Where a session's clarify run lives. New sessions land it under the REAL clarification
+    routine — `routines_home/clarification/runs/<ts>` — so the run has a valid
+    `clarification:<ts>` id and every standard run surface (run page, SSE tail, registry,
+    orphan recovery) applies with no bridge (D13=B). Legacy sessions, and deploys the
+    template has not reached, keep the run session-local under `<session>/runs/<ts>`.
+    """
+    real = server.routines_home / TEMPLATE_SLUG / "runs" / ts
+    return real if real.is_dir() else d / "runs" / ts
+
+
 def draft_preview(d: Path) -> str:
     try:
         text = (d / "instruction.md").read_text(encoding="utf-8").strip()
@@ -119,8 +130,8 @@ def snapshot(app_state, d: Path) -> dict:
     has_result = isinstance(result, dict) and bool(result.get("refined_instruction"))
     ts = ((sessions(app_state).get(d.name) or {}).get("run_ts") or meta.get("run_ts")
           or latest_run_ts(d))
-    run = (registry.read_run(d / "runs" / ts, d.name.lstrip("."))
-           if ts and (d / "runs" / ts).is_dir() else None)
+    rd = clarify_run_dir(app_state.server, d, ts) if ts else None
+    run = registry.read_run(rd, d.name.lstrip(".")) if rd is not None and rd.is_dir() else None
     state = run.state if run else "unknown"
     stage = "suggest" if has_result else ("error" if state in registry.TERMINAL_STATES else "chat")
     # Only meaningful while clarifying — a DEAD pid there means the session is stuck (needs
@@ -223,7 +234,10 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
         # the template's practice modules ride into every session (traits are files, not yaml)
         shutil.copytree(tpl / "traits", d / "traits", dirs_exist_ok=True)
     atomic_write(d / "routine.yaml", yaml.safe_dump({
-        "name": "New-routine wizard", "slug": f"wizard-{ts}", "enabled": False,
+        # With the template present the session IS a clarification run: the engine composes
+        # run_id from this slug, so status/transcript/usage all stamp `clarification:<ts>`.
+        "name": "New-routine wizard",
+        "slug": TEMPLATE_SLUG if tpl is not None else f"wizard-{ts}", "enabled": False,
         "description": "New-routine clarification wizard session.",
         "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
         "workflow": {"library_slug": "clarify-instruction", "library_commit": commit},
@@ -240,9 +254,12 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
     write_candidates(server, d)   # the workflow patterns the clarifier suggests + marries against
     # An initial status so the client sees "starting" while the engine decomposes then runs — the
     # engine takes over ownership of status.json once it boots.
-    (d / "runs" / ts).mkdir(parents=True, exist_ok=True)
-    atomic_write_json(d / "runs" / ts / "status.json",
-                      {"run_id": f"{wid}:{ts}", "state": "starting", "started": ts,
+    run_dir = ((server.routines_home / TEMPLATE_SLUG / "runs" / ts) if tpl is not None
+               else d / "runs" / ts)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": f"{TEMPLATE_SLUG if tpl is not None else wid}:{ts}",
+                       "state": "starting", "started": ts,
                        "updated": now_iso(), "turn": 0, "question": None,
                        "usage": {"in": 0, "out": 0}})
     return wid, ts, d

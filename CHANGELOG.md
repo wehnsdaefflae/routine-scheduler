@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.58.0] — 2026-07-16
+
+### Changed
+- **Clarify sessions are now REAL runs of the `clarification` routine** (self-audit D13=B,
+  first slice). `wizard_store.create_session` lands the run at
+  `routines_home/clarification/runs/<ts>` — a valid `clarification:<ts>` run id with no
+  dotfile bridge — and stamps the session's `routine.yaml` with the clarification slug so
+  the engine composes that id in status/transcript/usage. `engine-run` gained a `--run-dir`
+  override (artifact dir decoupled from the throwaway session workspace, which stays
+  hidden as before); `_clarify_run_dir`, cancel/abort, the LLM-sidecar tailer and
+  finalize's provenance copy all resolve through the new `wizard_store.clarify_run_dir`.
+  Standard run surfaces now apply to clarify chats: the run page (`#/run/clarification:<ts>`),
+  SSE tail, transcript paging, registry/dashboard listing, and orphan recovery. Legacy
+  sessions and deploys without the template keep the old session-local layout (fallback).
+  Remaining slices: run-page panels replacing wizard.js/wizard-create.js, and routing
+  run-page *inject* to the session workspace inbox.
+
 ## [0.57.2] — 2026-07-16
 
 ### Fixed

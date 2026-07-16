@@ -142,11 +142,12 @@ def cmd_engine_run(args) -> int:
     routine_dir = _routine_dir(server, args.routine)
     # LLM task manager: this subprocess can't reach the daemon bus, so every instrumented
     # complete() appends a lifecycle record to a sidecar the daemon tails and republishes.
+    run_dir = Path(args.run_dir) if getattr(args, "run_dir", None) else None
     if args.run_ts:
-        set_sink(FileSink(routine_dir / "runs" / args.run_ts / "llm-tasks.jsonl"))
+        set_sink(FileSink((run_dir or routine_dir / "runs" / args.run_ts) / "llm-tasks.jsonl"))
     signal.signal(signal.SIGTERM, lambda *_: request_abort())
     try:
-        status, _ = run_routine(routine_dir, server, run_ts=args.run_ts,
+        status, _ = run_routine(routine_dir, server, run_ts=args.run_ts, run_dir=run_dir,
                                 resume_from=args.run_ts if getattr(args, "resume", False) else None)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -312,6 +313,9 @@ def main(argv: list[str] | None = None) -> int:
     e = sub.add_parser("engine-run", help="internal: run a routine (spawned by the daemon)")
     e.add_argument("routine")
     e.add_argument("--run-ts", required=True)
+    e.add_argument("--run-dir", help="artifact dir override: the run lives here instead of "
+                                     "<routine>/runs/<run-ts> (clarify sessions land their run "
+                                     "under the real 'clarification' routine)")
     e.add_argument("--resume", action="store_true",
                    help="rehydrate the run's transcript and continue it")
     e.set_defaults(fn=cmd_engine_run)

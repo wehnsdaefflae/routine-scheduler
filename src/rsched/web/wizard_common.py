@@ -50,7 +50,8 @@ def _wizard_dir(request: Request, wid: str) -> Path:
 def _clarify_run_dir(request: Request, wid: str) -> Path:
     d = _wizard_dir(request, wid)
     sess = wizard_store.sessions(request.app.state).get(wid) or {}
-    ts = sess.get("run_ts") or wizard_store.latest_run_ts(d)
+    ts = (sess.get("run_ts") or wizard_store.read_meta(d).get("run_ts")
+          or wizard_store.latest_run_ts(d))
     if ts is None:
         raise HTTPException(404, "wizard session has no run")
-    return d / "runs" / ts
+    return wizard_store.clarify_run_dir(request.app.state.server, d, ts)

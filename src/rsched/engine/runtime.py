@@ -89,11 +89,14 @@ def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:
 
 def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None = None,
                 model_overrides: dict | None = None, on_event=None,
-                resume_from: str | None = None) -> tuple[str, Path]:
+                resume_from: str | None = None, run_dir: Path | None = None) -> tuple[str, Path]:
     """Execute one run of the routine at routine_dir. Returns (final status, run dir).
     on_event(obj) is called for every transcript event (used by `rsched run-once`). When
     resume_from is a prior run's ts, that run dir is reused and its transcript is rehydrated
     into the prompt so the run continues where it left off (with a fresh budget window).
+    run_dir overrides the default `<routine_dir>/runs/<ts>` artifact location — the wizard's
+    clarify sessions run their hidden throwaway workspace but land the run itself under the
+    real `clarification` routine, so it has a valid run id and the standard run surfaces.
     """
     cfg, problems = load_routine(routine_dir)
     if cfg is None:
@@ -105,7 +108,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
         cfg.models.update(model_overrides)
     registry = EndpointRegistry(server)
     ts = resume_from or run_ts or make_run_ts()
-    run_dir = routine_dir / "runs" / ts
+    run_dir = run_dir or routine_dir / "runs" / ts
     if resume_from and not run_dir.is_dir():
         raise RuntimeError(f"cannot resume {ts}: run dir not found")
     run_dir.mkdir(parents=True, exist_ok=True)
