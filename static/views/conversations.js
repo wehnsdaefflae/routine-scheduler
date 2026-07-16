@@ -22,6 +22,7 @@ import { busy, chip, el, emptyState, relTime, storage, toast } from "/static/uti
 import { followScroll } from "/static/follow.js";
 import { enabled as notifyEnabled } from "/static/notify.js";
 import { TERMINAL, WORKING } from "/static/states.js";
+import { mdInline } from "/static/md.js";
 
 const PREFILL_KEY = "conv-new-prefill";
 

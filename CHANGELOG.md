@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.46.1] — 2026-07-16
+
+### Fixed
+- **Conversations view: `mdInline` was used but never imported.** `static/views/conversations.js`
+  called `mdInline(q.question)` when rendering a deferred question (`showQuestion`) without
+  importing it from `/static/md.js`, so the deferred-question box crashed the render with
+  `ReferenceError: mdInline is not defined` (observed twice in `.ui-traces` on 2026-07-15).
+  Added the missing import. A new static-analysis test (`tests/test_static_imports.py`) now
+  asserts every `static/**/*.js` that calls `md()`/`mdInline()` imports it from `/static/md.js`,
+  so the console's no-build ES modules can't ship this ReferenceError class again.
+
 ## [0.46.0] — 2026-07-16
 
 ### Changed
