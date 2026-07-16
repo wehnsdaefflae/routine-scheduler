@@ -407,8 +407,24 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   font-weight: 600;
 }
 .sg-node.current .sg-dot { color: var(--amber); }
+.sg-node.skipped .sg-dot, .sg-node.skipped .sg-stats { color: var(--faint); font-style: italic; }
 .sg-link { width: 1px; height: 10px; background: var(--line-2); margin-left: 10px; }
 .sg-link.done { background: var(--live); opacity: 0.5; }
+
+/* file activity (run rail + conversation artifact rail): which files the run read/wrote —
+   paths truncate LEFT (rtl trick) so the filename end stays visible */
+.filelist { display: flex; flex-direction: column; gap: 1px; font-family: var(--sans); }
+.file-row {
+  display: flex; align-items: baseline; gap: 8px; font-size: 11.5px; color: var(--muted);
+  padding: 1px 4px; min-width: 0;
+}
+.file-row .file-path {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  direction: rtl; text-align: left;
+}
+.file-row .file-ops { margin-left: auto; padding-left: 8px; color: var(--faint);
+  font-size: 10.5px; white-space: nowrap; }
+.file-row.err .file-ops { color: var(--err); }
 
 /* the recursive task tree: sequential subtasks (→) + parallel subruns (⇉), each with a
    per-node turn-budget meter (amber ≥85%, red over) and its children nested */

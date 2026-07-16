@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.48.0] — 2026-07-16
+
+### Added
+- **File-activity rail card** (user order): the run view and the conversation view now show
+  which files a run read / wrote / edited — per-path counts derived server-side from the
+  transcript's observation events (`GET /api/runs/{id}/files`, `rsched/fileactivity.py`),
+  so subruns and user slash commands count too. Rows are first-touched order, long paths
+  truncate on the left, failed touches are flagged; the card live-refreshes off the SSE
+  tail (bursts coalesced into one refetch).
+
+### Changed
+- **State graph marks skipped phases**: a state the run's `phase.json` jumped over (no turn
+  ever recorded under it) now renders `» skipped` instead of a ✓ — previously the checkmark
+  was purely positional, claiming work that never happened. Detection requires the run to
+  stamp phases at all, so a conversation's synthetic reply-cycle diagram is unaffected.
+
 ## [0.47.0] — 2026-07-16
 
 ### Changed

@@ -5,7 +5,9 @@
 // A recorded phase that matches no parsed state is appended as its own node: the diagram
 // never lies about where the run says it is. With a `statsUrl` (/api/runs/…/phases) each
 // visited node also shows its instrumentation — turns · tokens · wall-clock · cost —
-// refreshed on every phase transition: the rail is the run's instrument panel.
+// refreshed on every phase transition: the rail is the run's instrument panel. A state
+// BEFORE the current one that no turn ever ran under (the run's phase.json jumped over
+// it) is marked "skipped" rather than checked off — passed, not done.
 
 import { api } from "/static/api.js";
 import { el, fmtCost, fmtDur, fmtNum } from "/static/util.js";
@@ -18,6 +20,7 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
   let states = [];
   let phase = "";
   let stats = {};        // norm(phase) → {turns, tokens, cost, elapsed_s}
+  let statsLoaded = false;  // only a LOADED stats map can prove a state was skipped
   let unphased = null;   // turns from before any phase.json write
 
   function statsLine(st) {
@@ -42,14 +45,24 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
       rows.push({ name: phase, desc: "(recorded phase — not in main.md's run flow)" });
       idx = rows.length - 1;
     }
+    // Skip detection needs proof the run stamps phases at all — a diagram highlighted
+    // synthetically (a conversation's reply cycle) must not read as skipped work.
+    const anyPhased = statsLoaded && Object.keys(stats).length > 0;
     rows.forEach((s, i) => {
-      const cls = !phase ? "todo" : i < idx ? "done" : i === idx ? "current" : "todo";
       const st = stats[norm(s.name)];
-      box.append(el("div", { class: `sg-node ${cls}`, title: s.desc || s.name },
-        el("span", { class: "sg-dot" }, i === idx && phase ? "●" : i < idx && phase ? "✓" : "○"),
+      // a phase before the current one with no recorded turns was never entered —
+      // the run's phase.json jumped over it (every visited phase stamps ≥1 turn)
+      const skipped = anyPhased && phase && i < idx && !st;
+      const cls = !phase ? "todo" : skipped ? "done skipped"
+        : i < idx ? "done" : i === idx ? "current" : "todo";
+      box.append(el("div", { class: `sg-node ${cls}`,
+        title: skipped ? "skipped — the run recorded no turns in this phase" : s.desc || s.name },
+        el("span", { class: "sg-dot" }, i === idx && phase ? "●"
+          : skipped ? "»" : i < idx && phase ? "✓" : "○"),
         el("span", { class: "sg-name" }, s.name),
         st ? el("span", { class: "sg-stats", title: "this phase so far: turns · tokens · wall-clock · cost" },
-          statsLine(st)) : null));
+          statsLine(st))
+           : skipped ? el("span", { class: "sg-stats" }, "skipped") : null));
       if (i < rows.length - 1) box.append(el("div", { class: `sg-link ${i < idx ? "done" : ""}` }));
     });
     if (unphased?.turns) {
@@ -67,6 +80,7 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
         if (p.phase) stats[norm(p.phase)] = p;
         else unphased = p;
       }
+      statsLoaded = true;
     } catch { return; /* instrumentation is decoration — never break the diagram */ }
     renderInto();
   }

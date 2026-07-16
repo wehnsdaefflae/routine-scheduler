@@ -78,7 +78,8 @@ tree of sequential subtasks (→) and parallel subruns (⇉), each a node with a
 workflow pattern, and a per-node turn-budget meter (amber ≥85%, red over), children nested. It is
 a read-model over the on-disk `sub/` transcripts — live while the run runs. In the transcript,
 each child unfolds in place; `run-once` prints the same tree as `↳ subtask …` / `↰ subtask …`
-lines.
+lines. The rails' **files** card folds children in too: a path a subtask read or wrote counts
+into the parent run's per-file rows, marked `↳`.
 
 ## Resume
 

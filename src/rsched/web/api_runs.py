@@ -107,6 +107,17 @@ def run_phases(request: Request, run_id: str) -> dict:
     return {"phases": phase_stats(run_dir)}
 
 
+@router.get("/runs/{run_id}/files")
+def run_files(request: Request, run_id: str) -> dict:
+    """Which files the run read and wrote — per-path counts derived from the transcript
+    (subruns and user slash commands included) — the rail's file-activity card.
+    """
+    from ..fileactivity import file_activity
+
+    _, run_dir = _run_dir(request, run_id)
+    return {"files": file_activity(run_dir)}
+
+
 @router.get("/runs/{run_id}/tree")
 def run_tree(request: Request, run_id: str) -> dict:
     """The recursive task tree: this run's sequential subtasks + parallel subruns, each a node

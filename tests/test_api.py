@@ -204,6 +204,19 @@ def test_runs_and_transcript(client):
     assert c.get("/api/runs/garbage/transcript").status_code == 400
 
 
+def test_run_files_endpoint(client):
+    """/runs/{id}/files serves the file-activity read-model — the rail's files card."""
+    c, tmp = client
+    run_dir = _mk_run(tmp / "routines", "apir", "20260707-080000", "finished")
+    with (run_dir / "transcript.jsonl").open("a") as fh:
+        fh.write(json.dumps({"type": "observation", "turn": 1, "payload": {
+            "kind": "write_file", "path": "artifacts/out.md", "bytes": 42}}) + "\n")
+    files = c.get("/api/runs/apir:20260707-080000/files").json()["files"]
+    assert files == [{"path": "artifacts/out.md", "reads": 0, "writes": 1, "edits": 0,
+                      "bytes": 42, "errors": 0, "sub": False}]
+    assert c.get("/api/runs/apir:20990101-000000/files").status_code == 404
+
+
 def test_intervention_endpoints(client):
     c, tmp = client
     run_dir = _mk_run(tmp / "routines", "apir", "20260708-100000", "running")

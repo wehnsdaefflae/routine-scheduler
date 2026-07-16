@@ -95,7 +95,11 @@ the limits (single-writer status.json preserved).
   Every `assistant_action` transcript event is stamped with the ACTIVE phase, so the rail is also an
   instrument panel: `statemap.phase_stats` (served at `/api/runs/<id>/phases`) derives per-phase
   turns / tokens / cost / wall-clock from the transcript — dispatch time lands on the acting phase,
-  completion time on the phase that produced the next action.
+  completion time on the phase that produced the next action; a state the run's phase.json jumped
+  over (zero recorded turns) renders as `skipped`, never a positional ✓. The sibling read-model
+  `fileactivity.py` (`/api/runs/<id>/files` → `components/fileactivity.js`) derives per-file
+  read/write/edit counts from the same transcript's OBSERVATION events — so subruns and user slash
+  commands count — feeding the rail's files card on the run view and the conversation.
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →

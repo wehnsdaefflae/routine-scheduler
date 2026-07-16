@@ -136,6 +136,59 @@ def test_state_graph_shows_phase_instrumentation(ui, ui_page):
     expect(node.locator(".sg-stats")).to_contain_text("1.6k tok")
 
 
+def test_state_graph_marks_skipped_phases(ui, ui_page):
+    """A state the run's phase.json jumped over (no turn ever ran under it) reads
+    'skipped', not checked-off — the diagram never claims work that didn't happen."""
+    run_dir = ui.seed_run("uir", "20260715-133000", "running")
+    (ui.routine_dir("uir") / "main.md").write_text(
+        "## Run flow\n1. **gather** — g.\n2. **analyse** — a.\n3. **act** — x.\n",
+        encoding="utf-8")
+    events = [
+        {"ts": "2026-07-15T10:00:30+00:00", "type": "assistant_action", "phase": "gather",
+         "usage": {"in": 900, "out": 100}, "turn": 1, "payload": {"kind": "util", "say": "x"}},
+        {"ts": "2026-07-15T10:01:00+00:00", "type": "assistant_action", "phase": "act",
+         "usage": {"in": 500, "out": 100}, "turn": 2, "payload": {"kind": "util", "say": "y"}},
+    ]
+    (run_dir / "transcript.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    state_dir = ui.routine_dir("uir") / "state"
+    state_dir.mkdir(exist_ok=True)
+    (state_dir / "phase.json").write_text('{"phase": "act"}', encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-133000")
+    expect(ui_page.locator(".sg-node", has_text="gather")).to_have_class("sg-node done")
+    skipped = ui_page.locator(".sg-node", has_text="analyse")
+    expect(skipped).to_have_class("sg-node done skipped")
+    expect(skipped.locator(".sg-stats")).to_have_text("skipped")
+
+
+def test_run_rail_lists_file_activity(ui, ui_page):
+    """The run rail's files card answers 'what did this run read and write' at a glance —
+    per-path counts from the transcript's observations, failed touches flagged."""
+    run_dir = ui.seed_run("uir", "20260715-140000", "finished", summary="done")
+    events = [
+        {"type": "observation", "turn": 1, "payload": {
+            "kind": "read_file", "path": "state/notes.md", "content": "x"}},
+        {"type": "observation", "turn": 2, "payload": {
+            "kind": "read_file", "path": "state/notes.md", "content": "x"}},
+        {"type": "observation", "turn": 3, "payload": {
+            "kind": "write_file", "path": "artifacts/report.html", "bytes": 42}},
+        {"type": "observation", "turn": 4, "payload": {
+            "kind": "edit_file", "path": "routine.yaml", "error": "never writable"}},
+    ]
+    with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
+        fh.writelines(json.dumps(e) + "\n" for e in events)
+
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-140000")
+    rows = ui_page.locator(".file-row")
+    expect(rows).to_have_count(3)
+    expect(rows.nth(0)).to_contain_text("state/notes.md")
+    expect(rows.nth(0).locator(".file-ops")).to_have_text("read ×2")
+    expect(rows.nth(1).locator(".file-ops")).to_have_text("wrote")
+    expect(rows.nth(2)).to_have_class("file-row err")
+    expect(rows.nth(2).locator(".file-ops")).to_have_text("✕1")
+
+
 def test_run_view_question_form(ui, ui_page):
     """The run view's blocking-question panel rides the shared answerForm: option buttons
     prefill, the mirrored/Discord note renders, and ask-back sends an intermediate reply."""

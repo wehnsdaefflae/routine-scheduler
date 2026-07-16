@@ -33,7 +33,7 @@ def _imported_from_md(text: str) -> set[str]:
 
 def _calls(text: str, name: str) -> bool:
     # `name(` not preceded by an identifier char or a dot (so `cmd(` / `foo.md(` don't match).
-    return re.search(r'(?<![A-Za-z0-9_.])' + re.escape(name) + r'\s*\(', text) is not None
+    return re.search(r"(?<![A-Za-z0-9_.])" + re.escape(name) + r"\s*\(", text) is not None
 
 
 def test_md_helpers_are_imported_where_used():

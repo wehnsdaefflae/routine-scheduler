@@ -68,8 +68,10 @@ in line behind cron runs, and vice versa.
 - **Center — the chat.** Your messages and the agent's replies are the conversation; the tool work
   between them folds into one expandable group per reply, so you can read the outcome and expand the
   how only when you want it.
-- **Right — artifacts + state.** The deliverables the agent produces, plus a live state-graph card.
-  Also folds to a rail so the chat gets the width.
+- **Right — artifacts + state.** The deliverables the agent produces, a live state-graph card, and
+  a **files** card — which files the run read / wrote / edited, per-path counts straight from the
+  transcript (subtasks and your slash commands included). Also folds to a rail so the chat gets the
+  width.
 
 ## Attachments
 

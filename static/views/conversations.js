@@ -16,6 +16,7 @@ import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
 import { createChat } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
+import { createFileActivity } from "/static/components/fileactivity.js";
 import { createStateGraph } from "/static/components/stategraph.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { permissionsPanel } from "/static/components/permissions.js";
@@ -250,8 +251,10 @@ export async function render(view, slug, _query = {}) {
     // re-highlighted live on the SSE state events below
     const graphBody = el("div", {});
     const treeBody = el("div", {});
+    const filesBody = el("div", {});
     artBody.append(el("div", { class: "rail-cap" }, "state"), graphBody);
-    if (detail.run_id) artBody.append(el("div", { class: "rail-cap" }, "tasks"), treeBody);
+    if (detail.run_id) artBody.append(el("div", { class: "rail-cap" }, "tasks"), treeBody,
+                                      el("div", { class: "rail-cap" }, "files"), filesBody);
     // detached background tasks the assistant launched (the `detach` action): a flat cross-run
     // list with a cancel affordance. Hidden until there is at least one.
     const bgCap = el("div", { class: "rail-cap", hidden: true }, "background");
@@ -263,6 +266,8 @@ export async function render(view, slug, _query = {}) {
       ...(detail.run_id ? { statsUrl: `/api/runs/${detail.run_id}/phases` } : {}) });
     const taskTree = detail.run_id ? createTaskTree(treeBody, {
       treeUrl: `/api/runs/${detail.run_id}/tree`, isLive: () => !TERMINAL.has(curState) }) : null;
+    const fileActivity = detail.run_id
+      ? createFileActivity(filesBody, { url: `/api/runs/${detail.run_id}/files` }) : null;
     const artifacts = createArtifacts(artBody, { slug });
 
     const BG_LIVE = new Set(["queued", "starting", "running", "waiting_user", "paused"]);
@@ -324,7 +329,8 @@ export async function render(view, slug, _query = {}) {
       // (a conversation loops — it has no single workflow phase to highlight)
       stateGraph.setPhase(WORKING.has(s) ? "working" : "waiting for you");
       composer.setLive(!TERMINAL.has(s));
-      if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); taskTree?.refresh(); }
+      if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); taskTree?.refresh();
+                             fileActivity?.refresh(); }
       refreshBackground();   // a finished detached task wakes the conversation → catch it here
     };
     setState(detail.state);
@@ -335,7 +341,9 @@ export async function render(view, slug, _query = {}) {
       events: (o) => `/api/runs/${detail.run_id}/events?offset=${o}`,
       offset: 0,
       onEvent: (ev) => { chat.add(ev); scrollDown();
-                         if (ev.type === "subrun_start" || ev.type === "subrun_end") taskTree?.refresh(); },
+                         if (ev.type === "subrun_start" || ev.type === "subrun_end") taskTree?.refresh();
+                         if (ev.type === "observation" && ["read_file", "view_image", "write_file",
+                             "edit_file"].includes(ev.payload?.kind)) fileActivity?.poke(); },
       onState: (s) => { setState(s.state);   // setState re-lights the state diagram
                         showQuestion(questionBox, s.question); },
       onGone: () => setState("finished"),
