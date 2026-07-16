@@ -226,10 +226,16 @@ def json_or_raise(resp, name: str) -> dict:
         ) from exc
 
 
-def with_retries(fn, *, tries: int = 3, base_delay: float = 1.0):
+def with_retries(fn, *, tries: int = 3, base_delay: float | None = None):
     """Run fn(); on EndpointError(retryable=True) back off 1s/2s and retry (3 tries total).
     Non-retryable EndpointErrors propagate immediately; the last error is re-raised as-is.
+    The default backoff honors RSCHED_RETRY_BASE_DELAY (read per call): the test suite
+    zeroes it — dead-endpoint tests exercise the retry LOGIC, never the backoff clock.
     """
+    if base_delay is None:
+        import os
+
+        base_delay = float(os.environ.get("RSCHED_RETRY_BASE_DELAY", "1.0"))
     return Retrying(
         retry=retry_if_exception(lambda e: isinstance(e, EndpointError) and e.retryable),
         stop=stop_after_attempt(tries),

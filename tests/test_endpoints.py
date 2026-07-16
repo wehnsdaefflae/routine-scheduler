@@ -56,6 +56,7 @@ def test_split_system():
 
 
 def test_with_retries_backoff(monkeypatch):
+    monkeypatch.delenv("RSCHED_RETRY_BASE_DELAY", raising=False)  # pin the PRODUCTION delays
     sleeps = []
     monkeypatch.setattr("time.sleep", sleeps.append)
     calls = []

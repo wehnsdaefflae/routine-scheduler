@@ -14,6 +14,7 @@ one directory scan.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -167,6 +168,10 @@ def build_docs(source_repo: Path, out: Path, *, modules: tuple[str, ...] = ("rsc
 
 def ensure_docs(source_repo: Path) -> None:
     """Boot-time entry: build if stale, never raise (docs must not take the daemon down)."""
+    # Test/ops opt-out (RSCHED_NO_SCHEDULER's sibling): without it every TestClient(app)
+    # pays a pdoc build — the lifespan's to_thread task cannot be cancelled, only awaited.
+    if os.environ.get("RSCHED_SKIP_DOCS_BUILD"):
+        return
     try:
         if build_docs(source_repo, docs_out_dir()):
             log.info("docs: rebuilt into %s", docs_out_dir())

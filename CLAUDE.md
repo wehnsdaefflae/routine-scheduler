@@ -17,7 +17,12 @@ routine config (`routine.yaml` / UI).
 ## Commands
 
 - `uv sync` — install/refresh the venv
-- `uv run pytest -q` — full suite (fast, no network). Single test: `uv run pytest tests/test_loop.py -q`
+- `uv run pytest -q` — full suite (fast, no network; PARALLEL by default via pytest-xdist
+  `-n auto` in addopts — pass `-n0` for a serial run / debugging with `-s`). Two conftest
+  env knobs keep it honest AND fast: `RSCHED_SKIP_DOCS_BUILD` (the app lifespan's pdoc build
+  — a to_thread task shutdown can only await) and `RSCHED_RETRY_BASE_DELAY` (endpoint retry
+  LOGIC runs, the 1s/2s backoff clock doesn't); test_docs_build / test_with_retries_backoff
+  clear them to pin the real paths. Single test: `uv run pytest tests/test_loop.py -q`
   or `-k <name>`. Live endpoint smoke tests run only with `RSCHED_LIVE_TESTS=1`. The suite
   includes the browser UI tests in `tests/ui/` (Playwright driving the REAL console over a
   stub runner — no scheduler, no engine, no LLM; see `tests/ui/conftest.py`). One-time per

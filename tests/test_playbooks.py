@@ -217,6 +217,37 @@ def test_library_and_playbook_api(client):
     assert c.get("/api/playbooks/nope").status_code == 404
 
 
+def test_playbook_edit_detail_and_delete_routes(client):
+    """The Library tab's write surface: PUT is lint-gated (a degraded MAIN.md never lands),
+    detail files are served, DELETE removes the whole playbook — 404s stay honest."""
+    c, server = client
+    home = server.library_home
+    pb = playbooks.read_playbook(home, "research-and-report")
+
+    # detail files: 404 for a name the playbook doesn't carry; 200 once one exists
+    assert c.get("/api/playbooks/research-and-report/detail/nope.md").status_code == 404
+    playbooks.write_playbook(home, "research-and-report", main=pb["content"],
+                             details={"sources.md": "# sources\n- example"})
+    got = c.get("/api/playbooks/research-and-report/detail/sources.md").json()
+    assert got["content"].startswith("# sources")
+
+    # PUT: junk is rejected by the linter (422 names the problems), a real edit lands
+    assert c.put("/api/playbooks/research-and-report",
+                 json={"content": "not a playbook at all"}).status_code == 422
+    edited = pb["content"].replace("## Instructions", "## Instructions\n\n1. Be thorough.", 1)
+    r = c.put("/api/playbooks/research-and-report", json={"content": edited})
+    assert r.status_code == 200, r.text
+    assert "Be thorough." in playbooks.read_playbook(home, "research-and-report")["content"]
+    assert c.put("/api/playbooks/ghost", json={"content": edited}).status_code == 404
+
+    # DELETE: gone means gone (list + detail agree); a second delete is a 404
+    assert c.delete("/api/playbooks/research-and-report").json()["ok"] is True
+    assert c.get("/api/playbooks/research-and-report").status_code == 404
+    assert all(p["slug"] != "research-and-report"
+               for p in c.get("/api/playbooks").json()["playbooks"])
+    assert c.delete("/api/playbooks/research-and-report").status_code == 404
+
+
 def test_create_conversation_from_playbook(client):
     c, server = client
     r = c.post("/api/conversations",

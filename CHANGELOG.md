@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.57.1] — 2026-07-16
+
+### Changed
+- **Test suite: 3× faster, +12 behavior tests, coverage 84.8% → 88%** (user order). Speed
+  came from diagnosis, not skipping: (1) the app lifespan's pdoc docs build is a to_thread
+  task shutdown can only AWAIT — every TestClient/uvicorn test paid ~3s teardown and one
+  test a 19s rebuild; `RSCHED_SKIP_DOCS_BUILD` (set suite-wide in conftest, cleared by
+  test_docs_build) removes it. (2) `with_retries`' 1s/2s backoff clock is now
+  `RSCHED_RETRY_BASE_DELAY`-tunable at call time — dead-endpoint tests exercise the retry
+  logic without sleeping (test_with_retries_backoff pins the production delays). (3)
+  pytest-xdist `-n auto` is the default (`-n0` for serial); the suite is hermetic per test.
+  Wall clock: 224s → ~70s (110s with coverage). New meaningful tests: the CLI command
+  surface (validate/abort/lint/suggest/scaffold/run-once exit codes, printed diagnostics,
+  disk effects — cli.py 37%→~90%), the executor's real `uv run` util seam incl. the
+  grants-aware failure/repair-hint contract, and the playbook edit/detail/delete routes
+  (lint-gated PUT, honest 404s). Coverage ratchet raised: fail_under 84 → 87.
+
 ## [0.57.0] — 2026-07-16
 
 ### Added

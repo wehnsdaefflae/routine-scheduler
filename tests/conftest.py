@@ -8,8 +8,20 @@ SYSTEM prompt contains the marker — that makes parallel sub-workflow tests det
 from __future__ import annotations
 
 import json
+import os
 import threading
 from pathlib import Path
+
+# The app lifespan launches a pdoc docs build in a thread that shutdown can only AWAIT —
+# without this, every TestClient(app)/uvicorn test pays ~3s of teardown (and a test that
+# points source_repo elsewhere pays a full ~19s rebuild). test_docs_build clears the var
+# to exercise the real path.
+os.environ.setdefault("RSCHED_SKIP_DOCS_BUILD", "1")
+# Endpoint retries: keep the 3-try LOGIC, zero the 1s/2s backoff clock — every test that
+# points a call at a dead endpoint (autolabel against dummy:127.0.0.1:1, refusal paths)
+# otherwise pays ~3s of pure sleep. test_with_retries_backoff clears the var to pin the
+# real production delays.
+os.environ.setdefault("RSCHED_RETRY_BASE_DELAY", "0.01")
 
 import pytest
 import yaml

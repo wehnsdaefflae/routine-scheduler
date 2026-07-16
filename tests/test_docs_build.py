@@ -57,5 +57,6 @@ def test_ensure_docs_never_raises(tmp_path, monkeypatch):
         raise RuntimeError("pdoc exploded")
 
     monkeypatch.setenv("RSCHED_DOCS_DIR", str(tmp_path / "docs-out"))
+    monkeypatch.delenv("RSCHED_SKIP_DOCS_BUILD", raising=False)   # conftest sets it suite-wide
     monkeypatch.setattr(db, "build_docs", boom)
     ensure_docs(tmp_path / "missing")

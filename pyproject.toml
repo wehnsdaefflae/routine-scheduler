@@ -26,6 +26,7 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
+    "pytest-xdist>=3.6",
     "ruff>=0.15",
     "mypy>=1.14",
     "types-croniter",
@@ -48,6 +49,10 @@ packages = ["src/rsched"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Parallel by default (pytest-xdist): the suite is hermetic per-test (tmp_path homes,
+# ephemeral ports, per-process monkeypatching). One stuck test can't hide behind the
+# others' output — use -n0 for a serial run / debugging with -s.
+addopts = ["-n", "auto"]
 filterwarnings = [
     "error",  # any warning is a failure — drift surfaces immediately
     # third-party transitional notice (starlette's httpx→httpx2 migration), not ours to fix
@@ -137,4 +142,4 @@ branch = true
 [tool.coverage.report]
 skip_covered = true
 show_missing = true
-fail_under = 84  # ratchet: current suite delivers 84.8% branch coverage — never drop below
+fail_under = 87  # ratchet: current suite delivers 88% branch coverage — never drop below
