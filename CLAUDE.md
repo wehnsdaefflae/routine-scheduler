@@ -88,7 +88,7 @@ the limits (single-writer status.json preserved).
   spend is folded into the run's usage. Falls back to the deterministic one-line digest
   (`history.maybe_compact`) on any failure. The on-disk transcript keeps everything regardless.
 - **Phase is derived, never bookkept**: the stage modules ARE the states — `statemap.py` builds the
-  UI's state-graph diagram from the routine's own `stages/*.md` (older recipes on disk: `steps/`),
+  UI's state-graph diagram from the routine's own `stages/*.md`,
   in main.md first-mention order (nothing parsed from prose, so every routine has a diagram), and
   the engine tracks the run's live position from its stage-module READS: a `read_file` of
   `stages/<name>.md` stamps `ctx.phase` (executor) → status.json (every turn) → the run SSE `state`

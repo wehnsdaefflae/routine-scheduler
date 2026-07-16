@@ -29,15 +29,16 @@ def test_stage_states_ordered_by_main_md_mention(tmp_path):
         > statemap.module_rank((d / "main.md").read_text(encoding="utf-8"), "gather")
 
 
-def test_stage_states_accepts_older_steps_dir(tmp_path):
-    """Older recipes on disk keep their modules under steps/ (the config-optimizer /
-    self-audit generation) — the graph derives from them all the same."""
+def test_stage_states_file_reference_outranks_name_drop(tmp_path):
+    """Intro prose that name-drops a module ("… until record finishes the run") must not
+    steal its flow position — the module's `<stem>.md` FILE reference is the order signal."""
     d = tmp_path / "r"
-    (d / "steps").mkdir(parents=True)
-    (d / "steps" / "orient.md").write_text("# Step: orient\n", encoding="utf-8")
-    (d / "steps" / "record.md").write_text("# Step: record\n", encoding="utf-8")
+    (d / "stages").mkdir(parents=True)
+    (d / "stages" / "orient.md").write_text("# Step: orient\n", encoding="utf-8")
+    (d / "stages" / "record.md").write_text("# Step: record\n", encoding="utf-8")
     (d / "main.md").write_text(
-        "## Run flow\n1. `steps/orient.md` — look around.\n2. `steps/record.md` — close.\n",
+        "Work until `record` finishes the run.\n\n## Run flow\n"
+        "1. `stages/orient.md` — look around.\n2. `stages/record.md` — close.\n",
         encoding="utf-8")
     assert [s["name"] for s in statemap.stage_states(d)] == ["orient", "record"]
 

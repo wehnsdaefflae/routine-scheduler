@@ -1,14 +1,14 @@
 """The routine's state graph, derived from its stage modules — for the UI's live diagram.
 
-A routine's stages/ modules (older recipes on disk: steps/) ARE its states: decompose
-already maps the abstract workflow onto task-specific module names at creation, so there
-is nothing to infer from prose — every routine with stage modules has a diagram,
-unconditionally. Node order is main.md's own routing: modules sort by where main.md first
-mentions them (its `## Run flow` list references each one); unmentioned extras sort last,
-alphabetically. The CURRENT node is the engine's live phase — the stage module the run
-last read (the executor stamps it into ctx.phase → status.json → the run SSE `state`
-event) — so a recipe owes the diagram nothing; its state/phase.json remains a private
-state file (the digest shows it), not a UI contract.
+A routine's stages/ modules ARE its states: decompose already maps the abstract workflow
+onto task-specific module names at creation, so there is nothing to infer from prose —
+every routine with stage modules has a diagram, unconditionally. Node order is main.md's
+own routing: modules sort by where main.md first mentions them (its `## Run flow` list
+references each one); unmentioned extras sort last, alphabetically. The CURRENT node is
+the engine's live phase — the stage module the run last read (the executor stamps it into
+ctx.phase → status.json → the run SSE `state` event) — so a recipe owes the diagram
+nothing; its state/phase.json remains a private state file (the digest shows it), not a
+UI contract.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 
 MAX_STATES = 16
-MODULE_DIRS = ("stages", "steps")   # canonical name + the older generation still on disk
+STAGES_DIR = "stages"   # THE module dir — every routine on disk follows it (0.49.1)
 
 # main.md's YAML frontmatter carries an ALPHABETICAL module list (scaffold provenance) —
 # strip it before ranking mentions, or it would pose as every module's first mention.
@@ -31,12 +31,9 @@ def norm(name: str) -> str:
 
 
 def module_dir(routine_dir: Path) -> Path | None:
-    """The routine's stage-module dir — stages/ (canonical) or steps/ (older recipes)."""
-    for name in MODULE_DIRS:
-        d = routine_dir / name
-        if d.is_dir():
-            return d
-    return None
+    """The routine's stage-module dir, or None when it has no stage modules."""
+    d = routine_dir / STAGES_DIR
+    return d if d.is_dir() else None
 
 
 def module_rank(main_md: str, stem: str) -> tuple[int, int]:

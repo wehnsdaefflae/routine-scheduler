@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.49.1] — 2026-07-16
+
+### Changed
+- **`steps/` → `stages/` everywhere — one module-dir convention.** All seven production
+  routines were migrated in place (`git mv steps stages` + a reference rewrite across
+  main.md / stage modules / traits / state files, committed per routine repo; `runs/`
+  and LEDGER history untouched), and the engine's transitional `steps/` acceptance from
+  0.49.0 was removed (`statemap.STAGES_DIR`). Per the migration policy, the data
+  migration ran once on the production instance and no migration code is kept.
+
 ## [0.49.0] — 2026-07-16
 
 ### Changed

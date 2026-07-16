@@ -15,7 +15,7 @@ from .. import utils_lib
 from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, EndpointError, guess_media_type
 from ..ids import is_slug
 from ..paths import resolve_rel
-from ..statemap import MODULE_DIRS
+from ..statemap import STAGES_DIR
 from .observations import truncate
 from .run_context import RunContext
 
@@ -140,7 +140,7 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     # "read the module for where you are" — so the engine tracks the live phase right
     # here (→ status.json → the SSE state event) with zero recipe cooperation; the
     # stage modules are the state graph's nodes (statemap), so the names always match.
-    if (path.suffix == ".md" and path.parent.name in MODULE_DIRS
+    if (path.suffix == ".md" and path.parent.name == STAGES_DIR
             and path.parent.parent == ctx.routine.dir):
         ctx.phase = path.stem
     lines = text.splitlines()
