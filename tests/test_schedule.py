@@ -1,5 +1,7 @@
 """Friendly schedule ↔ cron round-trip and descriptions."""
 
+from pathlib import Path
+
 import pytest
 
 from rsched.schedule import cron_to_friendly, describe, friendly_to_cron, server_tz
@@ -55,8 +57,46 @@ def test_server_tz_reports_the_local_zoneinfo_key(monkeypatch):
         def now(_tz=None):
             return _Stamp()
 
+    monkeypatch.delenv("TZ", raising=False)
     monkeypatch.setattr("rsched.schedule.datetime", _DT)
     assert server_tz() == "Europe/Berlin"
+
+
+def test_server_tz_honors_tz_env(monkeypatch):
+    """A TZ env var (how a container is told its zone) wins outright — no filesystem
+    probing needed."""
+    monkeypatch.setenv("TZ", ":Europe/Vienna")   # the leading colon form is valid
+    assert server_tz() == "Europe/Vienna"
+
+
+def test_server_tz_reads_etc_timezone_when_localtime_is_not_a_symlink(monkeypatch, tmp_path):
+    """In a container, /etc/localtime is a bind-mounted FILE (the symlink trick dies) and
+    /etc/timezone names the zone — server_tz falls through to it."""
+    from types import SimpleNamespace
+
+    class _Stamp:
+        @staticmethod
+        def astimezone():
+            return SimpleNamespace(tzinfo=SimpleNamespace())   # no .key — a fixed offset
+
+    class _DT:
+        @staticmethod
+        def now(_tz=None):
+            return _Stamp()
+
+    (tmp_path / "localtime").write_bytes(b"TZif2-binary-blob")     # a file, not a symlink
+    (tmp_path / "timezone").write_text("Europe/Vienna\n", encoding="utf-8")
+
+    real_path = Path
+
+    def _fake_path(p):
+        mapped = {"/etc/localtime": tmp_path / "localtime", "/etc/timezone": tmp_path / "timezone"}
+        return mapped.get(str(p), real_path(p))
+
+    monkeypatch.delenv("TZ", raising=False)
+    monkeypatch.setattr("rsched.schedule.datetime", _DT)
+    monkeypatch.setattr("rsched.schedule.Path", _fake_path)
+    assert server_tz() == "Europe/Vienna"
 
 
 def test_server_tz_degrades_to_utc_when_zone_is_undetectable(monkeypatch):
@@ -68,5 +108,6 @@ def test_server_tz_degrades_to_utc_when_zone_is_undetectable(monkeypatch):
         def now(_tz=None):
             raise OSError("no clock")
 
+    monkeypatch.delenv("TZ", raising=False)
     monkeypatch.setattr("rsched.schedule.datetime", _Broken)
     assert server_tz() == "UTC"

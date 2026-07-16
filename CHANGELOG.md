@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.50.1] — 2026-07-16
+
+### Fixed
+- **Conversations and detached background runs now survive container recreation**: the
+  compose file was missing bind mounts for `~/conversations` and `~/background`, so both
+  homes lived in the container's writable layer — any `docker compose up -d` after a
+  compose/image change would have silently destroyed them (plain restarts reuse the
+  container, which is why nothing was lost). Both are now bound like `~/routines`.
+- **`server_tz()` works inside a container**: it now honors a `TZ` env var and falls back
+  to `/etc/timezone` (bind-mounted from the host along with `/etc/localtime`, read-only) —
+  previously only the `/etc/localtime` symlink trick worked, which a bind mount defeats,
+  so a containerized daemon always reported `Etc/UTC` and stamped UTC into every schedule
+  the UI wrote.
+
 ## [0.50.0] — 2026-07-16
 
 ### Added

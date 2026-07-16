@@ -463,8 +463,12 @@ A bump MUST land with a matching `## [x.y.z]` CHANGELOG.md header in the same co
 
 `deploy/install.sh` (idempotent host install: venv, config + token, seeds, systemd user service + linger)
 or Docker (`docker compose up -d` — a disposable engine-only image; source, config, `~/.credentials`,
-`~/routines`, and the library repo are all bind-mounted, so the whole system migrates as a tarball of
-those dirs). Server config: `~/.config/routine-scheduler/config.yaml` (generated with a random token on
+`~/routines`, `~/conversations`, `~/background`, and the library repo are all bind-mounted, so the
+whole system migrates as a tarball of those dirs — EVERY data home must be a bind, or it dies with
+the container layer on recreate. The host's `/etc/localtime` + `/etc/timezone` ride along read-only
+so the container keeps the host's zone; `schedule.server_tz()` honors TZ env / the zoneinfo key /
+the localtime symlink / `/etc/timezone`, in that order). Server config:
+`~/.config/routine-scheduler/config.yaml` (generated with a random token on
 first boot by `bootstrap.ensure_config`, so a fresh deploy is never an open API). Web UI on `:8321`,
 bearer-token auth; `RSCHED_BIND` / `RSCHED_PORT` override for containers. First launch redirects to
 Settings until setup (secrets, endpoints + system model, GitHub device-flow, the library) is finished.

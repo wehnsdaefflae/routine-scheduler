@@ -32,6 +32,14 @@ services:
       - ${RSCHED_HOME:-/home/mark}/.config/gh:/home/mark/.config/gh          # `gh auth login` persists here
       - ${RSCHED_HOME:-/home/mark}/.credentials:/home/mark/.credentials:ro    # optional file-based secrets (read-only)
       - ${RSCHED_HOME:-/home/mark}/routines:/home/mark/routines
+      # Conversations + detached background runs are data, exactly like routines — without
+      # these binds they land in the container's writable layer and DIE on every recreate.
+      - ${RSCHED_HOME:-/home/mark}/conversations:/home/mark/conversations
+      - ${RSCHED_HOME:-/home/mark}/background:/home/mark/background
+      # The host's timezone, read-only: local times in logs/cron, and server_tz() reads
+      # /etc/timezone (the /etc/localtime symlink trick doesn't survive a bind mount).
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       # One merged library repo (workflows/ + fragments/ + utils/ + gu) — see config `libraries_home`.
       - ${RSCHED_HOME:-/home/mark}/.local/share/routine-scheduler-libraries:/home/mark/.local/share/routine-scheduler-libraries
       # Playwright's browser cache: page-fetch downloads Chromium here once (user-level);

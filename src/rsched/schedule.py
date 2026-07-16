@@ -14,25 +14,37 @@ load, never surfaced to the user.
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
+from pathlib import Path
 
 WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
 
 def server_tz() -> str:
-    """The server's local IANA timezone name (e.g. 'Europe/Berlin'), best-effort."""
+    """The server's local IANA timezone name (e.g. 'Europe/Berlin'), best-effort. Inside
+    a container the host's zone arrives as a TZ env var or a bind-mounted /etc/timezone
+    (a plain file naming the zone) — /etc/localtime stops being a readable symlink there,
+    so all three routes are tried.
+    """
+    env = os.environ.get("TZ", "").strip().lstrip(":")
+    if env:
+        return env
     try:
         tz = datetime.now(UTC).astimezone().tzinfo
         key = getattr(tz, "key", None)
         if key:
-            return key
-        from pathlib import Path
-
+            return str(key)
         link = Path("/etc/localtime")
         if link.is_symlink():
             p = str(link.resolve())
             if "zoneinfo/" in p:
                 return p.split("zoneinfo/", 1)[1]
+        tzfile = Path("/etc/timezone")
+        if tzfile.is_file():
+            name = tzfile.read_text(encoding="utf-8").strip()
+            if name:
+                return name
     except Exception:
         pass
     return "UTC"
