@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from ..config import DEFAULT_BUDGETS, DEFAULT_PERMISSIONS, ServerConfig
+from ..config import DEFAULT_BUDGETS, DEFAULT_PERMISSIONS, DELIBERATION_LEVELS, ServerConfig
 from ..ids import is_slug
 
 GITIGNORE = "runs/\ninbox/\nquestions/\n"
@@ -81,7 +81,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
              fs_read_roots: list[str] | None = None,
              fs_write_roots: list[str] | None = None,
              stages: dict[str, str] | None = None, enabled: bool = True,
-             tags: list[str] | None = None) -> Path:
+             tags: list[str] | None = None, deliberation: str = "") -> Path:
     """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
     the routine gets ADAPTED trait copies under traits/ (referenced from main.md's Standing
     practices tail — the routine's own files from then on) + stages/ modules. The clarified
@@ -168,6 +168,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         "permissions": active_perms,
         "capabilities": capabilities,
         "budgets": {**DEFAULT_BUDGETS, **(budgets or {})},
+        # how much thinking lands on paper — wizard-suggested per task, user-adjustable
+        **({"deliberation": deliberation} if deliberation in DELIBERATION_LEVELS else {}),
         "retention": {"keep_runs": 30},
     }
     if fs_read_roots:

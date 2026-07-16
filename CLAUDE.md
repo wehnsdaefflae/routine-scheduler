@@ -55,8 +55,10 @@ the limits (single-writer status.json preserved).
   ∩ (base ∪ enabled capabilities), plus path gates (runs/ needs the previous-runs depth; a run NEVER
   writes its own recipe — main.md / stages/ / traits/ — a fixed rule unlocked only when a user-granted
   fs_write_root covers the routine dir (the routine-improver's case); `routine.yaml` is NEVER writable
-  by any run, even under an fs_write_root — config is the user's; executor.py backstops absolute paths
-  and scopes `runs: last`).
+  by any run — config is the user's — with ONE semantic exception: a run holding a user-granted
+  fs_write_root may re-level the `deliberation` key (`config_tunable` policy flag; the executor
+  parses the proposed yaml and rejects any other key change — how the improver optimizes the knob);
+  executor.py backstops absolute paths and scopes `runs: last`).
   A disallowed/switched-off call is corrected inside the schema-retry cycle with an error naming the
   covering permission, and never becomes a turn.
 - **The system prompt is composed once at boot** (`engine/composer.py`; the CAPABILITIES
@@ -117,7 +119,8 @@ the limits (single-writer status.json preserved).
   far better than `oneOf`): `util, write_util, read_file, view_image, write_file, edit_file, memory_read,
   memory_write, llm, spawn, subtask, detach, subruns, kill, wait, ask_user, finish`. Every action carries `say` (finding-first narration:
   what the last observation taught you + why this action; terse for routine steps, 2-3 sentences
-  at decision points) + `kind`. `read_file` batches related reads via `paths` (one turn, one
+  at decision points; worded per the routine's `deliberation` level) + `kind`. `read_file` batches
+  related reads via `paths` (one turn, one
   observation section per file); `edit_file` anchor-replaces in place so revisions cost the diff, not
   the document. `write_file` is GROUNDED: overwriting an existing file OUTSIDE the routine's own dir
   is rejected unless this run has seen it (`ctx.seen_paths` — read/viewed/written this run, rebuilt
@@ -186,7 +189,11 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   `budgets:` (max_turns / wall_clock_min / total_tokens (-1 = unlimited, the default) / subruns /
   subrun_depth / ask_timeout_min — all editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
   budgets/fs-roots/schedules are resources, never capabilities; `improve: false` opts the routine
-  out of the routine-improver's passes (default: included).
+  out of the routine-improver's passes (default: included); `deliberation:`
+  (terse|standard|deliberate|think-on-paper — how much thinking lands on paper: words the say
+  contract, `engine/deliberation.py`; wizard-suggested per task, slider on the routine page /
+  conversation header, mid-run via control.json `set_deliberation` from the run view, and the ONE
+  config key the improver may tune).
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
   routes to `stages/<name>.md` modules, read on demand, and ends with a Standing practices tail
   referencing `traits/`). The clarified instruction is only a transient compile SEED — decomposed into
@@ -313,7 +320,8 @@ chat message; the next user message resumes the SAME run in place (fresh budget 
   distil a new one) and, when the conversation was seeded from a playbook, **Update playbook**
   (`PUT …/playbook` → revise that one) — both distil from the transcript via the `system_model`.
 - Defaults: routine default permissions+capabilities PLUS **`background-tasks`** (the `detach` action —
-  conversation-shaped, since a finished task reports back into the chat), shell OFF (one-click grant;
+  conversation-shaped, since a finished task reports back into the chat), `deliberation: deliberate`
+  (chat is judgment-heavy; slider in the header panel), shell OFF (one-click grant;
   run-history + the previous-runs depth greyed — routine-only); traits = ask-policy/global-utils/web-research/ledger-discipline/**git-checkpoint**
   (checkpoint commits in external project repos — the conversation dir itself is unversioned).
   Conversations feed workflow-usage + health events; they are EXCLUDED from the dashboard,
@@ -358,7 +366,8 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   asks to generate one) and MARRIES the task to it — asking questions that overlay the task on the pattern's
   control flow + parameters (candidates written to the session's `state/candidates.md`).
 - **Traits** (`library-seed/traits/`, `# trait:` heading, NO requires — lint-enforced): reusable practice
-  prose. Selected at creation (the wizard preselects via `suggest_traits_permissions` from the refined
+  prose. Selected at creation (the wizard preselects via `suggest_traits_permissions` — which also
+  suggests the routine's `deliberation` level — from the refined
   instruction + chosen pattern), ADAPTED to the task by `adapt.decompose` (schema carries a `traits`
   array), written to `<routine>/traits/`, referenced from main.md's Standing practices tail
   (`scaffold.with_practices_tail` guarantees it; `scaffold.copy_traits` is the one trait-copy

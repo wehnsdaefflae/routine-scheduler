@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.55.0] — 2026-07-16
+
+### Added
+- **The deliberation slider** (user order): a per-routine/per-conversation knob over how
+  much of the model's thinking lands ON PAPER — the persistent prose channel that, unlike
+  ephemeral thinking tokens, survives between turns. Four named stops
+  (`terse | standard | deliberate | think-on-paper`), each a qualitatively distinct say
+  contract (`engine/deliberation.py` owns the wording; the top two license knowledge
+  BEYOND the run — domain conventions, base rates, prior art — and the top stop adds a
+  notes-file discipline before direction-shaping actions). Conversations default to
+  `deliberate`, routines to `standard`; children inherit the parent's live level.
+  Surfaces: routine page (Models panel), new-routine wizard (suggested per task by
+  `suggest_traits_permissions`, editable), conversation header panel (saves config +
+  re-levels a live reply), and the run view (mid-run, control.json `set_deliberation` —
+  applied at the turn boundary as an engine note carrying the new contract, exactly like
+  a model switch). Status/SSE/API carry the live level.
+- **The improver can optimize it.** `deliberation` is now the ONE routine.yaml key a run
+  may edit — only under a user-granted fs_write_root (the routine-improver's grant), and
+  the executor parses the proposed yaml and rejects any change beyond that single key
+  (`grants.py config_tunable` + `executor._deliberation_only_change`). The improver's
+  seed teaches the rubric: raise a stop when judgment-heavy transcripts show restatement
+  says, lower when mechanical work carries contextualizing ceremony; one stop at a time,
+  evidence logged. Every other config key stays sealed exactly as before.
+
 ## [0.54.1] — 2026-07-16
 
 ### Fixed

@@ -47,7 +47,8 @@ async def run_stream(run_dir: Path, start_offset: int = 0):
             yield _event("state", {"state": state, "phase": phase,
                                    "question": st.get("question"),
                                    "turn": st.get("turn"), "usage": st.get("usage"),
-                                   "model": st.get("model"), "updated": st.get("updated")})
+                                   "model": st.get("model"), "updated": st.get("updated"),
+                                   "deliberation": st.get("deliberation")})
         if state in TERMINAL_STATES:
             terminal_grace -= 1
             if terminal_grace <= 0:

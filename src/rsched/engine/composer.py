@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from . import deliberation
 from .actions import ACTION_SCHEMA, example_action
 from .capabilities import capabilities_digest
 from .run_context import RunContext
@@ -64,12 +65,14 @@ contradictions. read_file / write_file are rejected on .memory/ paths.""")
                      "main.md entry and the stages/<name>.md modules it routes to) fully defines "
                      "your task: goal, deliverable, constraints, completion criteria. It is the "
                      "single source of truth for what to do. ")
+    # The say contract scales with the routine's deliberation level (the user's knob over
+    # how much thinking lands on paper); think-on-paper adds a standing notes-file paragraph.
+    level = ctx.deliberation or r.deliberation
+    standing = deliberation.standing_note(level)
     return f"""You are the orchestrator of the routine "{r.name}" ({r.slug}), run {ctx.run_id}\
 {f" (schedule: {r.cron})" if r.cron else ""}. This conversation IS the run: every turn you reply \
-with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. The \
-"say" field is your narration: lead with what the last observation taught you, then why this \
-action — a few words for routine steps, 2-3 sentences when you decide between options, change \
-direction, or hit a surprise.
+with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. \
+{deliberation.say_contract(level)}{f"\n\n{standing}" if standing else ""}
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \
 conversation, one per turn, each answered by an observation before your next reply. Never state or \

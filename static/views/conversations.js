@@ -8,6 +8,7 @@
 // finished one resumes it in place, so the view remounts its tail after every send.
 
 import { api, apiUpload } from "/static/api.js";
+import { deliberationControl } from "/static/components/deliberation.js";
 import { answerForm } from "/static/components/answerform.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { tagsEditor } from "/static/components/tags.js";
@@ -619,6 +620,26 @@ export async function render(view, slug, _query = {}) {
     capBody.append(el("div", { class: "row", style: "gap:12px;flex-wrap:wrap;align-items:flex-end" },
       budgetField("turns / reply", turnsIn), budgetField("minutes / reply (-1=∞)", minsIn),
       budgetField("tokens / reply (-1=∞)", tokIn), saveBudgets));
+    // Deliberation: saved to config on release (next reply composes with it) AND, when a
+    // reply is live, the current run is re-leveled too — a conversation IS one run, so the
+    // durable/live distinction collapses here.
+    const delib = deliberationControl(detail.deliberation || "deliberate", {
+      onCommit: async (level) => {
+        try {
+          await api(`/api/conversations/${slug}`, { method: "PATCH",
+            body: { deliberation: level } });
+          if (isLive() && detail.run_id) {
+            await api(`/api/runs/${detail.run_id}/deliberation`,
+              { method: "POST", body: { level } }).catch(() => {});
+          }
+          toast(`deliberation: ${level}`);
+        } catch (err) { toast(err.message, 4000, { error: true }); }
+      },
+    });
+    capBody.append(el("div", { class: "row mt", style: "gap:10px;align-items:flex-start" },
+      el("span", { class: "faint small", style: "min-width:150px;padding-top:4px" },
+        "deliberation — thinking on paper"),
+      delib.node));
     capBody.append(permissionsPanel(detail.permissions, detail.capabilities, {
       disableRuns: "a conversation is one continuous run — previous-run depth is routine-only",
       saveLabel: "save permissions",

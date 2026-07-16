@@ -86,6 +86,9 @@ class RunContext:
 
     turn: int = 0
     phase: str = ""
+    # Live deliberation level (see config.DELIBERATION_LEVELS): initialized from the
+    # routine config by EngineLoop, mutated by a control.json mid-run switch.
+    deliberation: str = ""
     # Resolved paths this run has read, viewed, or written — write_file's grounding set:
     # overwriting an existing file OUTSIDE the routine's own dir requires the run to have
     # seen it (rebuilt from the transcript on resume, so grounding survives legs).
@@ -228,6 +231,7 @@ class RunContext:
             "question": self.question,
             "usage": self.usage_total(),
             "model": self.main_model,
+            "deliberation": self.deliberation,
             "schema_retries": self.schema_retries,
             "schema_forcefails": self.schema_forcefails,
             "referrals": self.referrals,

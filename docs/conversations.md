@@ -76,6 +76,13 @@ in line behind cron runs, and vice versa.
   transcript (subtasks and your slash commands included). Also folds to a rail so the chat gets the
   width.
 
+## Deliberation
+
+The header's **⚙ capabilities & budgets** panel carries the **deliberation** slider — how much of
+the model's thinking lands on paper as it works (conversations default to *deliberate*: says that
+carry the context behind each step, including knowledge beyond the immediate inputs). A change saves
+to the conversation and, when a reply is live, re-levels it at the next turn.
+
 ## Attachments
 
 Attach files on the first message or any later one; paste an image directly into the message box and

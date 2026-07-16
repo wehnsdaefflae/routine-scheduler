@@ -241,6 +241,22 @@ def test_run_view_message_modes(ui, ui_page):
                for m in inbox.glob("msg-*.json"))
 
 
+def test_run_view_deliberation_relevel(ui, ui_page):
+    """The run view's ⚙ deliberation control re-levels a LIVE run: one arrow key on the
+    slider posts to /runs/{id}/deliberation and the signal lands in control.json
+    (run-scoped, applied by the engine at the next turn boundary)."""
+    run_dir = ui.seed_run("uir", "20260716-090000", "running")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260716-090000")
+    ui_page.locator("details", has_text="⚙ deliberation").locator("summary").click()
+    slider = ui_page.locator('.delib input[type="range"]')
+    slider.focus()
+    slider.press("ArrowRight")                        # standard → deliberate
+    expect(_toast(ui_page)).to_contain_text("takes effect next turn")
+    ctrl = json.loads((run_dir / "control.json").read_text(encoding="utf-8"))
+    assert ctrl["set_deliberation"]["level"] == "deliberate"
+    assert ctrl["set_deliberation"]["ts"]
+
+
 def test_run_transcript_story_and_refer(ui, ui_page):
     """The transcript reads as a story: a phase change draws a labeled divider, an injected
     message's leading `> re …` line renders as a quote chip, and the ↩ on a turn primes the
@@ -361,6 +377,27 @@ def test_conversation_slash_commands(ui, ui_page):
     assert all("read_file" in d["text"] or not d.get("command") for d in flagged)
 
 
+def test_conversation_deliberation_slider(ui, ui_page):
+    """A conversation's deliberation is edited from the header panel: defaults to
+    'deliberate' (chat is judgment-heavy), one arrow key saves the new level to the
+    conversation's routine.yaml (it applies from the next reply)."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill("Deliberation knob playground.")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    slug = ui_page.url.rsplit("/", 1)[-1]
+    raw = yaml.safe_load((ui.conversations / slug / "routine.yaml").read_text(encoding="utf-8"))
+    assert raw["deliberation"] == "deliberate"        # the conversation default
+
+    ui_page.locator("summary", has_text="capabilities & budgets").click()
+    slider = ui_page.locator('.delib input[type="range"]')
+    slider.focus()
+    slider.press("ArrowLeft")                         # deliberate → standard
+    expect(_toast(ui_page)).to_contain_text("deliberation: standard")
+    raw = yaml.safe_load((ui.conversations / slug / "routine.yaml").read_text(encoding="utf-8"))
+    assert raw["deliberation"] == "standard"
+
+
 def test_conversation_refer_to_message(ui, ui_page):
     """Messenger-style 'refer to' in chat: ↩ on a message primes the composer chip, ✕ drops
     it, and a sent message leads with the quoted reference line."""
@@ -416,6 +453,12 @@ def test_routine_page_saves(ui, ui_page):
     expect(_toast(ui_page)).to_contain_text("tags saved")
     expect(ui_page.locator(".tags .tag", has_text="nightly")).to_be_visible()
 
+    # deliberation slider (Models panel): one arrow key saves the level immediately
+    delib_slider = ui_page.locator('.delib input[type="range"]')
+    delib_slider.focus()
+    delib_slider.press("ArrowRight")   # standard → deliberate
+    expect(_toast(ui_page)).to_contain_text("deliberation: deliberate")
+
     # schedule: saves in place — the page must NOT reload (marker survives)
     ui_page.evaluate("window.__no_reload = true")
     ui_page.locator(".panel", has=ui_page.get_by_role("button", name="save schedule")) \
@@ -431,6 +474,7 @@ def test_routine_page_saves(ui, ui_page):
     assert raw["budgets"]["max_turns"] == 42
     assert raw["tags"] == ["nightly"]
     assert raw["enabled"] is False
+    assert raw["deliberation"] == "deliberate"
     # removing the tag also saves immediately
     ui_page.locator(".tags .tag", has_text="nightly").locator(".x").click()
     expect(ui_page.locator(".tags .tag", has_text="nightly")).to_have_count(0)

@@ -43,20 +43,22 @@ def _template(server, *, budgets=None, models=None, traits=None):
 
 def test_defaults_without_template_fall_back_to_hardcoded(tmp_path):
     server = _server(tmp_path)
-    budgets, models = wizard_store.template_defaults(server)
+    budgets, models, level = wizard_store.template_defaults(server)
     assert budgets == wizard_store.WIZARD_BUDGETS
     assert budgets is not wizard_store.WIZARD_BUDGETS   # a copy — callers may mutate
     assert models == {}
+    assert level == ""                                  # "" = the config default
 
 
 def test_defaults_overlay_template_budgets_and_models(tmp_path):
     server = _server(tmp_path)
     _template(server, budgets={"max_turns": 60}, models={"main": "m"})
-    budgets, models = wizard_store.template_defaults(server)
+    budgets, models, level = wizard_store.template_defaults(server)
     assert budgets["max_turns"] == 60                       # the template's value wins
     assert budgets["max_wall_clock_min"] == \
         wizard_store.WIZARD_BUDGETS["max_wall_clock_min"]   # omitted keys stay complete
     assert models == {"main": "m"}
+    assert level == ""                                  # template without the key → default
 
 
 def test_defaults_survive_a_broken_template_yaml(tmp_path):
@@ -64,9 +66,10 @@ def test_defaults_survive_a_broken_template_yaml(tmp_path):
     d = server.routines_home / wizard_store.TEMPLATE_SLUG
     d.mkdir(parents=True)
     (d / "routine.yaml").write_text(":: not yaml ::", encoding="utf-8")
-    budgets, models = wizard_store.template_defaults(server)
+    budgets, models, level = wizard_store.template_defaults(server)
     assert budgets == wizard_store.WIZARD_BUDGETS
     assert models == {}
+    assert level == ""
 
 
 # ---- create_session copies the template ------------------------------------------------

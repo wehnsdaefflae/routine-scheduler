@@ -308,13 +308,17 @@ def test_deny_gates_edit_file_like_write_file():
 
 def test_deny_blocks_own_recipe_and_config_writes():
     """Own recipe writes (main.md/stages/traits) are a FIXED rule, unlocked only via
-    recipe_unlocked (a user fs_write_root covering the dir). routine.yaml is config: denied for
-    EVERYONE, even when the recipe is unlocked — config is the user's."""
+    recipe_unlocked (a user fs_write_root covering the dir). routine.yaml is config: denied
+    without the config_tunable flag — the denial teaches the ONE exception (`deliberation`
+    under a user-granted fs_write_root; the executor's semantic diff enforces the rest)."""
     none = GrantPolicy()
-    for path in ("main.md", "stages/collect.md", "traits/ask-policy.md", "./main.md", "routine.yaml"):
+    for path in ("main.md", "stages/collect.md", "traits/ask-policy.md", "./main.md"):
         denial = none.deny({"kind": "write_file", "path": path, "content": "x"})
         assert denial and "routine-improver" in denial, path
         assert none.deny({"kind": "read_file", "path": path}) is None, path
+    cfg_denial = none.deny({"kind": "write_file", "path": "routine.yaml", "content": "x"})
+    assert cfg_denial and "deliberation" in cfg_denial
+    assert none.deny({"kind": "read_file", "path": "routine.yaml"}) is None
     # instruction.md is no longer a recipe file (the seed isn't persisted) — writes are open
     assert none.deny({"kind": "write_file", "path": "instruction.md", "content": "x"}) is None
     # non-recipe writes stay open

@@ -4,6 +4,7 @@
 
 import { api } from "/static/api.js";
 import { answerForm } from "/static/components/answerform.js";
+import { deliberationControl } from "/static/components/deliberation.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { mdInline } from "/static/md.js";
 import { setQuery } from "/static/router.js";
@@ -166,6 +167,24 @@ export async function render(view, runId, query = {}) {
   }).catch(() => {});
   controls.append(switchBox);
 
+  // Mid-run deliberation re-level (run-scoped, like the model switch: the durable value
+  // stays on the routine page). Applied at the next turn boundary via control.json.
+  const delibSummary = el("summary", { style: "cursor:pointer;color:var(--muted)" },
+    "⚙ deliberation");
+  const delibBox = el("details", { class: "small" }, delibSummary);
+  const delib = deliberationControl("standard", {
+    onCommit: async (level) => {
+      try {
+        const r = await api(`/api/runs/${runId}/deliberation`, { method: "POST",
+          body: { level } });
+        toast(`${r.switch} — takes effect next turn (this run)`);
+        delibSummary.textContent = `⚙ deliberation: ${level}`;
+      } catch (err) { toast(err.message, 4000, { error: true }); }
+    },
+  });
+  delibBox.append(el("div", { class: "mt" }, delib.node));
+  controls.append(delibBox);
+
   // ---- transcript sources: main run = resilient tail; a sub-run = paged fetch + poll ----------
   let curState = "";
   const subs = new Map();          // n -> label
@@ -242,6 +261,7 @@ export async function render(view, runId, query = {}) {
     pauseBtn.hidden = abortBtn.hidden = terminal;   // controls for a live run
     resumeBtn.hidden = !terminal;                   // resume only a terminal run
     switchBox.hidden = terminal;                    // no mid-run switch once the run has ended
+    delibBox.hidden = terminal;                     // deliberation re-level is mid-run only
     setModes(terminal);
     tickDur();
     if (state === "paused") { paused = true; pauseBtn.textContent = "▶ resume"; }
@@ -349,6 +369,10 @@ export async function render(view, runId, query = {}) {
   lastUpdated = detail.updated || "";
   tickDur();
   setModel(detail.model);
+  if (detail.deliberation) {
+    delib.set(detail.deliberation);
+    delibSummary.textContent = `⚙ deliberation: ${detail.deliberation}`;
+  }
   showQuestion(detail.question);
   for (const n of detail.subruns || []) subs.set(n, `sub ${n}`);
   viewingSub = (initialSub != null && (detail.subruns || []).includes(initialSub)) ? initialSub : null;

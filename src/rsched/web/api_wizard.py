@@ -202,6 +202,7 @@ def wizard_suggest(request: Request, wid: str) -> dict:
         tp = suggest_traits_permissions(server, result["refined_instruction"], chosen)
     return {"wizard_result": result, "suggested_tags": suggested_tags, "suggestions": suggestions,
             "suggested_traits": tp["traits"], "suggested_permissions": tp["permissions"],
+            "suggested_deliberation": tp["deliberation"],
             "none_fit": none_fit, "new_workflow_hint": str(choice.get("hint") or "")}
 
 
@@ -237,6 +238,7 @@ class FinalizeBody(BaseModel):
     traits: list[str] | None = None       # practice modules to adapt in (None → workflow defaults)
     permissions: list[str] | None = None  # engine-enforced capabilities (None → defaults)
     budgets: dict | None = None           # per-run ceilings (None → DEFAULT_BUDGETS)
+    deliberation: str = ""                # DELIBERATION_LEVELS ("" → default)
     run_now: bool = False
 
 
@@ -313,7 +315,8 @@ async def _build_routine(app_state, wid: str, d: Path, body: FinalizeBody, resul
                 workflow_slug=body.workflow_slug, cron=cron,
                 tz=schedule.server_tz(), params=params, stages=stages, description=description,
                 models=body.models, tags=normalize_tags(body.tags) or None,
-                traits=body.traits, permissions=body.permissions, budgets=body.budgets)
+                traits=body.traits, permissions=body.permissions, budgets=body.budgets,
+                deliberation=body.deliberation)
     except Exception as exc:   # scaffold/decompose failure — the session stays for a retry
         # clean up a half-built dir so the retry isn't blocked
         partial = server.routines_home / body.slug

@@ -181,11 +181,13 @@ def test_suggest_traits_permissions_validates_against_the_library(server, monkey
     from rsched.workflows import suggest as sug_mod
 
     ep = _SysEndpoint([{"traits": ["ask-policy", "made-up-trait"],
-                        "permissions": ["memory", "cosmic-powers"]}])
+                        "permissions": ["memory", "cosmic-powers"],
+                        "deliberation": "deliberate"}])
     _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
     out = sug_mod.suggest_traits_permissions(server, "watch a git repo",
                                              workflow_slug="general-task")
-    assert out == {"traits": ["ask-policy"], "permissions": ["memory"]}   # unknowns dropped
+    assert out == {"traits": ["ask-policy"], "permissions": ["memory"],
+                   "deliberation": "deliberate"}   # unknowns dropped, level passes
     prompt = ep.calls[0]["messages"][0]["content"]
     assert "CHOSEN WORKFLOW: general-task" in prompt  # the picked pattern informs the pick
 
@@ -211,5 +213,6 @@ def test_suggest_traits_permissions_empty_library_never_calls_the_model(tmp_path
     (s.libraries_home / "permissions").mkdir(parents=True)
     ep = _SysEndpoint([])
     _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
-    assert sug_mod.suggest_traits_permissions(s, "x") == {"traits": [], "permissions": []}
+    assert sug_mod.suggest_traits_permissions(s, "x") == {
+        "traits": [], "permissions": [], "deliberation": "standard"}
     assert ep.calls == []

@@ -105,7 +105,8 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
     _, sub_ref = parent_ctx.registry.for_model("subroutine", parent_ctx.routine.models)
     child_budgets = parent_ctx.child_budgets(overrides=alloc_overrides)
     child_ctx = RunContext(
-        routine=_sub_routine(parent_ctx.routine, sub_dir, sub_ref),
+        routine=_sub_routine(parent_ctx.routine, sub_dir, sub_ref,
+                             deliberation=parent_ctx.deliberation),
         server=parent_ctx.server, registry=parent_ctx.registry, run_ts=parent_ctx.run_ts,
         run_dir=sub_dir, transcript=transcript, budgets=child_budgets,
         depth=parent_ctx.depth + 1, parent_run_id=parent_ctx.run_id,
@@ -135,12 +136,13 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
     return sub
 
 
-def _sub_routine(routine, sub_dir, ref):
+def _sub_routine(routine, sub_dir, ref, *, deliberation: str = ""):
     """A child's config: its OWN dir (so main.md + read_file/write_file resolve under sub_dir),
     the parent's fs roots inherited, the parent's SUBROUTINE model as the child's MAIN model
     (subroutine/tool_call inherited so the child can spawn/subtask/llm too), permissions and
     capabilities off (a child holds nothing gated: it reports through its finish summary and
-    keeps no LEDGER/audit).
+    keeps no LEDGER/audit). The parent's LIVE deliberation level carries over (a mid-run
+    switch reaches children spawned after it).
     """
     import copy
 
@@ -150,4 +152,6 @@ def _sub_routine(routine, sub_dir, ref):
     r.models["main"] = ref.name       # resolved subroutine catalog name → the child's main
     r.permissions = []
     r.capabilities = {}
+    if deliberation:
+        r.deliberation = deliberation
     return r

@@ -29,6 +29,7 @@ from .control import (
     _ABORT,
     RunAborted,
     announce_finished_subruns,
+    apply_deliberation_switch,
     apply_model_switch,
     drain_injections,
     pause_gate,
@@ -103,9 +104,12 @@ class EngineLoop:
                                                ctx.routine.permissions,
                                                ctx.routine.capabilities,
                                                current_run_ts=ctx.run_ts,
-                                               recipe_unlocked=unlocked)
+                                               recipe_unlocked=unlocked,
+                                               config_tunable=bool(ctx.routine.fs_write_roots))
         self.util_reminder = self._build_util_reminder()
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
+        self._last_deliberation_ts = ""   # edge-trigger for mid-run deliberation switches
+        ctx.deliberation = ctx.routine.deliberation   # live level; control.json may re-set it
         # Repeat-streak escape hatch: identical-but-valid actions in a row are the second
         # signature of provider grammar distortion (a model narrating "I keep forgetting args"
         # while the grammar suppresses the field). At REPEAT_WARN the next completion runs
@@ -172,6 +176,7 @@ class EngineLoop:
                                    "Progress so far is in the transcript and LEDGER.")
                 pause_gate(self, poll_s=POLL_S)
                 apply_model_switch(self)
+                apply_deliberation_switch(self)
                 drain_injections(self)
                 announce_finished_subruns(self)
                 action, usage = next_action(self)

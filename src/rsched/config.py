@@ -77,6 +77,16 @@ DEFAULT_TRAITS = ["ask-policy", "global-utils", "ledger-discipline", "web-resear
 # explicitly configured this role (e.g. to a Nano-GPT abliterated model). Leaving it unset
 # preserves the previous behaviour exactly.
 MODEL_KINDS = ("main", "subroutine", "tool_call", "uncensored")
+# How much of the model's thinking lands ON PAPER — the persistent prose channel (`say`,
+# plus a notes-file discipline at the top stop). Ordered stops, not a continuum: models
+# follow qualitatively distinct contracts, not "verbosity 0.7". Composer wording per stop
+# lives in engine/deliberation.py. Distinct from a model's `effort` (ephemeral thinking,
+# thrown away between turns); deliberation is ink, effort is scratch paper. User-set via
+# the routine page / wizard / conversation panel; mid-run via control.json; the ONE
+# routine.yaml key the routine-improver may tune (see grants.py carve-out).
+DELIBERATION_LEVELS = ("terse", "standard", "deliberate", "think-on-paper")
+DEFAULT_DELIBERATION = "standard"
+CONVERSATION_DELIBERATION = "deliberate"  # chat is judgment-heavy — context on paper by default
 # Endpoints are model TRANSPORTS, never a second harness. "claude-cli" is the Claude Code
 # CLI in fully stripped print mode (tools off, our system prompt replaces its own) — a
 # subscription-billed completion function; the engine remains the only agent loop.
@@ -374,6 +384,9 @@ class RoutineConfig(_Config):
     # Whether the routine-improver meta routine visits this routine (default: yes; the
     # toggle on the routine page opts out with `improve: false`).
     improve: bool = True
+    # How much thinking lands on paper (see DELIBERATION_LEVELS). Unknown values are
+    # reported and coerced to the default in load_routine, like models/budgets.
+    deliberation: str = DEFAULT_DELIBERATION
 
     @field_validator("cron")
     @classmethod
@@ -465,6 +478,10 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     for key in [k for k in cfg.budgets if k not in DEFAULT_BUDGETS]:
         problems.append(f"budgets.{key}: unknown budget")
         del cfg.budgets[key]
+    if cfg.deliberation not in DELIBERATION_LEVELS:
+        problems.append(f"deliberation: unknown level {cfg.deliberation!r} "
+                        f"(expected one of {DELIBERATION_LEVELS})")
+        cfg.deliberation = DEFAULT_DELIBERATION
     from .grants import normalize_capabilities  # function-level: grants imports engine.actions
 
     cfg.capabilities, cap_problems = normalize_capabilities(cfg.capabilities)

@@ -2,6 +2,7 @@
 // navigable recipe (main.md + stage modules + trait modules), then state & runs.
 
 import { api } from "/static/api.js";
+import { deliberationControl } from "/static/components/deliberation.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { md, mdInline } from "/static/md.js";
@@ -198,6 +199,16 @@ export async function render(view, slug, query = {}) {
       sel);
   });
   const refMonth = d.spend?.current?.referrals || 0;
+  // Deliberation: how much thinking lands on paper (the say/notes contract). Saved on
+  // release — the next run composes with the new level (a LIVE run is re-leveled from
+  // the run view, control.json-scoped).
+  const delib = deliberationControl(d.deliberation || "standard", {
+    onCommit: async (level) => {
+      try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { deliberation: level } });
+        toast(`deliberation: ${level} — applies from the next run`); }
+      catch (err) { toast(err.message, 4000, { error: true }); }
+    },
+  });
   view.append(el("h2", {}, "Models"),
     el("div", { class: "panel" },
       el("div", { class: "muted small", style: "margin-bottom:8px" },
@@ -205,6 +216,11 @@ export async function render(view, slug, query = {}) {
           ? "which catalog model this routine uses for each role — leave on system default to fall back to the system model"
           : "add a model in Settings first"),
       ...modelRows,
+      el("div", { class: "row mt", style: "align-items:flex-start" },
+        el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, "deliberation"),
+        el("span", { class: "muted small", style: "min-width:150px" },
+          "how much thinking lands on paper"),
+        delib.node),
       d.referrals_total
         ? el("div", { class: "muted small mt",
             title: "turns or llm calls the main/tool model refused and the uncensored model answered instead (from the durable usage stream)" },

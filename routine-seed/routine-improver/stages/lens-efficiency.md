@@ -10,6 +10,16 @@ Cut waste in **how** the target works and keep its files clean:
   design; strip diff-narration ("previously…", stale counts) — that history lives in the
   LEDGER and git. Keep any `state/`/`stages/` file under ~350 lines (over → split along a
   read-together seam, or roll old material into `archive/` with a one-paragraph summary).
+- **Deliberation level** (`routine.yaml: deliberation` — the ONE config key you may tune;
+  see the autonomy gate). Judge it from the transcripts, both directions:
+  - says that merely restate the action beside them ("Reading X", "Running Y") on a task
+    full of judgment calls → the level is too LOW: decisions leave no reasoning on paper,
+    later turns re-derive or drop context. Raise one stop.
+  - long contextualizing says (or notes-file ceremony at `think-on-paper`) on mechanical
+    pipeline work where nothing is ever decided → the level is too HIGH: pure token spend.
+    Lower one stop.
+  Move ONE stop at a time, note old → new + the evidence in `cursor.changes`, and let the
+  next visit's transcripts confirm or revert.
 - **Look up the idiomatic way** before hand-rolling a leaner mechanism — the leanest
   process is usually the standard one, not a clever bespoke one.
 - **Scratch is scratch:** flag stray temporary files (they belong under `state/tmp/`,

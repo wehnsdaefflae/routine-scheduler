@@ -11,10 +11,14 @@ Run each lens module against the current target, in this order:
 Read one module, act in that lens only, then the next. Shared rules for every lens:
 
 - **Autonomy gate.** Safe, reversible edits to the target's RECIPE — its `main.md`, `stages/`,
-  `traits/` (and `state/`) — do them now and commit the target's dir with `git-sync`. NEVER edit a
-  target's `routine.yaml`: config (budgets, models, permissions, capabilities, fs-roots) is the
-  user's — and the engine blocks the write anyway — so propose any config change as a deferred
-  `ask_user` NAMING THE TARGET. Same for changing the target's goal or a hard constraint, deleting
+  `traits/` (and `state/`) — do them now and commit the target's dir with `git-sync`. A target's
+  `routine.yaml` is the user's config (budgets, models, permissions, capabilities, fs-roots) with
+  ONE exception you may tune directly: the **`deliberation`** key (terse | standard | deliberate |
+  think-on-paper — how much of the model's thinking lands on paper; it words the say contract).
+  Change it with `edit_file` on the target's `routine.yaml`, ONLY that key, only on run evidence
+  (see the efficiency lens), and log old → new + the evidence in `cursor.changes`. Every OTHER
+  config change is proposed as a deferred `ask_user` NAMING THE TARGET — the engine blocks the
+  write anyway. Same for changing the target's goal or a hard constraint, deleting
   large accumulated work, or anything outward/irreversible: file a deferred `ask_user`, and move on.
   A conversation (under `~/conversations`) gets a LIGHTER touch — NEVER edit its `instruction.md`
   (the user's own first message); improve only its recipe mechanics when run evidence shows friction.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from ..config import ServerConfig
+from ..config import DEFAULT_DELIBERATION, DELIBERATION_LEVELS, ServerConfig
 from ..endpoints import EndpointRegistry
 from ..schema_guard import SchemaViolation, parse_reply
 from .library import list_workflows
@@ -122,19 +122,22 @@ def normalize_tags(raw: list) -> list[str]:
 
 
 TRAITS_PERMS_SCHEMA = {
-    "type": "object", "additionalProperties": False, "required": ["traits", "permissions"],
+    "type": "object", "additionalProperties": False,
+    "required": ["traits", "permissions", "deliberation"],
     "properties": {"traits": {"type": "array", "items": {"type": "string"}},
-                   "permissions": {"type": "array", "items": {"type": "string"}}},
+                   "permissions": {"type": "array", "items": {"type": "string"}},
+                   "deliberation": {"type": "string", "enum": list(DELIBERATION_LEVELS)}},
 }
 
 
 def suggest_traits_permissions(server: ServerConfig, instruction: str,
                                workflow_slug: str = "") -> dict:
-    """Preselect the traits (practice modules, adapted in at creation) and permissions
-    (engine-enforced capabilities) for a new routine, from its instruction + chosen
-    workflow. Returns {'traits': [...], 'permissions': [...]}, validated against the
-    library; falls back to the defaults when no endpoint answers. The wizard shows the
-    result as an editable preselection — this is a first pass, not a decision.
+    """Preselect the traits (practice modules, adapted in at creation), permissions
+    (engine-enforced capabilities), and deliberation level for a new routine, from its
+    instruction + chosen workflow. Returns {'traits': [...], 'permissions': [...],
+    'deliberation': <level>}, validated against the library; falls back to the defaults
+    when no endpoint answers. The wizard shows the result as an editable preselection —
+    this is a first pass, not a decision.
     """
     from .. import library_docs
     from ..config import DEFAULT_PERMISSIONS, DEFAULT_TRAITS
@@ -142,7 +145,8 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
     traits = library_docs.list_docs(server.traits_home)
     perms = library_docs.list_docs(server.permissions_home)
     fallback = {"traits": [t for t in DEFAULT_TRAITS if t in {d["slug"] for d in traits}],
-                "permissions": [p for p in DEFAULT_PERMISSIONS if p in {d["slug"] for d in perms}]}
+                "permissions": [p for p in DEFAULT_PERMISSIONS if p in {d["slug"] for d in perms}],
+                "deliberation": DEFAULT_DELIBERATION}
     if not traits and not perms:
         return fallback
     workflow_note = ""
@@ -167,6 +171,12 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
         "Pick permissions conservatively: only what the task clearly needs (e.g. communication "
         "only if it must reach the user outside the web UI; run-history only if runs build on "
         "each other's details beyond the last summary; shell almost never).\n\n"
+        "Also pick DELIBERATION — how much of the model's thinking should land on paper "
+        "as it works: 'terse' for purely mechanical pipelines (fetch, convert, file); "
+        "'standard' for ordinary tasks; 'deliberate' when steps involve judgment that "
+        "benefits from world knowledge beyond the immediate inputs (evaluating, ranking, "
+        "curating, writing for a reader); 'think-on-paper' only for genuinely "
+        "decision-heavy analysis where reasoning must persist across a long run.\n\n"
         "Reply with ONLY one JSON object matching this schema (no prose):\n"
         + json.dumps(TRAITS_PERMS_SCHEMA)
     )
@@ -185,8 +195,11 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
                 completion.text, TRAITS_PERMS_SCHEMA)
             known_t = {d["slug"] for d in traits}
             known_p = {d["slug"] for d in perms}
+            level = obj.get("deliberation")
             return {"traits": [t for t in obj.get("traits", []) if t in known_t],
-                    "permissions": [p for p in obj.get("permissions", []) if p in known_p]}
+                    "permissions": [p for p in obj.get("permissions", []) if p in known_p],
+                    "deliberation": level if level in DELIBERATION_LEVELS
+                                    else DEFAULT_DELIBERATION}
         except SchemaViolation as exc:
             messages.append({"role": "assistant", "content": completion.text[:2000]})
             messages.append({"role": "user", "content":

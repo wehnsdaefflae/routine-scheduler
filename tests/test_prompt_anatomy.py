@@ -73,6 +73,17 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         assert needle in DOC, f"engine string {needle!r} missing from docs/prompt-anatomy.md"
 
 
+def test_doc_pins_the_deliberation_levels():
+    """The four say-contract levels are documented with their distinctive cores — change
+    engine/deliberation.py wording and this fails until the doc follows."""
+    from rsched.config import DELIBERATION_LEVELS
+
+    for level in DELIBERATION_LEVELS:
+        assert level in DOC, f"deliberation level {level!r} missing from the doc"
+    for core in ("ONE terse clause", "beyond this run", "state/notes.md"):
+        assert core in DOC, f"deliberation contract core {core!r} missing from the doc"
+
+
 def test_doc_names_every_action_kind_and_the_finish_example_matches():
     for kind in KINDS:
         assert kind in DOC, f"action kind {kind!r} missing from docs/prompt-anatomy.md"

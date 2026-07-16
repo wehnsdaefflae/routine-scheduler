@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sse_starlette import EventSourceResponse
 
+from ..config import DELIBERATION_LEVELS
 from ..daemon import registry
 from ..daemon.registry import TERMINAL_STATES
 from ..daemon.runner import abort_process
@@ -67,9 +68,10 @@ def run_detail(request: Request, run_id: str) -> dict:
                   if p.name.isdigit()) if (run_dir / "sub").is_dir() else []
     st = read_json(run_dir / "status.json")
     model = st.get("model") if isinstance(st, dict) else ""
+    deliberation = st.get("deliberation") if isinstance(st, dict) else ""
     return {"run_id": info.run_id, "routine": slug, "ts": info.ts, "state": info.state,
             "turn": info.turn, "usage": info.usage, "elapsed_s": info.elapsed_s,
-            "question": info.question, "model": model,
+            "question": info.question, "model": model, "deliberation": deliberation or "",
             "summary": info.summary, "updated": info.updated, "subruns": subs}
 
 
@@ -224,6 +226,30 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
     ctrl["switch_model"] = {body.kind: body.model, "ts": now_iso()}
     atomic_write_json(run_dir / "control.json", ctrl)
     return {"ok": True, "switch": f"{body.kind} → {body.model}"}
+
+
+class DeliberationSwitch(BaseModel):
+    level: str   # one of DELIBERATION_LEVELS
+
+
+@router.post("/runs/{run_id}/deliberation")
+def switch_deliberation(request: Request, run_id: str, body: DeliberationSwitch) -> dict:
+    """Re-level a live run's deliberation mid-flight (run-scoped, like a model switch: the
+    durable value stays in routine.yaml). Writes control.json; the engine applies it at the
+    next turn boundary with an engine note carrying the new say contract.
+    """
+    _, run_dir = _run_dir(request, run_id)
+    if body.level not in DELIBERATION_LEVELS:
+        raise HTTPException(400, f"unknown level {body.level!r} "
+                                 f"(expected one of {DELIBERATION_LEVELS})")
+    st = read_json(run_dir / "status.json")
+    if (st.get("state") if isinstance(st, dict) else None) in TERMINAL_STATES:
+        raise HTTPException(409, "run is not active; nothing to switch")
+    ctrl = read_json(run_dir / "control.json")
+    ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}       # keep pause + switch_model
+    ctrl["set_deliberation"] = {"level": body.level, "ts": now_iso()}
+    atomic_write_json(run_dir / "control.json", ctrl)
+    return {"ok": True, "switch": f"deliberation → {body.level}"}
 
 
 @router.post("/runs/{run_id}/resume-run")

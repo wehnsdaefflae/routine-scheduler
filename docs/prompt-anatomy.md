@@ -32,7 +32,7 @@ Eight sections, in this order:
 
 | # | Section | Source | What the model learns |
 |---|---|---|---|
-| 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a finding-first `say` (lead with what the last observation taught you, then why this action — a few words for routine steps, 2-3 sentences on decisions, direction changes, and surprises), "the run starts NOW", stages-on-demand, working dir + extra fs roots, **no shell**, capability-aware `write_util` and memory-action glosses, the traits-vs-capabilities prose ownership rule, the concrete budgets, a prose gloss of every action kind (including `read_file` batching via `paths`, in-place `edit_file` instead of whole-file rewrites, and `view_image` to SEE an image/PDF — natively when the model is multimodal, else via the vision util), sequential `subtask` decomposition (a background child the parent starts then WAITS for, its own context + pattern + budget) alongside parallel `spawn`, the injection warning. |
+| 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a finding-first `say`, worded per the routine's **deliberation level** (see below; the default `standard` reads: lead with what the last observation taught you, then why this action — a few words for routine steps, 2-3 sentences on decisions, direction changes, and surprises), "the run starts NOW", stages-on-demand, working dir + extra fs roots, **no shell**, capability-aware `write_util` and memory-action glosses, the traits-vs-capabilities prose ownership rule, the concrete budgets, a prose gloss of every action kind (including `read_file` batching via `paths`, in-place `edit_file` instead of whole-file rewrites, and `view_image` to SEE an image/PDF — natively when the model is multimodal, else via the vision util), sequential `subtask` decomposition (a background child the parent starts then WAITS for, its own context + pattern + budget) alongside parallel `spawn`, the injection warning. |
 | 2 | `# ACTION SCHEMA (your every reply matches this)` | `ACTION_SCHEMA` | The exact reply grammar; field descriptions double as micro-docs (`say`/`question`/`summary` say that simple Markdown renders in the UI; `say` demands the finding first, then the why; `summary` demands a DETAILED 8-20 lines). |
 | 3 | `# EXAMPLE of a valid reply` | `example_action()` | One few-shot example (`read_file stages/scan.md`) that models on-demand stage reading and a finding-first `say` — deliberately NOT `util name=list`: the catalog already sits in CAPABILITIES, so opening a run by re-listing it just re-buys known information. |
 | 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow **and the task**: a top-level routine's recipe is self-contained — goal, deliverable, constraints and completion criteria are compiled into `main.md` + `stages/*.md` (stage detail read on demand), practice detail in `traits/*.md`. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
@@ -45,6 +45,27 @@ So: **conduct** lives in the routine's own `traits/` files (referenced from the 
 read on demand — never inlined), **capability facts** in (6), **memory** in (7) — and
 whatever is not in the prompt is reachable by an action (`util name=list`,
 `read_file stages/…`, `read_file traits/…`, `memory_read <topic>`).
+
+**Deliberation levels** — the `say` contract sentence is picked by the routine's
+`deliberation` config key (`engine/deliberation.py` owns the wording; the slider lives on
+the routine page, the wizard, the conversation header, and — mid-run, control.json-scoped —
+the run view). Prose the model does not write down does not exist for later turns (thinking
+tokens are ephemeral, the message list append-only), so this knob decides how much of its
+thinking lands ON PAPER:
+
+| Level | The say contract | Extra |
+|---|---|---|
+| `terse` | ONE terse clause — why this action; a full sentence only on a decision or a surprise | for cheap mechanical pipelines |
+| `standard` | the finding-first default above | |
+| `deliberate` | lead with the finding, add the context that informs it — including what you know **beyond this run** (domain conventions, base rates, prior art) — then the why; 2-4 sentences, a decision gets a short paragraph | |
+| `think-on-paper` | as `deliberate` | + a standing paragraph: before a direction-shaping action (finish, spawn, subtask, ask_user, a stage change), write the deliberation to `state/notes.md` first and act from what was written |
+
+A mid-run switch (`POST /api/runs/{id}/deliberation` → control.json `set_deliberation`)
+cannot rewrite the composed prompt (append-only caching contract), so the engine applies it
+at the turn boundary as an ENGINE NOTE carrying the new contract sentence. Children inherit
+the parent's live level. `deliberation` is also the ONE routine.yaml key a run may edit —
+only under a user-granted fs_write_root (the routine-improver's grant), only that key,
+semantically verified by the executor.
 
 **Subrun variant** (spawned children): same composer, but the workflow is the library
 pattern materialized under `runs/<ts>/sub/<n>/`, and — because a subrun has no decomposed

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import yaml
 
+from ..config import DELIBERATION_LEVELS
 from ..daemon import registry
 from ..daemon.runner import _pid_alive
 from ..ids import now_iso
@@ -33,12 +34,12 @@ def template_dir(server) -> Path | None:
     return d if (d / "routine.yaml").is_file() else None
 
 
-def template_defaults(server) -> tuple[dict, dict]:
-    """(budgets, models) a new session copies from the clarification template routine —
-    the RAW yaml, not load_routine, because the loader backfills DEFAULT_BUDGETS (routine
-    defaults, e.g. a 5-minute ask timeout) for omitted keys; here an omitted key must keep
-    its WIZARD_BUDGETS value. Only known budget keys pass; models pass through as-is
-    (empty = system-model fallback).
+def template_defaults(server) -> tuple[dict, dict, str]:
+    """(budgets, models, deliberation) a new session copies from the clarification template
+    routine — the RAW yaml, not load_routine, because the loader backfills DEFAULT_BUDGETS
+    (routine defaults, e.g. a 5-minute ask timeout) for omitted keys; here an omitted key
+    must keep its WIZARD_BUDGETS value. Only known budget keys pass; models pass through
+    as-is (empty = system-model fallback); deliberation passes when valid ("" = default).
     """
     d = template_dir(server)
     if d is not None:
@@ -53,8 +54,10 @@ def template_defaults(server) -> tuple[dict, dict]:
             models = raw_models if isinstance(raw_models, dict) else {}
             budgets = {k: v for k, v in budgets.items()
                        if k in WIZARD_BUDGETS and isinstance(v, int)}
-            return {**WIZARD_BUDGETS, **budgets}, dict(models)
-    return dict(WIZARD_BUDGETS), {}
+            level = raw.get("deliberation")
+            return ({**WIZARD_BUDGETS, **budgets}, dict(models),
+                    level if level in DELIBERATION_LEVELS else "")
+    return dict(WIZARD_BUDGETS), {}, ""
 
 
 def sessions(app_state) -> dict:
@@ -213,7 +216,7 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
     (d / "instruction.md").write_text(draft.rstrip() + "\n", encoding="utf-8")
     (d / "LEDGER.md").write_text("# LEDGER — wizard session\n", encoding="utf-8")
     (d / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
-    budgets, models = template_defaults(server)
+    budgets, models, level = template_defaults(server)
     tpl = template_dir(server)
     if tpl is not None and (tpl / "traits").is_dir():
         # the template's practice modules ride into every session (traits are files, not yaml)
@@ -224,6 +227,7 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
         "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
         "workflow": {"library_slug": "clarify-instruction", "library_commit": commit},
         "budgets": budgets, **({"models": models} if models else {}),
+        **({"deliberation": level} if level else {}),
         "permissions": [], "capabilities": {},   # the clarify session holds nothing gated;
         # its tools allowlist narrows further
     }, sort_keys=False))

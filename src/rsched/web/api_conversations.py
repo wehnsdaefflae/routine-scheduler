@@ -23,7 +23,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from .. import conversations as conv_mod
-from ..config import MODEL_KINDS, load_routine
+from ..config import DELIBERATION_LEVELS, MODEL_KINDS, load_routine
 from ..daemon import registry
 from ..ids import now_iso, run_ts
 from ..paths import atomic_write, atomic_write_json
@@ -246,6 +246,7 @@ def detail(request: Request, slug: str) -> dict:
         "capabilities": capabilities,
         "traits": traits,
         "budgets": info.cfg.budgets,
+        "deliberation": info.cfg.deliberation,
         "runs": [{"run_id": r.run_id, "ts": r.ts, "state": r.state} for r in info.runs],
         "background": list_background_rows(request, slug),
         "problems": info.problems,
@@ -258,6 +259,7 @@ class ConversationPatch(BaseModel):
     workdir: str | None = None
     budgets: dict | None = None
     models: dict | None = None
+    deliberation: str | None = None   # DELIBERATION_LEVELS — applies at the next reply
 
 
 @router.patch("/conversations/{slug}")
@@ -288,6 +290,11 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
             if not isinstance(name, str) or name not in server.models:
                 raise HTTPException(400, f"models.{kind}: must be a catalog model name")
         raw["models"] = updates["models"]
+    if "deliberation" in updates:
+        if updates["deliberation"] not in DELIBERATION_LEVELS:
+            raise HTTPException(400, f"deliberation: unknown level "
+                                     f"{updates['deliberation']!r}")
+        raw["deliberation"] = updates["deliberation"]
     atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
     return {"ok": True, "updated": list(updates)}
 

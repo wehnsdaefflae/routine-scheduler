@@ -3,6 +3,7 @@
 // helpers (cancel, error, building-cleanup registration).
 
 import { api } from "/static/api.js";
+import { deliberationControl } from "/static/components/deliberation.js";
 import { navigate } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { busy, el, requiresSummary, toast } from "/static/util.js";
@@ -152,6 +153,17 @@ export async function stageSuggest(ctx, wid) {
             el("span", {}, label), input);
         }))));
 
+  // Deliberation — suggested per task (how judgment-heavy it is), user-adjustable here
+  // and on the routine page; mid-run from the run view.
+  const delib = deliberationControl(
+    data.suggested_deliberation || lib.default_deliberation || "standard");
+  ctx.stage.append(el("h2", {}, "Deliberation"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted small", style: "margin-bottom:6px" },
+        "how much of the model's thinking lands on paper as it works — suggested from the ",
+        "task; raise it for judgment-heavy work, lower it for mechanical pipelines."),
+      delib.node));
+
   // Schedule is routine CONFIG, set here (or later on the routine page) — it is never
   // part of the instruction and never suggested by the model.
   const f = {
@@ -183,6 +195,7 @@ export async function stageSuggest(ctx, wid) {
         traits: Object.entries(traitBoxes).filter(([, b]) => b.checked).map(([s]) => s),
         permissions: Object.entries(permBoxes).filter(([, b]) => b.checked).map(([s]) => s),
         budgets,
+        deliberation: delib.value,
       }});
       ctx.notifyChanged();                 // the top banner now shows the build in progress
       stageBuilding(ctx, wid, { slug: r.slug });

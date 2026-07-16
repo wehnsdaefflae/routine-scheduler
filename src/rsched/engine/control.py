@@ -1,18 +1,20 @@
-"""Run control plane: the abort switch, the pause gate, mid-run model switches, and the
-turn-boundary message feeds (injected user messages, finished sub-workflow announcements).
+"""Run control plane: the abort switch, the pause gate, mid-run model and deliberation
+switches, and the turn-boundary message feeds (injected user messages, finished
+sub-workflow announcements).
 
 Everything here runs BETWEEN turns and mutates only the loop's message list / context —
 never the model call itself. control.json stays web-owned: the engine only reads it
-(pause, switch_model) and reacts at the next turn boundary.
+(pause, switch_model, set_deliberation) and reacts at the next turn boundary.
 """
 
 from __future__ import annotations
 
 import time
 
+from ..config import DELIBERATION_LEVELS
 from ..paths import read_json
 from ..schema_guard import validate
-from . import executor, inbox
+from . import deliberation, executor, inbox
 from .actions import ACTION_SCHEMA, validate_action
 from .commands import CommandError, parse_command
 from .observations import format_observation, truncate
@@ -75,6 +77,27 @@ def apply_model_switch(loop) -> None:
         ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
         loop.messages.append({"role": "user", "content":
             f"ENGINE NOTE: {note}. Continue the run on the new model."})
+
+
+def apply_deliberation_switch(loop) -> None:
+    """Turn-boundary: honour a mid-run deliberation switch written to control.json by the
+    web layer. Same edge-trigger discipline as apply_model_switch — the engine never
+    writes control.json. The composed prompt is immutable (prompt-caching contract), so
+    the new say contract reaches the model as an appended engine note instead.
+    """
+    ctx = loop.ctx
+    obj = read_json(ctx.root_run_dir / "control.json")
+    sw = obj.get("set_deliberation") if isinstance(obj, dict) else None
+    if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_deliberation_ts:
+        return
+    loop._last_deliberation_ts = str(sw["ts"])
+    level = sw.get("level")
+    if level not in DELIBERATION_LEVELS or level == ctx.deliberation:
+        return
+    note = deliberation.switch_note(ctx.deliberation, level)
+    ctx.deliberation = level
+    ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
+    loop.messages.append({"role": "user", "content": f"ENGINE NOTE: {note}"})
 
 
 def inject_user_message(loop, m: dict) -> None:
