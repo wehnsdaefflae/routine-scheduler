@@ -129,7 +129,7 @@ def test_dialog_reply_keeps_the_record_open_and_a_reask_supersedes_it(make_routi
     seen: dict = {"first": None}
 
     def driver():
-        deadline = time.time() + 30   # generous: under full-suite load 10s has flaked
+        deadline = time.time() + 180  # must outlive the run's whole ask budget (2×ask_timeout_min); 30s flaked under full-suite load
         while time.time() < deadline:
             recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
             blocking = [r for r in recs if r.get("mode") == "blocking"]
@@ -171,7 +171,7 @@ def test_dialog_reply_survives_a_finish_without_reask(make_routine, scripted):
     d = make_routine(slug="dialogdrop", budgets={"ask_timeout_min": 1})
 
     def driver():
-        deadline = time.time() + 30   # generous: under full-suite load 10s has flaked
+        deadline = time.time() + 180  # must outlive the run's whole ask budget (2×ask_timeout_min); 30s flaked under full-suite load
         while time.time() < deadline:
             recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
             blocking = [r for r in recs if r.get("mode") == "blocking"]

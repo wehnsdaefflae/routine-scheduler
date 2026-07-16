@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.54.1] — 2026-07-16
+
+### Fixed
+- **Flaky `test_dialog_reply_*` decisions tests (recurring F71).** The driver thread's
+  wall-clock deadline (30s) could expire before the run's total ask budget elapsed
+  (`ask_timeout_min: 1` × two blocking asks = up to 120s) under full-suite CPU load, so the
+  re-ask answer was never posted and `answers[1]` raised `IndexError`. Raised both driver
+  deadlines to 180s so the driver always outlives the run's whole ask budget. Test-only
+  change; no runtime behaviour affected.
+
 ## [0.54.0] — 2026-07-16
 
 ### Added
