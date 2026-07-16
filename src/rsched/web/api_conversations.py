@@ -118,6 +118,7 @@ async def create_conversation(request: Request, text: Annotated[str, Form()] = "
                               max_total_turns: Annotated[str, Form()] = "",
                               files: Annotated[list[UploadFile] | None, File()] = None) -> dict:
     server = request.app.state.server
+    text = text.replace("\r\n", "\n")   # multipart encodes newlines CRLF; \n is canonical
     if not text.strip() and not playbook.strip():
         raise HTTPException(400, "empty message — write the first message or pick a playbook")
     # Optional pre-start budgets: max_turns = turns per REPLY, max_total_turns = cumulative
@@ -194,6 +195,7 @@ async def message(request: Request, slug: str, text: Annotated[str, Form()],
     it to the model as prose.
     """
     info = conversation_info(request, slug)
+    text = text.replace("\r\n", "\n")   # multipart encodes newlines CRLF; \n is canonical
     if not text.strip():
         raise HTTPException(400, "empty message")
     conv_dir = info.cfg.dir

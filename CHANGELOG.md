@@ -19,6 +19,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.54.0] — 2026-07-16
+
+### Added
+- **"Refer to" on every message (the messenger reply analog).** Every transcript message
+  (turns, injections, questions, answers, finish banners) and every chat message (yours,
+  the agent's replies, single work steps inside a fold) carries a hover ↩ that primes the
+  composer with a reference chip; sending prepends ONE leading quoted line
+  (`> re <label>: <snippet>`) to the message text — plain markdown the model reads
+  naturally, no new event field. The sent message renders the line as a compact quote chip,
+  ✕ drops a primed reference, and a slash command never takes one (its `/<kind>` head must
+  lead). Run view (all three modes) and conversations alike.
+- **Transcript story rendering.** The run transcript groups the say stream by acting stage:
+  a phase change draws a labeled divider (from the `phase` stamp assistant_action events
+  already carry), so a run reads as chapters of its own stages. Applies wherever the shared
+  renderer runs — run view, subrun unfolds, and chat work folds.
+
+### Fixed
+- **Conversation messages no longer carry `\r`.** Multipart form encoding turns every
+  newline into CRLF; the conversations API now canonicalizes to `\n` on receipt (create +
+  message), so multi-line chat messages stop leaking carriage returns into instruction.md,
+  the inbox, and the model's context. Surfaced by the refer-to tests' exact-match asserts.
+
+### Changed
+- **Finding-first `say` contract.** The harness contract and the action schema now demand
+  the say LEAD with what the last observation taught, then why this action — a few words
+  for routine steps, 2-3 sentences on decisions, direction changes, and surprises (was:
+  "one short sentence, what/why"). Mid-run narration becomes an actual story instead of a
+  restatement of the action beside it; prompt-anatomy doc + pin test track the wording.
+
 ## [0.53.0] — 2026-07-16
 
 ### Added

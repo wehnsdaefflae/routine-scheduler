@@ -2,10 +2,9 @@
 models, and traits/ from routines_home/clarification when it exists, and the API keeps
 the template itself protected — never fired, never archived, flagged on its card."""
 
+import pytest
 import yaml
 from fastapi.testclient import TestClient
-
-import pytest
 
 from rsched.config import ServerConfig, load_server_config
 from rsched.web import wizard_store
@@ -77,7 +76,7 @@ def test_create_session_copies_budgets_models_and_traits(tmp_path):
     server = _server(tmp_path)
     _template(server, budgets={"max_turns": 60}, models={"main": "m"},
               traits={"ask-policy.md": "# ask policy\n"})
-    wid, ts, d = wizard_store.create_session(server, "Watch arxiv for new agent papers.")
+    _wid, _ts, d = wizard_store.create_session(server, "Watch arxiv for new agent papers.")
     raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
     assert raw["budgets"]["max_turns"] == 60
     assert raw["budgets"]["ask_timeout_min"] == wizard_store.WIZARD_BUDGETS["ask_timeout_min"]
@@ -87,7 +86,7 @@ def test_create_session_copies_budgets_models_and_traits(tmp_path):
 
 def test_create_session_without_template_matches_old_behaviour(tmp_path):
     server = _server(tmp_path)
-    wid, ts, d = wizard_store.create_session(server, "Watch arxiv for new agent papers.")
+    _wid, _ts, d = wizard_store.create_session(server, "Watch arxiv for new agent papers.")
     raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
     assert raw["budgets"] == wizard_store.WIZARD_BUDGETS
     assert "models" not in raw

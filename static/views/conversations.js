@@ -310,6 +310,7 @@ export async function render(view, slug, _query = {}) {
         sessionStorage.setItem(PREFILL_KEY, lastUserText || "");
         navigate("#/conversations");
       },
+      onRefer: composer.setRef,
     });
 
     // The first message became instruction.md (composed into the system prompt), so no
@@ -363,6 +364,19 @@ export async function render(view, slug, _query = {}) {
       const { picker, files, clearFiles, wirePaste } = filePicker();
       wirePaste(input);
       const send = el("button", { class: "btn primary" }, "send");
+
+      // "refer to" (the messenger reply analog): a hover ↩ on any chat message or work step
+      // primes this chip; the send prepends the quoted reference line to the message text.
+      let pendingRef = null;
+      const refText = el("span", { class: "ref-text" });
+      const refClear = el("button", { class: "btn small ghost", title: "drop the reference" }, "✕");
+      const refBar = el("div", { class: "composer-ref", hidden: true }, "↩ ", refText, refClear);
+      const setRef = (r) => {
+        pendingRef = r;
+        refBar.hidden = !r;
+        if (r) { refText.textContent = `${r.label}: ${r.snippet}`; input.focus(); }
+      };
+      refClear.onclick = () => setRef(null);
 
       // ---- slash commands: the user runs the SAME actions/utils the assistant can ----
       let catalog = null;
@@ -467,7 +481,7 @@ export async function render(view, slug, _query = {}) {
         try { await api(`/api/runs/${detail.run_id}/abort`, { method: "POST" }); toast("stopping the reply…"); }
         catch (err) { toast(err.message, 4000, { error: true }); stopBtn.disabled = false; }
       };
-      const node = el("div", { class: "conv-composer" }, helpPanel,
+      const node = el("div", { class: "conv-composer" }, helpPanel, refBar,
         el("div", { class: "cmd-anchor" }, suggests, input),
         el("div", { class: "row", style: "gap:8px" }, picker, helpBtn, send, stopBtn), pbRow);
       const submit = async () => {
@@ -475,15 +489,20 @@ export async function render(view, slug, _query = {}) {
         send.disabled = true;
         try {
           const fd = new FormData();
-          fd.append("text", input.value);
           // a known /<kind> head marks the message as a COMMAND the engine executes
           const head = input.value.trimStart().match(/^\/([a-z_]+)/);
-          if (head && (await loadCatalog()).kinds.some((k) => k.kind === head[1])) {
-            fd.append("command", "1");
-          }
+          const isCommand = Boolean(head
+            && (await loadCatalog()).kinds.some((k) => k.kind === head[1]));
+          // a primed reference rides the text as one leading quoted line (prose only — a
+          // command must keep its /<kind> head)
+          fd.append("text", pendingRef && !isCommand
+            ? `> re ${pendingRef.label}: ${pendingRef.snippet}\n\n${input.value}`
+            : input.value);
+          if (isCommand) fd.append("command", "1");
           for (const f of files()) fd.append("files", f);
           const r = await apiUpload(`/api/conversations/${slug}/message`, fd);
           input.value = "";
+          setRef(null);
           forgetField(input);   // sent — the draft must not refill on reload
           clearFiles();
           toast(r.command ? "command running — you keep the turn"
@@ -504,7 +523,8 @@ export async function render(view, slug, _query = {}) {
         }
         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
       };
-      return { node, setLive: (live) => { stopBtn.hidden = !live; if (live) stopBtn.disabled = false; } };
+      return { node, setRef,
+               setLive: (live) => { stopBtn.hidden = !live; if (live) stopBtn.disabled = false; } };
     }
   }
 

@@ -67,8 +67,9 @@ contradictions. read_file / write_file are rejected on .memory/ paths.""")
     return f"""You are the orchestrator of the routine "{r.name}" ({r.slug}), run {ctx.run_id}\
 {f" (schedule: {r.cron})" if r.cron else ""}. This conversation IS the run: every turn you reply \
 with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. The \
-"say" field is ONE short sentence — what you observed / why this action; keep it terse (a few \
-words for routine steps), spend words only on decisions and surprises.
+"say" field is your narration: lead with what the last observation taught you, then why this \
+action — a few words for routine steps, 2-3 sentences when you decide between options, change \
+direction, or hit a surprise.
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \
 conversation, one per turn, each answered by an observation before your next reply. Never state or \

@@ -94,7 +94,8 @@ the limits (single-writer status.json preserved).
   `stages/<name>.md` stamps `ctx.phase` (executor) → status.json (every turn) → the run SSE `state`
   event, which also fires on phase change (`/stategraph` endpoints,
   `static/components/stategraph.js` — rendered in the run view's rail and the conversation artifact
-  rail, current phase highlighted live). `state/phase.json` stays recipe-private state (the digest
+  rail, current phase highlighted live). The transcript renderer chapters the say stream with
+  labeled phase dividers from the same per-event `phase` stamp, so a run reads as a story. `state/phase.json` stays recipe-private state (the digest
   shows it); it does NOT drive the diagram. Every `assistant_action` transcript event is stamped
   with the ACTIVE phase, so the rail is also an instrument panel: `statemap.phase_stats` (served at
   `/api/runs/<id>/phases`) derives per-phase turns / tokens / cost / wall-clock from the
@@ -114,8 +115,9 @@ the limits (single-writer status.json preserved).
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
   far better than `oneOf`): `util, write_util, read_file, view_image, write_file, edit_file, memory_read,
-  memory_write, llm, spawn, subtask, detach, subruns, kill, wait, ask_user, finish`. Every action carries `say` (ONE
-  terse sentence of narration) + `kind`. `read_file` batches related reads via `paths` (one turn, one
+  memory_write, llm, spawn, subtask, detach, subruns, kill, wait, ask_user, finish`. Every action carries `say` (finding-first narration:
+  what the last observation taught you + why this action; terse for routine steps, 2-3 sentences
+  at decision points) + `kind`. `read_file` batches related reads via `paths` (one turn, one
   observation section per file); `edit_file` anchor-replaces in place so revisions cost the diff, not
   the document. `write_file` is GROUNDED: overwriting an existing file OUTSIDE the routine's own dir
   is rejected unless this run has seen it (`ctx.seen_paths` — read/viewed/written this run, rebuilt
@@ -300,6 +302,12 @@ chat message; the next user message resumes the SAME run in place (fresh budget 
   `components/artifacts.js` with `base: "routines"`), with the state-graph card on top.
   UI: `static/views/conversations.js` + `components/chat.js` (work folded per reply,
   `[new-topic]` first-line marker → warn + one-click fork) + `components/artifacts.js`.
+  **Refer-to** (messenger reply analog, run view + chat): every rendered message carries a
+  hover ↩ that primes the composer; the send prepends ONE leading quoted line
+  (`> re <label>: <snippet>` — `transcript.js` `splitRef`/`referButton` own the convention)
+  to the message TEXT, so the model reads it as plain markdown — no new event field, and
+  renderers show it as a quote chip. Slash commands never take a reference (the `/<kind>`
+  head must lead).
 - **Playbooks** (see Libraries & seeds → Playbooks): the new-conversation form has a playbook
   picker (`GET /api/playbooks`); the composer carries **Save as playbook** (`POST …/playbook` →
   distil a new one) and, when the conversation was seeded from a playbook, **Update playbook**

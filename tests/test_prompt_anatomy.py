@@ -66,6 +66,8 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "do NOT restart from step 1",
         "NOT a new run: do not restart the workflow",
         "OBSERVATION (finish REJECTED)",
+        # the say contract (composer harness line + ACTION_SCHEMA description)
+        "lead with what the last observation taught you",
     ]
     for needle in needles:
         assert needle in DOC, f"engine string {needle!r} missing from docs/prompt-anatomy.md"

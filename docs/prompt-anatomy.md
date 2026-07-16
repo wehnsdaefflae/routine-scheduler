@@ -32,9 +32,9 @@ Eight sections, in this order:
 
 | # | Section | Source | What the model learns |
 |---|---|---|---|
-| 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a TERSE `say` (one short sentence — words are spent on decisions and surprises, not routine steps), "the run starts NOW", stages-on-demand, working dir + extra fs roots, **no shell**, capability-aware `write_util` and memory-action glosses, the traits-vs-capabilities prose ownership rule, the concrete budgets, a prose gloss of every action kind (including `read_file` batching via `paths`, in-place `edit_file` instead of whole-file rewrites, and `view_image` to SEE an image/PDF — natively when the model is multimodal, else via the vision util), sequential `subtask` decomposition (a background child the parent starts then WAITS for, its own context + pattern + budget) alongside parallel `spawn`, the injection warning. |
-| 2 | `# ACTION SCHEMA (your every reply matches this)` | `ACTION_SCHEMA` | The exact reply grammar; field descriptions double as micro-docs (`say`/`question`/`summary` say that simple Markdown renders in the UI; `say` demands ONE short sentence; `summary` demands a DETAILED 8-20 lines). |
-| 3 | `# EXAMPLE of a valid reply` | `example_action()` | One few-shot example (`read_file stages/scan.md`) that models on-demand stage reading and a terse `say` — deliberately NOT `util name=list`: the catalog already sits in CAPABILITIES, so opening a run by re-listing it just re-buys known information. |
+| 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a finding-first `say` (lead with what the last observation taught you, then why this action — a few words for routine steps, 2-3 sentences on decisions, direction changes, and surprises), "the run starts NOW", stages-on-demand, working dir + extra fs roots, **no shell**, capability-aware `write_util` and memory-action glosses, the traits-vs-capabilities prose ownership rule, the concrete budgets, a prose gloss of every action kind (including `read_file` batching via `paths`, in-place `edit_file` instead of whole-file rewrites, and `view_image` to SEE an image/PDF — natively when the model is multimodal, else via the vision util), sequential `subtask` decomposition (a background child the parent starts then WAITS for, its own context + pattern + budget) alongside parallel `spawn`, the injection warning. |
+| 2 | `# ACTION SCHEMA (your every reply matches this)` | `ACTION_SCHEMA` | The exact reply grammar; field descriptions double as micro-docs (`say`/`question`/`summary` say that simple Markdown renders in the UI; `say` demands the finding first, then the why; `summary` demands a DETAILED 8-20 lines). |
+| 3 | `# EXAMPLE of a valid reply` | `example_action()` | One few-shot example (`read_file stages/scan.md`) that models on-demand stage reading and a finding-first `say` — deliberately NOT `util name=list`: the catalog already sits in CAPABILITIES, so opening a run by re-listing it just re-buys known information. |
 | 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow **and the task**: a top-level routine's recipe is self-contained — goal, deliverable, constraints and completion criteria are compiled into `main.md` + `stages/*.md` (stage detail read on demand), practice detail in `traits/*.md`. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
 | 5 | `# INSTRUCTION (your assigned task)` | the parent's spawn `prompt` — **subruns only** | SUBRUN-ONLY. A top-level routine has NO instruction section and no `instruction.md` on disk: its task is entirely its self-contained recipe (`main.md` + `stages/`). The clarified instruction was only a transient compile **SEED**, consumed when the recipe was generated at creation and never persisted. A subrun has no decomposed stages, so its self-contained brief (the parent's `prompt`) rides here instead. |
 | 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ capabilities — switched-off gated kinds like `memory_*`/`write_util` simply don't appear), the enabled capabilities + the held conduct permissions, each held permission's short capability note (the library doc's body, capped), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary, reserved utils flagged). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
@@ -221,7 +221,7 @@ state digest point at the files, read on demand. The working-directory path is s
 ### 5.1 System prompt
 
 ```
-You are the orchestrator of the routine "Job radar" (job-radar), run job-radar:20260712-070000 (schedule: 0 7 * * *). This conversation IS the run: every turn you reply with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. The "say" field is ONE short sentence — what you observed / why this action; keep it terse (a few words for routine steps), spend words only on decisions and surprises.
+You are the orchestrator of the routine "Job radar" (job-radar), run job-radar:20260712-070000 (schedule: 0 7 * * *). This conversation IS the run: every turn you reply with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. The "say" field is your narration: lead with what the last observation taught you, then why this action — a few words for routine steps, 2-3 sentences when you decide between options, change direction, or hit a surprise.
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this conversation, one per turn, each answered by an observation before your next reply. Never state or summarize results that no observation here has shown; finishing with claims of unperformed work is the single worst failure this system knows. The engine rejects a finish(ok) before any action ran.
 
@@ -269,7 +269,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
  "properties": {
   "say": {
    "type": "string",
-   "description": "ONE short sentence: what you observed / why this action. A few words suffice for routine steps; spend words only on decisions and surprises. Simple Markdown (bold, `code`, links) renders in the UI."
+   "description": "Your narration: lead with what the last observation taught you, then why this action. A few words suffice for routine steps; spend 2-3 sentences on decisions, direction changes, and surprises. Simple Markdown (bold, `code`, links) renders in the UI."
   },
   "kind": {
    "type": "string",
@@ -436,7 +436,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
 
 # EXAMPLE of a valid reply
 {
- "say": "Workflow stage 1 \u2014 reading its module before acting.",
+ "say": "Digest puts this run at the scan stage \u2014 reading its module before acting.",
  "kind": "read_file",
  "path": "stages/scan.md"
 }
@@ -547,10 +547,10 @@ Begin run job-radar:20260712-070000. Nothing has been executed yet — the workf
 
 ### 5.3 A turn in the middle
 
-The model's message (always just the JSON, `say` terse):
+The model's message (always just the JSON, `say` finding-first):
 
 ```json
-{"say": "Scanning portal 1 (portal quirks note consulted).", "kind": "util", "name": "websearch", "args": ["site:freelance.de LLM projekt", "--json"]}
+{"say": "Quirks note says portal 1 needs the site: filter — scanning it first.", "kind": "util", "name": "websearch", "args": ["site:freelance.de LLM projekt", "--json"]}
 ```
 
 The engine's reply (the observation, nothing else on an ordinary turn):

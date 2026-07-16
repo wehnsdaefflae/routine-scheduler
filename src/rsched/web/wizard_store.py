@@ -38,7 +38,8 @@ def template_defaults(server) -> tuple[dict, dict]:
     the RAW yaml, not load_routine, because the loader backfills DEFAULT_BUDGETS (routine
     defaults, e.g. a 5-minute ask timeout) for omitted keys; here an omitted key must keep
     its WIZARD_BUDGETS value. Only known budget keys pass; models pass through as-is
-    (empty = system-model fallback)."""
+    (empty = system-model fallback).
+    """
     d = template_dir(server)
     if d is not None:
         try:
@@ -46,8 +47,10 @@ def template_defaults(server) -> tuple[dict, dict]:
         except (OSError, yaml.YAMLError):
             raw = None
         if isinstance(raw, dict):
-            budgets = raw.get("budgets") if isinstance(raw.get("budgets"), dict) else {}
-            models = raw.get("models") if isinstance(raw.get("models"), dict) else {}
+            raw_budgets = raw.get("budgets")
+            raw_models = raw.get("models")
+            budgets = raw_budgets if isinstance(raw_budgets, dict) else {}
+            models = raw_models if isinstance(raw_models, dict) else {}
             budgets = {k: v for k, v in budgets.items()
                        if k in WIZARD_BUDGETS and isinstance(v, int)}
             return {**WIZARD_BUDGETS, **budgets}, dict(models)

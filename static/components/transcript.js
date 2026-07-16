@@ -9,6 +9,8 @@
 //                        start/end lines; n may be a nested path like "2/1". Returns
 //                        {events, offset}.
 //   isLive()           — true while the run is live; expanded subruns keep polling.
+//   onRefer({label, snippet}) — enables a hover "refer to" button on every message (the
+//                        messenger reply analog); the view primes its composer with it.
 
 import { md, mdInline } from "/static/md.js";
 import { answerForm } from "/static/components/answerform.js";
@@ -19,11 +21,29 @@ const BRIEF_FIELD = { util: "name", write_util: "name", read_file: "path", write
                       llm: "prompt", spawn: "label", kill: "n", wait: "n",
                       ask_user: "question", finish: "status" };
 
+// "Refer to" rides the message TEXT as one leading quoted line — `> re <label>: <snippet>`,
+// then a blank line, then the message. Plain markdown the model reads naturally, no new
+// event field; this is the ONE convention (composers prepend it, renderers split it).
+const REF_LINE = /^> re ([^\n]+)\n\n?/;
+export function splitRef(text) {
+  const m = REF_LINE.exec(text || "");
+  return m ? { ref: m[1], body: (text || "").slice(m[0].length) } : { ref: null, body: text || "" };
+}
+
+export function referButton(onRefer, label, snippet) {
+  if (!onRefer) return null;
+  return el("button", { class: "refer-btn", title: "refer to this in your next message",
+    onclick: () => onRefer({ label,
+      snippet: String(snippet || "").replace(/\s+/g, " ").trim().slice(0, 160) }) }, "↩");
+}
+
 export function createTranscript(container, opts = {}) {
   const root = el("div", { class: "transcript" });
   container.append(root);
   let openTurn = null; // the turn box awaiting its observation
+  let lastPhase = null; // the acting stage of the previous turn — a change inserts a divider
   const qforms = new Map();   // qid -> { controls, created } for open inline answer forms
+  const referBtn = (label, snippet) => referButton(opts.onRefer, label, snippet);
 
   function closeQuestion(qid, note) {
     const f = qforms.get(qid);
@@ -95,6 +115,13 @@ export function createTranscript(container, opts = {}) {
 
   function addTurn(ev) {
     const a = ev.payload;
+    // Group the flat stream by acting stage: assistant_action events carry the live phase
+    // (stamped from stage-module reads) — a change draws a labeled divider, so the say
+    // stream reads as a story chaptered by the routine's own stages.
+    if (ev.phase && ev.phase !== lastPhase) {
+      lastPhase = ev.phase;
+      root.append(el("div", { class: "phase-divider" }, el("span", {}, ev.phase)));
+    }
     // For utils, show the whole call inline (name + args) — a missing args array must be
     // visible at a glance, not one click deep in the action json.
     const brief = a.kind === "util"
@@ -114,7 +141,9 @@ export function createTranscript(container, opts = {}) {
                               title: ev.usage.provider ? `served by ${ev.usage.provider}` : "" },
                     fmtTokens(ev.usage)) : null),
       el("details", { class: "raw" }, el("summary", {}, "action json"),
-        el("pre", {}, JSON.stringify(a, null, 1))));
+        el("pre", {}, JSON.stringify(a, null, 1))),
+      referBtn(`turn ${ev.turn ?? "?"} (${a.kind}${a.kind === "util" && a.name ? ` ${a.name}` : ""})`,
+        a.say || brief));
     root.append(turn);
     openTurn = a.kind === "finish" ? null : turn;
     return turn;
@@ -192,9 +221,15 @@ export function createTranscript(container, opts = {}) {
   }
 
   const SIMPLE = {
-    user_injection: (ev) => ev.payload.source === "engine"
-      ? el("div", { class: "ev system" }, `— ${ev.payload.text} —`)
-      : el("div", { class: "ev injection" }, `\u{1F4E8} user: ${ev.payload.text}`),
+    user_injection: (ev) => {
+      if (ev.payload.source === "engine") {
+        return el("div", { class: "ev system" }, `— ${ev.payload.text} —`);
+      }
+      const { ref, body } = splitRef(ev.payload.text);
+      return el("div", { class: "ev injection" },
+        ref ? el("div", { class: "reply-ref", title: ref }, "↩ ", ref) : null,
+        `\u{1F4E8} user: ${body}`);
+    },
     question: questionNode,
     answer: (ev) => {
       if (!ev.payload.intermediate) closeQuestion(ev.payload.qid);   // dialog replies keep it open
@@ -213,6 +248,15 @@ export function createTranscript(container, opts = {}) {
       md(ev.payload.summary || "(no summary)", "obs md"))),
     header: (ev) => el("div", { class: "ev system" },
       `run ${ev.run_id} · ${ev.orchestrator?.endpoint}:${ev.orchestrator?.model} · workflow ${ev.workflow?.slug || "?"}`),
+  };
+
+  // What a "refer to" on a simple event means to the model reading the quote later —
+  // labels are addressed to it ("your question"), snippets are the message's own words.
+  const REFER_SIMPLE = {
+    user_injection: (ev) => ev.payload.source === "engine" ? null
+      : ["the earlier user message", splitRef(ev.payload.text).body],
+    question: (ev) => ["your question", ev.payload.question],
+    answer: (ev) => ["the user's answer", ev.payload.text],
   };
 
   return {
@@ -234,11 +278,18 @@ export function createTranscript(container, opts = {}) {
           el("strong", {}, `finish: ${p.status}`),
           el("div", { class: "mt", style: "margin-top:6px" }, md(p.summary || "")),
           el("div", { class: "muted", style: "margin-top:6px" },
-            `${ev.turns ?? "?"} turns · ${fmtTokens(ev.usage_total)}`)));
+            `${ev.turns ?? "?"} turns · ${fmtTokens(ev.usage_total)}`),
+          referBtn(`your ${p.status} finish summary`, (p.summary || "").split("\n")[0])));
         return;
       }
       const renderer = SIMPLE[ev.type];
-      if (renderer) root.append(renderer(ev));
+      if (renderer) {
+        const node = renderer(ev);
+        const ref = REFER_SIMPLE[ev.type]?.(ev);
+        const btn = ref && referBtn(ref[0], ref[1]);
+        if (btn) node.append(btn);
+        root.append(node);
+      }
     },
   };
 }

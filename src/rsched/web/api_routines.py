@@ -30,7 +30,8 @@ DEFERRED_BACKLOG_N = 5
 
 def guard_template(slug: str, refusal: str) -> None:
     """The 'clarification' routine is the wizard's protected template — configuration the
-    user edits, never a runnable/removable routine. 403 keeps it on the page regardless."""
+    user edits, never a runnable/removable routine. 403 keeps it on the page regardless.
+    """
     if slug == TEMPLATE_SLUG:
         raise HTTPException(403, f"{slug!r} is the protected clarification template — {refusal}")
 

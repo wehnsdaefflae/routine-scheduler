@@ -241,6 +241,56 @@ def test_run_view_message_modes(ui, ui_page):
                for m in inbox.glob("msg-*.json"))
 
 
+def test_run_transcript_story_and_refer(ui, ui_page):
+    """The transcript reads as a story: a phase change draws a labeled divider, an injected
+    message's leading `> re …` line renders as a quote chip, and the ↩ on a turn primes the
+    composer — the sent text leads with the quoted reference and the chip clears."""
+    run_dir = ui.seed_run("uir", "20260715-150000", "finished", summary="done")
+    events = [
+        {"ts": "2026-07-15T10:00:30+00:00", "type": "assistant_action", "phase": "gather",
+         "turn": 1, "usage": {"in": 10, "out": 5},
+         "payload": {"kind": "util", "name": "websearch", "args": ["llm jobs"],
+                     "say": "Catalog fits — scanning portals."}},
+        {"type": "observation", "turn": 1,
+         "payload": {"kind": "util", "name": "websearch", "exit": 0, "stdout": "3 hits"}},
+        {"ts": "2026-07-15T10:01:30+00:00", "type": "assistant_action", "phase": "report",
+         "turn": 2, "usage": {"in": 10, "out": 5},
+         "payload": {"kind": "write_file", "path": "artifacts/r.md",
+                     "say": "Hits are solid — writing the report."}},
+        {"type": "user_injection",
+         "payload": {"text": "> re turn 1 (util websearch): Catalog fits — scanning "
+                             "portals.\n\nlook deeper"}},
+    ]
+    with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
+        fh.writelines(json.dumps(e) + "\n" for e in events)
+
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-150000")
+    dividers = ui_page.locator(".phase-divider")
+    expect(dividers).to_have_count(2)
+    expect(dividers.nth(0)).to_have_text("gather")
+    expect(dividers.nth(1)).to_have_text("report")
+    # the injected message renders its reference line as a chip, body clean
+    injection = ui_page.locator(".ev.injection")
+    expect(injection.locator(".reply-ref")).to_contain_text("turn 1 (util websearch)")
+    expect(injection).to_contain_text("user: look deeper")
+
+    # ↩ on turn 1 primes the composer chip (label + the say as snippet)…
+    ui_page.locator(".turn .refer-btn").first.click()
+    ref = ui_page.locator(".composer-ref")
+    expect(ref).to_be_visible()
+    expect(ref).to_contain_text("turn 1 (util websearch): Catalog fits — scanning portals.")
+    # …and the queued message leads with the quoted reference line
+    ui_page.locator('select[title="where this message goes"]').select_option("queue")
+    ui_page.locator('input[placeholder^="message…"]').fill("dig into that result")
+    ui_page.get_by_role("button", name="send", exact=True).click()
+    expect(_toast(ui_page)).to_contain_text("queued for the next run")
+    expect(ref).to_be_hidden()                      # sent — the chip clears
+    sent = [json.loads(m.read_text(encoding="utf-8"))
+            for m in (ui.routine_dir("uir") / "inbox").glob("msg-*.json")]
+    assert any(d["text"] == "> re turn 1 (util websearch): Catalog fits — scanning "
+                            "portals.\n\ndig into that result" for d in sent)
+
+
 # ---- 2. Conversation composer ------------------------------------------------------------
 
 
@@ -309,6 +359,37 @@ def test_conversation_slash_commands(ui, ui_page):
     assert command["text"] == "/read_file instruction.md"
     # a bare word (not a known /kind) is NOT flagged — it would hand the turn to the model
     assert all("read_file" in d["text"] or not d.get("command") for d in flagged)
+
+
+def test_conversation_refer_to_message(ui, ui_page):
+    """Messenger-style 'refer to' in chat: ↩ on a message primes the composer chip, ✕ drops
+    it, and a sent message leads with the quoted reference line."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill("Sort my reading list.")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    slug = ui_page.url.rsplit("/", 1)[-1]
+
+    # the seeded instruction bubble carries the hover ↩ — clicking primes the chip
+    ui_page.locator(".msg.user .refer-btn").first.click()
+    ref = ui_page.locator(".composer-ref")
+    expect(ref).to_be_visible()
+    expect(ref).to_contain_text("my earlier message: Sort my reading list.")
+    ref.get_by_role("button").click()               # ✕ drops the reference
+    expect(ref).to_be_hidden()
+
+    # primed again, the sent text leads with the quoted reference line
+    ui_page.locator(".msg.user .refer-btn").first.click()
+    ui_page.locator(".conv-composer textarea").fill("start with the papers")
+    ui_page.locator(".conv-composer").get_by_role("button", name="send", exact=True).click()
+    expect(_toast(ui_page)).to_be_visible()
+    messages = list((ui.conversations / slug / "inbox").glob("msg-*.json"))
+    assert len(messages) == 1
+    # exact match matters: multipart encodes newlines CRLF and the API must canonicalize
+    # to \n, or every stored chat message would carry \r into the engine's context
+    text = json.loads(messages[0].read_text(encoding="utf-8"))["text"]
+    assert text == ("> re my earlier message: Sort my reading list.\n\n"
+                    "start with the papers"), repr(text)
 
 
 # ---- 3. Routine page saves ---------------------------------------------------------------

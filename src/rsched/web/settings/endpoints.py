@@ -225,7 +225,8 @@ def credits_provider(ep) -> str | None:
 
 def nanogpt_balance_url(base_url: str) -> str:
     """Nano-GPT's check-balance lives at /api/check-balance on the ORIGIN — beside,
-    not under, the OpenAI-compatible /api/v1 the endpoint is configured with."""
+    not under, the OpenAI-compatible /api/v1 the endpoint is configured with.
+    """
     from urllib.parse import urlsplit
 
     parts = urlsplit(base_url)

@@ -8,8 +8,10 @@
 //   isLive()          — live-run predicate for subrun polling
 //   onArtifact(path)  — a write_file into artifacts/ landed (the panel refreshes)
 //   onFork(title, qt) — the user clicked the [new-topic] fork button
+//   onRefer({label, snippet}) — "refer to" on any message primes the composer (also passed
+//                       into the work-fold transcripts, so a single step is referable)
 
-import { createTranscript } from "/static/components/transcript.js";
+import { createTranscript, referButton, splitRef } from "/static/components/transcript.js";
 import { answerForm } from "/static/components/answerform.js";
 import { md, mdInline } from "/static/md.js";
 import { el, fmtTime, fmtTokens } from "/static/util.js";
@@ -17,17 +19,21 @@ import { el, fmtTime, fmtTokens } from "/static/util.js";
 const NEW_TOPIC = /^\s*\[new-topic\]\s*(.*)$/;
 const ATTACH_BLOCK = /\n?\n?\[attached files[^\]]*\]\n((?:- .*\n?)+)/;
 
-// A user message may carry the attachment block the API appended — render it as chips.
-function userNode(text) {
-  const m = ATTACH_BLOCK.exec(text);
-  const body = m ? text.replace(ATTACH_BLOCK, "").trimEnd() : text;
+// A user message may LEAD with the reference line a "refer to" send prepended (rendered as
+// a quote chip) and may carry the attachment block the API appended (rendered as chips).
+function userNode(text, refBtn) {
+  const { ref, body: rest } = splitRef(text);
+  const m = ATTACH_BLOCK.exec(rest);
+  const body = m ? rest.replace(ATTACH_BLOCK, "").trimEnd() : rest;
   const chips = m ? m[1].trim().split("\n").map((line) => {
     const p = line.replace(/^- /, "").trim();
     return el("span", { class: "attach-chip", title: p }, "📎 ", p.split("/").pop());
   }) : [];
   return el("div", { class: "msg user" },
+    ref ? el("div", { class: "reply-ref", title: ref }, "↩ ", ref) : null,
     el("div", { class: "msg-body" }, md(body)),
-    chips.length ? el("div", { class: "msg-attach" }, chips) : null);
+    chips.length ? el("div", { class: "msg-attach" }, chips) : null,
+    refBtn || null);
 }
 
 export function createChat(container, opts = {}) {
@@ -43,7 +49,7 @@ export function createChat(container, opts = {}) {
     const box = el("div", { class: "fold-body" });
     const details = el("details", { class: "work-fold" }, summary, box);
     const transcript = createTranscript(box, {
-      answer: opts.answer, loadSub: opts.loadSub, isLive: opts.isLive });
+      answer: opts.answer, loadSub: opts.loadSub, isLive: opts.isLive, onRefer: opts.onRefer });
     root.append(details);
     fold = { details, summary, transcript, steps: 0, briefs: [] };
     return fold;
@@ -77,7 +83,9 @@ export function createChat(container, opts = {}) {
         p.status && p.status !== "ok" ? el("span", { class: `chip ${p.status}` }, p.status) : null,
         el("span", {}, `${ev.turns ?? "?"} turns`),
         ev.usage_total ? el("span", {}, fmtTokens(ev.usage_total)) : null,
-        ev.ts ? el("span", { title: ev.ts }, fmtTime(ev.ts)) : null));
+        ev.ts ? el("span", { title: ev.ts }, fmtTime(ev.ts)) : null),
+      referButton(opts.onRefer, `your reply${ev.ts ? ` at ${fmtTime(ev.ts)}` : ""}`,
+        (summary || "").split("\n")[0]));
     return node;
   }
 
@@ -138,8 +146,9 @@ export function createChat(container, opts = {}) {
               el("div", { class: "msg-body" }, p.text || "")));
           } else {
             closeFold("ok");
-            lastUser = (p.text || "").replace(ATTACH_BLOCK, "").trim();
-            root.append(userNode(p.text || ""));
+            lastUser = splitRef(p.text || "").body.replace(ATTACH_BLOCK, "").trim();
+            root.append(userNode(p.text || "",
+              referButton(opts.onRefer, "my earlier message", lastUser)));
           }
           return;
         case "finish":
@@ -172,7 +181,8 @@ export function createChat(container, opts = {}) {
         case "question":
           // questions surface at chat level — answerable where the model asked
           closeFold("ok");
-          root.append(el("div", { class: "msg question-msg" }, questionInline(ev)));
+          root.append(el("div", { class: "msg question-msg" }, questionInline(ev),
+            referButton(opts.onRefer, "your question", p.question)));
           return;
         case "answer":
           root.append(el("div", { class: "ev answer" }, p.intermediate

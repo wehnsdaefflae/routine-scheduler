@@ -128,6 +128,34 @@
 .finish-banner.ok { background: rgba(95, 206, 143, 0.06); border: 1px solid rgba(95, 206, 143, 0.35); }
 .finish-banner.partial, .finish-banner.aborted { background: rgba(242, 193, 78, 0.05); border: 1px solid rgba(242, 193, 78, 0.32); }
 .finish-banner.failed { background: rgba(242, 105, 92, 0.06); border: 1px solid rgba(242, 105, 92, 0.35); }
+/* phase grouping: a labeled divider whenever the acting stage changes, so the say stream
+   reads as a story chaptered by the routine's own stages */
+.phase-divider {
+  display: flex; align-items: center; gap: 9px; margin: 4px 0 -3px; color: var(--amber);
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
+}
+.phase-divider::before, .phase-divider::after { content: ""; height: 1px; background: var(--line-2); flex: 1; }
+/* "refer to" — the messenger reply analog: a hover ↩ on any message primes the composer
+   chip; the sent message renders its leading `> re …` line as a quote chip */
+.turn, .ev, .finish-banner, .msg { position: relative; }
+.refer-btn {
+  position: absolute; top: 3px; right: 4px; background: none; border: none; cursor: pointer;
+  color: var(--faint); font-size: 13px; line-height: 1; padding: 3px 5px;
+  opacity: 0; transition: opacity 0.12s;
+}
+.turn:hover > .refer-btn, .ev:hover > .refer-btn, .finish-banner:hover > .refer-btn,
+.msg:hover > .refer-btn { opacity: 1; }
+.refer-btn:hover { color: var(--text); }
+.reply-ref {
+  color: var(--faint); font-size: 11.5px; border-left: 2px solid var(--line-2);
+  padding: 1px 8px; margin-bottom: 6px; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.composer-ref {
+  display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px;
+  border-left: 2px solid var(--amber); padding: 2px 8px; margin-bottom: 4px;
+}
+.composer-ref .ref-text { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* model-authored prose rendered from simple markdown (md.js) — .md block, .mdi inline */
 .md, .turn .obs.md { white-space: normal; }
 .md p { margin: 0 0 7px; }

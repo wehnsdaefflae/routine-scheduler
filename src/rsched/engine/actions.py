@@ -28,9 +28,10 @@ ACTION_SCHEMA: dict = {
     "properties": {
         "say": {
             "type": "string",
-            "description": "ONE short sentence: what you observed / why this action. A few words "
-                           "suffice for routine steps; spend words only on decisions and "
-                           "surprises. Simple Markdown (bold, `code`, links) renders in the UI.",
+            "description": "Your narration: lead with what the last observation taught you, then "
+                           "why this action. A few words suffice for routine steps; spend 2-3 "
+                           "sentences on decisions, direction changes, and surprises. "
+                           "Simple Markdown (bold, `code`, links) renders in the UI.",
         },
         "kind": {"type": "string", "enum": list(KINDS)},
         # util / write_util (the ONLY way to run code — there is no shell)
@@ -352,11 +353,11 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
 
 def example_action() -> dict:
     """The few-shot example embedded in the harness contract — models on-demand step
-    reading with a terse `say` (NOT util discovery: the catalog is already in
+    reading with a finding-first `say` (NOT util discovery: the catalog is already in
     CAPABILITIES, so opening a run by re-listing it just re-buys known information).
     """
     return {
-        "say": "Workflow stage 1 — reading its module before acting.",
+        "say": "Digest puts this run at the scan stage — reading its module before acting.",
         "kind": "read_file",
         "path": "stages/scan.md",
     }

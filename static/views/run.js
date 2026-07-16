@@ -110,7 +110,19 @@ export async function render(view, runId, query = {}) {
       : "inject a message into the run…";
   }
   setModes(false);
-  view.append(el("div", { class: "row mt" }, modeSel, msgInput, sendBtn));
+  // "refer to" (the messenger reply analog): a hover ↩ on any transcript message primes
+  // this chip; the send prepends the quoted reference line to the message text.
+  let pendingRef = null;
+  const refText = el("span", { class: "ref-text" });
+  const refClear = el("button", { class: "btn small ghost", title: "drop the reference" }, "✕");
+  const refBar = el("div", { class: "composer-ref mt", hidden: true }, "↩ ", refText, refClear);
+  const setRef = (r) => {
+    pendingRef = r;
+    refBar.hidden = !r;
+    if (r) { refText.textContent = `${r.label}: ${r.snippet}`; msgInput.focus(); }
+  };
+  refClear.onclick = () => setRef(null);
+  view.append(refBar, el("div", { class: "row mt" }, modeSel, msgInput, sendBtn));
 
   // Auto-scroll ("follow"): on by default; the user can toggle it, and scrolling up pauses it.
   let autoscroll = true;
@@ -205,6 +217,7 @@ export async function render(view, runId, query = {}) {
     subTranscript = createTranscript(subBox, {
       loadSub: (m, o) => api(`/api/runs/${runId}/transcript?sub=${n}/${m}&offset=${o}`),
       isLive: () => !TERMINAL.has(curState),
+      onRefer: setRef,
     });
     subOffset = startOffset || 0;
     const pull = async () => {
@@ -270,18 +283,22 @@ export async function render(view, runId, query = {}) {
   const doSend = async () => {
     if (!msgInput.value.trim()) return;
     const mode = modeSel.value;
+    const text = pendingRef
+      ? `> re ${pendingRef.label}: ${pendingRef.snippet}\n\n${msgInput.value}`
+      : msgInput.value;
     sendBtn.disabled = true;
     try {
       if (mode === "converse") {
-        await api(`/api/runs/${runId}/converse`, { method: "POST", body: { text: msgInput.value } });
+        await api(`/api/runs/${runId}/converse`, { method: "POST", body: { text } });
         forgetField(msgInput);   // delivered — must not refill after the reload below
         toast("message delivered — waking the run to continue the conversation…");
         setTimeout(() => location.reload(), 800);   // reattach the tail to the now-live run
         return;                  // keep the button disabled until the reload lands
       }
-      const r = await api(`/api/runs/${runId}/inject`, { method: "POST", body: { text: msgInput.value } });
+      const r = await api(`/api/runs/${runId}/inject`, { method: "POST", body: { text } });
       toast(r.delivery === "mid-run" ? "injected — picked up at the next turn" : "queued for the next run");
       msgInput.value = "";
+      setRef(null);
       forgetField(msgInput);   // sent — the draft must not refill on reload
     } catch (err) { toast(err.message, 4000, { error: true }); }
     sendBtn.disabled = false;
@@ -305,6 +322,7 @@ export async function render(view, runId, query = {}) {
     // …and subrun lines unfold into the child's own conversation, in place.
     loadSub: (n, o) => api(`/api/runs/${runId}/transcript?sub=${n}&offset=${o}`),
     isLive: () => !TERMINAL.has(curState),
+    onRefer: setRef,
   });
 
   // Question state stays in sync everywhere: an answer given on the Decisions page (or in

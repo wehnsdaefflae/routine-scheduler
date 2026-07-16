@@ -67,7 +67,10 @@ in line behind cron runs, and vice versa.
   card with the snippet, tags, and status. A tag filter narrows the list. The pane folds to a rail.
 - **Center — the chat.** Your messages and the agent's replies are the conversation; the tool work
   between them folds into one expandable group per reply, so you can read the outcome and expand the
-  how only when you want it.
+  how only when you want it. Hover any message — yours, a reply, even a single step inside a work
+  fold — and a **↩ refer-to** button primes the composer with it, messenger-reply style: your next
+  message leads with a quoted `> re …` line the agent reads naturally, and the sent bubble shows the
+  reference as a compact quote chip (✕ on the chip drops it before sending).
 - **Right — artifacts + state.** The deliverables the agent produces, a live state-graph card, and
   a **files** card — which files the run read / wrote / edited, per-path counts straight from the
   transcript (subtasks and your slash commands included). Also folds to a rail so the chat gets the
