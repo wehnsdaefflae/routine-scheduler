@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.50.0] — 2026-07-16
+
+### Added
+- **write_file overwrites must be grounded** (the Claude-Code-style read-before-write rule,
+  scoped to where it matters): overwriting an existing file OUTSIDE the routine's own dir —
+  a project file under an `fs_write_root` — is rejected unless the run has read, viewed, or
+  written that file this run (`ctx.seen_paths`, rebuilt from the transcript on resume so a
+  leg-one read grounds a leg-two rewrite). The routine's own dir is exempt (state/report
+  rewrites are its normal mode), `append` adds without destroying, new files need no
+  grounding, and `edit_file` stays ungated — its verbatim anchor is self-grounding. The
+  rejection is a teaching observation naming the fix; the composed prompt's file-actions
+  line states the rule up front.
+
 ## [0.49.1] — 2026-07-16
 
 ### Changed

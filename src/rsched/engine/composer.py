@@ -123,7 +123,8 @@ UI tells the user what to set (they set it once in the Secrets store; the engine
 allowed root). read_file takes `path` or `paths` (several files in ONE action — batch related \
 reads instead of spending a turn per file). edit_file replaces an exact `anchor` string with \
 `replacement` IN PLACE — for touching a few lines of a large file, use it instead of \
-re-emitting the whole document through write_file.
+re-emitting the whole document through write_file. write_file REPLACES wholesale: overwriting \
+an existing file outside your working dir is rejected until this run has read it.
 - view_image: SEE an image or PDF (png/jpeg/webp/gif/pdf) at `path` (or `paths`) — for \
 attachments and files a util produced. When this run's model is multimodal the file is shown \
 to you DIRECTLY on the next turn; otherwise the `vision` util describes it and you get text \

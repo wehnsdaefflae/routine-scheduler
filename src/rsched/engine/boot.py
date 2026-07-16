@@ -6,11 +6,11 @@ composed in composer.py.
 
 from __future__ import annotations
 
-from ..paths import read_json
+from ..paths import read_json, resolve_rel
 from . import executor, inbox
 from .composer import build_system_prompt, kickoff_message, state_digest
 from .control import inject_user_message, run_user_command
-from .history import orphaned_children, prior_usage, replay_messages
+from .history import orphaned_children, prior_usage, replay_messages, seen_paths
 
 
 def boot(loop) -> None:
@@ -41,6 +41,14 @@ def boot(loop) -> None:
         # rehydrate the live phase: the last phased action's stamp is the stage module
         # the run was in when it left off (the executor stamps stage-module reads)
         ctx.phase = next((str(e["phase"]) for e in reversed(events) if e.get("phase")), "")
+        # rehydrate write_file's grounding set — a file an earlier leg read stays
+        # overwritable (a root revoked between legs simply drops out of the set)
+        roots = [*ctx.routine.fs_read_roots, *ctx.routine.fs_write_roots]
+        for rel in seen_paths(events):
+            try:
+                ctx.seen_paths.add(str(resolve_rel(ctx.routine.dir, rel, roots)))
+            except (OSError, PermissionError):
+                continue
         ctx.budget_base_turn = last_turn        # a fresh budget window from the resume point
         # reporting stays cumulative even though the budget window is fresh — without
         # this base, status.json shows only the last leg of a resumed run

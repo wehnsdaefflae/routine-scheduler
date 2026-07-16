@@ -1226,6 +1226,65 @@ def test_own_recipe_writes_blocked_unless_write_root_covers_dir(make_routine, sc
     assert (d2 / "stages" / "collect.md").read_text().strip() == "rewritten"
 
 
+def test_write_file_overwrite_outside_own_dir_requires_a_read(make_routine, scripted, tmp_path):
+    """write_file REPLACES wholesale: overwriting an existing file outside the routine's
+    own dir is rejected until this run has seen it — then the same write lands. Creating
+    a new file and rewriting files in the OWN dir need no grounding."""
+    import yaml as _yaml
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "config.ini").write_text("keep = me\n", encoding="utf-8")
+    d = make_routine(slug="grounded")
+    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
+    cfg["fs_write_roots"] = [str(project)]
+    cfg["fs_read_roots"] = [str(project)]
+    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+    target = str(project / "config.ini")
+    scripted([
+        write_file(target, content="clobbered"),                  # unread → rejected
+        write_file("state/notes.md", content="own dir is fine"),  # own dir: no gate
+        write_file(str(project / "new.txt"), content="create"),   # new file: no gate
+        {"say": "Reading it first.", "kind": "read_file", "path": target},
+        write_file(target, content="grounded rewrite"),           # seen → allowed
+        finish(),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    assert (project / "config.ini").read_text() == "grounded rewrite"
+    assert (project / "new.txt").read_text() == "create"
+    assert (d / "state" / "notes.md").read_text() == "own dir is fine"
+    obs = [e["payload"] for e in read_events(run_dir / "transcript.jsonl")[0]
+           if e["type"] == "observation" and e["payload"].get("kind") == "write_file"]
+    assert "never read" in (obs[0].get("error") or "")            # the teaching rejection
+    assert all(not o.get("error") for o in obs[1:])
+
+
+def test_write_overwrite_grounding_survives_resume(make_routine, scripted, tmp_path):
+    """The grounding set is rebuilt from the replayed transcript: a file read in leg one
+    stays overwritable after an interruption — no re-read tax on resume."""
+    import yaml as _yaml
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "notes.txt").write_text("original", encoding="utf-8")
+    d = make_routine(slug="regrounded")
+    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
+    cfg["fs_write_roots"] = [str(project)]
+    cfg["fs_read_roots"] = [str(project)]
+    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+    target = str(project / "notes.txt")
+    scripted([{"say": "Reading.", "kind": "read_file", "path": target},
+              finish(summary="leg one done")])
+    status1, _ = run_routine(d, _server(d), run_ts=TS)
+    assert status1 == "ok"
+
+    scripted([write_file(target, content="leg two rewrite"), finish()])
+    status2, _ = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    assert status2 == "ok"
+    assert (project / "notes.txt").read_text() == "leg two rewrite"
+
+
 def test_assistant_actions_carry_the_active_phase(make_routine, scripted):
     """Each assistant_action event is stamped with the phase that was active while it was
     produced — reading a stage module IS the transition (the executor stamps it; no

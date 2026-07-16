@@ -49,7 +49,8 @@ def _ctx(tmp_path, endpoint):
     ref = SimpleNamespace(multimodal=endpoint.multimodal, context_chars=200_000) if endpoint else None
     registry = SimpleNamespace(for_model=lambda k, m: (endpoint, ref)) if endpoint else None
     return SimpleNamespace(routine=routine, grants=None, root_run_dir=tmp_path / "runs" / "x",
-                           server=SimpleNamespace(utils_home=tmp_path / "utils"), registry=registry)
+                           server=SimpleNamespace(utils_home=tmp_path / "utils"), registry=registry,
+                           seen_paths=set())
 
 
 def test_do_view_image_native(tmp_path):

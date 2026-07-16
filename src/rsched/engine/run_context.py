@@ -86,6 +86,10 @@ class RunContext:
 
     turn: int = 0
     phase: str = ""
+    # Resolved paths this run has read, viewed, or written — write_file's grounding set:
+    # overwriting an existing file OUTSIDE the routine's own dir requires the run to have
+    # seen it (rebuilt from the transcript on resume, so grounding survives legs).
+    seen_paths: set[str] = field(default_factory=set)
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
     # Spend recorded by EARLIER legs of this run (set on resume from the transcript).
     # Budgets deliberately ignore it — a resume gets a fresh window — but reporting must

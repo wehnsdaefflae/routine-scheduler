@@ -117,7 +117,11 @@ the limits (single-writer status.json preserved).
   memory_write, llm, spawn, subtask, detach, subruns, kill, wait, ask_user, finish`. Every action carries `say` (ONE
   terse sentence of narration) + `kind`. `read_file` batches related reads via `paths` (one turn, one
   observation section per file); `edit_file` anchor-replaces in place so revisions cost the diff, not
-  the document. `subtask` runs a child sub-workflow SEQUENTIALLY and blocks (the parallel `spawn`'s
+  the document. `write_file` is GROUNDED: overwriting an existing file OUTSIDE the routine's own dir
+  is rejected unless this run has seen it (`ctx.seen_paths` — read/viewed/written this run, rebuilt
+  from the transcript on resume); the own dir is exempt (state/report rewrites are the normal mode),
+  append and new files pass, and `edit_file` needs no gate — its verbatim anchor is self-grounding.
+  `subtask` runs a child sub-workflow SEQUENTIALLY and blocks (the parallel `spawn`'s
   sibling — one child-task executor, `engine/childrun.py`); a `subtask` with `workflow: "generate"`
   drafts a new pattern when the `workflows: generate` capability is held (see docs/subtasks.md).
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out.

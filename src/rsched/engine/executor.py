@@ -136,6 +136,7 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
         text = path.read_text(encoding="utf-8", errors="replace")
     except (OSError, PermissionError) as exc:
         return {"path": rel_path, "error": str(exc)}
+    ctx.seen_paths.add(str(path))
     # Reading a stage module IS the run's state transition — every recipe routes by
     # "read the module for where you are" — so the engine tracks the live phase right
     # here (→ status.json → the SSE state event) with zero recipe cooperation; the
@@ -203,6 +204,7 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal:
     if mime is None:
         return {"path": rel_path, "error": "not a viewable image/PDF (png/jpeg/webp/gif/pdf) — "
                                            "read text files with read_file instead"}
+    ctx.seen_paths.add(str(path))   # viewed = seen: grounds a later overwrite of this file
     supports = getattr(endpoint, "supports_media", None)
     native = (supports is not None and path.stat().st_size <= NATIVE_MEDIA_MAX_BYTES
               and supports(mime, multimodal=multimodal))
@@ -292,6 +294,18 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
         path = resolve_rel(ctx.routine.dir, action["path"], roots)
         if err := _write_gate(ctx, path):
             return {"kind": "write_file", "path": action["path"], "error": err}
+        # Grounding gate: write_file REPLACES a file wholesale. Overwriting one OUTSIDE
+        # the routine's own dir (a project file under an fs_write_root) requires having
+        # seen it this run — a model that never read the content cannot know what it
+        # destroys. The own dir is exempt (state/report rewrites are its normal mode);
+        # append adds without destroying; creating a new file needs no grounding.
+        if (path.is_file() and not action.get("append")
+                and not path.is_relative_to(ctx.routine.dir)
+                and str(path) not in ctx.seen_paths):
+            return {"kind": "write_file", "path": action["path"],
+                    "error": "this OVERWRITES an existing file this run has never read — "
+                             "read_file it first (then overwrite knowingly), or use "
+                             "edit_file with a verbatim anchor for a targeted change"}
         path.parent.mkdir(parents=True, exist_ok=True)
         data = action["content"]
         if not isinstance(data, str):
@@ -303,6 +317,7 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
                 fh.write(data)
         else:
             path.write_text(data, encoding="utf-8")
+        ctx.seen_paths.add(str(path))   # written = seen: a rewrite of own output is grounded
     except (OSError, PermissionError) as exc:
         return {"kind": "write_file", "path": action["path"], "error": str(exc)}
     return {"kind": "write_file", "path": action["path"], "bytes": len(data.encode("utf-8")),
@@ -335,6 +350,7 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
         new_text = text.replace(anchor, replacement) if action.get("all") \
             else text.replace(anchor, replacement, 1)
         path.write_text(new_text, encoding="utf-8")
+        ctx.seen_paths.add(str(path))   # an anchored edit is grounded by its verbatim anchor
     except (OSError, PermissionError) as exc:
         return {"kind": "edit_file", "path": action["path"], "error": str(exc)}
     return {"kind": "edit_file", "path": action["path"],

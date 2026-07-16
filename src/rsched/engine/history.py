@@ -256,3 +256,23 @@ def prior_usage(events: list[dict]) -> dict:
         if u.get("cost"):
             total["cost"] = round(total.get("cost", 0.0) + float(u["cost"]), 6)
     return total
+
+
+def seen_paths(events: list[dict]) -> list[str]:
+    """Path strings (as the actions gave them) that earlier legs read, viewed, or wrote —
+    successful read_file / view_image / write_file / edit_file observations. Rebuilds
+    write_file's grounding set on resume, so a file read before an interruption stays
+    overwritable after it.
+    """
+    out: list[str] = []
+    for ev in events:
+        if ev.get("type") != "observation":
+            continue
+        p = ev.get("payload") or {}
+        kind = p.get("kind")
+        if kind in ("read_file", "view_image"):
+            entries = p.get("files") or ([p] if p.get("path") else [])
+            out.extend(str(f["path"]) for f in entries if f.get("path") and not f.get("error"))
+        elif kind in ("write_file", "edit_file") and p.get("path") and not p.get("error"):
+            out.append(str(p["path"]))
+    return out
