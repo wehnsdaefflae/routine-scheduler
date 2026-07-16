@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.48.1] — 2026-07-16
+
+### Fixed
+- **Full-repo `ruff check` is green again**: the seed trees are now excluded from lint
+  (`extend-exclude = ["library-seed", "util-seed"]` with the reasons documented in
+  `pyproject.toml`). Workflow pattern files are never-executed control-flow depictions
+  parsed with `ast` (pseudo-imports are the format; `workflows/lint.py` is their gate), and
+  seed utils are PEP 723 single-file scripts with script conventions (print CLI,
+  assert-based `--selftest`; header checks + the selftest run are their gate). Previously
+  ~226 findings in those trees never surfaced because the pre-commit hook only lints
+  changed files — the "ruff green in every commit" invariant now holds for the whole repo,
+  and pre-commit's `--force-exclude` keeps the exclusion effective for explicitly-passed
+  paths too.
+
 ## [0.48.0] — 2026-07-16
 
 ### Added

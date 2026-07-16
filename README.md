@@ -121,7 +121,10 @@ process), `run-once` (`--model kind=name` overrides a model role with a catalog 
 adds live endpoint smoke tests). Quality gates are strict and enforced:
 
 - `uv run ruff check` — lint with `select = ALL`; every ignore in `pyproject.toml` names
-  the deliberate house-style reason. Zero findings is the only passing state.
+  the deliberate house-style reason. Zero findings on the full repo is the only passing
+  state. The seed trees (`library-seed/`, `util-seed/`) are excluded: workflow patterns are
+  never-executed ast-parsed depictions and utils are PEP 723 scripts — each has its own gate
+  (`workflows/lint.py`; util header checks + `--selftest`).
 - `uv run mypy` — type check of `src/rsched`.
 - `uv run pre-commit install` once — both gates then run on every commit.
 - `uv run pytest --cov` — coverage report (branch coverage on; `fail_under` is a ratchet).

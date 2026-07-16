@@ -434,8 +434,11 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   canned actions and is the main engine harness. Endpoint adapters are mock-tested; anything touching the
   network hides behind `RSCHED_LIVE_TESTS=1`.
 - `ruff check` (select ALL — every pyproject ignore names its house-style reason) and `mypy`
-  are green in every commit; pre-commit enforces both. New ignores need the same one-line
-  justification the existing ones carry.
+  are green in every commit — on the FULL repo, not just changed files; pre-commit enforces
+  both. New ignores need the same one-line justification the existing ones carry. The two
+  seed trees are excluded (`extend-exclude`): `library-seed/workflows` are never-executed
+  ast-parsed pattern files gated by `workflows/lint.py`, `util-seed` are PEP 723 scripts
+  gated by `utils_lib.header_problems` + their `--selftest`.
 - ONE outbound notification seam: any engine/daemon-implicit "reach the user" send goes through
   `rsched/notify.py` (see docs/notifications.md); new channels become a permission + a notify
   transport, never an inline util call.

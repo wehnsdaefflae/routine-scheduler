@@ -59,6 +59,13 @@ filterwarnings = [
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+# Seed trees are not package code and have their own gates, so ruff skips them entirely
+# (pre-commit passes --force-exclude, so this holds for explicitly-passed files too):
+# - library-seed/workflows: never-executed control-flow DEPICTIONS parsed with ast —
+#   pseudo-imports (`from routine.params import …`) are the format; workflows/lint.py gates them.
+# - util-seed: PEP 723 single-file scripts with script conventions (print CLI, assert-based
+#   --selftest); gated by utils_lib.header_problems + the selftest run, not package lint.
+extend-exclude = ["library-seed", "util-seed"]
 
 [tool.ruff.lint]
 select = ["ALL"]
