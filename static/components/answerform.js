@@ -33,7 +33,7 @@ export function answerForm(q, {
     "ask back") : null;
   const row = el("div", { class: "row mt" }, input, send, discuss, extraControls);
   const node = el("div", {},
-    options.length ? el("div", { class: "row mt", style: "gap:8px" },
+    options.length ? el("div", { class: "row mt answer-opts", style: "gap:8px" },
       options.map((o, i) => el("button", {
         class: "btn small", ...(numbered ? { title: `press ${i + 1}` } : {}),
         onclick: () => { input.value = o; input.focus(); },

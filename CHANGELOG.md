@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.57.2] — 2026-07-16
+
+### Fixed
+- **Decision-card option buttons no longer overflow right on narrow screens** (self-audit
+  F80). A full-sentence option (e.g. the wizard-unification decision's option B) rendered
+  as a single `.btn` with `white-space: nowrap`, so a long label ran off the viewport even
+  though the `.row` container already wraps between buttons. New rule
+  `.answer-opts .btn { white-space: normal; max-width: 100%; text-align: left }` lets the
+  label wrap inside the button and cap at the container width. The shared `answerForm`
+  options row is tagged `.answer-opts`. Guarded by a 400px-viewport UI test asserting the
+  option button's right edge stays within the question card.
+
 ## [0.57.1] — 2026-07-16
 
 ### Changed

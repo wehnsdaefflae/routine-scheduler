@@ -213,6 +213,28 @@ def test_run_view_question_form(ui, ui_page):
     assert answer["text"] == "thinking out loud: why not both?"
 
 
+def test_long_option_label_does_not_overflow(ui, ui_page):
+    """A decision option can be a full sentence. The option button must wrap and stay
+    within the question card width instead of overflowing right on a narrow viewport
+    (F80). Guards the .answer-opts .btn { white-space: normal; max-width: 100% } rule."""
+    long_opt = ("B: promote clarify sessions to real runs of the clarification routine so "
+                "their ids are valid with no addressing bridge required")
+    ui_page.set_viewport_size({"width": 400, "height": 900})
+    ui.seed_question("uir", "q-long", "Which addressing bridge?",
+                     options=[long_opt, "leave as-is"], default="leave as-is")
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator(".question-item")
+    expect(card).to_be_visible()
+    btn = card.get_by_role("button", name=f"1 · {long_opt}", exact=True)
+    expect(btn).to_be_visible()
+    card_box = card.bounding_box()
+    btn_box = btn.bounding_box()
+    # the button's right edge must not extend past the card's right edge (+1px slack)
+    assert btn_box["x"] + btn_box["width"] <= card_box["x"] + card_box["width"] + 1, (
+        f"option button overflows card: btn right={btn_box['x'] + btn_box['width']}, "
+        f"card right={card_box['x'] + card_box['width']}")
+
+
 def test_run_view_message_modes(ui, ui_page):
     """ONE input with an explicit mode: a live run fixes it to inject; a terminal run
     offers continue-this-run vs queue-for-next-run."""

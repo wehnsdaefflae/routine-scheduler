@@ -301,6 +301,12 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .conv-opts label { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--muted); }
 .conv-opts label.row { flex-direction: row; align-items: center; }
 
+/* answerForm option buttons: long labels (e.g. full-sentence decision options) wrap
+   inside the button and cap at the container width instead of overflowing right on
+   narrow screens. The .row class already wraps BETWEEN buttons; .btn's white-space:nowrap
+   is what forces a single wide option off-screen, so override it here. */
+.answer-opts .btn { white-space: normal; max-width: 100%; text-align: left; }
+
 .conv-chat { margin-top: 14px; }
 .chat { display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 92%; border-radius: 10px; padding: 10px 13px; border: 1px solid var(--line); }
