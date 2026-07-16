@@ -141,10 +141,12 @@ def inject(request: Request, run_id: str, body: Inject) -> dict:
     _, run_dir = _run_dir(request, run_id)
     if not body.text.strip():
         raise HTTPException(400, "empty message")
-    routine_dir = run_dir.parent.parent
+    from . import wizard_store
+
+    inbox = wizard_store.session_inbox_dir(request.app.state.server, run_dir)
     st = read_json(run_dir / "status.json")
     state = st.get("state") if isinstance(st, dict) else None
-    atomic_write_json(routine_dir / "inbox" / f"msg-{now_iso().replace(':', '')}.json",
+    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}.json",
                       {"text": body.text, "ts": now_iso(), "via": "web"})
     return {"ok": True,
             "delivery": "mid-run" if state not in TERMINAL_STATES else "next-run"}
@@ -161,7 +163,10 @@ async def converse(request: Request, run_id: str, body: Inject) -> dict:
     if not body.text.strip():
         raise HTTPException(400, "empty message")
     routine_dir = run_dir.parent.parent
-    atomic_write_json(routine_dir / "inbox" / f"msg-{now_iso().replace(':', '')}.json",
+    from . import wizard_store
+
+    inbox = wizard_store.session_inbox_dir(request.app.state.server, run_dir)
+    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}.json",
                       {"text": body.text, "ts": now_iso(), "via": "web-converse"})
     st = read_json(run_dir / "status.json")
     state = st.get("state") if isinstance(st, dict) else None

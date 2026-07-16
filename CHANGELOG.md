@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.58.1] — 2026-07-16
+
+### Fixed
+- **Run-page messages to a live clarify session now reach it** (self-audit D13=B follow-up).
+  A clarify session (0.58.0) is a real run whose artifacts live at
+  `clarification/runs/<ts>`, but the engine executes it in the hidden throwaway workspace
+  `.wizard-<ts>` and polls THAT dir's inbox. `POST /api/runs/clarification:<ts>/inject`
+  and `/converse` derived the inbox as `run_dir.parent.parent/inbox` =
+  `clarification/inbox`, which the live session never polls, so a run-page message was
+  silently dropped. New resolver `wizard_store.session_inbox_dir` redirects a clarify
+  run's message to the `.wizard-<ts>` workspace inbox when that workspace exists; ordinary
+  routines and legacy session-local clarify runs fall through to `routine_dir/inbox`
+  unchanged. (`answer` already routed correctly — the wizard question carries the
+  workspace dir name.)
+
 ## [0.58.0] — 2026-07-16
 
 ### Changed

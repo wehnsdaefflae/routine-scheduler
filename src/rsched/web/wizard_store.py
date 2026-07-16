@@ -100,6 +100,24 @@ def clarify_run_dir(server, d: Path, ts: str) -> Path:
     return real if real.is_dir() else d / "runs" / ts
 
 
+def session_inbox_dir(server, run_dir: Path) -> Path:
+    """The inbox a run-page message (inject/converse) must land in so a LIVE run actually
+    polls it. For a D13=B clarify run the artifact dir is `clarification/runs/<ts>` but the
+    engine executes the session in the hidden throwaway workspace `.wizard-<ts>` and polls
+    THAT dir's inbox — so a message routed to `clarification/inbox` would never be seen.
+    Redirect to the workspace inbox when this run is a clarify run (its artifact dir sits
+    under the clarification template) and the `.wizard-<ts>` workspace still exists. Every
+    other run — ordinary routines, and legacy session-local clarify runs whose run_dir is
+    already under `.wizard-<ts>` — falls through to the normal `routine_dir/inbox`.
+    """
+    routine_dir = run_dir.parent.parent
+    if routine_dir.name == TEMPLATE_SLUG:
+        workspace = server.routines_home / f".wizard-{run_dir.name}"
+        if workspace.is_dir():
+            return workspace / "inbox"
+    return routine_dir / "inbox"
+
+
 def draft_preview(d: Path) -> str:
     try:
         text = (d / "instruction.md").read_text(encoding="utf-8").strip()
