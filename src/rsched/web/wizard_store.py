@@ -21,6 +21,38 @@ from ..workflows.scaffold import GITIGNORE
 WIZARD_BUDGETS = {"max_turns": 25, "max_wall_clock_min": 30, "max_total_tokens": 200_000,
                   "max_subruns": 0, "max_subrun_depth": 0, "ask_timeout_min": 120}
 
+# The protected 'clarification' template routine: every clarify session copies its budgets,
+# models, and traits/ from this dir when it exists (seeded via routine-seed/, adopted at
+# boot). Absent — a deploy the seed hasn't reached, or tests — the hardcoded WIZARD_BUDGETS
+# above stay the fallback, so the wizard never depends on the template being there.
+TEMPLATE_SLUG = "clarification"
+
+
+def template_dir(server) -> Path | None:
+    d = server.routines_home / TEMPLATE_SLUG
+    return d if (d / "routine.yaml").is_file() else None
+
+
+def template_defaults(server) -> tuple[dict, dict]:
+    """(budgets, models) a new session copies from the clarification template routine —
+    the RAW yaml, not load_routine, because the loader backfills DEFAULT_BUDGETS (routine
+    defaults, e.g. a 5-minute ask timeout) for omitted keys; here an omitted key must keep
+    its WIZARD_BUDGETS value. Only known budget keys pass; models pass through as-is
+    (empty = system-model fallback)."""
+    d = template_dir(server)
+    if d is not None:
+        try:
+            raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            raw = None
+        if isinstance(raw, dict):
+            budgets = raw.get("budgets") if isinstance(raw.get("budgets"), dict) else {}
+            models = raw.get("models") if isinstance(raw.get("models"), dict) else {}
+            budgets = {k: v for k, v in budgets.items()
+                       if k in WIZARD_BUDGETS and isinstance(v, int)}
+            return {**WIZARD_BUDGETS, **budgets}, dict(models)
+    return dict(WIZARD_BUDGETS), {}
+
 
 def sessions(app_state) -> dict:
     """In-memory handles of live clarify processes ({wid: {proc, run_ts, dir}}); snapshots fall
@@ -178,12 +210,17 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
     (d / "instruction.md").write_text(draft.rstrip() + "\n", encoding="utf-8")
     (d / "LEDGER.md").write_text("# LEDGER — wizard session\n", encoding="utf-8")
     (d / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
+    budgets, models = template_defaults(server)
+    tpl = template_dir(server)
+    if tpl is not None and (tpl / "traits").is_dir():
+        # the template's practice modules ride into every session (traits are files, not yaml)
+        shutil.copytree(tpl / "traits", d / "traits", dirs_exist_ok=True)
     atomic_write(d / "routine.yaml", yaml.safe_dump({
         "name": "New-routine wizard", "slug": f"wizard-{ts}", "enabled": False,
         "description": "New-routine clarification wizard session.",
         "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
         "workflow": {"library_slug": "clarify-instruction", "library_commit": commit},
-        "budgets": WIZARD_BUDGETS,
+        "budgets": budgets, **({"models": models} if models else {}),
         "permissions": [], "capabilities": {},   # the clarify session holds nothing gated;
         # its tools allowlist narrows further
     }, sort_keys=False))

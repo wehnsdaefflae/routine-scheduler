@@ -19,12 +19,20 @@ from ..ids import now_iso, run_ts
 from ..paths import atomic_write, resolve_rel
 from ..stats import monthly_spend
 from . import artifacts
+from .wizard_store import TEMPLATE_SLUG
 
 router = APIRouter(tags=["routines"])
 
 # Above this many unanswered deferred asks, a routine's card flags a decision backlog —
 # the operator question is "which routine is silently starving on my input".
 DEFERRED_BACKLOG_N = 5
+
+
+def guard_template(slug: str, refusal: str) -> None:
+    """The 'clarification' routine is the wizard's protected template — configuration the
+    user edits, never a runnable/removable routine. 403 keeps it on the page regardless."""
+    if slug == TEMPLATE_SLUG:
+        raise HTTPException(403, f"{slug!r} is the protected clarification template — {refusal}")
 
 
 def _state(request: Request):
@@ -104,6 +112,8 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None 
     last = info.last_run
     return {
         "slug": info.slug,
+        # the clarification template renders with run/archive hidden (wizard config, not a job)
+        "protected": info.slug == TEMPLATE_SLUG,
         "name": info.cfg.name,
         "description": info.cfg.description,
         "enabled": info.cfg.enabled,
@@ -376,6 +386,7 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
 @router.post("/routines/{slug}/run")
 async def run_now(request: Request, slug: str) -> dict:
     info = _info(request, slug)
+    guard_template(slug, "it never runs directly (the wizard starts sessions from it)")
     run_id = await _state(request).runner.fire(info.cfg, reason="manual")
     if run_id is None:
         raise HTTPException(409, f"routine {slug!r} already has an active run")
@@ -385,6 +396,7 @@ async def run_now(request: Request, slug: str) -> dict:
 @router.post("/routines/{slug}/archive")
 def archive_routine(request: Request, slug: str) -> dict:
     info = _info(request, slug)
+    guard_template(slug, "it cannot be archived (sessions copy their config from it)")
     guard_not_active(request, info)
     home = _state(request).server.routines_home
     target = home / ".archive" / f"{slug}-{run_ts()}"

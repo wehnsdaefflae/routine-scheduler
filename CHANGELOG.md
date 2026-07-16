@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.53.0] — 2026-07-16
+
+### Added
+- **Clarification template routine (audit decision D10).** The "+ New routine" wizard's
+  clarify sessions now copy their budgets, models, and practice modules (`traits/`) from a
+  visible, protected `clarification` routine instead of hardcoded values. Seeded via
+  `routine-seed/clarification` and adopted once at boot on existing deployments; the API
+  refuses run/archive for it (403), every card/detail payload carries `protected`, and the
+  routine page swaps the run/archive buttons for a "protected template" chip. Editing that
+  routine's budgets/models/traits tunes every future clarification session.
+
 ## [0.52.0] — 2026-07-16
 
 Self-audit (wizard hardening after the 2026-07-16 routine-creation incidents).

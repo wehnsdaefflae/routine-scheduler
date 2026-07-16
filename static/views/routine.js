@@ -27,11 +27,15 @@ export async function render(view, slug, query = {}) {
       el("div", { class: "kicker" }, "routine"),
       el("h1", {}, d.name || slug)),
     el("div", { class: "row" }, chipHost,
-      d.active_run
-        ? el("a", { class: "btn primary", href: `#/run/${d.active_run}` }, "◉ watch live")
-        : el("button", { class: "btn primary", disabled: !llmReady,
-            title: llmReady ? "" : "connect an LLM endpoint in Settings first", onclick: runNow }, "▶ run now"),
-      el("button", { class: "btn danger", onclick: archive }, "archive"))));
+      // the clarification template is wizard configuration: no run, no archive — the
+      // server 403s both anyway; hiding the buttons says so up front
+      ...(d.protected
+        ? [chip("protected template", "disabled")]
+        : [d.active_run
+            ? el("a", { class: "btn primary", href: `#/run/${d.active_run}` }, "◉ watch live")
+            : el("button", { class: "btn primary", disabled: !llmReady,
+                title: llmReady ? "" : "connect an LLM endpoint in Settings first", onclick: runNow }, "▶ run now"),
+          el("button", { class: "btn danger", onclick: archive }, "archive")]))));
   if (d.problems?.length) {
     view.append(el("div", { class: "panel err", style: "margin-top:14px" },
       d.problems.map((p) => el("div", { style: "color:var(--err)" }, `⚠ ${p}`))));

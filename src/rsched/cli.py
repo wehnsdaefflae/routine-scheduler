@@ -197,6 +197,7 @@ def cmd_daemon(_args) -> int:
     server, problems = load_server_config()
     seed_routines(server.routines_home)   # fresh deploy: install bundled meta routines (off)
     adopt_seed_routine(server.routines_home, "token-lab")  # seeds added after first boot land once
+    adopt_seed_routine(server.routines_home, "clarification")  # the wizard's protected template (D10)
     # new default permissions reach existing routines once, at boot
     adopt_permissions(server.routines_home, server.permissions_home)
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap

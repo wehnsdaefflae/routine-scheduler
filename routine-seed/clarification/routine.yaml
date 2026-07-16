@@ -1,0 +1,31 @@
+name: Routine clarification
+description: Template for "+ New routine" clarification sessions — every session copies
+  its budgets, models, and traits from here. Protected — never scheduled, never archived,
+  never run directly.
+tags:
+- meta
+- template
+slug: clarification
+enabled: false
+schedule:
+  cron: ''
+  tz: Europe/Berlin
+  catchup: skip
+workflow:
+  library_slug: clarify-instruction
+  library_commit: ''
+permissions: []
+capabilities:
+  actions: []
+  utils: []
+  confirm: always
+  runs: none
+budgets:
+  max_turns: 25
+  max_wall_clock_min: 30
+  max_total_tokens: 200000
+  max_subruns: 0
+  max_subrun_depth: 0
+  ask_timeout_min: 120
+retention:
+  keep_runs: 30
