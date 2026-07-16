@@ -24,8 +24,9 @@ WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "S
 def server_tz() -> str:
     """The server's local IANA timezone name (e.g. 'Europe/Berlin'), best-effort. Inside
     a container the host's zone arrives as a TZ env var or a bind-mounted /etc/timezone
-    (a plain file naming the zone) — /etc/localtime stops being a readable symlink there,
-    so all three routes are tried.
+    (a plain file naming the zone). /etc/timezone is consulted BEFORE the /etc/localtime
+    symlink: Docker mounts through the image's symlink, leaving a stale symlink NAME over
+    correct zone DATA — the symlink is only trustworthy where /etc/timezone is absent.
     """
     env = os.environ.get("TZ", "").strip().lstrip(":")
     if env:
@@ -35,16 +36,16 @@ def server_tz() -> str:
         key = getattr(tz, "key", None)
         if key:
             return str(key)
-        link = Path("/etc/localtime")
-        if link.is_symlink():
-            p = str(link.resolve())
-            if "zoneinfo/" in p:
-                return p.split("zoneinfo/", 1)[1]
         tzfile = Path("/etc/timezone")
         if tzfile.is_file():
             name = tzfile.read_text(encoding="utf-8").strip()
             if name:
                 return name
+        link = Path("/etc/localtime")
+        if link.is_symlink():
+            p = str(link.resolve())
+            if "zoneinfo/" in p:
+                return p.split("zoneinfo/", 1)[1]
     except Exception:
         pass
     return "UTC"

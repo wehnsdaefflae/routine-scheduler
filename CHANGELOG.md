@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.50.2] — 2026-07-16
+
+### Fixed
+- **`server_tz()` consults `/etc/timezone` before the `/etc/localtime` symlink**: Docker
+  bind-mounts through the image's symlink (stale NAME over correct zone DATA), so in a
+  container the symlink route answered `Etc/UTC` even with the host's zone mounted.
+
 ## [0.50.1] — 2026-07-16
 
 ### Fixed
