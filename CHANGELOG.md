@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.56.1] — 2026-07-16
+
+Self-audit (first slice of the D11 wizard→run-page unification: backend structure).
+
+### Changed
+- **`api_wizard.py` split into a three-module wizard package (F63 budget).** The 355-line
+  route file (over the ~350-line one-responsibility budget) is now three files sharing one
+  `APIRouter`: `wizard_common.py` (the router + the helpers both halves use —
+  `_wizard_pid`/`_center`/`_wizard_recorder`/`_stop_tailer`/`_wizard_dir`/`_clarify_run_dir`),
+  `wizard_sessions.py` (session lifecycle + the clarify-chat stream: list/detail/cancel/start/
+  events/transcript/answer), and a slimmed `api_wizard.py` (the build half: suggest/
+  generate-workflow/finalize + `_build_routine`). `app.py`'s `api_wizard.router` include is
+  unchanged (the router is re-exported); `scaffold`/`suggest_tags`/`FinalizeBody`/
+  `_build_routine` stay importable off `api_wizard` for the tests. Pure structure — no route,
+  payload, or behaviour change; full suite green 840/3. This is slice 0 of the wizard→run-page
+  unification (audit D11): the session/clarify half is now cleanly separated from the build
+  half, the seam the frontend unification lands along.
+
 ## [0.56.0] — 2026-07-16
 
 ### Changed
