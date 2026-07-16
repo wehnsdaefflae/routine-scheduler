@@ -74,6 +74,55 @@ def restart_action(requested: bool, active_states: list[str], draining: bool,
     return "drain"
 
 
+# A clarify run whose engine has not yet taken over ('starting', no pid) counts as active
+# only while its status stamp is this fresh — so an orphaned session (e.g. killed by a
+# previous restart) can never block every future restart.
+CLARIFY_FRESH_S = 15 * 60
+
+
+def clarify_states(server: ServerConfig) -> list[str]:
+    """Live clarify-run states of in-flight new-routine wizard sessions (.wizard-* dirs).
+
+    The registry deliberately skips dot-dirs, so these engine runs are invisible to
+    runner.active_states() — but a restart mid-clarification kills the user's setup
+    conversation (observed 2026-07-16: a drain fired while a fresh clarify run was still
+    decomposing and orphaned it at turn 0). Folding their states into restart_action's
+    active_states gives clarify runs the same protection ordinary runs have: waiting_user
+    defers the restart, running/starting drains it.
+
+    Two guards keep a dead session from parking restarts forever: a run WITH a pid counts
+    only while that pid is alive; a run with no pid yet ('starting' — the engine subprocess
+    is booting/decomposing) counts only while its status stamp is fresh (CLARIFY_FRESH_S).
+    """
+    from datetime import UTC, datetime
+
+    from ..paths import read_json
+    from .registry import TERMINAL_STATES
+    from .runner import _pid_alive
+
+    out: list[str] = []
+    home = server.routines_home
+    for d in sorted(home.glob(".wizard-*")) if home.is_dir() else []:
+        runs = sorted((d / "runs").glob("*")) if (d / "runs").is_dir() else []
+        st = read_json(runs[-1] / "status.json") if runs else None
+        if not isinstance(st, dict) or st.get("state") in TERMINAL_STATES:
+            continue
+        state = str(st.get("state") or "unknown")
+        if st.get("pid"):
+            if _pid_alive(st["pid"]):
+                out.append(state)
+            continue
+        try:
+            updated = datetime.fromisoformat(str(st.get("updated") or ""))
+        except ValueError:
+            continue
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=UTC)
+        if abs((datetime.now(UTC) - updated).total_seconds()) <= CLARIFY_FRESH_S:
+            out.append(state)
+    return out
+
+
 def trigger_shutdown() -> None:
     """Signal uvicorn to shut down gracefully (it handles SIGTERM); the process then exits and
     the supervisor relaunches with the new code. Isolated so tests patch it rather than

@@ -56,3 +56,67 @@ def test_decompose_fallback_returns_no_adapted_traits(tmp_path):
     assert result["traits"] == {}
     assert result["stages"] == {}
     assert result["main"].strip()
+
+
+# ---- pinned deliverables (META["pin"]) ----------------------------------------------------------
+
+
+class _PinEndpoint:
+    """Returns a decomposition that keeps or drops the pattern's pinned deliverable."""
+
+    def __init__(self, keep_pin: bool):
+        self.keep_pin = keep_pin
+        self.prompts = []
+
+    def complete(self, messages, *, model, schema=None, effort=None, timeout=600, **kw):
+        self.prompts.append(messages[0]["content"])
+        main = ("interrogate the draft, then write state/wizard_result.json" if self.keep_pin
+                else "# Scheduler research\n\nresearch improvements and post them to decisions")
+        return Completion(text="", parsed={"main": main, "stages": []})
+
+
+def _pin_server(tmp_path):
+    server = ServerConfig()
+    server.routines_home = tmp_path
+    server.libraries_home = SEED
+    return server
+
+
+def test_decompose_enforces_pinned_deliverables(monkeypatch, tmp_path):
+    """clarify-instruction pins state/wizard_result.json. A decomposition that drops it — the
+    generator built the DRAFTED routine instead of the clarify flow (observed 2026-07-16, the
+    run then dead-ended with 'ended without a result') — falls back to the verbatim pattern,
+    which always keeps the deliverable."""
+    fake = _PinEndpoint(keep_pin=False)
+    import rsched.endpoints as endpoints_mod
+
+    monkeypatch.setattr(endpoints_mod.EndpointRegistry, "for_system",
+                        lambda self: (fake, ModelRef(endpoint="x", model="m")))
+    result = decompose(_pin_server(tmp_path), "clarify-instruction",
+                       "draft: research scheduler improvements each run")
+    assert "PINNED DELIVERABLES" in fake.prompts[0]          # the prompt demands the pin…
+    assert "state/wizard_result.json" in fake.prompts[0]
+    assert result["stages"] == {}                            # …and the drop forced the fallback
+    assert "state/wizard_result.json" in result["main"]
+
+
+def test_decompose_accepts_a_result_that_keeps_the_pin(monkeypatch, tmp_path):
+    fake = _PinEndpoint(keep_pin=True)
+    import rsched.endpoints as endpoints_mod
+
+    monkeypatch.setattr(endpoints_mod.EndpointRegistry, "for_system",
+                        lambda self: (fake, ModelRef(endpoint="x", model="m")))
+    result = decompose(_pin_server(tmp_path), "clarify-instruction", "some draft")
+    assert result["main"] == "interrogate the draft, then write state/wizard_result.json"
+
+
+def test_decompose_without_pins_never_falls_back_over_them(monkeypatch, tmp_path):
+    """general-task declares no pin — an arbitrary main must stay accepted (guard is opt-in)."""
+    fake = _PinEndpoint(keep_pin=False)
+    import rsched.endpoints as endpoints_mod
+
+    monkeypatch.setattr(endpoints_mod.EndpointRegistry, "for_system",
+                        lambda self: (fake, ModelRef(endpoint="x", model="m")))
+    result = decompose(_pin_server(tmp_path), "general-task", "some task")
+    assert "PINNED" not in fake.prompts[0]
+    assert result["main"].startswith("# Scheduler research")

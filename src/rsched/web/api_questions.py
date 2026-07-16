@@ -136,14 +136,17 @@ def _wizard_questions(server) -> list[dict]:
         ts = wizard_store.latest_run_ts(d)
         run = (registry.read_run(d / "runs" / ts, d.name)
                if ts and (d / "runs" / ts).is_dir() else None)
+        seen: set[str] = set()
         if run and run.question and run.state == "waiting_user":
+            seen.add(str(run.question.get("qid")))
             out.append(_mark_answered(d, {**run.question, "routine": d.name, "wizard": True,
                                           "mode": "blocking", "run_state": run.state,
                                           "asked": run.question.get("asked") or run.ts}))
         pending = d / "questions" / "pending"
         for path in sorted(pending.glob("*.json")) if pending.is_dir() else []:
             q = read_json(path)
-            if isinstance(q, dict) and q.get("question"):
+            # a live blocking question also has a durable pending record — list it once
+            if isinstance(q, dict) and q.get("question") and str(q.get("qid")) not in seen:
                 out.append(_mark_answered(d, {**q, "routine": d.name, "wizard": True,
                                               "mode": q.get("mode", "deferred")}))
     return out

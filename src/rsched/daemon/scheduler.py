@@ -139,9 +139,14 @@ class Scheduler:
         """
         if self._shutting_down:
             return True
+        requested = restart.restart_requested(self.server)
+        active = self.runner.active_states()
+        if requested:
+            # in-flight clarify runs (dot-hidden, invisible to the runner) hold the restart
+            # exactly like ordinary runs: waiting_user defers it, running drains it
+            active = active + restart.clarify_states(self.server)
         action = restart.restart_action(
-            restart.restart_requested(self.server), self.runner.active_states(),
-            self.runner.draining, len(self.wizard_builds))
+            requested, active, self.runner.draining, len(self.wizard_builds))
         if action == "idle":
             if self.runner.draining:
                 log.info("restart request withdrawn — resuming normal scheduling")

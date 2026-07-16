@@ -151,11 +151,14 @@ async function refreshSetupBanner() {
   const cur = active[0];   // newest first
   if (!cur) { banner.hidden = true; banner.replaceChildren(); return; }
   const more = active.length > 1 ? ` (+${active.length - 1} more)` : "";
+  // name the session (draft preview) — an abandoned session's banner must not read as if it
+  // were about a routine the user just finished creating
+  const what = cur.draft ? ` · “${cur.draft.length > 60 ? `${cur.draft.slice(0, 60)}…` : cur.draft}”` : "";
   banner.replaceChildren(
     el("span", { class: "sb-dot" }),
     el("span", { class: "sb-text" },
       el("b", {}, "Routine setup in progress"),
-      ` — ${STAGE_LABEL[cur.stage] || "working"}${more}. The backend is still running; pick up where you left off.`),
+      ` — ${STAGE_LABEL[cur.stage] || "working"}${what}${more}. The backend is still running; pick up where you left off.`),
     el("a", { class: "btn small primary", href: `#/wizard/${cur.wid}` }, "resume"));
   banner.hidden = false;
 }

@@ -1331,3 +1331,41 @@ def test_library_permission_doc_requires_roundtrip(client):
     bad = c.put("/api/library/permissions/communication",
                 json={"content": d2["content"], "requires": {"confirm": "never"}})
     assert bad.status_code == 422
+
+
+def test_wizard_blocking_question_listed_once(client):
+    """A live blocking clarify question also has a durable pending record on disk — the
+    Decisions page must list it ONCE, not twice (observed 2026-07-16: every clarify question
+    showed doubled). Genuinely separate deferred records still surface."""
+    c, tmp = client
+    routines = tmp / "routines"
+    ts = "20260711-091500"
+    wid, d = _mk_wizard(routines, ts, state="waiting_user")
+    atomic_write_json(d / "runs" / ts / "status.json",
+                      {"run_id": f"{wid}:{ts}", "state": "waiting_user", "pid": 4242, "turn": 1,
+                       "question": {"qid": f"q-{ts}-1", "question": "Which areas?"}})
+    pend = d / "questions" / "pending"
+    pend.mkdir(parents=True)
+    atomic_write_json(pend / f"q-{ts}-1.json",
+                      {"qid": f"q-{ts}-1", "question": "Which areas?", "mode": "blocking"})
+    atomic_write_json(pend / f"q-{ts}-2.json",
+                      {"qid": f"q-{ts}-2", "question": "Another, deferred one",
+                       "mode": "deferred"})
+    qs = [q for q in c.get("/api/questions").json() if q.get("wizard")]
+    assert [q["qid"] for q in qs].count(f"q-{ts}-1") == 1
+    assert {q["qid"] for q in qs} == {f"q-{ts}-1", f"q-{ts}-2"}
+    live = next(q for q in qs if q["qid"] == f"q-{ts}-1")
+    assert live["mode"] == "blocking" and live["run_state"] == "waiting_user"
+
+
+def test_wizard_start_refused_while_draining(client):
+    """The restart drain waits for live clarify runs — accepting a NEW one mid-drain would
+    never converge, and the restart would kill it mid-conversation (2026-07-16 incident)."""
+    c, tmp = client
+    c.app.state.runner.draining = True
+    try:
+        r = c.post("/api/wizard/start", json={"draft": "a brand new routine"})
+        assert r.status_code == 503
+        assert not list((tmp / "routines").glob(".wizard-*"))     # no session dir created
+    finally:
+        c.app.state.runner.draining = False

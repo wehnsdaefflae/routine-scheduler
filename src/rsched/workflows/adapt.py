@@ -144,6 +144,12 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
     from .. import library_docs
 
     meta, _, raw = read_workflow(server.library_home, slug)
+    # A pattern may PIN deliverable paths (META["pin"]: str | list) that MUST survive
+    # decomposition — the tailored files must still name them. The observed failure mode:
+    # applied to a draft that itself describes a routine (the wizard's clarify-instruction),
+    # the generator sometimes builds THAT routine and silently drops the pattern's real
+    # deliverable. A dropped pin falls back to the verbatim pattern, which always keeps it.
+    pins = [meta["pin"]] if isinstance(meta.get("pin"), str) else list(meta.get("pin") or [])
     trait_bodies = {}
     for t in traits or []:
         raw_doc = library_docs.read_doc(server.traits_home, t)
@@ -159,8 +165,11 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
         if trait_bodies:
             docs = "\n\n".join(f"--- trait: {t} ---\n{body}" for t, body in trait_bodies.items())
             trait_note = _TRAITS_NOTE.format(trait_docs=docs)
+        pin_note = ("\n\nPINNED DELIVERABLES — the generated main/stages MUST keep these literal "
+                    "paths, serving the same role they have in the workflow pattern:\n"
+                    + "\n".join(f"- {p}" for p in pins)) if pins else ""
         prompt = _DECOMPOSE_PROMPT.format(workflow=raw, instruction=instruction) \
-            + param_note + trait_note
+            + param_note + trait_note + pin_note
         comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
                                  schema=DECOMPOSE_SCHEMA, effort=ref.effort,
                                  temperature=ref.temperature, timeout=180,
@@ -171,6 +180,10 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
         main = str(data.get("main") or "").strip()
         if not main:
             raise ValueError("empty main")
+        missing = [p for p in pins
+                   if p not in main and not any(p in b for b in stages.values())]
+        if missing:
+            raise ValueError(f"decompose dropped pinned deliverable(s): {missing}")
         adapted = {t["slug"]: str(t["body"]).strip() for t in (data.get("traits") or [])
                    if t.get("slug") in trait_bodies and str(t.get("body", "")).strip()}
         return {"main": main, "stages": stages, "traits": adapted}

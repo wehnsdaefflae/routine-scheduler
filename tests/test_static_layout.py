@@ -64,3 +64,14 @@ def test_no_view_references_undefined_conv_classes():
     structural = {"conv-main"}   # a plain container, intentionally unstyled
     missing = {t for t in used - structural if f".{t}" not in css}
     assert not missing, f"classes mounted but unstyled in views.css: {sorted(missing)}"
+
+
+def test_wizard_recovery_affordances_present():
+    """Pins the affordances shipped for the 2026-07-16 wizard incidents: the setup banner
+    names the session by its draft preview (an abandoned session must not read as if it were
+    the routine just created), and the clarify error screen offers a draft-preserving retry."""
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "cur.draft" in app, "setup banner must quote the session's draft preview"
+    wiz = (STATIC / "views" / "wizard.js").read_text(encoding="utf-8")
+    assert "retry with the same draft" in wiz, "error screen must offer a draft-preserving retry"
+    assert "draft_full" in wiz, "the retry needs the snapshot's full draft"

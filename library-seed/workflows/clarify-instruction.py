@@ -24,9 +24,14 @@ META = {
     "when_to_use": "Internal: drives the new-routine wizard. Applied to a raw draft, it picks the "
                    "fitting workflow pattern, asks the user blocking questions that overlay the task "
                    "on that pattern, then writes state/wizard_result.json. Not for scheduled use.",
-    "version": 7,
+    "version": 8,
     "tags": ["meta", "wizard", "intake"],
     "includes": ["ask-policy"],
+    # The deliverable must survive decomposition: applied to a draft that itself describes a
+    # routine, the generator has been observed building THAT routine instead of the clarify
+    # flow. A pinned path missing from the tailored files makes decompose fall back to this
+    # pattern rendered verbatim (see workflows.adapt.decompose).
+    "pin": ["state/wizard_result.json"],
     # Only these action kinds are permitted — there is nothing to run or discover, only to clarify.
     "tools": ["ask_user", "read_file", "write_file", "finish"],
 }

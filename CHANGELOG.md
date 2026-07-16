@@ -19,6 +19,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.52.0] — 2026-07-16
+
+Self-audit (wizard hardening after the 2026-07-16 routine-creation incidents).
+
+### Fixed
+- **A self-restart no longer kills an in-flight routine clarification.** Clarify runs live in
+  dot-hidden `.wizard-*` dirs the registry skips, so the restart drain never saw them: a drain
+  fired mid-clarification and orphaned the user's setup conversation at turn 0. New
+  `restart.clarify_states()` folds live clarify runs into the drain gate — `waiting_user`
+  defers the restart, `running`/fresh `starting` drain it; dead pids and stale orphans never
+  block. `/api/wizard/start` also returns 503 while draining (mirrors finalize's gate).
+- **The clarify run can no longer be silently decomposed into the drafted routine itself.**
+  Observed: applied to a draft that described a research routine, the decompose step built THAT
+  routine — it ran the task, posted its output to Decisions, never wrote
+  `state/wizard_result.json`, and creation dead-ended with "The clarification run ended without
+  a result." Patterns may now PIN deliverable paths (`META["pin"]`, clarify-instruction v8 pins
+  `state/wizard_result.json`); the decompose prompt demands them and a result that drops one
+  falls back to the verbatim pattern.
+- **Clarify questions no longer show twice on the Decisions page** — a live blocking question
+  also has a durable pending record; `_wizard_questions` now dedups by qid like `_all_questions`
+  always did.
+
+### Added
+- The clarify error screen offers **"retry with the same draft"** (the error-stage wizard
+  snapshot carries `draft_full`) instead of only a draft-losing "start over".
+- The setup banner names the session it refers to (draft preview), so a leftover abandoned
+  session no longer reads as if the routine just created were still "in progress".
+
 ## [0.51.0] — 2026-07-16
 
 ### Added

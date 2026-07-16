@@ -73,7 +73,8 @@ export async function render(view, resumeWid) {
     else if (snap.stage === "done") navigate(snap.run_id ? `#/run/${snap.run_id}` : `#/routine/${snap.slug}`);
     else if (snap.stage === "suggest") stageSuggest(ctx, wid);
     else if (snap.stage === "error")
-      stageError(wid, snap.error ? `couldn't build the routine: ${snap.error}` : "The clarification run ended without a result.");
+      stageError(wid, snap.error ? `couldn't build the routine: ${snap.error}` : "The clarification run ended without a result.",
+        snap.draft_full);
     else stageChat(wid, snap);
   }
 
@@ -183,11 +184,25 @@ export async function render(view, resumeWid) {
   }
 
   // ---- stage: error (clarify finished with no result) ----------------------------------------
-  function stageError(wid, msg) {
+  function stageError(wid, msg, draft) {
     closeTail();
-    stage.replaceChildren(el("div", { class: "panel err" }, msg,
-      el("div", { class: "row mt" },
-        el("button", { class: "btn small", onclick: () => cancelSession(wid) }, "start over"))));
+    const row = el("div", { class: "row mt" });
+    if (draft) {
+      // the draft survives the dead end — retry runs a fresh clarification with the same text
+      const retry = el("button", { class: "btn small primary" }, "retry with the same draft");
+      retry.onclick = async () => {
+        retry.disabled = true;
+        try {
+          await api(`/api/wizard/${encodeURIComponent(wid)}`, { method: "DELETE" }).catch(() => {});
+          const r = await api("/api/wizard/start", { method: "POST", body: { draft } });
+          notifyChanged();
+          navigate(`#/wizard/${r.wid}`);
+        } catch (err) { toast(err.message, 6000, { error: true }); retry.disabled = false; }
+      };
+      row.append(retry);
+    }
+    row.append(el("button", { class: "btn small", onclick: () => cancelSession(wid) }, "start over"));
+    stage.replaceChildren(el("div", { class: "panel err" }, msg, row));
   }
 
   // ---- cancel: stop the backend session and return to a fresh draft --------------------------

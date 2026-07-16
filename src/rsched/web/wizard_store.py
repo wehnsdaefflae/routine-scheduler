@@ -89,10 +89,18 @@ def snapshot(app_state, d: Path) -> dict:
     # until the engine takes over, and the pre-run decompose can hold that phase for a
     # while — report unknown (None), never dead, or the UI shows a false "no longer running".
     alive = _pid_alive(run.pid) if (stage == "chat" and run is not None and run.pid) else None
-    return {"wid": d.name, "run_ts": ts, "created": meta.get("created", ""),
+    snap = {"wid": d.name, "run_ts": ts, "created": meta.get("created", ""),
             "draft": draft_preview(d),
             "stage": stage, "state": state, "has_result": has_result,
             "question": run.question if run else None, "alive": alive}
+    if stage == "error":
+        # the full draft, so the error screen can offer "retry with the same draft" —
+        # losing the user's text to a failed clarify run is the real cost of the dead end
+        try:
+            snap["draft_full"] = (d / "instruction.md").read_text(encoding="utf-8").strip()
+        except OSError:
+            snap["draft_full"] = ""
+    return snap
 
 
 def list_sessions(app_state) -> list[dict]:

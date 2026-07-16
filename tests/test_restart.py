@@ -148,3 +148,84 @@ def test_scheduler_waits_for_wizard_build(tmp_path, monkeypatch):
     assert sched._maybe_restart() is True
     assert triggered == [True]                                  # now it restarts
     assert restart.restart_requested(server) is False
+
+
+# ---- clarify runs hold the restart (2026-07-16 incident) ---------------------------------------
+
+
+def _clarify_session(home, name, **status):
+    """A dot-hidden wizard session with one run's status.json (no engine process)."""
+    rd = home / name / "runs" / "20260716-101112"
+    rd.mkdir(parents=True)
+    (rd / "status.json").write_text(json.dumps({"state": "running", **status}))
+    return rd
+
+
+def test_clarify_states_counts_live_sessions(tmp_path):
+    """Clarify runs live in dot-dirs the registry skips — clarify_states surfaces them for the
+    restart gate: a live pid counts with its state, a dead pid and a terminal run do not."""
+    import os
+
+    server = _server(tmp_path)
+    assert restart.clarify_states(server) == []                       # no sessions at all
+    _clarify_session(tmp_path, ".wizard-a", state="waiting_user", pid=os.getpid())
+    _clarify_session(tmp_path, ".wizard-b", state="running", pid=99999999)     # dead pid
+    _clarify_session(tmp_path, ".wizard-c", state="finished", pid=os.getpid())  # terminal
+    assert restart.clarify_states(server) == ["waiting_user"]
+
+
+def test_clarify_states_fresh_vs_stale_starting(tmp_path):
+    """A pid-less 'starting' run (the engine subprocess is still booting/decomposing) counts
+    only while its stamp is fresh — an orphaned session must never block restarts forever."""
+    from datetime import UTC, datetime, timedelta
+
+    server = _server(tmp_path)
+    now = datetime.now(UTC)
+    _clarify_session(tmp_path, ".wizard-fresh", state="starting", pid=None,
+                     updated=now.isoformat())
+    _clarify_session(tmp_path, ".wizard-stale", state="starting", pid=None,
+                     updated=(now - timedelta(hours=2)).isoformat())
+    _clarify_session(tmp_path, ".wizard-unstamped", state="starting", pid=None)
+    assert restart.clarify_states(server) == ["starting"]
+
+
+def test_scheduler_waits_for_clarify_run(tmp_path, monkeypatch):
+    """The 2026-07-16 incident: a restart drained while a clarification was in flight and killed
+    the user's setup conversation at turn 0. The drain must wait for live clarify runs too."""
+    import os
+
+    server = _server(tmp_path)
+    runner = Runner(server, EventBus())
+    sched = Scheduler(server, runner, EventBus())
+    triggered = []
+    monkeypatch.setattr(restart, "trigger_shutdown", lambda: triggered.append(True))
+    p = restart.sentinel_path(server)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("{}")
+    monkeypatch.setattr(runner, "active_states", list)   # no engine runs the runner can see
+    rd = _clarify_session(tmp_path, ".wizard-live", state="running", pid=os.getpid())
+    assert sched._maybe_restart() is True                # → drain, not restart
+    assert runner.draining is True and triggered == []
+    (rd / "status.json").write_text(json.dumps({"state": "finished"}))   # the clarify run ends
+    assert sched._maybe_restart() is True
+    assert triggered == [True]
+    assert restart.restart_requested(server) is False
+
+
+def test_scheduler_defers_while_clarify_waits_on_user(tmp_path, monkeypatch):
+    """A clarify run parked on a blocking question defers the restart exactly like an
+    ordinary waiting_user run — never freeze scheduling on a human mid-conversation."""
+    import os
+
+    server = _server(tmp_path)
+    runner = Runner(server, EventBus())
+    sched = Scheduler(server, runner, EventBus())
+    monkeypatch.setattr(restart, "trigger_shutdown",
+                        lambda: (_ for _ in ()).throw(AssertionError("must not restart")))
+    p = restart.sentinel_path(server)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("{}")
+    monkeypatch.setattr(runner, "active_states", list)
+    _clarify_session(tmp_path, ".wizard-parked", state="waiting_user", pid=os.getpid())
+    assert sched._maybe_restart() is False
+    assert runner.draining is False

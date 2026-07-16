@@ -108,6 +108,11 @@ class StartBody(BaseModel):
 async def start(request: Request, body: StartBody) -> dict:
     if not body.draft.strip():
         raise HTTPException(400, "empty draft instruction")
+    # Don't start a clarify run while the daemon is draining for a self-restart — the drain
+    # now waits for live clarify runs, so one accepted here would never converge (and the
+    # restart would otherwise kill it mid-conversation). Retry once the daemon is back.
+    if request.app.state.scheduler.runner.draining:
+        raise HTTPException(503, "the server is restarting — please retry in a moment")
     server = request.app.state.server
     # session creation is all disk writes plus a full library read (candidates) — off the loop
     wid, ts, d = await asyncio.to_thread(wizard_store.create_session, server, body.draft)
