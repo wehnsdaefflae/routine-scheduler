@@ -159,3 +159,29 @@ def test_git_dates_created_and_revised(tmp_path):
 def test_empty_world(tmp_path):
     out = util_stats(_server(tmp_path))
     assert out["utils"] == [] and out["backfill_runs"] == 0
+
+
+def test_write_snapshot_persists_to_xdg_state(tmp_path, monkeypatch):
+    """write_util_stats_snapshot persists util_stats() to snapshot_path() (under
+    XDG_STATE_HOME so a Landlock-jailed util can read it) with a `generated` stamp — the
+    single file both the Stats tab and the util-review routine's `util-stats` util read."""
+    from rsched.util_stats import snapshot_path, write_util_stats_snapshot
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    server = _server(tmp_path)
+    _add_util(server, "fetch")
+    _stream(server, [
+        {"run_id": "r:1", "ts": "2026-07-01T07:00:00+00:00",
+         "utils": {"fetch": {"ok": 2, "error": 1}}},
+    ])
+
+    returned = write_util_stats_snapshot(server)
+    path = snapshot_path()
+    assert path == tmp_path / "state" / "routine-scheduler" / "util-stats.json"
+    assert path.is_file()
+
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    assert on_disk == returned
+    assert on_disk["generated"]                       # ISO stamp present
+    rows = {r["name"]: r for r in on_disk["utils"]}
+    assert rows["fetch"]["executed"] == 3 and rows["fetch"]["ok"] == 2

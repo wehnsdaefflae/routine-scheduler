@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.68.0] — 2026-07-17
+
+### Added
+- **Persisted util-stats snapshot — one source of truth for the Stats tab and routines
+  (F97).** The per-util execution stats the Stats tab shows (`util_stats()`: library git
+  dates + the durable workflow-usage stream + transcript backfill) are now written to
+  `$XDG_STATE_HOME/routine-scheduler/util-stats.json` (default
+  `~/.local/state/routine-scheduler/util-stats.json`) on every root-run finish, via the new
+  `util_stats.write_util_stats_snapshot(server)` (atomic, best-effort — a stats write never
+  breaks a run). The XDG state location is deliberate: a Landlock-jailed util subprocess can
+  read `~/.local/state` but not the daemon's `routines_home/.control` area, so this is the
+  one place a routine's util can reach the same numbers the web page computes. Unblocks the
+  `global-utils-review` (util-improver) routine, whose first run stalled with "stats source
+  UNRESOLVED" because the figures were reachable only through the token-gated `/api/stats`.
+- **`util-stats` global util** (library) reads that snapshot and emits it (`--json` for a
+  routine to consume, a table for humans, `--name` to filter one util) — the review
+  routine's stats source.
+
 ## [0.67.4] — 2026-07-17
 
 ### Fixed

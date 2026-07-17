@@ -146,4 +146,12 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                        cost=float(ctx.usage.get("cost") or 0.0), referrals=ctx.referrals,
                        recipe_commit=ctx.recipe_commit, utils=ctx.util_stats,
                        asks_deferred=ctx.asks_deferred)
+    # Refresh the persisted util-stats snapshot (the single source of truth the Stats tab
+    # and the util-review routine both read) now that this run's usage record has landed.
+    # Best-effort: a telemetry write must never break a finished run.
+    try:
+        from ..util_stats import write_util_stats_snapshot
+        write_util_stats_snapshot(server)
+    except Exception:  # stats telemetry must never break a run
+        pass
     return status, run_dir

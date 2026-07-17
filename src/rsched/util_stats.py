@@ -26,6 +26,7 @@ missing (no such util) / denied (permission refusal) / rejected (malformed actio
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -34,6 +35,7 @@ from .config import ServerConfig
 from .engine.executor import USAGE_ERROR_EXIT
 from .engine.transcript import read_events
 from .health_events import WORKFLOW_USAGE_FILE
+from .ids import now_iso
 from .workflows.library import head_commit
 
 OUTCOMES = ("ok", "error", "usage_error", "missing", "denied", "rejected")
@@ -238,3 +240,36 @@ def util_stats(server: ServerConfig) -> dict:
         })
     rows.sort(key=lambda r: (-r["executed"], r["name"]))
     return {"utils": rows, "stream_records": stream_runs, "backfill_runs": backfill_runs}
+
+
+def snapshot_path() -> Path:
+    """Canonical on-disk location of the util-stats snapshot — the SINGLE persisted copy of
+    the `util_stats` computation that both the Stats tab and any routine (through the
+    `util-stats` global util) read, so the two never diverge.
+
+    Lives under XDG_STATE_HOME (default ~/.local/state) on purpose: a Landlock-jailed util
+    subprocess can read ~/.local/state (sandbox._HOME_RW) but NOT the routines_home/.control
+    daemon-state area, so a routine's `util-stats` call could never reach a snapshot kept
+    under .control/. This same resolution is mirrored by the `util-stats` util.
+    """
+    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    return Path(base) / "routine-scheduler" / "util-stats.json"
+
+
+def write_util_stats_snapshot(server: ServerConfig) -> dict:
+    """Compute `util_stats(server)` once and persist it (atomic replace) to
+    `snapshot_path()`, stamped with a `generated` ISO timestamp. Returns the snapshot dict.
+
+    Best-effort on the WRITE — an I/O error is swallowed so the run-finish hook that calls
+    this can never break a run — but the computed data is always returned to the caller.
+    """
+    data = {"generated": now_iso(), **util_stats(server)}
+    path = snapshot_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        pass
+    return data
