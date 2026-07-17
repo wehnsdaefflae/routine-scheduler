@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.67.1] — 2026-07-17
+
+### Fixed
+- **Dashboard routine card no longer counts snoozed questions as open.** The card's
+  "N open questions" count (`web/api_routines.py`) ignored `snoozed_until`, so a question
+  snoozed into the future showed as an open question on the card while the Decisions tab
+  badge and the Decisions page — which hide snoozed items by design — showed nothing; the
+  two surfaces disagreed. The card now derives both `open_questions` and `decision_backlog`
+  through the same snooze-aware filter (`_awaiting_questions`, reusing `_snooze_active`), so
+  a snoozed decision stays quiet everywhere and the card count can never contradict the
+  badge. Reported via the audit feedback channel.
+
 ## [0.67.0] — 2026-07-17
 
 ### Changed

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -20,6 +21,7 @@ from ..ids import now_iso, run_ts
 from ..paths import atomic_write, resolve_rel
 from ..stats import monthly_spend
 from . import artifacts
+from .api_questions import _snooze_active
 from .wizard_store import TEMPLATE_SLUG
 
 router = APIRouter(tags=["routines"])
@@ -114,6 +116,17 @@ def _spend_line(monthly: dict, slug: str) -> dict | None:
             "prev_month": prev, "prev": cells.get(prev) if prev else None}
 
 
+def _awaiting_questions(info: registry.RoutineInfo) -> list[dict]:
+    """Questions genuinely waiting on the user: unanswered AND not snoozed into the
+    future. This is the exact visibility the Decisions badge and page apply (they hide
+    snoozed items by design — a snoozed decision is deliberately quiet), so a card's
+    open-question count can never disagree with the badge.
+    """
+    now = datetime.now(UTC)
+    return [q for q in info.open_questions
+            if not q.get("answered") and not _snooze_active(q.get("snoozed_until"), now)]
+
+
 def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None = None) -> dict:
     sched = _state(request).scheduler
     last = info.last_run
@@ -142,12 +155,13 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None 
                          "tokens": (r.usage.get("in") or 0) + (r.usage.get("out") or 0),
                          "cost": r.usage.get("cost") or 0, "elapsed_s": r.elapsed_s}
                         for r in info.runs[:HEARTBEAT_RUNS_N]],
-        "open_questions": sum(1 for q in info.open_questions if not q.get("answered")),
+        "open_questions": len(_awaiting_questions(info)),
         # >N unanswered deferred asks = the routine is starving on decisions; the
-        # dashboard flags it loud instead of letting the count quietly grow.
-        "decision_backlog": sum(1 for q in info.open_questions
-                                if not q.get("answered")
-                                and q.get("mode", "deferred") != "blocking")
+        # dashboard flags it loud instead of letting the count quietly grow. Snoozed
+        # asks are excluded (the user parked them — not silently starving), so the card
+        # count matches the Decisions badge.
+        "decision_backlog": sum(1 for q in _awaiting_questions(info)
+                                if q.get("mode", "deferred") != "blocking")
                             > DEFERRED_BACKLOG_N,
         "problems": info.problems,
         "improve": info.cfg.improve,

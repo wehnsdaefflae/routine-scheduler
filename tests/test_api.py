@@ -410,6 +410,23 @@ def test_routine_card_flags_decision_backlog(client):
     assert card["open_questions"] == 6
 
 
+def test_routine_card_open_questions_excludes_snoozed(client):
+    """A snoozed-into-the-future question waits silently — the card's open-question count
+    must exclude it, exactly like the Decisions badge/page do, so the two surfaces never
+    disagree (a card showing "1 open question" with no matching badge is the bug)."""
+    c, tmp = client
+    pending = tmp / "routines" / "apir" / "questions" / "pending"
+    atomic_write_json(pending / "q-live.json",
+                      {"qid": "q-live", "question": "still open?", "options": [],
+                       "asked": "20260707", "mode": "deferred"})
+    atomic_write_json(pending / "q-snoozed.json",
+                      {"qid": "q-snoozed", "question": "later?", "options": [],
+                       "asked": "20260707", "mode": "deferred",
+                       "snoozed_until": "2099-01-01T00:00:00+00:00"})
+    card = next(x for x in c.get("/api/routines").json() if x["slug"] == "apir")
+    assert card["open_questions"] == 1   # the snoozed one is not counted
+
+
 def test_deferred_question_links_back_to_its_run(client):
     """A deferred question's `asked` run_ts resolves to run_id + live run state when that run
     still exists — the Decisions view uses it to flag stale questions."""
