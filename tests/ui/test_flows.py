@@ -654,6 +654,10 @@ def test_settings_endpoints_crud(ui, ui_page):
     assert models["llama"] == {"endpoint": "vllm", "model": "meta/llama-3"} \
         or models["llama"]["endpoint"] == "vllm"
 
+    # the system-model blurb states the role-fallback behaviour (not "setup-time work" only)
+    expect(ui_page.locator(".panel", has_text="System model"))\
+        .to_contain_text("any role a routine leaves unset falls back to this system model")
+
     # max_tokens audit flag: unset → the ⚠ chip; a self-referencing fallback is rejected
     # server-side; setting a real value clears the flag
     model_card = ui_page.locator(".panel",

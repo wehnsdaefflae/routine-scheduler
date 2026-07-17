@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.67.3] — 2026-07-17
+
+### Fixed
+- **Settings → LLM endpoints: the system-model description now states its role-fallback
+  behaviour.** The blurb described the system model only as the fallback for "setup-time
+  work that isn't a routine yet" (the clarify wizard + workflow generation), omitting that
+  it is ALSO the fallback for any routine role (`main`/`subroutine`/`tool_call`) left unset
+  — which `config.py`, `EndpointRegistry.for_model`, and `docs/endpoints.md` all document.
+  It now says so, and points at the separate per-model `fallbacks` failover chain, so the
+  two fallback mechanisms aren't confused. UI-text accuracy only; no behaviour change.
+
 ## [0.67.2] — 2026-07-17
 
 ### Fixed

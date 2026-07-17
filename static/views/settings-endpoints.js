@@ -188,7 +188,9 @@ export async function renderEndpoints(view) {
         "The one fallback model for setup-time work that isn't a routine yet — the new-routine ",
         "clarify wizard and workflow generation. Required before you can create routines. ",
         "Each routine then picks its own ", el("strong", {}, "main"), " / ",
-        el("strong", {}, "subroutine"), " / ", el("strong", {}, "tool-call"), " models on its page."));
+        el("strong", {}, "subroutine"), " / ", el("strong", {}, "tool-call"), " models on its page — ",
+        "any role a routine leaves unset falls back to this system model. (A model may also name its ",
+        "own per-model ", el("strong", {}, "fallbacks"), " above — a separate hard-failure failover chain.)"));
     if (!models.length) {
       box.append(el("div", { class: "muted small" }, "add a model above first"));
       return box;
