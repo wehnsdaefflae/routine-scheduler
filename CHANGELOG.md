@@ -19,6 +19,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.65.0] — 2026-07-17
+
+### Added
+- **Per-model output `max_tokens` in the catalog.** `ModelConfig.max_tokens` (and an
+  `EndpointConfig.max_tokens` default it inherits) resolves into `ModelRef.max_tokens`,
+  with a generous engine fallback (`DEFAULT_MODEL_MAX_TOKENS` = 16,384). Every engine call
+  site — turns, the `llm` action, compaction archival, refusal referral — now sends the
+  resolved per-model value instead of a hard-coded 16,384; `claude-cli` maps it to
+  `CLAUDE_CODE_MAX_OUTPUT_TOKENS`. Settings surfaces an audit flag (`max_tokens_warning`) on
+  any model whose limit is unset (riding the generic default), implausibly low (< 4,096), or
+  larger than the model's context window — so "every model has its max tokens set correctly"
+  is auditable at a glance, mirroring how unset secrets are flagged.
+- **Ordered model failover chains with provider cooldowns.** A catalog model may declare
+  `fallbacks:` — an ordered list of catalog model names (non-transitive) the engine fails
+  over to when the model fails hard (its transport retries are exhausted, or the error was
+  never retryable). `routine.yaml` still maps each role to ONE catalog name — editing a
+  catalog model's chain updates every routine that references it, so no config-shape
+  migration. Two cooperating levels (`endpoints/failover.py`): a hard `EndpointError` marks
+  the `(endpoint, provider model id)` *cooling* for 5 minutes (centrally, in
+  `InstrumentedEndpoint` — the one seam every LLM call crosses), and every role resolution
+  (`for_model` / `for_uncensored` / `for_system`) picks the first not-cooling chain member;
+  the turn-completion seam (`engine/completion.py`) additionally advances down the chain
+  MID-TURN on a hard failure. The switch is logged visibly as a transcript `error` event
+  carrying a `failover` payload (`from` / `to` / `cooldown_s`) — a payload extension, not a
+  new event type — and each turn's `usage.model` records the model that actually served it,
+  so spend attribution and `status.json`'s live model stay truthful. Chain exhausted → the
+  run fails exactly as before; models without `fallbacks` behave exactly as before.
+- **Settings credential-source indicator.** Each endpoint card now shows which rung of the
+  credential ladder is live — inline key / secret `<VAR>` / env file / none — and warns
+  loudly when an inline key **shadows** a set secret (the inline key wins, so editing the
+  secret changes nothing until it's removed). Computed by label-only mirrors
+  (`api_key_source` / `token_source`) sitting beside the resolvers they track; key values
+  are never returned through the API. The documented precedence (inline → secret → env file)
+  is unchanged.
+
 ## [0.64.0] — 2026-07-17
 
 ### Added
