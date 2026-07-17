@@ -110,8 +110,18 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         # The LLM task manager sink: every instrumented complete() (run in threadpool/to_thread
         # workers) marshals its lifecycle records onto THIS loop, where the task center + bus live.
         set_sink(DaemonSink(task_center, asyncio.get_running_loop()))
+        # Full-text search: keep the FTS index warm in the background (bounded passes in a
+        # thread) so query-time freshness top-ups stay cheap. The index is a pure cache
+        # under <routines_home>/.control/ — this process is its only writer.
+        from . import api_search
+
+        search_task = asyncio.create_task(api_search.maintain(app.state.search))
         yield
         set_sink(None)
+        search_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await search_task
+        app.state.search.close()
         docs_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await docs_task
@@ -139,6 +149,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_routines,
         api_runs,
         api_schedule,
+        api_search,
         api_stats,
         api_traces,
         api_wizard,
@@ -148,7 +159,8 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
 
     for module in (api_push, api_routines, api_conversations, api_background, api_runs,
                    api_schedule, api_stats, api_questions, api_audit, api_traces, settings,
-                   api_workflows, api_playbooks, api_wizard, api_llm_tasks, api_hooks):
+                   api_workflows, api_playbooks, api_wizard, api_llm_tasks, api_hooks,
+                   api_search):
         app.include_router(module.router, prefix="/api", dependencies=deps)
     # The ONE deliberately unauthenticated API route: webhook trigger ingest. Third
     # parties call it, so the per-trigger URL token is the auth (constant-time compare,
@@ -176,6 +188,9 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.state.scheduler = scheduler
     app.state.detached = scheduler.detached   # detached-background-task manager (Phase 2 API)
     app.state.llm_tasks = task_center
+    from ..search import SearchIndex
+
+    app.state.search = SearchIndex(server)    # the FTS cache; this process is its one writer
 
     deps = [Depends(require_auth)]
     _include_api_routers(app, deps)

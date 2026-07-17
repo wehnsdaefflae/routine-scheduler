@@ -110,6 +110,47 @@ h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 }
 .lamp.on { background: var(--live); box-shadow: 0 0 8px var(--live); }
 
+/* ---------- global search (header) ---------- */
+/* At rest the slot is a compact icon-sized box so the nav never loses tabs to it; the
+   INPUT is anchored to the slot's right edge and expands OVER the nav on focus
+   ("/" or Ctrl-K gets you there without the mouse). Icon is an inline data URI
+   (favicon precedent) — no external assets. */
+.gsearch { position: relative; flex: 0 0 34px; height: 30px; }
+.gsearch .gs-input {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 100%;
+  background: var(--ink-2) url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2356697e' stroke-width='2.4'><circle cx='10.5' cy='10.5' r='6'/><line x1='15.2' y1='15.2' x2='21' y2='21'/></svg>") no-repeat 9px center / 13px;
+  color: var(--text); border: 1px solid var(--line-2); border-radius: 5px;
+  padding: 5px 8px 5px 28px; font: inherit; font-size: 12px;
+  transition: width 0.15s ease; cursor: pointer;
+}
+.gsearch .gs-input:focus { width: max(100%, min(420px, 60vw)); z-index: 31; cursor: text; }
+.gsearch .gs-input::placeholder { color: var(--faint); }
+.gs-pop {
+  position: absolute; top: calc(100% + 9px); right: 0; width: min(560px, calc(100vw - 28px));
+  max-height: 68vh; overflow-y: auto; z-index: 30; padding: 6px;
+  background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 7px;
+  box-shadow: var(--shadow);
+}
+.gs-group {
+  display: flex; align-items: center; gap: 8px; padding: 8px 8px 4px;
+  font-size: 11.5px; color: var(--muted);
+}
+.gs-group b { color: var(--text); }
+.gs-hit {
+  display: flex; align-items: baseline; gap: 8px; padding: 6px 8px; border-radius: 5px;
+  color: var(--muted); font-size: 12px; line-height: 1.45;
+}
+.gs-hit:hover, .gs-hit.active { background: var(--raised); color: var(--text); }
+.gs-kind {
+  flex: 0 0 auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--faint); border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 5px;
+}
+.gs-snip { flex: 1; min-width: 0; overflow: hidden; max-height: 3em; }
+.gs-snip mark { background: transparent; color: var(--amber); font-weight: 600; }
+.gs-meta { flex: 0 0 auto; font-size: 10.5px; color: var(--faint); white-space: nowrap; }
+.gs-empty, .gs-note { padding: 10px; color: var(--faint); font-size: 12px; }
+.gs-note { border-top: 1px solid var(--line); margin-top: 4px; }
+
 /* ---------- banners ---------- */
 .notice-banner, .setup-banner {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -353,6 +394,8 @@ input[type=time], input[type=number] { width: auto; }
   .topbar { flex-wrap: wrap; height: auto; padding: 8px 14px; gap: 8px 14px; }
   /* all seven links stay visible — wrap into rows instead of an invisible sideways scroll */
   .topbar nav { order: 3; flex-basis: 100%; flex-wrap: wrap; overflow-x: visible; row-gap: 2px; }
+  /* search shares the brand row and soaks up its free width (nav wraps to its own row) */
+  .gsearch { flex: 1 1 120px; min-width: 0; height: 40px; }
   .clock { display: none; }
   main { padding: 16px 14px 90px; }
   .crumbs { padding: 10px 14px 0; }

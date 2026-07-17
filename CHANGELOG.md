@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.64.0] — 2026-07-17
+
+### Added
+- **Instance-wide full-text search.** One box in the app header (`/` or Ctrl-K) over
+  everything the instance ever wrote — run transcripts (say/note narration, finish
+  summaries, questions + answers, user messages; gzipped archives and subrun trees
+  included), result.md reports, compaction `history/` archives, LEDGER.md, `.memory/`
+  notes, durable decision records, and recipe files — across routines AND conversations.
+  Hits rank by BM25 (porter stemming, so `playbook` finds `playbooks`), group by
+  routine → run with snippet-highlighted matches, and deep-link into the run /
+  conversation / decisions / routine views. Backend: an SQLite FTS5 index (stdlib
+  `sqlite3`) at `<routines_home>/.control/search.sqlite3` — a pure cache of the flat
+  files (delete it, it rebuilds), kept fresh behind per-file stat fingerprints (newest
+  runs first, budget-bounded passes with a per-pass progress guarantee) by a daemon
+  maintainer task plus a ~2s query-time top-up; rows for retention-pruned runs are
+  pruned. Raw FTS5 syntax passes through when it parses; anything else falls back to
+  escaped phrase terms — a malformed query is a 400, never a 500. New: `search/`
+  package, `web/api_search.py` (`GET /api/search?q=`), the header
+  `components/searchbox.js` (compact icon at rest, expands over the nav on focus),
+  docs/search.md.
+
 ## [0.63.0] — 2026-07-17
 
 ### Added

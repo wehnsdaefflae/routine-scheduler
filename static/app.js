@@ -9,6 +9,7 @@ import { installFormPersistence } from "/static/formpersist.js";
 import { el, fmtTs, skeleton, startTimeTicker, storage, toast } from "/static/util.js";
 import { initNotifications } from "/static/notify.js";
 import { initTaskManager } from "/static/components/taskmanager.js";
+import { initSearchBox } from "/static/components/searchbox.js";
 
 installTracing();
 installFormPersistence();
@@ -276,6 +277,7 @@ function gateNav(ready) {
   startClock();
   initNotifications();
   initTaskManager();
+  initSearchBox();
   startTimeTicker();
   try {
     const s = await api("/api/status");

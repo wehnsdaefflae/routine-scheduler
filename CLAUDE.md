@@ -495,6 +495,21 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   its own inbox message for that fire (deterministic filenames → exactly-once across crashes).
   `cooldown_s` per trigger (default 60) bounds trigger-fire frequency, so a leaked URL can't burn
   budget; `state.json` in the spool is the daemon-written fire ledger the Triggers card renders.
+- **Instance-wide search** (`search/` + `web/api_search.py` + the header box
+  `components/searchbox.js`, focused by `/` or Ctrl-K): SQLite FTS5 over both homes' PROSE —
+  transcript say/note/finish/questions/answers/user messages (gz + subrun trees included),
+  result.md, history/ archives, LEDGER.md, `.memory/`, pending decision records, recipe
+  files; NEVER config, state/, inbox, artifacts, or tool observations (bulk, and where a
+  leaked secret would live). The db (`<routines_home>/.control/search.sqlite3`) is a PURE
+  CACHE of the filesystem — delete it and it rebuilds; per-file stat fingerprints drive
+  incremental refresh (newest runs first, budget-bounded with a per-pass progress
+  guarantee) and prune rows for files retention removed. ONE writer: the daemon/web
+  process (a lifespan maintainer task + a ~2s query-time top-up) — engine subprocesses
+  never import it. Raw FTS5 syntax passes through when it parses; anything else falls
+  back to escaped-phrase terms, and an empty/unsearchable query is a 400, never a 500.
+  Hits carry {home, slug, run_ts, sub, kind, turn, phase, snippet} and the client groups +
+  deep-links them (`#/run/<slug>:<ts>[?sub=…]`, `#/conversations/<slug>`, `#/questions`,
+  `#/routine/<slug>`). See docs/search.md.
 - **Self-update restart** (`restart.py`): a sentinel triggers a drain (parked `waiting_user`/`paused` runs
   don't block it), then a clean exit; systemd `Restart=always` relaunches on the committed code (`uv run`
   re-syncs deps). Orphaned runs claiming to be alive are closed out at boot.

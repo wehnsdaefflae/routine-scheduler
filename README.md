@@ -71,6 +71,10 @@ endpoints, the central Secrets store, GitHub, the library repo.
 
 ## The console
 
+- **Search** — one box in the header (press `/` or `Ctrl-K`) over everything the instance
+  ever wrote: run transcripts, finish reports, decisions, ledgers, memory notes, and
+  recipes, across routines and conversations. Hits group by routine and deep-link into
+  the exact run. SQLite FTS5 under the hood — a pure cache of the flat files on disk.
 - **Decisions** — one inbox for everything the system is asking you: blocking questions
   (a run is waiting), deferred ones, and open self-audit decisions. Keyboard-first;
   answers flow back into the asking routine's next turn or next run.
