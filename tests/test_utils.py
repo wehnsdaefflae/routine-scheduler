@@ -148,7 +148,8 @@ def _ctx(home, grants=None):
     return SimpleNamespace(server=SimpleNamespace(utils_home=home, sandbox="off"),
                            routine=SimpleNamespace(dir=home, fs_read_roots=[],
                                                    fs_write_roots=[]),
-                           grants=grants)
+                           grants=grants,
+                           count_util=lambda *a, **k: None)
 
 
 def test_util_show_returns_source(tmp_path):
