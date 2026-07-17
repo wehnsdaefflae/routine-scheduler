@@ -46,7 +46,10 @@ DEFAULT_BUDGETS = {
     "max_cost": -1,
     "max_subruns": 8,
     "max_subrun_depth": 2,
-    "ask_timeout_min": 5,
+    # 480 (8h) deployment norm: a 5-minute default seeded a blocking-ask timeout trap into
+    # every new routine (recurred on scheduler-improvement-research + global-utils-review,
+    # each hand-fixed). Raised deployment-wide per config-optimizer q-20260717-191914-24.
+    "ask_timeout_min": 480,
 }
 # The two-layer permission defaults a new routine gets when routine.yaml is silent.
 # PERMISSIONS are conduct docs (library prose reaching the prompt when held);

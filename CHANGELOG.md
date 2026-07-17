@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.68.1] — 2026-07-17
+
+### Fixed
+- **util-stats snapshot no longer silently disappears when one transcript is corrupt
+  (F97).** The run-finish hook (`engine/runtime.py`) that refreshes
+  `util-stats.json` swallows every exception so telemetry can never break a run — but
+  `util_stats()` computed the whole snapshot *outside* the write's own guard, so a single
+  unreadable/corrupt transcript raised straight through the hook and produced **no snapshot
+  at all** (the file stayed missing after several qualifying root-run finishes). `_backfill`
+  now wraps each `_scan_transcript` in try/except: a bad transcript is skipped and logged,
+  every other source still counts. The swallowed-exception `pass` in the runtime hook is now
+  a `log.warning(..., exc_info=True)` so a future failure leaves a breadcrumb instead of
+  vanishing silently.
+
+### Changed
+- **Default `ask_timeout_min` raised 5 → 480 (8h), the deployment norm (F102).** The old
+  5-minute default seeded a blocking-ask timeout trap into every newly-created routine — a
+  blocking question would auto-continue on its stated default after only 5 minutes. It
+  recurred twice (`scheduler-improvement-research`, `global-utils-review`), each hand-fixed
+  by the user, who approved raising it deployment-wide (config-optimizer
+  `q-20260717-191914-24`). All mature routines already run 480; this fixes the root cause for
+  future routines. Existing `routine.yaml` files are engine-sealed to runs and unchanged.
+
 ## [0.68.0] — 2026-07-17
 
 ### Added

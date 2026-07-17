@@ -26,6 +26,7 @@ missing (no such util) / denied (permission refusal) / rejected (malformed actio
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -37,6 +38,8 @@ from .engine.transcript import read_events
 from .health_events import WORKFLOW_USAGE_FILE
 from .ids import now_iso
 from .workflows.library import head_commit
+
+log = logging.getLogger("rsched.util_stats")
 
 OUTCOMES = ("ok", "error", "usage_error", "missing", "denied", "rejected")
 _EXECUTED = ("ok", "error", "usage_error")   # outcomes where the util actually ran
@@ -197,7 +200,14 @@ def _backfill(server: ServerConfig, covered: set[str]) -> tuple[dict, int]:
                 for t in transcripts:
                     if t.suffix == ".gz" and t.with_suffix("").exists():
                         continue   # the plain file is scanned; don't double-read
-                    for name, cell in _scan_transcript(t).items():
+                    try:
+                        cells = _scan_transcript(t)
+                    except Exception:  # ONE corrupt transcript must not raise out of
+                        # util_stats() and zero the whole snapshot — skip it, keep the rest
+                        log.warning("util_stats: skipping unreadable transcript %s", t,
+                                    exc_info=True)
+                        continue
+                    for name, cell in cells.items():
                         _merge(agg, name, cell["counts"], cell["first"], cell["last"])
     return agg, scanned
 

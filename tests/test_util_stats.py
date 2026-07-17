@@ -161,6 +161,31 @@ def test_empty_world(tmp_path):
     assert out["utils"] == [] and out["backfill_runs"] == 0
 
 
+def test_backfill_tolerates_unreadable_transcript(tmp_path, monkeypatch):
+    """A single corrupt/unreadable transcript must NOT raise out of util_stats() and zero
+    the whole snapshot — the run-finish hook swallows exceptions, so a raise here silently
+    yields no snapshot at all. The bad run is skipped; every other source still counts."""
+    import rsched.util_stats as us
+
+    server = _server(tmp_path)
+    _add_util(server, "fetch")
+    _run_with_transcript(server, "r", "20260601-070000",
+                         [_obs("fetch", ts="2026-06-01T07:01:00+00:00")])
+    _stream(server, [
+        {"run_id": "r:stream", "ts": "2026-07-01T07:00:00+00:00",
+         "utils": {"fetch": {"ok": 1}}},
+    ])
+
+    def boom(_path):
+        raise ValueError("corrupt transcript")
+
+    monkeypatch.setattr(us, "_scan_transcript", boom)
+    out = us.util_stats(server)     # must not raise
+    rows = {r["name"]: r for r in out["utils"]}
+    assert rows["fetch"]["ok"] == 1          # the stream record still counted
+    assert out["backfill_runs"] == 1         # the bad run was visited and tolerated
+
+
 def test_write_snapshot_persists_to_xdg_state(tmp_path, monkeypatch):
     """write_util_stats_snapshot persists util_stats() to snapshot_path() (under
     XDG_STATE_HOME so a Landlock-jailed util can read it) with a `generated` stamp — the

@@ -152,6 +152,6 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     try:
         from ..util_stats import write_util_stats_snapshot
         write_util_stats_snapshot(server)
-    except Exception:  # stats telemetry must never break a run
-        pass
+    except Exception:  # stats telemetry must never break a run — but leave a breadcrumb
+        log.warning("util-stats snapshot refresh failed at run finish", exc_info=True)
     return status, run_dir

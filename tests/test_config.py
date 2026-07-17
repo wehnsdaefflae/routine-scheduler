@@ -198,6 +198,17 @@ def test_routine_minimal_gets_defaults(tmp_path):
     assert cfg.catchup == "skip" and cfg.keep_runs == 30
 
 
+def test_default_ask_timeout_is_deployment_norm(tmp_path):
+    """The blocking-ask timeout default is 480min (8h) — the deployment norm — NOT 5min.
+    A 5-minute default seeded a timeout trap into every new routine (recurred on
+    scheduler-improvement-research + global-utils-review, each hand-fixed); pin it so a
+    future edit can't silently reintroduce the trap."""
+    assert DEFAULT_BUDGETS["ask_timeout_min"] == 480
+    d = _mk_routine(tmp_path, {"description": "Inherits the default."})
+    cfg, problems = load_routine(d)
+    assert problems == [] and cfg.budgets["ask_timeout_min"] == 480
+
+
 def test_routine_bad_values_reported_and_defaulted(tmp_path):
     d = _mk_routine(tmp_path, {
         "description": "Bad bits.",
