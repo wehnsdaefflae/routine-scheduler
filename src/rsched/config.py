@@ -381,6 +381,12 @@ class RoutineConfig(_Config):
         k: list(v) if isinstance(v, list) else v for k, v in DEFAULT_CAPABILITIES.items()})
     fs_read_roots: list[HomePath] = Field(default_factory=list)
     fs_write_roots: list[HomePath] = Field(default_factory=list)
+    # Event triggers — fire the routine on an external event, alongside cron. One
+    # canonical list of {id, type, …} entries (webhook implemented; imap/watch_path
+    # reserved in the same shape); validated in triggers.py, fired by the daemon's
+    # TriggerManager (docs/triggers.md). User config like everything in this file:
+    # created/deleted on the routine page, never by a run.
+    triggers: list[dict] = Field(default_factory=list)
     keep_runs: int = Field(30, validation_alias=AliasPath("retention", "keep_runs"))
     # Whether the routine-improver meta routine visits this routine (default: yes; the
     # toggle on the routine page opts out with `improve: false`).
@@ -414,7 +420,7 @@ class RoutineConfig(_Config):
             return []
         return [str(t).strip() for t in v if str(t).strip()] if isinstance(v, list) else v
 
-    @field_validator("fs_read_roots", "fs_write_roots", "models", mode="before")
+    @field_validator("fs_read_roots", "fs_write_roots", "models", "triggers", mode="before")
     @classmethod
     def _none_as_absent(cls, v: object, info: ValidationInfo) -> object:
         # a bare `key:` (YAML null) reads as the FIELD'S OWN empty default ([] or {})
@@ -539,6 +545,10 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
 
     cfg.capabilities, cap_problems = normalize_capabilities(cfg.capabilities)
     problems += cap_problems
+    from .triggers import validate_triggers
+
+    cfg.triggers, trigger_problems = validate_triggers(cfg.triggers)
+    problems += trigger_problems
 
     # A routine is self-contained: its recipe is materialized into main.md at generation, and the
     # workflow.library_slug is kept only as "generated-from" provenance.

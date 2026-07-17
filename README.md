@@ -112,6 +112,18 @@ automatically. A routine with the `communication` permission held may additional
 blocking questions through Discord (one batched, phone-answerable message per run) — the UI
 stays the only channel otherwise.
 
+## Event triggers
+
+Besides cron and the run-now button, a routine can fire on an **external event**: add a
+**webhook trigger** on its routine page and POST anything to the generated
+`/api/hooks/<slug>/<token>` URL (CI finished, a monitor alerted, a form landed). The URL's
+server-generated token is the only auth — no console bearer for third parties — and the
+payload reaches the run verbatim as an injected message. Bursts coalesce: events arriving
+while a run is active (or within the trigger's cooldown) queue into **one** follow-up run
+that receives every payload, so a noisy or leaked URL can't burn budget. `imap` and
+`watch_path` trigger types are reserved in the same config shape. See `docs/triggers.md`
+(also on the Help tab).
+
 ## CLI
 
 `uv run rsched --help` — `daemon` (what the service/container runs: scheduler + web in one

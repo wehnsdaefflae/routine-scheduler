@@ -197,7 +197,11 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   `budgets:` (max_turns / wall_clock_min / total_tokens (-1 = unlimited, the default) / subruns /
   subrun_depth / ask_timeout_min — all editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
   budgets/fs-roots/schedules are resources, never capabilities; `improve: false` opts the routine
-  out of the routine-improver's passes (default: included).
+  out of the routine-improver's passes (default: included); `triggers:` — event-driven fires
+  alongside cron (docs/triggers.md): one canonical list of `{id, type, cooldown_s, …}` entries
+  (`webhook` implemented — server-generated URL token IS the auth; `imap`/`watch_path` reserved
+  in the same shape), validated in `rsched/triggers.py`, created/deleted on the routine page's
+  Triggers card (never by a run; the library-sync export REDACTS trigger tokens).
 - `tuning.yaml` — the routine's machine-tunable BEHAVIOR parameters, classed with the RECIPE
   (improver-editable under its fs_write_root; config stays sealed — the file boundary IS the
   permission boundary). Today: `deliberation:` (terse|standard|deliberate|think-on-paper — how
@@ -464,6 +468,16 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   every rescan — no database, no cache files; parsing is memoized per file behind a stat()
   fingerprint (inode+mtime+size, so atomic rewrites always miss), pruned for deleted dirs,
   copies returned — the disk stays the source of truth on every lookup.
+- **Event triggers fire through the same seam** (docs/triggers.md): the webhook route
+  (`web/api_hooks.py`, POST `/api/hooks/<slug>/<token>` — the ONE unauthenticated API route:
+  constant-time token compare, generic 404, 64 KiB cap, rate limit + spool cap, rejections logged,
+  payload never echoed) only RECORDS events durably in the `.control/triggers/<slug>/` spool
+  (request-file idiom, like restart.request); the scheduler-ticked **`TriggerManager`**
+  (`daemon/triggers.py`) turns them into fires — the trigger analog of overrun is QUEUE, not skip:
+  N events while a run is active/queued/cooling coalesce into ONE fire, each event still landing as
+  its own inbox message for that fire (deterministic filenames → exactly-once across crashes).
+  `cooldown_s` per trigger (default 60) bounds trigger-fire frequency, so a leaked URL can't burn
+  budget; `state.json` in the spool is the daemon-written fire ledger the Triggers card renders.
 - **Self-update restart** (`restart.py`): a sentinel triggers a drain (parked `waiting_user`/`paused` runs
   don't block it), then a clean exit; systemd `Restart=always` relaunches on the committed code (`uv run`
   re-syncs deps). Orphaned runs claiming to be alive are closed out at boot.

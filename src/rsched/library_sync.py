@@ -58,6 +58,8 @@ def export_routines(routines_home: Path, dest_routines: Path) -> dict:
                 desired.add(rel)
                 dst = dest_routines / rel
                 data = src.read_bytes()
+                if src.name == "routine.yaml":
+                    data = _sanitized_routine_yaml(data)
                 if dst.is_file() and dst.read_bytes() == data:
                     unchanged += 1
                     continue
@@ -74,6 +76,20 @@ def export_routines(routines_home: Path, dest_routines: Path) -> dict:
             elif p.is_dir() and not any(p.iterdir()):
                 p.rmdir()
     return {"exported": len(exported), "removed": removed, "skipped": skipped}
+
+
+def _sanitized_routine_yaml(data: bytes) -> bytes:
+    """routine.yaml can carry secrets now (webhook trigger `token` values) — run it
+    through the same redaction the server-config export gets before it leaves the
+    instance. Unparseable content is copied verbatim (the sync must not eat files).
+    """
+    try:
+        obj = yaml.safe_load(data.decode("utf-8"))
+    except (UnicodeDecodeError, yaml.YAMLError):
+        return data
+    if not isinstance(obj, dict) or not _redact(obj):
+        return data
+    return yaml.safe_dump(obj, sort_keys=False, allow_unicode=True).encode("utf-8")
 
 
 def _redact(obj) -> int:

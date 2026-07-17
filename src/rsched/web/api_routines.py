@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import schedule
+from .. import triggers as triggers_mod
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
 from ..daemon import registry
 from ..ids import now_iso, run_ts
@@ -203,6 +204,10 @@ def routine_detail(request: Request, slug: str) -> dict:
         "catalog": list(server.models.keys()),
         "system_model": server.system_model or None,
         "deliberation": info.cfg.deliberation,
+        # event triggers (webhook now): config rows + fire ledger + hook URL paths — the
+        # Triggers card renders these; CRUD lives in api_hooks
+        "triggers": triggers_mod.describe_triggers(server.routines_home, slug,
+                                                   info.cfg.triggers),
         "permissions": permissions,
         "capabilities": capabilities,
         "ledger_tail": ledger_tail,

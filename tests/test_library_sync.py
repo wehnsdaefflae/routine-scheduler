@@ -60,6 +60,24 @@ def test_config_export_redacts_secrets(tmp_path):
     assert data["bind"] == "127.0.0.1" and out["redacted_values"] == 2
 
 
+def test_export_redacts_trigger_tokens_in_routine_yaml(tmp_path):
+    """routine.yaml carries webhook trigger tokens now — the export must never push them
+    to a (possibly remote) library repo. Same _redact pass the config export gets."""
+    home = tmp_path / "routines"
+    d = home / "hooked"
+    d.mkdir(parents=True)
+    d.joinpath("routine.yaml").write_text(yaml.safe_dump({
+        "slug": "hooked", "description": "hook test",
+        "triggers": [{"id": "t-1", "type": "webhook", "token": "supersecret",
+                      "cooldown_s": 60}],
+    }), encoding="utf-8")
+    dest = tmp_path / "dest"
+    library_sync.export_routines(home, dest)
+    text = (dest / "hooked" / "routine.yaml").read_text(encoding="utf-8")
+    assert "supersecret" not in text
+    assert yaml.safe_load(text)["triggers"][0]["token"] == "REDACTED"
+
+
 def test_run_sync_ok_writes_status_and_is_idempotent(tmp_path):
     s = _server(tmp_path)
     _mk_routine_tree(s.routines_home)

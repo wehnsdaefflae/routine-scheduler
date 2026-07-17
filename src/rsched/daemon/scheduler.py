@@ -4,6 +4,9 @@ Every tick (5s) it checks due fires; every registry_rescan_s it rescans ~/routin
 edits to routine.yaml — schedule changes, enable/disable — take effect without restarts).
 Catch-up (`run_once`) is evaluated exactly once, at daemon boot. A fire that finds its
 routine still running is skipped and logged (`overrun_skipped`, inside Runner.fire).
+Event triggers ride the same tick: spooled webhook events become coalesced fires — the
+trigger analog of the overrun rule is that events QUEUE instead of being skipped
+(daemon/triggers.py, docs/triggers.md).
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from . import registry, restart
 from .detached import DetachedManager
 from .events import EventBus
 from .runner import Runner
+from .triggers import TriggerManager
 
 log = logging.getLogger("rsched.scheduler")
 
@@ -43,6 +47,9 @@ class Scheduler:
         # a conversation reply and report back on completion. The manager is the single writer of
         # background_home; it is ticked after the cron-fire loop (paused during a restart drain).
         self.detached = DetachedManager(server, runner)
+        # Event triggers (webhooks today): the web layer only spools events durably; this
+        # manager turns them into coalesced fires at the tick (see daemon/triggers.py).
+        self.triggers = TriggerManager(server, runner)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
         # In-flight new-routine wizard builds (wids), registered by api_wizard.finalize and
@@ -118,6 +125,8 @@ class Scheduler:
                 self._fire_library_sync()
             # detached background tasks: intake new requests, deliver finished ones, wake owners
             await self.detached.tick(now)
+            # event triggers: spooled webhook events → coalesced fires (one per free routine)
+            await self.triggers.tick(self.catalog)
 
     def _fire_library_sync(self) -> None:
         """Run the sync off-loop (git talks to the network); one at a time — an overrun

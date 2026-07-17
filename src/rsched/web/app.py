@@ -131,6 +131,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_audit,
         api_background,
         api_conversations,
+        api_hooks,
         api_llm_tasks,
         api_playbooks,
         api_push,
@@ -147,8 +148,12 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
 
     for module in (api_push, api_routines, api_conversations, api_background, api_runs,
                    api_schedule, api_stats, api_questions, api_audit, api_traces, settings,
-                   api_workflows, api_playbooks, api_wizard, api_llm_tasks):
+                   api_workflows, api_playbooks, api_wizard, api_llm_tasks, api_hooks):
         app.include_router(module.router, prefix="/api", dependencies=deps)
+    # The ONE deliberately unauthenticated API route: webhook trigger ingest. Third
+    # parties call it, so the per-trigger URL token is the auth (constant-time compare,
+    # rate-limited, size-capped — see api_hooks), never the global bearer.
+    app.include_router(api_hooks.hooks_router, prefix="/api")
 
 
 def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = True) -> FastAPI:
