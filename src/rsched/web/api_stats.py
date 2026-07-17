@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from ..stats import aggregate, monthly_spend
+from ..util_stats import util_stats
 
 router = APIRouter(tags=["stats"])
 
@@ -15,8 +16,11 @@ router = APIRouter(tags=["stats"])
 @router.get("/stats")
 def stats(request: Request) -> dict:
     """Full usage roll-up for the Stats tab: totals plus by_routine / by_model /
-    by_endpoint / by_day / by_kind / by_state slices, and the durable `monthly`
-    per-routine spend series (workflow-usage stream — survives run retention).
+    by_endpoint / by_day / by_kind / by_state slices, the durable `monthly`
+    per-routine spend series (workflow-usage stream — survives run retention), and
+    `utils` — per-util execution stats (library git dates + the stream's per-run
+    outcome breakdowns + a memoized transcript backfill for pre-stream history).
     """
     server = request.app.state.server
-    return {**aggregate(server), "monthly": monthly_spend(server)}
+    return {**aggregate(server), "monthly": monthly_spend(server),
+            "utils": util_stats(server)}

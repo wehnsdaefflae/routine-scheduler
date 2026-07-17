@@ -85,7 +85,8 @@ input[type="search"] { background: #141d28; color: #d5dee6; border: 1px solid #1
 # deeper contract docs. Guides not named here sort alphabetically after them.
 GUIDE_ORDER = ["getting-started", "examples", "conversations", "playbooks",
                "traits-permissions", "notifications", "subtasks", "background-tasks",
-               "triggers", "authoring", "sandboxing", "prompt-anatomy", "endpoints"]
+               "triggers", "run-analytics", "authoring", "sandboxing", "prompt-anatomy",
+               "endpoints"]
 
 
 def docs_out_dir() -> Path:

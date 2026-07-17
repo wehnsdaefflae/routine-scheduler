@@ -15,7 +15,7 @@ from ..config import DELIBERATION_LEVELS
 from ..paths import read_json
 from ..schema_guard import validate
 from . import deliberation, executor, inbox
-from .actions import ACTION_SCHEMA, validate_action
+from .actions import ACTION_SCHEMA, util_rejection_outcome, validate_action
 from .commands import CommandError, parse_command
 from .observations import format_observation, truncate
 
@@ -135,6 +135,12 @@ def run_user_command(loop, m: dict) -> None:
                     or validate_action(action, allowed_kinds=loop.allowed_tools,
                                        grants=loop.grants))
         if problems:
+            # per-util telemetry: user slash commands hit the same gates as model actions
+            # and count the same way (a denied call never reaches the executor)
+            counted = util_rejection_outcome(action, allowed_kinds=loop.allowed_tools,
+                                             grants=loop.grants)
+            if counted is not None:
+                ctx.count_util(*counted)
             raise CommandError("; ".join(problems))
         obs = executor.dispatch(action, ctx)
     except CommandError as exc:

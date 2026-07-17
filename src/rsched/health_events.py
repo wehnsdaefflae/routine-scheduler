@@ -39,14 +39,23 @@ def log_health_event(routines_home: Path, event: str, *, routine: str,
         pass
 
 
-def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str, workflow: str,
-                       depth: int, status: str, turns: int, tokens: int,
-                       cost: float = 0.0, referrals: int = 0) -> None:
+def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noqa: PLR0913 — a flat record writer: one keyword per stream field keeps the vocabulary explicit
+                       workflow: str, depth: int, status: str, turns: int, tokens: int,
+                       cost: float = 0.0, referrals: int = 0,
+                       recipe_commit: str | None = None, utils: dict | None = None,
+                       asks_deferred: int = 0) -> None:
     """Append one line per finished (sub)run to <routines_home>/.control/workflow-usage.jsonl —
     the feedback stream the meta-workflows routine mines to optimize the library, and the
     DURABLE spend series (run dirs fall to retention; this stream survives — monthly spend
     aggregation reads it). Subruns report like any other run (depth > 0), so per-purpose
     child workflows inform pattern evolution too. Best-effort, like the health log.
+
+    Payload extensions (never a new shape): `recipe_commit` — the recipe version that
+    produced the run (health-by-recipe-version outlives retention thanks to this field);
+    `utils` — the run's per-util outcome counts (RunContext.util_stats; ALWAYS present on
+    new records, even empty — its presence marks the record as util-counted, which is how
+    the Stats read-model knows not to double count the run from its transcript);
+    `asks_deferred` — deferred-question churn.
     """
     path = Path(routines_home) / ".control" / WORKFLOW_USAGE_FILE
     try:
@@ -63,6 +72,9 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str, workfl
                 "tokens": tokens,
                 "cost": round(cost, 6),
                 "referrals": referrals,
+                "recipe_commit": recipe_commit,
+                "utils": utils or {},
+                "asks_deferred": asks_deferred,
             }) + "\n")
     except OSError:
         pass

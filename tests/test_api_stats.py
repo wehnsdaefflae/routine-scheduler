@@ -60,6 +60,25 @@ def test_stats_route_serves_the_stats_tab_shape(api_client, make_routine):
         assert col in runs[0], col
 
 
+def test_stats_route_carries_util_stats(api_client, make_routine):
+    """The per-util section rides the same payload (aggregation math in
+    test_util_stats.py; this pins the wire shape stats.js consumes)."""
+    c, tmp = api_client
+    make_routine(slug="alpha")
+    control = tmp / "routines" / ".control"
+    control.mkdir(parents=True, exist_ok=True)
+    (control / "workflow-usage.jsonl").write_text(
+        '{"run_id": "alpha:x", "ts": "2026-07-15T10:00:00+00:00", '
+        '"utils": {"fetch": {"ok": 2, "denied": 1}}}\n', encoding="utf-8")
+    u = c.get("/api/stats").json()["utils"]
+    row = next(r_ for r_ in u["utils"] if r_["name"] == "fetch")
+    assert row["executed"] == 2 and row["ok"] == 2 and row["denied"] == 1
+    assert row["in_library"] is False                 # hermetic library holds no utils
+    for col in ("created", "revised", "first_executed", "last_executed",
+                "usage_error", "rejected", "missing"):
+        assert col in row, col
+
+
 def test_stats_route_requires_auth(api_client):
     c, _tmp = api_client
     assert c.get("/api/stats", headers={"Authorization": ""}).status_code == 401

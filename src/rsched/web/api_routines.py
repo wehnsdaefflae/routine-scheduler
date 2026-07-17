@@ -221,6 +221,43 @@ def routine_detail(request: Request, slug: str) -> dict:
     }
 
 
+@router.get("/routines/{slug}/health")
+def recipe_health(request: Request, slug: str) -> dict:
+    """Health by recipe version: the routine's runs bucketed by the recipe commit that
+    produced them (stamped by the engine; pre-stamp history is date-attributed), plus the
+    deterministic regression evaluation of the newest recipe change — the routine page's
+    health section. Flag-first: reverting is the user's explicit POST below, never
+    automatic.
+    """
+    from ..run_health import routine_health
+
+    info = _info(request, slug)
+    return routine_health(_state(request).server, info.cfg.dir, slug)
+
+
+class RevertBody(BaseModel):
+    commit: str
+
+
+@router.post("/routines/{slug}/recipe/revert")
+def revert_recipe(request: Request, slug: str, body: RevertBody) -> dict:
+    """One-click rollback of a recipe change: restore main.md / stages/ / traits/ /
+    tuning.yaml to their state just before `commit` and commit only those paths —
+    routine.yaml (the user's config) and state files are never touched. Guarded like
+    every web-side routine edit: 409 while a run is active.
+    """
+    from ..recipes import RecipeError
+    from ..recipes import revert_recipe as do_revert
+
+    info = _info(request, slug)
+    guard_not_active(request, info)
+    try:
+        result = do_revert(info.cfg.dir, body.commit)
+    except RecipeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, **result}
+
+
 @router.get("/routines/{slug}/stategraph")
 def stategraph(request: Request, slug: str) -> dict:
     """The routine's state graph (its stage modules, in main.md mention order) + the

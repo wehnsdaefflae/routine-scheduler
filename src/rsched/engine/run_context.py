@@ -86,6 +86,11 @@ class RunContext:
 
     turn: int = 0
     phase: str = ""
+    # The recipe version (last recipe-touching commit — recipes.current_recipe_commit)
+    # that produced this run, stamped at run start; None for unversioned dirs
+    # (conversations, wizard workspaces). Lands in status.json and the run's
+    # workflow-usage record so outcomes stay attributable after retention.
+    recipe_commit: str | None = None
     # Live deliberation level (see config.DELIBERATION_LEVELS): initialized from the
     # routine config by EngineLoop, mutated by a control.json mid-run switch.
     deliberation: str = ""
@@ -113,6 +118,15 @@ class RunContext:
     schema_retries: int = 0           # cumulative schema-violation retries this run (telemetry)
     referrals: int = 0                # turns/llm-calls answered by the `uncensored` model (audit)
     schema_forcefails: int = 0        # turns that exhausted every schema attempt (telemetry)
+    # Per-util execution telemetry: util name → {outcome: n}. Outcomes — ok / error
+    # (non-zero exit) / usage_error (exit 2, argparse's bad-arguments convention) /
+    # missing (no such util) / denied (permission rejection) / rejected (malformed
+    # action). Counted at the executor and validation seams (count_util), folded into
+    # the run's workflow-usage record — the Stats tab's per-util reliability source.
+    util_stats: dict = field(default_factory=dict)
+    # Deferred-question churn: decisions this run threw over the wall to the user — a
+    # deferred ask, a blocking ask that timed out / was parked / died with an abort.
+    asks_deferred: int = 0
     _started_mono: float = field(default_factory=time.monotonic)
     _suspended_s: float = 0.0
 
@@ -157,6 +171,13 @@ class RunContext:
             else:
                 total[key] = total.get(key, 0) + int(val)
         return total
+
+    def count_util(self, name: str, outcome: str) -> None:
+        """One per-util telemetry tick (see util_stats). The catalog pseudo-utils
+        (`list`, `show`) are discovery, not execution — callers skip them.
+        """
+        cell = self.util_stats.setdefault(name, {})
+        cell[outcome] = cell.get(outcome, 0) + 1
 
     def note_schema_retry(self) -> None:
         """Telemetry: one schema-violation retry occurred this turn."""
@@ -244,6 +265,11 @@ class RunContext:
             "schema_retries": self.schema_retries,
             "schema_forcefails": self.schema_forcefails,
             "referrals": self.referrals,
+            # the recipe version that produced this run (null: unversioned dir) — the
+            # health view's bucket key; survives retention via the workflow-usage record
+            "recipe_commit": self.recipe_commit,
+            "utils": self.util_stats,
+            "asks_deferred": self.asks_deferred,
             "budgets": {
                 "turns_left": None if turns_left is None else int(turns_left),
                 "wall_clock_left_s": None if wall_left_min is None else int(wall_left_min * 60),

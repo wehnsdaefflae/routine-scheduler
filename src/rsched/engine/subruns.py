@@ -180,7 +180,13 @@ class SubrunManager:
                                tokens=int(sub.ctx.usage.get("in", 0))
                                       + int(sub.ctx.usage.get("out", 0)),
                                cost=float(sub.ctx.usage.get("cost") or 0.0),
-                               referrals=sub.ctx.referrals)
+                               referrals=sub.ctx.referrals,
+                               # the child ran under the parent's recipe version; its util
+                               # counts are its OWN (parents never fold them — the Stats
+                               # read-model sums records at every depth, so folding would
+                               # double count)
+                               recipe_commit=pctx.recipe_commit, utils=sub.ctx.util_stats,
+                               asks_deferred=sub.ctx.asks_deferred)
 
     def status_table(self) -> dict:
         rows = [{"n": sub.n, "label": sub.label, "workflow": sub.workflow,

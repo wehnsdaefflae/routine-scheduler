@@ -361,6 +361,25 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     return problems
 
 
+def util_rejection_outcome(obj: dict, allowed_kinds: set[str] | None = None,
+                           grants=None) -> tuple[str, str] | None:
+    """Classify a REJECTED util action for per-util telemetry (RunContext.count_util):
+    returns (util name, "denied" | "rejected") or None when the rejection is not
+    attributable to a util. "denied" = a permission refusal (a reserved util switched
+    off, the util kind excluded by the workflow's tools:) — Mark's "permission problem";
+    "rejected" = a malformed call (schema/field problems). A denial never reaches the
+    executor — it is corrected inside the schema-retry cycle and never becomes a turn —
+    so it MUST be counted here at the validation seam or it would never be counted at
+    all. The catalog pseudo-utils (list/show) are discovery, not execution: skipped.
+    """
+    name = str(obj.get("name") or "").strip()
+    if obj.get("kind") != "util" or not name or name in ("list", "show"):
+        return None
+    denied = ((allowed_kinds is not None and "util" not in allowed_kinds)
+              or (grants is not None and grants.deny(obj) is not None))
+    return name, ("denied" if denied else "rejected")
+
+
 def example_action() -> dict:
     """The few-shot example embedded in the harness contract — models on-demand step
     reading with a finding-first `say` (NOT util discovery: the catalog is already in

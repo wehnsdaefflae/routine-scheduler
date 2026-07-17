@@ -21,6 +21,10 @@ from .run_context import RunContext
 
 READ_DEFAULT_MAX_LINES = 200
 UTIL_DEFAULT_TIMEOUT_S = 300
+# argparse exits 2 on bad arguments — the deterministic "called with wrong syntax" signal
+# for per-util telemetry (a util not using argparse may exit 1 for everything; then its
+# usage errors count as plain errors, which is the honest fallback).
+USAGE_ERROR_EXIT = 2
 VISION_UTIL = "vision"
 VIEW_DEFAULT_PROMPT = ("Describe this file in full detail — transcribe any text verbatim and "
                        "note structure, data, and notable visual elements.")
@@ -60,11 +64,15 @@ def do_util(action: dict, ctx: RunContext) -> dict:
         return {"kind": "util", "name": "show", "target": target, "source": content,
                 "truncated": truncated}
     if not utils_lib.exists(home, name):
+        ctx.count_util(name, "missing")
         return {"kind": "util", "name": name, "missing": True,
                 "available": [u["name"] for u in utils_lib.list_utils(home)]}
     code, out, err = utils_lib.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
         policy=sandbox.policy_for_run(ctx.server, ctx.routine))
+    # Per-util reliability telemetry (util_stats → the Stats tab).
+    ctx.count_util(name, "ok" if code == 0
+                   else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
     stdout, trunc_out = truncate(out)
     # On failure, stderr is the repair material — keep the whole trace where possible
     # (truncate preserves head+tail, so the exception at the traceback's end survives).

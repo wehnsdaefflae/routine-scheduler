@@ -11,7 +11,7 @@ import { scheduleEditor } from "/static/components/schedule.js";
 import { triggersCard } from "/static/components/triggers.js";
 import { permissionsPanel } from "/static/components/permissions.js";
 import { recipeNav } from "/static/components/recipenav.js";
-import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, toast, when } from "/static/util.js";
+import { chip, el, emptyState, fmtDur, fmtNum, fmtTokens, skeleton, toast, when } from "/static/util.js";
 
 export async function render(view, slug, query = {}) {
   view.append(skeleton(["35%", "100%", "70%"]));
@@ -252,6 +252,78 @@ export async function render(view, slug, query = {}) {
              ? "the library pattern this routine was generated from — its recipe is the routine's OWN now (edit it in the Recipe section below)"
              : "its origin pattern is no longer in this library — the recipe is the routine's OWN (edit it in the Recipe section below)")
           : "written directly, not generated from a library pattern")));
+
+  // -- recipe health: runs bucketed by the recipe version that produced them --------
+  // (engine-stamped recipe commit; the durable usage stream survives run retention).
+  // A deterministic heuristic flags the newest recipe change when the runs after it are
+  // clearly worse than the runs before — flag-first, the roll-back is YOUR click.
+  const healthBox = el("div", { class: "panel" }, skeleton(["60%", "90%"]));
+  view.append(el("h2", {}, "Recipe health"), healthBox);
+  async function loadHealth() {
+    let h;
+    try { h = await api(`/api/routines/${slug}/health`); }
+    catch (err) { healthBox.replaceChildren(el("div", { class: "muted small" }, `health unavailable: ${err.message}`)); return; }
+    const parts = [];
+    const day = (iso) => (iso ? String(iso).slice(0, 10) : "—");
+    const reg = h.regression || {};
+    async function revert(commit, label) {
+      if (!(await confirmDialog(
+        `Roll back recipe change ${label}? main.md / stages / traits / tuning.yaml return to their state just before it (a new commit — nothing is lost). Config and state are untouched.`,
+        { confirmLabel: "roll back" }))) return;
+      try {
+        await api(`/api/routines/${slug}/recipe/revert`, { method: "POST", body: { commit } });
+        toast("recipe rolled back"); refreshTree(); loadHealth();
+      } catch (err) { toast(err.message, 5000, { error: true }); }
+    }
+    if (reg.flagged) {
+      parts.push(el("div", { class: "panel err", style: "margin-bottom:10px" },
+        el("div", {}, `⚠ possible regression since recipe change ${reg.short} — "${reg.subject}"`),
+        ...(reg.reasons || []).map((r) => el("div", { class: "small", style: "margin-top:4px" }, `· ${r}`)),
+        el("div", { class: "row mt" },
+          el("button", { class: "btn small danger", onclick: () => revert(reg.commit, reg.short) },
+            "↩ roll back this change"))));
+    }
+    if (!h.tracked) {
+      parts.push(el("div", { class: "muted small" },
+        "no git history in this dir — recipe versions aren't tracked (conversations are unversioned by design)"));
+    }
+    const versions = h.versions || [];
+    if (versions.length) {
+      const outcomes = (b) => ["ok", "partial", "failed", "aborted"]
+        .filter((k) => b[k]).map((k) => `${b[k]} ${k}`).join(" · ") || "—";
+      const rows = versions.map((b, i) => el("tr", {},
+        el("td", { title: b.commit || "" },
+          el("span", { class: "ref-tag" }, b.short || "?"),
+          b.current ? el("span", { class: "chip ok", style: "margin-left:6px" }, "current") : ""),
+        el("td", { class: "muted", style: "max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap", title: b.subject }, b.subject || ""),
+        el("td", { class: "muted" }, day(b.date)),
+        el("td", { class: "num" }, String(b.runs)),
+        el("td", {}, outcomes(b),
+          b.inferred_runs ? el("span", { class: "muted small", title: "runs from before version stamping — attributed by date (can be off by one run around a change)" }, ` · ~${b.inferred_runs} date-mapped`) : ""),
+        el("td", { class: "num" }, b.runs ? fmtNum(b.turns_median) : "—"),
+        el("td", { class: "num" }, b.runs ? fmtNum(b.tokens_median) : "—"),
+        el("td", { class: "num", title: "decisions deferred to you during these runs" }, b.asks_deferred ? String(b.asks_deferred) : "—"),
+        el("td", {}, b.current && versions.length > 1 && b.commit
+          ? el("button", { class: "btn small", title: "restore the recipe files to their state just before this change",
+              onclick: () => revert(b.commit, b.short) }, "↩ roll back")
+          : "")));
+      parts.push(el("div", { class: "tablewrap" },
+        el("table", { class: "list" },
+          el("thead", {}, el("tr", {}, ["version", "change", "date", "runs", "outcomes", "med. turns", "med. tokens", "asks", ""].map((x) => el("th", {}, x)))),
+          el("tbody", {}, ...rows))));
+      if (versions.every((b) => !b.runs)) {
+        parts.push(el("div", { class: "muted small mt" }, "no runs recorded in the usage stream yet — health fills in as runs finish"));
+      }
+    } else if (h.tracked) {
+      parts.push(el("div", { class: "muted small" }, "no recipe-touching commits yet — versions appear once the recipe is committed"));
+    }
+    if (h.untracked?.runs) {
+      parts.push(el("div", { class: "muted small mt" },
+        `${h.untracked.runs} run(s) could not be attributed to any recipe version`));
+    }
+    healthBox.replaceChildren(...parts);
+  }
+  loadHealth();
 
   // -- recipe: the routine's OWN workflow files (main.md + stage modules + practice traits) -----
   // A navigable tree that mirrors the markdown files; edits go through the generic /file endpoint.

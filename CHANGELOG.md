@@ -19,6 +19,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.66.0] — 2026-07-17
+
+### Added
+- **Outcome-gated self-improvement: recipe-version health + one-click roll-back.** Every
+  run is stamped with the recipe VERSION that produced it — the last commit touching
+  main.md / stages/ / traits/ / tuning.yaml (`rsched/recipes.py`), never the state-noise
+  HEAD; uncommitted recipe edits (the routine-improver's) are snapshotted into a
+  recipe-only `recipe: pre-run snapshot` commit at run start, so every version is a real,
+  revertable commit. The stamp lands in status.json (`recipe_commit`) and the durable
+  workflow-usage record, so health history outlives run retention. The routine page's new
+  **Recipe health** section (`GET /api/routines/{slug}/health`, `rsched/run_health.py`)
+  buckets runs by version — outcomes, fail rate, median turns/tokens, deferred-question
+  churn (`asks_deferred`, engine-counted) — with pre-stamp history date-attributed and
+  marked `date-mapped`. A deterministic regression heuristic (no stats libraries; every
+  constant justified in the module: 5-run windows, ≥3 runs to judge, fail-rate +0.4,
+  1.5× median growth with +5-turn / +20k-token floors) flags the newest recipe change
+  when its runs are clearly worse. **Flag-first**: the roll-back is the user's click
+  (`POST /api/routines/{slug}/recipe/revert`) — it restores ONLY the recipe files as a
+  new commit (never routine.yaml or state), 409-guarded while a run is active; the
+  routine-improver never auto-reverts.
+- **Per-util execution stats on the Stats tab.** Every util call is counted by outcome in
+  the engine (`RunContext.util_stats`): ok / error / usage_error (exit 2 — argparse's
+  bad-arguments convention) / missing / denied / rejected. Denials are counted at the
+  validation seam (`engine/actions.util_rejection_outcome`) — a denied call is corrected
+  inside the schema-retry cycle and never becomes a turn, so the executor alone would
+  never see it; user slash commands count identically; `list`/`show` discovery never
+  counts. The per-run breakdown rides status.json and the workflow-usage record (`utils`
+  payload extension — always present on new records, marking the run as counted).
+  `rsched/util_stats.py` joins that stream with the library's git history (created / last
+  revised per util, one memoized `git log` walk) and a stat-fingerprint-memoized
+  transcript backfill for pre-stream runs. The new **Global utils** table answers, per
+  util: exists since when, last revision, how often executed / successful / mis-called /
+  permission-blocked, first & last execution — honest about unknowns (never-executed
+  utils, pre-stream rejection history).
+
+### Docs
+- New Help guide `docs/run-analytics.md`; CLAUDE.md (routines-on-disk + workflow-usage
+  paragraphs) and README updated.
+
 ## [0.65.0] — 2026-07-17
 
 ### Added

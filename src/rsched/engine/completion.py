@@ -15,7 +15,13 @@ from ..endpoints import failover
 from ..endpoints.base import EndpointError
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
 from . import executor
-from .actions import ACTION_SCHEMA, KIND_EXAMPLES, normalize_action, validate_action
+from .actions import (
+    ACTION_SCHEMA,
+    KIND_EXAMPLES,
+    normalize_action,
+    util_rejection_outcome,
+    validate_action,
+)
 from .history import (
     COMPACT_AT_FRACTION,
     COMPACT_AT_FRACTION_CACHED,
@@ -228,6 +234,13 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
                 or validate_action(candidate, allowed_kinds=loop.allowed_tools,
                                    grants=loop.grants)
                 or recreate_denial(loop, candidate))
+    if problems and isinstance(candidate, dict):
+        # per-util telemetry: a denied/malformed util call never reaches the executor —
+        # this validation seam is the only place it can be counted (util_stats)
+        counted = util_rejection_outcome(candidate, allowed_kinds=loop.allowed_tools,
+                                         grants=loop.grants)
+        if counted is not None:
+            loop.ctx.count_util(*counted)
     return candidate, problems
 
 

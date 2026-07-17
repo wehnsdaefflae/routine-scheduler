@@ -47,6 +47,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     if mode == "deferred":
         inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                             qtype=qtype, default=default)
+        ctx.asks_deferred += 1   # churn telemetry: a decision thrown over the wall
         return {"kind": "ask_user", "qid": qid, "mode": mode}
 
     timeout_min = ctx.budgets.ask_timeout_min
@@ -79,6 +80,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         # the run dies but the decision survives — as a deferred question for the next run
         inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                             qtype=qtype, default=default)
+        ctx.asks_deferred += 1
         raise
     finally:
         ctx.credit_suspended(time.monotonic() - started)
@@ -88,6 +90,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         # timeout: on the stated default, the record staying open as deferred.
         inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                             qtype=qtype, default=default)
+        ctx.asks_deferred += 1
         if mirror:
             mirror.notify_deferred(default)
         return {"kind": "ask_user", "qid": qid, "mode": mode, "deferred_by_user": True,
@@ -122,6 +125,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # The record stays open (now deferred) so a late answer still reaches a future run.
     inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                         qtype=qtype, default=default)
+    ctx.asks_deferred += 1
     if mirror:
         mirror.notify_timeout(default)
     return {"kind": "ask_user", "qid": qid, "mode": mode, "timed_out": True,

@@ -238,9 +238,18 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   `state` folds a partial finish into "finished", the outcome field keeps it distinguishable —
   the dashboard's sortable per-routine stats AND its run-history **heartbeat strip**
   (`components/heartbeat.js`: last 15 runs per card/row via the cards' `recent_runs`, green ok /
-  amber partial / red failed / grey aborted, height = tokens, click opens the run); gitignored,
-  keep-last-N with gzip). The engine commits the working dir
-  automatically — routines never run git themselves.
+  amber partial / red failed / grey aborted, height = tokens, click opens the run). status.json
+  also carries `recipe_commit` (the recipe VERSION that produced the run: the last recipe-touching
+  commit, stamped at run start by `recipes.current_recipe_commit`, which first snapshots any
+  uncommitted recipe edits — the improver's — into a recipe-only commit; null for unversioned
+  dirs), `utils` (per-util outcome counts) and `asks_deferred`; gitignored, keep-last-N with gzip).
+  The engine commits the working dir
+  automatically — routines never run git themselves. **Recipe health** (`run_health.py`, routine
+  page + `GET /routines/{slug}/health`) buckets the durable usage records by recipe version and
+  flags the newest recipe change when the runs after it are clearly worse than the runs before
+  (deterministic thresholds, each constant justified in the module — see docs/run-analytics.md);
+  `POST /routines/{slug}/recipe/revert` is the one-click rollback (recipe files only — never
+  routine.yaml or state; 409 while a run is active). Flag-first: the improver never auto-reverts.
 
 ## Child tasks (subtasks + subruns), questions, injection
 
@@ -304,7 +313,15 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   dirs fall to retention, this stream survives): `stats.monthly_spend` aggregates it per routine ×
   month — the Stats tab's "Monthly spend" table and the dashboard cards' compact month line
   (bg-task slugs attributed to their owner conversation; depth-0 entries only, a parent already
-  folds its children in). The referral AUDIT (`ctx.referrals`: turns + llm calls the uncensored
+  folds its children in). Records carry payload EXTENSIONS (never a new shape): `recipe_commit`
+  (health-by-recipe-version outlives retention), `utils` (per-util outcome counts — ok / error /
+  usage_error (exit 2 = bad args) / missing / denied / rejected, counted in `RunContext.count_util`
+  at the executor + validation seams; a denied call never becomes a turn, so it is counted where
+  it is raised; subrun records carry their OWN counts, never folded into the parent), and
+  `asks_deferred` (deferred-question churn). `util_stats.py` joins the stream with the library's
+  git history (created/revised per util) and a stat-memoized transcript backfill for pre-stream
+  runs — the Stats tab's "Global utils" table. The referral AUDIT (`ctx.referrals`: turns + llm
+  calls the uncensored
   model answered — both paths increment it, children fold into the parent, status.json carries it
   per run) surfaces on the routine page's Models section.
 

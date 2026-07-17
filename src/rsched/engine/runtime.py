@@ -118,6 +118,12 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     ctx = RunContext(routine=cfg, server=server, registry=registry, run_ts=ts,
                      run_dir=run_dir, transcript=transcript,
                      budgets=Budgets.from_config(cfg.budgets))
+    # Stamp the recipe version that produces this run (recipes.current_recipe_commit —
+    # snapshots any uncommitted recipe edits first, e.g. the routine-improver's). None
+    # for unversioned dirs (conversations). Lands in status.json + the usage record.
+    from ..recipes import current_recipe_commit
+
+    ctx.recipe_commit = current_recipe_commit(routine_dir)
     if not resume_from:
         _ensure_decomposed(routine_dir, cfg, server)   # workflow + instruction → main.md, if needed
     body, prov, allowed_tools = load_workflow(routine_dir, cfg)
@@ -137,5 +143,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                        workflow=prov.get("slug") or "", depth=0, status=status,
                        turns=ctx.turn,
                        tokens=int(ctx.usage.get("in", 0)) + int(ctx.usage.get("out", 0)),
-                       cost=float(ctx.usage.get("cost") or 0.0), referrals=ctx.referrals)
+                       cost=float(ctx.usage.get("cost") or 0.0), referrals=ctx.referrals,
+                       recipe_commit=ctx.recipe_commit, utils=ctx.util_stats,
+                       asks_deferred=ctx.asks_deferred)
     return status, run_dir

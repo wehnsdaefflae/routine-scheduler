@@ -40,7 +40,10 @@ path: this scheduler is the only harness.
   intention from its recent runs, grounds changes in online research, applies the safe
   reversible ones directly (committed per routine), and files a deferred question to the
   **Decisions** page when unsure; answers are remembered in the LEDGERs, so user
-  interaction shrinks over time.
+  interaction shrinks over time. Self-improvement is **outcome-gated**: every run is
+  stamped with the recipe version that produced it, the routine page's Recipe-health view
+  buckets outcomes by version, a deterministic heuristic flags a change whose runs got
+  clearly worse — and one click rolls the recipe back (the improver never auto-reverts).
 - **As a whole**: three more bundled meta routines use the exact same building blocks —
   `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, acting
   is lens-scoped and test-gated, with bigger decisions on the **Audit** page),
