@@ -10,7 +10,8 @@ is the harness* — the orchestrator LLM follows the workflow document and acts 
 action per turn. **A second AGENT LOOP in the path is banned**: it fights this harness and hides the
 conversation. Endpoints are model TRANSPORTS only (see Endpoints). Routines have **no shell** — the
 only way to run code is a global util (a reserved `shell` util exists behind the `shell`
-permission). The instruction contains only the task; conduct prose lives in the routine's own
+permission), and every util subprocess runs inside a Landlock sandbox scoped to the run's
+permissions (docs/sandboxing.md). The instruction contains only the task; conduct prose lives in the routine's own
 `traits/` (adapted in at creation); schedule, PERMISSIONS, workdir, budgets, and model roles are
 routine config (`routine.yaml` / UI).
 
@@ -448,14 +449,30 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   tab has a Playbooks section (`web/api_playbooks.py`). Reaches existing instances at boot via
   `bootstrap.sync_seed_library_docs` (subfolder-aware). See docs/playbooks.md.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`,
-  `calls:`, `tags:`, `secrets: NAME,…` — the docstring is the ONLY machine-read surface; comment-form
-  declarations above it are invisible), and a `--selftest` the engine runs before saving. `write_util`
-  is gated twice: `utils_lib.header_problems` rejects a missing `tags:` line or a credential env var
-  the code reads but `secrets:` doesn't declare (the Settings page can only prompt for declared
-  secrets), then the selftest; approval rides the routine's write_util `confirm:` capability level.
-  Discover with the `util` action `name: list`.
-- **Secrets** are one central, write-only KEY→VALUE store injected into every util, endpoint, and the
-  subscription at run time; utils declare which vars they need and the UI flags unset ones.
+  `calls:` (sibling utils exec'd via `gu` — drives transitive secret/net resolution), `tags:`,
+  `secrets: NAME,…`, `net: outbound|none` — the docstring is the ONLY machine-read surface;
+  comment-form declarations above it are invisible), and a `--selftest` the engine runs before
+  saving. `write_util` is gated twice: `utils_lib.header_problems` rejects a missing `tags:`/`net:`
+  line or a credential env var the code reads but `secrets:` doesn't declare (the Settings page can
+  only prompt for declared secrets), then the selftest; approval rides the routine's write_util
+  `confirm:` capability level. A slug with a DELETION in the library's git history is a user
+  decision: `write_util` on it is rejected inside the schema-retry cycle until an answered blocking
+  ask this run says yes (`interact.recreate_denial` / `utils_lib.was_deleted`), and the boot
+  seed-sync never resurrects a deleted seed util. Discover with the `util` action `name: list`.
+- **Every util subprocess is SANDBOXED** (docs/sandboxing.md): `utils_lib.run_util` takes a
+  `SandboxPolicy` and wraps the command in a Landlock jail (`rsched/sandbox.py` policy +
+  `rsched/landlock.py` ctypes binding/child wrapper, verified working inside the production Docker
+  container) whose visible filesystem derives from the run — routine dir + fs roots rw/ro, plus the
+  toolchain (uv + caches, the library, system trees; the daemon-user HOME stays invisible: secrets
+  store, ~/.credentials, ~/.ssh). Network is the util's `net:` declaration (undeclared = no TCP;
+  transitive over `calls:`). Server config `sandbox: strict|permissive|off` (default permissive:
+  jail when the kernel can, warn and proceed bare when it can't; strict refuses instead; the child
+  wrapper itself never degrades — it exits 97). A one-shot boot migration (`MIGRATION(expires=
+  2026-08-17)` in bootstrap.py) stamps pre-sandbox utils `net: outbound` + missing secrets/calls.
+- **Secrets** are one central, write-only KEY→VALUE store; a util subprocess receives ONLY the vars
+  it (or a `calls:` sibling) declares — undeclared store keys are scrubbed even from inherited
+  daemon env, in every sandbox mode. Endpoints and the subscription read the store as before; the
+  UI flags unset declared vars.
 
 ## Ownership, concurrency, restart (daemon/)
 

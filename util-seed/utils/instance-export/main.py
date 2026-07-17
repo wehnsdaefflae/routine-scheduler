@@ -7,6 +7,7 @@ usage: gu instance-export DEST [--routines-home PATH] [--config PATH] [--json]
 calls: (none)
 secrets: (none)
 tags: sync, backup, meta
+net: none
 
 Everything the instance acquires syncs to ONE repo — this util stages the instance-owned part
 into that repo's working tree (DEST, normally ~/.local/share/routine-scheduler-libraries, which

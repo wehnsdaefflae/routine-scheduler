@@ -7,6 +7,7 @@ usage: gu dir-tree ROOT [--depth N] [--max N] [--all] [--json]
 calls: (none)
 secrets: (none)
 tags: files, listing, meta
+net: none
 
 The routine-safe replacement for `ls`/`find`: prints each entry as an indented name
 (directories with a trailing /), sorted, depth-first, bounded by --depth (default 2) and

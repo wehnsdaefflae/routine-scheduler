@@ -724,16 +724,24 @@ def test_secrets_store(client, tmp_path, monkeypatch):
 
 
 def test_secrets_injected_into_utils_and_endpoints(tmp_path, monkeypatch):
-    """Store → util env (env-first) but LLM keys stay stripped; endpoints read their key_var."""
+    """Store → util env, but SCOPED: only the vars a util DECLARES on `secrets:` reach it;
+    LLM keys stay stripped unconditionally; endpoints read their key_var from the store."""
     monkeypatch.setattr("rsched.secrets.secrets_path", lambda: tmp_path / "secrets.env")
     from rsched.secrets import set_secret
     set_secret("FOO_TOKEN", "tok")
+    set_secret("BAR_TOKEN", "other")
     set_secret("OPENROUTER_KEY", "sk-or-xyz")
 
-    from rsched.utils_lib import _child_env
-    env = _child_env()
-    assert env["FOO_TOKEN"] == "tok"                 # a util credential flows through
-    assert "OPENROUTER_KEY" not in env               # …but LLM keys never reach utils
+    from rsched import utils_lib
+    home = tmp_path / "library"
+    utils_lib.ensure_library(home)
+    utils_lib.write_util_file(home, "declarer", (
+        "# /// script\n# ///\n"
+        '"""declarer — d.\n\nusage: gu declarer\nsecrets: FOO_TOKEN\ntags: t\nnet: none\n"""\n'))
+    env = utils_lib._child_env(home, "declarer")
+    assert env["FOO_TOKEN"] == "tok"                 # the declared credential flows through
+    assert "BAR_TOKEN" not in env                    # …an UNdeclared store key does not
+    assert "OPENROUTER_KEY" not in env               # …and LLM keys never reach utils
 
     from rsched.config import EndpointConfig
     from rsched.endpoints import make_endpoint

@@ -25,6 +25,7 @@ usage: gu dir-tree ROOT [--depth N] [--max N] [--all] [--json]
 calls: (none)
 secrets: (none)
 tags: files, listing, meta
+net: none
 
 The routine-safe replacement for `ls`/`find`: prints each entry as an indented name…
 """
@@ -36,22 +37,31 @@ Line by line:
   sees in its prompt; make the summary earn its tokens.
 - **`usage:`** — the exact CLI invocation. Shown when a routine asks
   `util name=list args=["dir-tree"]`.
-- **`calls:`** — external services the util talks to (`(none)` for offline ones).
+- **`calls:`** — sibling utils this one execs via `gu <name>` (`(none)` otherwise). The
+  sandbox resolves secrets and network need TRANSITIVELY across this graph — an
+  undeclared sibling call means the callee's secrets never reach it.
 - **`secrets:`** — the env vars it needs, e.g. `secrets: OPENROUTER_API_KEY`. The engine
   **rejects** a util whose code reads a credential env var it doesn't declare — declared
-  secrets are what the Settings page can prompt for and inject at run time.
+  secrets are what the Settings page can prompt for, and the ONLY store keys injected
+  into the util's environment at run time.
 - **`tags:`** — required; the catalog groups and filters on them.
+- **`net:`** — required: `outbound` (opens network connections) or `none`. Utils run in a
+  filesystem/network sandbox (see [sandboxing](sandboxing.md)); a `none` (or undeclared)
+  util gets no TCP at all.
 
 Two gates run before a util reaches the library:
 
-1. `header_problems` — the docstring standard above (missing `tags:`, undeclared secrets).
+1. `header_problems` — the docstring standard above (missing `tags:`/`net:`, undeclared
+   secrets).
 2. `--selftest` — every util must implement a **fully offline** selftest; the engine runs
    it before saving. A util that can't prove itself in a sandbox doesn't land.
 
 Whether a routine may write utils at all is its `write_util` capability; the approval
 level (`always` / `creations` / `never`) decides when you're asked first. A run proposes,
 you approve on the Decisions page, the selftest passes, the util is committed — and is
-immediately available to every other routine.
+immediately available to every other routine. One rule sits above all of that: a util the
+user **deleted** from the library is never recreated silently — the engine rejects the
+write and has the routine ask first ([sandboxing](sandboxing.md) § never recreate).
 
 ## Workflow patterns — control flow as a Python file
 

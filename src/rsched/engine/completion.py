@@ -179,12 +179,15 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
     (schema first, then per-kind/permission checks). Raises on unparseable text —
     callers decide whether that is a retry or a silent fallback.
     """
+    from .interact import recreate_denial  # function-level: interact pulls in the ask stack
+
     candidate = (completion.parsed if completion.parsed is not None
                  else extract_json(completion.text))
     candidate = normalize_action(candidate)
     problems = (validate(candidate, ACTION_SCHEMA)
                 or validate_action(candidate, allowed_kinds=loop.allowed_tools,
-                                   grants=loop.grants))
+                                   grants=loop.grants)
+                or recreate_denial(loop, candidate))
     return candidate, problems
 
 

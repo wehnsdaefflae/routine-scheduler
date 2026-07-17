@@ -233,6 +233,12 @@ class ServerConfig(_Config):
     github_client_id: BlankableStr = ""  # OAuth client_id for the device flow (default: gh CLI's)
     max_concurrent_runs: int = 2
     registry_rescan_s: int = 30
+    # Util-subprocess sandbox mode (docs/sandboxing.md): every util runs inside a Landlock
+    # filesystem/network jail derived from the run's permissions. "permissive" (default)
+    # engages the jail whenever the kernel supports it and warns + runs unsandboxed when
+    # not; "strict" refuses to run utils unsandboxed; "off" never wraps. Secrets scoping
+    # (declared-only env injection) applies in EVERY mode — it needs no kernel support.
+    sandbox: Literal["strict", "permissive", "off"] = "permissive"
     endpoints: dict[str, EndpointConfig] = Field(default_factory=dict)
     # The model CATALOG: name → a provider model bound to an endpoint, carrying its own
     # multimodality / context window / effort / temperature. Routines, conversations, and

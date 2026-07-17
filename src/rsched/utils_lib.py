@@ -18,11 +18,12 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from . import sandbox
 from .ids import is_slug
 
-# LLM-auth vars scrubbed from util subprocesses: a util that needs an LLM (e.g. a
-# `gu claude` equivalent) resolves its own credentials; it must never inherit the
-# orchestrator's keys and silently mis-bill or use the wrong account.
+# LLM-auth vars scrubbed from util subprocesses UNCONDITIONALLY (declared or not): a util
+# that needs an LLM (e.g. a `gu claude` equivalent) resolves its own credentials; it must
+# never inherit the orchestrator's keys and silently mis-bill or use the wrong account.
 STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
               "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS",
               "OPENROUTER_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY")
@@ -151,14 +152,19 @@ def list_utils(home: Path) -> list[dict]:
         main_py = d / "main.py"
         if not main_py.is_file():
             continue
-        out.append({"name": d.name, **_parse_header(main_py.read_text(encoding="utf-8"))})
+        out.append({"name": d.name, **parse_header(main_py.read_text(encoding="utf-8"))})
     return out
 
 
 _SUMMARY_RE = re.compile(r'"""(.+?)"""', re.DOTALL)
 
 
-def _parse_header(src: str) -> dict:
+def parse_header(src: str) -> dict:
+    """The docstring header — the util's ONLY machine-read surface: summary, usage, tags,
+    declared secrets, declared sibling `calls:` (drives transitive secret/net resolution,
+    see util_needs), and the `net:` declaration ("outbound" | "none"; "" = undeclared,
+    which the sandbox treats as none — fail closed).
+    """
     m = _SUMMARY_RE.search(src)
     doc = m.group(1).strip() if m else ""
     lines = [ln.strip() for ln in doc.splitlines() if ln.strip()]
@@ -170,23 +176,61 @@ def _parse_header(src: str) -> dict:
     sec_line = next((ln for ln in lines if ln.lower().startswith("secrets:")), "")
     secrets = [s.strip() for s in sec_line[len("secrets:"):].split(",")
                if s.strip() and s.strip().lower() != "(none)"] if sec_line else []
-    return {"summary": summary, "usage": usage, "tags": tags, "secrets": secrets}
+    calls_line = next((ln for ln in lines if ln.lower().startswith("calls:")), "")
+    calls = [c.strip() for c in calls_line[len("calls:"):].split(",")
+             if c.strip() and c.strip().lower() not in ("(none)", "none")
+             and is_slug(c.strip())] if calls_line else []
+    net_line = next((ln for ln in lines if ln.lower().startswith("net:")), "")
+    net = net_line[len("net:"):].strip().lower() if net_line else ""
+    return {"summary": summary, "usage": usage, "tags": tags, "secrets": secrets,
+            "calls": calls, "net": net}
 
 
 # env-var names that smell like credentials — used by header_problems to catch a util that
-# reads a secret it never declared (the Settings page can only prompt for DECLARED secrets)
-_SECRETISH = re.compile(r"""os\.(?:environ(?:\.get\(|\[)|getenv\()\s*["']([A-Z][A-Z0-9_]*)["']""")
+# reads a secret it never declared (the Settings page can only prompt for DECLARED secrets,
+# and the sandbox injects only declared ones). Two read shapes are detected:
+#   direct    — os.environ["NAME"] / os.environ.get("NAME") / os.getenv("NAME")
+#   indirect  — VAR = "NAME"  then  os.environ[VAR] / os.getenv(VAR)  (the `gu claude`
+#               pattern: TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"; a var-keyed read alone can't
+#               name the secret, so we resolve module-level string-literal constants)
+_ENV_READ = r"""os\.(?:environ(?:\.get\(|\[)|getenv\()\s*"""
+_SECRETISH = re.compile(_ENV_READ + r"""["']([A-Z][A-Z0-9_]*)["']""")
+_ENV_VAR_KEY = re.compile(_ENV_READ + r"""([A-Za-z_][A-Za-z0-9_]*)\b""")
+_CONST_ASSIGN = re.compile(r"""^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*["']([A-Z][A-Z0-9_]*)["']""",
+                           re.MULTILINE)
 _SECRET_HINT = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL)S?$")
+
+
+def _secrets_read(content: str) -> set[str]:
+    """Credential-shaped env var NAMES the code reads — directly, or indirectly through a
+    module-level string constant used as an environ key.
+    """
+    used = {v for v in _SECRETISH.findall(content) if _SECRET_HINT.search(v)}
+    consts = dict(_CONST_ASSIGN.findall(content))
+    for var in _ENV_VAR_KEY.findall(content):
+        literal = consts.get(var)
+        if literal and _SECRET_HINT.search(literal):
+            used.add(literal)
+    return used
+
+
+def undeclared_secrets(content: str) -> list[str]:
+    """Credential-looking env vars the code reads but the docstring `secrets:` line does
+    not declare — the gap header_problems rejects (and the header migration repairs).
+    """
+    declared = {s.upper() for s in parse_header(content)["secrets"]}
+    return sorted(_secrets_read(content) - declared)
 
 
 def header_problems(content: str) -> list[str]:
     """Doc-standard gate for saving a util. The docstring header is the util's ONLY
-    machine-read surface (catalog, Settings secrets page): it must carry a summary, a
-    usage: line, at least one tag, and a secrets: declaration covering every
-    credential-looking env var the code reads. Comment-form `# secrets:` lines above the
-    docstring are invisible to the parser — that is exactly the failure this gate stops.
+    machine-read surface (catalog, Settings secrets page, the sandbox): it must carry a
+    summary, a usage: line, at least one tag, a secrets: declaration covering every
+    credential-looking env var the code reads, and a net: declaration. Comment-form
+    `# secrets:` lines above the docstring are invisible to the parser — that is exactly
+    the failure this gate stops.
     """
-    h = _parse_header(content)
+    h = parse_header(content)
     problems = []
     if not h["summary"]:
         problems.append("no module docstring — the first line must be '<name> — <summary>'")
@@ -194,13 +238,16 @@ def header_problems(content: str) -> list[str]:
         problems.append("docstring needs a 'usage: gu <name> …' line")
     if not h["tags"]:
         problems.append("docstring needs a 'tags: <tag>, <tag>, …' line (at least one tag)")
-    declared = {s.upper() for s in h["secrets"]}
-    used = {v for v in _SECRETISH.findall(content) if _SECRET_HINT.search(v)}
-    undeclared = sorted(used - declared)
+    if h["net"] not in ("outbound", "none"):
+        problems.append("docstring needs a 'net: outbound' or 'net: none' line — declare "
+                        "whether this util opens network connections; the sandbox denies "
+                        "all TCP to a util declaring none (or declaring nothing)")
+    undeclared = undeclared_secrets(content)
     if undeclared:
         problems.append("code reads credential env var(s) not declared in the docstring's "
                         f"'secrets:' line: {', '.join(undeclared)} — declare them there "
-                        "(the Settings page only prompts for declared secrets)")
+                        "(the Settings page only prompts for declared secrets, and the "
+                        "sandbox injects only declared ones)")
     return problems
 
 
@@ -238,18 +285,57 @@ def write_util_file(home: Path, name: str, content: str) -> None:
     (d / "main.py").write_text(content, encoding="utf-8")
 
 
-def _child_env() -> dict:
+def util_needs(home: Path, name: str) -> tuple[set[str], bool]:
+    """(declared secret env vars, net-outbound?) for one util, resolved TRANSITIVELY across
+    its docstring `calls:` siblings — the whole call tree runs inside ONE jail and ONE env,
+    so a caller inherits what its callees declared (gmail-body-dump calls gmail → gets the
+    GMAIL_* secrets; anything calling a net: outbound sibling needs the network open too).
+    Undeclared = not granted: an unknown net line (or none at all) contributes nothing.
+    """
+    secrets: set[str] = set()
+    net = False
+    seen: set[str] = set()
+    stack = [name]
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        src = read_util(home, current)
+        if src is None:
+            continue
+        header = parse_header(src)
+        secrets.update(s.upper() for s in header["secrets"])
+        net = net or header["net"] == "outbound"
+        stack += header["calls"]
+    return secrets, net
+
+
+def _child_env(home: Path, name: str) -> dict:
+    """A util subprocess's environment: the central secrets store injects ONLY the vars the
+    util (or a `calls:` sibling) declares; every other store key is scrubbed even when the
+    daemon's own environment carries it — an undeclared secret must not reach the child by
+    any route. STRIP_VARS (LLM keys) are removed unconditionally, declared or not.
+    """
     from .secrets import load_secrets
-    env = {**os.environ, **load_secrets()}      # central secrets store → utils (env-first)
+    declared, _ = util_needs(home, name)
+    env = {**os.environ}
+    for key, value in load_secrets().items():
+        if key.upper() in declared:
+            env[key] = value
+        else:
+            env.pop(key, None)
     for k in STRIP_VARS:
-        env.pop(k, None)                # …but never LLM keys: utils bill only via `gu claude`
+        env.pop(k, None)                # never LLM keys: utils bill only via `gu claude`
     return env
 
 
-def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300
-             ) -> tuple[int, str, str]:
-    """Controlled runner: only a named util from THIS library, uv-run, scrubbed env,
-    library root on PATH (so the util can call siblings via `gu`). Returns (exit, out, err).
+def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
+             policy: sandbox.SandboxPolicy) -> tuple[int, str, str]:
+    """Controlled runner: only a named util from THIS library, uv-run, scoped env (declared
+    secrets only), library root on PATH (so the util can call siblings via `gu`), inside the
+    Landlock jail `policy` + the util's own `net:` declaration describe (sandbox.wrap; the
+    server `sandbox:` mode decides strict/permissive/off). Returns (exit, out, err).
     """
     if not is_slug(name):
         return 2, "", f"invalid util name {name!r}"
@@ -257,23 +343,44 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300
         return 2, "", f"no util named {name!r} (available: {[u['name'] for u in list_utils(home)]})"
     if not shutil.which("uv"):
         return 2, "", "uv is required to run utils but is not on PATH"
-    env = _child_env()
+    env = _child_env(home, name)
     env["PATH"] = f"{home}:{env.get('PATH', '')}"
     # Point the `gu` dispatcher (on PATH, for sibling calls) at THIS library, so a util that
     # shells out to `gu <sibling>` always resolves siblings here.
     env["GLOBAL_UTILS_HOME"] = str(home)
+    _, net = util_needs(home, name)
     try:
-        r = subprocess.run(["uv", "run", "--script", str(util_dir(home, name) / "main.py"),
-                            *args], capture_output=True, text=True, timeout=timeout,
+        cmd = sandbox.wrap(["uv", "run", "--script", str(util_dir(home, name) / "main.py"),
+                            *args], policy=policy, utils_home=home, net=net)
+    except sandbox.SandboxRefusal as exc:
+        return 2, "", str(exc)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
                            env=env, cwd=str(home), check=False)
         return r.returncode, r.stdout, r.stderr
     except subprocess.TimeoutExpired:
         return -1, "", f"util {name!r} timed out after {timeout}s"
 
 
-def selftest(home: Path, name: str, *, timeout: int = 120) -> tuple[bool, str]:
-    code, out, err = run_util(home, name, ["--selftest"], timeout=timeout)
+def selftest(home: Path, name: str, *, timeout: int = 120,
+             policy: sandbox.SandboxPolicy) -> tuple[bool, str]:
+    code, out, err = run_util(home, name, ["--selftest"], timeout=timeout, policy=policy)
     return code == 0, (err or out).strip()
+
+
+def was_deleted(home: Path, name: str) -> bool:
+    """Was utils/<name>/main.py ever DELETED from the library's git history? The engine's
+    never-recreate rule keys off this (interact.recreate_denial), as does the boot seed-sync
+    (a user-deleted seed util is never resurrected). Any deletion counts — the web UI is the
+    only deliberate delete path today, and treating every prior deletion as user intent is
+    the safe reading. Fails open to False (no repo / git error = nothing to guard).
+    """
+    try:
+        r = _git(home, "log", "--diff-filter=D", "--format=%h", "--",
+                 f"utils/{name}/main.py")
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return r.returncode == 0 and bool(r.stdout.strip())
 
 
 def git_commit(home: Path, message: str) -> bool:

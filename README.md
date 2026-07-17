@@ -15,8 +15,10 @@ and user-set **permissions** — the held set is per-routine config in `routine.
 **The workflow is the harness.** Runs execute on a provider-agnostic engine: the
 orchestrator LLM follows the workflow document and acts only by returning one JSON action
 per turn. Routines have **no shell** — the only way to run code is a global util (the `util`
-action); if none fits, the routine writes one (`write_util`, selftest-gated, optionally
-requiring your approval). Other actions: read/write a file, a scoped `llm` subcall, decompose the
+action), and every util subprocess runs inside a Landlock sandbox scoped to the run's declared
+filesystem roots, declared secrets, and declared network need (`docs/sandboxing.md`); if none
+fits, the routine writes one (`write_util`, selftest-gated, optionally
+requiring your approval — and never silently recreating a util you deleted). Other actions: read/write a file, a scoped `llm` subcall, decompose the
 work into child tasks — `spawn` parallel sub-workflows (monitor with `subruns`, `kill`, `wait`) or
 run ordered `subtask` steps sequentially (each a fresh-context child on its own pattern + budget) —
 ask the user (blocking or deferred), or finish. Children never outlive the parent; the recursive

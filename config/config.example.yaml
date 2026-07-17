@@ -19,6 +19,13 @@ libraries_remote: ""   # e.g. https://github.com/<you>/routine-scheduler-librari
 max_concurrent_runs: 2
 registry_rescan_s: 30
 
+# Util-subprocess sandbox (docs/sandboxing.md): every util runs inside a Landlock jail
+# scoped to the run's permissions, with declared-only secrets and per-util network.
+#   permissive (default) — jail when the kernel supports Landlock; warn + run bare when not
+#   strict               — refuse to run utils unsandboxed instead of warning
+#   off                  — never wrap (secrets scoping still applies)
+sandbox: permissive
+
 # Chat-completion endpoints — model TRANSPORTS only; this scheduler's engine is the one and only
 # harness. NONE are configured by default: add the ones you use in the web UI (Settings → LLM
 # endpoints), which explains what credential each kind needs. Full guide with provider recipes

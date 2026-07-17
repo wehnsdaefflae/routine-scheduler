@@ -190,6 +190,7 @@ def cmd_daemon(_args) -> int:
         adopt_permissions,
         adopt_seed_routine,
         ensure_config,
+        migrate_util_headers,
         seed_routines,
         sync_seed_library_docs,
         sync_seed_utils,
@@ -203,6 +204,7 @@ def cmd_daemon(_args) -> int:
     adopt_permissions(server.routines_home, server.permissions_home)
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap
     sync_seed_library_docs(server.libraries_home)  # workflows/traits/permissions added since, too
+    migrate_util_headers(server.libraries_home)  # MIGRATION(expires=2026-08-17): sandbox rollout
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

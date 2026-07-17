@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from .. import utils_lib
+from .. import sandbox, utils_lib
 from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, EndpointError, guess_media_type
 from ..ids import is_slug
 from ..paths import resolve_rel
@@ -63,7 +63,8 @@ def do_util(action: dict, ctx: RunContext) -> dict:
         return {"kind": "util", "name": name, "missing": True,
                 "available": [u["name"] for u in utils_lib.list_utils(home)]}
     code, out, err = utils_lib.run_util(
-        home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S))
+        home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
+        policy=sandbox.policy_for_run(ctx.server, ctx.routine))
     stdout, trunc_out = truncate(out)
     # On failure, stderr is the repair material — keep the whole trace where possible
     # (truncate preserves head+tail, so the exception at the traceback's end survives).
@@ -170,7 +171,8 @@ def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
     if not utils_lib.exists(home, VISION_UTIL):
         return "error: the `vision` util is not installed, so this file cannot be described"
     args = [abspath, "--prompt", prompt or VIEW_DEFAULT_PROMPT, "--json"]
-    code, out, err = utils_lib.run_util(home, VISION_UTIL, args, timeout=UTIL_DEFAULT_TIMEOUT_S)
+    code, out, err = utils_lib.run_util(home, VISION_UTIL, args, timeout=UTIL_DEFAULT_TIMEOUT_S,
+                                        policy=sandbox.policy_for_run(ctx.server, ctx.routine))
     if code != 0:
         return f"error: vision util failed (exit {code}): {(err or out or '').strip()[:800]}"
     try:

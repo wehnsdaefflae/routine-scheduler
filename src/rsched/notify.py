@@ -51,8 +51,10 @@ def run_channel(server, args: list[str], timeout: int = UTIL_TIMEOUT_S) -> tuple
     notification failure is logged and swallowed, the durable web record already exists.
     """
     try:
+        from . import sandbox
         code, out, err = utils_lib.run_util(server.utils_home, _CHANNEL_UTIL, args,
-                                            timeout=timeout)
+                                            timeout=timeout,
+                                            policy=sandbox.base_policy(server))
     except Exception as exc:  # a channel must never take the caller down
         log.warning("notify channel: %s", exc)
         return 1, ""

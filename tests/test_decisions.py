@@ -109,7 +109,7 @@ def test_util_approval_is_the_same_record_with_its_own_type(make_routine, script
     d = make_routine(slug="approval", budgets={"ask_timeout_min": 0})
     scripted([
         {"say": "new util", "kind": "write_util", "name": "frob",
-         "content": '"""frob — test util.\n\nusage: gu frob\ntags: test, demo\n"""\n'},
+         "content": '"""frob — test util.\n\nusage: gu frob\ntags: test, demo\nnet: none\n"""\n'},
         finish(),
     ])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)
@@ -218,7 +218,7 @@ class _FakeDiscord:
         self.calls: list[list[str]] = []
         self.replies = list(replies)
 
-    def run_util(self, home, name, args, timeout=0):
+    def run_util(self, home, name, args, timeout=0, policy=None):
         assert name == "discord"
         self.calls.append(list(args))
         if args[0] == "read":

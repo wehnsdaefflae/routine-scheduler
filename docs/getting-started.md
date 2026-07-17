@@ -63,8 +63,8 @@ Two design rules explain most of the system's shape:
 
 **1 · Connect a model.** Settings → LLM endpoints → add one (an OpenRouter key is the
 fastest start; the Claude subscription needs no per-token billing). Set it as the system
-model. Add any secrets your future utils need (Settings → Secrets — write-only store,
-injected into utils at run time).
+model. Add any secrets your future utils need (Settings → Secrets — write-only store; at
+run time a util receives ONLY the secrets its docstring declares — see the sandboxing guide).
 
 **2 · Describe the task.** *+ new routine* → write the TASK in your own words — what to
 produce or tend, what "done" looks like. Not when it runs, not how to behave; those come

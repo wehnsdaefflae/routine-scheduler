@@ -6,6 +6,7 @@
 usage: gu pytest-run REPO_PATH [--cmd "uv run pytest -q"] [--timeout SECS] [--json]
 calls: (none)
 tags: dev, testing, code
+net: outbound
 
 Runs the test suite in REPO_PATH and returns a structured verdict: ok (exit 0), the pytest
 summary line, and the tail of output. Meant as the gate a self-modifying routine checks before

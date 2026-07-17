@@ -151,7 +151,12 @@ its own `routine.yaml` at all: config (budgets, models, permissions, capabilitie
 the user's, so even the routine-improver proposes a config change with a deferred `ask_user`
 rather than editing the file. A rejected call never becomes a turn. The current run's own
 `runs/<ts>/` tree (status, archived history) stays readable regardless — the engine itself
-points the model there after compaction. `runs/` is never writable.
+points the model there after compaction. `runs/` is never writable. One more write_util-
+specific rule rides the same schema-retry rejection: a util the user **deleted** from the
+library (a deletion in its git history) is never recreated silently — the run must `ask_user`
+first, and only an explicit yes that run unblocks it (see [sandboxing](sandboxing.md)). Every
+util also runs inside a Landlock sandbox scoped to the run's filesystem roots, declared
+secrets, and declared network need — a distinct, always-on layer, not a capability.
 
 The model sees its surface in the prompt's machine-facing **CAPABILITIES** section —
 the enabled capabilities, the held permission slugs, and each held permission's short

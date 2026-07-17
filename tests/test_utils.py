@@ -1,12 +1,21 @@
-"""Util library: real uv-run of utils (catalog, run, selftest, composition). Uses uv."""
+"""Util library: real uv-run of utils (catalog, run, selftest, composition). Uses uv.
+
+Real runs use OFF/permissive sandbox policies: OFF where the test targets observation
+shaping or catalog logic, PERMISSIVE where the whole run chain (uv, the gu dispatcher)
+should pass through the real jail when the kernel offers one (test_landlock.py owns the
+enforcement assertions themselves).
+"""
 
 import shutil
 
 import pytest
 
-from rsched import utils_lib
+from rsched import sandbox, utils_lib
 
 pytestmark = pytest.mark.skipif(shutil.which("uv") is None, reason="uv required to run utils")
+
+OFF = sandbox.SandboxPolicy(mode="off")
+PERMISSIVE = sandbox.SandboxPolicy(mode="permissive")
 
 ADDER = '''# /// script
 # dependencies = []
@@ -82,9 +91,9 @@ def test_write_run_selftest_and_catalog(tmp_path):
     utils_lib.ensure_library(home)
     utils_lib.write_util_file(home, "adder", ADDER)
 
-    ok, out = utils_lib.selftest(home, "adder")
+    ok, out = utils_lib.selftest(home, "adder", policy=OFF)
     assert ok, out
-    code, stdout, _ = utils_lib.run_util(home, "adder", ["2", "3", "--json"])
+    code, stdout, _ = utils_lib.run_util(home, "adder", ["2", "3", "--json"], policy=OFF)
     assert code == 0 and '"sum": 5' in stdout
     catalog = utils_lib.catalog_text(home)
     assert "adder — add two integers." in catalog
@@ -95,18 +104,20 @@ def test_util_composition(tmp_path):
     utils_lib.ensure_library(home)
     utils_lib.write_util_file(home, "adder", ADDER)
     utils_lib.write_util_file(home, "doubler", DOUBLER)
-    ok, out = utils_lib.selftest(home, "doubler")   # doubler calls adder via `gu`
+    # PERMISSIVE: on a Landlock kernel this whole chain (uv → doubler → gu → adder) runs
+    # inside the real jail — the composition test doubles as the sandbox-compat canary.
+    ok, out = utils_lib.selftest(home, "doubler", policy=PERMISSIVE)
     assert ok, out
-    code, stdout, _ = utils_lib.run_util(home, "doubler", ["4", "--json"])
+    code, stdout, _ = utils_lib.run_util(home, "doubler", ["4", "--json"], policy=PERMISSIVE)
     assert code == 0 and '"double": 8' in stdout
 
 
 def test_run_missing_and_invalid(tmp_path):
     home = tmp_path / "utils-home"
     utils_lib.ensure_library(home)
-    code, _, err = utils_lib.run_util(home, "ghost", [])
+    code, _, err = utils_lib.run_util(home, "ghost", [], policy=OFF)
     assert code == 2 and "no util named" in err
-    code, _, err = utils_lib.run_util(home, "Bad Name", [])
+    code, _, err = utils_lib.run_util(home, "Bad Name", [], policy=OFF)
     assert code == 2 and "invalid util name" in err
 
 
@@ -134,7 +145,10 @@ def test_failed_util_observation_teaches_usage(tmp_path):
 
 def _ctx(home, grants=None):
     from types import SimpleNamespace
-    return SimpleNamespace(server=SimpleNamespace(utils_home=home), grants=grants)
+    return SimpleNamespace(server=SimpleNamespace(utils_home=home, sandbox="off"),
+                           routine=SimpleNamespace(dir=home, fs_read_roots=[],
+                                                   fs_write_roots=[]),
+                           grants=grants)
 
 
 def test_util_show_returns_source(tmp_path):
@@ -194,15 +208,17 @@ GOOD_UTIL = (
     "calls: (none)\n"
     "secrets: DEMO_API_KEY\n"
     "tags: demo, testing\n"
+    "net: none\n"
     '"""\n'
     'import os\nkey = os.environ.get("DEMO_API_KEY")\n'
 )
 
 
 def test_header_problems_gate():
-    """The util doc standard is enforced: tags required, and every credential-looking env
+    """The util doc standard is enforced: tags required, every credential-looking env
     var the code reads must be DECLARED in the docstring's secrets: line (a comment-form
-    `# secrets:` above the docstring is invisible — the deepgram failure mode)."""
+    `# secrets:` above the docstring is invisible — the deepgram failure mode), and a
+    net: declaration is required (the sandbox keys off it)."""
     from rsched.utils_lib import header_problems
 
     assert header_problems(GOOD_UTIL) == []
@@ -218,3 +234,81 @@ def test_header_problems_gate():
     # plain env vars (no KEY/TOKEN/SECRET shape) need no declaration
     plain = GOOD_UTIL.replace('os.environ.get("DEMO_API_KEY")', 'os.environ.get("HOME")')
     assert header_problems(plain) == []
+    # the net: line is required, with exactly outbound|none as values
+    no_net = GOOD_UTIL.replace("net: none\n", "")
+    assert any("net:" in p for p in header_problems(no_net))
+    bad_net = GOOD_UTIL.replace("net: none\n", "net: sometimes\n")
+    assert any("net:" in p for p in header_problems(bad_net))
+    assert header_problems(GOOD_UTIL.replace("net: none\n", "net: outbound\n")) == []
+
+
+def test_parse_header_net_and_calls():
+    h = utils_lib.parse_header(GOOD_UTIL)
+    assert h["net"] == "none" and h["calls"] == [] and h["secrets"] == ["DEMO_API_KEY"]
+    with_calls = GOOD_UTIL.replace("calls: (none)\n", "calls: adder, page-fetch\n")
+    assert utils_lib.parse_header(with_calls)["calls"] == ["adder", "page-fetch"]
+    # a header without the lines parses as undeclared — fail closed downstream
+    bare = '"""x — y.\n\nusage: gu x\n"""\n'
+    h = utils_lib.parse_header(bare)
+    assert h["net"] == "" and h["calls"] == [] and h["secrets"] == []
+
+
+def _write_header_util(home, name, *, secrets="(none)", net="none", calls="(none)"):
+    utils_lib.write_util_file(home, name, (
+        "# /// script\n# dependencies = []\n# ///\n"
+        f'"""{name} — fixture.\n\nusage: gu {name}\ncalls: {calls}\n'
+        f"secrets: {secrets}\ntags: t\nnet: {net}\n"
+        '"""\nprint("ok")\n'
+    ))
+
+
+def test_util_needs_transitive_closure(tmp_path):
+    """Secrets and network resolve across the docstring `calls:` graph: the whole call
+    tree runs inside ONE jail and ONE env, so a caller inherits its callees' needs."""
+    utils_lib.ensure_library(tmp_path)
+    _write_header_util(tmp_path, "leaf", secrets="LEAF_TOKEN", net="outbound")
+    _write_header_util(tmp_path, "middle", calls="leaf")
+    _write_header_util(tmp_path, "top", calls="middle", secrets="TOP_KEY")
+    _write_header_util(tmp_path, "loner")
+    secrets, net = utils_lib.util_needs(tmp_path, "top")
+    assert secrets == {"TOP_KEY", "LEAF_TOKEN"} and net is True
+    secrets, net = utils_lib.util_needs(tmp_path, "loner")
+    assert secrets == set() and net is False
+    # cycles terminate; a missing callee contributes nothing
+    _write_header_util(tmp_path, "a", calls="b")
+    _write_header_util(tmp_path, "b", calls="a, ghost")
+    assert utils_lib.util_needs(tmp_path, "a") == (set(), False)
+
+
+def test_child_env_scopes_secrets(tmp_path, monkeypatch):
+    """The central store injects ONLY declared secrets; undeclared store keys are scrubbed
+    even out of the inherited daemon environment; STRIP_VARS go unconditionally."""
+    utils_lib.ensure_library(tmp_path)
+    _write_header_util(tmp_path, "scoped", secrets="MY_TOKEN")
+    monkeypatch.setattr("rsched.secrets.load_secrets",
+                        lambda: {"MY_TOKEN": "t-1", "OTHER_KEY": "o-1"})
+    monkeypatch.setenv("OTHER_KEY", "leaked-via-daemon-env")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "never")
+    monkeypatch.setenv("UNRELATED", "stays")
+    env = utils_lib._child_env(tmp_path, "scoped")
+    assert env["MY_TOKEN"] == "t-1"
+    assert "OTHER_KEY" not in env
+    assert "ANTHROPIC_API_KEY" not in env
+    assert env["UNRELATED"] == "stays"
+
+
+def test_was_deleted_reads_git_history(tmp_path):
+    """The never-recreate rule's probe: a deletion anywhere in the library's history
+    counts; a slug that never existed (or a fresh recreate) reads as expected."""
+    utils_lib.ensure_library(tmp_path)
+    _write_header_util(tmp_path, "doomed")
+    utils_lib.git_commit(tmp_path, "create doomed")
+    assert utils_lib.was_deleted(tmp_path, "doomed") is False
+    assert utils_lib.was_deleted(tmp_path, "never-existed") is False
+    shutil.rmtree(utils_lib.util_dir(tmp_path, "doomed"))
+    utils_lib.git_commit(tmp_path, "delete util doomed via web")
+    assert utils_lib.was_deleted(tmp_path, "doomed") is True
+    # recreating does not erase the history — the guard still consults the user
+    _write_header_util(tmp_path, "doomed")
+    utils_lib.git_commit(tmp_path, "recreate doomed")
+    assert utils_lib.was_deleted(tmp_path, "doomed") is True

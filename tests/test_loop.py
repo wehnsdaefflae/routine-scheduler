@@ -359,7 +359,8 @@ def test_util_missing_then_continue(make_routine, scripted):
 # Minimal util source that passes the write_util doc-standard gate (header_problems).
 def util_src(name):
     return ('# /// script\n# ///\n'
-            f'"""{name} — test util.\n\nusage: gu {name}\ntags: test, demo\nsecrets: (none)\n"""\n')
+            f'"""{name} — test util.\n\nusage: gu {name}\ntags: test, demo\n'
+            'secrets: (none)\nnet: none\n"""\n')
 
 
 def test_write_util_header_gate_blocks_bad_docs(make_routine, scripted, monkeypatch):

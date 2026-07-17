@@ -15,8 +15,8 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 
-from .. import utils_lib
-from ..ids import question_id
+from .. import sandbox, utils_lib
+from ..ids import is_slug, question_id
 from . import decisions, detach, inbox
 from .control import RunAborted
 
@@ -24,7 +24,8 @@ _APPROVE_WORDS = ("approve", "approved", "yes", "y", "ok", "okay", "go", "accept
 
 
 def _is_approval(text: str) -> bool:
-    return text.strip().lower().split()[0] in _APPROVE_WORDS if text.strip() else False
+    head = text.strip().lower().split()[0].strip(".,!:;") if text.strip() else ""
+    return head in _APPROVE_WORDS
 
 
 def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> dict:
@@ -110,6 +111,9 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                             "more back-and-forth first. Address their message, then ask again "
                             "with ask_user (the original question, or a sharper version)."}
         inbox.resolve_question(ctx.routine.dir, qid)
+        # The run's record of decided asks: guards an explicit user yes unblocks consult it
+        # (recreate_denial). In-memory on purpose — a resumed leg starts empty and re-asks.
+        ctx.user_answers.append({"qid": qid, "question": question, "answer": answer["text"]})
         if mirror:
             mirror.notify_resolved(answer["text"], source)
         return {"kind": "ask_user", "qid": qid, "mode": mode, "answered": True,
@@ -122,6 +126,34 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         mirror.notify_timeout(default)
     return {"kind": "ask_user", "qid": qid, "mode": mode, "timed_out": True,
             "timeout_min": timeout_min, **({"default": default} if default else {})}
+
+
+def recreate_denial(loop, action: dict) -> list[str]:
+    """The never-recreate rule, checked INSIDE the schema-retry cycle (a denied call is
+    corrected and never becomes a turn, like every permission gate): a write_util for a
+    slug that once existed and was deleted from the util library — the user's deliberate
+    act, per the library's git history — must not proceed silently. An explicit user yes
+    THIS run (an answered blocking ask naming the util) unblocks it; the routine's normal
+    write_util approval level still applies afterwards.
+    """
+    if action.get("kind") != "write_util":
+        return []
+    ctx = loop.ctx
+    name = str(action.get("name") or "")
+    if ctx.depth > 0 or not name or not is_slug(name):
+        return []   # subruns can't write utils at all — handle_write_util declines them
+    home = ctx.server.utils_home
+    if utils_lib.exists(home, name) or not utils_lib.was_deleted(home, name):
+        return []   # a revision, or a slug that never existed — no recreation involved
+    if any(name.lower() in str(a.get("question") or "").lower()
+           and _is_approval(str(a.get("answer") or "")) for a in ctx.user_answers):
+        return []   # the user explicitly said yes to this recreate, this run
+    return [f"util {name!r} existed before and was DELETED from the util library by the "
+            f"user — a user-deleted util is never recreated without asking. First ask_user "
+            f'with mode "blocking", naming util {name!r} and why it is needed (e.g. '
+            f"'Recreate the deleted util {name!r}? <reason>'); recreate only after an "
+            f"explicit yes this run. On a no or a timeout, work without it and note the "
+            f"gap in your finish summary."]
 
 
 def handle_write_util(loop, action: dict, poll_s: float) -> dict:
@@ -155,7 +187,7 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:
         if not _is_approval(ask["answer"]):
             return {"kind": "write_util", "name": name, "declined": True}
     utils_lib.write_util_file(home, name, content)
-    ok, output = utils_lib.selftest(home, name)
+    ok, output = utils_lib.selftest(home, name, policy=sandbox.base_policy(ctx.server))
     if not ok:
         return {"kind": "write_util", "name": name, "created": creating,
                 "selftest_ok": False, "output": output[:2000]}

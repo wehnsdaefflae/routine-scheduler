@@ -19,6 +19,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.63.0] — 2026-07-17
+
+### Added
+- **Util-subprocess sandbox (Landlock).** Every util now runs inside a Landlock jail
+  (`rsched/landlock.py` — a stdlib-ctypes binding + strict child wrapper; `rsched/sandbox.py`
+  — the policy layer) whose visible filesystem is derived from the run's permissions: the
+  routine dir + its `fs_read_roots`/`fs_write_roots` read/write, plus the toolchain a util
+  needs to execute (interpreter, uv + its caches, the util library, system trees). The
+  daemon-user HOME — `~/.config/routine-scheduler` (the secrets store), `~/.credentials`,
+  `~/.ssh` — is invisible, closing the `gu page-fetch file:///…/secrets.env` read-and-exfil
+  bypass. Verified working inside the production Docker container (Landlock ABI 4, filesystem
+  + TCP, default seccomp). New server config `sandbox: strict | permissive | off` (default
+  **permissive**: jail when the kernel supports it, warn + run bare when it doesn't; strict
+  refuses to run utils unsandboxed). See docs/sandboxing.md.
+- **Network as a declared util capability.** The util docstring header gains a required
+  `net: outbound | none` line (undeclared = none — no TCP); the sandbox denies all TCP
+  (Landlock ABI ≥ 4) to a util that declares none. Sibling calls declared on `calls:` resolve
+  network + secret needs transitively.
+- **Scoped secrets injection.** A util subprocess now receives ONLY the store secrets it (or
+  a `calls:` sibling) declares on `secrets:`; every other store key is scrubbed even out of
+  the inherited daemon environment (applies in every sandbox mode, no kernel needed). Secret
+  detection now also resolves the `VAR = "NAME"` + `os.environ[VAR]` indirection.
+- **Never recreate a user-deleted util.** `write_util` for a slug with a deletion in the util
+  library's git history is rejected inside the schema-retry cycle (never a turn); the model
+  must `ask_user` first and an explicit yes that run unblocks it (`interact.recreate_denial`).
+  The boot seed-sync likewise never resurrects a user-deleted seed util.
+
+### Changed
+- `utils_lib.run_util` / `selftest` take a `SandboxPolicy`; `header_problems` requires the
+  `net:` line; the util-authoring permission doc + prompt CAPABILITIES note the new rules.
+- One-shot boot migration (`MIGRATION(expires=2026-08-17)`) stamps pre-sandbox library util
+  headers with `net: outbound` (behavior-preserving) + any missing `calls:`/`secrets:`.
+
 ## [0.62.0] — 2026-07-17
 
 ### Added

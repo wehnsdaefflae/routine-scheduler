@@ -113,10 +113,13 @@ def test_do_view_image_batched_mixed(tmp_path):
 
 def test_vision_describe_parses_and_errors(tmp_path, monkeypatch):
     from rsched import utils_lib
-    ctx = SimpleNamespace(server=SimpleNamespace(utils_home=tmp_path))
+    ctx = SimpleNamespace(server=SimpleNamespace(utils_home=tmp_path, sandbox="off"),
+                          routine=SimpleNamespace(dir=tmp_path, fs_read_roots=[],
+                                                  fs_write_roots=[]))
     monkeypatch.setattr(utils_lib, "exists", lambda home, n: True)
     monkeypatch.setattr(utils_lib, "run_util",
-                        lambda home, n, args, timeout=300: (0, json.dumps({"text": "hi"}), ""))
+                        lambda home, n, args, timeout=300, policy=None:
+                        (0, json.dumps({"text": "hi"}), ""))
     assert executor.vision_describe(ctx, "/x.png", "?") == "hi"
     monkeypatch.setattr(utils_lib, "run_util", lambda *a, **k: (1, "", "boom"))
     assert executor.vision_describe(ctx, "/x.png", "?").startswith("error:")

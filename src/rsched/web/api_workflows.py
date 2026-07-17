@@ -196,7 +196,7 @@ class UtilBody(BaseModel):
 @router.put("/library/utils/{name}")
 def put_util(request: Request, name: str, body: UtilBody) -> dict:
     """Edit a global util (selftest-gated, committed) — mirrors the write_util engine action."""
-    from .. import utils_lib
+    from .. import sandbox, utils_lib
 
     server = request.app.state.server
     problems = utils_lib.header_problems(body.content)
@@ -204,7 +204,8 @@ def put_util(request: Request, name: str, body: UtilBody) -> dict:
         raise HTTPException(422, "header problems (not saved): " + "; ".join(problems))
     utils_lib.ensure_library(server.utils_home, remote=server.libraries_remote)
     utils_lib.write_util_file(server.utils_home, name, body.content)
-    ok, output = utils_lib.selftest(server.utils_home, name)
+    ok, output = utils_lib.selftest(server.utils_home, name,
+                                    policy=sandbox.base_policy(server))
     if not ok:
         raise HTTPException(422, f"selftest failed (not committed):\n{output[:800]}")
     utils_lib.git_commit(server.utils_home, f"revise {name} via web")

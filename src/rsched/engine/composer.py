@@ -122,11 +122,14 @@ PEP 723 script: `# /// script` deps block, a module docstring whose first line i
 built-in checks, data on stdout / diagnostics on stderr / exit 0 on success; on invalid or
 missing arguments it MUST print its own usage line to stderr and exit 2 — an error that
 doesn't teach the correct call wastes every future caller's turn). The engine runs
-`--selftest` and only commits if it passes; a util may call sibling utils via `gu <name>`. If it \
+`--selftest` and only commits if it passes; a util may call sibling utils via `gu <name>` — \
+declare those on a `calls: <name>, …` header line. If it \
 needs a secret (token, password, API key), read it env-first — `os.environ["NAME"]` — never \
 hardcode or prompt for it, AND declare the names in a header `secrets: NAME1, NAME2` line so the \
-UI tells the user what to set (they set it once in the Secrets store; the engine injects it).\
-{util_confirm}
+UI tells the user what to set (they set it once in the Secrets store; the engine injects it — \
+ONLY declared secrets reach the util). Declare network use with a `net: outbound` (or \
+`net: none`) header line: utils run in a filesystem/network sandbox and an undeclared \
+network need fails.{util_confirm}
 - read_file / write_file / edit_file: read or write a file (within the working dir or an \
 allowed root). read_file takes `path` or `paths` (several files in ONE action — batch related \
 reads instead of spending a turn per file). edit_file replaces an exact `anchor` string with \

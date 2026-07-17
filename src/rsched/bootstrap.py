@@ -276,10 +276,17 @@ def sync_seed_utils(libraries_home: Path) -> int:
     dest = libraries_home / "utils"
     if not src.is_dir() or not dest.is_dir():
         return 0   # fresh deploys get everything via seed_libraries instead
+    from . import utils_lib
+
     installed = []
     for d in sorted(p for p in src.iterdir() if p.is_dir()):
         target = dest / d.name
         if target.exists():
+            continue
+        # Never resurrect a util the USER deleted (the library's git history knows) — the
+        # same rule the engine enforces on write_util (interact.recreate_denial). A missing
+        # seed util with no deletion history is genuinely new and lands normally.
+        if utils_lib.was_deleted(libraries_home, d.name):
             continue
         shutil.copytree(d, target)
         installed.append(d.name)
@@ -289,3 +296,79 @@ def sync_seed_utils(libraries_home: Path) -> int:
         _git(libraries_home, "commit", "-qm",
              f"seed-sync: install new seed util(s): {', '.join(installed)}")
     return len(installed)
+
+
+# MIGRATION(expires=2026-08-17): one-shot header migration for the util-sandbox rollout.
+# Every pre-sandbox util lacks the `net:` declaration the sandbox keys off (undeclared =
+# no TCP), some read credentials they never declared on `secrets:` (scoped env injection
+# would starve them), and the few that exec siblings via `gu <name>` predate the `calls:`
+# convention transitive resolution needs. Adds `net: outbound` (preserving today's
+# unrestricted-network behavior — the user/curator tightens per util from here), seeds
+# `calls:` from literal ["gu", "<name>" invocations, and appends undeclared credential
+# env vars to `secrets:`. Idempotent (a compliant header changes nothing); runs at every
+# daemon boot until deleted after the production instance converges.
+_GU_CALL_RE = re.compile(r"""\[\s*["']gu["']\s*,\s*["']([a-z0-9][a-z0-9-]*)["']""")
+
+
+def _with_header_line(content: str, line: str, after: tuple[str, ...]) -> str:
+    """Insert `line` into the first docstring, after the last header line starting with a
+    prefix in `after` (falling back to the docstring's last line). No docstring = unchanged.
+    """
+    m = re.search(r'"""(.+?)"""', content, re.DOTALL)
+    if not m:
+        return content
+    doc = m.group(1)
+    trailing = "\n" if doc.endswith("\n") else ""   # splitlines drops it; the join must not
+    doc_lines = doc.splitlines()
+    at = max((i for i, ln in enumerate(doc_lines)
+              if ln.strip().lower().startswith(after)), default=len(doc_lines) - 1)
+    doc_lines.insert(at + 1, line)
+    return content[:m.start(1)] + "\n".join(doc_lines) + trailing + content[m.end(1):]
+
+
+def migrate_util_headers(libraries_home: Path) -> int:
+    """See the MIGRATION marker above. Returns how many utils were rewritten."""
+    from . import utils_lib
+
+    utils_root = libraries_home / "utils"
+    if not utils_root.is_dir():
+        return 0
+    touched = []
+    for main_py in sorted(utils_root.glob("*/main.py")):
+        name = main_py.parent.name
+        content = original = main_py.read_text(encoding="utf-8")
+        header = utils_lib.parse_header(content)
+        calls_found = sorted({c for c in _GU_CALL_RE.findall(content) if c != name}
+                             - set(header["calls"]))
+        if calls_found:
+            declared = [*header["calls"], *calls_found]
+            if re.search(r"(?im)^calls:", content):
+                content = re.sub(r"(?im)^calls:.*$", "calls: " + ", ".join(declared),
+                                 content, count=1)
+            else:
+                # anchor on tags/secrets first: a bare `usage:` can head a multi-line
+                # block whose indented continuations an insert right after would split
+                content = _with_header_line(content, "calls: " + ", ".join(declared),
+                                            ("secrets:", "tags:", "usage:"))
+        if header["net"] not in ("outbound", "none"):
+            content = _with_header_line(content, "net: outbound",
+                                        ("secrets:", "tags:", "calls:", "usage:"))
+        missing = utils_lib.undeclared_secrets(content)
+        if missing:
+            declared = [*utils_lib.parse_header(content)["secrets"], *missing]
+            if re.search(r"(?im)^secrets:", content):
+                content = re.sub(r"(?im)^secrets:.*$", "secrets: " + ", ".join(declared),
+                                 content, count=1)
+            else:
+                content = _with_header_line(content, "secrets: " + ", ".join(declared),
+                                            ("net:", "tags:", "usage:"))
+        if content != original:
+            main_py.write_text(content, encoding="utf-8")
+            touched.append(name)
+    if touched:
+        log.warning("sandbox rollout: migrated %d util header(s): %s",
+                    len(touched), ", ".join(touched))
+        _git(libraries_home, "add", "-A")
+        _git(libraries_home, "commit", "-qm",
+             "migrate util headers: declare net/calls/secrets (sandbox rollout)")
+    return len(touched)

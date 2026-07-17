@@ -93,6 +93,10 @@ class RunContext:
     # overwriting an existing file OUTSIDE the routine's own dir requires the run to have
     # seen it (rebuilt from the transcript on resume, so grounding survives legs).
     seen_paths: set[str] = field(default_factory=set)
+    # Blocking asks ANSWERED this run ({qid, question, answer}) — consulted by guards an
+    # explicit user yes unblocks (interact.recreate_denial's never-recreate rule).
+    # In-memory only: a resumed leg starts empty and the model re-asks.
+    user_answers: list[dict] = field(default_factory=list)
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
     # Spend recorded by EARLIER legs of this run (set on resume from the transcript).
     # Budgets deliberately ignore it — a resume gets a fresh window — but reporting must
