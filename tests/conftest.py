@@ -150,6 +150,10 @@ class ScriptedRegistry(EndpointRegistry):
     def for_model(self, kind, models):
         return self.resolve((models or {}).get(kind) or "system")
 
+    def for_model_chain(self, kind, models):
+        # the engine's failover seam walks the chain; scripted tests have a chain of one
+        return [self.for_model(kind, models)]
+
     def for_uncensored(self, models):
         name = (models or {}).get("uncensored")
         return self.resolve(name) if name else None
