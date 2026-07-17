@@ -80,6 +80,23 @@ def test_hook_payload_size_cap(api_client, make_routine):
     assert ok.status_code == 202
 
 
+def test_hook_streaming_body_cap_without_content_length(api_client, make_routine):
+    """A chunked body (iterator content → no Content-Length) can't sneak past the cap:
+    the declared-length pre-check is skipped, so the streaming reader must abort it."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    _add_trigger(tmp, "testr")
+    bare = TestClient(c.app)
+
+    def _huge():
+        for _ in range(triggers.MAX_PAYLOAD_BYTES // 1024 + 2):
+            yield b"x" * 1024
+
+    r = bare.post(f"/api/hooks/testr/{TOK}", content=_huge())
+    assert r.status_code == 413
+    assert triggers.pending_events(tmp / "routines", "testr") == []
+
+
 def test_hook_rate_limit(api_client, make_routine, monkeypatch):
     c, tmp = api_client
     make_routine(slug="testr")

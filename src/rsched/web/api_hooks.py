@@ -65,6 +65,21 @@ def _match_webhook(info: registry.RoutineInfo | None, token: str) -> dict | None
     return matched
 
 
+async def _read_capped(request: Request) -> bytes | None:
+    """Read the body streaming, aborting once it exceeds the cap — so a chunked request
+    with no (or a lying) Content-Length can't buffer an unbounded body into memory before
+    the size check. Returns the bytes, or None if the stream ran past MAX_PAYLOAD_BYTES.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > triggers.MAX_PAYLOAD_BYTES:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _rate_window(request: Request, slug: str) -> deque[float]:
     """Sliding accept-window per slug, kept on app.state (in-memory is right: one process
     serves web + daemon, and the durable backstop is the spool cap, not this).
@@ -89,9 +104,10 @@ async def receive_hook(request: Request, slug: str, token: str) -> dict:
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > triggers.MAX_PAYLOAD_BYTES:
         _reject(413, slug, client, f"declared content-length {declared}", "payload too large")
-    body = await request.body()
-    if len(body) > triggers.MAX_PAYLOAD_BYTES:
-        _reject(413, slug, client, f"payload {len(body)} bytes", "payload too large")
+    body = await _read_capped(request)
+    if body is None:
+        # streamed past the cap (a missing/lying content-length can't sneak a huge body in)
+        _reject(413, slug, client, "streamed body over cap", "payload too large")
     info = registry.scan(server).get(slug)
     trigger = _match_webhook(info, token)
     if info is None or trigger is None or not info.cfg.enabled:
