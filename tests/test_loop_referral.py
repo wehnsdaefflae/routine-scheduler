@@ -42,6 +42,10 @@ class _FakeRegistry:
     def for_model(self, kind, models):
         return self.main_ep, ModelRef("main-ep", "main-model")
 
+    def for_model_chain(self, kind, models):
+        # the engine's failover seam walks the chain; a fake has a chain of one
+        return [self.for_model(kind, models)]
+
     def for_uncensored(self, models):
         if self.unc_ep is None:
             return None
