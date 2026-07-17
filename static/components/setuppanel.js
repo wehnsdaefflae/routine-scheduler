@@ -11,6 +11,7 @@ import { navigate } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { busy, el, requiresSummary, toast } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
+import { trace } from "/static/trace.js";
 
 // Tell app.js the session advanced / was canceled / finalized so the setup banner updates.
 const notifyChanged = () => window.dispatchEvent(new CustomEvent("rsched-wizard-changed"));
@@ -45,6 +46,9 @@ export async function createSetupPanel(host, { ts }) {
 
   function apply(s) {
     lastSnap = s;
+    // Diagnostic (F93): record which panel stage actually renders vs the run state, so a
+    // finished clarify run stuck on the chat frame (no create form) leaves a .ui-traces trail.
+    trace("setup-stage", s.stage || "chat", `state=${s.state || "?"} has_result=${s.has_result ? 1 : 0}`);
     if (s.stage === "done") { done(s.run_id, s.slug); return; }
     if (s.stage === "building") { if (stage !== "building") renderBuilding(s); return; }
     clearBuilding();

@@ -789,6 +789,27 @@ def test_clarify_run_page_suggest_form_after_finish(ui, ui_page, monkeypatch):
     expect(ui_page.locator('input[value="arxiv-watch"]')).to_be_visible()
 
 
+def test_clarify_run_page_question_form_renders_options(ui, ui_page):
+    """A clarify blocking question WITH options renders its option buttons on the run page's
+    top question form (F93: 'no options on the new-routine subpage'), and clicking an option
+    fills the answer for one-tap submit into the .wizard-<ts> inbox the live session polls."""
+    _wid, ts, d, run_dir = _seed_clarify_session(ui)
+    _set_run_status(run_dir, state="waiting_user", pid=4242,
+                    question={"qid": "q-w3", "question": "How often?", "type": "text",
+                              "options": ["daily", "weekly", "monthly"], "default": "weekly",
+                              "asked": ts})
+    ui_page.goto(f"{ui.url}/#/run/clarification:{ts}")
+    opts = ui_page.locator(".answer-opts .btn")
+    expect(opts).to_have_count(3)
+    opts.filter(has_text="weekly").click()
+    field = ui_page.locator('textarea[data-persist="answer-q-w3"]')
+    expect(field).to_have_value("weekly")
+    field.press("Enter")
+    expect(_toast(ui_page)).to_contain_text("answer sent")
+    answer = json.loads((d / "inbox" / "answer-q-w3.json").read_text(encoding="utf-8"))
+    assert answer["text"] == "weekly"
+
+
 # ---- 6. Pre-start capabilities & budgets on the composer ----------------------------------
 
 

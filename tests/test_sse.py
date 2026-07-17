@@ -92,6 +92,29 @@ async def test_run_stream_emits_state_event_on_phase_change(tmp_path, monkeypatc
     await gen.aclose()
 
 
+async def test_run_stream_emits_state_event_on_new_question_same_state(tmp_path, monkeypatch):
+    """A NEW pending question (new qid) with the SAME run state + phase still fires its own
+    state event (F93). The run-page question form re-renders only on a `state` event, so a
+    clarify run that answers one question and re-asks the next within the same phase must
+    still push the new question — otherwise an open run page keeps showing the stale form."""
+    monkeypatch.setattr(sse, "POLL_S", 0.01)
+    run_dir = _mk_run(tmp_path, "apir", TS, "waiting_user")
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": f"apir:{TS}", "state": "waiting_user", "phase": "clarify",
+                       "question": {"qid": "q-a", "question": "First?"}})
+    gen = sse.run_stream(run_dir)
+    first = [await asyncio.wait_for(anext(gen), 2) for _ in range(3)]
+    assert first[-1]["event"] == "state"
+    assert json.loads(first[-1]["data"])["question"]["qid"] == "q-a"
+    # same state + phase, different question — must NOT be coalesced away
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": f"apir:{TS}", "state": "waiting_user", "phase": "clarify",
+                       "question": {"qid": "q-b", "question": "Second?"}})
+    nxt = await asyncio.wait_for(anext(gen), 2)
+    assert nxt["event"] == "state" and json.loads(nxt["data"])["question"]["qid"] == "q-b"
+    await gen.aclose()
+
+
 async def test_run_stream_start_offset_skips_replay(tmp_path, monkeypatch):
     """A reconnecting client passes its offset and gets only what it has not seen."""
     monkeypatch.setattr(sse, "POLL_S", 0.01)

@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.67.4] — 2026-07-17
+
+### Fixed
+- **Run-page question form now updates when a run re-asks within the same phase (F93).**
+  The run SSE tail (`web/sse.py`) emitted a `state` event only on a `(state, phase)` change,
+  so a NEW pending question with unchanged state+phase never reached an open run page — the
+  question form (which re-renders only on a `state` event) could keep showing a stale/absent
+  form, forcing answers onto the Decisions page. The dedup key now also includes the pending
+  question's `qid`, so a changed (or cleared) question always rides its own event.
+
+### Added
+- **`.ui-traces` diagnostics for the new-routine clarify run page (F93).** The setup panel
+  records which stage it renders (`setup-stage`, with run state + `has_result`) and the run
+  view records real transitions of the shown question id (`run-question`) — so a clarify run
+  reported stuck on the chat frame (no create form) or missing its question form leaves a
+  diagnosable trail for the self-audit's improve-ui lens.
+
 ## [0.67.3] — 2026-07-17
 
 ### Fixed

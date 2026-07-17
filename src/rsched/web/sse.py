@@ -41,11 +41,16 @@ async def run_stream(run_dir: Path, start_offset: int = 0):
         st: dict = raw if isinstance(raw, dict) else {}
         state = st.get("state")
         phase = st.get("phase")
-        # phase transitions ride the same event — the state-graph diagram updates on them
-        if state and (state, phase) != last_state:
-            last_state = (state, phase)
+        question = st.get("question")
+        # A changed pending question must ride its own state event even when state+phase are
+        # unchanged (F93: the run-page question form only re-renders on a `state` event, so a
+        # question that changes without a state/phase transition would never reach an open run
+        # page). phase transitions ride the same event — the state-graph diagram updates on them.
+        qid = question.get("qid") if isinstance(question, dict) else None
+        if state and (state, phase, qid) != last_state:
+            last_state = (state, phase, qid)
             yield _event("state", {"state": state, "phase": phase,
-                                   "question": st.get("question"),
+                                   "question": question,
                                    "turn": st.get("turn"), "usage": st.get("usage"),
                                    "model": st.get("model"), "updated": st.get("updated"),
                                    "deliberation": st.get("deliberation")})

@@ -20,6 +20,7 @@ import { busy, chip, el, emptyState, fmtDur, fmtTokens, fmtTs, skeleton, streamS
 import { forgetField } from "/static/formpersist.js";
 import { followScroll } from "/static/follow.js";
 import { TERMINAL, WORKING } from "/static/states.js";
+import { trace } from "/static/trace.js";
 
 export async function render(view, runId, query = {}) {
   const [slug, ts] = runId.split(":");
@@ -278,8 +279,13 @@ export async function render(view, runId, query = {}) {
     scrollDown();
   }
 
+  let shownQid = null;
   function showQuestion(q) {
     questionBox.replaceChildren();
+    // Diagnostic (F93): trace only real transitions of the shown question (SSE state events
+    // fire often) — captures whether/when the run page rendered a given clarify question.
+    const qid = q ? q.qid : null;
+    if (qid !== shownQid) { trace("run-question", qid || "none", curState); shownQid = qid; }
     if (!q) return;
     const form = answerForm(q, {
       submitText: (text, intermediate) => api(`/api/questions/${q.qid}/answer`,
