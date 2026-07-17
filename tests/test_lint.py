@@ -331,3 +331,23 @@ def test_dump_markdown_roundtrips_through_engine_parse():
     assert meta2 == meta and list(meta2) == list(meta)     # values AND key order survive
     assert body2 == body.strip()                           # later --- stays in the body
     assert text.endswith("\n") and not text.endswith("\n\n")
+
+
+
+def test_cmd_lint_libraries_home_skips_server_config(tmp_path, monkeypatch):
+    """`rsched lint --libraries-home DIR` lints the given library directly, WITHOUT reading the
+    (sandbox-jailed) server config — the path sandboxed callers like the gu rsched-lint util use.
+    """
+    from types import SimpleNamespace
+
+    import rsched.cli as cli
+
+    def _boom(*a, **k):
+        raise AssertionError("load_server_config must not run when --libraries-home is given")
+
+    monkeypatch.setattr(cli, "load_server_config", _boom)
+    home = merged_library(tmp_path)
+    assert cli.cmd_lint(SimpleNamespace(target=None, libraries_home=str(home))) == 0
+    # without the flag it falls back to load_server_config (here our boom fires)
+    with pytest.raises(AssertionError):
+        cli.cmd_lint(SimpleNamespace(target=None, libraries_home=None))

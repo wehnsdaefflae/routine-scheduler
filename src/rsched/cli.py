@@ -253,8 +253,12 @@ def cmd_abort(args) -> int:
 def cmd_lint(args) -> int:
     from .workflows.lint import lint_all
 
-    server, _ = load_server_config()
-    results = lint_all(server.libraries_home)
+    if getattr(args, "libraries_home", None):
+        libraries_home = Path(args.libraries_home)   # sandboxed caller: skip ~/.config read
+    else:
+        server, _ = load_server_config()
+        libraries_home = server.libraries_home
+    results = lint_all(libraries_home)
     bad = 0
     for name, problems in sorted(results.items()):
         if args.target and args.target not in name:
@@ -335,6 +339,8 @@ def main(argv: list[str] | None = None) -> int:
 
     li = sub.add_parser("lint", help="lint the workflow library + materialized workflows")
     li.add_argument("target", nargs="?", help="limit to entries containing this string")
+    li.add_argument("--libraries-home", help="lint this library dir directly, skipping the "
+                    "server-config load (lets sandboxed callers lint without ~/.config access)")
     li.set_defaults(fn=cmd_lint)
 
     su = sub.add_parser("suggest", help="rank library workflows for an instruction")

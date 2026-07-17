@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.66.1] — 2026-07-17
+
+### Fixed
+- **`rsched lint` works under the util sandbox.** The 0.63.0 Landlock sandbox deliberately
+  hides `~/.config/routine-scheduler/` (secrets live there), so `rsched lint` — which called
+  `load_server_config()` only to find `libraries_home` — crashed with `PermissionError` when
+  invoked from a sandboxed util (e.g. the `gu rsched-lint` helper self-audit uses). `lint`
+  now accepts `--libraries-home DIR` to lint a library directly, skipping the server-config
+  read; the library dir itself is already visible to utils (it is `utils_home`). Self-audit
+  decision D16.
+- **Restored the green test gate**: 0.66.0's new per-util telemetry (`ctx.count_util`) had
+  broken a `tests/test_utils.py` fixture whose fake context lacked the method.
+
 ## [0.66.0] — 2026-07-17
 
 ### Added
