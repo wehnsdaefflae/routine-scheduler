@@ -106,7 +106,10 @@ you; deferred ones feed the next run. Everything is answerable inline.
 **8 · Tune.** On the routine's page: schedule, permissions, budgets, models, the **Recipe**
 file-tree (its `main.md`, every stage and trait file), the LEDGER, all runs with their
 cost/turns/tokens/duration. The overview sorts and filters on those run stats — card grid or
-detail table.
+detail table, and both carry a **heartbeat strip**: the last ~15 runs as colored bars
+(green ok · amber partial · red failed · grey aborted, bar height tracking token spend) —
+hover for a run's stats, click to open it. A routine that failed four of its last ten runs
+no longer looks identical to one that's been green for a month.
 
 ## What routines are good at
 

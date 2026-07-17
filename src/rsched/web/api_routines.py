@@ -27,6 +27,11 @@ router = APIRouter(tags=["routines"])
 # the operator question is "which routine is silently starving on my input".
 DEFERRED_BACKLOG_N = 5
 
+# The dashboard heartbeat strip shows this many recent runs per routine — enough to see a
+# flaky week at a glance without growing the card payload (the registry already parses
+# every run's status.json, so this is a slice of data in hand, not a new scan).
+HEARTBEAT_RUNS_N = 15
+
 
 def guard_template(slug: str, refusal: str) -> None:
     """The 'clarification' routine is the wizard's protected template — configuration the
@@ -129,6 +134,13 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None 
         "last_run": ({"run_id": last.run_id, "ts": last.ts, "state": last.state,
                       "summary": last.summary[:280], "turns": last.turn,
                       "usage": last.usage, "elapsed_s": last.elapsed_s} if last else None),
+        # the heartbeat strip's window, newest first: state + finish outcome (partial is
+        # invisible in state) + the hover stats, flattened to keep the payload lean
+        "recent_runs": [{"run_id": r.run_id, "ts": r.ts, "state": r.state,
+                         "outcome": r.outcome, "turns": r.turn,
+                         "tokens": (r.usage.get("in") or 0) + (r.usage.get("out") or 0),
+                         "cost": r.usage.get("cost") or 0, "elapsed_s": r.elapsed_s}
+                        for r in info.runs[:HEARTBEAT_RUNS_N]],
         "open_questions": sum(1 for q in info.open_questions if not q.get("answered")),
         # >N unanswered deferred asks = the routine is starving on decisions; the
         # dashboard flags it loud instead of letting the count quietly grow.

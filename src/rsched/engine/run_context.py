@@ -99,6 +99,10 @@ class RunContext:
     # not: status.json and the finish event carry usage_total() = base + this window.
     usage_base: dict = field(default_factory=dict)
     state: str = "starting"
+    # The finish outcome (ok|partial|failed|aborted), stamped once at run end. status.json's
+    # `state` folds a partial finish into "finished" — this field keeps a budget-exhausted
+    # run distinguishable (the dashboard's run-history strip). None while the run is live.
+    outcome: str | None = None
     question: dict | None = None
     main_model: str = ""              # "<endpoint>/<model>" resolved each turn (in status.json)
     budget_base_turn: int = 0         # turns before this count against a prior window (resume)
@@ -221,6 +225,7 @@ class RunContext:
             "run_id": self.run_id,
             "pid": __import__("os").getpid(),
             "state": self.state,
+            "outcome": self.outcome,
             "started": self.run_ts,
             "updated": now_iso(),
             "turn": self.turn,

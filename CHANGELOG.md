@@ -19,6 +19,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.61.0] — 2026-07-17
+
+### Added
+- **Run-history heartbeat strip on the dashboard.** Every routine card AND list-view row
+  now carries a compact SVG strip of the last 15 runs (`static/components/heartbeat.js` —
+  the symmetric PAST view to the week grid's future fires): green ok / amber partial /
+  red failed / grey aborted / teal still-running bars, oldest left, newest at the right
+  edge, bar height tracking the run's token spend (sqrt-scaled per strip). Hover shows
+  ts · outcome · turns · tokens · cost · duration; click opens that run. A routine that
+  failed 4 of its last 10 runs no longer looks identical to one green for a month.
+  Data path: cards gain an additive `recent_runs` field (`web/api_routines.py`
+  `HEARTBEAT_RUNS_N` — a slice of what the registry already parses, no new scanning), and
+  status.json gains the additive **`outcome`** field (ok|partial|failed|aborted, stamped
+  at run end by the engine) because `state` folds a partial finish into "finished" — the
+  strip is where partial becomes visible again.
+- **GFM pipe tables + blockquotes in model-authored prose.** `static/md.js` (the one
+  sanctioned innerHTML pathway) now renders pipe tables — header row + `|---|` separator
+  → `table.list` in a `.tablewrap`, `:---:`/`---:` alignment honored, `\|` escapes, a
+  malformed table stays literal text — and `>` blockquotes (grouped, nested via re-parse,
+  recursion depth-capped) on BLOCK surfaces: finish summaries, llm replies, artifacts.
+  The escape-first security structure is unchanged (everything HTML-escaped before any
+  transform; no live HTML); `mdInline` (say narration, questions) stays inline-only.
+  The models are TOLD: the composer's finish gloss and the ACTION_SCHEMA `summary`
+  description now state that pipe tables and blockquotes render — so tabular results
+  arrive as real tables, not ASCII art (`docs/prompt-anatomy.md` and its pin test move
+  in the same commit).
+
+### Fixed
+- `tests/ui` `test_routine_page_saves`: the tag-removal disk assert waited a fixed 200ms
+  — now an explicit poll on the yaml state (`_wait_until`), per the standing
+  fix-flakes-with-render-waits rule.
+
 ## [0.60.0] — 2026-07-17
 
 ### Added

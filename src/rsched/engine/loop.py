@@ -296,6 +296,7 @@ class EngineLoop:
             _autocommit(ctx.routine.dir, f"{ctx.run_id}: {status}")  # routines never run git
             state = {"ok": "finished", "partial": "finished", "failed": "failed",
                      "aborted": "aborted"}.get(status, "finished")
+            ctx.outcome = status   # `state` folds partial into finished — this keeps it visible
             ctx.write_status(state, question=None)
         return status
 

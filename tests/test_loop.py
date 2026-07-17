@@ -223,6 +223,7 @@ def test_resume_rehydrates_and_continues(make_routine, scripted):
     assert "state/probe.txt" in joined and "ENGINE NOTE" in joined
     st = read_json(run_dir / "status.json")
     assert st["state"] == "finished" and st["turn"] == 4      # continued past the first run's 2 turns
+    assert st["outcome"] == "ok"                              # the finish outcome is stamped
     # usage reporting is CUMULATIVE across legs (ScriptedEndpoint bills 10 in / 5 out per
     # completion; 2 turns per leg): a resume must not zero the dashboard's numbers
     assert st["usage"]["in"] == 40 and st["usage"]["out"] == 20
@@ -550,7 +551,7 @@ def test_three_invalid_attempts_fail_run(make_routine, scripted):
 
 
 def test_turn_budget_forces_partial_finish(make_routine, scripted):
-    _d, ep, status, _run_dir, events = _run(
+    _d, ep, status, run_dir, events = _run(
         make_routine, scripted,
         [probe(say=f"s{i}") for i in range(3)],
         budgets={"max_turns": 2})
@@ -558,6 +559,10 @@ def test_turn_budget_forces_partial_finish(make_routine, scripted):
     fin = events[-1]["payload"]
     assert "turn budget exhausted" in fin["summary"] and fin["authored"] is False
     assert len(ep.calls) == 2  # no third completion happened
+    st = read_json(run_dir / "status.json")
+    # `state` folds partial into finished — the outcome field keeps it distinguishable
+    # (the dashboard heartbeat strip renders it amber, not green)
+    assert st["state"] == "finished" and st["outcome"] == "partial"
 
 
 def test_repeated_action_warn_then_fail(make_routine, scripted):

@@ -6,6 +6,7 @@ harness exists to catch.
 """
 
 import json
+import time
 
 import yaml
 from playwright.sync_api import expect
@@ -13,6 +14,18 @@ from playwright.sync_api import expect
 
 def _toast(page):
     return page.locator("#toast:not([hidden])")
+
+
+def _wait_until(cond, timeout_s=8.0):
+    """Explicit persist-wait: poll a condition instead of sleeping a fixed amount — fixed
+    sleeps before disk asserts are exactly what flakes under xdist load (standing rule,
+    self-audit 2026-07-17)."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if cond():
+            return
+        time.sleep(0.1)
+    raise AssertionError(f"condition not met within {timeout_s:.1f}s")
 
 
 # ---- 1. Decisions answer flow ------------------------------------------------------------
@@ -506,13 +519,12 @@ def test_routine_page_saves(ui, ui_page):
     tuning = yaml.safe_load(
         (ui.routine_dir("uir") / "tuning.yaml").read_text(encoding="utf-8"))
     assert tuning["deliberation"] == "deliberate"
-    # removing the tag also saves immediately
+    # removing the tag also saves immediately — wait on the DISK state, not a fixed sleep
+    # (the removal has no distinct toast to sync on; a 200ms nap flaked under xdist load)
     ui_page.locator(".tags .tag", has_text="nightly").locator(".x").click()
     expect(ui_page.locator(".tags .tag", has_text="nightly")).to_have_count(0)
-    ui_page.wait_for_timeout(200)
-    raw = yaml.safe_load(
-        (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
-    assert raw["tags"] == []
+    _wait_until(lambda: yaml.safe_load(
+        (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))["tags"] == [])
 
     # permissions: the panel re-renders in place from the server's post-cascade state
     perm_panel = ui_page.locator(
@@ -818,3 +830,77 @@ def test_audit_refs_link_and_flash(ui, ui_page):
     card = ui_page.locator(".question-item", has_text="Pick a path")
     flink = card.locator("a.ref-link", has_text="F1")
     expect(flink).to_have_attribute("href", "#/audit?focus=F1")
+
+
+# ---- 8. md.js block rendering: GFM pipe tables + blockquotes -------------------------------
+
+
+def test_md_tables_and_blockquotes_render(ui, ui_page):
+    """The one sanctioned innerHTML pathway renders GFM pipe tables (reusing table.list)
+    and > blockquotes on block surfaces — here the finish summary, the most-read one.
+    Inline transforms still run inside cells; a table without a valid |---| separator
+    stays literal text (the malformed-input contract)."""
+    summary = (
+        "## Digest\n\n"
+        "| portal | hits | best |\n"
+        "| --- | ---: | --- |\n"
+        "| freelance.de | 12 | **9** |\n"
+        "| gulp | 3 | 7 |\n\n"
+        "> re yesterday: the floor stays at 80.\n"
+        "> Flag anything above 110 anyway.\n\n"
+        "| not | a table |\n"
+        "plain prose right after it\n")
+    run_dir = ui.seed_run("uir", "20260716-090000", "finished", summary="done")
+    finish = {"ts": "2026-07-16T09:05:00+00:00", "type": "finish", "turns": 3,
+              "usage_total": {"in": 10, "out": 5},
+              "payload": {"status": "ok", "summary": summary, "authored": True}}
+    with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(finish) + "\n")
+
+    ui_page.goto(f"{ui.url}/#/run/uir:20260716-090000")
+    banner = ui_page.locator(".finish-banner")
+    table = banner.locator("table.list")
+    expect(table).to_have_count(1)                          # the malformed one did NOT parse
+    expect(table.locator("th").nth(0)).to_have_text("portal")
+    expect(table.locator("tbody tr")).to_have_count(2)
+    expect(table.locator("tbody tr").nth(0)).to_contain_text("freelance.de")
+    expect(table.locator("strong")).to_have_text("9")       # inline md runs inside cells
+    quote = banner.locator("blockquote")
+    expect(quote).to_contain_text("re yesterday: the floor stays at 80.")
+    expect(quote).to_contain_text("Flag anything above 110 anyway.")
+    expect(banner).to_contain_text("| not | a table |")     # literal text, pipes intact
+
+
+# ---- 9. Dashboard run-history heartbeat strip ----------------------------------------------
+
+
+def test_dashboard_heartbeat_strip(ui, ui_page):
+    """The heartbeat strip answers 'is this routine RELIABLE, not just green today': one
+    bar per recent run on the card AND the list view, outcome-bucketed (partial comes from
+    status.json `outcome` — state alone reads finished), newest at the right edge, click
+    opens that run."""
+    ui.seed_run("uir", "20260710-070000", "finished", summary="ok run",
+                usage={"in": 100, "out": 20, "cost": 0.02})
+    partial_dir = ui.seed_run("uir", "20260711-070000", "finished", summary="stopped early",
+                              usage={"in": 50, "out": 10})
+    st = json.loads((partial_dir / "status.json").read_text(encoding="utf-8"))
+    st["outcome"] = "partial"
+    (partial_dir / "status.json").write_text(json.dumps(st), encoding="utf-8")
+    ui.seed_run("uir", "20260712-070000", "failed", summary="boom")
+    ui.seed_run("uir", "20260713-070000", "aborted")
+
+    ui_page.goto(ui.url)
+    card = ui_page.locator(".card", has_text="Test uir")
+    strip = card.locator("svg.heartbeat")
+    expect(strip).to_be_visible()
+    for cls in ("hb-ok", "hb-partial", "hb-failed", "hb-aborted"):
+        expect(strip.locator(f"rect.{cls}")).to_have_count(1)
+    expect(strip.locator("rect.hb-empty")).to_have_count(11)   # 15 slots, 4 runs
+    # newest run (the aborted one) sits at the right edge; its bar opens the run view
+    strip.locator("a.hb-bar").last.click()
+    expect(ui_page).to_have_url(f"{ui.url}/#/run/uir:20260713-070000")
+
+    ui_page.goto(ui.url)                                       # list view: same strip per row
+    ui_page.get_by_role("button", name="☰ list view").click()
+    row = ui_page.locator("table.list tbody tr", has_text="Test uir")
+    expect(row.locator("svg.heartbeat")).to_be_visible()

@@ -153,8 +153,9 @@ ACTION_SCHEMA: dict = {
             "description": "finish: a DETAILED 8-20 line result summary — concrete outcomes "
                            "(numbers, names, links), decisions taken + why, files changed, "
                            "open ends and what the next run should pick up (becomes result.md, "
-                           "the dashboard's last-outcome, and the next run's context; simple "
-                           "Markdown — bold, lists, `code`, links — renders in the UI)",
+                           "the dashboard's last-outcome, and the next run's context; Markdown "
+                           "— bold, lists, `code`, links, pipe tables, > quotes — renders in "
+                           "the UI)",
         },
     },
 }

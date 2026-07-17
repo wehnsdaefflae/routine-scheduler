@@ -111,6 +111,29 @@ def test_routine_cards_and_detail(client):
     assert c.get("/api/routines/nope").status_code == 404
 
 
+def test_routine_card_recent_runs_window(client):
+    """The heartbeat strip's data: recent_runs on every card, newest first, with the finish
+    outcome — a partial finish reads state=finished, so `outcome` is what keeps it amber."""
+    c, tmp = client
+    routines = tmp / "routines"
+    _mk_run(routines, "apir", "20260701-070000", "finished")
+    run2 = _mk_run(routines, "apir", "20260702-070000", "finished")
+    st = read_json(run2 / "status.json")
+    st["outcome"] = "partial"
+    atomic_write_json(run2 / "status.json", st)
+    _mk_run(routines, "apir", "20260703-070000", "failed")
+    _mk_run(routines, "apir", "20260704-070000", "aborted")
+    rr = c.get("/api/routines").json()[0]["recent_runs"]
+    assert [r["ts"] for r in rr] == ["20260704-070000", "20260703-070000",
+                                     "20260702-070000", "20260701-070000"]
+    assert rr[1]["state"] == "failed"
+    assert rr[2]["state"] == "finished" and rr[2]["outcome"] == "partial"
+    # flattened hover stats, exactly the fields the strip needs (tokens = in + out)
+    assert rr[0] == {"run_id": "apir:20260704-070000", "ts": "20260704-070000",
+                     "state": "aborted", "outcome": None, "turns": 2, "tokens": 14,
+                     "cost": 0.0123, "elapsed_s": 95}
+
+
 def test_patch_routine_and_409_guard(client):
     c, tmp = client
     r = c.patch("/api/routines/apir", json={"enabled": False, "schedule": {"cron": "0 9 * * 2"}})

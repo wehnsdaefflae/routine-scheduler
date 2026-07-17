@@ -4,6 +4,7 @@
 // free text filter; every stat sorts; a table view sits one toggle away.
 
 import { api } from "/static/api.js";
+import { heartbeat } from "/static/components/heartbeat.js";
 import { weekGrid } from "/static/components/weekgrid.js";
 import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, fmtCost, fmtDur, fmtNum, skeleton, storage, tagChip, toast, when } from "/static/util.js";
@@ -235,6 +236,8 @@ export async function render(view) {
         c.decision_backlog ? el("a", { href: "#/questions", class: "chip failed",
           title: "this routine is starving on deferred decisions — answer some" }, "decision backlog") : null),
       spendLine(c.spend),
+      // the past mirror of "next fire": the last runs at a glance — flaky ≠ green-today
+      c.recent_runs?.length ? el("div", { class: "hb-row" }, heartbeat(c.recent_runs)) : null,
       last ? el("div", { class: "lastrun" },
           el("div", { class: "lr-line" }, when(last.ts), chip(last.state, last.state),
             stats ? el("span", { class: "muted small", title: "last run: turns · duration · tokens · cost" },
@@ -252,8 +255,8 @@ export async function render(view) {
 
   // ---- the detail table: same data, one row per routine, headers sort ------------------------
   const COLS = [
-    ["routine", "name"], ["state", "state"], ["schedule", null], ["next", "next"],
-    ["last run", "activity"], ["turns", "turns"], ["tokens", "tokens"],
+    ["routine", "name"], ["state", "state"], ["history", null], ["schedule", null],
+    ["next", "next"], ["last run", "activity"], ["turns", "turns"], ["tokens", "tokens"],
     ["cost", "cost"], ["duration", "duration"], ["open ?", "questions"], ["", null],
   ];
   function table(shown) {
@@ -270,6 +273,8 @@ export async function render(view) {
           c.description ? el("div", { class: "faint small", style: "max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, c.description) : null),
         el("td", {}, c.active_state ? chip(c.active_state, c.active_state)
           : c.enabled ? (last ? chip(last.state, last.state) : chip("idle", "idle")) : chip("disabled", "disabled")),
+        el("td", { class: "hb-cell" }, c.recent_runs?.length
+          ? heartbeat(c.recent_runs) : el("span", { class: "faint" }, "—")),
         el("td", { class: "muted small" }, c.schedule_desc || "manual"),
         el("td", { class: "muted small" }, c.next_fire ? when(c.next_fire, { mode: "rel" }) : "—"),
         el("td", {}, last ? el("a", { href: `#/run/${last.run_id}` }, when(last.ts)) : el("span", { class: "faint" }, "never")),

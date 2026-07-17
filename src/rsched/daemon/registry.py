@@ -41,6 +41,8 @@ class RunInfo:
     ts: str
     dir: Path
     state: str = "unknown"       # running | waiting_user | paused | finished | failed | aborted
+    outcome: str | None = None   # finish outcome (ok|partial|failed|aborted) — partial is
+                                 # invisible in `state` (folded into finished); None while live
     summary: str = ""
     pid: int | None = None
     turn: int = 0
@@ -123,6 +125,7 @@ def _read_run_fresh(run_dir: Path, slug: str) -> RunInfo:
     st = read_json(run_dir / "status.json")
     if isinstance(st, dict):
         info.state = st.get("state", "unknown")
+        info.outcome = st.get("outcome")
         info.pid = st.get("pid")
         info.turn = int(st.get("turn") or 0)
         info.usage = st.get("usage") or {}

@@ -70,6 +70,11 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "lead with what the last observation taught you",
         # the note channel (ACTION_SCHEMA description + composer contract sentence)
         "worth keeping beyond this context window",
+        # the finish-summary rendering contract (composer finish gloss + ACTION_SCHEMA
+        # summary description) — md.js renders these on block surfaces, so the model is
+        # told tables/quotes are worth emitting
+        "pipe tables and > blockquotes",
+        "pipe tables, > quotes",
     ]
     for needle in needles:
         assert needle in DOC, f"engine string {needle!r} missing from docs/prompt-anatomy.md"

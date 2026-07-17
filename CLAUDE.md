@@ -213,8 +213,12 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   at creation (self-refined afterwards; no post-creation toggle).
 - `state/`, `LEDGER.md`, `inbox/` (daemon/web drop messages + answers here), `questions/pending/`
   (the ONE decision-record shape: {mode, type, default, expires} — asks and util approvals alike),
-  `runs/<ts>/` (transcripts + status.json incl. usage/turns/elapsed_s — the dashboard's sortable
-  per-routine stats; gitignored, keep-last-N with gzip). The engine commits the working dir
+  `runs/<ts>/` (transcripts + status.json incl. usage/turns/elapsed_s + the finish `outcome` —
+  `state` folds a partial finish into "finished", the outcome field keeps it distinguishable —
+  the dashboard's sortable per-routine stats AND its run-history **heartbeat strip**
+  (`components/heartbeat.js`: last 15 runs per card/row via the cards' `recent_runs`, green ok /
+  amber partial / red failed / grey aborted, height = tokens, click opens the run); gitignored,
+  keep-last-N with gzip). The engine commits the working dir
   automatically — routines never run git themselves.
 
 ## Child tasks (subtasks + subruns), questions, injection
