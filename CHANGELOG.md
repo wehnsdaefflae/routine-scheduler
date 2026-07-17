@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.67.0] — 2026-07-17
+
+### Changed
+- **The `meta` tag is now a plain tag — no special-casing.** Previously `meta`-tagged
+  workflows were hidden from the spawn/subtask capability catalog and from wizard
+  suggestions, meta routines were hidden on the dashboard by default, and the `meta` tag was
+  sorted first and styled specially. Now: meta workflows appear in the spawn catalog
+  (`engine/capabilities.py`), in the wizard clarifier's candidate patterns
+  (`web/wizard_store.py`) and in `suggest()` (`workflows/suggest.py`, the `INTERNAL_TAG`
+  filter is gone); the dashboard no longer hides meta routines by default and sorts/styles
+  the tag like any other (`static/views/dashboard.js`, `library.js`, `util.js`). Bundled meta
+  routines still install **disabled** on a fresh instance (a seed-install safety default, not a
+  tag behaviour — enable each on its routine page). Self-audit decision D15.
+
 ## [0.66.1] — 2026-07-17
 
 ### Fixed

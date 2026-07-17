@@ -117,7 +117,7 @@ def test_generate_raises_when_lint_never_passes(server, monkeypatch):
 # -------------------------------------------------------------------- suggest()
 
 
-def test_suggest_filters_unknown_slugs_and_hides_meta_workflows(server, monkeypatch):
+def test_suggest_filters_unknown_slugs(server, monkeypatch):
     from rsched.workflows import suggest as sug_mod
 
     ep = _SysEndpoint([{
@@ -133,7 +133,7 @@ def test_suggest_filters_unknown_slugs_and_hides_meta_workflows(server, monkeypa
     assert result["none_fit"] is False
     listing = ep.calls[0]["messages"][0]["content"]
     assert "slug: general-task" in listing
-    assert "slug: converse" not in listing            # meta-tagged internals never listed
+    assert "slug: converse" in listing                # meta workflows are listed like any other tag now (D15)
 
 
 def test_suggest_retries_once_on_a_malformed_reply(server, monkeypatch):

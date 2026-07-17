@@ -88,7 +88,7 @@ export async function render(view) {
 
   function visible(c) {
     const tags = c.tags || [];
-    if (active.size ? !tags.some((t) => active.has(t)) : tags.includes("meta")) return false;
+    if (active.size && !tags.some((t) => active.has(t))) return false;
     if (states.size && ![...states].some((s) => STATE_BUCKETS[s]?.(c))) return false;
     if (search) {
       const hay = `${c.name} ${c.slug} ${c.description} ${(c.tags || []).join(" ")}`.toLowerCase();
@@ -108,7 +108,7 @@ export async function render(view) {
 
   function renderFilterBar() {
     const all = [...new Set(cards.flatMap((c) => c.tags || []))]
-      .sort((a, b) => (a === "meta" ? -1 : b === "meta" ? 1 : a.localeCompare(b)));
+      .sort((a, b) => a.localeCompare(b));
     filterBar.replaceChildren();
     if (!cards.length) return;
     filterBar.append(el("span", { class: "lbl" }, "filter"));
@@ -144,8 +144,6 @@ export async function render(view) {
     if (active.size || states.size) filterBar.append(el("button", { class: "btn ghost small",
       onclick: () => { active.clear(); states.clear(); storage.set(FILTER_KEY, "[]"); renderFilterBar(); renderBody(); },
     }, "clear"));
-    else if (cards.some((c) => (c.tags || []).includes("meta")))
-      filterBar.append(el("span", { class: "faint small" }, "· meta hidden"));
   }
 
   function renderBody() {
@@ -159,11 +157,8 @@ export async function render(view) {
       return;
     }
     if (!shown.length) {
-      body.append(active.size || states.size || search
-        ? emptyState("▢", "Nothing matches this filter",
-            "Clear the filters above to see all routines (meta routines are hidden by default).")
-        : emptyState("▢", "Only meta routines here so far",
-            "Meta routines (the system's self-maintenance) are tucked away by default — click the meta tag above to show them, or create your own routine."));
+      body.append(emptyState("▢", "Nothing matches this filter",
+        "Clear the filters above to see all routines."));
       return;
     }
     if (viewMode === "list") { body.append(table(shown)); return; }

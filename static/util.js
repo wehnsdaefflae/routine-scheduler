@@ -145,7 +145,7 @@ export function requiresSummary(r) {
 }
 
 export function tagChip(text, { onClick, onRemove, active } = {}) {
-  const cls = ["tag", text === "meta" ? "meta" : "", onClick ? "click" : "", active ? "on" : ""]
+  const cls = ["tag", onClick ? "click" : "", active ? "on" : ""]
     .filter(Boolean).join(" ");
   const attrs = { class: cls };
   if (onClick) attrs.onclick = onClick;

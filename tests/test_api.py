@@ -1053,7 +1053,7 @@ def test_wizard_suggest_leads_with_clarifier_choice(client, monkeypatch):
 
 def test_wizard_candidates_inline_pattern_source(tmp_path):
     """start() writes the workflow patterns (with their full Python control flow) into the session's
-    state/, so the clarifier can suggest + marry by reading one file. Meta patterns are excluded."""
+    state/, so the clarifier can suggest + marry by reading one file. All patterns are included."""
     from pathlib import Path
 
     from rsched.config import ServerConfig
@@ -1066,7 +1066,7 @@ def test_wizard_candidates_inline_pattern_source(tmp_path):
     wizard_store.write_candidates(server, d)
     text = (d / "state" / "candidates.md").read_text()
     assert "general-task" in text and "```python" in text and "def main():" in text
-    assert "clarify-instruction" not in text          # meta patterns are excluded from candidates
+    assert "clarify-instruction" in text              # meta patterns are candidates like any other tag now (D15)
 
 
 def test_library_reports_defaults_and_both_doc_sets(client):

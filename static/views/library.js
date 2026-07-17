@@ -39,7 +39,7 @@ export async function render(view, sub, query = {}) {
   function renderFilterBar() {
     const all = [...new Set([...data.workflows, ...data.traits, ...data.permissions,
       ...data.playbooks, ...data.utils]
-      .flatMap((x) => x.tags || []))].sort((a, b) => (a === "meta" ? -1 : b === "meta" ? 1 : a.localeCompare(b)));
+      .flatMap((x) => x.tags || []))].sort((a, b) => a.localeCompare(b));
     filterBar.replaceChildren();
     if (!all.length) return;
     filterBar.append(el("span", { class: "lbl" }, "filter"));

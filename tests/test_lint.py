@@ -202,13 +202,16 @@ def test_tag_suggestion_helpers(tmp_path):
         assert t in vocab, t
 
 
-def test_suggest_candidate_filter_uses_meta_tag():
-    from rsched.workflows.library import list_workflows
-    from rsched.workflows.suggest import INTERNAL_TAG
+def test_suggest_candidates_include_meta_workflows():
+    # meta is a plain tag now (self-audit decision D15) — candidate patterns no longer
+    # exclude meta-tagged workflows; they are offered like any other.
+    from rsched.config import ServerConfig
+    from rsched.web.wizard_store import candidate_patterns
 
-    candidates = [w["slug"] for w in list_workflows(SEED)
-                  if INTERNAL_TAG not in (w.get("tags") or [])]
-    assert candidates == ["general-task"]                 # the only shipped workflow, user-facing
+    server = ServerConfig()
+    server.libraries_home = SEED
+    slugs = [w["slug"] for w in candidate_patterns(server)]
+    assert "general-task" in slugs and "clarify-instruction" in slugs
 
 
 def test_lint_rejects_non_list_tags():

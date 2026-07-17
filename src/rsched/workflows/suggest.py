@@ -31,14 +31,8 @@ SUGGEST_SCHEMA = {
     },
 }
 
-# Workflows tagged 'meta' are internal machinery (wizard, library maintenance, self-audit) —
-# excluded from user-facing suggestion. This replaces the old hardcoded name set with the tag.
-INTERNAL_TAG = "meta"
-
-
 def suggest(server: ServerConfig, instruction: str) -> dict:
-    candidates = [w for w in list_workflows(server.library_home)
-                  if INTERNAL_TAG not in (w.get("tags") or [])]
+    candidates = list(list_workflows(server.library_home))
     if not candidates:
         return {"suggestions": [], "none_fit": True,
                 "new_workflow_hint": "library has no workflows yet"}

@@ -91,8 +91,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         try:
             from ..workflows.library import list_workflows
 
-            patterns = [w for w in list_workflows(ctx.server.library_home)
-                        if "meta" not in (w.get("tags") or [])]
+            patterns = list(list_workflows(ctx.server.library_home))
         except Exception:
             patterns = []
         if patterns:

@@ -300,8 +300,7 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
 
 def candidate_patterns(server) -> list[dict]:
     from ..workflows import library
-    return [w for w in library.list_workflows(server.library_home)
-            if "meta" not in (w.get("tags") or [])]
+    return list(library.list_workflows(server.library_home))
 
 
 def write_candidates(server, d: Path) -> None:
