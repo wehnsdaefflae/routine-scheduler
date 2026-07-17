@@ -106,6 +106,11 @@ NATIVE_MM_KINDS = {"anthropic", "claude-cli"}
 # Anthropic key. claude-cli has no entry — it authenticates via the subscription token
 # (`credentials_env` / CLAUDE_CODE_OAUTH_TOKEN), never key_var.
 KEY_VAR_DEFAULTS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
+# The output cap a resolved model falls back to when neither the catalog model nor its
+# endpoint sets max_tokens. Generous on purpose: reasoning models need room to think AND
+# answer — a provider's small default can swallow the content entirely. Settings flags
+# models still riding this fallback so the real per-model limit gets configured.
+DEFAULT_MODEL_MAX_TOKENS = 16_384
 
 # YAML-friendly coercions: a bare `key:` (null) reads as the empty string; path strings
 # expand `~` and $VARS.
@@ -134,6 +139,7 @@ class EndpointConfig(_Config):
     # vision support, and sampling. context_chars ≈ 4 × the token window.
     context_chars: int = 100_000
     temperature: float | None = None
+    max_tokens: int | None = None   # None → DEFAULT_MODEL_MAX_TOKENS at resolve time
     # openai kind only: merged verbatim into every request body. This is where aggregator
     # routing lives — e.g. OpenRouter {"provider": {"ignore": [...]}} to exclude serving
     # providers whose constrained decoding measurably corrupts output (drops declared
@@ -165,6 +171,14 @@ class ModelConfig(_Config):
     context_chars: int | None = None
     effort: str | None = None          # reasoning-effort hint (low|medium|high|xhigh|max)
     temperature: float | None = None   # None = inherit the endpoint's temperature default
+    # Max OUTPUT tokens per completion — the model's real output limit. None = inherit the
+    # endpoint's max_tokens, else DEFAULT_MODEL_MAX_TOKENS. Settings flags unset/implausible
+    # values so "set correctly" is auditable.
+    max_tokens: int | None = None
+    # Ordered failover chain: catalog model NAMES tried in order when this model fails hard
+    # (transport retries exhausted / non-retryable error). NOT transitive — only this list is
+    # tried, each entry with its own endpoint and attributes. See endpoints/failover.py.
+    fallbacks: list[str] = Field(default_factory=list)
 
 
 @dataclass
@@ -181,6 +195,7 @@ class ModelRef:
     multimodal: bool = False
     context_chars: int = 100_000
     temperature: float | None = None
+    max_tokens: int = DEFAULT_MODEL_MAX_TOKENS
     name: str = ""
 
 
@@ -338,6 +353,11 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
         mc.name = name
         if mc.endpoint not in cfg.endpoints:
             problems.append(f"models.{name}: endpoint {mc.endpoint!r} is not configured")
+        for fb in mc.fallbacks:
+            if fb == name:
+                problems.append(f"models.{name}: fallbacks must not name the model itself")
+            elif fb not in cfg.models:
+                problems.append(f"models.{name}: fallback {fb!r} is not a catalog model")
     if cfg.system_model and cfg.system_model not in cfg.models:
         problems.append(f"system_model: {cfg.system_model!r} is not a catalog model")
     return cfg, problems

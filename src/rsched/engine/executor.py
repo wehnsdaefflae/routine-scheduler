@@ -454,7 +454,8 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
         endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models)
         completion = endpoint.complete(messages, model=ref.model, schema=schema,
                                        effort=ref.effort, temperature=ref.temperature,
-                                       max_tokens=16_384, purpose=purpose, kind="llm_action")
+                                       max_tokens=ref.max_tokens, purpose=purpose,
+                                       kind="llm_action")
     except EndpointError as exc:
         return {"kind": "llm", "error": str(exc)}
     ctx.add_usage(completion.usage)
@@ -472,7 +473,7 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
                 u_completion = u_endpoint.complete(messages, model=u_ref.model, schema=schema,
                                                    effort=u_ref.effort,
                                                    temperature=u_ref.temperature,
-                                                   max_tokens=16_384,
+                                                   max_tokens=u_ref.max_tokens,
                                                    purpose=(purpose + " · referred")[:80],
                                                    kind="llm_action")
             except EndpointError:

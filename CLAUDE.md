@@ -153,7 +153,12 @@ the limits (single-writer status.json preserved).
 Chat-completion adapters implementing one `ChatEndpoint.complete(...)` (`base.py` — tenacity retries on
 retryable `EndpointError`s; a 200 with an unparseable body is one of them). All three honor
 `ModelRef.effort` and report prompt-cache traffic as usage `cached_in`/`cache_write` (kept out of `in`).
-`complete()` takes an optional `session` caching hint (a stable key per run) adapters may ignore. Three kinds:
+`complete()` takes an optional `session` caching hint (a stable key per run) adapters may ignore.
+The credential ladder (`resolve_api_key`: inline api_key → key_var in Secrets → key_env_file; claude-cli:
+env → inline → Secrets → credentials_env) has label-only mirrors BESIDE the resolvers
+(`api_key_source` / `token_source`) feeding the Settings card's "credential in use" line — which rung is
+live, plus a shadow warning when an inline key hides a set secret; key values never leave the server.
+Three kinds:
 - **openai** — any OpenAI-compatible API (OpenRouter, vLLM, Ollama). Schema via json_schema / json_object
   / ollama-native; degrades gracefully (retries without `response_format`/`reasoning` on a 400, and without
   `response_format` on a 503 that hides a schema-incapable backend). Caching
@@ -172,7 +177,10 @@ retryable `EndpointError`s; a 200 with an unparseable body is one of them). All 
 
 The **model catalog** (`config.ModelConfig`, `ServerConfig.models`) binds a provider model id to
 an endpoint and owns the PER-MODEL attributes — `multimodal`, `context_chars`, `effort`,
-`temperature` (each None inherits the endpoint kind default / the endpoint's own value).
+`temperature`, `max_tokens` (each None inherits the endpoint kind default / the endpoint's own
+value; `max_tokens` — the model's real OUTPUT limit, sent on every engine call — falls back to
+`DEFAULT_MODEL_MAX_TOKENS` 16_384, and Settings flags unset/implausible values so "set correctly"
+is auditable), plus `fallbacks:` — the ordered FAILOVER chain (catalog names, NOT transitive).
 Endpoints hold only transport + auth + those DEFAULTS; `multimodal` is NOT on the endpoint (one
 endpoint serves many models with different windows and vision support). Each **routine
 references models BY NAME** (`routine.yaml` `models:` maps a role → catalog name): `main` (the
@@ -181,10 +189,18 @@ loop), `subroutine` (a spawned child's main), `tool_call` (the `llm` action), op
 name) — the ONE model for pre-routine machine work (the clarify wizard + workflow
 generation/suggestion). `EndpointRegistry.resolve(name)` /
 `.for_model(kind, routine.models)` / `.for_system()` produce a RESOLVED `ModelRef` (endpoint,
-model id, effort + the filled-in multimodal/context_chars/temperature) — the runtime handle, no
-longer parsed from yaml. `supports_media(mime, *, multimodal)` and compaction (`ref.context_chars`)
-take the resolved model's values; `complete()` gains a `temperature` kwarg. Editing a catalog
-model updates every routine that names it.
+model id, effort + the filled-in multimodal/context_chars/temperature/max_tokens) — the runtime
+handle, no longer parsed from yaml. `supports_media(mime, *, multimodal)` and compaction
+(`ref.context_chars`) take the resolved model's values; `complete()` gains a `temperature` kwarg.
+Editing a catalog model updates every routine that names it. **Failover** (`endpoints/failover.py`)
+is two-level: a hard EndpointError anywhere (marked centrally in `InstrumentedEndpoint`) puts that
+(endpoint, model id) in a 5-min process-local COOLDOWN, and every role resolution
+(`for_model`/`for_uncensored`/`for_system`) picks the first not-cooling chain member — while the
+engine's turn completion (`completion.py`) additionally advances down the chain MID-TURN on a hard
+failure, logging the switch as a transcript `error` event with a `failover` payload (never a new
+event type) and stamping each turn's `usage.model` with the model that actually served it, so
+status.json (`ctx.main_model`) and spend attribution stay truthful. Chain exhausted → the run
+fails exactly as before; models without `fallbacks` behave exactly as before.
 
 ## Routines on disk
 

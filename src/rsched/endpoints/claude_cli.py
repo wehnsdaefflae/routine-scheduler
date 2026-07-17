@@ -111,6 +111,25 @@ def resolve_token(credentials_env: str, inline: str = "") -> str | None:
     return None
 
 
+def token_source(credentials_env: str, inline: str) -> dict:
+    """Which rung the subscription token would come from RIGHT NOW — labels only, never the
+    token (the Settings UI shows this on the endpoint card). Must mirror the effective
+    ladder in complete(): process env var → inline token (UI-set) → the secrets store →
+    the credentials env-file. `shadowed_secret` flags an inline token hiding a set secret.
+    """
+    from ..secrets import load_secrets
+    secret_set = bool(load_secrets().get(TOKEN_VAR))
+    if os.environ.get(TOKEN_VAR):
+        return {"source": "process_env", "var": TOKEN_VAR}
+    if inline:
+        return {"source": "inline", "var": TOKEN_VAR, "shadowed_secret": secret_set}
+    if secret_set:
+        return {"source": "secret", "var": TOKEN_VAR}
+    if resolve_token(credentials_env):
+        return {"source": "env_file", "var": TOKEN_VAR, "env_file": credentials_env}
+    return {"source": "none", "var": TOKEN_VAR}
+
+
 def scrub_env(base: Mapping[str, str], *, token: str | None,
               max_tokens: int | None = None) -> dict:
     env = dict(base)

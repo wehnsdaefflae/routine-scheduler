@@ -40,9 +40,13 @@ Two design rules explain most of the system's shape:
 - **Endpoints** (Settings) are model *transports*: OpenAI-compatible APIs (OpenRouter,
   vLLM, Ollama), the Anthropic API, or your Claude subscription via the Claude Code CLI. A
   **model** is a named catalog entry bound to an endpoint, carrying its own context window,
-  vision support, effort, and temperature. Each routine picks its models by name — the main
-  loop, spawned sub-workflows, the `llm` tool-call action, and (optionally) an `uncensored`
-  referral model — or falls back to the one **system model**. A model can be **multimodal**: it views images and PDFs natively
+  vision support, effort, temperature, output limit (`max_tokens` — Settings flags models
+  where it's unset or implausible), and an optional ordered **fallback chain** — other
+  catalog models the engine fails over to when this one's provider fails hard, with a
+  cooldown so a flapping provider isn't hammered. Each routine picks its models by name —
+  the main loop, spawned sub-workflows, the `llm` tool-call action, and (optionally) an
+  `uncensored` referral model — or falls back to the one **system model**. A model can be
+  **multimodal**: it views images and PDFs natively
   (default on for Anthropic/Claude models, a per-model toggle for OpenAI-compatible vision
   models), otherwise through the `vision` util.
 - **The library** (Library tab) is one git repo holding the shared building blocks:

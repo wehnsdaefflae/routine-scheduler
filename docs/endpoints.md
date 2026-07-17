@@ -28,7 +28,11 @@ OpenAI chat-completions dialect, cloud or local.
    in the server config), or set `key_var` to a name like `OPENROUTER_API_KEY` and put the
    value in **Settings → Secrets** — the central store. Secrets win for anything you might
    rotate; inline wins for quick starts. `claude-cli` reads `CLAUDE_CODE_OAUTH_TOKEN` from
-   Secrets — paste the token the card asks for.
+   Secrets — paste the token the card asks for. The card's **credential in use** line shows
+   which rung of the ladder is actually live (inline / secret / env file / none — labels
+   only, values are never returned) and warns when an inline key **shadows** a set secret:
+   the inline key wins, so editing the secret changes nothing until the inline key is
+   removed.
 3. **Test it.** Enter a model id on the card and hit *test* — you get latency, whether the
    model respected a JSON schema, and the raw error (with an auth hint) if the call failed.
    Fix problems here, not mid-run.
@@ -127,6 +131,50 @@ default. Routines and the system model reference a model by its catalog **name**
   model spends its whole output budget thinking instead of answering.
 - `temperature` — sampling temperature; inherits the endpoint's when unset (`openai` and
   `anthropic` apply it, `claude-cli` ignores it).
+- `max_tokens` — the model's real **output** limit per completion, sent on every engine call
+  (turns, `llm` actions; `claude-cli` maps it to `CLAUDE_CODE_MAX_OUTPUT_TOKENS`). Inherits the
+  endpoint's `max_tokens` when unset; with neither set, a generous engine default (16,384)
+  applies and Settings flags the model with a **⚠ max_tokens** chip — implausible values
+  (below 4,096, or larger than the context window) are flagged too, so "every model set
+  correctly" is auditable at a glance.
+- `fallbacks` — the ordered **failover chain**: catalog model names tried in order when this
+  model fails hard. See *Failover & cooldowns* below.
+
+### Failover & cooldowns (`fallbacks`)
+
+A provider outage at cron-fire time used to kill the run after the transport's own retries
+(3 tries, exponential backoff). With `fallbacks: [other-model, …]` on a catalog model, the
+engine instead **fails over**:
+
+- **Mid-turn**: when the serving model fails hard (retries exhausted, or a non-retryable
+  error such as a dead host or bad key), the turn is re-issued to the next chain member —
+  with *its* endpoint, effort, temperature, and max_tokens. The switch is logged visibly as
+  a transcript `error` event carrying a `failover` payload (`from`/`to`/`cooldown_s`), and
+  every turn's usage records the model that actually served it, so spend attribution stays
+  correct. Only when the whole chain is exhausted does the run fail as before.
+- **Cooldown**: a hard-failed (endpoint, model) is marked *cooling* for 5 minutes — every
+  later resolution in the same run process (main turns, `llm` actions, compaction, spawned
+  children) skips it for the first not-cooling chain member instead of hammering a flapping
+  provider. When every chain member is cooling, the primary is used anyway (a run never
+  stalls on bookkeeping). Cooldowns are process-local: a fresh run probes the primary once
+  and re-marks it if the outage persists.
+- Chains are **not transitive**: only the named model's own `fallbacks` list is tried, in
+  order. Self-references, duplicates, and unknown names are reported as config problems and
+  skipped. Roles without fallbacks behave exactly as before — the feature is opt-in per
+  catalog model, and `routine.yaml` still maps each role to ONE catalog name.
+
+```yaml
+models:
+  glm:
+    endpoint: OpenRouter
+    model: z-ai/glm-5.2
+    max_tokens: 32768             # the model's real output limit
+    fallbacks: [glm-featherless]  # tried when OpenRouter fails hard
+  glm-featherless:
+    endpoint: Featherless
+    model: zai-org/GLM-5.2
+    max_tokens: 16384
+```
 
 ### Prompt caching (automatic — no config)
 

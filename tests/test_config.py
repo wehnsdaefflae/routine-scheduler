@@ -275,3 +275,25 @@ def test_bare_serverconfig_is_hermetic_under_pytest(tmp_path):
     s = ServerConfig()
     assert str(Path.home()) not in str(s.routines_home)
     assert str(Path.home()) not in str(s.libraries_home)
+
+
+def test_catalog_max_tokens_and_fallbacks(tmp_path):
+    """The catalog carries per-model max_tokens (endpoint default inheritable) and the
+    ordered `fallbacks:` chain; bad chain entries are reported, never silently applied."""
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.safe_dump({
+        "endpoints": {"e": {"kind": "openai", "base_url": "http://x/v1", "max_tokens": 9000}},
+        "models": {
+            "a": {"endpoint": "e", "model": "a-id", "max_tokens": 5000,
+                  "fallbacks": ["a", "ghost", "b"]},
+            "b": {"endpoint": "e", "model": "b-id"},
+        },
+    }), encoding="utf-8")
+    cfg, problems = load_server_config(p)
+    assert cfg.models["a"].max_tokens == 5000
+    assert cfg.models["b"].max_tokens is None          # inherits at resolve time
+    assert cfg.endpoints["e"].max_tokens == 9000
+    assert cfg.models["a"].fallbacks == ["a", "ghost", "b"]   # kept verbatim; resolve skips
+    assert any("fallbacks must not name the model itself" in x for x in problems)
+    assert any("fallback 'ghost' is not a catalog model" in x for x in problems)
+    assert not any("'b'" in x for x in problems)       # a valid fallback raises no problem

@@ -10,7 +10,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from ..config import NATIVE_MM_KINDS, EndpointConfig, ModelRef, ServerConfig
+from ..config import (
+    DEFAULT_MODEL_MAX_TOKENS,
+    NATIVE_MM_KINDS,
+    EndpointConfig,
+    ModelRef,
+    ServerConfig,
+)
+from . import failover
 from .anthropic_api import AnthropicEndpoint
 from .base import ChatEndpoint, Completion, EndpointError
 from .claude_cli import ClaudeCliEndpoint
@@ -74,17 +81,49 @@ class EndpointRegistry:
         ref = ModelRef(endpoint=mc.endpoint, model=mc.model, effort=mc.effort,
                        multimodal=multimodal,
                        context_chars=mc.context_chars or ep_cfg.context_chars,
-                       temperature=temperature, name=name)
+                       temperature=temperature,
+                       max_tokens=mc.max_tokens or ep_cfg.max_tokens
+                       or DEFAULT_MODEL_MAX_TOKENS,
+                       name=name)
         return self.get(mc.endpoint), ref
 
-    def for_model(self, kind: str, models: dict[str, str]) -> tuple[InstrumentedEndpoint, ModelRef]:
-        """Resolve one of a routine's model roles (main/subroutine/tool_call) by catalog name.
-        A role the routine left unset falls back to the server's system_model (also a name).
+    def resolve_chain(self, name: str) -> list[tuple[InstrumentedEndpoint, ModelRef]]:
+        """The model plus its declared `fallbacks:`, each resolved in order — the failover
+        chain. Self-references, duplicates, and unresolvable fallback names are skipped (the
+        config loader flags them as problems) — a bad chain entry must never break the
+        primary's resolution.
+        """
+        chain = [self.resolve(name)]
+        mc = self.server.models.get(name)
+        seen = {name}
+        for fb in (mc.fallbacks if mc else []):
+            if fb in seen:
+                continue
+            seen.add(fb)
+            try:
+                chain.append(self.resolve(fb))
+            except EndpointError:
+                continue
+        return chain
+
+    def for_model_chain(self, kind: str,
+                        models: dict[str, str]) -> list[tuple[InstrumentedEndpoint, ModelRef]]:
+        """A routine role's full failover chain (primary first). The engine's turn
+        completion walks it when the picked model fails hard mid-turn.
         """
         name = models.get(kind) or self.server.system_model
         if not name:
             raise EndpointError(f"no model configured for {kind!r} (and no system_model fallback)")
-        return self.resolve(name)
+        return self.resolve_chain(name)
+
+    def for_model(self, kind: str, models: dict[str, str]) -> tuple[InstrumentedEndpoint, ModelRef]:
+        """Resolve one of a routine's model roles (main/subroutine/tool_call) by catalog name.
+        A role the routine left unset falls back to the server's system_model (also a name).
+        Cooldown-aware: a model whose provider just failed hard is skipped for its first
+        not-cooling fallback (failover.pick), so every resolution site avoids a known-bad
+        provider without changing.
+        """
+        return failover.pick(self.for_model_chain(kind, models))
 
     def for_uncensored(
             self, models: dict[str, str]) -> tuple[InstrumentedEndpoint, ModelRef] | None:
@@ -97,12 +136,12 @@ class EndpointRegistry:
         name = models.get("uncensored")
         if not name:
             return None
-        return self.resolve(name)
+        return failover.pick(self.resolve_chain(name))
 
     def for_system(self) -> tuple[InstrumentedEndpoint, ModelRef]:
         """The one model for pre-routine machine work (workflow generation/suggestion, the
-        clarify wizard) — the server system_model catalog name.
+        clarify wizard) — the server system_model catalog name. Cooldown-aware like for_model.
         """
         if not self.server.system_model:
             raise EndpointError("no system_model configured")
-        return self.resolve(self.server.system_model)
+        return failover.pick(self.resolve_chain(self.server.system_model))

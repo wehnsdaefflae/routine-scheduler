@@ -631,6 +631,9 @@ def test_settings_endpoints_crud(ui, ui_page):
     card = ui_page.locator(".panel", has=ui_page.locator("strong", has_text="vllm")).first
     expect(card).to_contain_text("http://10.0.0.5:8000/v1")
     assert _server_yaml(ui)["endpoints"]["vllm"]["base_url"] == "http://10.0.0.5:8000/v1"
+    # the credential-source indicator: no key anywhere (hermetic secrets) → keyless label
+    expect(card).to_contain_text("credential in use:")
+    expect(card).to_contain_text("keyless local backends")
 
     # UPDATE it (edit fields → save changes)
     card.locator("summary", has_text="edit fields").click()
@@ -650,6 +653,23 @@ def test_settings_endpoints_crud(ui, ui_page):
     models = _server_yaml(ui)["models"]
     assert models["llama"] == {"endpoint": "vllm", "model": "meta/llama-3"} \
         or models["llama"]["endpoint"] == "vllm"
+
+    # max_tokens audit flag: unset → the ⚠ chip; a self-referencing fallback is rejected
+    # server-side; setting a real value clears the flag
+    model_card = ui_page.locator(".panel",
+                                 has=ui_page.locator("strong", has_text="llama")).last
+    expect(model_card).to_contain_text("⚠ max_tokens")
+    model_card.locator("summary", has_text="edit fields").click()
+    model_card.locator("label.field", has_text="max_tokens (output)").locator("input").fill("8192")
+    model_card.locator("label.field", has_text="fallbacks").locator("input").fill("llama")
+    model_card.get_by_role("button", name="save changes").click()
+    expect(_toast(ui_page)).to_contain_text("fallback")
+    model_card.locator("label.field", has_text="fallbacks").locator("input").fill("")
+    model_card.get_by_role("button", name="save changes").click()
+    model_card = ui_page.locator(".panel",
+                                 has=ui_page.locator("strong", has_text="llama")).last
+    expect(model_card).not_to_contain_text("⚠ max_tokens")   # auto-waits for the reload
+    assert _server_yaml(ui)["models"]["llama"]["max_tokens"] == 8192
 
     # DELETE the model, then the endpoint (each behind the themed confirm dialog).
     # .last = the INNERMOST matching panel (the card), not the section wrapper around it.

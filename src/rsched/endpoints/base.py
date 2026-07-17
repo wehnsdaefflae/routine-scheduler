@@ -149,6 +149,24 @@ def split_system(messages: list[Message]) -> tuple[str, list[Message]]:
     return "\n\n".join(system_parts), rest
 
 
+def api_key_source(*, api_key: str, key_var: str, key_env_file: str) -> dict:
+    """Which rung of the credential ladder is LIVE for these settings — labels only, never
+    key values (the Settings UI shows this per endpoint). Must mirror resolve_api_key's
+    precedence exactly; keeping both beside each other is what stops them drifting.
+    `shadowed_secret` flags the confusing case: an inline key wins while `key_var` is also
+    set in the secrets store — editing the secret then changes nothing.
+    """
+    from ..secrets import load_secrets
+    secret_set = bool(key_var and load_secrets().get(key_var))
+    if api_key:
+        return {"source": "inline", "var": key_var or None, "shadowed_secret": secret_set}
+    if secret_set:
+        return {"source": "secret", "var": key_var}
+    if key_env_file and key_var and key_from_env_file(key_env_file, key_var):
+        return {"source": "env_file", "var": key_var, "env_file": key_env_file}
+    return {"source": "none", "var": key_var or None}
+
+
 def resolve_api_key(*, name: str, api_key: str, key_var: str, key_env_file: str,
                     required: bool) -> str:
     """The shared credential ladder: inline `api_key` (UI-set) wins, then `key_var` in the

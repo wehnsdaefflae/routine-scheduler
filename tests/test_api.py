@@ -1400,3 +1400,84 @@ def test_wizard_start_refused_while_draining(client):
         assert not list((tmp / "routines").glob(".wizard-*"))     # no session dir created
     finally:
         c.app.state.runner.draining = False
+
+
+def test_settings_model_max_tokens_and_fallbacks(client):
+    """The catalog carries per-model max_tokens (audit-flagged when unset/implausible) and
+    the ordered failover chain; the API validates chain entries and guards deletion."""
+    c, tmp = client
+    # the seeded model has no max_tokens anywhere → flagged as unset (the audit flag)
+    mv = next(m for m in c.get("/api/settings/models").json()["models"] if m["name"] == "m")
+    assert "unset" in mv["max_tokens_warning"]
+    # fallbacks must name existing catalog models, never the model itself
+    assert c.post("/api/settings/models", json={
+        "name": "a", "endpoint": "dummy", "model": "a-id",
+        "fallbacks": ["ghost"]}).status_code == 400
+    assert c.post("/api/settings/models", json={
+        "name": "a", "endpoint": "dummy", "model": "a-id",
+        "fallbacks": ["a"]}).status_code == 400
+    r = c.post("/api/settings/models", json={
+        "name": "a", "endpoint": "dummy", "model": "a-id", "max_tokens": 32_000,
+        "context_chars": 400_000, "fallbacks": ["m"]})
+    assert r.status_code == 200
+    raw = yaml.safe_load((tmp / "config.yaml").read_text())["models"]["a"]
+    assert raw["max_tokens"] == 32_000 and raw["fallbacks"] == ["m"]
+    av = next(m for m in c.get("/api/settings/models").json()["models"] if m["name"] == "a")
+    assert av["max_tokens_effective"] == 32_000 and av["max_tokens_warning"] is None
+    assert av["fallbacks"] == ["m"]
+    # a fallback target can't be deleted while referenced; clearing the chain frees it
+    c.post("/api/settings/models", json={"name": "b", "endpoint": "dummy", "model": "b-id"})
+    c.put("/api/settings/models/a", json={
+        "name": "a", "endpoint": "dummy", "model": "a-id", "fallbacks": ["b"]})
+    assert c.delete("/api/settings/models/b").status_code == 400
+    c.put("/api/settings/models/a", json={"name": "a", "endpoint": "dummy", "model": "a-id"})
+    assert "fallbacks" not in yaml.safe_load(
+        (tmp / "config.yaml").read_text())["models"]["a"]   # an empty chain leaves no key
+    assert c.delete("/api/settings/models/b").status_code == 200
+    # implausible values are flagged: too low, and larger than the context window
+    c.put("/api/settings/models/a", json={
+        "name": "a", "endpoint": "dummy", "model": "a-id", "max_tokens": 2000})
+    av = next(m for m in c.get("/api/settings/models").json()["models"] if m["name"] == "a")
+    assert "implausibly low" in av["max_tokens_warning"]
+    c.put("/api/settings/models/a", json={
+        "name": "a", "endpoint": "dummy", "model": "a-id", "max_tokens": 50_000})
+    av = next(m for m in c.get("/api/settings/models").json()["models"] if m["name"] == "a")
+    assert "exceeds" in av["max_tokens_warning"]   # 200k chars vs the 100k default window
+    # an endpoint-level default satisfies the audit and is inherited as effective
+    c.put("/api/settings/endpoints/dummy", json={
+        "name": "dummy", "kind": "openai", "base_url": "http://127.0.0.1:1/v1",
+        "max_tokens": 8192})
+    mv = next(m for m in c.get("/api/settings/models").json()["models"] if m["name"] == "m")
+    assert mv["max_tokens_warning"] is None and mv["max_tokens_effective"] == 8192
+
+
+def test_endpoint_credential_source_labels(client, monkeypatch):
+    """Settings shows WHICH credential rung is live per endpoint — labels only, never
+    values — and warns when an inline key shadows a set secret (Mark's 'why isn't it
+    using the store?' confusion made visible)."""
+    c, _tmp = client
+    # no key anywhere → none; keyless is legitimate for openai (Ollama, vLLM)
+    ep = next(e for e in c.get("/api/settings/endpoints").json()["endpoints"]
+              if e["name"] == "dummy")
+    assert ep["key_source"]["source"] == "none" and ep["key_source"]["keyless_ok"] is True
+    assert ep["key_source"]["var"] == "OPENAI_API_KEY"       # the openai kind default
+    # a secret under the endpoint's key_var → the store serves it
+    c.put("/api/settings/secrets", json={"key": "OPENAI_API_KEY", "value": "sk-stored"})
+    ep = next(e for e in c.get("/api/settings/endpoints").json()["endpoints"]
+              if e["name"] == "dummy")
+    assert ep["key_source"] == {"source": "secret", "var": "OPENAI_API_KEY"}
+    # an inline key WINS and shadows the set secret — flagged; values never in the response
+    c.put("/api/settings/endpoints/dummy", json={
+        "name": "dummy", "kind": "openai", "base_url": "http://x/v1", "api_key": "sk-inline"})
+    listing = c.get("/api/settings/endpoints").json()
+    ep = next(e for e in listing["endpoints"] if e["name"] == "dummy")
+    assert ep["key_source"]["source"] == "inline"
+    assert ep["key_source"]["shadowed_secret"] is True
+    assert "sk-inline" not in str(listing) and "sk-stored" not in str(listing)
+    # claude-cli: the subscription token ladder — the secrets store outranks the env file
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    c.post("/api/settings/endpoints", json={"name": "cc", "kind": "claude-cli"})
+    c.put("/api/settings/secrets", json={"key": "CLAUDE_CODE_OAUTH_TOKEN", "value": "tok"})
+    ep = next(e for e in c.get("/api/settings/endpoints").json()["endpoints"]
+              if e["name"] == "cc")
+    assert ep["key_source"] == {"source": "secret", "var": "CLAUDE_CODE_OAUTH_TOKEN"}

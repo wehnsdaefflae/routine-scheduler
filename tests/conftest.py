@@ -38,7 +38,9 @@ def _hermetic_home(tmp_path, monkeypatch):
     routines_home/.control — so every pytest run used to append fixture noise (run_failed
     for 'aborted', 'testr', 'wubad', ...) into the LIVE health-events.jsonl. Redirect all
     "~" expansion in rsched.config (field defaults + HomePath validation, both of which
-    resolve `expand` at call time) into this test's tmp dir."""
+    resolve `expand` at call time) into this test's tmp dir. The SECRETS store is
+    redirected too: the settings endpoint view reads it on every listing (credential-source
+    labels), and assertions must not vary with whatever the host's real store contains."""
     from rsched import paths as _paths
     fake_home = tmp_path / "hermetic-home"
     real = _paths.expand
@@ -48,6 +50,18 @@ def _hermetic_home(tmp_path, monkeypatch):
             return fake_home / s[2:] if len(s) > 1 else fake_home
         return real(v)
     monkeypatch.setattr("rsched.config.expand", expand)
+    monkeypatch.setattr("rsched.secrets.secrets_path",
+                        lambda: fake_home / ".config/routine-scheduler/secrets.env")
+
+
+@pytest.fixture(autouse=True)
+def _failover_reset():
+    """The failover cooldown registry is process-global by design (one engine subprocess =
+    one run tree); in the one long-lived pytest process it must not leak between tests."""
+    from rsched.endpoints import failover
+    failover.reset()
+    yield
+    failover.reset()
 
 
 WORKFLOW_MD = """---
@@ -87,7 +101,8 @@ class ScriptedEndpoint:
         system = messages[0]["content"] if messages else ""
         with self.lock:
             self.calls.append({"messages": [dict(m) for m in messages], "model": model,
-                               "schema": schema, "session": session})
+                               "schema": schema, "session": session,
+                               "max_tokens": max_tokens, "effort": effort})
             item = None
             for i, entry in enumerate(self.replies):
                 if isinstance(entry, tuple):

@@ -82,7 +82,11 @@ endpoints, the central Secrets store, GitHub, the library repo.
   and run history; drill into any run to watch its conversation live.
 - **Library** — browse and edit the shared workflows, traits, permissions, playbooks, and global utils; every
   save is lint/selftest-gated.
-- **Settings** — LLM endpoints (with a live test call), the write-only Secrets store
+- **Settings** — LLM endpoints (live test call + a credential-source indicator: which of
+  inline key / secret / env file is in use, warning when an inline key shadows a set
+  secret) and the model catalog (per-model window, output `max_tokens` with an audit flag
+  for unset/implausible values, ordered failover chains with provider cooldowns), the
+  write-only Secrets store
   every util reads, GitHub device flow, library/source remotes, graceful server restart.
 - **Log** — a live, filterable activity feed across all routines; expand a row to tail
   that run's transcript inline.

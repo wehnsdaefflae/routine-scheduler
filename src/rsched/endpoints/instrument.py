@@ -25,7 +25,8 @@ from pathlib import Path
 from typing import IO
 
 from ..ids import now_iso
-from .base import DEFAULT_TIMEOUT, ChatEndpoint, Completion, Message
+from . import failover
+from .base import DEFAULT_TIMEOUT, ChatEndpoint, Completion, EndpointError, Message
 
 # --- parent-process context --------------------------------------------------
 # A frontend-initiated process (routine creation) sets this so the complete()
@@ -163,7 +164,15 @@ class InstrumentedEndpoint:
                         "temperature": temperature}
         sink = _sink
         if sink is None:                       # fast path: nothing observing
-            return self._inner.complete(messages, **inner_kwargs)
+            try:
+                return self._inner.complete(messages, **inner_kwargs)
+            except EndpointError:
+                # An EndpointError escaping the adapter means HARD failure (its own
+                # transport retries are exhausted, or it was never retryable): start the
+                # failover cooldown. This wrapper is the one seam every LLM call passes
+                # through, so a failure anywhere steers every later resolution.
+                failover.mark_failed(self._inner.name, model)
+                raise
         common = {"id": uuid.uuid4().hex[:12], "endpoint": self._inner.name, "model": model,
                   "purpose": purpose or "LLM call", "kind": kind,
                   "process_id": process if process is not None else current_process()}
@@ -171,6 +180,8 @@ class InstrumentedEndpoint:
         try:
             comp = self._inner.complete(messages, **inner_kwargs)
         except BaseException as exc:
+            if isinstance(exc, EndpointError):   # hard failure — see the fast path above
+                failover.mark_failed(self._inner.name, model)
             _emit(sink, make_record("failed", **common, error=str(exc)[:300]))
             raise
         _emit(sink, make_record("finished", **common, usage=comp.usage,

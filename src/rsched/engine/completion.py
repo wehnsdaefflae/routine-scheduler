@@ -1,7 +1,8 @@
 """One valid action from the model — the completion side of a turn: the schema-guarded
-retry cycle (≤3 attempts), repeat-streak schema shedding, refusal referral to the
-`uncensored` model, image→vision-util fallback, the prompt-size compaction gate, and
-usage folding. Every function takes the live EngineLoop; the turn ORDER stays in loop.run().
+retry cycle (≤3 attempts), model failover down the role's fallback chain, repeat-streak
+schema shedding, refusal referral to the `uncensored` model, image→vision-util fallback,
+the prompt-size compaction gate, and usage folding. Every function takes the live
+EngineLoop; the turn ORDER stays in loop.run().
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ import json
 import time
 from pathlib import Path
 
+from ..endpoints import failover
 from ..endpoints.base import EndpointError
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
 from . import executor
@@ -31,7 +33,9 @@ def fold_usage(usage_sum: dict, completion) -> None:
     """Fold one completion's usage into this turn's running sum: in/out, prompt-cache
     traffic (kept out of `in` so token budgets keep their meaning), metered cost, and the
     serving provider — aggregators route per request, and attribution is what lets an
-    audit correlate malformed actions with the provider, not the model.
+    audit correlate malformed actions with the provider, not the model. The serving MODEL
+    itself is stamped by the caller (`usage["model"]`) once an action is accepted, so a
+    failed-over or referred turn stays attributable to the model that actually produced it.
     """
     usage_sum["in"] += completion.usage["in"]
     usage_sum["out"] += completion.usage["out"]
@@ -47,10 +51,11 @@ def fold_usage(usage_sum: dict, completion) -> None:
 def next_action(loop) -> tuple[dict | None, dict]:
     ctx = loop.ctx
     loop._referred_turn = False   # set when the uncensored model produced THIS turn's action
-    endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
+    chain = ctx.registry.for_model_chain("main", ctx.routine.models)
+    endpoint, ref = failover.pick(chain)   # first chain member not in provider cooldown
     ctx.main_model = f"{ref.endpoint}/{ref.model}"     # in status.json; updates on a switch
     compact_if_needed(loop, endpoint, ref)
-    usage_sum = {"in": 0, "out": 0}
+    usage_sum: dict = {"in": 0, "out": 0}   # + "model"/"provider" attribution (str) on success
     schema = None if loop._schema_off else ACTION_SCHEMA
     if loop._shed_schema_turns > 0:
         loop._shed_schema_turns -= 1
@@ -58,14 +63,14 @@ def next_action(loop) -> tuple[dict | None, dict]:
     prev_raw: str | None = None
     referral_tried = False   # refer a free-text refusal to the uncensored model once (D8 C)
     base_len = len(loop.messages)   # schema-retry debris beyond this is dropped on success
-    for attempt in range(1, MAX_SCHEMA_ATTEMPTS + 1):
-        # Generous output cap: reasoning models need room to think AND answer — a
-        # provider's small default can swallow the content entirely.
+    attempt = 0
+    while attempt < MAX_SCHEMA_ATTEMPTS:
+        attempt += 1
         try:
             completion = endpoint.complete(loop.messages, model=ref.model,
                                            schema=schema, effort=ref.effort,
                                            temperature=ref.temperature,
-                                           max_tokens=16_384,
+                                           max_tokens=ref.max_tokens,
                                            session=str(ctx.run_dir),
                                            # bookkeeping only — the wrapper consumes
                                            # these; they never reach the transport, so
@@ -75,12 +80,24 @@ def next_action(loop) -> tuple[dict | None, dict]:
                                                       else f" · retry {attempt}"),
                                            kind="turn")
         except EndpointError as exc:
-            # Runtime net: if the failure is on a turn whose tail carries an image the
-            # endpoint couldn't show, convert it to vision-util text and retry text-only;
-            # otherwise it's a real endpoint failure — let it propagate.
+            # Runtime net 1: if the failure is on a turn whose tail carries an image the
+            # endpoint couldn't show, convert it to vision-util text and retry text-only —
+            # and lift the cooldown the instrumentation just started, since the image, not
+            # the provider, was the problem.
             if apply_media_fallback(loop, exc):
+                failover.clear(ref.endpoint, ref.model)
+                attempt -= 1   # a transport repair, not a model attempt
                 continue
-            raise
+            # Runtime net 2: a hard provider failure — advance down the role's fallback
+            # chain (the failed model is already cooling); chain exhausted → propagate,
+            # failing the run exactly as before fallbacks existed.
+            switched = _switch_to_fallback(loop, chain, ref, exc)
+            if switched is None:
+                raise
+            endpoint, ref = switched
+            ctx.main_model = f"{ref.endpoint}/{ref.model}"
+            attempt -= 1   # transport failover doesn't consume a schema attempt
+            continue
         fold_usage(usage_sum, completion)
         if completion.parsed is None and not completion.text.strip():
             # Empty reply = provider hiccup, not a model mistake: retry cleanly (no
@@ -105,6 +122,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
                 # earned their keep eliciting THIS reply and would otherwise be re-read
                 # every remaining turn. The transcript's error events keep the record.
                 del loop.messages[base_len:]
+            usage_sum["model"] = f"{ref.endpoint}/{ref.model}"   # per-turn attribution
             return candidate, usage_sum
         except SchemaViolation as exc:
             raw = completion.text or json.dumps(completion.parsed or {})
@@ -139,6 +157,26 @@ def next_action(loop) -> tuple[dict | None, dict]:
     return None, usage_sum
 
 
+def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
+    """The picked model failed hard mid-turn (its adapter's transport retries are already
+    exhausted, and InstrumentedEndpoint has marked it cooling). Advance to the next chain
+    member not in cooldown and log the switch VISIBLY: a transcript `error` event whose
+    `failover` payload names both models — so the run records which model serves from here
+    (status.json follows via ctx.main_model). None = chain exhausted.
+    """
+    nxt = failover.next_after(chain, failed_ref)
+    if nxt is None:
+        return None
+    _, n_ref = nxt
+    loop.ctx.transcript.event("error", {
+        "where": "endpoint",
+        "message": (f"{failed_ref.name or failed_ref.model} failed hard: {str(exc)[:300]} "
+                    f"— failing over to {n_ref.name or n_ref.model}"),
+        "failover": {"from": failed_ref.name, "to": n_ref.name,
+                     "cooldown_s": failover.COOLDOWN_S}})
+    return nxt
+
+
 def refer_turn_to_uncensored(loop, usage_sum: dict, base_len: int) -> dict | None:
     """D8 scope C: the routine's main/subroutine model refused the turn in free text. If an
     `uncensored` model is configured, re-issue the CURRENT turn to it once and return a
@@ -157,7 +195,8 @@ def refer_turn_to_uncensored(loop, usage_sum: dict, base_len: int) -> dict | Non
         completion = u_endpoint.complete(loop.messages, model=u_ref.model,
                                          schema=ACTION_SCHEMA, effort=u_ref.effort,
                                          temperature=u_ref.temperature,
-                                         max_tokens=16_384, session=str(ctx.run_dir),
+                                         max_tokens=u_ref.max_tokens,
+                                         session=str(ctx.run_dir),
                                          purpose=f"turn {ctx.turn + 1} · referred", kind="turn")
     except EndpointError:
         return None
@@ -171,6 +210,7 @@ def refer_turn_to_uncensored(loop, usage_sum: dict, base_len: int) -> dict | Non
     if len(loop.messages) > base_len:
         del loop.messages[base_len:]
     ctx.referrals += 1
+    usage_sum["model"] = f"{u_ref.endpoint}/{u_ref.model}"   # the model that served the turn
     return candidate
 
 

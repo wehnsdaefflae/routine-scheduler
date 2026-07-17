@@ -72,13 +72,15 @@ export async function renderEndpoints(view) {
   }
   const mmValue = (sel) => (sel.value === "on" ? true : sel.value === "off" ? false : null);
 
-  function modelBody(nameIn, epSel, modelIn, mmSel, ctxIn, effSel, tempIn) {
+  function modelBody(name, f) {
     return {
-      name: nameIn, endpoint: epSel.value, model: modelIn.value.trim(),
-      multimodal: mmValue(mmSel),
-      context_chars: ctxIn.value.trim() ? Number(ctxIn.value) : null,
-      effort: effSel.value || null,
-      temperature: tempIn.value.trim() ? Number(tempIn.value) : null,
+      name, endpoint: f.epSel.value, model: f.modelIn.value.trim(),
+      multimodal: mmValue(f.mmSel),
+      context_chars: f.ctxIn.value.trim() ? Number(f.ctxIn.value) : null,
+      effort: f.effSel.value || null,
+      temperature: f.tempIn.value.trim() ? Number(f.tempIn.value) : null,
+      max_tokens: f.mtIn.value.trim() ? Number(f.mtIn.value) : null,
+      fallbacks: f.fbIn.value.split(",").map((s) => s.trim()).filter(Boolean),
     };
   }
 
@@ -92,7 +94,11 @@ export async function renderEndpoints(view) {
     const effSel = el("select", {}, EFFORTS.map((e) => el("option", { value: e }, e || "default")));
     effSel.value = m.effort || "";
     const tempIn = el("input", { type: "number", step: "0.1", value: m.temperature ?? "", placeholder: "inherit" });
-    return { epSel, modelIn, mmSel, ctxIn, effSel, tempIn };
+    const mtIn = el("input", { type: "number", value: m.max_tokens ?? "",
+      placeholder: `inherit (${(m.max_tokens_effective || 0).toLocaleString()})` });
+    const fbIn = el("input", { type: "text", value: (m.fallbacks || []).join(", "),
+      placeholder: "fallback model names, comma-separated", style: "width:220px" });
+    return { epSel, modelIn, mmSel, ctxIn, effSel, tempIn, mtIn, fbIn };
   }
 
   function modelFieldRows(f) {
@@ -104,7 +110,10 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "multimodal"), f.mmSel),
         el("label", { class: "field" }, el("span", {}, "context_chars"), f.ctxIn),
         el("label", { class: "field" }, el("span", {}, "effort"), f.effSel),
-        el("label", { class: "field" }, el("span", {}, "temperature"), f.tempIn)));
+        el("label", { class: "field" }, el("span", {}, "temperature"), f.tempIn)),
+      el("div", { class: "field-row" },
+        el("label", { class: "field" }, el("span", {}, "max_tokens (output)"), f.mtIn),
+        el("label", { class: "field" }, el("span", {}, "fallbacks (failover order)"), f.fbIn)));
   }
 
   function modelItem(m, endpoints) {
@@ -114,7 +123,7 @@ export async function renderEndpoints(view) {
       if (!f.modelIn.value.trim()) { toast("enter a model id"); return; }
       try {
         await api(`/api/settings/models/${encodeURIComponent(m.name)}`, { method: "PUT",
-          body: modelBody(m.name, f.epSel, f.modelIn, f.mmSel, f.ctxIn, f.effSel, f.tempIn) });
+          body: modelBody(m.name, f) });
         toast(`${m.name}: updated`); await load();
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
@@ -128,7 +137,13 @@ export async function renderEndpoints(view) {
       el("div", { class: "row spread" },
         el("div", {}, el("strong", {}, m.name), " ",
           el("span", { class: "muted small" }, `${m.endpoint} / ${m.model}`), " ",
-          m.multimodal_effective ? el("span", { class: "chip bare", title: "sees images/PDFs natively" }, "👁") : ""),
+          m.multimodal_effective ? el("span", { class: "chip bare", title: "sees images/PDFs natively" }, "👁") : "",
+          (m.fallbacks || []).length
+            ? el("span", { class: "muted small", title: "failover order on hard provider errors" },
+                ` ⇢ ${m.fallbacks.join(" ⇢ ")}`) : "",
+          m.max_tokens_warning
+            ? el("span", { class: "chip partial", style: "margin-left:6px",
+                title: m.max_tokens_warning }, "⚠ max_tokens") : ""),
         delBtn),
       el("details", { class: "mt" },
         el("summary", { style: "cursor:pointer;font-size:12px" }, "edit fields"),
@@ -145,7 +160,7 @@ export async function renderEndpoints(view) {
       if (!f.modelIn.value.trim()) { toast("enter a model id"); return; }
       try {
         await api("/api/settings/models", { method: "POST",
-          body: modelBody(nameIn.value.trim(), f.epSel, f.modelIn, f.mmSel, f.ctxIn, f.effSel, f.tempIn) });
+          body: modelBody(nameIn.value.trim(), f) });
         toast(`model ${nameIn.value.trim()} added`); await load();
       } catch (err) { toast(err.message, 4000, { error: true }); }
     };
@@ -156,7 +171,9 @@ export async function renderEndpoints(view) {
       modelFieldRows(f),
       el("div", { class: "muted small", style: "margin-top:4px" },
         "multimodal = default lets the endpoint kind decide (on for anthropic/claude-cli, off for openai). ",
-        "Blank context/temperature inherit the endpoint's."),
+        "Blank context/temperature/max_tokens inherit the endpoint's. max_tokens is the model's ",
+        "real OUTPUT limit — unset models ride a generic 16,384 and get flagged. ",
+        "fallbacks = catalog model names tried in order when this model's provider fails hard."),
       el("div", { class: "row mt" }, save));
   }
 
@@ -206,6 +223,35 @@ export async function renderEndpoints(view) {
     if (r.usage && (r.usage.in || r.usage.out))
       node.append(el("span", { class: "dim" }, `  ·  ${r.usage.in || 0} in / ${r.usage.out || 0} out tok`));
     return node;
+  }
+
+  // Which rung of the credential ladder is live RIGHT NOW (inline → secret → env file),
+  // labels only — and a loud warning when an inline key shadows a set secret, the exact
+  // confusion where editing the secret changes nothing.
+  function credSourceLine(ep) {
+    const ks = ep.key_source;
+    if (!ks) return "";
+    const line = el("div", { class: "small", style: "margin-top:4px" }, "credential in use: ");
+    if (ks.source === "inline") {
+      line.append(el("span", {}, "inline key (saved on this endpoint)"));
+      if (ks.shadowed_secret)
+        line.append(el("span", { style: "color:var(--warn)" },
+          ` — ⚠ shadows secret ${ks.var}: the inline key wins; delete it to use the secret`));
+    } else if (ks.source === "secret") {
+      line.append(el("span", { style: "color:var(--ok)" }, `secret ${ks.var} ✓`),
+        el("span", { class: "muted" }, " (Settings → Secrets)"));
+    } else if (ks.source === "env_file") {
+      line.append(el("span", {}, `env file ${ks.env_file} (${ks.var})`));
+    } else if (ks.source === "process_env") {
+      line.append(el("span", {}, `process environment ${ks.var}`));
+    } else if (ks.keyless_ok) {
+      line.append(el("span", { class: "muted" },
+        `none — fine for keyless local backends (Ollama, vLLM); otherwise set ${ks.var || "a key"} in Secrets`));
+    } else {
+      line.append(el("span", { style: "color:var(--err)" },
+        `✗ missing — paste one below${ks.var ? ` or set ${ks.var} in Secrets` : ""}`));
+    }
+    return line;
   }
 
   function item(ep, secretKeys) {
@@ -270,12 +316,14 @@ export async function renderEndpoints(view) {
     const baseIn = el("input", { type: "text", value: ep.base_url || "", placeholder: "https://host/v1" });
     const keyVarIn = el("input", { type: "text", value: ep.key_var || "", placeholder: "KEY_VAR in Secrets (optional)" });
     const ctxIn = el("input", { type: "number", value: ep.context_chars });
+    const mtIn = el("input", { type: "number", value: ep.max_tokens ?? "", placeholder: "inherit (16,384)" });
     const saveEdit = el("button", { class: "btn small primary" }, "save changes");
     saveEdit.onclick = async () => {
       try {
         await api(`/api/settings/endpoints/${ep.name}`, { method: "PUT", body: {
           name: ep.name, kind: kindSel.value, base_url: baseIn.value.trim(), key_env_file: ep.key_env_file || "",
-          key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 100000 } });
+          key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 100000,
+          max_tokens: mtIn.value.trim() ? Number(mtIn.value) : null } });
         toast(`${ep.name}: updated`); await load();
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
@@ -287,7 +335,8 @@ export async function renderEndpoints(view) {
       el("div", { class: "field-row" },
         el("label", { class: "field" }, el("span", {}, "key_var (Secrets)"), keyVarIn),
         el("label", { class: "field" }, el("span", {}, "schema_mode"), schemaSel),
-        el("label", { class: "field" }, el("span", {}, "context_chars (default)"), ctxIn)),
+        el("label", { class: "field" }, el("span", {}, "context_chars (default)"), ctxIn),
+        el("label", { class: "field" }, el("span", {}, "max_tokens (default)"), mtIn)),
       el("div", { class: "row" }, saveEdit));
 
     // Account balance, for providers that expose one (OpenRouter, Nano-GPT) — lazy per card.
@@ -314,6 +363,7 @@ export async function renderEndpoints(view) {
         delBtn),
       el("div", { class: "small" }, info.title),
       el("div", { class: "muted small", style: "margin-bottom:2px" }, info.hint),
+      credSourceLine(ep),
       creditsRow,
       keyRow,
       el("div", { class: "row mt" }, modelInput, testBtn),

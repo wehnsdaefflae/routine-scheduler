@@ -736,3 +736,46 @@ def test_extra_body_merged_and_provider_captured(monkeypatch):
     c = ep.complete([{"role": "user", "content": "hi"}], model="m")
     assert seen["provider"] == {"ignore": ["StreamLake"]}
     assert c.provider == "Fireworks"
+
+
+def test_api_key_source_ladder(tmp_path, monkeypatch):
+    """The Settings credential-source labels mirror resolve_api_key's precedence exactly —
+    inline wins (flagged when it shadows a set secret) → secret → env file → none."""
+    from rsched.endpoints.base import api_key_source
+
+    monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {"K": "sk-stored"})
+    assert api_key_source(api_key="sk-inline", key_var="K", key_env_file="") == {
+        "source": "inline", "var": "K", "shadowed_secret": True}
+    assert api_key_source(api_key="", key_var="K", key_env_file="") == {
+        "source": "secret", "var": "K"}
+    monkeypatch.setattr("rsched.secrets.load_secrets", dict)
+    envf = tmp_path / "creds.env"
+    envf.write_text("K=sk-file\n", encoding="utf-8")
+    assert api_key_source(api_key="", key_var="K", key_env_file=str(envf)) == {
+        "source": "env_file", "var": "K", "env_file": str(envf)}
+    assert api_key_source(api_key="", key_var="K",
+                          key_env_file=str(tmp_path / "missing.env")) == {
+        "source": "none", "var": "K"}
+    assert api_key_source(api_key="sk-i", key_var="", key_env_file="") == {
+        "source": "inline", "var": None, "shadowed_secret": False}
+
+
+def test_token_source_ladder(tmp_path, monkeypatch):
+    """claude-cli's analog: process env → inline (shadow-flagged) → secret → env file."""
+    from rsched.endpoints.claude_cli import token_source
+
+    monkeypatch.delenv(TOKEN_VAR, raising=False)
+    monkeypatch.setattr("rsched.secrets.load_secrets", dict)
+    assert token_source(str(tmp_path / "missing.env"), "") == {
+        "source": "none", "var": TOKEN_VAR}
+    envf = tmp_path / "oauth.env"
+    envf.write_text(f"{TOKEN_VAR}=tok-file\n", encoding="utf-8")
+    assert token_source(str(envf), "") == {
+        "source": "env_file", "var": TOKEN_VAR, "env_file": str(envf)}
+    monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {TOKEN_VAR: "tok-stored"})
+    assert token_source(str(envf), "") == {"source": "secret", "var": TOKEN_VAR}
+    assert token_source(str(envf), "tok-inline") == {
+        "source": "inline", "var": TOKEN_VAR, "shadowed_secret": True}
+    monkeypatch.setenv(TOKEN_VAR, "tok-env")
+    assert token_source(str(envf), "tok-inline") == {
+        "source": "process_env", "var": TOKEN_VAR}
