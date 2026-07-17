@@ -12,3 +12,4 @@ audit/
 .ruff_cache/
 .mypy_cache/
 .coverage
+/LEDGER.md
