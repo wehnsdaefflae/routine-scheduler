@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.62.0] — 2026-07-17
+
+### Added
+- **Event-driven routine triggers (webhook path).** A routine can now fire on an external
+  event alongside cron, via a new canonical `triggers:` list in routine.yaml (one shape from
+  day one: `{id, type, cooldown_s, …}` — `webhook` implemented, `imap`/`watch_path` reserved
+  so the mail/file-drop watchers slot in later without reshaping config). The webhook path:
+  `POST /api/hooks/<slug>/<token>` (`web/api_hooks.py`) is the one deliberately
+  unauthenticated API route — the per-trigger, server-generated URL token IS the auth
+  (constant-time compare, generic 404 with no existence oracle, 64 KiB streaming size cap,
+  per-slug rate limit + durable spool cap, payload never echoed, rejections logged). The
+  handler only RECORDS events durably in the `.control/triggers/<slug>/` spool; the
+  scheduler-ticked `TriggerManager` (`daemon/triggers.py`) turns them into fires, so
+  one-run-per-routine, `max_concurrent_runs`, and the restart drain stay the daemon's job.
+  **Coalescing**: N events while a run is active/queued/cooling → ONE fire, each event still
+  landing as its own inbox message (deterministic filenames → exactly-once across crashes);
+  `cooldown_s` (default 60) bounds trigger-fire frequency so a leaked URL can't burn budget.
+  A **Triggers card** on the routine page (`static/components/triggers.js`) creates/deletes
+  webhooks, copies the hook URL, and shows the per-trigger fire ledger. The library-sync
+  export now redacts webhook `token` values in routine.yaml. See `docs/triggers.md`.
+
 ## [0.61.0] — 2026-07-17
 
 ### Added
