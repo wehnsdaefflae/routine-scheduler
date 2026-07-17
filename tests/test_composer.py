@@ -165,6 +165,26 @@ def test_subrun_prompt_carries_its_instruction(make_routine, tmp_path):
     assert "# INSTRUCTION (your assigned task)" in sp and "Do the delegated thing." in sp
 
 
+def test_conversation_prompt_carries_its_first_message(make_routine, tmp_path):
+    # A conversation runs at depth 0 but its task is instruction.md (the first message), NOT a
+    # self-contained recipe. It is discriminated by HOME: its dir sits directly under the server's
+    # conversations_home. Without the section the agent only sees the converse HOW-to pattern and
+    # never its actual task (F91).
+    ctx = _ctx(make_routine, tmp_path, slug="convo")
+    ctx.server.conversations_home = ctx.routine.dir.parent
+    task = "Summarize the attached quarterly report and flag the risks."
+    sp = build_system_prompt(ctx, "## Run flow", task, "digest", [])
+    assert "# INSTRUCTION (your assigned task)" in sp and task in sp
+    # the ownership prose names instruction.md as the task and preserves multi-turn work
+    hc = harness_contract(ctx)
+    assert "first message that opened this conversation" in hc and "instruction.md" in hc
+    assert "may take several turns" in hc
+    # a routine whose dir is NOT under conversations_home still drops its transient seed
+    ctx.server.conversations_home = tmp_path / "some-other-home"
+    sp2 = build_system_prompt(ctx, "## Run flow", task, "digest", [])
+    assert "# INSTRUCTION (your assigned task)" not in sp2 and task not in sp2
+
+
 def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     """The CAPABILITIES section names every util (one line each), the action kinds this run
     may use, and marks reserved-but-ungranted utils — so a run (or the clarify wizard,

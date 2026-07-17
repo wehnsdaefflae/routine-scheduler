@@ -15,6 +15,23 @@ from .capabilities import capabilities_digest
 from .run_context import RunContext
 
 
+def _is_conversation(ctx: RunContext) -> bool:
+    """True when this run is a conversation — a routine-shaped dir directly under the
+    server's conversations_home. Run kind is discriminated by HOME everywhere (the yaml
+    `kind: conversation` is dropped by pydantic), mirroring daemon.runner._under_home. A
+    conversation's task lives in instruction.md (the first message), unlike a scheduled
+    routine whose task is its self-contained recipe.
+    """
+    server = getattr(ctx, "server", None)
+    home = getattr(server, "conversations_home", None)
+    if home is None:
+        return False
+    try:
+        return ctx.routine.dir.resolve().parent == Path(home).resolve()
+    except OSError:
+        return False
+
+
 def harness_contract(ctx: RunContext) -> str:
     r, b = ctx.routine, ctx.budgets
     extra = ""
@@ -53,13 +70,25 @@ the engine maintains .memory/INDEX.md from `about`; delete: true removes a note.
 memory_read(name) returns one. The state digest shows the INDEX at run start — consult it \
 before re-discovering anything; revise notes that turned out wrong instead of appending \
 contradictions. read_file / write_file are rejected on .memory/ paths.""")
-    # Where the task lives differs by kind. A top-level routine's task is BAKED INTO its recipe
-    # (main.md + stages/), self-contained and authoritative — the sole source of truth. A subrun's
-    # task is the INSTRUCTION section (its parent's self-contained brief).
+    # Where the task lives differs by kind. A top-level ROUTINE's task is BAKED INTO its recipe
+    # (main.md + stages/), self-contained and authoritative — the sole source of truth. A SUBRUN's
+    # task is the INSTRUCTION section (its parent's self-contained brief). A CONVERSATION runs at
+    # depth 0 but its task is NOT the recipe: it is the first message (instruction.md), and the
+    # converse workflow only defines HOW to work a reply — so it gets its own ownership prose and
+    # the INSTRUCTION section below (see build_system_prompt).
     if ctx.depth > 0:
         ownership = ("Ownership of prose: your task is the INSTRUCTION section below — a "
                      "self-contained brief written by your parent; everything you need to do, and "
                      "why, is there. ")
+    elif _is_conversation(ctx):
+        ownership = ("Ownership of prose: your task is the INSTRUCTION section below — the first "
+                     "message that opened this conversation (saved as instruction.md in your "
+                     "working directory); every later user turn arrives as a MESSAGE that refines, "
+                     "corrects or extends it, read together with the conversation so far. The "
+                     "WORKFLOW below (the converse pattern) defines HOW you work a reply — triage "
+                     "the newest message, act in small verified steps, finish every reply — not "
+                     "WHAT the task is. A reply may take several turns and spawn sub-work when a "
+                     "fuller, multi-step response serves the user better. ")
     else:
         ownership = ("Ownership of prose: your recipe is self-contained — the WORKFLOW below (its "
                      "main.md entry and the stages/<name>.md modules it routes to) fully defines "
@@ -273,10 +302,12 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
         "# EXAMPLE of a valid reply\n" + json.dumps(example_action(), indent=1),
         "# WORKFLOW (the control flow you follow)\n" + workflow_body.strip(),
     ]
-    # A top-level routine's task is its self-contained recipe (main.md + stages/), so no instruction
+    # A top-level ROUTINE's task is its self-contained recipe (main.md + stages/), so no instruction
     # is placed in the prompt — the seed isn't even persisted. A SUBRUN has no decomposed stages —
-    # its instruction IS the parent's self-contained brief, so it stays in the prompt.
-    if ctx.depth > 0:
+    # its instruction IS the parent's self-contained brief, so it stays in the prompt. A CONVERSATION
+    # runs at depth 0 but its task IS its first message (instruction.md), so it carries the section
+    # too (without it the agent never sees its task — only the converse HOW-to pattern).
+    if ctx.depth > 0 or (_is_conversation(ctx) and instruction.strip()):
         sections.append("# INSTRUCTION (your assigned task)\n" + instruction.strip())
     sections.append("# CAPABILITIES (what this run can actually use)\n"
                     + capabilities_digest(ctx, allowed_kinds))

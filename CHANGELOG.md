@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.67.2] — 2026-07-17
+
+### Fixed
+- **A conversation now sees its own task in the system prompt.** `build_system_prompt`
+  appended the `# INSTRUCTION` section only at `depth > 0`, and the depth-0 ownership prose
+  declared the WORKFLOW the "single source of truth for what to do". But a **conversation**
+  runs at depth 0 while its task IS its first message (`instruction.md`) and the `converse`
+  workflow only defines HOW to work a reply — so the agent was handed the converse pattern
+  with its actual task dropped from the prompt, and on the first turn had to go hunting for
+  `instruction.md` to understand what it was even asked to do. The composer now detects a
+  conversation by HOME (its dir under `conversations_home`, matching `daemon.runner`, since
+  the yaml `kind: conversation` is dropped by pydantic), carries the `# INSTRUCTION` section
+  for it, and gives it conversation-specific ownership prose that names `instruction.md` as
+  the task, frames later user messages as refinements of it, and preserves multi-turn /
+  sub-work replies. Scheduled routines are unchanged (their task stays compiled into the
+  recipe). `docs/prompt-anatomy.md` updated to match. Reported via the audit feedback channel.
+
 ## [0.67.1] — 2026-07-17
 
 ### Fixed

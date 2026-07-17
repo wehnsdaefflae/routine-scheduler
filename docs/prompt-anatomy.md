@@ -36,7 +36,7 @@ Eight sections, in this order:
 | 2 | `# ACTION SCHEMA (your every reply matches this)` | `ACTION_SCHEMA` | The exact reply grammar; field descriptions double as micro-docs (`say`/`question` say that simple Markdown renders in the UI, `summary` that Markdown — incl. pipe tables, > quotes — renders (tables render only on BLOCK surfaces like the finish summary and llm replies; `say`/`question` render inline, so they stay tables-free); `say` demands the finding first, then the why; the optional `note` captures 1-3 self-contained lines to state/notes.md at no turn cost; `summary` demands a DETAILED 8-20 lines). |
 | 3 | `# EXAMPLE of a valid reply` | `example_action()` | One few-shot example (`read_file stages/scan.md`) that models on-demand stage reading and a finding-first `say` — deliberately NOT `util name=list`: the catalog already sits in CAPABILITIES, so opening a run by re-listing it just re-buys known information. |
 | 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow **and the task**: a top-level routine's recipe is self-contained — goal, deliverable, constraints and completion criteria are compiled into `main.md` + `stages/*.md` (stage detail read on demand), practice detail in `traits/*.md`. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
-| 5 | `# INSTRUCTION (your assigned task)` | the parent's spawn `prompt` — **subruns only** | SUBRUN-ONLY. A top-level routine has NO instruction section and no `instruction.md` on disk: its task is entirely its self-contained recipe (`main.md` + `stages/`). The clarified instruction was only a transient compile **SEED**, consumed when the recipe was generated at creation and never persisted. A subrun has no decomposed stages, so its self-contained brief (the parent's `prompt`) rides here instead. |
+| 5 | `# INSTRUCTION (your assigned task)` | the parent's spawn `prompt` (subruns), or `instruction.md` (conversations) | **Subruns AND conversations.** A top-level scheduled ROUTINE has NO instruction section and no `instruction.md` on disk: its task is entirely its self-contained recipe (`main.md` + `stages/`) — the clarified instruction was only a transient compile **SEED**, consumed at creation and never persisted. A **subrun** has no decomposed stages, so its self-contained brief (the parent's `prompt`) rides here. A **conversation** runs at depth 0 but its task is its first message (`instruction.md`), so it carries the section too (discriminated by HOME — its dir sits directly under `conversations_home`); without it the agent would see only the converse HOW-to pattern and never its actual task. |
 | 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ capabilities — switched-off gated kinds like `memory_*`/`write_util` simply don't appear), the enabled capabilities + the held conduct permissions, each held permission's short capability note (the library doc's body, capped), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary, reserved utils flagged). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
 | 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the `state/` file list, `stages/` module names, the `traits/` practice-module names, the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), open deferred questions, answers that arrived since the last run. |
 | 8 | `# MESSAGES FROM THE USER (consume now)` | inbox drain at boot | Only present if messages were waiting — and only on a FRESH run: a resume delivers waiting messages as trailing `USER MESSAGE` injections instead (§2). |
@@ -86,8 +86,10 @@ direction-shaping action), so the top deliberation stop no longer costs extra tu
 **Subrun variant** (spawned children): same composer, but the workflow is the library
 pattern materialized under `runs/<ts>/sub/<n>/`, and — because a subrun has no decomposed
 stages — section 5 (`# INSTRUCTION (your assigned task)`) IS present, carrying the parent's
-self-contained `prompt` verbatim (a top-level routine omits section 5 entirely — its task is
-in the workflow). Permissions and capabilities are off (so no `write_util`, no `memory_*`, no
+self-contained `prompt` verbatim (a top-level scheduled routine omits section 5 entirely — its
+task is in the workflow; a **conversation** is the exception — it runs at depth 0 but carries
+section 5, its first message / `instruction.md`, since the converse pattern only defines HOW to
+work a reply). Permissions and capabilities are off (so no `write_util`, no `memory_*`, no
 reserved utils, no traits of their own), and section 7 collapses to `(subrun — no routine state
 digest; everything you need is in the instruction)`.
 
@@ -508,8 +510,9 @@ These practice modules are this routine's own adapted standards — read each wi
 *(No `# INSTRUCTION` section — this is a top-level routine: its task is compiled into the WORKFLOW
 above and its `stages/` modules, the single source of truth. There is no `instruction.md` on disk —
 the clarified instruction was only a transient compile SEED, consumed when the recipe was generated
-at creation and never persisted. A subrun would show `# INSTRUCTION (your assigned task)` here,
-carrying its parent's self-contained brief.)*
+at creation and never persisted. A subrun — and a conversation, whose task is its first message —
+would show `# INSTRUCTION (your assigned task)` here (a subrun carries its parent's self-contained
+brief; a conversation its `instruction.md`).)*
 
 # CAPABILITIES (what this run can actually use)
 Model: openrouter/qwen/qwen3-235b-a22b — context window ≈ 200,000 chars; the engine archives the middle of the conversation to on-disk history at ~60-80% of that, so budget your reads (large files via read_file ranges, not whole).
