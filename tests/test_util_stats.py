@@ -210,3 +210,56 @@ def test_write_snapshot_persists_to_xdg_state(tmp_path, monkeypatch):
     assert on_disk["generated"]                       # ISO stamp present
     rows = {r["name"]: r for r in on_disk["utils"]}
     assert rows["fetch"]["executed"] == 3 and rows["fetch"]["ok"] == 2
+
+
+def test_backfill_tolerates_unreadable_home(tmp_path, monkeypatch):
+    """A whole home that cannot be enumerated (a PermissionError/race on conversations_home,
+    the daemon's real second home that a routines_home-only repro never exercises) must NOT
+    raise out of util_stats() and zero the snapshot — that home is skipped and whatever the
+    other home contributed is kept. This is the residual F97 mode the per-transcript guard
+    did not cover."""
+    from pathlib import Path
+
+    import rsched.util_stats as us
+
+    server = _server(tmp_path)
+    _add_util(server, "fetch")
+    _run_with_transcript(server, "r", "20260601-070000",
+                         [_obs("fetch", ts="2026-06-01T07:01:00+00:00")])
+    server.conversations_home.mkdir(parents=True, exist_ok=True)
+
+    real_iterdir = Path.iterdir
+
+    def maybe_boom(self):
+        if self == server.conversations_home:
+            raise PermissionError("cannot enumerate conversations_home")
+        return real_iterdir(self)
+
+    monkeypatch.setattr(Path, "iterdir", maybe_boom)
+    out = us.util_stats(server)          # must not raise
+    rows = {r["name"]: r for r in out["utils"]}
+    assert rows["fetch"]["ok"] == 1      # routines_home backfill still counted
+
+
+def test_write_snapshot_degrades_when_util_stats_raises(tmp_path, monkeypatch):
+    """write_util_stats_snapshot evaluates util_stats() BEFORE its I/O guard, so a raise
+    there used to yield NO snapshot file at all (silently, via the best-effort run-finish
+    hook — the root of F97's never-materializing snapshot). It must instead ALWAYS create
+    the file, degraded and marked with the error, so the failure is observable next run."""
+    import rsched.util_stats as us
+    from rsched.util_stats import snapshot_path, write_util_stats_snapshot
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    server = _server(tmp_path)
+
+    def boom(_server):
+        raise RuntimeError("compute failed")
+
+    monkeypatch.setattr(us, "util_stats", boom)
+    returned = write_util_stats_snapshot(server)     # must not raise
+    path = snapshot_path()
+    assert path.is_file()                            # dir + file created despite the failure
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    assert on_disk == returned
+    assert on_disk["error"] == "util_stats computation failed"
+    assert on_disk["utils"] == [] and on_disk["generated"]

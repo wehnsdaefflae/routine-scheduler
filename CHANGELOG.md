@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.68.2] — 2026-07-18
+
+### Fixed
+- **util-stats snapshot STILL never materialized — the real F97 root cause.** 0.68.1 only
+  guarded a corrupt *transcript*, but the snapshot dir (`~/.local/state/routine-scheduler/`)
+  never existed at all on the deployment even after two qualifying root-run finishes under
+  0.68.1. Cause: `write_util_stats_snapshot` evaluates `util_stats(server)` *before* its I/O
+  guard, and `util_stats()` still raised on a home it could not enumerate — `_backfill`
+  iterates BOTH `routines_home` and `conversations_home`, and its per-home directory walk
+  (`iterdir`/`stat`) was unguarded (a routines_home-only repro never exercised it). Two
+  fixes: (1) `_backfill` now wraps each home's enumeration in `try/except` (skip+log a home
+  it cannot read, keep the other home's counts); (2) `write_util_stats_snapshot` wraps the
+  `util_stats()` call so any compute failure still writes a degraded, `error`-marked
+  snapshot — the file (and its parent dir) is ALWAYS created, making the residual observable
+  next run instead of a silent absent file. Tests:
+  `test_backfill_tolerates_unreadable_home`, `test_write_snapshot_degrades_when_util_stats_raises`.
+
 ## [0.68.1] — 2026-07-17
 
 ### Fixed

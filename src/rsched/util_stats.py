@@ -181,34 +181,40 @@ def _backfill(server: ServerConfig, covered: set[str]) -> tuple[dict, int]:
     agg: dict[str, dict] = {}
     scanned = 0
     for home in (server.routines_home, server.conversations_home):
-        if not home.is_dir():
-            continue
-        for rdir in sorted(home.iterdir()):
-            if not rdir.is_dir() or rdir.name.startswith(".") \
-                    or not (rdir / "routine.yaml").exists():
+        try:
+            if not home.is_dir():
                 continue
-            runs = rdir / "runs"
-            if not runs.is_dir():
-                continue
-            for run_dir in sorted(d for d in runs.iterdir() if d.is_dir()):
-                if f"{rdir.name}:{run_dir.name}" in covered:
+            for rdir in sorted(home.iterdir()):
+                if not rdir.is_dir() or rdir.name.startswith(".") \
+                        or not (rdir / "routine.yaml").exists():
                     continue
-                scanned += 1
-                transcripts = [run_dir / "transcript.jsonl",
-                               *sorted((run_dir / "sub").glob("*/transcript.jsonl")),
-                               *sorted((run_dir / "sub").glob("*/transcript.jsonl.gz"))]
-                for t in transcripts:
-                    if t.suffix == ".gz" and t.with_suffix("").exists():
-                        continue   # the plain file is scanned; don't double-read
-                    try:
-                        cells = _scan_transcript(t)
-                    except Exception:  # ONE corrupt transcript must not raise out of
-                        # util_stats() and zero the whole snapshot — skip it, keep the rest
-                        log.warning("util_stats: skipping unreadable transcript %s", t,
-                                    exc_info=True)
+                runs = rdir / "runs"
+                if not runs.is_dir():
+                    continue
+                for run_dir in sorted(d for d in runs.iterdir() if d.is_dir()):
+                    if f"{rdir.name}:{run_dir.name}" in covered:
                         continue
-                    for name, cell in cells.items():
-                        _merge(agg, name, cell["counts"], cell["first"], cell["last"])
+                    scanned += 1
+                    transcripts = [run_dir / "transcript.jsonl",
+                                   *sorted((run_dir / "sub").glob("*/transcript.jsonl")),
+                                   *sorted((run_dir / "sub").glob("*/transcript.jsonl.gz"))]
+                    for t in transcripts:
+                        if t.suffix == ".gz" and t.with_suffix("").exists():
+                            continue   # the plain file is scanned; don't double-read
+                        try:
+                            cells = _scan_transcript(t)
+                        except Exception:  # ONE corrupt transcript must not raise out of
+                            # util_stats() and zero the whole snapshot — skip it, keep the rest
+                            log.warning("util_stats: skipping unreadable transcript %s", t,
+                                        exc_info=True)
+                            continue
+                        for name, cell in cells.items():
+                            _merge(agg, name, cell["counts"], cell["first"], cell["last"])
+        except Exception:  # a whole home we cannot even ENUMERATE (perms, races, a
+            # conversations_home surprise) must not raise out of util_stats() and zero the
+            # snapshot — skip that home, keep whatever the other home contributed
+            log.warning("util_stats: skipping unreadable home %s", home, exc_info=True)
+            continue
     return agg, scanned
 
 
@@ -273,7 +279,17 @@ def write_util_stats_snapshot(server: ServerConfig) -> dict:
     Best-effort on the WRITE — an I/O error is swallowed so the run-finish hook that calls
     this can never break a run — but the computed data is always returned to the caller.
     """
-    data = {"generated": now_iso(), **util_stats(server)}
+    try:
+        data = {"generated": now_iso(), **util_stats(server)}
+    except Exception:
+        # util_stats() must NEVER prevent the snapshot from existing: it is evaluated
+        # before the write guard below, so any raise here (e.g. a home that cannot be
+        # enumerated) would otherwise propagate into the best-effort run-finish hook and
+        # yield NO file at all, silently, forever. A degraded snapshot (dir + file created,
+        # marked with the error) is strictly more observable than an absent one.
+        log.warning("util_stats() failed; writing a degraded snapshot", exc_info=True)
+        data = {"generated": now_iso(), "utils": [], "stream_records": 0,
+                "backfill_runs": 0, "error": "util_stats computation failed"}
     path = snapshot_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
