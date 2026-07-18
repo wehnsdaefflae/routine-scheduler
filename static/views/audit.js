@@ -7,6 +7,7 @@
 // from the pending list. A decision with queued feedback is marked answered (vs still open).
 
 import { api } from "/static/api.js";
+import { md } from "/static/md.js";
 import { chip, el, emptyState, fmtTs, skeleton, toast, when } from "/static/util.js";
 import { focusRef, linkifyRefs } from "/static/components/reflinks.js";
 import { forgetField } from "/static/formpersist.js";
@@ -97,7 +98,7 @@ export async function render(view, query = {}) {
             el("span", { class: "muted small" },
               c.ts ? when(c.ts) : null,
               c.commit ? ` · ${String(c.commit).slice(0, 8)}` : "")),
-          c.detail ? el("div", { class: "muted mt prose", style: "white-space:pre-wrap" }, c.detail) : null))
+          c.detail ? md(c.detail, "md muted mt prose") : null))
       : [el("div", { class: "muted small", style: "padding:6px 0" },
           "No self-modifications recorded yet.")];
     return el("div", {}, el("h2", {}, "Changelog"), ...items);
@@ -133,7 +134,7 @@ export async function render(view, query = {}) {
         el("div", { class: "row", style: "gap:9px" }, chip(sev, `sev-${sev}`),
           el("strong", { class: "prose" }, f.title || f.id)),
         el("span", { class: "faint small" }, f.id)),
-      f.detail ? el("div", { class: "mt prose", style: "white-space:pre-wrap" }, f.detail) : null,
+      f.detail ? md(f.detail, "md mt prose") : null,
       (f.evidence || []).length ? el("div", { class: "row mt", style: "gap:6px" },
         el("span", { class: "faint small" }, "evidence"),
         ...f.evidence.map((e) => el("span", { class: "ref-tag" }, String(e)))) : null,
@@ -166,7 +167,7 @@ export async function render(view, query = {}) {
         el("div", { class: "row", style: "gap:9px" }, chip(label, tone),
           el("strong", { class: "prose" }, d.title || d.id)),
         el("span", { class: "faint small" }, d.id)),
-      d.detail ? el("div", { class: "muted mt prose", style: "white-space:pre-wrap" }, d.detail) : null,
+      d.detail ? md(d.detail, "md muted mt prose") : null,
       (d.options || []).length && !isSettled(d)
         ? el("div", { class: "faint small mt" }, `options: ${d.options.map(String).join("  ·  ")}`)
         : null);
@@ -251,7 +252,7 @@ export async function render(view, query = {}) {
       if (r.generated) meta.append("generated ", when(r.generated));
       if (r.since?.commit) meta.append(`  ·  since ${String(r.since.commit).slice(0, 8)}`);
       body.append(meta);
-      if (r.summary) body.append(el("div", { class: "panel prose" }, r.summary));
+      if (r.summary) body.append(md(r.summary, "md panel prose"));
     }
 
     const pendingBox = pendingSection(pending);

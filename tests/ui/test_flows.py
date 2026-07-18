@@ -908,6 +908,47 @@ def test_decision_detail_renders_markdown(ui, ui_page):
     assert "- keep" not in card.inner_text()
 
 
+def test_audit_detail_renders_markdown(ui, ui_page):
+    """The Audit page (#/audit) renders a report's own prose — finding/decision `detail`
+    and the top summary — as real markdown DOM, not literal textContent. Regression (F105,
+    2026-07-18): static/views/audit.js never imported md.js, so finding/decision block
+    markdown (lists, `code`, tables) showed as raw text — the same gap F104 fixed on the
+    Decisions page. Ref-links (F/D mentions) must still work through the md() output."""
+    import re
+
+    rdir = ui.routines / "self-audit"
+    (rdir / "audit").mkdir(parents=True)
+    report = {
+        "generated": "2026-07-16T20:00:00+00:00",
+        "summary": "Carrying F2; D2 is settled.",
+        "findings": [{
+            "id": "F2", "severity": "improvement", "title": "Render `detail` as markdown",
+            "detail": ("The Audit view rendered prose flat. Now:\n\n"
+                       "- lists become real items\n"
+                       "- inline `code` renders\n")}],
+        "decisions": [{
+            "id": "D2", "status": "open", "title": "Ship the md() fix",
+            "detail": ("Two options:\n\n"
+                       "- apply the `md()` render (see F2)\n"
+                       "- leave as-is\n"),
+            "options": ["apply", "leave as-is"]}],
+    }
+    (rdir / "audit" / "report.json").write_text(json.dumps(report), encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}/#/audit")
+    fcard = ui_page.locator("#ref-F2")
+    # the finding's bullet list renders as real <li>, not literal "- lists become …"
+    expect(fcard.locator("li", has_text="lists become real")).to_be_visible()
+    expect(fcard.locator("code", has_text="code")).to_be_visible()
+    assert "- lists become" not in fcard.inner_text()
+    # decision detail renders markdown too, and a D-ref inside md() prose still linkifies
+    dcard = ui_page.locator("#ref-D2")
+    expect(dcard.locator("li", has_text="apply the")).to_be_visible()
+    expect(dcard.locator("code", has_text="md()")).to_be_visible()
+    expect(dcard.locator("a.ref-link", has_text="F2")).to_have_attribute(
+        "href", "#/audit?focus=F2")
+
+
 # ---- 8. md.js block rendering: GFM pipe tables + blockquotes -------------------------------
 
 

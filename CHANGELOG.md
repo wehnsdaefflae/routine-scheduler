@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.69.1] — 2026-07-18
+
+### Fixed
+- **Audit page now renders the report's own markdown (F105).** `static/views/audit.js`
+  never imported `md.js`, so a finding/decision `detail`, the top summary, and changelog
+  entries showed their block markdown (lists, `code`, tables) as literal pre-wrapped text —
+  the same gap F104 fixed on the Decisions page. Those four prose surfaces now render via
+  `md()` (the sanctioned HTML-escaped innerHTML path); `F/D` ref-links still linkify through
+  the rendered output. Covered by `tests/ui/test_flows.py::test_audit_detail_renders_markdown`.
+
 ## [0.69.0] — 2026-07-18
 
 ### Added
