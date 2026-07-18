@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.69.0] — 2026-07-18
+
+### Added
+- **New "Summary" tab — each routine's latest finish message in one glance surface.** A
+  sibling to the Decisions inbox (which collects what the routines need *from* you); Summary
+  collects what they last *said* — the most recent run's finish summary per routine, newest
+  first, with the finish markdown rendered (`md()`), a jump-to-run link, and a per-item
+  mark-read control. Dismissing an item persists under `routines_home/.control/
+  summary-read.json`; a newer run of that routine automatically resurfaces it. New route
+  `#/summary` + `static/views/summary.js` + nav/breadcrumb, backed by a new read-only
+  `GET /api/summary` and `POST /api/summary/{slug}/read` (registry read-model). The
+  Decisions/`#/questions` inbox is unchanged. (Reviewer decision D21, option A.)
+
 ## [0.68.3] — 2026-07-18
 
 ### Fixed

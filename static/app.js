@@ -23,6 +23,7 @@ const routes = [
   [/^#\/routine\/([a-z0-9-]+)$/, () => import("/static/views/routine.js")],
   [/^#\/run\/([a-z0-9-]+:[0-9-]+)$/, () => import("/static/views/run.js")],
   [/^#\/questions$/, () => import("/static/views/questions.js")],
+  [/^#\/summary$/, () => import("/static/views/summary.js")],
   [/^#\/library(?:\/(.*))?$/, () => import("/static/views/library.js")],
   [/^#\/new-routine$/, () => import("/static/views/new-routine.js")],
   [/^#\/settings$/, () => import("/static/views/settings.js")],
@@ -73,6 +74,7 @@ async function route() {
 function updateLocation(path) {
   const key = path.startsWith("#/log") ? "log"
     : path.startsWith("#/conversations") ? "conversations"
+    : path.startsWith("#/summary") ? "summary"
     : path.startsWith("#/questions") ? "questions"
     : path.startsWith("#/audit") ? "audit"
     : path.startsWith("#/stats") ? "stats"
@@ -93,6 +95,7 @@ function crumbsFor(path) {
   switch (top) {
     case "": return [{ label: "Routines" }];
     case "log": return [{ label: "Log" }];
+    case "summary": return [{ label: "Summary" }];
     case "questions": return [{ label: "Decisions" }];
     case "audit": return [{ label: "Audit" }];
     case "stats": return [{ label: "Stats" }];

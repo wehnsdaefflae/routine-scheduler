@@ -151,6 +151,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_schedule,
         api_search,
         api_stats,
+        api_summary,
         api_traces,
         api_wizard,
         api_workflows,
@@ -158,7 +159,8 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
     )
 
     for module in (api_push, api_routines, api_conversations, api_background, api_runs,
-                   api_schedule, api_stats, api_questions, api_audit, api_traces, settings,
+                   api_schedule, api_stats, api_summary, api_questions, api_audit, api_traces,
+                   settings,
                    api_workflows, api_playbooks, api_wizard, api_llm_tasks, api_hooks,
                    api_search):
         app.include_router(module.router, prefix="/api", dependencies=deps)
