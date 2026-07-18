@@ -296,6 +296,10 @@ def write_util_stats_snapshot(server: ServerConfig) -> dict:
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         tmp.replace(path)
-    except OSError:
-        pass
+    except OSError as exc:
+        # Silent-by-design (telemetry must never break a finished run) — but a PERSISTENT
+        # write failure, e.g. an unwritable state dir (a root-owned ~/.local blocks the
+        # mkdir of ~/.local/state), otherwise leaves the Stats tab and the util-review
+        # routine permanently empty with NO clue. Leave a breadcrumb so it is diagnosable.
+        log.warning("util-stats snapshot write to %s failed: %s", path, exc)
     return data

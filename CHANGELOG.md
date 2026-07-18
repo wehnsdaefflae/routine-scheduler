@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.68.3] — 2026-07-18
+
+### Fixed
+- **util-stats snapshot failure was silent — the ACTUAL F97 root cause is a filesystem
+  permission, not a `util_stats()` raise.** Proven this run by running the daemon's own venv
+  (`/opt/rsched-venv/bin/python`, v0.68.2): `/home/mark/.local` is owned `root:root` (mode
+  755), so the daemon (uid 1000 `mark`) cannot `mkdir ~/.local/state`; the snapshot write
+  raises `PermissionError` — which **is an `OSError`** and was swallowed by
+  `write_util_stats_snapshot`'s `except OSError: pass` with no log. Every util_stats-internal
+  fix across 0.68.0–0.68.2 was treating the wrong layer. The real fix is operational (`chown
+  mark:mark ~/.local`); code-side, the writer now leaves a `log.warning` breadcrumb naming
+  the unwritable path so this class of misconfiguration is never silent again.
+- **Markdown in Decisions-page items now renders.** `static/views/questions.js` rendered an
+  OPEN question's text as raw `textContent` (and an answered one inline-only), so a meta
+  (self-audit) decision's rich `detail` — lists, GFM tables, `code` — showed literal markup.
+  Meta decisions now use the block renderer (`md()`); ordinary short prompts keep the
+  inline-only subset (`mdInline()`). Reviewer-reported 2026-07-18.
+
 ## [0.68.2] — 2026-07-18
 
 ### Fixed

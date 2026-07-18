@@ -263,3 +263,29 @@ def test_write_snapshot_degrades_when_util_stats_raises(tmp_path, monkeypatch):
     assert on_disk == returned
     assert on_disk["error"] == "util_stats computation failed"
     assert on_disk["utils"] == [] and on_disk["generated"]
+
+
+def test_write_snapshot_logs_breadcrumb_when_state_dir_unwritable(tmp_path, monkeypatch, caplog):
+    """The REAL F97 mode: ~/.local owned by root means the daemon (uid 1000 mark) cannot
+    create ~/.local/state, so the snapshot write raises PermissionError (an OSError). That is
+    swallowed by design (telemetry must never break a run), but it used to be swallowed
+    SILENTLY — leaving the Stats tab and the util-review routine permanently empty with no
+    clue. The writer must still not raise, still return the computed data, but leave a WARNING
+    breadcrumb naming the unwritable path so the misconfiguration is diagnosable."""
+    import logging
+
+    from rsched.util_stats import snapshot_path, write_util_stats_snapshot
+
+    # Point XDG_STATE_HOME below a FILE, so mkdir(parents=True) raises an OSError on the write
+    # (a stand-in for the real EACCES on a root-owned ~/.local).
+    blocker = tmp_path / "blocker"
+    blocker.write_text("i am a file, not a dir", encoding="utf-8")
+    monkeypatch.setenv("XDG_STATE_HOME", str(blocker / "state"))
+    server = _server(tmp_path)
+
+    with caplog.at_level(logging.WARNING):
+        returned = write_util_stats_snapshot(server)     # must NOT raise
+    assert not snapshot_path().exists()                  # the write genuinely failed
+    assert "generated" in returned                       # computed data still returned
+    assert any("snapshot write" in r.getMessage() and "failed" in r.getMessage()
+               for r in caplog.records)

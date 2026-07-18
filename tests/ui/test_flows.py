@@ -877,6 +877,37 @@ def test_audit_refs_link_and_flash(ui, ui_page):
     expect(flink).to_have_attribute("href", "#/audit?focus=F1")
 
 
+def test_decision_detail_renders_markdown(ui, ui_page):
+    """A self-audit report DECISION carries rich markdown in its `detail` (the report's own
+    prose — `code`, bullet lists, tables). On the Decisions page (#/questions) a meta decision
+    must render that markdown as real DOM, not literal text. Regression: open questions used to
+    render as raw textContent and answered ones inline-only, so decision block markdown (lists,
+    tables, code fences) never rendered — the reviewer flagged it (2026-07-18)."""
+    rdir = ui.routines / "self-audit"
+    (rdir / "audit").mkdir(parents=True)
+    report = {
+        "generated": "2026-07-16T20:00:00+00:00",
+        "summary": "one open decision.",
+        "findings": [],
+        "decisions": [{
+            "id": "D9", "status": "open", "title": "Adopt the `snapshot` guard",
+            "detail": ("Two independent options:\n\n"
+                       "- keep `write_util_stats_snapshot` as-is\n"
+                       "- add a `log.warning` breadcrumb\n"),
+            "options": ["do it", "leave as-is"]}],
+    }
+    (rdir / "audit" / "report.json").write_text(json.dumps(report), encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator(".question-item", has_text="Adopt the")
+    # the bullet list in `detail` renders as a real <li>, not literal "- add …"
+    expect(card.locator("li", has_text="breadcrumb")).to_be_visible()
+    # inline `code` spans render as <code>, not literal backticks
+    expect(card.locator("code", has_text="log.warning")).to_be_visible()
+    # and the raw list marker is gone from the visible text
+    assert "- keep" not in card.inner_text()
+
+
 # ---- 8. md.js block rendering: GFM pipe tables + blockquotes -------------------------------
 
 
