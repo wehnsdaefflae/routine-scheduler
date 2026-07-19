@@ -146,8 +146,9 @@ export async function render(view, query = {}) {
 
   // Decisions are ANSWERED on the Decisions page (one inbox, meta-badged) — here each
   // gets a read-only card (the landing target for D-references) plus the status line.
-  function decisionsSummary(decisions, queuedDecisions) {
-    const open = decisions.filter((d) => !queuedDecisions.has(d.id) && !isSettled(d)).length;
+  function decisionsSummary(decisions, queuedDecisions, answeredDecisions) {
+    const open = decisions.filter((d) => !queuedDecisions.has(d.id)
+      && !answeredDecisions.has(d.id) && !isSettled(d)).length;
     const queued = decisions.filter((d) => queuedDecisions.has(d.id)).length;
     return el("div", {},
       el("h2", {}, `Decisions · ${open} open / ${queued} queued / ${decisions.length} total`),
@@ -159,16 +160,20 @@ export async function render(view, query = {}) {
         el("span", {}, " Answers flow back to the next run as settled work orders."))));
   }
 
-  function decisionPanel(d, queuedDecisions) {
+  function decisionPanel(d, queuedDecisions, answeredDecisions) {
+    // An answered decision (durable marker, survives inbox consumption) reads as answered
+    // here too — not re-presented as "open" once a run drains its feedback message.
     const [label, tone] = isSettled(d) ? ["settled", "ok"]
+      : answeredDecisions.has(d.id) ? ["answered", "ok"]
       : queuedDecisions.has(d.id) ? ["answer queued", "partial"] : ["open", "waiting_user"];
+    const decided = isSettled(d) || answeredDecisions.has(d.id);
     return el("div", { class: "panel mt", id: `ref-${d.id}` },
       el("div", { class: "row spread" },
         el("div", { class: "row", style: "gap:9px" }, chip(label, tone),
           el("strong", { class: "prose" }, d.title || d.id)),
         el("span", { class: "faint small" }, d.id)),
       d.detail ? md(d.detail, "md muted mt prose") : null,
-      (d.options || []).length && !isSettled(d)
+      (d.options || []).length && !decided
         ? el("div", { class: "faint small mt" }, `options: ${d.options.map(String).join("  ·  ")}`)
         : null);
   }
@@ -268,8 +273,12 @@ export async function render(view, query = {}) {
         : el("div", { class: "muted small", style: "padding:6px 0" }, "No findings this run — all clear."));
       const decisions = r.decisions || [];
       if (decisions.length) {
-        body.append(decisionsSummary(decisions, queuedDecisions),
-          ...decisions.map((d) => decisionPanel(d, queuedDecisions)));
+        // Durable answered markers (from decisions-answered.json) — the Decisions page uses
+        // the same set to hide answered decisions; the Audit page must agree so a decision
+        // answered elsewhere doesn't re-present as open here after a run consumes its message.
+        const answeredDecisions = new Set(data.answered_decisions || []);
+        body.append(decisionsSummary(decisions, queuedDecisions, answeredDecisions),
+          ...decisions.map((d) => decisionPanel(d, queuedDecisions, answeredDecisions)));
       }
     } else {
       body.append(data.last_run

@@ -75,8 +75,12 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
     if kind == "schedule_run":
         target = obs.get("target")
         if obs.get("unknown_target"):
-            return (f"OBSERVATION (schedule_run: no routine {target!r} — nothing armed. "
-                    "Check the slug.)")
+            sugg = obs.get("suggestions") or []
+            valid = obs.get("valid_targets") or []
+            hint = f" Did you mean: {', '.join(sugg)}?" if sugg else ""
+            listing = f" Valid target slugs: {', '.join(valid)}." if valid else ""
+            return (f"OBSERVATION (schedule_run: no routine {target!r} — nothing armed."
+                    f"{hint}{listing})")
         if obs.get("bad_fire_at"):
             return f"OBSERVATION (schedule_run {target!r} REJECTED): {obs['bad_fire_at']}"
         if "cancelled" in obs:

@@ -504,7 +504,8 @@ def test_audit_report_and_feedback(client):
     # no self-audit routine yet → friendly empty payload
     assert c.get("/api/audit").json() == {"exists": False, "routine": "self-audit",
                                           "report": None, "changelog": [],
-                                          "last_run": None, "pending_feedback": []}
+                                          "last_run": None, "pending_feedback": [],
+                                          "answered_decisions": []}
 
     adir = routines / "self-audit" / "audit"
     adir.mkdir(parents=True)
@@ -1315,6 +1316,46 @@ def test_audit_decision_answer_survives_inbox_consumption(client):
         "decisions": [{"id": "D2", "title": "Pick a path (round 2)", "detail": "new context",
                        "status": "open", "options": ["A", "B"]}]})
     assert [q["qid"] for q in c.get("/api/questions").json() if q.get("meta")] == ["audit:D2"]
+
+
+def test_audit_page_reflects_answered_decision_after_consumption(client):
+    """The Audit page and the Decisions page must AGREE (reviewer note: responses to
+    decisions were not synced everywhere): a decision answered on the Decisions page reads
+    as answered on the Audit page too (`answered_decisions`), even after a run consumes its
+    inbox message. The Audit page previously reconstructed answered-state from
+    pending_feedback ALONE, so the decision re-presented as open the moment a run drained
+    the queued message."""
+    c, tmp = client
+    rdir = tmp / "routines" / "self-audit"
+    adir = rdir / "audit"
+    adir.mkdir(parents=True)
+    (rdir / "inbox").mkdir(exist_ok=True)
+    atomic_write_json(adir / "report.json", {
+        "generated": "2026-07-11T09:00:00+00:00",
+        "findings": [],
+        "decisions": [{"id": "D2", "title": "Pick a path", "detail": "context",
+                       "status": "open", "options": ["A", "B"]}]})
+    # not yet answered → the Audit page carries no answered marker for it
+    assert c.get("/api/audit").json()["answered_decisions"] == []
+
+    # answer it, then a run consumes the queued feedback message (mid-run delivery)
+    assert c.post("/api/questions/audit:D2/answer", json={"text": "A"}).status_code == 200
+    for p in (rdir / "inbox").glob("msg-*.json"):
+        p.unlink()
+    # pending_feedback is now empty, yet the Audit page still knows D2 is answered
+    audit = c.get("/api/audit").json()
+    assert audit["pending_feedback"] == []
+    assert audit["answered_decisions"] == ["D2"]
+
+    # a NEWER report (generated after the marker) re-opens it — answered_decisions drops D2.
+    # Far-future stamp: the marker is written with REAL now(), so a near-past constant would
+    # turn into a time-bomb the moment the wall clock passes it.
+    atomic_write_json(adir / "report.json", {
+        "generated": "2099-01-01T00:00:00+00:00",
+        "findings": [],
+        "decisions": [{"id": "D2", "title": "Pick a path (round 2)", "detail": "new",
+                       "status": "open", "options": ["A", "B"]}]})
+    assert c.get("/api/audit").json()["answered_decisions"] == []
 
 
 def test_put_permissions_cascades_capabilities(client):

@@ -12,6 +12,7 @@ reaches the next run. Waiting time is credited back to the wall-clock budget.
 
 from __future__ import annotations
 
+import difflib
 import time
 from datetime import datetime, timedelta
 
@@ -246,7 +247,13 @@ def handle_schedule_run(loop, action: dict, poll_s: float) -> dict:
     target = str(action.get("target") or "")
     home = ctx.server.routines_home
     if not (home / target / "routine.yaml").is_file():
-        return {"kind": "schedule_run", "target": target, "unknown_target": True}
+        # Discoverability: a scheduling routine guessing a sibling's slug (the train-seat
+        # friction) should get the valid slugs + close matches back, not a bare rejection.
+        slugs = sorted(p.name for p in home.iterdir()
+                       if not p.name.startswith(".") and (p / "routine.yaml").is_file())
+        return {"kind": "schedule_run", "target": target, "unknown_target": True,
+                "suggestions": difflib.get_close_matches(target, slugs, n=3, cutoff=0.5),
+                "valid_targets": slugs}
     if action.get("cancel"):
         req_id = str(action.get("id")).strip() if action.get("id") else None
         removed = schedule_once.cancel(home, target, req_id)

@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.73.0] — 2026-07-19
+
+### Fixed
+- **Decision answers now sync to the Audit page too (reviewer AUDIT note: "responses to
+  decisions are still not synced everywhere the decision surfaces").** The Audit tab
+  reconstructed a decision's answered-state from the still-queued `pending_feedback` inbox
+  messages ALONE, so the moment a self-audit run consumed a decision's feedback message the
+  Audit page re-presented that answered decision as `open` — while the Decisions page kept it
+  hidden via the durable `audit/decisions-answered.json` marker. `/api/audit` now also emits
+  `answered_decisions` (the marker ids answered at-or-after the report's `generated`, the same
+  rule `_audit_decisions` uses); `static/views/audit.js` reads it and shows those decisions as
+  **answered** (not open), hiding their options. The two surfaces now agree.
+  `web/api_audit.py`, `static/views/audit.js`.
+
+### Changed
+- **`schedule_run` unknown-target now teaches the caller which slugs are valid.** Arming a
+  one-shot on an unknown routine returned a bare `unknown_target` — a scheduling routine
+  guessing a sibling's slug (observed: `train-seat-finder-scheduler` burned turns guessing
+  `bahnbonus-seat-finder`/`-position-finder` before the real `bahnbonus-seat-position`, even
+  building a new util + asking the user). The `unknown_target` observation now carries
+  `valid_targets` (every sibling routine slug) and `suggestions` (fuzzy close matches), and the
+  formatted observation prints "Did you mean …? Valid target slugs: …".
+  `engine/interact.py`, `engine/observations.py`.
+
 ## [0.72.1] — 2026-07-19
 
 ### Fixed

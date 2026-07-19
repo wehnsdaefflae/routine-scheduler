@@ -235,8 +235,16 @@ def test_handle_schedule_run_unknown_target_and_bad_fire_at(tmp_path):
     server = _server(tmp_path)
     _routine(server, slug="target-r")
     loop = _loop(server)
-    assert handle_schedule_run(loop, {"target": "ghost", "fire_at": "+3d",
-                                      "reason": "g"}, 0.0)["unknown_target"]
+    ghost = handle_schedule_run(loop, {"target": "ghost", "fire_at": "+3d",
+                                       "reason": "g"}, 0.0)
+    assert ghost["unknown_target"]
+    # discoverability (the train-seat friction): the valid sibling slugs come back so a
+    # scheduling routine isn't left blind-guessing a slug.
+    assert "target-r" in ghost["valid_targets"]
+    # a near-miss slug yields a close-match suggestion
+    near = handle_schedule_run(loop, {"target": "target-x", "fire_at": "+3d",
+                                      "reason": "g"}, 0.0)
+    assert near["unknown_target"] and "target-r" in near["suggestions"]
     bad = handle_schedule_run(loop, {"target": "target-r", "fire_at": "yesterday",
                                      "reason": "g"}, 0.0)
     assert "bad_fire_at" in bad

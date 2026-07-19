@@ -86,6 +86,24 @@ def _pending_feedback(routine_dir: Path) -> list[dict]:
     return out
 
 
+def _answered_decisions(routine_dir: Path, report: object) -> list[str]:
+    """Decision ids the user DURABLY answered at-or-after this report's `generated` — the
+    exact rule the Decisions page (`_audit_decisions`) uses to keep an answered decision
+    hidden. The Audit page reads this so an answered decision reads as answered HERE too,
+    even after a run has consumed its inbox feedback message. Without it the Audit page
+    reconstructs answered-state from `pending_feedback` alone, so a decision re-presents as
+    open the moment a run drains its message — the "not synced everywhere" bug.
+    """
+    if not isinstance(report, dict):
+        return []
+    answered = read_json(routine_dir / "audit" / "decisions-answered.json")
+    if not isinstance(answered, dict):
+        return []
+    generated = str(report.get("generated") or "")
+    return [str(did) for did, marker in answered.items()
+            if (m := str(marker or "")) and m >= generated]
+
+
 @router.get("/audit")
 def audit(request: Request) -> dict:
     routine_dir = _routine_dir(request)
@@ -101,7 +119,8 @@ def audit(request: Request) -> dict:
         last_run = {"run_id": r.run_id, "ts": r.ts, "state": r.state, "summary": r.summary[:400]}
     return {"exists": exists, "routine": SELF_AUDIT_SLUG, "report": report,
             "changelog": changelog, "last_run": last_run,
-            "pending_feedback": _pending_feedback(routine_dir) if exists else []}
+            "pending_feedback": _pending_feedback(routine_dir) if exists else [],
+            "answered_decisions": _answered_decisions(routine_dir, report) if exists else []}
 
 
 class Feedback(BaseModel):
