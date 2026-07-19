@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.72.0] — 2026-07-19
+
+### Added
+- **Schedule-once UI card (D28) — the frontend for the 0.71.0 one-shot backend.** The routine
+  page now has a **Schedule once** card beside Triggers: a local-time datetime picker + reason
+  field arms a one-shot (`POST /api/routines/<slug>/schedule-once`, the naive local time is
+  converted to an absolute UTC instant client-side), the armed one-shots list with a Cancel
+  button (`DELETE …/<id>`), and the daemon fire ledger (`fired N× · last …`).
+  `static/components/schedule-once.js`, wired into `static/views/routine.js`.
+- **Armed one-shots on the dashboard week strip.** `GET /api/schedule/week` now returns a
+  `one_shots` list per routine (armed schedule-once fires inside the window) alongside the
+  recurring cron `fires`, and includes a routine that has *only* a one-shot armed (no cron).
+  The week grid renders one-shots as distinct **hollow** dots. `web/api_schedule.py`,
+  `static/components/weekgrid.js`, `static/views/dashboard.js`.
+
+### Tests
+- `tests/ui/test_schedule_once.py` (Playwright): a seeded one-shot renders, Cancel clears the
+  spool request, and arming from the UI writes a new request. `test_schedule_once.py` gains a
+  week-strip API test (armed one-shot surfaces in `one_shots`; a far-out one does not).
+
 ## [0.71.0] — 2026-07-19
 
 ### Added

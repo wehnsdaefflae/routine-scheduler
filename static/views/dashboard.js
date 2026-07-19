@@ -79,7 +79,7 @@ export async function render(view) {
   view.append(banner, weekPanel, filterBar, body);
   body.append(skeleton(), skeleton(), skeleton());
 
-  let cards = [], llmReady = true, firesBySlug = new Map();
+  let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();
   const active = new Set(JSON.parse(storage.get(FILTER_KEY) || "[]"));
   const states = new Set();
   let viewMode = storage.get(VIEW_KEY) || "cards";
@@ -148,7 +148,7 @@ export async function render(view) {
 
   function renderBody() {
     const shown = ordered(cards.filter(visible));
-    week.update(cards.filter(visible), firesBySlug);
+    week.update(cards.filter(visible), firesBySlug, oneShotsBySlug);
     weekPanel.hidden = !cards.length;
     body.replaceChildren();
     if (!cards.length) {
@@ -180,6 +180,7 @@ export async function render(view) {
     }
     cards = routines;
     firesBySlug = new Map((sched?.routines || []).map((r) => [r.slug, r.fires.map((t) => +new Date(t))]));
+    oneShotsBySlug = new Map((sched?.routines || []).map((r) => [r.slug, (r.one_shots || []).map((t) => +new Date(t))]));
     llmReady = status.llm_ready !== false;
     banner.replaceChildren();
     if (!llmReady) banner.append(el("div", { class: "panel warn", style: "margin:12px 0" },

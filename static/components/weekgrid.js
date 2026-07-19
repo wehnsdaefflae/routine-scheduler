@@ -35,16 +35,24 @@ function text(x, y, str, cls, anchor = "start") {
 export function weekGrid() {
   const node = el("div", { class: "weekgrid" });
 
-  // cards: the dashboard's currently visible routines; firesBySlug: Map slug → [ms, …]
-  function update(cards, firesBySlug) {
+  // cards: the dashboard's currently visible routines; firesBySlug: Map slug → [ms, …] of
+  // recurring cron fires; oneShotsBySlug: Map slug → [ms, …] of armed one-shot fires (rendered
+  // as distinct hollow dots). A row shows if it has either kind in view.
+  function update(cards, firesBySlug, oneShotsBySlug = new Map()) {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const t0 = start.getTime(), span = DAYS * DAY_MS;
     const now = Date.now();
+    const inWin = (t) => t >= t0 && t < t0 + span;
+    const nextUpcoming = (r) => Math.min(
+      r.fires.find((t) => t >= now) ?? Infinity,
+      r.oneShots.find((t) => t >= now) ?? Infinity);
     const rows = cards
-      .map((c) => ({ c, fires: (firesBySlug.get(c.slug) || []).filter((t) => t >= t0 && t < t0 + span) }))
-      .filter((r) => r.fires.length)
-      .sort((a, b) => (a.fires.find((t) => t >= now) ?? Infinity) - (b.fires.find((t) => t >= now) ?? Infinity));
+      .map((c) => ({ c,
+        fires: (firesBySlug.get(c.slug) || []).filter(inWin),
+        oneShots: (oneShotsBySlug.get(c.slug) || []).filter(inWin) }))
+      .filter((r) => r.fires.length || r.oneShots.length)
+      .sort((a, b) => nextUpcoming(a) - nextUpcoming(b));
     node.replaceChildren();
     if (!rows.length) {
       node.append(el("div", { class: "faint small", style: "padding:4px 2px" },
@@ -77,6 +85,10 @@ export function weekGrid() {
       for (const t of r.fires)
         g.append(s("circle", { cx: x(t), cy, r: 3.2, fill: color, class: t < now ? "wg-dot past" : "wg-dot" },
           `${name} · ${fmtAt.format(new Date(t))}`));
+      for (const t of r.oneShots)
+        g.append(s("circle", { cx: x(t), cy, r: 3.8, fill: "none", stroke: color, "stroke-width": 1.6,
+          class: t < now ? "wg-dot one-shot past" : "wg-dot one-shot" },
+          `${name} · one-shot · ${fmtAt.format(new Date(t))}`));
       svg.append(g);
     });
 

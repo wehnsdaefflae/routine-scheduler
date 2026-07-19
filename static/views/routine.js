@@ -9,6 +9,7 @@ import { md, mdInline } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { triggersCard } from "/static/components/triggers.js";
+import { scheduleOnceCard } from "/static/components/schedule-once.js";
 import { permissionsPanel } from "/static/components/permissions.js";
 import { recipeNav } from "/static/components/recipenav.js";
 import { chip, el, emptyState, fmtDur, fmtNum, fmtTokens, skeleton, toast, when } from "/static/util.js";
@@ -117,6 +118,10 @@ export async function render(view, slug, query = {}) {
   // -- triggers: event-driven fires alongside cron (webhook URLs, coalescing) -------
   view.append(el("h2", {}, "Triggers"),
     triggersCard(slug, d.triggers || [], { protected: !!d.protected }));
+
+  // -- schedule once: a one-shot future run that fires once then auto-removes --------
+  view.append(el("h2", {}, "Schedule once"),
+    scheduleOnceCard(slug, { protected: !!d.protected }));
 
   // -- permissions: conduct docs + machine-enforced capabilities (user-only) --------
   // The server re-applies the activation cascade on save, so the panel re-renders from a

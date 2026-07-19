@@ -22,30 +22,58 @@ MAX_FIRES = 400  # per routine — hourly is ~192 with back-fill; denser crons t
 
 @router.get("/schedule/week")
 def schedule_week(request: Request, days: int = 7) -> dict:
-    """Fire times for every enabled, cron-scheduled routine from a day ago to `days`
-    (1-14) ahead: {start, days, routines: [{slug, fires: [iso…], truncated}]}.
+    """Fire times for every enabled routine from a day ago to `days` (1-14) ahead:
+    {start, days, routines: [{slug, fires: [iso…], one_shots: [iso…], truncated}]}.
+    `fires` are recurring cron fires; `one_shots` are armed schedule-once fires in the
+    window (the client renders them as distinct points). A routine with only a one-shot
+    armed and no cron still appears.
     """
     days = max(1, min(days, 14))
     now = datetime.now(UTC)
     start, end = now - timedelta(days=1), now + timedelta(days=days)
+    home = request.app.state.server.routines_home
     routines = []
     for info in registry.scan(request.app.state.server).values():
         cfg = info.cfg
-        if not cfg.enabled or not cfg.cron:
+        if not cfg.enabled:
+            continue
+        fires: list[str] = []
+        if cfg.cron:
+            try:
+                it = croniter(cfg.cron, start.astimezone(ZoneInfo(cfg.tz)))
+            except (ValueError, KeyError):
+                it = None  # a broken cron/tz already surfaces as a routine problem
+            if it is not None:
+                while len(fires) < MAX_FIRES:
+                    t = it.get_next(datetime)
+                    if t >= end:
+                        break
+                    fires.append(t.isoformat())
+        one_shots = _one_shot_fires(home, cfg.slug, start, end)
+        if fires or one_shots:
+            routines.append({"slug": cfg.slug, "fires": fires, "one_shots": one_shots,
+                             "truncated": len(fires) >= MAX_FIRES})
+    return {"start": now.isoformat(), "days": days, "routines": routines}
+
+
+def _one_shot_fires(routines_home, slug: str, start: datetime, end: datetime) -> list[str]:
+    """Armed one-shot fire instants for `slug` inside [start, end), UTC-normalised & sorted."""
+    out: list[str] = []
+    for p in schedule_once.pending_requests(routines_home, slug):
+        r = schedule_once.read_request(p)
+        raw = str(r.get("fire_at") or "")
+        if not r.get("active", True) or not raw:
             continue
         try:
-            it = croniter(cfg.cron, start.astimezone(ZoneInfo(cfg.tz)))
-        except (ValueError, KeyError):
-            continue  # a broken cron/tz already surfaces as a routine problem
-        fires: list[str] = []
-        while len(fires) < MAX_FIRES:
-            t = it.get_next(datetime)
-            if t >= end:
-                break
-            fires.append(t.isoformat())
-        routines.append({"slug": cfg.slug, "fires": fires,
-                         "truncated": len(fires) >= MAX_FIRES})
-    return {"start": now.isoformat(), "days": days, "routines": routines}
+            t = datetime.fromisoformat(raw)
+        except ValueError:
+            continue
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=UTC)
+        t = t.astimezone(UTC)
+        if start <= t < end:
+            out.append(t.isoformat())
+    return sorted(out)
 
 
 # -- one-shot time triggers (the routine page's Schedule-once card) -----------------------

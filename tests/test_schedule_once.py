@@ -270,3 +270,21 @@ def test_api_arm_rejects_bad_fire_at_and_unknown_routine(sched_client):
     assert c.post("/api/routines/ghost/schedule-once",
                   json={"fire_at": "+1d", "reason": "x"}).status_code == 404
     assert c.delete("/api/routines/weekly/schedule-once/so-nope").status_code == 404
+
+
+def test_api_week_surfaces_armed_one_shots(sched_client):
+    """An armed one-shot appears as a point in the dashboard week strip (its own field)."""
+    c, tmp = sched_client
+    home = tmp / "routines"
+    fire = datetime.now(UTC) + timedelta(days=2)
+    schedule_once.arm(home, "weekly", fire_at=fire, reason="x", requested_by="ui")
+    entry = next(r for r in c.get("/api/schedule/week").json()["routines"]
+                 if r["slug"] == "weekly")
+    assert entry["one_shots"] and entry["one_shots"][0][:10] == fire.date().isoformat()
+    # a one-shot far outside the window is not surfaced
+    schedule_once.cancel(home, "weekly")
+    schedule_once.arm(home, "weekly", fire_at=datetime.now(UTC) + timedelta(days=300),
+                      reason="far", requested_by="ui")
+    entry = next(r for r in c.get("/api/schedule/week").json()["routines"]
+                 if r["slug"] == "weekly")
+    assert entry["one_shots"] == []
