@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.71.0] — 2026-07-19
+
+### Added
+- **`schedule_run` action + `scheduling` permission — one-shot future runs (D27).** A routine
+  holding the new `scheduling` capability can arm a routine to run ONCE at a future instant,
+  then never again — the missing case between cron (repeats forever) and a manual run (now).
+  `schedule_run` takes `target` (routine slug; **self-target always allowed**, another routine
+  is the cross-routine case the permission authorizes), `fire_at` (an absolute ISO-8601 UTC
+  instant or a relative offset like `+3d` / `+2h` / `+30m`), and `reason` (injected into the
+  target's inbox just before it fires); `cancel: true` (+ optional `id`) calls it off.
+- **Daemon-owned request spool + `OneShotManager`.** Armed one-shots live in
+  `<routines_home>/.control/schedule-once/<slug>/req-*.json` (NOT `routine.yaml` — config
+  stays the user's; the engine writes the spool un-sandboxed like `write_util`). A new
+  `OneShotManager`, ticked beside `TriggerManager` after the cron loop, fires each due request
+  ONCE (same draining/one-run-per-routine gates as cron/trigger fires) then **deletes** it —
+  consumption is the non-repeating guarantee (no self-disabling cron, no config rewrite). A
+  missed one-shot make-up-fires on the next daemon start; `expires_at` bounds staleness.
+- **API:** `POST` / `GET` / `DELETE /api/routines/<slug>/schedule-once` — arm, list armed +
+  fire ledger, and cancel from the routine page (the user path beside the routine's own arming).
+- Full design + rationale: `docs/schedule-once.md`.
+
 ## [0.70.1] — 2026-07-19
 
 ### Fixed

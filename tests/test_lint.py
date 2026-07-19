@@ -100,7 +100,8 @@ def test_tags_on_library_elements():
     assert set(traits["web-research"]["tags"]) >= {"web", "research"}
     perms = {d["slug"]: d for d in library_docs.list_docs(SEED / "permissions")}
     assert set(perms) == {"util-authoring", "memory", "communication", "run-history",
-                          "shell", "workflow-generation", "background-tasks"}   # variants collapsed: level = capability
+                          "shell", "workflow-generation", "background-tasks",
+                          "scheduling"}   # variants collapsed: level = capability
     assert "self-modification" not in perms          # retired: a fixed engine rule now
     # a doc's frontmatter is stripped before its body is shown/inlined
     raw = (SEED / "traits" / "web-research.md").read_text()

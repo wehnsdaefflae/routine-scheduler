@@ -15,8 +15,8 @@ from ..ids import is_slug
 
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "edit_file",
-         "memory_read", "memory_write", "llm", "spawn", "subtask", "detach", "subruns", "kill",
-         "wait", "ask_user", "finish")
+         "memory_read", "memory_write", "llm", "spawn", "subtask", "detach", "schedule_run",
+         "subruns", "kill", "wait", "ask_user", "finish")
 
 READ_PATHS_MAX = 8
 
@@ -93,6 +93,21 @@ ACTION_SCHEMA: dict = {
                                    "write_util: the complete PEP 723 script as a string · "
                                    "memory_write: the note's full markdown (one string, "
                                    "≤100 lines)"},
+        # schedule_run — arm/cancel a one-shot time trigger on a routine (gated: scheduling)
+        "target": {"type": "string",
+                   "description": "schedule_run: the routine slug to arm/cancel a one-shot on "
+                                  "(self-target always allowed)"},
+        "fire_at": {"type": "string",
+                    "description": "schedule_run: when to fire ONCE — an absolute ISO-8601 UTC "
+                                   "instant, or a relative offset like '+3d' / '+2h' / '+30m'"},
+        "reason": {"type": "string",
+                   "description": "schedule_run: the provenance line injected into the target's "
+                                  "inbox just before the one-shot fires"},
+        "cancel": {"type": "boolean",
+                   "description": "schedule_run: cancel armed one-shot(s) on target instead of "
+                                  "arming (with id: cancel that one; without: cancel all)"},
+        "id": {"type": "string",
+               "description": "schedule_run: the one-shot id (so-XXXX) to cancel"},
         "append": {"type": "boolean",
                    "description": "write_file: append instead of overwrite (default false)"},
         # memory_write (memory_read needs only `name`)
@@ -167,8 +182,8 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "view_image": "path",
                "write_file": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "llm": "prompt", "spawn": "label", "subtask": "label",
-               "detach": "label", "kill": "n", "wait": "n", "ask_user": "question",
-               "finish": "status"}
+               "detach": "label", "schedule_run": "target", "kill": "n", "wait": "n",
+               "ask_user": "question", "finish": "status"}
 
 # kind → a minimal VALID action, shown to the model when a reply fails validation. Weak
 # models merge payload keys into the action object (file bodies, finish fields at top
@@ -179,6 +194,9 @@ KIND_EXAMPLES: dict[str, dict] = {
                    "content": "<the complete PEP 723 script as ONE string>"},
     "remove_util": {"say": "<why remove this util>", "kind": "remove_util",
                     "name": "obsolete-util"},
+    "schedule_run": {"say": "<why arm a one-shot>", "kind": "schedule_run",
+                     "target": "some-routine", "fire_at": "+3d",
+                     "reason": "<what the fired run should pick up>"},
     "read_file": {"say": "<why this file>", "kind": "read_file", "path": "state/notes.md"},
     "view_image": {"say": "<why look at it>", "kind": "view_image",
                    "path": "attachments/shot.png",
@@ -215,6 +233,7 @@ _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s")),
     "write_util": (("name", "content"), ()),
     "remove_util": (("name",), ()),
+    "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
     "view_image": ((), ("path", "paths", "prompt")),
     "write_file": (("path", "content"), ("append",)),
@@ -314,6 +333,16 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
         problems.append("kind=write_util requires 'content' to be the script text (one string)")
     if kind == "remove_util" and not is_slug(str(obj.get("name") or "")):
         problems.append("kind=remove_util requires 'name' to be a kebab-case util name")
+    if kind == "schedule_run":
+        if not is_slug(str(obj.get("target") or "")):
+            problems.append("kind=schedule_run requires 'target' to be a kebab-case routine slug")
+        if not obj.get("cancel"):
+            if not str(obj.get("fire_at") or "").strip():
+                problems.append("kind=schedule_run requires 'fire_at' (an ISO instant or a "
+                                "relative offset like '+3d') unless cancel: true")
+            if not str(obj.get("reason") or "").strip():
+                problems.append("kind=schedule_run requires 'reason' (why the one-shot fires) "
+                                "unless cancel: true")
     if kind in ("read_file", "view_image"):
         paths = obj.get("paths")
         if paths is not None and (not isinstance(paths, list)

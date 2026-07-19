@@ -75,6 +75,9 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         if g.allows_kind("remove_util"):
             cap_bits.append("remove_util (delete a global util the library no longer needs; "
                             "refused while another util still calls it)")
+        if g.allows_kind("schedule_run"):
+            cap_bits.append("schedule_run (arm/cancel a one-shot future run of a routine — "
+                            "self-target always; other routines via the scheduling permission)")
         cap_bits += [f"reserved util {u!r}" for u in sorted(g.utils)]
         if g.run_history != "none":
             cap_bits.append("read previous runs under runs/ "

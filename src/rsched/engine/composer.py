@@ -199,6 +199,13 @@ you relay it to the user. Give a complete self-contained "prompt" (it CANNOT ask
 questions) and pick its "workflow"; then `finish` the reply ("started it — I'll report back") and \
 do NOT wait. Its status is in state/background.json. Only from a conversation, only for jobs too \
 long to finish in this reply — otherwise do the work directly or use subtask.
+- schedule_run: arm a ONE-SHOT future run of a routine — `target` (the routine slug, \
+self-target always allowed), `fire_at` (an absolute ISO-8601 UTC instant or a relative offset \
+like "+3d" / "+2h" / "+30m"), `reason` (a provenance line injected into the target's inbox just \
+before it fires). The daemon fires the one-shot ONCE at fire_at, then CONSUMES it (it never \
+repeats — no cron to clean up). Cancel with `cancel: true` (+ `id` for one, or without to clear \
+all armed on the target). For a run to schedule its own follow-up ("re-check in 3 days") or arm \
+a milestone run on a sibling routine — gated by the scheduling permission.
 - subruns: a status table of your sub-workflows (state, turns, elapsed).
 - kill: terminate sub-workflow "n". wait: block until sub-workflow "n" / "all": true / any \
 unreported exit (timeout_s, default 600) — it returns AT ONCE when a finished child hasn't \

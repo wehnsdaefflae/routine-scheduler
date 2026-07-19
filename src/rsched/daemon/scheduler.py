@@ -22,6 +22,7 @@ from . import registry, restart
 from .detached import DetachedManager
 from .events import EventBus
 from .runner import Runner
+from .schedule_once import OneShotManager
 from .triggers import TriggerManager
 
 log = logging.getLogger("rsched.scheduler")
@@ -50,6 +51,9 @@ class Scheduler:
         # Event triggers (webhooks today): the web layer only spools events durably; this
         # manager turns them into coalesced fires at the tick (see daemon/triggers.py).
         self.triggers = TriggerManager(server, runner)
+        # One-shot time triggers: a request spool the web layer / the schedule_run action arm;
+        # this manager fires each due request ONCE then consumes it (see daemon/schedule_once.py).
+        self.oneshots = OneShotManager(server, runner)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
         # In-flight new-routine wizard builds (wids), registered by api_wizard.finalize and
@@ -127,6 +131,8 @@ class Scheduler:
             await self.detached.tick(now)
             # event triggers: spooled webhook events → coalesced fires (one per free routine)
             await self.triggers.tick(self.catalog)
+            # one-shot time triggers: due requests → a single fire, then consumed
+            await self.oneshots.tick(self.catalog)
 
     def _fire_library_sync(self) -> None:
         """Run the sync off-loop (git talks to the network); one at a time — an overrun

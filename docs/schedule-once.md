@@ -1,8 +1,13 @@
 # Schedule-once — one-shot time trigger (DESIGN)
 
-> **Status: DESIGN SPEC — not yet implemented.** This is the design pass for audit
-> decision **D26** (reviewer chose "design first, implement in a scoped follow-up").
-> Nothing below ships until the design is approved (**D27**) and built test-gated.
+> **Status: IMPLEMENTED in 0.71.0** (audit decision **D27 → A**, scope (a): any
+> `scheduling`-holder may target any routine; self-target always allowed). This document is
+> both the design rationale and the shipped design. Code: `src/rsched/schedule_once.py`
+> (spool), `src/rsched/daemon/schedule_once.py` (`OneShotManager`), the `schedule_run` action
+> (`engine/actions.py` + `interact.py`), the `scheduling` permission
+> (`library-seed/permissions/scheduling.md`), the API (`web/api_schedule.py`), and
+> `tests/test_schedule_once.py`. The UI *Schedule once* card + week-strip surfacing remain a
+> follow-up.
 > Cross-refs: `docs/triggers.md` (event triggers), `src/rsched/schedule.py` (cron),
 > `src/rsched/grants.py` (capabilities), `src/rsched/daemon/triggers.py` (the fire manager
 > this mirrors).

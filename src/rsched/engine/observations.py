@@ -72,6 +72,19 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
                     f"{', '.join(obs['callers'])}. Remove or update those callers first.")
         return (f"OBSERVATION (remove_util {obs['name']!r}: removed from the library and "
                 "committed — recoverable from git history).")
+    if kind == "schedule_run":
+        target = obs.get("target")
+        if obs.get("unknown_target"):
+            return (f"OBSERVATION (schedule_run: no routine {target!r} — nothing armed. "
+                    "Check the slug.)")
+        if obs.get("bad_fire_at"):
+            return f"OBSERVATION (schedule_run {target!r} REJECTED): {obs['bad_fire_at']}"
+        if "cancelled" in obs:
+            which = f"id {obs['id']}" if obs.get("id") else "all armed one-shots"
+            return (f"OBSERVATION (schedule_run {target!r}: cancelled {obs['cancelled']} "
+                    f"one-shot(s) — {which}).")
+        return (f"OBSERVATION (schedule_run {target!r}: armed one-shot {obs['armed']} for "
+                f"{obs['fire_at']} — the daemon fires it once, then consumes it).")
     if kind == "read_file":
         if obs.get("files") is not None:  # batched multi-path read
             parts = []

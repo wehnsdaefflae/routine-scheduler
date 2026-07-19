@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 
-from .. import sandbox, utils_lib
+from .. import sandbox, schedule_once, utils_lib
 from ..ids import is_slug, question_id
 from . import decisions, detach, inbox
 from .control import RunAborted
@@ -233,3 +233,30 @@ def handle_remove_util(loop, action: dict, poll_s: float) -> dict:
     utils_lib.remove_util_file(home, name)
     utils_lib.git_commit(home, f"remove {name}")
     return {"kind": "remove_util", "name": name, "removed": True}
+
+
+def handle_schedule_run(loop, action: dict, poll_s: float) -> dict:
+    """Arm or cancel a one-shot time trigger on a routine — the cross-routine setter the
+    `scheduling` capability gates. The engine writes the request spool un-sandboxed (like
+    write_util's library write); the daemon's OneShotManager fires the request once at
+    fire_at then CONSUMES it (auto-deactivate). Scope (a): any scheduling-holder may target
+    ANY routine; self-targeting (a run arming its own follow-up) is the common case.
+    """
+    ctx = loop.ctx
+    target = str(action.get("target") or "")
+    home = ctx.server.routines_home
+    if not (home / target / "routine.yaml").is_file():
+        return {"kind": "schedule_run", "target": target, "unknown_target": True}
+    if action.get("cancel"):
+        req_id = str(action.get("id")).strip() if action.get("id") else None
+        removed = schedule_once.cancel(home, target, req_id)
+        return {"kind": "schedule_run", "target": target, "cancelled": removed, "id": req_id}
+    try:
+        fire_at = schedule_once.parse_fire_at(str(action.get("fire_at") or ""))
+    except ValueError as exc:
+        return {"kind": "schedule_run", "target": target, "bad_fire_at": str(exc)}
+    rec = schedule_once.arm(home, target, fire_at=fire_at,
+                            reason=str(action.get("reason") or ""),
+                            requested_by=ctx.run_id)
+    return {"kind": "schedule_run", "target": target, "armed": rec["id"],
+            "fire_at": rec["fire_at"]}
