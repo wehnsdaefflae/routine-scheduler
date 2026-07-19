@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.74.0] — 2026-07-19
+
+### Added
+- **`report_bug` — an ungated, default-on "report potential bugs" action for EVERY routine
+  (reviewer AUDIT decision D29=A).** Any run — at any depth — may file a bug report about the
+  scheduler itself (engine, a util's CLI, the web UI, a workflow) with a one-line `title` and
+  optional `detail`. It appends a structured entry
+  (`{ts, routine, run_id, title, detail}`) to `<routines_home>/.control/bug-reports.jsonl`
+  (new `rsched.bug_reports` module, best-effort append modeled on the health-events log) and
+  does not interrupt anyone or reach the user. `report_bug` joins `finish` in the new
+  `ALWAYS_KINDS` set: it bypasses both the workflow `tools:` allowlist and the capability
+  gate (it is not a `GATED_KIND`), so it is available to every routine with no capability to
+  enable. The self-audit routine's gather-evidence reads this stream each run and turns
+  unresolved entries into findings (recipe wiring tracked separately for the routine-improver).
+  New action schema fields `title`/`detail`; handler `interact.handle_report_bug`; observation
+  rendering; composer + `docs/prompt-anatomy.md` action-list entries. Tests in
+  `tests/test_report_bug.py` (+ the `report_bug` case in the `test_actions.py` valid-actions
+  matrix).
+
 ## [0.73.0] — 2026-07-19
 
 ### Fixed

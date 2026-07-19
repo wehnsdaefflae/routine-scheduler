@@ -16,7 +16,13 @@ from ..ids import is_slug
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "edit_file",
          "memory_read", "memory_write", "llm", "spawn", "subtask", "detach", "schedule_run",
-         "subruns", "kill", "wait", "ask_user", "finish")
+         "subruns", "kill", "wait", "ask_user", "report_bug", "finish")
+
+# Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist: `finish`
+# so a run can always end, and `report_bug` so any routine can always flag a scheduler
+# defect (the ungated, default-on bug channel). Neither is a GATED_KIND, so both also pass
+# the capability layer for every routine.
+ALWAYS_KINDS = ("finish", "report_bug")
 
 READ_PATHS_MAX = 8
 
@@ -161,6 +167,18 @@ ACTION_SCHEMA: dict = {
                            "that times out continues on this stated default; shown to the user "
                            "with the question",
         },
+        # report_bug — the ungated, default-on bug channel every routine holds
+        "title": {
+            "type": "string",
+            "description": "report_bug: a one-line summary of the scheduler bug or friction "
+                           "you hit",
+        },
+        "detail": {
+            "type": "string",
+            "description": "report_bug: the full description — what you did, what happened, "
+                           "what you expected; enough for the self-audit routine to reproduce "
+                           "and fix it",
+        },
         # finish
         "status": {"type": "string", "enum": ["ok", "partial", "failed"],
                    "description": "finish: run outcome"},
@@ -183,7 +201,7 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "write_file": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "llm": "prompt", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "kill": "n", "wait": "n",
-               "ask_user": "question", "finish": "status"}
+               "ask_user": "question", "report_bug": "title", "finish": "status"}
 
 # kind → a minimal VALID action, shown to the model when a reply fails validation. Weak
 # models merge payload keys into the action object (file bodies, finish fields at top
@@ -224,6 +242,9 @@ KIND_EXAMPLES: dict[str, dict] = {
     "wait": {"say": "<why block>", "kind": "wait"},
     "ask_user": {"say": "<why ask>", "kind": "ask_user",
                  "question": "<one self-contained question>", "mode": "deferred"},
+    "report_bug": {"say": "<the scheduler defect you hit>", "kind": "report_bug",
+                   "title": "<one-line summary>",
+                   "detail": "<what you did, what happened, what you expected>"},
     "finish": {"say": "<what was achieved>", "kind": "finish", "status": "ok",
                "summary": "<detailed 8-20 line result summary>"},
 }
@@ -248,6 +269,7 @@ _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "kill": (("n",), ()),
     "wait": ((), ("n", "all", "timeout_s")),
     "ask_user": (("question",), ("mode", "options", "default")),
+    "report_bug": (("title",), ("detail",)),
     "finish": (("status", "summary"), ()),
 }
 
@@ -319,10 +341,10 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     kind = obj.get("kind")
     if kind not in _KIND_FIELDS:
         return [f"unknown kind {kind!r}"]
-    if allowed_kinds is not None and kind != "finish" and kind not in allowed_kinds:
+    if allowed_kinds is not None and kind not in ALWAYS_KINDS and kind not in allowed_kinds:
         return [f"kind={kind} is not available in this workflow — it permits only "
-                f"{sorted(allowed_kinds | {'finish'})}; use one of those"]
-    if grants is not None and kind != "finish" and (denial := grants.deny(obj)):
+                f"{sorted(allowed_kinds | set(ALWAYS_KINDS))}; use one of those"]
+    if grants is not None and kind not in ALWAYS_KINDS and (denial := grants.deny(obj)):
         return [denial]
     required, optional = _KIND_FIELDS[kind]
     for field in required:

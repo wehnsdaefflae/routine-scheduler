@@ -215,6 +215,12 @@ finish kills them.
 answer. Mode "blocking" pauses the run until answered; after {b.ask_timeout_min} minutes without \
 an answer the run CONTINUES on your stated `default` (set it on every blocking ask) and the \
 question stays open for a future run. Ask sparingly; batch what can wait until run end.
+- report_bug: file a bug report about the SCHEDULER itself (the engine, a util's CLI, the web \
+UI, a workflow) — a defect or friction you hit while running. `title` (one line) + optional \
+`detail` (what you did, what happened, what you expected). It appends to a shared bug stream the \
+self-audit routine reads every run and turns into findings; it does NOT interrupt anyone or reach \
+the user. Available to EVERY routine by default (no capability needed). Use it for scheduler \
+defects you notice in passing — not for your own task's problems (those go in your finish summary).
 - finish: end the run with status ok|partial|failed and a DETAILED 8-20 line summary: concrete \
 outcomes (numbers, names, links), decisions taken and why, what changed on disk, open ends and \
 what the next run should pick up. That summary is what the user and the next run see — it is \

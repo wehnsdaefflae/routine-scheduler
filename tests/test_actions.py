@@ -42,6 +42,8 @@ def test_schema_compiles_and_example_passes():
         {"say": "s", "kind": "kill", "n": 2},
         {"say": "s", "kind": "wait", "all": True, "timeout_s": 120},
         {"say": "s", "kind": "ask_user", "question": "q?", "mode": "blocking", "options": ["a", "b"]},
+        {"say": "s", "kind": "report_bug", "title": "schedule_run ate my args",
+         "detail": "called X, got Y, expected Z"},
         {"say": "s", "kind": "finish", "status": "ok", "summary": "done"},
     ],
     ids=KINDS,

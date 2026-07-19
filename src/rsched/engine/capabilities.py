@@ -46,7 +46,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
     `util name=list` (live, never stale).
     """
     from .. import utils_lib
-    from .actions import KINDS
+    from .actions import ALWAYS_KINDS, KINDS
 
     parts: list[str] = []
     try:
@@ -59,7 +59,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         pass
     g = ctx.grants
     kinds = [k for k in KINDS
-             if (allowed_kinds is None or k in allowed_kinds)
+             if (allowed_kinds is None or k in allowed_kinds or k in ALWAYS_KINDS)
              and (g is None or g.allows_kind(k))]
     parts.append("Action kinds usable this run: " + ", ".join(kinds) + ". Anything else is "
                  "rejected by the engine before it becomes a turn.")

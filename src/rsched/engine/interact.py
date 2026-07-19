@@ -16,7 +16,7 @@ import difflib
 import time
 from datetime import datetime, timedelta
 
-from .. import sandbox, schedule_once, utils_lib
+from .. import bug_reports, sandbox, schedule_once, utils_lib
 from ..ids import is_slug, question_id
 from . import decisions, detach, inbox
 from .control import RunAborted
@@ -267,3 +267,20 @@ def handle_schedule_run(loop, action: dict, poll_s: float) -> dict:
                             requested_by=ctx.run_id)
     return {"kind": "schedule_run", "target": target, "armed": rec["id"],
             "fire_at": rec["fire_at"]}
+
+
+def handle_report_bug(loop, action: dict) -> dict:
+    """File a bug report against the scheduler — the ungated, default-on channel every
+    routine holds. Appends a structured entry to <routines_home>/.control/bug-reports.jsonl
+    (routine, run_id, ts, title, detail); self-audit's gather-evidence reads that stream
+    each run and turns unresolved entries into findings. Best-effort like the health log —
+    a failed write never aborts the reporting run; it just reports filed=False. Works at any
+    depth (subruns report too — the report carries the run that saw the bug).
+    """
+    ctx = loop.ctx
+    title = str(action.get("title") or "").strip()
+    detail = str(action.get("detail") or "").strip()
+    path = bug_reports.file_bug_report(
+        ctx.server.routines_home, routine=ctx.routine.slug, run_id=ctx.run_id,
+        title=title, detail=detail)
+    return {"kind": "report_bug", "title": title, "filed": path is not None}
