@@ -573,7 +573,7 @@ def test_autolabel_rewrites_config_atomically(server, monkeypatch):
 
     class FakeRegistry:
         def __init__(self, _server): ...
-        def for_system(self):
+        def for_model(self, kind, models):
             return FakeEndpoint(), SimpleNamespace(model="m", effort=None, temperature=None)
 
     monkeypatch.setattr("rsched.endpoints.EndpointRegistry", FakeRegistry)
@@ -584,6 +584,35 @@ def test_autolabel_rewrites_config_atomically(server, monkeypatch):
     untouched = {k: v for k, v in before.items() if k not in ("name", "description", "tags")}
     assert {k: raw[k] for k in untouched} == untouched       # the rest of the config survives
     assert not list(d.glob("*.tmp"))                         # tmp file was renamed, not left
+
+
+def test_autolabel_uses_the_conversations_own_model(server, monkeypatch):
+    """Title + tags come from the conversation's OWN model (for_model('main', its models)),
+    never the system model — so a conversation pinned to an uncensored model titles with it
+    instead of a default model that might refuse the request."""
+    from types import SimpleNamespace
+
+    d = conv_mod.create_conversation(server, slug="c-mdl", first_message="hello",
+                                     models={"main": "uncensored-x"})
+    seen: dict = {}
+
+    class FakeEndpoint:
+        def complete(self, *a, **k):
+            return SimpleNamespace(parsed={"title": "Titled thing", "tags": []}, text="")
+
+    class FakeRegistry:
+        def __init__(self, _server): ...
+        def for_model(self, kind, models):
+            seen["kind"], seen["models"] = kind, dict(models)
+            return FakeEndpoint(), SimpleNamespace(model="m", effort=None, temperature=None)
+        def for_system(self):
+            raise AssertionError("autolabel must resolve the conversation's model, not the system one")
+
+    monkeypatch.setattr("rsched.endpoints.EndpointRegistry", FakeRegistry)
+    conv_mod.autolabel(server, d, "hello")
+    assert seen["kind"] == "main"
+    assert seen["models"] == {"main": "uncensored-x"}
+    assert yaml.safe_load((d / "routine.yaml").read_text())["name"] == "Titled thing"
 
 
 def test_commands_catalog_and_command_flagged_message(client):

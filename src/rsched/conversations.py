@@ -217,15 +217,24 @@ _LABEL_SCHEMA = {
 
 
 def autolabel(server: ServerConfig, conv_dir: Path, text: str) -> None:
-    """Best-effort title + tags from the first message via the system model — runs OFF the
-    reply path (the API fires it in a thread). Falls back to the first-line title already
-    written at creation; never raises. Only touches name/description/tags — keys the
+    """Best-effort title + tags from the first message via the CONVERSATION'S OWN model —
+    the same model its replies use (`for_model("main", …)`, with the system model as the
+    fallback when the conversation pins no model), so a conversation set to an uncensored
+    model gets its title from that model too, not a default model that might refuse. Runs
+    OFF the reply path (the API fires it in a thread). Falls back to the first-line title
+    already written at creation; never raises. Only touches name/description/tags — keys the
     engine never writes, so a live run is safe.
     """
     try:
         from .endpoints import EndpointRegistry
 
-        endpoint, ref = EndpointRegistry(server).for_system()
+        models: dict = {}
+        try:
+            conv_cfg = yaml.safe_load((conv_dir / "routine.yaml").read_text(encoding="utf-8")) or {}
+            models = conv_cfg.get("models") or {}
+        except Exception:
+            models = {}
+        endpoint, ref = EndpointRegistry(server).for_model("main", models)
         comp = endpoint.complete(
             [{"role": "user", "content":
               "Title this new conversation with an agent, and tag it. First message:\n---\n"
