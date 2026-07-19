@@ -52,10 +52,10 @@ import yaml
 from .engine.actions import KINDS
 from .ids import is_slug
 
-GATED_KINDS = ("write_util", "memory_read", "memory_write", "detach")
+GATED_KINDS = ("write_util", "remove_util", "memory_read", "memory_write", "detach")
 # When no library permission doc requires a gated kind (e.g. the library predates it),
 # denials still name the doc that canonically covers its conduct.
-_DEFAULT_KIND_SOURCE = {"write_util": "util-authoring",
+_DEFAULT_KIND_SOURCE = {"write_util": "util-authoring", "remove_util": "util-authoring",
                         "memory_read": "memory", "memory_write": "memory",
                         "detach": "background-tasks"}
 _DEFAULT_RUNS_SOURCE = ("run-history",)

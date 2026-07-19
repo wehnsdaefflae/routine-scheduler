@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.70.0] — 2026-07-19
+
+### Added
+- **`remove_util` action — routine-executable util curation (D25).** The engine gains a
+  `remove_util` action mirroring `write_util`: a routine holding the **util-authoring**
+  capability can now DELETE a global util, not just create/revise one. Like `write_util`,
+  the removal runs un-sandboxed engine-side (`utils_lib.remove_util_file`, committed so it is
+  recoverable from git history) — the counterpart the library previously lacked, which left
+  removal only to the web UI or a host shell (F108: the util sandbox jails the library dir for
+  every routine, even `shell`). The action **refuses** while any other util still declares the
+  target on its `calls:` line (`utils_lib.referenced_by`, mirroring the `gu remove` no-callers
+  guard), asks for approval unless the routine's write_util policy is `never`, and is declined
+  for sub-workflows. Gated as a new `GATED_KIND` sourced from `util-authoring` (the permission
+  doc's `requires.actions` now lists `write_util, remove_util`); stripped from detached tasks
+  like `write_util`. Covered by `tests/test_remove_util.py` (helper, validation, capability
+  gate, and the remove / refuse-callers / missing / subrun-decline handler paths).
+
 ## [0.69.1] — 2026-07-18
 
 ### Fixed

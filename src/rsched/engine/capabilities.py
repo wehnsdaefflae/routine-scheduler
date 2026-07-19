@@ -72,6 +72,9 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                              "once the selftest passes)",
                 "never": "write_util (autonomous, selftest-gated)",
             }[g.confirm])
+        if g.allows_kind("remove_util"):
+            cap_bits.append("remove_util (delete a global util the library no longer needs; "
+                            "refused while another util still calls it)")
         cap_bits += [f"reserved util {u!r}" for u in sorted(g.utils)]
         if g.run_history != "none":
             cap_bits.append("read previous runs under runs/ "

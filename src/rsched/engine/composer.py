@@ -159,6 +159,12 @@ UI tells the user what to set (they set it once in the Secrets store; the engine
 ONLY declared secrets reach the util). Declare network use with a `net: outbound` (or \
 `net: none`) header line: utils run in a filesystem/network sandbox and an undeclared \
 network need fails.{util_confirm}
+- remove_util: delete a global util the library no longer needs — name (kebab-case). The \
+curation counterpart to write_util, gated by the same util-authoring capability (and, unless \
+that capability is fully autonomous, the same approval step). The engine REFUSES if any other \
+util still declares it on a `calls:` line — remove or update those callers first; the deletion \
+is committed to the library and stays recoverable from git history. Check the catalog before \
+removing something another routine relies on.
 - read_file / write_file / edit_file: read or write a file (within the working dir or an \
 allowed root). read_file takes `path` or `paths` (several files in ONE action — batch related \
 reads instead of spending a turn per file). edit_file replaces an exact `anchor` string with \

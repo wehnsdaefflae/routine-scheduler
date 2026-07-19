@@ -221,6 +221,8 @@ class EngineLoop:
                     obs = interact.handle_ask(self, action, poll_s=POLL_S)
                 elif action["kind"] == "write_util":
                     obs = interact.handle_write_util(self, action, poll_s=POLL_S)
+                elif action["kind"] == "remove_util":
+                    obs = interact.handle_remove_util(self, action, poll_s=POLL_S)
                 elif action["kind"] == "spawn":
                     obs = self.subruns.spawn(action)
                 elif action["kind"] == "subtask":

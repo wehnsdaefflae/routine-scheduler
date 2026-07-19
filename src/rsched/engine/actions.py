@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from ..ids import is_slug
 
-KINDS = ("util", "write_util", "read_file", "view_image", "write_file", "edit_file",
+KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
+         "edit_file",
          "memory_read", "memory_write", "llm", "spawn", "subtask", "detach", "subruns", "kill",
          "wait", "ask_user", "finish")
 
@@ -46,7 +47,7 @@ ACTION_SCHEMA: dict = {
         # util / write_util (the ONLY way to run code — there is no shell)
         "name": {
             "type": "string",
-            "description": "util/write_util: the global util's name (kebab-case) · "
+            "description": "util/write_util/remove_util: the global util's name (kebab-case) · "
                            "memory_read/memory_write: the note's topic (kebab-case)",
         },
         "args": {
@@ -162,7 +163,8 @@ ACTION_SCHEMA: dict = {
 
 # The one field that best identifies a turn of each kind — the one-line "briefs" used by
 # turn records, compaction digests, and transcript replay.
-BRIEF_FIELD = {"util": "name", "write_util": "name", "read_file": "path", "view_image": "path",
+BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "read_file": "path",
+               "view_image": "path",
                "write_file": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "llm": "prompt", "spawn": "label", "subtask": "label",
                "detach": "label", "kill": "n", "wait": "n", "ask_user": "question",
@@ -175,6 +177,8 @@ KIND_EXAMPLES: dict[str, dict] = {
     "util": {"say": "<why this util now>", "kind": "util", "name": "list"},
     "write_util": {"say": "<why a new util>", "kind": "write_util", "name": "my-util",
                    "content": "<the complete PEP 723 script as ONE string>"},
+    "remove_util": {"say": "<why remove this util>", "kind": "remove_util",
+                    "name": "obsolete-util"},
     "read_file": {"say": "<why this file>", "kind": "read_file", "path": "state/notes.md"},
     "view_image": {"say": "<why look at it>", "kind": "view_image",
                    "path": "attachments/shot.png",
@@ -210,6 +214,7 @@ KIND_EXAMPLES: dict[str, dict] = {
 _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s")),
     "write_util": (("name", "content"), ()),
+    "remove_util": (("name",), ()),
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
     "view_image": ((), ("path", "paths", "prompt")),
     "write_file": (("path", "content"), ("append",)),
@@ -307,6 +312,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             problems.append(f"kind={kind} requires a non-empty {field!r} field")
     if kind == "write_util" and not isinstance(obj.get("content"), str | None):
         problems.append("kind=write_util requires 'content' to be the script text (one string)")
+    if kind == "remove_util" and not is_slug(str(obj.get("name") or "")):
+        problems.append("kind=remove_util requires 'name' to be a kebab-case util name")
     if kind in ("read_file", "view_image"):
         paths = obj.get("paths")
         if paths is not None and (not isinstance(paths, list)

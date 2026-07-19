@@ -285,6 +285,25 @@ def write_util_file(home: Path, name: str, content: str) -> None:
     (d / "main.py").write_text(content, encoding="utf-8")
 
 
+def referenced_by(home: Path, name: str) -> list[str]:
+    """Utils that declare `name` on their docstring `calls:` line — the reverse-dependents
+    that would break if `name` were removed. The engine's remove_util action refuses on a
+    non-empty result (mirrors the `gu remove` no-callers refusal).
+    """
+    return sorted(u["name"] for u in list_utils(home)
+                  if u["name"] != name and name in (u.get("calls") or []))
+
+
+def remove_util_file(home: Path, name: str) -> None:
+    """Delete a util's whole <name>/ dir (un-sandboxed, engine-side — the counterpart to
+    write_util_file). Committed by the caller via git_commit, so it stays recoverable from
+    git history. The no-callers guard lives in the remove_util action handler, not here.
+    """
+    d = util_dir(home, name)
+    if d.exists():
+        shutil.rmtree(d)
+
+
 def util_needs(home: Path, name: str) -> tuple[set[str], bool]:
     """(declared secret env vars, net-outbound?) for one util, resolved TRANSITIVELY across
     its docstring `calls:` siblings — the whole call tree runs inside ONE jail and ONE env,

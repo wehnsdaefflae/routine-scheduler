@@ -56,6 +56,22 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
         return (f"OBSERVATION (write_util {obs['name']!r}: selftest passed, "
                 f"{'created' if obs.get('created') else 'revised'} and committed). "
                 "You can now run it with the util action.")
+    if kind == "remove_util":
+        if obs.get("declined"):
+            reason = obs.get("reason")
+            return (f"OBSERVATION (remove_util {obs['name']!r} DECLINED"
+                    + (f": {reason}" if reason else " by the user") + "). Do not retry it.")
+        if obs.get("pending_approval"):
+            return (f"OBSERVATION (remove_util {obs['name']!r}): approval requested from the "
+                    f"user ({obs['qid']}). It is NOT removed yet; continue with other work.")
+        if obs.get("missing"):
+            return (f"OBSERVATION (remove_util {obs['name']!r}): no such util — nothing to "
+                    "remove (see `util name=list`).")
+        if obs.get("callers"):
+            return (f"OBSERVATION (remove_util {obs['name']!r} REFUSED): still called by "
+                    f"{', '.join(obs['callers'])}. Remove or update those callers first.")
+        return (f"OBSERVATION (remove_util {obs['name']!r}: removed from the library and "
+                "committed — recoverable from git history).")
     if kind == "read_file":
         if obs.get("files") is not None:  # batched multi-path read
             parts = []

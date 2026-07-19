@@ -1,9 +1,9 @@
 ---
 tags: [tool-use, utils, authoring]
 requires:
-  actions: [write_util]
+  actions: [write_util, remove_util]
 ---
-# permission: util authoring — create and revise global utils
+# permission: util authoring — create, revise and remove global utils
 
 Unlocks `write_util`: when no existing util fits, write one (single-purpose, reusable — never
 a one-off); when a util is broken, repair it (read its source first: `util` name `show`, args
@@ -17,3 +17,8 @@ env), siblings exec'd via `gu` on `calls:`, and `net: outbound` or `net: none` �
 a filesystem/network sandbox; undeclared network = no TCP. NEVER recreate a util the user
 deleted (a slug with a deletion in the library's history is rejected): ask_user first, mode
 blocking, naming the util and why — only an explicit yes in the same run unblocks it.
+
+Also unlocks `remove_util`: delete a util the library no longer needs. It is gated by the
+same approval level as write_util, and the engine REFUSES the removal while any other util
+still declares the target on its `calls:` line (check with `util name=list` first). The
+deletion is committed to the library, so it stays recoverable from git history.

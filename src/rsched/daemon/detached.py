@@ -46,7 +46,7 @@ BACKGROUND_BUDGETS = {**DEFAULT_BUDGETS, "max_wall_clock_min": 60}
 # A fire-and-forget task authoring library utils, writing throwaway .memory notes, or nesting
 # another detach is pure waste (and write_util triggers a blocking approval ask no one answers),
 # so these gated kinds are stripped from the capabilities copied off the owner.
-_STRIP_ACTIONS = ("write_util", "memory_read", "memory_write", "detach")
+_STRIP_ACTIONS = ("write_util", "remove_util", "memory_read", "memory_write", "detach")
 DELIVERED_GRACE_S = 3600  # remove a delivered task dir this long after delivery
 
 

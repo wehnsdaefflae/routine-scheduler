@@ -197,3 +197,39 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:
                 "selftest_ok": False, "output": output[:2000]}
     utils_lib.git_commit(home, f"{'create' if creating else 'revise'} {name}")
     return {"kind": "write_util", "name": name, "created": creating, "selftest_ok": True}
+
+
+def handle_remove_util(loop, action: dict, poll_s: float) -> dict:
+    """Delete a global util (curation) — the write_util counterpart, gated by the same
+    util-authoring capability. Refuses if any sibling still declares it on a `calls:` line
+    (mirrors the `gu remove` no-callers refusal); asks for approval unless the routine's
+    write_util policy is 'never'; the removal itself runs un-sandboxed engine-side (like
+    write_util's library write), committed so it is recoverable from git history.
+    """
+    ctx = loop.ctx
+    name = action["name"]
+    if ctx.depth > 0:
+        return {"kind": "remove_util", "name": name, "declined": True,
+                "reason": "sub-workflows cannot remove utils — curation is a top-level action"}
+    home = ctx.server.utils_home
+    utils_lib.ensure_library(home, remote=ctx.server.libraries_remote)
+    if not utils_lib.exists(home, name):
+        return {"kind": "remove_util", "name": name, "missing": True}
+    if callers := utils_lib.referenced_by(home, name):
+        return {"kind": "remove_util", "name": name, "callers": callers}
+    # Removal is destructive — approve it unless write_util is fully autonomous ('never').
+    if ctx.grants is None or ctx.grants.needs_confirm(creating=True):
+        ask = handle_ask(loop, {
+            "question": f"Approve removal of global util '{name}'? It is deleted from the "
+                        f"library (recoverable from git history).",
+            "mode": "blocking", "options": ["approve", "decline"],
+            "default": "the util is NOT removed until approved"}, poll_s,
+            qtype="util-approval")
+        if not ask.get("answered"):
+            return {"kind": "remove_util", "name": name, "pending_approval": True,
+                    "qid": ask.get("qid")}
+        if not _is_approval(ask["answer"]):
+            return {"kind": "remove_util", "name": name, "declined": True}
+    utils_lib.remove_util_file(home, name)
+    utils_lib.git_commit(home, f"remove {name}")
+    return {"kind": "remove_util", "name": name, "removed": True}
