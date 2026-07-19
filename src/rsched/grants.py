@@ -220,7 +220,15 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
             grants_runs = True
         if req.get("workflows"):
             grants_wf = True
-    actions = [a for a in caps.get("actions") or [] if a in req_actions]
+    active_set = set(active)
+    # Fallback for the "library predates the kind" gap (see _DEFAULT_KIND_SOURCE): a gated
+    # kind whose canonical SOURCE permission is HELD survives even when that permission's
+    # doc requires: has not been updated to name it — otherwise e.g. remove_util can never
+    # persist under util-authoring (util-authoring.md predates the kind), so the UI toggle
+    # silently reverts on save. capabilities_for's RAISE is unchanged, so merely holding the
+    # permission does NOT auto-add the kind; only an explicit user opt-in survives the floor.
+    actions = [a for a in caps.get("actions") or []
+               if a in req_actions or _DEFAULT_KIND_SOURCE.get(a) in active_set]
     utils = [u for u in caps.get("utils") or [] if u in req_utils]
     runs = (caps.get("runs") or "none") if grants_runs else "none"
     workflows = (caps.get("workflows") or "catalog") if grants_wf else "catalog"

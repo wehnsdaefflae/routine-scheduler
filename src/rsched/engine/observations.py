@@ -131,8 +131,13 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
     if kind == "write_file":
         if err := obs.get("error"):
             return f"OBSERVATION (write_file {obs.get('path')} FAILED): {err}"
-        return f"OBSERVATION (write_file): wrote {obs['bytes']} bytes to {obs['path']}" + (
-            " (appended)" if obs.get("append") else "")
+        base = f"OBSERVATION (write_file): wrote {obs['bytes']} bytes to {obs['path']}"
+        if obs.get("append"):
+            size = obs.get("size")
+            # show the resulting total so a silent overwrite (size == bytes) is visible
+            return base + (f" (appended; file now {size} bytes)" if size is not None
+                           else " (appended)")
+        return base
     if kind == "edit_file":
         if err := obs.get("error"):
             return f"OBSERVATION (edit_file {obs.get('path')} FAILED): {err}"

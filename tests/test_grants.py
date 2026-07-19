@@ -169,6 +169,23 @@ def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_pat
         "workflows": "catalog"}
 
 
+def test_floor_keeps_gated_kind_via_default_source_when_doc_predates_it(tmp_path):
+    """Regression (remove_util toggle reverted on save): a gated kind whose permission doc's
+    requires: predates the kind — util-authoring.md was seeded before remove_util existed —
+    must still persist when the user EXPLICITLY opts in AND holds the canonical source
+    permission (_DEFAULT_KIND_SOURCE). Otherwise floor_capabilities strips it every save."""
+    home = _lib(tmp_path, {"util-authoring": AUTHORING})   # requires: [write_util] only
+    lib = read_library_requires(home)
+    opt_in = {"actions": ["write_util", "remove_util"]}
+    # util-authoring held + explicit opt-in → remove_util survives the floor (order kept)
+    assert floor_capabilities(["util-authoring"], lib, opt_in)["actions"] == \
+        ["write_util", "remove_util"]
+    # not held → floored away entirely
+    assert floor_capabilities([], lib, opt_in)["actions"] == []
+    # RAISE is unchanged: merely holding util-authoring does NOT auto-add remove_util
+    assert capabilities_for(["util-authoring"], lib)["actions"] == ["write_util"]
+
+
 def test_workflows_generate_capability_binds_to_its_permission(tmp_path):
     """`workflows: generate` (draft a pattern for a subtask when none fits) rides the same
     cascade as `runs`: off by default, raised by its doc, floored away without it, and

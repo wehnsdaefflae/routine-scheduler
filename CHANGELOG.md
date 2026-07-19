@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.76.0] — 2026-07-19
+
+### Fixed
+- **The `remove_util` action permission reverted to unchecked on every "Save permissions"
+  (self-audit F130; operator bug report filed from global-utils-review 2026-07-19).** Enabling
+  the `remove_util` toggle never persisted, so an operator-approved util removal
+  (`pagedrop-publish`, unused and now failing its own selftest with 403) stayed un-executable
+  for 5 consecutive runs. Root cause: `floor_capabilities` keeps a gated action only when a HELD
+  permission doc's `requires.actions` names it, but `permissions/util-authoring.md` was seeded
+  before `remove_util` existed and lists only `write_util` — so the floor stripped `remove_util`
+  on every save. Fix: `floor_capabilities` now also keeps a gated kind whose canonical source
+  permission (`_DEFAULT_KIND_SOURCE`, e.g. `remove_util → util-authoring`) is held, closing the
+  "library predates the kind" gap generically. The RAISE (`capabilities_for`) is unchanged, so
+  merely holding util-authoring does NOT auto-enable `remove_util` — it stays an explicit opt-in
+  that now persists.
+
+### Added
+- **`write_file` observation reports the file's total `size` after the write (self-audit F129;
+  bug report: an `append:true` appeared to overwrite a file's existing content).** The
+  observation carried only `bytes` written, so an append that silently overwrote was
+  indistinguishable from a genuine append. It now includes `size` (total on-disk bytes) and the
+  append observation reads *"wrote N bytes … (appended; file now M bytes)"* — a true append shows
+  `size == prior + bytes`, an overwrite shows `size == bytes`, making the class provable from the
+  observation alone. (`do_write_file`'s append path itself is correct — `open("a")` — so no
+  overwrite was reproducible in code; this is the diagnostic for a future occurrence.)
+
 ## [0.75.0] — 2026-07-19
 
 ### Added

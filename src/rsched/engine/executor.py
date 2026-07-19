@@ -331,10 +331,14 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
         else:
             path.write_text(data, encoding="utf-8")
         ctx.seen_paths.add(str(path))   # written = seen: a rewrite of own output is grounded
+        size = path.stat().st_size      # TOTAL bytes on disk after the write
     except (OSError, PermissionError) as exc:
         return {"kind": "write_file", "path": action["path"], "error": str(exc)}
+    # `bytes` = payload WRITTEN this action; `size` = the file's total size AFTER it. An
+    # append that truly appended shows size == prior + bytes; an overwrite shows size ==
+    # bytes — so append-vs-overwrite is provable from the observation alone.
     return {"kind": "write_file", "path": action["path"], "bytes": len(data.encode("utf-8")),
-            "append": bool(action.get("append"))}
+            "append": bool(action.get("append")), "size": size}
 
 
 def do_edit_file(action: dict, ctx: RunContext) -> dict:
