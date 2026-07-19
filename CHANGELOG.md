@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.75.0] — 2026-07-19
+
+### Added
+- **Reject an ok-finish that CLAIMS a high-signal action the run never took (reviewer AUDIT
+  decision D31=B; self-audit finding F127).** A routine wrote *"Filed report_bug to
+  self-audit"* in its finish summary while taking no `report_bug` action — narrated unperformed
+  work that the old fabrication guard (which only rejects an ok-finish taken as the very
+  *first* action) let through. New `src/rsched/engine/finish_guard.py` `unbacked_action_claims()`
+  scans a top-level ok-finish summary for the literal engine token of `report_bug` / `ask_user`
+  / `schedule_run` bound to an affirmative completion verb; when that action was never taken
+  this run the finish is rejected with an instruction to either take the action or drop the
+  claim. Deliberately narrow (precision over recall on the shared run path): only literal action
+  tokens (never natural-language paraphrases), negations are excluded, and **meta routines**
+  (tag `meta` — self-audit, routine-improver, config-optimizer, token-lab, clarification) are
+  EXEMPT because their job is to quote and analyse *other* runs' actions (a universal check would
+  false-reject the auditor's own summaries). Covered by `tests/test_finish_guard.py` (incl. the
+  real radar summary as the positive) and a `tests/test_loop.py` integration test.
+
 ## [0.74.1] — 2026-07-19
 
 ### Changed

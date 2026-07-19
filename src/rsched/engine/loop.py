@@ -25,6 +25,7 @@ from .actions import BRIEF_FIELD
 from .autocommit import autocommit as _autocommit
 from .boot import boot
 from .completion import MAX_SCHEMA_ATTEMPTS, next_action
+from .finish_guard import unbacked_action_claims
 from .control import (
     _ABORT,
     RunAborted,
@@ -215,6 +216,28 @@ class EngineLoop:
                             "step 1 and do the actual work, one action per turn."})
                         ctx.write_status()
                         continue
+                    if action["status"] == "ok" and ctx.depth == 0:
+                        # Claim guard (D31=B): a top-level ok-finish whose summary claims a
+                        # high-signal action (report_bug/ask_user/schedule_run) the run never
+                        # took is narrated unperformed work — reject so the run either takes
+                        # the action or drops the claim. Meta routines are exempt (they quote
+                        # other runs' actions); see finish_guard.py.
+                        unbacked = unbacked_action_claims(
+                            action.get("summary", ""),
+                            {r["kind"] for r in self.turn_records},
+                            is_meta="meta" in (getattr(ctx.routine, "tags", None) or []))
+                        if unbacked:
+                            obs = {"kind": "finish", "rejected": True,
+                                   "unbacked_claims": unbacked}
+                            ctx.transcript.event("observation", obs, turn=ctx.turn)
+                            names = ", ".join(unbacked)
+                            self.messages.append({"role": "user", "content":
+                                f"OBSERVATION (finish REJECTED): your summary states you "
+                                f"performed {names}, but no such action was taken this run. "
+                                f"Either actually take the action now, or remove that claim "
+                                f"from your summary, then finish again."})
+                            ctx.write_status()
+                            continue
                     self.final_summary = action["summary"]
                     return self._finish_run(action["status"], action["summary"], authored=True)
                 if action["kind"] == "ask_user":

@@ -596,6 +596,22 @@ def test_fabricated_finish_rejected(make_routine, scripted):
     assert status2 == "failed" and events2[-1]["payload"]["authored"] is True
 
 
+def test_finish_rejected_on_unbacked_action_claim(make_routine, scripted):
+    # D31=B / F127: a non-meta run whose ok-finish summary claims a report_bug it never filed is
+    # rejected, then finishes cleanly once the false claim is dropped.
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
+        probe(),  # executed_actions > 0, so the first-action guard does not apply
+        finish(summary="Steady run. Filed report_bug to self-audit about the key gap."),
+        finish(summary="Steady run. Nothing to escalate this run."),
+    ], slug="claimer")
+    assert status == "ok"
+    rejected = [e for e in events if e["type"] == "observation"
+                and e["payload"].get("kind") == "finish" and e["payload"].get("rejected")]
+    assert len(rejected) == 1
+    assert rejected[0]["payload"].get("unbacked_claims") == ["report_bug"]
+    assert "report_bug" in ep.calls[-1]["messages"][-1]["content"]
+
+
 def test_ask_user_deferred(make_routine, scripted):
     d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
         {"say": "Need input eventually.", "kind": "ask_user", "question": "Which city?",
