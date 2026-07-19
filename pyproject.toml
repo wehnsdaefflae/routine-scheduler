@@ -33,6 +33,10 @@ dev = [
     "types-jsonschema",
     "types-pyyaml",
     "pytest-playwright>=0.8.0",
+    # UI suite is flaky under xdist (browser/timing contention); flaky() reruns absorb it.
+    # NOTE: only ACTIVE once the plugin is installed into the venv (uv sync by the env owner);
+    # until then the `flaky` marker is registered-but-inert (see tests/ui/conftest.py).
+    "pytest-rerunfailures>=14.0",
 ]
 
 [build-system]
@@ -53,6 +57,13 @@ asyncio_mode = "auto"
 # ephemeral ports, per-process monkeypatching). One stuck test can't hide behind the
 # others' output — use -n0 for a serial run / debugging with -s.
 addopts = ["-n", "auto"]
+# `flaky` is applied to tests/ui by tests/ui/conftest.py. Registered here so it is a known
+# marker even before pytest-rerunfailures is installed in the venv — otherwise the unknown-mark
+# warning would become an error under filterwarnings=error. The marker is inert (no reruns)
+# until the plugin is present; then it retries flaky browser tests instead of failing the gate.
+markers = [
+    "flaky: retry a flaky test on failure (pytest-rerunfailures; inert until the plugin is installed)",
+]
 filterwarnings = [
     "error",  # any warning is a failure — drift surfaces immediately
     # third-party transitional notice (starlette's httpx→httpx2 migration), not ours to fix

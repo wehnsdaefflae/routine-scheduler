@@ -27,6 +27,25 @@ from rsched.web.app import create_app
 
 TOKEN = "ui-test-token"
 
+_UI_DIR = Path(__file__).parent
+
+
+def pytest_collection_modifyitems(items):
+    """Auto-retry the browser UI tests. They are flaky under pytest-xdist — browser/timing/
+    shared-resource contention between parallel workers occasionally reds a genuinely-passing
+    test on a full-suite run (F120). `flaky(reruns=2)` reruns ONLY on failure: an intermittent
+    contention blip passes on retry, while a real regression still fails all attempts. Scoped to
+    this directory so the rest of the suite keeps failing fast. Inert until pytest-rerunfailures
+    is installed in the project venv (the `flaky` marker is registered in pyproject.toml so this
+    stays warning-clean under filterwarnings=error even before the plugin is present)."""
+    for item in items:
+        item_path = getattr(item, "path", None)
+        in_ui = bool(item_path) and (item_path == _UI_DIR or _UI_DIR in item_path.parents)
+        if not in_ui:  # fall back to fspath for any item lacking a pathlib .path
+            in_ui = str(_UI_DIR) in str(getattr(item, "fspath", ""))
+        if in_ui:
+            item.add_marker(pytest.mark.flaky(reruns=2, reruns_delay=1))
+
 
 class StubRunner:
     """Records fire/resume calls and answers like an idle daemon — no process is ever

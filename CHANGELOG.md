@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.74.1] — 2026-07-19
+
+### Changed
+- **Auto-rerun the flaky Playwright UI suite (reviewer AUDIT decision D30=A).** The browser
+  UI tests are non-deterministic under `pytest-xdist` (browser/timing/shared-resource
+  contention between parallel workers occasionally reds a genuinely-passing test on a
+  full-suite run — F120), which corrodes the hard test-gate. `pytest-rerunfailures>=14.0` is
+  now a dev dependency and a `pytest_collection_modifyitems` hook in `tests/ui/conftest.py`
+  applies `flaky(reruns=2)` to every `tests/ui` test (scoped there so the rest of the suite
+  keeps failing fast). Reruns fire ONLY on failure — an intermittent blip passes on retry, a
+  real regression still fails all attempts. The `flaky` marker is registered in `pyproject.toml`
+  so it is warning-clean under `filterwarnings=error` even while the plugin is absent.
+  - **Note on activation:** declaring the dep in `pyproject.toml` does not install it into the
+    project venv `/opt/rsched-venv`, which is read-only to routines; the reruns stay **inert**
+    until the venv owner runs `uv sync` (a one-time out-of-band step). Until then the wiring is
+    committed and the gate is unaffected. The earlier hard blocker — that merely adding the dep
+    made `uv run` try to sync the read-only venv and crash the gate — is resolved out-of-band by
+    the `pytest-run`/`rsched-lint` utils' `uv run --no-sync` fallback.
+
 ## [0.74.0] — 2026-07-19
 
 ### Added
