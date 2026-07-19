@@ -743,6 +743,27 @@ def test_new_routine_page_and_setup_banner_link_the_run_page(ui, ui_page):
         .to_have_attribute("href", f"#/run/clarification:{ts}")
 
 
+def test_new_routine_draft_is_forgotten_after_start(ui, ui_page):
+    """F110: the draft textarea persists across navigation (a half-typed task survives a
+    refresh — desired) but must be FORGOTTEN once a clarification starts, so it never refills
+    with the last-created routine's task on the next visit (forgetField on a successful start).
+    """
+    ui_page.goto(f"{ui.url}/#/new-routine")
+    ui_page.locator("textarea.code").fill("Watch arxiv for new agent papers.")
+    # navigate away and back — the draft SURVIVES (form persistence, the desired behaviour)
+    ui_page.goto(f"{ui.url}/#/")
+    ui_page.goto(f"{ui.url}/#/new-routine")
+    expect(ui_page.locator("textarea.code")).to_have_value("Watch arxiv for new agent papers.")
+    # start a clarification — stub the endpoint so no engine subprocess is needed
+    ui_page.route("**/api/wizard/start", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=json.dumps({"run_id": "clarification:20260719-120000"})))
+    ui_page.get_by_role("button", name="start clarification").click()
+    # after the start the draft is forgotten: returning shows an EMPTY field, not the old task
+    ui_page.goto(f"{ui.url}/#/new-routine")
+    expect(ui_page.locator("textarea.code")).to_have_value("")
+
+
 def test_clarify_run_page_chat_frame_and_question_answer(ui, ui_page):
     """A live clarify run renders on the STANDARD run page with the setup frame mounted,
     and the run page's own question form answers into the .wizard-<ts> workspace inbox —

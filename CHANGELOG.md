@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.70.1] — 2026-07-19
+
+### Fixed
+- **New-routine draft field no longer refills with the last routine's task (F110).** The
+  `#/new-routine` task textarea is form-persisted (a half-typed task survives a refresh —
+  desired), but `static/views/new-routine.js` never forgot the draft once a clarification
+  started, so the next visit restored the previously-created routine's text. It now calls
+  `forgetField(ta)` on a successful start (the documented submit-then-forget pattern), so the
+  field is empty on the next visit while still surviving plain navigation. Covered by
+  `tests/ui/test_flows.py::test_new_routine_draft_is_forgotten_after_start`.
+
 ## [0.70.0] — 2026-07-19
 
 ### Added

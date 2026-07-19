@@ -6,6 +6,7 @@
 // forking a second one.
 
 import { api } from "/static/api.js";
+import { forgetField } from "/static/formpersist.js";
 import { navigate } from "/static/router.js";
 import { el, skeleton, toast } from "/static/util.js";
 
@@ -50,6 +51,7 @@ export async function render(view) {
         go.disabled = false;
         return;
       }
+      forgetField(ta);   // the draft became a real session — don't refill it on the next visit
       navigate(`#/run/${r.run_id}`);       // the run page is the session surface
     } catch (err) { toast(err.message, 4000, { error: true }); go.disabled = false; }
   };
