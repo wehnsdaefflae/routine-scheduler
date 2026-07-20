@@ -74,6 +74,7 @@ def oauth_status(request: Request) -> dict:
         cid_key, secret_key = providers.creds_secret_keys(pid)
         provs.append({"id": pid, "name": prov.name, "expiring": prov.expiring,
                       "configured": providers.client_creds(pid) is not None,
+                      "console_url": prov.console_url,
                       "client_id_key": cid_key, "client_secret_key": secret_key})
     return {"public_url": public_url, "public_url_set": bool(public_url),
             "providers": provs, "connections": store.list_connections()}

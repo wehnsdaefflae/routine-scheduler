@@ -21,6 +21,7 @@ class Provider:
     name: str
     authorize_url: str
     token_url: str
+    console_url: str = ""       # where the user creates the OAuth app (the provider's dev console)
     default_scopes: tuple[str, ...] = ()
     device_url: str | None = None
     uses_pkce: bool = True
@@ -40,6 +41,7 @@ PROVIDERS: dict[str, Provider] = {
         name="Notion",
         authorize_url="https://api.notion.com/v1/oauth/authorize",
         token_url="https://api.notion.com/v1/oauth/token",  # noqa: S106 — token ENDPOINT URL, not a secret
+        console_url="https://www.notion.so/my-integrations",
         default_scopes=(),          # Notion scopes are fixed on the integration, not per-request
         device_url=None,            # Notion has no device flow → auth-code + callback only
         uses_pkce=True,
@@ -53,6 +55,7 @@ PROVIDERS: dict[str, Provider] = {
         name="Google",
         authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
         token_url="https://oauth2.googleapis.com/token",  # noqa: S106 — token ENDPOINT URL, not a secret
+        console_url="https://console.cloud.google.com/apis/credentials",
         default_scopes=("openid", "email"),
         device_url="https://oauth2.googleapis.com/device/code",
         uses_pkce=True,
@@ -65,6 +68,7 @@ PROVIDERS: dict[str, Provider] = {
         name="Slack",
         authorize_url="https://slack.com/oauth/v2/authorize",
         token_url="https://slack.com/api/oauth.v2.access",  # noqa: S106 — token ENDPOINT URL, not a secret
+        console_url="https://api.slack.com/apps",
         default_scopes=("users:read",),
         device_url=None,
         uses_pkce=True,

@@ -233,11 +233,16 @@ export async function render(view, query = {}) {
       const connect = el("button", { class: "btn small primary" }, "connect");
       connect.disabled = !(p.configured && d.public_url_set);
       connect.onclick = () => startConnect(p.id, acct.value.trim());
+      // Straight link to where you create the OAuth app for this provider (its dev console).
+      const consoleLink = p.console_url
+        ? el("a", { href: p.console_url, target: "_blank", rel: "noopener", class: "small",
+            "data-provider-link": p.id, title: `create the ${p.name} OAuth app` }, "create app ↗")
+        : null;
       const status = p.configured
         ? el("span", { class: "small", style: "color:var(--ok)" }, "✓ app configured")
         : el("span", { class: "small", style: "color:var(--warn)" }, `set ${p.client_id_key} + secret in Secrets`);
       connBox.append(el("div", { class: "row", style: "margin:4px 0", "data-provider": p.id },
-        el("span", { style: "width:90px;font-weight:600" }, p.name), status, acct, connect));
+        el("span", { style: "width:82px;font-weight:600" }, p.name), consoleLink, status, acct, connect));
     }
     if (!d.public_url_set)
       connBox.append(el("div", { class: "muted small mt" }, "set the redirect URL above to enable connecting"));

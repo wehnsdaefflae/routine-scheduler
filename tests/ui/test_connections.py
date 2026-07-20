@@ -20,6 +20,9 @@ def test_connections_card(ui, ui_page, monkeypatch):
     notion = ui_page.locator('[data-provider="notion"]')
     expect(notion).to_contain_text("Notion")
     expect(notion).to_contain_text("app configured")
+    # a straight link to where you create the OAuth app
+    expect(ui_page.locator('[data-provider-link="notion"]')).to_have_attribute(
+        "href", "https://www.notion.so/my-integrations")
     expect(ui_page.locator("[data-conn-empty]")).to_contain_text("none yet")
     # connect is gated on the redirect URL (not set yet)
     expect(notion.get_by_role("button", name="connect")).to_be_disabled()

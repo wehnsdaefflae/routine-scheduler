@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.78.1] — 2026-07-20
+
+### Added
+- **Settings → Connections: each provider row now links straight to where you create its OAuth
+  app** ("create app ↗" → the provider's dev console: Notion my-integrations, Google Cloud
+  credentials, Slack apps), via a new `console_url` on the provider registry. No more hunting for
+  the right page.
+
 ## [0.78.0] — 2026-07-20
 
 ### Added

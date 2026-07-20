@@ -49,6 +49,7 @@ def test_status_lists_providers(oauth_client):
     assert body["public_url_set"] is True
     notion = next(p for p in body["providers"] if p["id"] == "notion")
     assert notion["configured"] is True          # creds set in the fixture
+    assert notion["console_url"] == "https://www.notion.so/my-integrations"
     assert body["connections"] == []
 
 
