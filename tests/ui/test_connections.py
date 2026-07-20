@@ -29,6 +29,8 @@ def test_connections_card(ui, ui_page, monkeypatch):
     url_row.locator("input").fill("https://host.ts.net")
     url_row.get_by_role("button", name="save").click()
     expect(ui_page.locator("[data-conn-url] input")).to_have_value("https://host.ts.net")
+    # the exact callback to register is derived + shown (no guessing the /oauth/callback path)
+    expect(ui_page.locator("[data-conn-callback]")).to_have_text("https://host.ts.net/oauth/callback")
     expect(ui_page.locator('[data-provider="notion"]').get_by_role(
         "button", name="connect")).to_be_enabled()
 

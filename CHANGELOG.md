@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.77.1] — 2026-07-20
+
+### Fixed
+- **Settings → Connections: the OAuth base-URL field was mislabeled "Redirect URL"**, which invited
+  pasting the full `…/oauth/callback` (doubling the path). Renamed to **"Public URL"** with a
+  "base, not a path" note, and the card now derives + shows the exact callback
+  (`<public_url>/oauth/callback`) to register in the provider, with a copy button.
+
 ## [0.77.0] — 2026-07-20
 
 ### Added

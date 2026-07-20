@@ -51,10 +51,10 @@ OAuth has two halves that live in different places, because a routine run is hea
 1. **Create a Notion integration** (a *public* OAuth integration) at notion.so/my-integrations;
    note its client id + secret and its redirect URI requirement.
 2. **Settings → Secrets**: set `NOTION_OAUTH_CLIENT_ID` and `NOTION_OAUTH_CLIENT_SECRET`.
-3. **Settings → Connections → Redirect URL**: set the instance's external https URL (e.g. a
-   Tailscale Serve URL — the redirect is browser-side, so tailnet-reachable is enough). Register
-   `<that>/oauth/callback` as the integration's redirect URI. This is persisted as `public_url` in
-   config.yaml.
+3. **Settings → Connections → Public URL**: set the instance's external https BASE url (e.g. a
+   Tailscale Serve URL — the redirect is browser-side, so tailnet-reachable is enough) — the base,
+   not a path. The card then shows the exact callback (`<that>/oauth/callback`) to register as the
+   integration's redirect URI. This base is persisted as `public_url` in config.yaml.
 4. **Connect**: enter an account label (e.g. `personal`), click *connect*, consent in the new tab.
    The connection appears under "Connected accounts".
 5. **Bind it**: on a routine's page, *Connections* → pick the account for the provider → save. The

@@ -194,19 +194,30 @@ export async function render(view, query = {}) {
       setTimeout(tick, 2000);
     }
 
-    // Redirect URL (public_url) — the provider callback target, needed before any connect.
-    const urlIn = el("input", { type: "text", placeholder: "https://<host>.ts.net", style: "flex:1", value: d.public_url || "" });
+    // Public URL (public_url) — the BASE the provider redirects back to; the callback is derived
+    // (this field is the base, NOT the callback path — the app appends /oauth/callback itself).
+    const urlIn = el("input", { type: "text", placeholder: "https://host.ts.net", style: "flex:1", value: d.public_url || "" });
     const urlSave = el("button", { class: "btn small" }, "save");
     urlSave.onclick = async () => {
-      try { await api("/api/settings/oauth/public-url", { method: "PUT", body: { public_url: urlIn.value.trim() } }); toast("redirect URL saved"); renderConnections(); }
+      try { await api("/api/settings/oauth/public-url", { method: "PUT", body: { public_url: urlIn.value.trim() } }); toast("public URL saved"); renderConnections(); }
       catch (err) { toast(err.message, 5000, { error: true }); }
     };
+    const callbackLine = el("div", { class: "small mt" });
+    if (d.public_url) {
+      const cb = `${d.public_url.replace(/\/+$/, "")}/oauth/callback`;
+      callbackLine.append(
+        el("span", { class: "muted" }, "Register this exact callback in each provider's OAuth app: "),
+        el("code", { "data-conn-callback": "", style: "user-select:all" }, cb),
+        el("button", { class: "btn small", style: "margin-left:8px",
+          onclick: () => { navigator.clipboard?.writeText(cb); toast("callback URL copied"); } }, "copy"));
+    }
     connBox.append(
-      el("div", { class: "mt small", style: "font-weight:600" }, "Redirect URL"),
+      el("div", { class: "mt small", style: "font-weight:600" }, "Public URL"),
       el("div", { class: "muted small" },
-        "Your instance's external https URL (e.g. a Tailscale Serve URL). Register ",
-        el("code", {}, "<this>/oauth/callback"), " in each provider's OAuth app."),
-      el("div", { class: "row mt", "data-conn-url": "" }, urlIn, urlSave));
+        "Your instance's external https BASE url (e.g. your Tailscale Serve URL) — the base, ",
+        "not a path. Providers redirect back to ", el("code", {}, "<this>/oauth/callback"), "."),
+      el("div", { class: "row mt", "data-conn-url": "" }, urlIn, urlSave),
+      callbackLine);
 
     // Providers — connect a new account (disabled until the redirect URL + the app creds are set).
     connBox.append(el("div", { class: "mt small", style: "font-weight:600" }, "Providers"));
