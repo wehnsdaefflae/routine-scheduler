@@ -329,7 +329,62 @@ export async function render(view, query = {}) {
         toast(`${key} saved`); keyIn.value = ""; valIn.value = ""; renderSecrets();
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
-    secBox.append(el("div", { class: "row mt" }, keyIn, valIn, save));
+    // show/hide the value while typing — a JSON map is unreadable when masked
+    const showVal = el("button", { class: "btn small", type: "button" }, "show");
+    showVal.onclick = () => {
+      const masked = valIn.type === "password";
+      valIn.type = masked ? "text" : "password";
+      showVal.textContent = masked ? "hide" : "show";
+    };
+    secBox.append(el("div", { class: "row mt" }, keyIn, valIn, showVal, save));
+
+    // -- multi-entry (JSON-map) secrets: manage one entry at a time -----------------------
+    // The store never returns values, so you extend a map secret (e.g. FTP_SOURCES) by adding a
+    // single entry — the other entries' values are never shown or re-typed.
+    const maps = s.maps || {};
+    secBox.append(el("div", { class: "mt small", style: "font-weight:600" }, "Multi-entry secrets (JSON maps)"));
+    const mapKeys = Object.keys(maps);
+    if (mapKeys.length) {
+      for (const k of mapKeys) {
+        const chips = maps[k].map((name) => {
+          const x = el("button", { class: "btn small danger", title: `delete ${name}` }, `${name} ✕`);
+          x.onclick = async () => {
+            if (!(await confirmDialog(`Delete entry “${name}” from ${k}?`, { confirmLabel: "delete" }))) return;
+            try { await api(`/api/settings/secrets/${encodeURIComponent(k)}/entry/${encodeURIComponent(name)}`, { method: "DELETE" }); renderSecrets(); }
+            catch (err) { toast(err.message, 4000, { error: true }); }
+          };
+          return x;
+        });
+        secBox.append(el("div", { class: "row", style: "margin:4px 0;flex-wrap:wrap", "data-map": k },
+          el("span", { class: "mono small", style: "min-width:130px" }, k), ...chips));
+      }
+    } else {
+      secBox.append(el("div", { class: "muted small" }, "none yet — add an entry below to start one (e.g. FTP_SOURCES)"));
+    }
+    const mKey = el("input", { type: "text", placeholder: "secret (e.g. FTP_SOURCES)", style: "flex:1", list: "secret-names", "data-map-entry": "key" });
+    const mName = el("input", { type: "text", placeholder: "entry name (e.g. grantsforbina)", style: "flex:1", "data-map-entry": "name" });
+    const mVal = el("textarea", { placeholder: '{"host": "…", "user": "…", "pass": "…"}', rows: "3", style: "width:100%;font-size:12px", "data-map-entry": "value" });
+    const mSave = el("button", { class: "btn small primary" }, "add / replace entry");
+    mSave.onclick = async () => {
+      const key = mKey.value.trim(), name = mName.value.trim();
+      if (!key || !name) { toast("enter a secret and an entry name"); return; }
+      let value;
+      try { value = JSON.parse(mVal.value); }
+      catch { toast("the entry value must be valid JSON", 4000, { error: true }); return; }
+      if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        toast('the entry value must be a JSON object, e.g. {"host": …}', 4000, { error: true }); return;
+      }
+      try {
+        await api(`/api/settings/secrets/${encodeURIComponent(key)}/entry`, { method: "PUT", body: { name, value } });
+        toast(`${key} · ${name} saved`); mName.value = ""; mVal.value = ""; renderSecrets();
+      } catch (err) { toast(err.message, 5000, { error: true }); }
+    };
+    secBox.append(
+      el("datalist", { id: "secret-names" }, ...(s.needed || []).map((n) => el("option", { value: n.key }))),
+      el("div", { class: "muted small mt" }, "Add or replace ONE entry of a JSON-map secret — the other entries stay untouched and their values are never shown."),
+      el("div", { class: "row mt" }, mKey, mName),
+      el("div", { class: "mt" }, mVal),
+      el("div", { class: "row mt" }, mSave));
   }
   const secretsReady = renderSecrets();
 

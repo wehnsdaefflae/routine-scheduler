@@ -21,3 +21,14 @@ def test_needed_secret_shows_format(ui, ui_page):
     fmt.wait_for(timeout=10_000)
     fmt.locator("summary").click()
     expect(fmt).to_contain_text("host, user, pass")     # the format hint from the util docstring
+
+
+def test_map_secret_entry_editor(ui, ui_page):
+    """Add an entry to a JSON-map secret via the UI — it appears as a chip, values never shown."""
+    ui_page.goto(f"{ui.url}/#/settings?section=secrets")
+    ui_page.wait_for_selector('[data-map-entry="key"]', timeout=10_000)
+    ui_page.locator('[data-map-entry="key"]').fill("FTP_SOURCES")
+    ui_page.locator('[data-map-entry="name"]').fill("acme")
+    ui_page.locator('[data-map-entry="value"]').fill('{"host": "h", "user": "u", "pass": "p"}')
+    ui_page.get_by_role("button", name="add / replace entry").click()
+    expect(ui_page.locator('[data-map="FTP_SOURCES"]')).to_contain_text("acme")

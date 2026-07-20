@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.79.0] — 2026-07-20
+
+### Added
+- **Settings → Secrets: manage multi-entry (JSON-map) secrets one entry at a time.** A secret whose
+  value is a JSON object (e.g. `FTP_SOURCES` holding several FTP servers) can be extended without
+  re-typing the whole write-only blob: the card lists the entry NAMES (never the values) with a
+  per-entry delete, and an "add / replace entry" form merges a single entry SERVER-side (the other
+  entries' values are never returned). New endpoints `PUT /settings/secrets/{key}/entry` and
+  `DELETE /settings/secrets/{key}/entry/{name}`; the listing gained a `maps` field. Plus a
+  show/hide toggle on the secret-value field, since a JSON map is unreadable when masked.
+
 ## [0.78.4] — 2026-07-20
 
 ### Added
