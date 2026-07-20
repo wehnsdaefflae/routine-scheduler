@@ -241,6 +241,20 @@ def test_header_problems_gate():
     bad_net = GOOD_UTIL.replace("net: none\n", "net: sometimes\n")
     assert any("net:" in p for p in header_problems(bad_net))
     assert header_problems(GOOD_UTIL.replace("net: none\n", "net: outbound\n")) == []
+    # grouped read (the `ftp` pattern): names in a tuple looped over os.environ — the
+    # credential-shaped one must be declared even though it never appears at an environ[...] site.
+    grouped = (
+        "# /// script\n# dependencies = []\n# ///\n"
+        '"""grp — grouped-read util.\n\n'
+        "usage: gu grp\ncalls: (none)\ntags: test\nnet: outbound\n"
+        '"""\n'
+        "import os\n"
+        '_KEYS = ("FTP_HOST", "FTP_USER", "FTP_PASS", "FTP_PORT")\n'
+        "cfg = {k: os.environ.get(k) for k in _KEYS}\n"
+    )
+    assert any("FTP_PASS" in p for p in header_problems(grouped)), header_problems(grouped)
+    declared_grp = grouped.replace("tags: test\n", "secrets: FTP_PASS\ntags: test\n")
+    assert header_problems(declared_grp) == []
 
 
 def test_parse_header_net_and_calls():

@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.78.2] — 2026-07-20
+
+### Fixed
+- **The "declare the credential env vars you read" util gate had a blind spot** (`utils_lib.
+  _secrets_read`): it caught direct literals (`os.environ["X_TOKEN"]`) and single-constant
+  indirection (the `gu claude` `TOKEN_VAR = "…"` pattern) but **not a tuple/list of names looped
+  over `os.environ`** — `KEYS = ("A_PASS", …); for k in KEYS: os.environ.get(k)`. So the `ftp`
+  util shipped without declaring `FTP_PASS`, which the sandbox then silently scrubbed from a
+  routine's util subprocess (its FTP creds never arrived). The gate now resolves grouped
+  tuple/list constants; a full library sweep found `ftp` was the only offender (its `secrets:`
+  line is fixed in the utils library). Credentials set in Settings → Secrets now reach the util.
+
 ## [0.78.1] — 2026-07-20
 
 ### Added

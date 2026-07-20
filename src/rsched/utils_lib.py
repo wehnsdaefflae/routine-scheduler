@@ -188,29 +188,44 @@ def parse_header(src: str) -> dict:
 
 # env-var names that smell like credentials — used by header_problems to catch a util that
 # reads a secret it never declared (the Settings page can only prompt for DECLARED secrets,
-# and the sandbox injects only declared ones). Two read shapes are detected:
+# and the sandbox injects only declared ones). Three read shapes are detected:
 #   direct    — os.environ["NAME"] / os.environ.get("NAME") / os.getenv("NAME")
 #   indirect  — VAR = "NAME"  then  os.environ[VAR] / os.getenv(VAR)  (the `gu claude`
 #               pattern: TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"; a var-keyed read alone can't
 #               name the secret, so we resolve module-level string-literal constants)
+#   grouped   — KEYS = ("A_PASS", "B_TOKEN", …)  then  for k in KEYS: os.environ.get(k)
+#               (the `ftp` pattern: a loop var over a tuple/list of names — when the env key is
+#               a var we cannot pin to ONE literal, every credential-shaped name grouped in a
+#               module-level tuple/list counts as read; err toward "declare it")
 _ENV_READ = r"""os\.(?:environ(?:\.get\(|\[)|getenv\()\s*"""
 _SECRETISH = re.compile(_ENV_READ + r"""["']([A-Z][A-Z0-9_]*)["']""")
 _ENV_VAR_KEY = re.compile(_ENV_READ + r"""([A-Za-z_][A-Za-z0-9_]*)\b""")
 _CONST_ASSIGN = re.compile(r"""^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*["']([A-Z][A-Z0-9_]*)["']""",
                            re.MULTILINE)
+_GROUP_ASSIGN = re.compile(r"""^\s*[A-Za-z_][A-Za-z0-9_]*\s*=\s*[(\[]([^)\]]*)[)\]]""",
+                           re.MULTILINE)
+_LITERAL = re.compile(r"""["']([A-Z][A-Z0-9_]*)["']""")
 _SECRET_HINT = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL)S?$")
 
 
 def _secrets_read(content: str) -> set[str]:
-    """Credential-shaped env var NAMES the code reads — directly, or indirectly through a
-    module-level string constant used as an environ key.
+    """Credential-shaped env var NAMES the code reads — directly, indirectly through a
+    module-level string constant, or (when the env key is a variable we can't pin to one
+    literal, e.g. a loop var) any credential-shaped name grouped in a tuple/list constant.
     """
     used = {v for v in _SECRETISH.findall(content) if _SECRET_HINT.search(v)}
     consts = dict(_CONST_ASSIGN.findall(content))
-    for var in _ENV_VAR_KEY.findall(content):
+    var_keys = _ENV_VAR_KEY.findall(content)
+    for var in var_keys:
         literal = consts.get(var)
         if literal and _SECRET_HINT.search(literal):
             used.add(literal)
+    # A var-keyed env read that resolves to no single constant (a loop over a tuple of names):
+    # count every credential-shaped literal grouped in a module-level tuple/list, since we can't
+    # tell which one the loop touches. Only triggers when such an unresolved read exists.
+    if any(var not in consts for var in var_keys):
+        for group in _GROUP_ASSIGN.findall(content):
+            used |= {lit for lit in _LITERAL.findall(group) if _SECRET_HINT.search(lit)}
     return used
 
 
