@@ -147,7 +147,7 @@ def _ctx(home, grants=None):
     from types import SimpleNamespace
     return SimpleNamespace(server=SimpleNamespace(utils_home=home, sandbox="off"),
                            routine=SimpleNamespace(dir=home, fs_read_roots=[],
-                                                   fs_write_roots=[]),
+                                                   fs_write_roots=[], connections={}),
                            grants=grants,
                            count_util=lambda *a, **k: None)
 
