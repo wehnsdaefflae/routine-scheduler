@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.76.3] — 2026-07-20
+
+### Changed
+- **`ruff check` and `mypy` now run inside pytest (`tests/test_quality.py`), so the one gate the
+  engine actually enforces covers them.** CLAUDE.md requires both green on the FULL repo every
+  commit and relies on pre-commit — but the daemon commits programmatically (git hooks bypassed),
+  pre-commit is not installed on the deployment, and self-audit's only hard gate is `pytest-run`.
+  The F97 external audit found the tree had been RED (11 ruff + 8 mypy errors from the Jul-19
+  toolchain bump, ruff 0.15.21 / mypy 2.3.0) across 0.72–0.76 with every commit sailing over it,
+  because a run only lints the files it changed. Running the two gates as tests means a red
+  full-repo can never be committed silently again — a red suite reverts, and the checks also cover
+  the live tree's pending edits. Skips cleanly in a minimal env without the dev tools; the commit
+  gate always has them. (Companion to the same audit's 0.76.2 fixes.)
+
 ## [0.76.2] — 2026-07-20
 
 ### Fixed
