@@ -196,7 +196,10 @@ export async function render(view, query = {}) {
 
     // Public URL (public_url) — the BASE the provider redirects back to; the callback is derived
     // (this field is the base, NOT the callback path — the app appends /oauth/callback itself).
-    const urlIn = el("input", { type: "text", placeholder: "https://host.ts.net", style: "flex:1", value: d.public_url || "" });
+    // Pre-fill from THIS browser's origin (the URL you reached the console at) when it's https and
+    // nothing is saved yet — so you almost never have to type it.
+    const originGuess = location.origin.startsWith("https://") ? location.origin : "";
+    const urlIn = el("input", { type: "text", placeholder: "https://host.ts.net", style: "flex:1", value: d.public_url || originGuess });
     const urlSave = el("button", { class: "btn small" }, "save");
     urlSave.onclick = async () => {
       try { await api("/api/settings/oauth/public-url", { method: "PUT", body: { public_url: urlIn.value.trim() } }); toast("public URL saved"); renderConnections(); }
@@ -217,6 +220,10 @@ export async function render(view, query = {}) {
         "Your instance's external https BASE url (e.g. your Tailscale Serve URL) — the base, ",
         "not a path. Providers redirect back to ", el("code", {}, "<this>/oauth/callback"), "."),
       el("div", { class: "row mt", "data-conn-url": "" }, urlIn, urlSave),
+      (!d.public_url && originGuess)
+        ? el("div", { class: "muted small mt" }, "Pre-filled from this browser's address (",
+            el("code", {}, originGuess), ") — click save to use it.")
+        : null,
       callbackLine);
 
     // Providers — connect a new account (disabled until the redirect URL + the app creds are set).

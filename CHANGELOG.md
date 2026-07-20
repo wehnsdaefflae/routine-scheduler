@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.78.0] — 2026-07-20
+
+### Added
+- **A sticky side table-of-contents on long pages** (`static/components/toc.js`): on wide viewports
+  a fixed rail parks in the right margin (mirroring the run/conversation rails, same 1560px
+  breakpoint), listing the view's `<h2>` sections with click-to-scroll and the in-view section
+  highlighted. Mounted generically by the router for any view with ≥2 headings; skipped on views
+  that already carry their own rail/nav. Hidden below 1560px.
+
+### Changed
+- **Settings → Connections: the Public URL field now pre-fills from the browser's origin** (when
+  it's https and nothing is saved), so you rarely type it — the URL you reached the console at is
+  the redirect base you want.
+
 ## [0.77.1] — 2026-07-20
 
 ### Fixed

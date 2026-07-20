@@ -10,6 +10,7 @@ import { el, fmtTs, skeleton, startTimeTicker, storage, toast } from "/static/ut
 import { initNotifications } from "/static/notify.js";
 import { initTaskManager } from "/static/components/taskmanager.js";
 import { initSearchBox } from "/static/components/searchbox.js";
+import { mountToc } from "/static/components/toc.js";
 
 installTracing();
 installFormPersistence();
@@ -58,7 +59,13 @@ async function route() {
       const td = (await mod.render(box, ...m.slice(1), query)) || null;
       // Superseded mid-render: the container is detached — release the view's listeners now.
       if (token !== navToken) { try { td?.(); } catch { /* already gone */ } return; }
-      teardown = td;
+      // A sticky side TOC of the view's sections (best-effort; no-op on short/rail'd views).
+      let tocCleanup = null;
+      try { tocCleanup = mountToc(box); } catch { /* toc is a nicety, never fatal */ }
+      teardown = () => {
+        try { td?.(); } catch { /* view already gone */ }
+        try { tocCleanup?.(); } catch { /* toc already gone */ }
+      };
     } catch (err) {
       if (token !== navToken) return;
       box.replaceChildren(el("div", { class: "empty" },

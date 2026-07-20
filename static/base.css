@@ -498,3 +498,26 @@ input[type=time], input[type=number] { width: auto; }
 @media (max-width: 860px) {
   #llm-tasks { right: 12px; bottom: 12px; }
 }
+
+/* Side table-of-contents (components/toc.js): parks in the right margin on wide viewports, like
+   the run/conversation rails; hidden below the same 1560px breakpoint (no margin to park in). */
+.side-toc { display: none; }
+@media (min-width: 1560px) {
+  .side-toc {
+    display: flex; flex-direction: column; gap: 1px;
+    position: fixed; top: 96px; right: 18px; bottom: 90px;
+    width: calc((100vw - 1180px) / 2 - 40px); max-width: 240px;
+    overflow-y: auto; z-index: 5; padding-left: 12px; border-left: 1px solid var(--line);
+  }
+  .side-toc-cap {
+    color: var(--faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+    margin-bottom: 6px;
+  }
+  .side-toc .toc-link {
+    color: var(--muted); font-size: 12.5px; line-height: 1.5; text-decoration: none; cursor: pointer;
+    padding: 2px 8px; border-radius: 6px; border-left: 2px solid transparent;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .side-toc .toc-link:hover { color: var(--text); background: var(--surface-2); }
+  .side-toc .toc-link.on { color: var(--amber); border-left-color: var(--amber); }
+}
