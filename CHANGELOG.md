@@ -19,6 +19,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.76.2] — 2026-07-20
+
+### Fixed
+- **F97, actually fixed — the util-stats snapshot dir was never writable in the container,
+  and the four-release chase (0.68.0–0.68.3) diagnosed the wrong `~/.local`.** External audit
+  on the host (reviewer-reserved for 2026-07-20) settled it: the snapshot file
+  (`~/.local/state/routine-scheduler/util-stats.json`) has **never existed** — not on the host,
+  not in the container. The daemon runs as uid 1000 in Docker, and the container's
+  `/home/mark/.local` is `root:root`: the entrypoint (`deploy/docker-entrypoint.sh`, run as
+  root) does `mkdir -p ~/.local/share/routine-scheduler-libraries` for that bind mount —
+  creating `~/.local` + `~/.local/share` as root — then chowns only the *leaf* to `mark`, so
+  `~/.local` and `~/.local/state` stay root-owned and the writer's `mkdir(~/.local/state/
+  routine-scheduler)` raises `PermissionError` (reproduced: `docker exec -u 1000 rsched mkdir -p
+  …/state/…` → *Permission denied*). The 0.68.3 fix chowned the **host's** `~/.local`, which is
+  irrelevant — `~/.local/state` is not a bind mount, so the daemon writes into the container's
+  own root-owned tree; and the routine's "stale mount-namespace" note was a misdiagnosis (the
+  `util-stats` util's 404 was correct — the file genuinely was absent). Fix: add
+  `~/.local/state` to the entrypoint's chown loop, so the uid-1000 daemon can create any XDG
+  state subdir it needs (now and for future consumers). Takes effect on image rebuild +
+  container recreate.
+- **A cleanly-finishing engine subprocess's WARNING/ERROR logs no longer vanish — the reason
+  F97 hid for four releases.** The daemon spawns each `engine-run` with `stdout=DEVNULL,
+  stderr=PIPE` and only surfaced that stderr on a *crash* (`_reap`), so the 0.68.1/0.68.3
+  snapshot-write breadcrumb — emitted by the engine on a successful finish — was silently
+  dropped ("never silent again" was still silent). `_reap` now re-emits a tail of any
+  WARNING/ERROR/CRITICAL/traceback lines (new pure `_notable_stderr` helper, tail-capped so a
+  chatty run can't flood the log) into the daemon log (→ `docker logs`), so a persistent
+  non-fatal failure is diagnosable from the outside. Unit + integration tested
+  (`tests/test_scheduler.py`).
+
 ## [0.76.1] — 2026-07-20
 
 ### Fixed

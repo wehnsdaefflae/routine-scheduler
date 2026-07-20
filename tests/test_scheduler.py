@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 
 import rsched.daemon.runner as runner_mod
@@ -9,7 +10,7 @@ import rsched.daemon.scheduler as sched_mod
 from rsched.config import ServerConfig, load_routine
 from rsched.daemon.events import EventBus
 from rsched.daemon.registry import read_run, scan
-from rsched.daemon.runner import Runner
+from rsched.daemon.runner import Runner, _notable_stderr
 from rsched.daemon.scheduler import Scheduler
 from rsched.engine.transcript import read_events
 from rsched.paths import atomic_write_json, read_json
@@ -202,3 +203,36 @@ def test_recover_orphans(make_routine, tmp_path):
     assert fixed == 1
     info = read_run(run_dir, "orphan")
     assert info.state == "failed" and "orphaned" in info.summary
+
+
+def test_notable_stderr_extracts_only_warnings_and_errors():
+    # Info/debug chatter is dropped; WARNING/ERROR/CRITICAL/traceback lines are kept, tail-first.
+    assert _notable_stderr(b"") == ""
+    assert _notable_stderr(b"2026 rsched INFO run_started\n2026 rsched INFO run_finished") == ""
+    out = _notable_stderr(b"2026 rsched INFO ok\n"
+                          b"2026 rsched.util_stats WARNING snapshot write to /x failed: boom\n"
+                          b"2026 rsched INFO more")
+    assert "WARNING" in out and "snapshot write to /x failed" in out and "INFO" not in out
+    assert "Traceback (most recent call last)" in _notable_stderr(
+        b"Traceback (most recent call last):\n  File ...\nValueError: x")
+    # A chatty run can't flood the log: only the tail of notable lines is kept.
+    flood = b"\n".join(f"2026 rsched ERROR e{i}".encode() for i in range(50))
+    kept = _notable_stderr(flood, max_lines=12)
+    assert kept.count("ERROR") == 12 and "e49" in kept and "e0 " not in kept
+
+
+async def test_reap_surfaces_clean_exit_diagnostics(make_routine, tmp_path, monkeypatch, caplog):
+    # A run that finishes cleanly but logged a WARNING (stdout is DEVNULL, stderr otherwise
+    # dropped) must still leave that line in the daemon log — the F97 breadcrumb that vanished.
+    d = make_routine(slug="warner")
+    cfg, _ = load_routine(d)
+    _stub_engine(monkeypatch,
+                 'printf \'{"state": "finished", "pid": 1}\' > runs/{TS}/status.json.tmp '
+                 '&& mv runs/{TS}/status.json.tmp runs/{TS}/status.json '
+                 '&& echo "2026 rsched.util_stats WARNING util-stats snapshot write failed: boom" 1>&2')
+    runner = Runner(_server(tmp_path), EventBus())
+    with caplog.at_level(logging.WARNING, logger="rsched.runner"):
+        await runner.fire(cfg)
+        assert await _wait_for(lambda: not runner.is_active("warner"))
+    surfaced = [r.getMessage() for r in caplog.records if "finished but logged" in r.getMessage()]
+    assert surfaced and "util-stats snapshot write failed" in surfaced[0]

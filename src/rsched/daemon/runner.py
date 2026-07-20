@@ -12,6 +12,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import signal
 import sys
 from dataclasses import dataclass
@@ -27,6 +28,23 @@ from .events import EventBus
 from .llm_tailer import tail_llm_sidecar
 
 log = logging.getLogger("rsched.runner")
+
+# WARNING/ERROR/CRITICAL/traceback markers in an engine subprocess's stderr. The engine's
+# stdout is DEVNULL and its stderr is only surfaced by _reap on a CRASH — so a non-fatal
+# diagnostic logged by a cleanly-finishing run (e.g. the util-stats snapshot write breadcrumb,
+# F97) was silently dropped. _notable_stderr lets _reap re-emit just those lines.
+_NOTABLE_RE = re.compile(r"\b(?:WARNING|ERROR|CRITICAL)\b|Traceback \(most recent call last\)")
+
+
+def _notable_stderr(stderr: bytes, *, max_lines: int = 12, max_chars: int = 800) -> str:
+    """A compact tail of the WARNING/ERROR/CRITICAL/traceback lines in captured stderr, or
+    "" when the subprocess logged nothing notable. Keeps only the tail so a chatty run can
+    never flood the daemon log, while a real, repeating failure stays visible every run.
+    """
+    hits = [ln.strip() for ln in stderr.decode("utf-8", "replace").splitlines()
+            if _NOTABLE_RE.search(ln)]
+    return " | ".join(hits[-max_lines:])[-max_chars:] if hits else ""
+
 
 KILL_GRACE_S = 10
 STATUS_POLL_S = 2.0
@@ -268,6 +286,15 @@ class Runner:
                             f"engine exited rc={rc} without a finish "
                             f"({stderr.decode('utf-8', 'replace')[-400:].strip() or 'no stderr'})")
             info = registry.read_run(run.run_dir, run.slug)
+        else:
+            # Clean finish: stdout was DEVNULL and stderr is otherwise dropped here, so a
+            # non-fatal WARNING/ERROR the engine logged (e.g. a persistent telemetry-write
+            # failure like F97) would vanish. Re-emit just those lines into the daemon log
+            # (→ docker logs) so a silent, repeating failure is diagnosable.
+            notable = _notable_stderr(stderr)
+            if notable:
+                log.warning("engine-run routine=%s run=%s finished but logged: %s",
+                            run.slug, run.run_id, notable)
         if self.center is not None:
             self.center.close_process(
                 run.run_id,
