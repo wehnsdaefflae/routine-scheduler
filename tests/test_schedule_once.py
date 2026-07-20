@@ -219,14 +219,14 @@ def test_handle_schedule_run_arms_then_cancels(tmp_path):
     _routine(server, slug="target-r")
     loop = _loop(server, run_id="self-audit:20260719-103133")
     obs = handle_schedule_run(loop, {"target": "target-r", "fire_at": "+3d",
-                                     "reason": "re-check"}, 0.0)
+                                     "reason": "re-check"})
     assert obs["armed"].startswith("so-")
     armed = schedule_once.pending_requests(server.routines_home, "target-r")
     assert len(armed) == 1
     rec = schedule_once.read_request(armed[0])
     assert rec["requested_by"] == "self-audit:20260719-103133" and rec["reason"] == "re-check"
     obs2 = handle_schedule_run(loop, {"target": "target-r", "cancel": True,
-                                      "id": obs["armed"]}, 0.0)
+                                      "id": obs["armed"]})
     assert obs2["cancelled"] == 1
     assert schedule_once.pending_requests(server.routines_home, "target-r") == []
 
@@ -236,17 +236,17 @@ def test_handle_schedule_run_unknown_target_and_bad_fire_at(tmp_path):
     _routine(server, slug="target-r")
     loop = _loop(server)
     ghost = handle_schedule_run(loop, {"target": "ghost", "fire_at": "+3d",
-                                       "reason": "g"}, 0.0)
+                                       "reason": "g"})
     assert ghost["unknown_target"]
     # discoverability (the train-seat friction): the valid sibling slugs come back so a
     # scheduling routine isn't left blind-guessing a slug.
     assert "target-r" in ghost["valid_targets"]
     # a near-miss slug yields a close-match suggestion
     near = handle_schedule_run(loop, {"target": "target-x", "fire_at": "+3d",
-                                      "reason": "g"}, 0.0)
+                                      "reason": "g"})
     assert near["unknown_target"] and "target-r" in near["suggestions"]
     bad = handle_schedule_run(loop, {"target": "target-r", "fire_at": "yesterday",
-                                     "reason": "g"}, 0.0)
+                                     "reason": "g"})
     assert "bad_fire_at" in bad
     assert schedule_once.pending_requests(server.routines_home, "target-r") == []
 

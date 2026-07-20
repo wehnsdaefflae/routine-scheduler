@@ -104,6 +104,7 @@ ignore = [
     "S110",    # best-effort try/except/pass seams (same reason as BLE001)
     "TC001", "TC002", "TC003",  # TYPE_CHECKING import gymnastics hurt readability, help nothing here
     "PERF203", # try/except in loops is the retry pattern
+    "ASYNC240", # daemon calls fast local-FS methods (Path.unlink etc.) directly in async handlers by design; local FS is not offloaded to threads (cf. atomic_write_json in the same coroutines)
     "RUF001", "RUF002", "RUF003",  # unicode arrows/dashes in prose strings are intentional
     "PLW2901", # loop-var reassignment used deliberately in normalize passes
     "SLF001",  # private-member access across sibling modules is deliberate at engine seams
