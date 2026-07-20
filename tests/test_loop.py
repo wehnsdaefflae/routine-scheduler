@@ -229,6 +229,26 @@ def test_resume_rehydrates_and_continues(make_routine, scripted):
     assert st["usage"]["in"] == 40 and st["usage"]["out"] == 20
 
 
+def test_resume_preserves_cumulative_counters(make_routine, scripted):
+    """A resumed leg keeps the per-run telemetry counters cumulative (like usage), not reset
+    to its own tally: status.json's util histogram survives a finish→reopen (F131/F132). Leg 1
+    records a util call; the resumed leg makes none, yet the leg-1 histogram must still be in
+    the final status.json (reseeded from the prior status.json on boot)."""
+    d = make_routine(slug="ctr")
+    scripted([util("ghostutil"), finish(summary="leg one")])   # missing util → utils histogram
+    status1, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status1 == "ok"
+    st1 = read_json(run_dir / "status.json")
+    assert st1["utils"].get("ghostutil", {}).get("missing") == 1   # leg 1 recorded it
+
+    scripted([write_file("state/more.txt", content="more"), finish(summary="leg two")])
+    status2, run_dir2 = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    assert status2 == "ok" and run_dir2 == run_dir
+    st2 = read_json(run_dir / "status.json")
+    # the resumed leg called no util, yet the leg-1 histogram is preserved rather than zeroed
+    assert st2["utils"].get("ghostutil", {}).get("missing") == 1
+
+
 def test_converse_resume_delivers_message_and_allows_immediate_refinish(make_routine, scripted):
     """Continuing a FINISHED run (web converse): the waiting inbox message arrives as a visible
     user_injection AFTER the continued-conversation note — not as a system-prompt section — and

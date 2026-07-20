@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.76.1] — 2026-07-20
+
+### Fixed
+- **A resumed run reset its per-run telemetry counters to the resumed leg's own tally
+  (self-audit F131/F132; bug report from routine-improver 2026-07-20).** A finish→reopen (an
+  operator message injected after an authored finish) starts a fresh `RunContext`, and `boot`
+  rehydrated the token-spend base, grounding set, and turn base from the transcript — but NOT
+  the cumulative counters mirrored to `status.json` and the finish event. So a reopened run's
+  `status.json` showed `utils: {}` and `asks_deferred: 0` (plus `schema_retries` /
+  `schema_forcefails` / `referrals`) despite the pre-finish leg's real activity — e.g.
+  global-utils-review 2026-07-19 recorded four real util calls yet reported an empty util
+  histogram, nearly tripping a false finish-claim-of-unperformed-work flag. Fix: on resume,
+  `boot` reseeds these counters from the prior leg's `status.json` (the run dir is reused
+  across legs) before the first `write_status` overwrites the file — the same
+  cumulative-across-legs guarantee `usage_base` already gives token spend. The GLOBAL
+  util-stats snapshot was always correct (it is transcript-derived); this repairs only the
+  per-run `status.json` and finish event. New `history.prior_counters` helper (unit-tested) +
+  a resume integration test.
+
 ## [0.76.0] — 2026-07-19
 
 ### Fixed

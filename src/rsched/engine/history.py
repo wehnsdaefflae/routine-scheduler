@@ -277,3 +277,33 @@ def seen_paths(events: list[dict]) -> list[str]:
         elif kind in ("write_file", "edit_file") and p.get("path") and not p.get("error"):
             out.append(str(p["path"]))
     return out
+
+
+# Cumulative per-run telemetry counters mirrored to status.json (RunContext.write_status) and
+# the finish/workflow-usage record. Tokens and turns already carry a resume base (usage_base /
+# budget_base_turn); these did NOT, so a resumed leg reset them to its own tally — a
+# finish→reopen showed utils:{} + asks_deferred:0 despite the pre-finish leg's real activity
+# (F131/F132). The GLOBAL util-stats snapshot is transcript-derived and was always correct;
+# this only repairs the per-run status.json + finish event.
+_RESUME_COUNTER_FIELDS = ("asks_deferred", "schema_retries", "schema_forcefails", "referrals")
+
+
+def prior_counters(status: dict) -> dict:
+    """Cumulative telemetry counters to reseed onto the RunContext on RESUME, read from the
+    prior leg's status.json (the run dir is reused across legs). Keeps status.json and the
+    finish event cumulative across legs — like usage_base for tokens — instead of resetting
+    the util histogram and the integer counters to the resumed leg's own tally. Returns a
+    dict of {RunContext attribute: value}; missing or malformed fields are skipped, and the
+    util cells are deep-copied so mutating the live ctx never writes back into the read dict.
+    """
+    out: dict = {}
+    utils = status.get("utils")
+    if isinstance(utils, dict):
+        cells = {k: dict(v) for k, v in utils.items() if isinstance(v, dict)}
+        if cells:
+            out["util_stats"] = cells
+    for fld in _RESUME_COUNTER_FIELDS:
+        val = status.get(fld)
+        if isinstance(val, int) and not isinstance(val, bool):
+            out[fld] = val
+    return out

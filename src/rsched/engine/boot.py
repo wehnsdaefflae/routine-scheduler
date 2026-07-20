@@ -10,11 +10,22 @@ from ..paths import read_json, resolve_rel
 from . import executor, inbox
 from .composer import build_system_prompt, kickoff_message, state_digest
 from .control import inject_user_message, run_user_command
-from .history import orphaned_children, prior_usage, replay_messages, seen_paths
+from .history import (orphaned_children, prior_counters, prior_usage, replay_messages,
+                      seen_paths)
 
 
 def boot(loop) -> None:
     ctx = loop.ctx
+    if loop.resume and ctx.depth == 0:
+        # The run dir is reused across resume legs, so status.json still holds the prior
+        # leg's final cumulative telemetry. Reseed it onto the fresh ctx BEFORE the
+        # write_status("starting") below overwrites the file — otherwise a finish→reopen
+        # resets the util histogram and the integer counters to this leg's own tally
+        # (F131/F132), the way usage_base already keeps token spend cumulative.
+        prior = read_json(ctx.run_dir / "status.json")
+        if isinstance(prior, dict):
+            for attr, val in prior_counters(prior).items():
+                setattr(ctx, attr, val)
     ctx.write_status("starting")
     if ctx.depth == 0:
         deferred_qa = inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir)
