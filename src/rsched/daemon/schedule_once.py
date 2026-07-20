@@ -102,7 +102,7 @@ class OneShotManager:
                           {"text": _fire_text(rec), "ts": now_iso(), "via": "schedule_once"})
         rid = await self.runner.fire(info.cfg, reason="schedule_once")
         # auto-deactivate = consume: the armed file is gone, nothing can re-fire it
-        path.unlink(missing_ok=True)
+        path.unlink(missing_ok=True)  # noqa: ASYNC240 — fast local-FS unlink; the daemon does sync FS I/O in async by design
         now = now_iso()
         state = schedule_once.read_state(self.home, slug)
         state.update(last_fired=now, fires=int(state.get("fires") or 0) + 1)

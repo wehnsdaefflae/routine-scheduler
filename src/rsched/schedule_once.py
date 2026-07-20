@@ -28,11 +28,10 @@ from __future__ import annotations
 
 import re
 import uuid
-from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from .ids import now_iso, run_ts
+from .ids import now_iso
 from .paths import atomic_write_json, read_json
 
 # A relative fire-at like "+3d" / "+2h" / "+30m" / "+45s" — the common "re-check in N" case.
@@ -163,7 +162,7 @@ def describe(routines_home: Path, slug: str) -> dict:
                           "requested_by": str(r.get("requested_by") or ""),
                           "created": str(r.get("created") or ""),
                           "expires_at": r.get("expires_at")})
-    armed.sort(key=lambda a: a["fire_at"])
+    armed.sort(key=lambda a: str(a["fire_at"]))
     state = read_state(routines_home, slug)
     return {"armed": armed,
             "last_fired": str(state.get("last_fired") or ""),

@@ -10,8 +10,7 @@ from ..paths import read_json, resolve_rel
 from . import executor, inbox
 from .composer import build_system_prompt, kickoff_message, state_digest
 from .control import inject_user_message, run_user_command
-from .history import (orphaned_children, prior_counters, prior_usage, replay_messages,
-                      seen_paths)
+from .history import orphaned_children, prior_counters, prior_usage, replay_messages, seen_paths
 
 
 def boot(loop) -> None:

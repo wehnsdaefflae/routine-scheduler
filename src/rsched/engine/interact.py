@@ -236,7 +236,7 @@ def handle_remove_util(loop, action: dict, poll_s: float) -> dict:
     return {"kind": "remove_util", "name": name, "removed": True}
 
 
-def handle_schedule_run(loop, action: dict, poll_s: float) -> dict:
+def handle_schedule_run(loop, action: dict, poll_s: float) -> dict:  # noqa: ARG001 — uniform dispatch-handler signature (loop, action, poll_s); poll_s unused here
     """Arm or cancel a one-shot time trigger on a routine — the cross-routine setter the
     `scheduling` capability gates. The engine writes the request spool un-sandboxed (like
     write_util's library write); the daemon's OneShotManager fires the request once at

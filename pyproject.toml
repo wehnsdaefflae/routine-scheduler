@@ -123,6 +123,7 @@ ignore = [
     "PT018",   # composite asserts read as one assertion of one fact; pytest introspection shows parts
 ]
 "src/rsched/cli.py" = ["T201"]  # print IS the CLI's output surface
+"src/rsched/engine/composer.py" = ["S608"]  # prompt f-strings contain SQL-like words; this file builds prompts, never SQL
 
 [tool.ruff.lint.mccabe]
 max-complexity = 22  # ratchet: current worst (engine loop); lower as refactors land

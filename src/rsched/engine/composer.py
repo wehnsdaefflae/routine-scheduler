@@ -321,11 +321,12 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
         "# EXAMPLE of a valid reply\n" + json.dumps(example_action(), indent=1),
         "# WORKFLOW (the control flow you follow)\n" + workflow_body.strip(),
     ]
-    # A top-level ROUTINE's task is its self-contained recipe (main.md + stages/), so no instruction
-    # is placed in the prompt — the seed isn't even persisted. A SUBRUN has no decomposed stages —
-    # its instruction IS the parent's self-contained brief, so it stays in the prompt. A CONVERSATION
-    # runs at depth 0 but its task IS its first message (instruction.md), so it carries the section
-    # too (without it the agent never sees its task — only the converse HOW-to pattern).
+    # A top-level ROUTINE's task is its self-contained recipe (main.md + stages/), so no
+    # instruction is placed in the prompt — the seed isn't even persisted. A SUBRUN has no
+    # decomposed stages — its instruction IS the parent's self-contained brief, so it stays
+    # in the prompt. A CONVERSATION runs at depth 0 but its task IS its first message
+    # (instruction.md), so it carries the section too (without it the agent never sees its
+    # task — only the converse HOW-to pattern).
     if ctx.depth > 0 or (_is_conversation(ctx) and instruction.strip()):
         sections.append("# INSTRUCTION (your assigned task)\n" + instruction.strip())
     sections.append("# CAPABILITIES (what this run can actually use)\n"

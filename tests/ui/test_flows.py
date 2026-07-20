@@ -935,7 +935,6 @@ def test_audit_detail_renders_markdown(ui, ui_page):
     2026-07-18): static/views/audit.js never imported md.js, so finding/decision block
     markdown (lists, `code`, tables) showed as raw text — the same gap F104 fixed on the
     Decisions page. Ref-links (F/D mentions) must still work through the md() output."""
-    import re
 
     rdir = ui.routines / "self-audit"
     (rdir / "audit").mkdir(parents=True)

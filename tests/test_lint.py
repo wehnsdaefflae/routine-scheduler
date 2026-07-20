@@ -344,7 +344,7 @@ def test_cmd_lint_libraries_home_skips_server_config(tmp_path, monkeypatch):
     """
     from types import SimpleNamespace
 
-    import rsched.cli as cli
+    from rsched import cli
 
     def _boom(*a, **k):
         raise AssertionError("load_server_config must not run when --libraries-home is given")

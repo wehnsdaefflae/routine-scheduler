@@ -29,7 +29,7 @@ def _read_map(server) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _latest(info) -> object | None:
+def _latest(info) -> registry.RunInfo | None:
     """The run whose finish message we surface: the newest run that actually carries a
     summary (a still-running or summary-less run is not a 'latest finish message'), falling
     back to the newest run of any state so a fresh routine still shows a row.

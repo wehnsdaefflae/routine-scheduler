@@ -40,7 +40,7 @@ def test_schedule_once_card_renders_and_cancels(ui, ui_page):
 def test_schedule_once_arm_from_ui(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
     expect(ui_page.locator(".oneshot-body")).to_contain_text("no one-shot armed")
-    when_local = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M")
+    when_local = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M")  # noqa: DTZ005 — naive local time is exactly what the datetime-local UI input expects
     ui_page.locator("input.oneshot-at").fill(when_local)
     ui_page.locator("input.oneshot-reason").fill("from the ui")
     ui_page.get_by_role("button", name="arm one-shot").click()

@@ -25,7 +25,6 @@ from .actions import BRIEF_FIELD
 from .autocommit import autocommit as _autocommit
 from .boot import boot
 from .completion import MAX_SCHEMA_ATTEMPTS, next_action
-from .finish_guard import unbacked_action_claims
 from .control import (
     _ABORT,
     RunAborted,
@@ -36,6 +35,7 @@ from .control import (
     pause_gate,
     request_abort,
 )
+from .finish_guard import unbacked_action_claims
 from .observations import format_observation
 from .run_context import RunContext
 from .subruns import SubrunManager
