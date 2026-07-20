@@ -135,10 +135,13 @@ def test_needed_secrets_excludes_connection_tokens(oauth_client):
         "secrets: NOTION_ACCESS_TOKEN, NOTION_TOKEN, FTP_SOURCES\n"
         "tags: test\nnet: outbound\n"
         '"""\n', encoding="utf-8")
-    needed = {n["key"] for n in client.get("/api/settings/secrets").json()["needed"]}
-    assert "NOTION_ACCESS_TOKEN" not in needed        # engine-injected from a connection, not user-set
-    assert "NOTION_TOKEN" in needed                   # the static-token alternative IS user-set
-    assert "FTP_SOURCES" in needed
+    entries = {n["key"]: n for n in client.get("/api/settings/secrets").json()["needed"]}
+    assert "NOTION_ACCESS_TOKEN" not in entries       # engine-injected from a connection, not user-set
+    assert "NOTION_TOKEN" in entries                  # the static-token alternative IS user-set
+    assert "FTP_SOURCES" in entries
+    # the declaring util's usage + doc ride along so the UI can show the secret's format
+    assert entries["FTP_SOURCES"]["doc"]
+    assert "connu" in entries["FTP_SOURCES"]["usage"]
 
 
 def test_set_public_url_validates(oauth_client):

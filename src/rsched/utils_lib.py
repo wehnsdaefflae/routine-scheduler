@@ -183,7 +183,7 @@ def parse_header(src: str) -> dict:
     net_line = next((ln for ln in lines if ln.lower().startswith("net:")), "")
     net = net_line[len("net:"):].strip().lower() if net_line else ""
     return {"summary": summary, "usage": usage, "tags": tags, "secrets": secrets,
-            "calls": calls, "net": net}
+            "calls": calls, "net": net, "doc": doc}
 
 
 # env-var names that smell like credentials — used by header_problems to catch a util that

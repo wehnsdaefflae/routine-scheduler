@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.78.4] — 2026-07-20
+
+### Added
+- **Settings → Secrets now shows each needed secret's FORMAT.** A "format / help" expander per
+  entry reveals the declaring util's `usage:` + docstring, so a structured secret's shape (e.g.
+  `FTP_SOURCES` is a JSON map `{name: {host, user, pass, port?, tls?, dir?}}`) is discoverable
+  right where you set it — not only in the util source. `utils_lib.parse_header` now returns the
+  docstring; the needed-secrets API carries the declaring util's usage + doc.
+
 ## [0.78.3] — 2026-07-20
 
 ### Fixed

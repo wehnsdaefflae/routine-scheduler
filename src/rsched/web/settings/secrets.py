@@ -25,13 +25,21 @@ def list_secrets(request: Request) -> dict:
     # a connection), so it must not appear as a needed store secret.
     injected = connection_token_vars()
     # which env vars do the installed utils declare they need, and are they set yet?
+    utils = utils_lib.list_utils(server_of(request).utils_home)
+    by_name = {u["name"]: u for u in utils}
     declared: dict[str, list[str]] = {}
-    for u in utils_lib.list_utils(server_of(request).utils_home):
+    for u in utils:
         for var in u.get("secrets", []):
             if var.upper() in injected:
                 continue
             declared.setdefault(var, []).append(u["name"])
-    needed = [{"key": k, "utils": us, "set": k in have} for k, us in sorted(declared.items())]
+    # Carry the declaring util's usage + docstring so the UI can show the expected FORMAT of a
+    # structured secret (e.g. FTP_SOURCES is a JSON map) right where the user sets it.
+    needed = []
+    for k, us in sorted(declared.items()):
+        primary = by_name.get(us[0], {})
+        needed.append({"key": k, "utils": us, "set": k in have,
+                       "usage": primary.get("usage", ""), "doc": primary.get("doc", "")})
     return {"keys": sorted(have), "needed": needed, "path": str(secret_store.secrets_path())}
 
 

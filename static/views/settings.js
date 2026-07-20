@@ -292,8 +292,16 @@ export async function render(view, query = {}) {
         el("table", { class: "list" }, el("tbody", {}, s.needed.map((n) => {
           const setBtn = el("button", { class: "btn small" }, n.set ? "replace" : "set");
           setBtn.onclick = () => { keyIn.value = n.key; valIn.value = ""; valIn.focus(); };
+          // The declaring util's usage + docstring — shows the expected FORMAT of a structured
+          // secret (e.g. FTP_SOURCES's JSON shape) right where you set it.
+          const fmt = (n.doc || n.usage)
+            ? el("details", { class: "small", "data-secret-fmt": n.key },
+                el("summary", { class: "muted", style: "cursor:pointer" }, "format / help"),
+                el("pre", { style: "white-space:pre-wrap;font-size:11px;margin:4px 0;padding:6px 8px;background:var(--ink);border:1px solid var(--line);border-radius:6px" },
+                  [n.usage, n.doc].filter(Boolean).join("\n\n")))
+            : null;
           return el("tr", {},
-            el("td", {}, n.key),
+            el("td", {}, el("div", { class: "mono" }, n.key), fmt),
             el("td", { class: "small", style: `color:${n.set ? "var(--ok)" : "var(--warn)"}` }, n.set ? "✓ set" : "unset"),
             el("td", { class: "muted small" }, n.utils.join(", ")),
             el("td", {}, n.set ? delBtn(n.key) : setBtn));
