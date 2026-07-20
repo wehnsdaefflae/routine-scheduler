@@ -38,3 +38,10 @@ def test_client_creds_from_secrets():
 def test_creds_secret_keys():
     assert providers.creds_secret_keys("notion") == (
         "NOTION_OAUTH_CLIENT_ID", "NOTION_OAUTH_CLIENT_SECRET")
+
+
+def test_connection_token_vars():
+    assert providers.access_token_var("notion") == "NOTION_ACCESS_TOKEN"
+    every = providers.connection_token_vars()
+    assert "NOTION_ACCESS_TOKEN" in every
+    assert every == {f"{pid.upper()}_ACCESS_TOKEN" for pid in providers.provider_ids()}

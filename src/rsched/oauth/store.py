@@ -11,6 +11,7 @@ import threading
 from dataclasses import asdict, dataclass, field
 
 from ..paths import atomic_write_json, config_file, read_json
+from .providers import access_token_var
 
 CONNECTIONS_FILE = "connections.json"
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")   # provider id + account label shape
@@ -121,7 +122,7 @@ def tokens_for_routine(connections: dict[str, str]) -> tuple[dict[str, str], lis
         elif conn.needs_reauth or not conn.access_token:
             warnings.append(f"{provider}:{account} needs re-authorization")
         else:
-            env[f"{provider.upper()}_ACCESS_TOKEN"] = conn.access_token
+            env[access_token_var(provider)] = conn.access_token
     return env, warnings
 
 

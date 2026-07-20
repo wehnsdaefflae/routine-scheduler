@@ -18,11 +18,18 @@ router = APIRouter()
 @router.get("/settings/secrets")
 def list_secrets(request: Request) -> dict:
     from ... import utils_lib
+    from ...oauth.providers import connection_token_vars
     have = set(secret_store.secret_keys())
+    # A util declares an OAuth connection's access token (e.g. NOTION_ACCESS_TOKEN) only so the
+    # sandbox lets the ENGINE-injected token through — the user never SETS it (it comes from binding
+    # a connection), so it must not appear as a needed store secret.
+    injected = connection_token_vars()
     # which env vars do the installed utils declare they need, and are they set yet?
     declared: dict[str, list[str]] = {}
     for u in utils_lib.list_utils(server_of(request).utils_home):
         for var in u.get("secrets", []):
+            if var.upper() in injected:
+                continue
             declared.setdefault(var, []).append(u["name"])
     needed = [{"key": k, "utils": us, "set": k in have} for k, us in sorted(declared.items())]
     return {"keys": sorted(have), "needed": needed, "path": str(secret_store.secrets_path())}

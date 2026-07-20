@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.78.3] — 2026-07-20
+
+### Fixed
+- **Settings → Secrets no longer lists OAuth connection tokens (e.g. `NOTION_ACCESS_TOKEN`) as
+  "needed" secrets.** A util declares them only so the sandbox lets the ENGINE-injected token
+  through — the user never *sets* them (they come from binding a connection on a routine), so
+  prompting for them was misleading. The needed-secrets list now excludes every provider's
+  `<PROVIDER>_ACCESS_TOKEN` (`oauth.providers.connection_token_vars`, now also the single source
+  for that injected-var name, used by `store.tokens_for_routine` too).
+
 ## [0.78.2] — 2026-07-20
 
 ### Fixed

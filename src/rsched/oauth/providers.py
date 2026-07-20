@@ -108,3 +108,15 @@ def creds_secret_keys(provider_id: str) -> tuple[str, str]:
     """The two Secrets-store key names a provider's OAuth app credentials use (for the UI)."""
     prefix = provider_id.upper()
     return f"{prefix}_OAUTH_CLIENT_ID", f"{prefix}_OAUTH_CLIENT_SECRET"
+
+
+def access_token_var(provider_id: str) -> str:
+    """The env var a bound connection's access token is injected into for a util."""
+    return f"{provider_id.upper()}_ACCESS_TOKEN"
+
+
+def connection_token_vars() -> set[str]:
+    """Every provider's access-token env var — these are ENGINE-INJECTED from a connection, so the
+    Settings 'needed secrets' list must not prompt for them as user-set store secrets.
+    """
+    return {access_token_var(pid) for pid in provider_ids()}

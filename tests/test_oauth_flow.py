@@ -124,6 +124,23 @@ def test_delete_connection(oauth_client, monkeypatch):
     assert client.delete("/api/settings/oauth/notion/acme").status_code == 404
 
 
+def test_needed_secrets_excludes_connection_tokens(oauth_client):
+    client, tmp_path = oauth_client
+    util = tmp_path / "library" / "utils" / "connu" / "main.py"
+    util.parent.mkdir(parents=True, exist_ok=True)
+    util.write_text(
+        "# /// script\n# dependencies = []\n# ///\n"
+        '"""connu — util needing tokens.\n\n'
+        "usage: gu connu\ncalls: (none)\n"
+        "secrets: NOTION_ACCESS_TOKEN, NOTION_TOKEN, FTP_SOURCES\n"
+        "tags: test\nnet: outbound\n"
+        '"""\n', encoding="utf-8")
+    needed = {n["key"] for n in client.get("/api/settings/secrets").json()["needed"]}
+    assert "NOTION_ACCESS_TOKEN" not in needed        # engine-injected from a connection, not user-set
+    assert "NOTION_TOKEN" in needed                   # the static-token alternative IS user-set
+    assert "FTP_SOURCES" in needed
+
+
 def test_set_public_url_validates(oauth_client):
     client, _ = oauth_client
     assert client.put("/api/settings/oauth/public-url",
