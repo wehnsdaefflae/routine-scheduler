@@ -21,6 +21,7 @@ from ..ids import now_iso
 from . import registry, restart
 from .detached import DetachedManager
 from .events import EventBus
+from .oauth_refresh import OAuthRefreshManager
 from .runner import Runner
 from .schedule_once import OneShotManager
 from .triggers import TriggerManager
@@ -54,6 +55,9 @@ class Scheduler:
         # One-shot time triggers: a request spool the web layer / the schedule_run action arm;
         # this manager fires each due request ONCE then consumes it (see daemon/schedule_once.py).
         self.oneshots = OneShotManager(server, runner)
+        # OAuth token upkeep: refresh expiring connections before they lapse so a run always
+        # reads a live token (a no-op for non-expiring providers). See daemon/oauth_refresh.py.
+        self.oauth = OAuthRefreshManager(server)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
         # In-flight new-routine wizard builds (wids), registered by api_wizard.finalize and
@@ -133,6 +137,8 @@ class Scheduler:
             await self.triggers.tick(self.catalog)
             # one-shot time triggers: due requests → a single fire, then consumed
             await self.oneshots.tick(self.catalog)
+            # OAuth token upkeep: refresh expiring connections nearing their deadline
+            await self.oauth.tick()
 
     def _fire_library_sync(self) -> None:
         """Run the sync off-loop (git talks to the network); one at a time — an overrun

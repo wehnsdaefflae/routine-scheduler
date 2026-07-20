@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from . import endpoints, github, library, library_sync, restart, secrets, source
+from . import endpoints, github, library, library_sync, oauth, restart, secrets, source
 
 router = APIRouter(tags=["settings"])
-for _mod in (endpoints, library, library_sync, source, github, secrets, restart):
+for _mod in (endpoints, library, library_sync, source, github, oauth, secrets, restart):
     router.include_router(_mod.router)

@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.77.0] — 2026-07-20
+
+### Added
+- **OAuth connections** (docs/oauth-connections.md): connect an external service account (Notion
+  first) via OAuth in the web UI, and a routine acts on its behalf headlessly. A connection is a
+  RESOURCE binding (routine.yaml `connections:` provider→account, like `models:`), never a
+  capability. Consent + refresh run in the daemon/web process; a run only READS a short-lived
+  access token from disk (the engine↔daemon boundary is filesystem-only).
+  - `oauth/providers.py` — provider registry (Notion implemented: auth-code + PKCE, long-lived
+    token, no device flow; Google/Slack scaffolds; app creds in the Secrets store as
+    `<PROVIDER>_OAUTH_CLIENT_ID`/`_OAUTH_CLIENT_SECRET`). `oauth/store.py` — the daemon-owned
+    `connections.json` (0600, single writer + lock, metadata-only listing).
+  - `web/settings/oauth.py` + a PUBLIC `GET /oauth/callback` (bearer-exempt like the webhook route;
+    the per-flow `state` + PKCE-S256 are the guards) + a Settings → Connections card. New
+    `ServerConfig.public_url` builds the redirect URI (e.g. a Tailscale Serve https URL).
+  - `daemon/oauth_refresh.py` — `OAuthRefreshManager` refreshes expiring tokens on the scheduler
+    tick, persists refresh-token rotation, flags `needs_reauth` + notifies on rejection (a no-op
+    for non-expiring providers like Notion).
+  - Engine injection: a routine's bound connections reach a util as `<PROVIDER>_ACCESS_TOKEN` via
+    `run_util(extra_secrets=…)` / `_child_env`, but ONLY if the util declares the var — the
+    declared-only sandbox invariant, extended to engine-provided tokens. The `notion` global util
+    was revised to read `NOTION_ACCESS_TOKEN`.
+
 ## [0.76.3] — 2026-07-20
 
 ### Changed

@@ -14,6 +14,7 @@ import json
 from .. import sandbox, utils_lib
 from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, EndpointError, guess_media_type
 from ..ids import is_slug
+from ..oauth import store as oauth_store
 from ..paths import resolve_rel
 from ..statemap import STAGES_DIR
 from .observations import truncate
@@ -28,6 +29,17 @@ USAGE_ERROR_EXIT = 2
 VISION_UTIL = "vision"
 VIEW_DEFAULT_PROMPT = ("Describe this file in full detail — transcribe any text verbatim and "
                        "note structure, data, and notable visual elements.")
+
+
+def _connection_env(ctx: RunContext) -> dict[str, str]:
+    """The routine's bound OAuth connections resolved to {<PROVIDER>_ACCESS_TOKEN: token}, passed
+    to run_util as extra_secrets. A util only sees a token it declares AND the routine binds; a
+    missing / needs-reauth binding is simply absent (the util then fails for want of a token).
+    """
+    if not ctx.routine.connections:
+        return {}
+    env, _warnings = oauth_store.tokens_for_routine(ctx.routine.connections)
+    return env
 
 
 def do_util(action: dict, ctx: RunContext) -> dict:
@@ -69,7 +81,8 @@ def do_util(action: dict, ctx: RunContext) -> dict:
                 "available": [u["name"] for u in utils_lib.list_utils(home)]}
     code, out, err = utils_lib.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
-        policy=sandbox.policy_for_run(ctx.server, ctx.routine))
+        policy=sandbox.policy_for_run(ctx.server, ctx.routine),
+        extra_secrets=_connection_env(ctx))
     # Per-util reliability telemetry (util_stats → the Stats tab).
     ctx.count_util(name, "ok" if code == 0
                    else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))

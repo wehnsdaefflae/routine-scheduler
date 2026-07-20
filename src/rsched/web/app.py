@@ -168,6 +168,10 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
     # parties call it, so the per-trigger URL token is the auth (constant-time compare,
     # rate-limited, size-capped — see api_hooks), never the global bearer.
     app.include_router(api_hooks.hooks_router, prefix="/api")
+    # The OAuth provider redirect target — also unauthenticated (a browser redirect carries no
+    # bearer), guarded instead by the unguessable per-flow `state`. Mounted at /oauth/callback
+    # (NOT under /api), like the index/static routes.
+    app.include_router(settings.oauth.callback_router)
 
 
 def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = True) -> FastAPI:

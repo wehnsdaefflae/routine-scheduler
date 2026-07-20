@@ -330,16 +330,20 @@ def util_needs(home: Path, name: str) -> tuple[set[str], bool]:
     return secrets, net
 
 
-def _child_env(home: Path, name: str) -> dict:
+def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = None) -> dict:
     """A util subprocess's environment: the central secrets store injects ONLY the vars the
     util (or a `calls:` sibling) declares; every other store key is scrubbed even when the
     daemon's own environment carries it — an undeclared secret must not reach the child by
     any route. STRIP_VARS (LLM keys) are removed unconditionally, declared or not.
+
+    `extra_secrets` are non-store secrets the engine resolves per run — today a routine's OAuth
+    connection access tokens (<PROVIDER>_ACCESS_TOKEN). They obey the SAME rule: injected only if
+    the util declares the var, scrubbed otherwise — the declared-only invariant covers them too.
     """
     from .secrets import load_secrets
     declared, _ = util_needs(home, name)
     env = {**os.environ}
-    for key, value in load_secrets().items():
+    for key, value in {**load_secrets(), **(extra_secrets or {})}.items():
         if key.upper() in declared:
             env[key] = value
         else:
@@ -350,11 +354,13 @@ def _child_env(home: Path, name: str) -> dict:
 
 
 def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
-             policy: sandbox.SandboxPolicy) -> tuple[int, str, str]:
+             policy: sandbox.SandboxPolicy,
+             extra_secrets: dict[str, str] | None = None) -> tuple[int, str, str]:
     """Controlled runner: only a named util from THIS library, uv-run, scoped env (declared
-    secrets only), library root on PATH (so the util can call siblings via `gu`), inside the
-    Landlock jail `policy` + the util's own `net:` declaration describe (sandbox.wrap; the
-    server `sandbox:` mode decides strict/permissive/off). Returns (exit, out, err).
+    secrets only, plus any `extra_secrets` the engine resolved for this run — same declared-only
+    rule), library root on PATH (so the util can call siblings via `gu`), inside the Landlock jail
+    `policy` + the util's own `net:` declaration describe (sandbox.wrap; the server `sandbox:` mode
+    decides strict/permissive/off). Returns (exit, out, err).
     """
     if not is_slug(name):
         return 2, "", f"invalid util name {name!r}"
@@ -362,7 +368,7 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
         return 2, "", f"no util named {name!r} (available: {[u['name'] for u in list_utils(home)]})"
     if not shutil.which("uv"):
         return 2, "", "uv is required to run utils but is not on PATH"
-    env = _child_env(home, name)
+    env = _child_env(home, name, extra_secrets)
     env["PATH"] = f"{home}:{env.get('PATH', '')}"
     # Point the `gu` dispatcher (on PATH, for sibling calls) at THIS library, so a util that
     # shells out to `gu <sibling>` always resolves siblings here.

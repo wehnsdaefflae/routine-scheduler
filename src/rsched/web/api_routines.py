@@ -217,6 +217,9 @@ def routine_detail(request: Request, slug: str) -> dict:
         "models": {k: (info.cfg.models.get(k) or None) for k in MODEL_KINDS},
         "catalog": list(server.models.keys()),
         "system_model": server.system_model or None,
+        # OAuth connection bindings {provider: account}; the picker's options come from
+        # GET /api/settings/oauth (the connected accounts).
+        "connections": dict(info.cfg.connections),
         "deliberation": info.cfg.deliberation,
         # event triggers (webhook now): config rows + fire ledger + hook URL paths — the
         # Triggers card renders these; CRUD lives in api_hooks
@@ -409,6 +412,7 @@ class RoutinePatch(BaseModel):
     schedule: dict | None = None            # {"friendly": {...}} — converted to cron server-side
     budgets: dict | None = None
     models: dict | None = None              # {main|subroutine|tool_call|uncensored: catalog name}
+    connections: dict | None = None         # {provider: account-label} OAuth connection bindings
     name: str | None = None
     description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
@@ -434,6 +438,17 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
             if not isinstance(name, str) or name not in server.models:
                 raise HTTPException(400, f"models.{kind}: must be a catalog model name")
         raw["models"] = updates.pop("models")
+    # Validate connection bindings: known provider, non-empty account label; REPLACE wholesale
+    # (blanking a provider clears it). Existence of the connection is NOT required — a routine may
+    # bind ahead of connecting; the engine injects nothing until the account is connected.
+    if "connections" in updates:
+        from ..oauth.providers import PROVIDERS
+        for prov, account in (updates["connections"] or {}).items():
+            if prov not in PROVIDERS:
+                raise HTTPException(400, f"unknown connection provider {prov!r}")
+            if not isinstance(account, str) or not account:
+                raise HTTPException(400, f"connections.{prov}: must be an account label")
+        raw["connections"] = updates.pop("connections")
     # deliberation is TUNING, not config — it lands in tuning.yaml (recipe-classed), never
     # in routine.yaml (the user's sealed authority surface).
     if "deliberation" in updates:

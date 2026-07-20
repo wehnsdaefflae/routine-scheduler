@@ -249,6 +249,11 @@ class ServerConfig(_Config):
     source_repo: HomePath = Field(default_factory=lambda: Path(__file__).resolve().parents[2])
     source_remote: BlankableStr = ""     # optional: self-audit's push target for code commits
     github_client_id: BlankableStr = ""  # OAuth client_id for the device flow (default: gh CLI's)
+    # External base URL a browser reaches this instance at (e.g. a Tailscale Serve https URL),
+    # used to build OAuth redirect URIs: f"{public_url}/oauth/callback". NOT derivable from
+    # bind/port (those are the listen address). Empty until set in Settings; the connect flow
+    # refuses to start an auth-code flow without it. See docs/oauth-connections.md.
+    public_url: BlankableStr = ""
     max_concurrent_runs: int = 2
     registry_rescan_s: int = 30
     # Util-subprocess sandbox mode (docs/sandboxing.md): every util runs inside a Landlock
@@ -399,6 +404,11 @@ class RoutineConfig(_Config):
     # falls back to the server system_model. Resolved live via EndpointRegistry, so editing
     # a catalog model updates every routine that names it.
     models: dict[str, str] = Field(default_factory=dict)
+    # OAuth connection bindings: provider id → account label (Settings → Connections). A run bound
+    # here gets that provider's current access token injected into any util that declares it (as
+    # <PROVIDER>_ACCESS_TOKEN). A RESOURCE binding like models/fs_roots — the binding is the grant;
+    # connections are user config, never set by a run. See docs/oauth-connections.md.
+    connections: dict[str, str] = Field(default_factory=dict)
     budgets: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_BUDGETS))
     # The two permission layers (user-changeable only; explicit values win, otherwise a
     # new routine holds the defaults). `permissions` names the held CONDUCT docs (library
@@ -449,7 +459,8 @@ class RoutineConfig(_Config):
             return []
         return [str(t).strip() for t in v if str(t).strip()] if isinstance(v, list) else v
 
-    @field_validator("fs_read_roots", "fs_write_roots", "models", "triggers", mode="before")
+    @field_validator("fs_read_roots", "fs_write_roots", "models", "connections", "triggers",
+                     mode="before")
     @classmethod
     def _none_as_absent(cls, v: object, info: ValidationInfo) -> object:
         # a bare `key:` (YAML null) reads as the FIELD'S OWN empty default ([] or {})
@@ -560,6 +571,11 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     for kind in [k for k in cfg.models if k not in MODEL_KINDS]:
         problems.append(f"models.{kind}: unknown model kind (expected one of {MODEL_KINDS})")
         del cfg.models[kind]
+    from .oauth.providers import PROVIDERS  # function-level: oauth imports secrets, not config
+    for prov in [p for p in cfg.connections if p not in PROVIDERS]:
+        problems.append(
+            f"connections.{prov}: unknown provider (expected one of {sorted(PROVIDERS)})")
+        del cfg.connections[prov]
     for key in [k for k in cfg.budgets if k not in DEFAULT_BUDGETS]:
         problems.append(f"budgets.{key}: unknown budget")
         del cfg.budgets[key]

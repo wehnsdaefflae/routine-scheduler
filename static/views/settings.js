@@ -18,7 +18,8 @@ export async function render(view, query = {}) {
   // Section nav — a visible location indicator within Settings; the active sub-section is in the
   // URL (#/settings?section=endpoints), so a deep link / reload lands on the same section.
   // Endpoints (with the model catalog + system model) leads: it is the first-run critical path.
-  const SECTIONS = [["endpoints", "Endpoints"], ["github", "GitHub"], ["secrets", "Secrets"],
+  const SECTIONS = [["endpoints", "Endpoints"], ["github", "GitHub"],
+                    ["connections", "Connections"], ["secrets", "Secrets"],
                     ["libraries", "Library"], ["library-sync", "Library sync"],
                     ["source", "Source"], ["server", "Server"],
                     ["notifications", "Notifications"]];
@@ -148,6 +149,93 @@ export async function render(view, query = {}) {
     }
   }
   const githubReady = renderGithub();
+
+  // -- OAuth connections (external accounts routines act on behalf of) --------------
+  view.append(sectionHead("connections", "Connections"));
+  const connBox = el("div", { class: "panel" });
+  connBox.append(skeleton(["60%", "85%"]));
+  view.append(connBox);
+  async function renderConnections() {
+    let d;
+    try { d = await api("/api/settings/oauth"); }
+    catch (err) { connBox.replaceChildren(el("div", { class: "muted" }, err.message)); return; }
+    connBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
+      "Connect external accounts (e.g. Notion) via OAuth so routines can act on your behalf. Bind a ",
+      "connection on a routine's page; its access token is injected only into utils that declare it."));
+
+    function disconnectBtn(provider, account) {
+      const b = el("button", { class: "btn small danger" }, "disconnect");
+      b.onclick = async () => {
+        if (!(await confirmDialog(`Disconnect ${provider}:${account}?`, { confirmLabel: "disconnect" }))) return;
+        try { await api(`/api/settings/oauth/${provider}/${encodeURIComponent(account)}`, { method: "DELETE" }); renderConnections(); }
+        catch (err) { toast(err.message, 4000, { error: true }); }
+      };
+      return b;
+    }
+
+    // Auth-code + PKCE: authorize opens in a NEW tab (the provider redirects it to /oauth/callback);
+    // this tab polls the flow until the callback reports connected.
+    async function startConnect(providerId, account) {
+      if (!account) { toast("enter an account label first"); return; }
+      let f;
+      try { f = await api(`/api/settings/oauth/${providerId}/authorize-start`, { method: "POST", body: { account } }); }
+      catch (err) { toast(err.message, 6000, { error: true }); return; }
+      window.open(f.authorize_url, "_blank", "noopener");
+      toast("authorize in the new tab, then return here");
+      const deadline = Date.now() + 600 * 1000;
+      const tick = async () => {
+        if (Date.now() > deadline) return;
+        let p;
+        try { p = await api(`/api/settings/oauth/flow/${f.flow_id}`); } catch { return; }
+        if (p.status === "connected") { toast(`${providerId} connected`); renderConnections(); return; }
+        if (p.status === "error") { toast(`✗ ${p.error || "authorization failed"}`, 6000, { error: true }); return; }
+        setTimeout(tick, 2000);
+      };
+      setTimeout(tick, 2000);
+    }
+
+    // Redirect URL (public_url) — the provider callback target, needed before any connect.
+    const urlIn = el("input", { type: "text", placeholder: "https://<host>.ts.net", style: "flex:1", value: d.public_url || "" });
+    const urlSave = el("button", { class: "btn small" }, "save");
+    urlSave.onclick = async () => {
+      try { await api("/api/settings/oauth/public-url", { method: "PUT", body: { public_url: urlIn.value.trim() } }); toast("redirect URL saved"); renderConnections(); }
+      catch (err) { toast(err.message, 5000, { error: true }); }
+    };
+    connBox.append(
+      el("div", { class: "mt small", style: "font-weight:600" }, "Redirect URL"),
+      el("div", { class: "muted small" },
+        "Your instance's external https URL (e.g. a Tailscale Serve URL). Register ",
+        el("code", {}, "<this>/oauth/callback"), " in each provider's OAuth app."),
+      el("div", { class: "row mt", "data-conn-url": "" }, urlIn, urlSave));
+
+    // Providers — connect a new account (disabled until the redirect URL + the app creds are set).
+    connBox.append(el("div", { class: "mt small", style: "font-weight:600" }, "Providers"));
+    for (const p of d.providers) {
+      const acct = el("input", { type: "text", placeholder: "account label", style: "width:150px" });
+      const connect = el("button", { class: "btn small primary" }, "connect");
+      connect.disabled = !(p.configured && d.public_url_set);
+      connect.onclick = () => startConnect(p.id, acct.value.trim());
+      const status = p.configured
+        ? el("span", { class: "small", style: "color:var(--ok)" }, "✓ app configured")
+        : el("span", { class: "small", style: "color:var(--warn)" }, `set ${p.client_id_key} + secret in Secrets`);
+      connBox.append(el("div", { class: "row", style: "margin:4px 0", "data-provider": p.id },
+        el("span", { style: "width:90px;font-weight:600" }, p.name), status, acct, connect));
+    }
+    if (!d.public_url_set)
+      connBox.append(el("div", { class: "muted small mt" }, "set the redirect URL above to enable connecting"));
+
+    // Connected accounts.
+    connBox.append(el("div", { class: "mt small", style: "font-weight:600" }, "Connected accounts"));
+    if (!d.connections.length) connBox.append(el("div", { class: "muted small", "data-conn-empty": "" }, "none yet"));
+    else connBox.append(el("div", { class: "tablewrap" }, el("table", { class: "list" }, el("tbody", {},
+      d.connections.map((c) => el("tr", { "data-conn": `${c.provider}:${c.account}` },
+        el("td", {}, `${c.provider}:${c.account}`),
+        el("td", { class: "muted small" }, c.label || ""),
+        el("td", { class: "small", style: `color:${c.needs_reauth ? "var(--warn)" : "var(--ok)"}` },
+          c.needs_reauth ? "needs re-auth" : "ok"),
+        el("td", {}, disconnectBtn(c.provider, c.account))))))));
+  }
+  const connectionsReady = renderConnections();
 
   // -- central secrets store ------------------------------------------------------
   view.append(sectionHead("secrets", "Secrets"));
@@ -464,7 +552,7 @@ export async function render(view, query = {}) {
   // The section fills load in parallel — every panel was appended above in its final DOM
   // order, so each async render only fills its own box. Wait for all of them before the
   // deep-link jump so the anchor lands on settled heights.
-  await Promise.all([endpointsReady, githubReady, secretsReady, librariesReady,
+  await Promise.all([endpointsReady, githubReady, connectionsReady, secretsReady, librariesReady,
                      librarySyncReady, sourceReady, serverReady]);
 
   // Land on the requested section (deep link / reload). Everything above is now in the DOM, so

@@ -137,6 +137,19 @@ that receives every payload, so a noisy or leaked URL can't burn budget. `imap` 
 `watch_path` trigger types are reserved in the same config shape. See `docs/triggers.md`
 (also on the Help tab).
 
+## OAuth connections
+
+A routine can act against a third-party service (Notion first) on behalf of an external
+account. Connect the account once in **Settings → Connections**: OAuth consent happens in your
+browser and the instance stores the resulting token (the redirect lands on a public
+`/oauth/callback`, guarded by a per-flow `state` + PKCE, so the instance needs to be reachable
+at an https URL — a Tailscale Serve URL is enough). Bind the account on a routine's page
+(`connections:` provider→account, a resource like `models:`); any util that declares the token
+var then receives a fresh access token at run time — injected only under that declared-var +
+bound-connection gate, never sitting in the prompt or a transcript. Expiring tokens are
+refreshed by the daemon before they lapse (a no-op for Notion's long-lived tokens); a lapsed one
+is flagged for re-auth and pinged to you. See `docs/oauth-connections.md` (also on the Help tab).
+
 ## CLI
 
 `uv run rsched --help` — `daemon` (what the service/container runs: scheduler + web in one

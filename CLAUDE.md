@@ -202,12 +202,39 @@ event type) and stamping each turn's `usage.model` with the model that actually 
 status.json (`ctx.main_model`) and spend attribution stay truthful. Chain exhausted → the run
 fails exactly as before; models without `fallbacks` behave exactly as before.
 
+## OAuth connections (oauth/)
+
+A **connection** lets a routine act against a third-party service (Notion first) on behalf of an
+external account. It is a RESOURCE binding like models/fs_roots — the routine.yaml `connections:`
+map (provider → account label) IS the grant; no run creates or changes one, and there is no
+capability layer. **Consent + refresh live in the daemon/web process** (a headless sandboxed run
+can do neither — consent needs a browser, refresh must WRITE the token store); a run only READS a
+short-lived access token from disk (the engine↔daemon boundary is filesystem-only). Pieces:
+`oauth/providers.py` — the provider registry (non-secret endpoints + flags; Notion implemented —
+auth-code + PKCE, long-lived token, no device flow; Google/Slack scaffolds; OAuth app creds in the
+Secrets store as `<PROVIDER>_OAUTH_CLIENT_ID`/`_OAUTH_CLIENT_SECRET`). `oauth/store.py` — the
+daemon-owned connection store (one `connections.json` beside `config.yaml`, keyed
+`<provider>:<account>`, atomic 0600, metadata-only listing, single writer + a lock;
+`tokens_for_routine` maps a routine's bindings → env vars). `web/settings/oauth.py` — the flow:
+`authorize-start` (authed, mints PKCE + `state`) → the user consents → the PUBLIC `GET
+/oauth/callback` (mounted WITHOUT the bearer dep, like `api_hooks.hooks_router` — the unguessable
+per-flow `state` is the CSRF guard) exchanges the code and writes the connection; the new
+`ServerConfig.public_url` (external https URL, e.g. Tailscale Serve) builds the redirect_uri.
+`daemon/oauth_refresh.py` (`OAuthRefreshManager`, ticked by the scheduler like the trigger/detached
+managers) refreshes EXPIRING tokens near expiry, persists rotation, flags `needs_reauth` + notifies
+on rejection — a no-op for non-expiring providers (Notion). **Engine injection**:
+`executor.do_util` resolves the routine's bound connections to `{<PROVIDER>_ACCESS_TOKEN: token}`
+and passes them to `utils_lib.run_util` as `extra_secrets`; `_child_env` injects each ONLY if the
+util declares the var — so a token reaches a util iff the routine binds the connection AND the util
+declares the var (the `notion` util declares `NOTION_ACCESS_TOKEN`). See docs/oauth-connections.md.
+
 ## Routines on disk
 
 A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is NEVER read at run time:
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
-  main / subroutine / tool_call / uncensored),
+  main / subroutine / tool_call / uncensored), `connections:` (provider → account label — OAuth
+  connection bindings, a resource like models; see OAuth connections above),
   `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: {actions, utils,
   confirm, runs, workflows} — both user-changeable only, side by side on the routine page with cascades between
   them; `workflows: catalog|generate` gates in-run pattern drafting for subtasks),
