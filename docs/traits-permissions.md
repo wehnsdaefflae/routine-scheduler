@@ -65,10 +65,34 @@ one is a lint error). The shipped set:
 | `web-research` | verify external facts by searching instead of recalling; provenance discipline |
 | `ledger-discipline` | the append-only LEDGER entry every run writes, and its rotation |
 | `git-checkpoint` | undo points for external project repos (and conversation dirs) the run edits — a checkpoint commit before risky edits and one after, named in the reply; never pushes unless asked |
+| `evidence-discipline` | every reported claim traced to an observation from this run; verified-or-not as a binary, never a confidence score; failure reported as failure |
+| `decision-commitment` | choose an approach and stop re-deciding: act when further lookup wouldn't change the action, revisit only on contradicting evidence, narrate the choice not the survey |
+| `error-recovery` | read a failed observation before reacting to it: state the error, change something material before retrying, treat two failures at one step as "the approach is wrong" |
+| `change-restraint` | the smallest change that does the job: no speculative structure, no compatibility shims, never hardcode past a check, say when the task itself is wrong |
+| `independent-verification` | check work from outside the context that produced it — a mechanical check first, else a `subtask` verifier briefed without your reasoning; self-review is the weakest option |
+| `review-recall` | for review/audit tasks: find first and filter second, label uncertainty instead of omitting, name what you did not cover |
+| `teaching-insights` | explain the reasoning where a human is reading (conversations, reports) — short insights at real decision points, specific to this work; costs output length |
+| `interface-design` | build UI that looks chosen rather than generated: pin the subject first, know the current default looks well enough to avoid them, plan a token system and critique it before coding, spend boldness in one place |
+| `interface-copy` | words as design material — name things by what the reader controls, active voice with a stable vocabulary, errors that explain and direct, one job per element |
+| `test-design` | a test earns its place by failing: name the regression first, assert behaviour not internals, watch it fail once before accepting it |
+| `failure-visibility` | error handling *written into code* — never catch without a reaction, enumerate what a broad catch would swallow, fallbacks are features not safety nets, stubs never ship |
 
 The first four are the routine `DEFAULT_TRAITS`. `git-checkpoint` is **not** a routine default —
 the wizard preselects it for repo-editing tasks, and it is a standing default for **conversations**
 (see the Conversations guide).
+
+The eleven below `git-checkpoint` are the **curated practice set** — distilled from Anthropic's
+prompt-engineering guidance, the Claude Code plugins (their skills and prompt-snippet references as
+well as the output-style hooks), OpenAI's agent prompting guide, and the self-correction and
+verification literature (see the reasoning notes in
+[`docs/curated-traits.md`](curated-traits.md)). None is a default: each is opt-in per routine, and
+a trait that is off contributes nothing at all — the whole point of keeping practice prose in
+selectable modules rather than one always-on block. Deliberately **not** included, because the
+evidence is against them or the harness already covers them: "double-check your own work" (unaided
+self-correction breaks about as many correct answers as it fixes — hence `independent-verification`
+instead), "don't be sycophantic" (measured as the least effective mitigation tested), numeric
+confidence scores (verbalized confidence is systematically overconfident), and parallel tool calls
+(architecturally impossible under one action per turn).
 
 Improvement passes are deliberately NOT traits anymore: the bundled **routine-improver**
 meta routine sweeps every routine that doesn't set `improve: false` in its

@@ -460,7 +460,15 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   path routines and conversations share) — the routine's own files from then on, never toggled.
   The routine defaults (`DEFAULT_TRAITS`): `ask-policy / global-utils / web-research / ledger-discipline`;
   plus `git-checkpoint` (external-repo undo points — a conversations default, wizard-preselected for
-  repo-editing routines, NOT a routine default). The five **after-run improvement passes** (bugfix /
+  repo-editing routines, NOT a routine default). Beside them the **curated practice set** —
+  `evidence-discipline / decision-commitment / error-recovery / change-restraint /
+  independent-verification / review-recall / teaching-insights / interface-design /
+  interface-copy / test-design / failure-visibility` — distilled from external
+  prompt-engineering guidance and the self-correction literature; NONE is a default, each is opt-in
+  per routine (the trait IS the on/off switch — off contributes nothing), and
+  docs/curated-traits.md records each one's provenance, its evidence strength, and the candidates
+  REJECTED on evidence (self-critique, anti-sycophancy prose, numeric confidence) so the set grows
+  on observed failures rather than folklore. The five **after-run improvement passes** (bugfix /
   research / features / UI / efficiency) are NOT traits — the **routine-improver** meta routine owns
   them and sweeps every routine (honoring `improve: false`). `DEFAULT_TRAITS` (config) is the no-LLM
   fallback selection.

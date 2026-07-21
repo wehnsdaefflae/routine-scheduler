@@ -19,6 +19,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.80.0] — 2026-07-21
+
+### Added
+- **A curated practice-trait set in the library** — eleven new opt-in traits distilled from
+  Anthropic's prompt-engineering guidance, the Claude Code plugins (skills and prompt-snippet
+  references as well as the output-style hooks), OpenAI's agent prompting guide, and the
+  self-correction/verification literature:
+  `evidence-discipline` (every reported claim traced to an observation; verified-or-not as a
+  binary, never a confidence score), `decision-commitment` (choose and stop re-deciding),
+  `error-recovery` (read a failed observation before reacting; two failures at one step means the
+  approach is wrong), `change-restraint` (the smallest change that does the job),
+  `independent-verification` (check from outside the context that produced the work — a mechanical
+  check, else a `subtask` verifier briefed without your reasoning), `review-recall` (find first,
+  filter second), `teaching-insights` (explain the reasoning where a human is reading),
+  `interface-design` (build UI that looks chosen rather than generated — pin the subject, avoid
+  the current default looks, plan and critique a token system before coding) and `interface-copy`
+  (words as design material: name things by what the reader controls, errors that explain and
+  direct, one job per element), `test-design` (a test earns its place by failing — name the
+  regression first, assert behaviour not internals, watch it fail once) and `failure-visibility`
+  (error handling written INTO code: never catch without a reaction, enumerate what a broad catch
+  would swallow, stubs never ship).
+  None is a default: each is picked per routine/conversation, **the trait itself is the on/off
+  switch**, and a trait that is off contributes nothing to the prompt. They reach existing
+  instances at the next daemon boot via `bootstrap.sync_seed_library_docs` and ride the normal
+  `library-sync` to the library repo — no new mechanism, no always-on block.
+- **`docs/curated-traits.md`** (new Help-tab guide) — per-trait provenance and *evidence strength*,
+  the reasoning behind shipping these as selectable traits rather than one always-on prompt
+  extension (the prompt's scarce resource is attention, not cached tokens), and the candidates
+  evaluated and **rejected on evidence**: self-critique-before-finishing (measurably net-negative
+  unaided), "don't be sycophantic" (the least effective mitigation tested), numeric confidence
+  (systematically overconfident), plus the ones this harness already covers structurally.
+
+### Changed
+- `suggest_traits_permissions` now tells the wizard when each curated trait is worth taking — and
+  explicitly not to take the set by default, since every trait costs prompt on every run it is on.
+
 ## [0.79.1] — 2026-07-21
 
 ### Fixed
