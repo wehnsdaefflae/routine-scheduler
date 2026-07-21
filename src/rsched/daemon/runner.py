@@ -66,6 +66,21 @@ def engine_cmd(target: str, run_ts: str, *, resume: bool = False) -> list[str]:
     return cmd
 
 
+def _queued_status(run_id: str, ts: str, prior: object = None) -> dict:
+    """The minimal 'queued' status.json written the moment a run is (re)armed, before its
+    engine subprocess boots. On a RESUME the run dir is reused and status.json still holds the
+    prior leg's cumulative telemetry (the `utils` histogram + the integer counters); pass that
+    dict as `prior` so this write CARRIES IT FORWARD instead of clobbering it. Otherwise the
+    boot-time prior_counters reseed (F131/F132) reads an already-wiped file and a finish->reopen
+    loses the pre-finish leg's util calls and counters (F140). A fresh run passes prior=None.
+    """
+    status = dict(prior) if isinstance(prior, dict) else {}
+    status.update({"run_id": run_id, "state": "queued", "started": ts,
+                   "updated": now_iso(), "turn": 0, "question": None,
+                   "usage": {"in": 0, "out": 0}})
+    return status
+
+
 @dataclass
 class ActiveRun:
     """A run the daemon tracks: queued for a slot, running as a subprocess, or parked on
@@ -158,10 +173,7 @@ class Runner:
         run_dir.mkdir(parents=True, exist_ok=True)
         run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir,
                         sem=self._sem_for(cfg), background=self.is_background(cfg))
-        atomic_write_json(run_dir / "status.json",
-                          {"run_id": run.run_id, "state": "queued", "started": ts,
-                           "updated": now_iso(), "turn": 0, "question": None,
-                           "usage": {"in": 0, "out": 0}})
+        atomic_write_json(run_dir / "status.json", _queued_status(run.run_id, ts))
         self.active[cfg.slug] = run
         self._spawn_supervisor(run, cfg, reason)
         return run.run_id
@@ -178,10 +190,12 @@ class Runner:
             return None
         run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir,
                         sem=self._sem_for(cfg), background=self.is_background(cfg))
+        # RESUME reuses the run dir: status.json still holds the prior leg's cumulative
+        # telemetry. Carry it forward (F140) so the boot-time prior_counters reseed sees it
+        # instead of the clobbered file — otherwise a finish->reopen drops the pre-finish
+        # leg's util histogram and integer counters.
         atomic_write_json(run_dir / "status.json",
-                          {"run_id": run.run_id, "state": "queued", "started": ts,
-                           "updated": now_iso(), "turn": 0, "question": None,
-                           "usage": {"in": 0, "out": 0}})
+                          _queued_status(run.run_id, ts, read_json(run_dir / "status.json")))
         self.active[cfg.slug] = run
         self._spawn_supervisor(run, cfg, reason, resume=True)
         return run.run_id

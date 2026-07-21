@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.79.1] — 2026-07-21
+
+### Fixed
+- **A finish→reopen no longer loses the pre-finish leg's util histogram and counters in
+  `status.json` (F140 — completes the F131/F132 fix).** The boot-time `prior_counters` reseed
+  (0.76.1) rehydrates a resumed leg's cumulative telemetry from the prior leg's `status.json`,
+  but `Runner.resume()` overwrote that file with a bare `{state:queued, turn:0, …}` dict — no
+  `utils`, no `asks_deferred`/`schema_retries`/… — *before* the engine booted, so the reseed
+  read an already-clobbered file and carried nothing forward. Observed: a reopened run with 9
+  real util calls reported only 2 in `status.json` (and `utils:{}` on the double-finish path).
+  The queued-status write is now a shared `_queued_status()` helper that, on resume, merges the
+  prior leg's telemetry forward (transient run-state fields still reset); a fresh run is
+  unchanged. The global util-stats snapshot was always correct (transcript-derived); this only
+  repairs the per-run `status.json` + finish event. Regression-guarded by a round-trip test
+  asserting the resume write is lossless w.r.t. `prior_counters`.
+
 ## [0.79.0] — 2026-07-20
 
 ### Added
