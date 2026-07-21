@@ -419,6 +419,40 @@ def do_memory_read(action: dict, ctx: RunContext) -> dict:
             "lines": len(content.splitlines()), "truncated": truncated}
 
 
+def do_read_trait(action: dict, ctx: RunContext) -> dict:
+    """CONSULT a practice module from the shared library — read-only, for THIS run only.
+
+    Nothing is written: the recipe invariant holds (a run never adds to its own traits/), and
+    the prose reaches the model as an ordinary observation rather than a permanent standing
+    practice. Making a trait permanent stays the user's call, from the routine page or the
+    conversation header. `name: "list"` returns the catalog, mirroring `util name=list` — the
+    trait catalog is deliberately NOT in the composed prompt, so discovery costs one turn
+    rather than every turn's cache.
+    """
+    from .. import library_docs
+
+    name = action["name"]
+    try:
+        home = ctx.server.traits_home
+    except AttributeError:      # bare test contexts carry no server config
+        return {"kind": "read_trait", "name": name, "missing": True, "available": []}
+    catalog = library_docs.list_docs(home)
+    # "held" = already one of this routine's own standing practices, so the model can tell a
+    # module it should ALREADY be following from one it is consulting for the first time.
+    held = {p.stem for p in ctx.routine.dir.joinpath("traits").glob("*.md")}
+    if name == "list":
+        return {"kind": "read_trait", "name": "list",
+                "traits": [{"slug": d["slug"], "summary": d["summary"],
+                            "held": d["slug"] in held} for d in catalog]}
+    raw = library_docs.read_doc(home, name)
+    if raw is None:
+        return {"kind": "read_trait", "name": name, "missing": True,
+                "available": [d["slug"] for d in catalog]}
+    body = library_docs.doc_body(raw).strip()
+    return {"kind": "read_trait", "name": name, "content": body,
+            "lines": len(body.splitlines()), "held": name in held}
+
+
 def do_memory_write(action: dict, ctx: RunContext) -> dict:
     name = action["name"]
     mem_dir = ctx.routine.dir / ".memory"
@@ -528,6 +562,7 @@ DISPATCH = {
     "edit_file": do_edit_file,
     "memory_read": do_memory_read,
     "memory_write": do_memory_write,
+    "read_trait": do_read_trait,
     "llm": do_llm,
 }
 

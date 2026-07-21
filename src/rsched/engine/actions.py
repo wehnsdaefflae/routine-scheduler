@@ -15,7 +15,8 @@ from ..ids import is_slug
 
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "edit_file",
-         "memory_read", "memory_write", "llm", "spawn", "subtask", "detach", "schedule_run",
+         "memory_read", "memory_write", "read_trait", "llm", "spawn", "subtask", "detach",
+         "schedule_run",
          "subruns", "kill", "wait", "ask_user", "report_bug", "finish")
 
 # Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist: `finish`
@@ -54,7 +55,9 @@ ACTION_SCHEMA: dict = {
         "name": {
             "type": "string",
             "description": "util/write_util/remove_util: the global util's name (kebab-case) · "
-                           "memory_read/memory_write: the note's topic (kebab-case)",
+                           "memory_read/memory_write: the note's topic (kebab-case) · "
+                           "read_trait: a practice module in the shared library, or "
+                           '"list" for the catalog',
         },
         "args": {
             "type": "array", "items": {"type": "string"},
@@ -199,7 +202,8 @@ ACTION_SCHEMA: dict = {
 BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "read_file": "path",
                "view_image": "path",
                "write_file": "path", "edit_file": "path", "memory_read": "name",
-               "memory_write": "name", "llm": "prompt", "spawn": "label", "subtask": "label",
+               "memory_write": "name", "read_trait": "name",
+               "llm": "prompt", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "kill": "n", "wait": "n",
                "ask_user": "question", "report_bug": "title", "finish": "status"}
 
@@ -229,6 +233,8 @@ KIND_EXAMPLES: dict[str, dict] = {
     "memory_write": {"say": "<what surprised you>", "kind": "memory_write", "name": "topic-slug",
                      "content": "<the note's full markdown, at most 100 lines>",
                      "about": "<one line: what this note holds + when to consult it>"},
+    "read_trait": {"say": "<why this practice now>", "kind": "read_trait",
+                   "name": "test-design"},
     "llm": {"say": "<why delegate>", "kind": "llm", "prompt": "<the subtask prompt>"},
     "spawn": {"say": "<why a child>", "kind": "spawn",
               "prompt": "<self-contained instruction>", "label": "child-1"},
@@ -261,6 +267,7 @@ _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "edit_file": (("path", "anchor"), ("replacement", "all")),
     "memory_read": (("name",), ()),
     "memory_write": (("name",), ("content", "about", "delete")),
+    "read_trait": (("name",), ()),
     "llm": (("prompt",), ("system", "response_schema")),
     "spawn": (("prompt",), ("workflow", "label")),
     "subtask": (("prompt",), ("workflow", "label", "turns")),

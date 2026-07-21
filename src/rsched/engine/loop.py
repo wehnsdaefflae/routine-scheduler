@@ -31,6 +31,7 @@ from .control import (
     announce_finished_subruns,
     apply_deliberation_switch,
     apply_model_switch,
+    apply_trait_additions,
     drain_injections,
     pause_gate,
     request_abort,
@@ -109,6 +110,7 @@ class EngineLoop:
         self.util_reminder = self._build_util_reminder()
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
         self._last_deliberation_ts = ""   # edge-trigger for mid-run deliberation switches
+        self._last_traits_ts = ""   # edge-trigger for user-added practice modules
         ctx.deliberation = ctx.routine.deliberation   # live level; control.json may re-set it
         # Repeat-streak escape hatch: identical-but-valid actions in a row are the second
         # signature of provider grammar distortion (a model narrating "I keep forgetting args"
@@ -177,6 +179,7 @@ class EngineLoop:
                 pause_gate(self, poll_s=POLL_S)
                 apply_model_switch(self)
                 apply_deliberation_switch(self)
+                apply_trait_additions(self)
                 drain_injections(self)
                 announce_finished_subruns(self)
                 action, usage = next_action(self)

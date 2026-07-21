@@ -1041,3 +1041,51 @@ def test_dashboard_heartbeat_strip(ui, ui_page):
     ui_page.get_by_role("button", name="☰ list view").click()
     row = ui_page.locator("table.list tbody tr", has_text="Test uir")
     expect(row.locator("svg.heartbeat")).to_be_visible()
+
+
+def test_routine_page_trait_picker_adds_a_practice_module(ui, ui_page):
+    """The post-creation practice picker: ticking a library module and applying copies it
+    into the routine's own traits/ VERBATIM and rebuilds main.md's derived Standing-practices
+    tail. This is the user's switch — a run can never change its own set."""
+    rdir = ui.routines / "uir"
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    panel = ui_page.locator(".panel", has=ui_page.locator(".traitpicker"))
+    expect(panel).to_be_visible()
+    row = panel.locator("label.toggle-row", has_text="evidence-discipline")
+    expect(row).to_be_visible()
+    row.locator('input[type="checkbox"]').check()
+    panel.get_by_role("button", name="apply").click()
+    expect(_toast(ui_page)).to_contain_text("practices updated")
+    written = (rdir / "traits" / "evidence-discipline.md").read_text(encoding="utf-8")
+    assert "# trait: evidence discipline" in written
+    assert "tags:" not in written                      # frontmatter stripped, body verbatim
+    assert "traits/evidence-discipline.md" in (rdir / "main.md").read_text(encoding="utf-8")
+
+    ui_page.reload()                                   # the tick survives a fresh detail read
+    reloaded = ui_page.locator(".panel", has=ui_page.locator(".traitpicker"))
+    expect(reloaded.locator("label.toggle-row", has_text="evidence-discipline")
+           .locator('input[type="checkbox"]')).to_be_checked()
+
+
+def test_conversation_header_trait_picker(ui, ui_page):
+    """The same picker in the conversation header — the case that motivated it, since a
+    conversation shifts topic mid-thread. Adding a module writes it into the conversation's
+    own traits/ and the shared endpoint records it for every reply from here on."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill("Help me restyle the landing page.")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    conv_dir = ui.conversations / ui_page.url.rsplit("/", 1)[-1]
+
+    ui_page.locator("details", has_text="⚙ capabilities & budgets").locator("summary").click()
+    picker = ui_page.locator(".traitpicker")
+    expect(picker).to_be_visible()
+    # conversations start with their default set already ticked
+    expect(picker.locator("label.toggle-row", has_text="ask-policy")
+           .locator('input[type="checkbox"]')).to_be_checked()
+    row = picker.locator("label.toggle-row", has_text="interface-design")
+    expect(row.locator('input[type="checkbox"]')).not_to_be_checked()
+    row.locator('input[type="checkbox"]').check()
+    picker.get_by_role("button", name="apply").click()
+    expect(_toast(ui_page)).to_contain_text("practices updated")
+    assert (conv_dir / "traits" / "interface-design.md").is_file()

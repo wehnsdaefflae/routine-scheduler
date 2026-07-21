@@ -21,6 +21,7 @@ import { createFileActivity } from "/static/components/fileactivity.js";
 import { createStateGraph } from "/static/components/stategraph.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { permissionsPanel } from "/static/components/permissions.js";
+import { traitPicker } from "/static/components/traitpicker.js";
 import { busy, chip, el, emptyState, relTime, toast } from "/static/util.js";
 import { followScroll } from "/static/follow.js";
 import { enabled as notifyEnabled } from "/static/notify.js";
@@ -685,10 +686,21 @@ export async function render(view, slug, _query = {}) {
         } catch (err) { toast(err.message, 4000, { error: true }); }
       },
     }).node);
-    if (detail.traits?.length) {
-      capBody.append(el("div", { class: "faint small mt" },
-        "traits (its own practice files): ", detail.traits.join(", ")));
-    }
+    // Practice modules: a conversation shifts topic mid-thread, so an addition is pushed to
+    // the reply in flight as well as saved for every reply after it (the server does both).
+    const traitHost = el("div", { class: "mt" });
+    const buildTraits = async () => {
+      const lib = await api("/api/library").catch(() => ({ traits: [] }));
+      return traitPicker(lib.traits || [], detail.traits || [], {
+        live: isLive(),
+        onSave: async (payload) => {
+          await api(`/api/conversations/${slug}/traits`, { method: "POST", body: payload });
+        },
+      }).node;
+    };
+    capBody.append(el("div", { class: "faint small mt" }, "practice modules — its own standing "
+      + "practices; an addition applies from the current reply on"), traitHost);
+    buildTraits().then((n) => traitHost.replaceChildren(n));
     caps.append(capBody);
     head.replaceChildren(
       el("div", { class: "conv-head-row" }, stateChip, title,

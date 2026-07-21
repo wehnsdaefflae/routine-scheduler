@@ -68,8 +68,10 @@ DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write"]
                         "workflows": "catalog"}
 # TRAITS a new routine gets when creation picks none explicitly (the wizard normally
 # preselects per task): reusable practice prose, adapted into the routine's own traits/
-# at creation and referenced from the end of its main.md. Not toggleable afterwards —
-# they are the routine's files from then on. Improvement passes are NOT part of a
+# at creation and referenced from the end of its main.md. The USER may add or remove one
+# later (traits.py — a later add copies the library text verbatim, since only creation
+# adapts); a RUN never changes its own set, and may only CONSULT an unheld module for the
+# current run (`read_trait`). Improvement passes are NOT part of a
 # routine's own traits: the routine-improver meta routine runs them across all routines
 # and conversations (honoring each one's `improve: false` opt-out).
 DEFAULT_TRAITS = ["ask-policy", "global-utils", "ledger-discipline", "web-research"]

@@ -31,6 +31,9 @@ from . import artifacts
 from .api_background import list_background_rows, teardown_background
 from .api_routines import (
     PermissionsBody,
+    TraitsBody,
+    active_run_dir,
+    apply_trait_edit,
     guard_not_active,
     permission_layers_detail,
     resolve_permission_layers,
@@ -345,6 +348,17 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
     if set(updates) - {"deliberation"}:   # a tuning-only patch never rewrites routine.yaml
         atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
     return {"ok": True, "updated": list(updates)}
+
+
+@router.post("/conversations/{slug}/traits")
+def set_conversation_traits(request: Request, slug: str, body: TraitsBody) -> dict:
+    """Add/remove this conversation's practice modules — the same implementation routines
+    use. A conversation is where this matters most: the work shifts topic mid-thread, and
+    an added module reaches the reply already in flight (control.json) as well as every
+    reply after it.
+    """
+    info = conversation_info(request, slug)
+    return apply_trait_edit(request, info.cfg.dir, body, active_run_dir(info))
 
 
 @router.put("/conversations/{slug}/permissions")

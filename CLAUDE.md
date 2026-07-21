@@ -122,7 +122,7 @@ the limits (single-writer status.json preserved).
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
   far better than `oneOf`): `util, write_util, read_file, view_image, write_file, edit_file, memory_read,
-  memory_write, llm, spawn, subtask, detach, subruns, kill, wait, ask_user, finish`. Every action carries `say` (finding-first narration:
+  memory_write, read_trait, llm, spawn, subtask, detach, subruns, kill, wait, ask_user, finish`. Every action carries `say` (finding-first narration:
   what the last observation taught you + why this action; terse for routine steps, 2-3 sentences
   at decision points; worded per the routine's `deliberation` level) + `kind`, plus an optional
   **`note`** — 1-3 SELF-CONTAINED lines worth keeping beyond the context window, engine-filed to
@@ -457,7 +457,16 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   instruction + chosen pattern), ADAPTED to the task by `adapt.decompose` (schema carries a `traits`
   array), written to `<routine>/traits/`, referenced from main.md's Standing practices tail
   (`scaffold.with_practices_tail` guarantees it; `scaffold.copy_traits` is the one trait-copy
-  path routines and conversations share) — the routine's own files from then on, never toggled.
+  path routines and conversations share) — the routine's own files from then on. The USER may
+  add/remove one AFTER creation (`traits.py`, `POST /{routines,conversations}/{slug}/traits` —
+  one shared impl): the traits/ DIR is the state, the Standing practices tail is DERIVED and
+  rebuilt from it, and a later add copies the library text VERBATIM (only creation adapts).
+  Deliberately not 409-guarded — a run may never write its own traits/, so the web layer is
+  the sole writer; an add even reaches a LIVE run via control.json `add_traits` →
+  `control.apply_trait_additions` (an engine note, since the prompt is immutable), while a
+  remove lands next run. A RUN never changes its own set — it may only CONSULT an unheld
+  module for the current run (`read_trait`, gated by the `practice-library` permission,
+  default-ON for conversations; writes nothing).
   The routine defaults (`DEFAULT_TRAITS`): `ask-policy / global-utils / web-research / ledger-discipline`;
   plus `git-checkpoint` (external-repo undo points — a conversations default, wizard-preselected for
   repo-editing routines, NOT a routine default). Beside them the **curated practice set** —
@@ -488,7 +497,9 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   (requires `workflows: generate` — a subtask may DRAFT a new library pattern when none fits, folding
   the system-model spend into the run; off by default), `background-tasks` (requires the `detach`
   action — launch a long fire-and-forget task that outlives a reply and reports back; default-ON for
-  conversations, opt-in for routines). Reservable utils =
+  conversations, opt-in for routines), `practice-library` (requires `read_trait` — CONSULT a library
+  practice module for the CURRENT run when the work needs a discipline the recipe lacks; read-only,
+  so the routine's own traits/ set stays the user's; default-ON for conversations). Reservable utils =
   the union of all docs' `requires.utils` (library-defined); gateable kinds = GATED_KINDS
   (engine-defined); `runs`/`workflows` are level capabilities. Permission bodies are SHORT (≤14 lines reach the prompt's CAPABILITIES section
   when held); the Library tab's permission editor has a prefilled, authoritative `requires:` panel.

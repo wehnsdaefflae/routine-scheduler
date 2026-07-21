@@ -175,6 +175,10 @@ an existing file outside your working dir is rejected until this run has read it
 attachments and files a util produced. When this run's model is multimodal the file is shown \
 to you DIRECTLY on the next turn; otherwise the `vision` util describes it and you get text \
 back. Set `prompt` (what to look for) so that fallback is useful.{memory_line}
+- read_trait: CONSULT a practice module from the shared library that you do not already hold — \
+`name: "list"` for the catalog, `name: "<slug>"` for one module's prose. It applies for the rest \
+of THIS run only and is never added to your recipe (your traits/ set is the user's to change); if \
+one keeps proving necessary, name it in your finish summary.\
 - llm: one scoped, stateless LLM subcall (runs on this routine's tool-call model). It sees ONLY \
 your prompt/system — include everything it needs; set response_schema for structured replies.
 - spawn: start a SUB-WORKFLOW that runs IN PARALLEL with you — pick its "workflow" for the \

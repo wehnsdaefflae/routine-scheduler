@@ -17,8 +17,8 @@ from .. import schedule
 from .. import triggers as triggers_mod
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
 from ..daemon import registry
-from ..ids import now_iso, run_ts
-from ..paths import atomic_write, resolve_rel
+from ..ids import now_iso, parse_run_id, run_ts
+from ..paths import atomic_write, atomic_write_json, read_json, resolve_rel
 from ..stats import monthly_spend
 from . import artifacts
 from .api_questions import _snooze_active
@@ -221,6 +221,9 @@ def routine_detail(request: Request, slug: str) -> dict:
         # GET /api/settings/oauth (the connected accounts).
         "connections": dict(info.cfg.connections),
         "deliberation": info.cfg.deliberation,
+        # Practice modules this routine holds — the traits/ dir IS the state (see traits.py);
+        # the picker's options come from GET /api/library (`traits`).
+        "traits": sorted(p.stem for p in (info.cfg.dir / "traits").glob("*.md")),
         # event triggers (webhook now): config rows + fire ledger + hook URL paths — the
         # Triggers card renders these; CRUD lives in api_hooks
         "triggers": triggers_mod.describe_triggers(server.routines_home, slug,
@@ -349,6 +352,73 @@ def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict
     p.write_text(body.content, encoding="utf-8")
     _git_commit(info.cfg.dir, f"edit {body.path} via web")
     return {"ok": True}
+
+
+class TraitsBody(BaseModel):
+    add: list[str] = []
+    remove: list[str] = []
+
+
+def active_run_dir(info: registry.RoutineInfo) -> Path | None:
+    """The live run's directory, or None when nothing is running — so a trait edit can
+    reach a run already in flight. Shared by both homes (a conversation's reply is a run
+    like any other).
+    """
+    if not info.active_run:
+        return None
+    try:
+        _, ts = parse_run_id(info.active_run.run_id)
+    except ValueError:
+        return None
+    d = info.cfg.dir / "runs" / ts
+    return d if d.is_dir() else None
+
+
+def apply_trait_edit(request: Request, routine_dir: Path, body: TraitsBody,
+                     active_run_dir: Path | None) -> dict:
+    """Add/remove practice modules on an existing routine or conversation — the ONE
+    implementation both homes use.
+
+    Deliberately NOT guarded by an active run, unlike other routine file edits: a run may
+    never write its own `traits/` (the recipe invariant), so the web layer is the only
+    writer there and no two-writer race exists. When a run IS live, the durable copy alone
+    would not reach it — its prompt was composed at boot and is immutable under the
+    prompt-caching contract — so an `add_traits` signal goes into the run's control.json and
+    `engine/control.apply_trait_additions` appends the prose at the next turn boundary.
+    Removal has no live counterpart on purpose: prose already in the context cannot be
+    unsaid, so a removal takes effect at the next run.
+    """
+    from .. import library_docs
+    from .. import traits as traits_mod
+
+    server = request.app.state.server
+    known = set(library_docs.slugs(server.traits_home))
+    if unknown := [s for s in body.add if s not in known]:
+        raise HTTPException(400, f"unknown practice module(s): {sorted(unknown)}")
+    added, removed = traits_mod.apply_changes(server.traits_home, routine_dir,
+                                              body.add, body.remove)
+    if not added and not removed:
+        return {"ok": True, "added": [], "removed": [], "traits": traits_mod.current_traits(
+            routine_dir)}
+    _git_commit(routine_dir, f"traits via web (+{len(added)}/-{len(removed)})")
+    if added and active_run_dir is not None:
+        ctrl = read_json(active_run_dir / "control.json")
+        ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}   # keep pause/model/deliberation
+        ctrl["add_traits"] = {"slugs": added, "ts": now_iso()}
+        atomic_write_json(active_run_dir / "control.json", ctrl)
+    return {"ok": True, "added": added, "removed": removed,
+            "live": bool(added and active_run_dir is not None),
+            "traits": traits_mod.current_traits(routine_dir)}
+
+
+@router.post("/routines/{slug}/traits")
+def set_routine_traits(request: Request, slug: str, body: TraitsBody) -> dict:
+    """Add/remove this routine's practice modules. Applies to a LIVE run too (see
+    apply_trait_edit); otherwise it lands at the next run.
+    """
+    info = _info(request, slug)
+    guard_template(slug, "the clarification template's practices are fixed")
+    return apply_trait_edit(request, info.cfg.dir, body, active_run_dir(info))
 
 
 class PermissionsBody(BaseModel):

@@ -30,6 +30,7 @@ def test_schema_compiles_and_example_passes():
         {"say": "s", "kind": "memory_read", "name": "portal-quirks"},
         {"say": "s", "kind": "memory_write", "name": "portal-quirks", "content": "# note",
          "about": "per-portal gotchas — read before scanning"},
+        {"say": "s", "kind": "read_trait", "name": "evidence-discipline"},
         {"say": "s", "kind": "llm", "prompt": "p", "system": "sys", "response_schema": {"type": "object"}},
         {"say": "s", "kind": "spawn", "prompt": "do x", "label": "research", "workflow": "general-task"},
         {"say": "s", "kind": "subtask", "prompt": "do step x", "label": "step-1",

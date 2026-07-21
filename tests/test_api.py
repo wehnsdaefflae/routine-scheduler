@@ -1358,6 +1358,35 @@ def test_audit_page_reflects_answered_decision_after_consumption(client):
     assert c.get("/api/audit").json()["answered_decisions"] == []
 
 
+def test_post_traits_adds_and_removes_practice_modules(client):
+    """The user's post-creation trait switch: the traits/ dir is the state, main.md's
+    Standing-practices tail is derived from it, and an unknown slug is a 400 rather than a
+    silent skip (the picker offers only real ones, so an unknown slug means a stale client).
+    """
+    c, tmp = client
+    traits_home = tmp / "library" / "traits"
+    traits_home.mkdir(parents=True, exist_ok=True)
+    (traits_home / "alpha.md").write_text(
+        "---\ntags: [a, b, c]\n---\n# trait: alpha — the first practice\nbody\n",
+        encoding="utf-8")
+    rdir = tmp / "routines" / "apir"
+    r = c.post("/api/routines/apir/traits", json={"add": ["alpha"], "remove": []})
+    assert r.status_code == 200, r.text
+    assert r.json()["added"] == ["alpha"] and "alpha" in r.json()["traits"]
+    assert (rdir / "traits" / "alpha.md").is_file()
+    assert "traits/alpha.md" in (rdir / "main.md").read_text(encoding="utf-8")
+    assert c.get("/api/routines/apir").json()["traits"] == ["alpha"]
+    # re-adding is a no-op, not a duplicate or an error
+    assert c.post("/api/routines/apir/traits", json={"add": ["alpha"]}).json()["added"] == []
+    # removal prunes the derived tail with it
+    out = c.post("/api/routines/apir/traits", json={"remove": ["alpha"]})
+    assert out.json()["removed"] == ["alpha"]
+    assert not (rdir / "traits" / "alpha.md").exists()
+    assert "traits/alpha.md" not in (rdir / "main.md").read_text(encoding="utf-8")
+    bad = c.post("/api/routines/apir/traits", json={"add": ["ghost"]})
+    assert bad.status_code == 400 and "ghost" in bad.text
+
+
 def test_put_permissions_cascades_capabilities(client):
     """The two-layer PUT: activating a doc RAISES capabilities to cover its requires AND
     FLOORS them back to the held docs (D8) — a gated action survives only as the means of a

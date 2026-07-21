@@ -150,6 +150,22 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
                     f"Existing topics: {topics}.")
         return (f"OBSERVATION (memory_read {obs['name']}.md, {obs['lines']} lines):\n"
                 f"{obs['content']}")
+    if kind == "read_trait":
+        if obs["name"] == "list":
+            rows = "\n".join(f"- {t['slug']}{' (already yours)' if t['held'] else ''}: "
+                             f"{t['summary']}" for t in obs["traits"]) or "(library is empty)"
+            return ("OBSERVATION (read_trait list) — practice modules in the shared library. "
+                    "Reading one applies it to THIS run only; making it a standing practice is "
+                    f"the user's call:\n{rows}")
+        if obs.get("missing"):
+            avail = ", ".join(obs.get("available") or []) or "(none)"
+            return (f"OBSERVATION (read_trait): no practice module named {obs['name']!r}. "
+                    f"Available: {avail}.")
+        already = (" — this is ALREADY one of your standing practices"
+                   if obs.get("held") else "")
+        return (f"OBSERVATION (read_trait {obs['name']}, {obs['lines']} lines{already}). "
+                "It applies for the rest of this run; it is not added to your recipe:\n"
+                f"{obs['content']}")
     if kind == "memory_write":
         if obs.get("deleted"):
             fate = ("deleted and INDEX updated" if obs.get("existed")

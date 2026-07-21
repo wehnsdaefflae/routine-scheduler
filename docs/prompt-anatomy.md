@@ -39,6 +39,18 @@ Eight sections, in this order:
 | 5 | `# INSTRUCTION (your assigned task)` | the parent's spawn `prompt` (subruns), or `instruction.md` (conversations) | **Subruns AND conversations.** A top-level scheduled ROUTINE has NO instruction section and no `instruction.md` on disk: its task is entirely its self-contained recipe (`main.md` + `stages/`) — the clarified instruction was only a transient compile **SEED**, consumed at creation and never persisted. A **subrun** has no decomposed stages, so its self-contained brief (the parent's `prompt`) rides here. A **conversation** runs at depth 0 but its task is its first message (`instruction.md`), so it carries the section too (discriminated by HOME — its dir sits directly under `conversations_home`); without it the agent would see only the converse HOW-to pattern and never its actual task. |
 | 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ capabilities — switched-off gated kinds like `memory_*`/`write_util` simply don't appear), the enabled capabilities + the held conduct permissions, each held permission's short capability note (the library doc's body, capped), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary, reserved utils flagged). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
 | 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the `state/` file list, `stages/` module names, the `traits/` practice-module names, the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), open deferred questions, answers that arrived since the last run. |
+
+**The practice set is the USER's, in both directions.** A routine's `traits/` files are its
+standing practices, listed in (7) and referenced from the workflow's Standing practices tail;
+the user adds or removes one at any time (`POST /routines/{slug}/traits`, the same endpoint
+conversations use — `rsched/traits.py` copies the library text VERBATIM, since only creation
+adapts, and rebuilds the tail from the directory). An addition reaches a run **already in
+flight**: the composed prompt is immutable under the caching contract, so `control.json`
+`add_traits` → `control.apply_trait_additions` appends the module's prose as an engine note at
+the next turn boundary. Removal has no live counterpart on purpose — prose already in a context
+cannot be unsaid — so it lands at the next run. A RUN never changes its own set; it may only
+**consult** an unheld module for the current run with `read_trait` (gated by the
+`practice-library` permission, default-on for conversations), which writes nothing.
 | 8 | `# MESSAGES FROM THE USER (consume now)` | inbox drain at boot | Only present if messages were waiting — and only on a FRESH run: a resume delivers waiting messages as trailing `USER MESSAGE` injections instead (§2). |
 
 So: **conduct** lives in the routine's own `traits/` files (referenced from the workflow,

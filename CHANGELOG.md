@@ -19,6 +19,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.81.0] — 2026-07-21
+
+### Added
+- **Practice modules are changeable after creation** — a *Practice modules* panel on the routine
+  page and in the conversation header adds or drops traits on an existing routine/conversation
+  (`POST /routines/{slug}/traits`, `POST /conversations/{slug}/traits` — one shared
+  implementation). The `traits/` directory IS the state and main.md's Standing-practices tail is
+  DERIVED from it, rebuilt on every change (`rsched/traits.py`), so add and remove need no
+  special-casing and a hand-edited tail converges back. A later add copies the library text
+  **verbatim** — only creation adapts, and an LLM round-trip between flipping a switch and the
+  module taking effect isn't worth it for a set written to be generally applicable.
+- **An addition reaches a run already in flight.** Deliberately not 409-guarded like other
+  routine file edits: a run may never write its own `traits/`, so the web layer is the sole
+  writer there and no race exists. Since the composed prompt is immutable under the
+  prompt-caching contract, `control.json` `add_traits` makes the engine append the module's prose
+  as an engine note at the next turn boundary (`control.apply_trait_additions`, the same
+  edge-triggered discipline as the model and deliberation switches). Removal lands at the next
+  run — prose already in a live context cannot be unsaid.
+- **`read_trait` — a read-only practice consult for a run.** A run still never changes its own
+  set, but may pull one library module into the CURRENT run when the work turns out to need a
+  discipline its recipe lacks (`name: "list"` for the catalog, entries flagged when already held).
+  Nothing is written, so the recipe invariant holds intact. Gated by the new `practice-library`
+  permission — default-on for conversations, opt-in for routines.
+
+### Changed
+- `DEFAULT_TRAITS`' "not toggleable afterwards" note is retired: the user may now retune the set
+  at any time. What stays fixed is the direction — practice is granted, never self-granted.
+
 ## [0.80.0] — 2026-07-21
 
 ### Added

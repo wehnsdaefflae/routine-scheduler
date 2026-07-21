@@ -1,10 +1,10 @@
-"""Run control plane: the abort switch, the pause gate, mid-run model and deliberation
-switches, and the turn-boundary message feeds (injected user messages, finished
-sub-workflow announcements).
+"""Run control plane: the abort switch, the pause gate, mid-run model, deliberation and
+practice-trait switches, and the turn-boundary message feeds (injected user messages,
+finished sub-workflow announcements).
 
 Everything here runs BETWEEN turns and mutates only the loop's message list / context —
 never the model call itself. control.json stays web-owned: the engine only reads it
-(pause, switch_model, set_deliberation) and reacts at the next turn boundary.
+(pause, switch_model, set_deliberation, add_traits) and reacts at the next turn boundary.
 """
 
 from __future__ import annotations
@@ -98,6 +98,35 @@ def apply_deliberation_switch(loop) -> None:
     ctx.deliberation = level
     ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
     loop.messages.append({"role": "user", "content": f"ENGINE NOTE: {note}"})
+
+
+def apply_trait_additions(loop) -> None:
+    """Turn-boundary: honour traits the USER added to a LIVE run from the web layer.
+
+    Same edge-trigger discipline as the model/deliberation switches — the engine never writes
+    control.json. The durable copy into <routine>/traits/ is the web layer's job (traits.py);
+    what cannot wait is the prose reaching the model, and the composed prompt is immutable
+    (prompt-caching contract), so each added module arrives as an appended engine note. On the
+    next run it is an ordinary standing practice read from the routine's own traits/.
+    """
+    ctx = loop.ctx
+    obj = read_json(ctx.root_run_dir / "control.json")
+    sw = obj.get("add_traits") if isinstance(obj, dict) else None
+    if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_traits_ts:
+        return
+    loop._last_traits_ts = str(sw["ts"])
+    for slug in sw.get("slugs") or []:
+        if not isinstance(slug, str) or slug in ctx.consulted_traits:
+            continue
+        body = (ctx.routine.dir / "traits" / f"{slug}.md")
+        if not body.is_file():
+            continue
+        ctx.consulted_traits.add(slug)
+        text = body.read_text(encoding="utf-8").strip()
+        note = (f"the user added the practice module traits/{slug}.md to this routine — it "
+                f"applies from now on, and is part of your recipe from the next run:\n\n{text}")
+        ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
+        loop.messages.append({"role": "user", "content": f"ENGINE NOTE: {note}"})
 
 
 def inject_user_message(loop, m: dict) -> None:

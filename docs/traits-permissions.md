@@ -99,6 +99,29 @@ meta routine sweeps every routine that doesn't set `improve: false` in its
 routine.yaml (an include-by-default toggle on the routine page) and runs the five lenses — bugfix, research,
 features, UI, efficiency — plus a fresh-eyes de-clutter pass on each, itself included.
 
+### Changing the set after creation
+
+The `traits/` directory IS the state; main.md's Standing practices tail is a derived index
+rebuilt from it on every change (`rsched/traits.py` — the one place that convergence lives).
+The **user** adds or removes a module at any time from the routine page's *Practice modules*
+panel or the conversation header (`POST /routines/{slug}/traits`, `POST
+/conversations/{slug}/traits` — one shared implementation). A later add copies the library
+text **verbatim**: only creation adapts, and an LLM round-trip between flipping a switch and
+the module taking effect would not be worth it for a set written to be generally applicable.
+
+Unlike other routine file edits this is **not** 409-guarded during a run — a run may never
+write its own `traits/`, so the web layer is the only writer there and no race exists. An
+addition even reaches a run already in flight: the composed prompt is immutable (caching
+contract), so `control.json` `add_traits` makes the engine append the prose as an engine note
+at the next turn boundary. A removal takes effect at the next run — prose already in a live
+context cannot be unsaid.
+
+A **run** never changes its own set. With the `practice-library` permission it may
+`read_trait` — consult one module from the library for the current run only (`name: "list"`
+for the catalog, entries flagged when already held). Nothing is written, so the recipe stays
+the user's; a module that keeps proving necessary belongs in the run's finish summary or a
+deferred `ask_user`. Default-on for conversations, opt-in for routines.
+
 At creation the wizard **preselects** traits from the refined instruction + chosen
 workflow (editable before creating), and the generator LLM **adapts** each selected trait
 to the task while it decomposes the workflow — concrete wording, task examples, inapplicable

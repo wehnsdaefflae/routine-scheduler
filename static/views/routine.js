@@ -11,6 +11,7 @@ import { scheduleEditor } from "/static/components/schedule.js";
 import { triggersCard } from "/static/components/triggers.js";
 import { scheduleOnceCard } from "/static/components/schedule-once.js";
 import { permissionsPanel } from "/static/components/permissions.js";
+import { traitPicker } from "/static/components/traitpicker.js";
 import { recipeNav } from "/static/components/recipenav.js";
 import { chip, el, emptyState, fmtDur, fmtNum, fmtTokens, skeleton, toast, when } from "/static/util.js";
 
@@ -144,6 +145,29 @@ export async function render(view, slug, query = {}) {
         "what this routine is ALLOWED to do — enforced by the engine on every action. Only you can ",
         "change either column; the routine can never grant itself anything. Takes effect at the next run."),
       permHost));
+
+  // -- practice modules (traits the routine holds; the traits/ dir IS the state) -----
+  const traitHost = el("div", {});
+  const buildTraitPanel = async (detail) => {
+    const lib = await api("/api/library").catch(() => ({ traits: [] }));
+    return traitPicker(lib.traits || [], detail.traits || [], {
+      live: !!detail.active_run,
+      onSave: async (payload) => {
+        await api(`/api/routines/${slug}/traits`, { method: "POST", body: payload });
+        const nd = await api(`/api/routines/${slug}`);
+        traitHost.replaceChildren(await buildTraitPanel(nd));
+      },
+    }).node;
+  };
+  buildTraitPanel(d).then((n) => traitHost.replaceChildren(n));
+  view.append(el("h2", {}, "Practice modules"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted small", style: "margin-bottom:10px" },
+        "the standing practices this routine reads before the situations they govern. Added ",
+        "modules are copied in verbatim and become the routine's own files; an addition reaches ",
+        "a run already in flight, a removal takes effect at the next run. The routine can ",
+        "CONSULT an unheld module for one run (read_trait) but never change this set."),
+      traitHost));
 
   // -- budgets (per-run ceilings — every invisible limit, surfaced) -----------------
   const UNLIMITED_BUDGETS = ["max_total_tokens", "max_wall_clock_min", "max_cost"];  // -1 = unlimited
