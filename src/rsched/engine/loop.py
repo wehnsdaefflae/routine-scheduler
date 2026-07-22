@@ -59,7 +59,7 @@ __all__ = [
 class EngineLoop:
     """The turn loop — the heart of a run. Each turn: budgets → pause gate → drain
     injected messages → announce finished subruns → ONE valid JSON action from the model
-    (up to 3 schema retries) → dispatch → append the observation; repeat until `finish`.
+    (3 attempts: up to 2 schema retries) → dispatch → append the observation; repeat until `finish`.
     Construct with `resume=True` to rehydrate a prior transcript and continue it.
     """
 

@@ -391,7 +391,7 @@ input[type=time], input[type=number] { width: auto; }
 /* ---------- mobile ---------- */
 @media (max-width: 860px) {
   .topbar { flex-wrap: wrap; height: auto; padding: 8px 14px; gap: 8px 14px; }
-  /* all seven links stay visible — wrap into rows instead of an invisible sideways scroll */
+  /* every tab stays visible — wrap into rows instead of an invisible sideways scroll */
   .topbar nav { order: 3; flex-basis: 100%; flex-wrap: wrap; overflow-x: visible; row-gap: 2px; }
   /* search shares the brand row and soaks up its free width (nav wraps to its own row) */
   .gsearch { flex: 1 1 120px; min-width: 0; height: 40px; }

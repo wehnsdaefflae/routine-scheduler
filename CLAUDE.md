@@ -33,7 +33,7 @@ routine config (`routine.yaml` / UI).
   every ignore in pyproject.toml carries its house-style reason). Both MUST be green in every
   commit; `uv run pre-commit install` wires them into git.
 - `uv run rsched run-once <slug>` — execute one run from the CLI (slug under `routines_home`, or a dir
-  path), streaming events. `--model kind=endpoint:model` overrides a model role; `--quiet` drops the stream.
+  path), streaming events. `--model kind=catalog-name` overrides a model role (catalog names, not endpoint:model pairs); `--quiet` drops the stream.
 - `uv run rsched daemon` — scheduler + web UI in one process (what systemd runs).
 - `uv run rsched validate | lint | suggest --instruction … | scaffold <slug> --workflow … | abort <slug>[:<ts>]`
   — see `rsched --help`. `engine-run` is internal (daemon-spawned).
@@ -48,7 +48,7 @@ between-turns control plane (abort, pause gate, `control.json` model switch, inj
 subrun announcements), and
 `engine/interact.py` the user-conversing handlers (`ask_user`, grant-gated `write_util`). Each turn:
 check budgets → pause gate → drain injected user messages (`inbox.py`) → announce finished subruns →
-get ONE valid action from the model (up to 3 schema-retries) → dispatch → append the observation →
+get ONE valid action from the model (3 attempts: up to 2 schema-retries) → dispatch → append the observation →
 repeat until `finish`. **Budgets are one unified primitive** (`engine/budget.py`: a `Budget` = a stop
 condition over a resource, a `BudgetLedger` over them, `allocate()` for child slices) shared by the run,
 a conversation reply window, a subtask, and a subrun — `RunContext` holds the live meter, the ledger holds
@@ -64,7 +64,8 @@ the limits (single-writer status.json preserved).
   per-leg **revise marker** (`engine/revise.py`: the run-view "revise recipe" mode drops one, the
   loop reads it ONCE and grants recipe self-write + the file-edit kinds for that leg only);
   `routine.yaml` is NEVER writable by any run, even under an fs_write_root or a revise — config is the user's,
-  no exceptions; the machine-tunable knobs live in tuning.yaml, where the FILE boundary is the
+  no exceptions (the block is by FILENAME anywhere the run can write, external repos included — a
+  deliberate over-block: any file named routine.yaml is treated as config); the machine-tunable knobs live in tuning.yaml, where the FILE boundary is the
   permission boundary; executor.py backstops absolute paths and scopes `runs: last`).
   A disallowed/switched-off call is corrected inside the schema-retry cycle with an error naming the
   covering permission, and never becomes a turn.
@@ -87,7 +88,9 @@ the limits (single-writer status.json preserved).
   and schema-retry debris is dropped from the live prompt once a retry succeeds (the transcript keeps
   the error events). Cache traffic reports as usage `cached_in`/`cache_write` (kept OUT of `in`, so
   token budgets keep their meaning); the loop hands every completion a stable `session` key (str(run_dir))
-  that adapters may use as a cache hint.
+  that adapters may use as a cache hint. THREE sanctioned exceptions rewrite the list in place:
+  compaction (below), schema-retry debris cleanup, and the media fallback (a failed image turn's
+  tail message is rewritten text-only) — each invalidates the provider cache once, by design.
 - **Compaction archives context to a navigable on-disk history** (`history.compact_to_history`): when
   the prompt exceeds ~60% of the resolved model's `context_chars` — ~80% once cache hits are observed
   (compaction rewrites the prefix and invalidates the cache, so carried context is cheaper than
@@ -123,8 +126,11 @@ the limits (single-writer status.json preserved).
 ## Core contracts — extend, never repurpose
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
-  far better than `oneOf`): `util, write_util, read_file, view_image, write_file, edit_file, memory_read,
-  memory_write, read_trait, llm, spawn, subtask, detach, subruns, kill, wait, ask_user, finish`. Every action carries `say` (finding-first narration:
+  far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, edit_file,
+  memory_read, memory_write, read_trait, llm, spawn, subtask, detach, schedule_run, subruns, kill, wait,
+  ask_user, report_bug, finish` (21). `finish` and `report_bug` are ALWAYS_KINDS — available on every
+  turn regardless of the workflow's `tools:` allowlist or the capability set (report_bug is the
+  ungated bug channel feeding `.control/bug-reports.jsonl`, self-audit's evidence stream). Every action carries `say` (finding-first narration:
   what the last observation taught you + why this action; terse for routine steps, 2-3 sentences
   at decision points; worded per the routine's `deliberation` level) + `kind`, plus an optional
   **`note`** — 1-3 SELF-CONTAINED lines worth keeping beyond the context window, engine-filed to
@@ -245,7 +251,7 @@ connect (paramiko `RejectPolicy` — no TOFU in a headless run). Pieces:
   `RSCHED_MACHINE_KEYS` (`{name: PEM}`, a credential — its name ends in KEYS so the util-authoring
   gate forces its declaration). `machine_env_vars()` keeps both out of the Settings "needed
   secrets" list (like `connection_token_vars()`).
-- **The reserved `remote` util** (`library-seed/utils/remote`, paramiko; needs the new
+- **The reserved `remote` util** (`util-seed/utils/remote`, paramiko; needs the new
   `remote-machines` permission → `requires: utils: [remote]`, the same reserved-util mechanism as
   `shell`): `list` / `exec` (short blocking) / `submit`·`status`·`logs`·`cancel` (DETACHED jobs
   for long GPU work — a setsid process group, killable; `--notify-webhook <the routine's own
@@ -276,7 +282,10 @@ connect (paramiko `RejectPolicy` — no TOFU in a headless run). Pieces:
 
 ## Routines on disk
 
-A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is NEVER read at run time:
+A routine dir (`~/routines/<slug>`) owns its recipe — a run NEVER follows library prose directly
+(the recipe is materialized in at creation; deliberate, narrow exceptions read the library AS DATA
+mid-run: subtask/spawn materialization, gated in-run workflow generation, `read_trait` consults,
+and the capabilities digest's catalog listing):
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
   main / subroutine / tool_call / uncensored), `connections:` (provider → account label — OAuth
@@ -284,7 +293,8 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: {actions, utils,
   confirm, runs, workflows} — both user-changeable only, side by side on the routine page with cascades between
   them; `workflows: catalog|generate` gates in-run pattern drafting for subtasks),
-  `budgets:` (max_turns / wall_clock_min / total_tokens (-1 = unlimited, the default) / subruns /
+  `budgets:` (max_turns / max_total_turns (cumulative across resume windows) / wall_clock_min /
+  total_tokens / max_cost (whole-$ ceiling) — the last four honor -1 = unlimited — / subruns /
   subrun_depth / ask_timeout_min — all editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
   budgets/fs-roots/schedules are resources, never capabilities; `improve: false` opts the routine
   out of the routine-improver's passes (default: included); `triggers:` — event-driven fires
@@ -346,8 +356,9 @@ A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is 
   Children are killed at parent finish (never outlive it); exits fold usage into the parent. The
   recursive tree is visualized live in the run/conversation rail (`web/tasktree.py` read-model →
   `static/components/tasktree.js`). `subrun_start`/`subrun_end` events carry `mode` (sequential/parallel)
-  + the child's allotted budget — payload EXTENSIONS, not new event types. A run interrupted mid-block
-  on a subtask resumes with a synthesized "did not complete" observation (`history.dangling_subtask`).
+  + the child's allotted budget — payload EXTENSIONS, not new event types. Children running at an interruption are dead on resume — boot marks each aborted
+  (`history.orphaned_children` → a synthesized `subrun_end`) and tells the model; finished-child
+  results ARE replayed (announcements reconstituted from `subrun_end` events).
   Pattern per child: pick a library slug, or `workflow: "generate"` to draft one (gated — see below).
 - **A detached background task (`detach`) is the CROSS-REPLY counterpart** — for a long fire-and-forget
   job (a 20-min scrape) that must OUTLIVE a conversation reply. Unlike a subtask/spawn thread (dies with
@@ -469,10 +480,13 @@ traits + permissions + playbooks),
 enabled; a seed added after first boot reaches existing instances via
 `bootstrap.adopt_seed_routine` at daemon boot, which respects an archived copy). `token-lab` is
 the token-efficiency R&D loop: measures real usage, tests methods via llm subcalls ONLY (never
-integrates), publishes `artifacts/report.html`. `library-sync`
-syncs the WHOLE instance into that one repo: `instance-export` copies each routine's working tree
-(minus `runs/`, `.git`, transient inbox/question state) into `routines/<slug>/` and the server config —
-token and api_key values redacted — into `config/`, then `git-sync` pushes. `bootstrap.py` seeds on
+integrates), publishes `artifacts/report.html`. The **library sync**
+(`library_sync.py`, a scheduled DAEMON job — Settings → Library sync, deliberately not a routine)
+syncs the WHOLE instance into that one repo: each routine's working tree (minus `runs/`, `.git`,
+transient inbox/question state) into `routines/<slug>/` and the server config — token/api_key
+values AND URL-embedded credentials redacted — into `config/`; then commit (scoped to
+`routines/ config/`, under the shared repo lock) → pull --rebase --autostash → push (never over a
+failed pull). `bootstrap.py` seeds on
 first boot; `deploy/install.sh` for host installs. Everything in the library is user-EDITABLE from
 the Library tab, and DELETABLE except permission docs (the capability layer's conduct surface) and
 the `clarify-instruction` workflow (the new-routine wizard runs it) — both guards are server-side.
@@ -545,7 +559,10 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   action — launch a long fire-and-forget task that outlives a reply and reports back; default-ON for
   conversations, opt-in for routines), `practice-library` (requires `read_trait` — CONSULT a library
   practice module for the CURRENT run when the work needs a discipline the recipe lacks; read-only,
-  so the routine's own traits/ set stays the user's; default-ON for conversations). Reservable utils =
+  so the routine's own traits/ set stays the user's; default-ON for conversations), `scheduling`
+  (requires the `schedule_run` action — arm/cancel one-shot fires on any routine, self-target
+  always allowed incl. conversations), and `remote-machines` (requires the reserved `remote`
+  util — see Remote machines above). Reservable utils =
   the union of all docs' `requires.utils` (library-defined); gateable kinds = GATED_KINDS
   (engine-defined); `runs`/`workflows` are level capabilities. Permission bodies are SHORT (≤14 lines reach the prompt's CAPABILITIES section
   when held); the Library tab's permission editor has a prefilled, authoritative `requires:` panel.
@@ -589,12 +606,14 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   `rsched/landlock.py` ctypes binding/child wrapper, verified working inside the production Docker
   container) whose visible filesystem derives from the run — routine dir + fs roots rw/ro, plus the
   toolchain (uv + caches, the library, system trees; the daemon-user HOME stays invisible: secrets
-  store, ~/.credentials, ~/.ssh). Network is the util's `net:` declaration (undeclared = no TCP;
+  store, ~/.credentials, ~/.ssh — with ONE deliberate rw carve-out: ~/.claude + ~/.claude.json, the
+  claude CLI's session/credential store, so `gu claude` works under the jail). Network is the util's `net:` declaration (undeclared = no TCP;
   transitive over `calls:`). Server config `sandbox: strict|permissive|off` (default permissive:
   jail when the kernel can, warn and proceed bare when it can't; strict refuses instead; the child
   wrapper itself never degrades — it exits 97). A one-shot boot migration (`MIGRATION(expires=
   2026-08-17)` in bootstrap.py) stamps pre-sandbox utils `net: outbound` + missing secrets/calls.
-- **Secrets** are one central, write-only KEY→VALUE store; a util subprocess receives ONLY the vars
+- **Secrets** are one central, write-only KEY→VALUE store (one `KEY=VALUE` line each;
+  a value with newlines — an SSH private key — is JSON-quoted onto its line, so PEMs round-trip); a util subprocess receives ONLY the vars
   it (or a `calls:` sibling) declares — undeclared store keys are scrubbed even from inherited
   daemon env, in every sandbox mode. Endpoints and the subscription read the store as before; the
   UI flags unset declared vars.
@@ -602,14 +621,29 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
 ## Ownership, concurrency, restart (daemon/)
 
 - The **engine subprocess** owns `runs/<ts>/*`, `status.json` (atomic, single writer), and git commits in
-  its routine dir. The **daemon** only writes `inbox/`. The **web layer** edits routine config only when
-  no run is active (409 otherwise).
+  its routine dir. The **daemon** writes `inbox/` plus the closeout of orphaned runs, retention
+  (delete/gzip old run dirs), detached-task delivery (artifacts + `state/background.json` on the
+  owner), and the `.control/` spools/ledgers. The **web layer** edits routine config only when no
+  run is active (409 otherwise) — deliberate live-edit exceptions: conversation settings and trait
+  add/remove (control.json `add_traits` tells the live run); web-side routine-dir commits take the
+  engine's per-repo commit lock.
 - The daemon (`scheduler.py` + `runner.py`) fires cron via croniter and spawns one `engine-run` subprocess
   per routine (never two of the same at once) under `max_concurrent_runs`; a run that blocks on a user
-  question **releases its slot**. `registry.py` derives the catalog and run-index live from the filesystem
-  every rescan — no database, no cache files; parsing is memoized per file behind a stat()
-  fingerprint (inode+mtime+size, so atomic rewrites always miss), pruned for deleted dirs,
-  copies returned — the disk stays the source of truth on every lookup.
+  question **releases its slot** (a PAUSED run too). **`rsched/registry.py`** (a shared read-model,
+  NOT daemon-owned) derives the catalog and run-index live from the filesystem every rescan — no
+  database, no cache files; parsing is memoized per file behind a stat() fingerprint
+  (inode+mtime+size, so atomic rewrites always miss), pruned for deleted dirs, copies returned —
+  the disk stays the source of truth on every lookup. Every other derived view lives in
+  **`rsched/readmodels/`** (stats, run_health, util_stats, statemap, fileactivity, tasktree) on the
+  same discipline: `readmodels/memo` fingerprint-caches per input file, `readmodels/usage_stream`
+  is the ONE parser of workflow-usage.jsonl — a read-model is a pure derivation, deletable state,
+  never a writer.
+- **One-shot time triggers (schedule-once, docs/schedule-once.md)**: a spool
+  (`.control/schedule-once/<slug>/req-*.json`) armed from the routine page or by a run holding
+  `scheduling` (the `schedule_run` action); the daemon's `OneShotManager` fires each due request
+  ONCE then CONSUMES the file (auto-deactivate = deletion). A conversation's self-armed one-shot
+  is namespaced `conv--<slug>` and wakes the conversation by RESUMING its run ("remind me in 3
+  days"). Cooldowns/expiry per request; corrupt requests are dropped, not rescanned.
 - **Event triggers fire through the same seam** (docs/triggers.md): the webhook route
   (`web/api_hooks.py`, POST `/api/hooks/<slug>/<token>` — the ONE unauthenticated API route:
   constant-time token compare, generic 404, 64 KiB cap, rate limit + spool cap, rejections logged,
@@ -635,9 +669,13 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   Hits carry {home, slug, run_ts, sub, kind, turn, phase, snippet} and the client groups +
   deep-links them (`#/run/<slug>:<ts>[?sub=…]`, `#/conversations/<slug>`, `#/questions`,
   `#/routine/<slug>`). See docs/search.md.
-- **Self-update restart** (`restart.py`): a sentinel triggers a drain (parked `waiting_user`/`paused` runs
-  don't block it), then a clean exit; systemd `Restart=always` relaunches on the committed code (`uv run`
-  re-syncs deps). Orphaned runs claiming to be alive are closed out at boot.
+- **Self-update restart** (`restart.py`): a sentinel triggers a drain, then a clean exit; systemd
+  `Restart=always` relaunches on the committed code (`uv run` re-syncs deps). A parked run
+  (`waiting_user`/`paused`) DEFERS the drain's start (never freeze scheduling on a human); once
+  draining, active runs are waited out. In-flight wizard builds AND live clarify runs (spawned by
+  the web layer, invisible to the runner — `restart.clarify_states` reads
+  `clarification/runs/*`) hold the drain the same way. Orphaned runs claiming to be alive are
+  closed out at boot.
 
 ## Standards
 
@@ -658,7 +696,10 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   gated by `utils_lib.header_problems` + their `--selftest`.
 - ONE outbound notification seam: any engine/daemon-implicit "reach the user" send goes through
   `rsched/notify.py` (see docs/notifications.md); new channels become a permission + a notify
-  transport, never an inline util call.
+  transport, never an inline util call. Discord is opt-in per routine via `communication`
+  (instance-level events like an OAuth reauth ping only fire when a BINDING routine holds it).
+  Browser push (`web/push.py`) is the WEB channel's delivery arm — it renders the same
+  open-decisions record, so it rides beside the seam, not through it.
 
 ## Versioning
 
@@ -676,7 +717,7 @@ or Docker (`docker compose up -d` — a disposable engine-only image; source, co
 whole system migrates as a tarball of those dirs — EVERY data home must be a bind, or it dies with
 the container layer on recreate. The host's `/etc/localtime` + `/etc/timezone` ride along read-only
 so the container keeps the host's zone; `schedule.server_tz()` honors TZ env / the zoneinfo key /
-the localtime symlink / `/etc/timezone`, in that order). Server config:
+`/etc/timezone` / the localtime symlink, in that order). Server config:
 `~/.config/routine-scheduler/config.yaml` (generated with a random token on
 first boot by `bootstrap.ensure_config`, so a fresh deploy is never an open API). Web UI on `:8321`,
 bearer-token auth; `RSCHED_BIND` / `RSCHED_PORT` override for containers. First launch redirects to

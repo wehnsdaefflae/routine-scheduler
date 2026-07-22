@@ -84,7 +84,7 @@ User slash commands run the same gates and count the same way. The catalog pseud
 (`list`, `show`) are discovery, not execution — never counted. Subrun records carry their
 own counts; parents never fold them in (the read-model sums records at every depth).
 
-`rsched/util_stats.py` joins three sources into the Stats tab table:
+`rsched/readmodels/util_stats.py` joins three sources into the Stats tab table:
 
 1. **Library git history** (one `git log` walk, memoized on HEAD): created = oldest
    commit touching `utils/<name>/`, last revised = newest.

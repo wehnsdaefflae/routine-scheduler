@@ -106,7 +106,8 @@ costing no turn; before finishing, fold what still matters into your report or m
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \
 conversation, one per turn, each answered by an observation before your next reply. Never state or \
 summarize results that no observation here has shown; finishing with claims of unperformed work is \
-the single worst failure this system knows. The engine rejects a finish(ok) before any action ran.
+the single worst failure this system knows. The engine rejects a top-level finish(ok) before any \
+action ran.
 
 The workflow below is your single entry point. Detailed, stage-specific instructions may live in \
 separate `stages/<name>.md` files (the state digest lists them) — read the one for the stage you \

@@ -173,7 +173,7 @@ back — `format_observation(obs)`, always starting `OBSERVATION (<kind>…)`:
 - `OBSERVATION (spawn): sub-workflow 1 'child' started … keep going.`
 - `OBSERVATION (subtask): sequential child 2 'draft' started (workflow general-task) — it runs in the BACKGROUND. To keep sequential order, wait for it (n=2) …` — subtask is NON-blocking; its completion arrives via the `wait` observation or the `SUBTASK FINISHED` hook (§3c), not here. `subtask REJECTED: …` when a cap is hit
 - `OBSERVATION (wait):\nSUB-WORKFLOW 1 'child' FINISHED (status ok, 12 turns):\n<summary>`
-- `OBSERVATION (finish REJECTED): you have not executed a single action this run…` — the fabrication guard, if a fresh run's very first action is a `finish(ok)` (a resume seeds the guard from the replayed observations, so a continued conversation may re-finish immediately)
+- `OBSERVATION (finish REJECTED): you have not executed a single action this run…` — the fabrication guard, if a fresh TOP-LEVEL run's very first action is a `finish(ok)` (children may validly answer from their instruction alone) (a resume seeds the guard from the replayed observations, so a continued conversation may re-finish immediately)
 
 Observations are truncated head+tail at 8k chars.
 
@@ -276,7 +276,7 @@ state digest point at the files, read on demand. The working-directory path is s
 ```
 You are the orchestrator of the routine "Job radar" (job-radar), run job-radar:20260712-070000 (schedule: 0 7 * * *). This conversation IS the run: every turn you reply with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. The "say" field is your narration: lead with what the last observation taught you, then why this action — a few words for routine steps, 2-3 sentences when you decide between options, change direction, or hit a surprise.
 
-The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this conversation, one per turn, each answered by an observation before your next reply. Never state or summarize results that no observation here has shown; finishing with claims of unperformed work is the single worst failure this system knows. The engine rejects a finish(ok) before any action ran.
+The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this conversation, one per turn, each answered by an observation before your next reply. Never state or summarize results that no observation here has shown; finishing with claims of unperformed work is the single worst failure this system knows. The engine rejects a top-level finish(ok) before any action ran.
 
 The workflow below is your single entry point. Detailed, stage-specific instructions may live in separate `stages/<name>.md` files (the state digest lists them) — read the one for the stage you are on with read_file, ON DEMAND, instead of loading them all up front. Keep your context lean.
 
@@ -548,7 +548,7 @@ the wait and batch other work while it is pending. [...]
 Unlocks the `memory_read` / `memory_write` actions — the ONLY way into `.memory/`, the
 notebook of things this routine learned the hard way. [...]
 
-Sub-workflow patterns for spawn — pick the one matching the CHILD's purpose, never reflexively the default:
+Sub-workflow patterns for spawn/subtask/detach — pick the one matching the CHILD's purpose, never reflexively the default:
 - general-task — bootstrap, then per run: orient on state, do the next increment of work, record, commit.
 
 Global utils (4; run `util name=list args=["<name>"]` for one's exact usage before calling it):
