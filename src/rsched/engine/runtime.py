@@ -135,23 +135,32 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     if not resume_from:            # a resumed run keeps the original header (append-only)
         transcript.header(run_id=ctx.run_id, routine=cfg.slug, workflow=prov,
                           orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model})
-    status = EngineLoop(ctx, body, instruction,
-                        allowed_tools=allowed_tools, resume=bool(resume_from)).run()
-    from ..health_events import log_workflow_usage
+    # Mount every bound machine's `share` (sshfs) at <routine>/mnt/<name>/ for the run's
+    # lifetime, so local filesystem utils act on remote files (compute goes via `remote exec`;
+    # this is the filesystem half). Best-effort; unmounted in the finally on EVERY exit path.
+    from .. import machines as machines_mod
 
-    log_workflow_usage(server.routines_home, routine=cfg.slug, run_id=ctx.run_id,
-                       workflow=prov.get("slug") or "", depth=0, status=status,
-                       turns=ctx.turn,
-                       tokens=int(ctx.usage.get("in", 0)) + int(ctx.usage.get("out", 0)),
-                       cost=float(ctx.usage.get("cost") or 0.0), referrals=ctx.referrals,
-                       recipe_commit=ctx.recipe_commit, utils=ctx.util_stats,
-                       asks_deferred=ctx.asks_deferred)
-    # Refresh the persisted util-stats snapshot (the single source of truth the Stats tab
-    # and the util-review routine both read) now that this run's usage record has landed.
-    # Best-effort: a telemetry write must never break a finished run.
+    mounts = machines_mod.mount_routine_shares(cfg, server)
     try:
-        from ..util_stats import write_util_stats_snapshot
-        write_util_stats_snapshot(server)
-    except Exception:  # stats telemetry must never break a run — but leave a breadcrumb
-        log.warning("util-stats snapshot refresh failed at run finish", exc_info=True)
-    return status, run_dir
+        status = EngineLoop(ctx, body, instruction,
+                            allowed_tools=allowed_tools, resume=bool(resume_from)).run()
+        from ..health_events import log_workflow_usage
+
+        log_workflow_usage(server.routines_home, routine=cfg.slug, run_id=ctx.run_id,
+                           workflow=prov.get("slug") or "", depth=0, status=status,
+                           turns=ctx.turn,
+                           tokens=int(ctx.usage.get("in", 0)) + int(ctx.usage.get("out", 0)),
+                           cost=float(ctx.usage.get("cost") or 0.0), referrals=ctx.referrals,
+                           recipe_commit=ctx.recipe_commit, utils=ctx.util_stats,
+                           asks_deferred=ctx.asks_deferred)
+        # Refresh the persisted util-stats snapshot (the single source of truth the Stats tab
+        # and the util-review routine both read) now that this run's usage record has landed.
+        # Best-effort: a telemetry write must never break a finished run.
+        try:
+            from ..util_stats import write_util_stats_snapshot
+            write_util_stats_snapshot(server)
+        except Exception:  # stats telemetry must never break a run — but leave a breadcrumb
+            log.warning("util-stats snapshot refresh failed at run finish", exc_info=True)
+        return status, run_dir
+    finally:
+        machines_mod.unmount_routine_shares(mounts)

@@ -19,6 +19,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.84.0] — 2026-07-22
+
+### Added — Remote machines: routines act on SSH hosts (GPU boxes, build servers)
+A routine can now run commands and move files on remote machines over SSH — for work that needs
+specific hardware (a GPU, a big build box) the daemon host doesn't have. Modeled on OAuth
+connections: a **resource binding**, never a capability a run can grant itself.
+
+- **Machine catalog** (`config.yaml` `machines:`, `ServerConfig.machines` → `MachineConfig`): an
+  operator-only, instance-wide list of SSH hosts (host / user / port / `key_var` / pinned
+  `host_key` / workdir / description / tags). Key MATERIAL never lives in config — `key_var` names
+  a **Secrets-store** key holding the private key; the pinned `host_key` is the server's public
+  key, verified STRICTLY at connect (no TOFU in a headless run). Settings → Machines does CRUD,
+  a host-key **scan**, and a live **test** — the last two run the real `remote` util server-side,
+  so what Settings proves is exactly what a run gets.
+- **Binding** (`routine.yaml` `machines: [names]`): a routine names the catalog machines it may
+  reach; the binding IS the grant. No run creates or changes one (`routine.yaml` stays sealed).
+  Bound on the routine page, alongside models/connections.
+- **The reserved `remote` util** (needs the new `remote-machines` permission): `list`, `exec`
+  (short, blocking), `submit`/`status`/`logs`/`cancel` (DETACHED jobs for long GPU work — poll,
+  or pass `--notify-webhook <the routine's own trigger URL>` and let the job ping the routine on
+  completion, no polling), `push`/`pull` (SFTP), plus `scan-host`/`test`. Host keys pinned; a
+  mismatch refuses to connect.
+- **Injection**: the engine resolves a routine's bindings to `RSCHED_MACHINES` (non-secret
+  connection metadata) + `RSCHED_MACHINE_KEYS` (private keys from the Secrets store), passed to
+  the `remote` util under the same declared-var gate OAuth tokens use — a token/key reaches a util
+  iff the routine binds the machine AND the util declares the var. Bound machines are named in the
+  prompt's CAPABILITIES section, so the model knows its hardware without a discovery turn.
+- **Filesystem shares** — compute crosses via `remote exec`, the FILESYSTEM via a mount. A machine
+  catalog entry can set a `share` (a remote dir); when a routine binds that machine the engine
+  mounts it over sshfs at `<routine>/mnt/<name>/` for the run, so ordinary filesystem utils (and
+  `read_file`/`write_file`) act on remote files with **no transfer step**. The engine mounts it
+  (not a sandboxed util), so the key never enters a util; the routine dir is already a sandbox write
+  root and a Landlock rule on it covers the sshfs sub-mount, so utils operate under the same jail.
+  `mnt/` is gitignored; mounting is best-effort (unreachable host / no `sshfs` → warn and proceed).
+  Docker gains `sshfs` + `/dev/fuse` + `CAP_SYS_ADMIN` (inert unless a bound machine sets a share).
+- **Hardening**: `SSH_AUTH_SOCK` / `SSH_AGENT_PID` are now scrubbed from every util subprocess
+  (`STRIP_VARS`), so a forwarded agent can never route around the per-routine machine binding.
+
+`~/.ssh` stays invisible to the sandbox exactly as before — remote-machine keys come from the
+Secrets store, not from disk. See `docs/remote-machines.md`.
+
 ## [0.83.2] — 2026-07-22
 
 ### Fixed — Routine-dir commits queue instead of racing (finishes the 0.83.1 race work)

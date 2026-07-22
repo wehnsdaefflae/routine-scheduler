@@ -39,7 +39,10 @@ Derived from the RUN's permissions, per dispatch:
   `~/.config/git`, `~/.config/gh`) so git-workflow utils can still push.
 - **invisible** — everything else. In particular the daemon user's HOME:
   `~/.config/routine-scheduler` (config + the central secrets store), `~/.credentials`,
-  `~/.ssh`, browser profiles, other apps' data.
+  `~/.ssh`, browser profiles, other apps' data. `~/.ssh` stays invisible even for the
+  remote-machine feature: a bound machine's private key comes from the Secrets store
+  (injected only into the `remote` util, declared-var gated), never from disk — see
+  [remote-machines](remote-machines.md).
 
 Known tradeoffs, accepted and documented: `/proc` is readable (headless chromium needs
 it), so keep secrets out of the daemon's environment — the compose file already prefers
@@ -60,10 +63,14 @@ network, and inherits the sibling's declared secrets.
 
 `_child_env` injects from the central store ONLY the vars the util (or a `calls:`
 sibling, transitively) declares on `secrets:`; every other store key is scrubbed even
-when the daemon's own environment carries it. `STRIP_VARS` (the LLM billing keys) never
-pass, declared or not. This layer needs no kernel support and applies even with
-`sandbox: off`. Blast radius after both layers: a prompt-injected util can leak at most
-its own declared secrets, not the store.
+when the daemon's own environment carries it. `STRIP_VARS` (the LLM billing keys, and the
+SSH-agent vars `SSH_AUTH_SOCK` / `SSH_AGENT_PID` — so a forwarded agent can't route around
+the per-routine machine binding) never pass, declared or not. The engine also injects a few
+per-run secrets through this SAME gate — a routine's OAuth connection tokens
+(`<PROVIDER>_ACCESS_TOKEN`) and its bound remote machines (`RSCHED_MACHINES` /
+`RSCHED_MACHINE_KEYS`) — each reaching a util only if the util declares the var. This layer
+needs no kernel support and applies even with `sandbox: off`. Blast radius after both layers:
+a prompt-injected util can leak at most its own declared secrets, not the store.
 
 ## The mode — config.yaml `sandbox:`
 

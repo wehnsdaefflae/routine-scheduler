@@ -93,6 +93,26 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         notes = _permission_notes(ctx, g)
         if notes:
             parts.append(notes)
+    bound = getattr(ctx.routine, "machines", None)
+    if bound:
+        # Bound remote machines are a resource the run can act on (via the `remote` util);
+        # naming them here saves a discovery turn. Non-secret metadata only — readiness
+        # (key/host-key set) is reported live by `remote list`.
+        catalog = getattr(ctx.server, "machines", {}) or {}
+        rows = []
+        for name in bound:
+            mac = catalog.get(name)
+            if mac is None:
+                rows.append(f"- {name} — (not in the instance catalog; ask the user to add it)")
+                continue
+            desc = mac.description or f"{mac.user}@{mac.host}"
+            tags = f" [{', '.join(mac.tags)}]" if mac.tags else ""
+            share = (f" · files mounted at mnt/{name}/ (read/write remote files there with "
+                     "normal file utils)") if getattr(mac, "share", "") else ""
+            rows.append(f"- {name} — {desc}{tags}{share}")
+        parts.append("Remote machines this routine is bound to (run commands with the `remote` "
+                     "util — `remote list` for readiness; a mounted share means the filesystem "
+                     "is already local):\n" + "\n".join(rows))
     if "spawn" in kinds:
         try:
             from ..workflows.library import list_workflows

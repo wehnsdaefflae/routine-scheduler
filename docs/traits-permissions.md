@@ -182,6 +182,7 @@ The shipped set:
 | `communication` | the reserved `discord` util — a second decision surface | opt-in |
 | `run-history` | previous-run reads (the depth — last / all — is the capability's setting) | opt-in |
 | `shell` | the reserved `shell` util — arbitrary host commands | opt-in |
+| `remote-machines` | the reserved `remote` util — act on bound SSH hosts (see [remote-machines](remote-machines.md)) | opt-in |
 | `workflow-generation` | `workflows: generate` — a subtask may DRAFT a new pattern when none fits | opt-in |
 | `background-tasks` | the `detach` action — launch a long job that outlives a reply and reports back | ✅ conversations; opt-in for routines |
 

@@ -150,6 +150,19 @@ bound-connection gate, never sitting in the prompt or a transcript. Expiring tok
 refreshed by the daemon before they lapse (a no-op for Notion's long-lived tokens); a lapsed one
 is flagged for re-auth and pinged to you. See `docs/oauth-connections.md` (also on the Help tab).
 
+## Remote machines
+
+A routine can run commands and move files on a remote **SSH host** — for work that needs specific
+hardware the daemon box doesn't have (a GPU for training/inference, a big build server). Register a
+host once in **Settings → Machines** (host / user / a `key_var` naming its private key in the
+Secrets store / a pinned, scanned host key), then bind it on a routine's page (`machines:`, a
+resource like `models:`) and switch on the `remote-machines` permission. The routine acts through
+the reserved `remote` util: `exec` for short commands, `submit`/`status`/`logs` for long DETACHED
+jobs (a GPU run can `--notify-webhook` the routine's own trigger URL on completion instead of being
+polled), `push`/`pull` over SFTP. Host keys are pinned (a mismatch refuses to connect), the private
+key comes from the Secrets store (never `~/.ssh`) and reaches only the `remote` util of a routine
+that binds the machine. See `docs/remote-machines.md` (also on the Help tab).
+
 ## CLI
 
 `uv run rsched --help` — `daemon` (what the service/container runs: scheduler + web in one

@@ -23,12 +23,16 @@ from . import libgit, sandbox
 from .ids import is_slug
 from .paths import atomic_write
 
-# LLM-auth vars scrubbed from util subprocesses UNCONDITIONALLY (declared or not): a util
+# Vars scrubbed from util subprocesses UNCONDITIONALLY (declared or not). LLM-auth: a util
 # that needs an LLM (e.g. a `gu claude` equivalent) resolves its own credentials; it must
 # never inherit the orchestrator's keys and silently mis-bill or use the wrong account.
+# SSH agent: a forwarded agent in the daemon's env would let ANY net-capable util
+# authenticate to hosts outside the machine catalog, routing around the per-routine binding —
+# so the agent socket never reaches a util (remote machines carry their own scoped keys).
 STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
               "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS",
-              "OPENROUTER_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY")
+              "OPENROUTER_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY",
+              "SSH_AUTH_SOCK", "SSH_AGENT_PID")
 
 DISPATCHER = '''#!/usr/bin/env python3
 """gu — run a global util: `gu <name> [args...]`, or `gu list`. Utils call each other

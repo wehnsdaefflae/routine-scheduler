@@ -86,7 +86,7 @@ input[type="search"] { background: #141d28; color: #d5dee6; border: 1px solid #1
 GUIDE_ORDER = ["getting-started", "examples", "conversations", "playbooks",
                "traits-permissions", "curated-traits", "notifications", "subtasks",
                "background-tasks", "triggers", "run-analytics", "authoring", "sandboxing",
-               "prompt-anatomy", "endpoints"]
+               "remote-machines", "prompt-anatomy", "endpoints"]
 
 
 def docs_out_dir() -> Path:

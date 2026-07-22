@@ -204,6 +204,33 @@ class ModelRef:
     name: str = ""
 
 
+class MachineConfig(_Config):
+    """One catalog machine: an SSH-reachable host a routine may act on (a GPU box, a build
+    server). Instance-wide config (config.yaml `machines:`), operator-only — a routine binds a
+    machine by NAME (RoutineConfig.machines), never creates one. Key MATERIAL never lives here:
+    `key_var` names a Secrets-store key holding the private key (the one credential); the pinned
+    `host_key` is the server's PUBLIC host key, verified strictly at connect. See
+    docs/remote-machines.md.
+    """
+
+    name: str = ""          # filled from the `machines:` mapping key
+    host: str               # hostname or IP the run connects to
+    user: str               # ssh login user
+    port: int = 22
+    key_var: BlankableStr = ""      # Secrets-store key NAME holding the private key (PEM)
+    # The server's pinned host key line ("ssh-ed25519 AAAA…"), verified strictly at connect
+    # (no TOFU in a headless run). Empty → the `remote` util refuses to connect; scan it in
+    # Settings → Machines. Multiple lines (one per algo) may be newline-joined.
+    host_key: BlankableStr = ""
+    # A remote directory to MOUNT (sshfs) into the routine when this machine is bound, at
+    # <routine>/mnt/<name>/ — so local filesystem utils read/write remote files seamlessly
+    # (compute stays on `remote exec`; only the filesystem is shared). Empty = no mount.
+    share: BlankableStr = ""
+    workdir: BlankableStr = ""       # default remote working dir for exec/jobs (else the login dir)
+    description: BlankableStr = ""   # one-line human summary, surfaced to the model in CAPABILITIES
+    tags: list[str] = Field(default_factory=list)
+
+
 class LibrarySyncConfig(_Config):
     """The daemon-scheduled library sync (`library_sync:` in config.yaml): mirror the
     instance into the ONE library repo and git-sync it. Deliberately NOT a routine —
@@ -269,6 +296,11 @@ class ServerConfig(_Config):
     # multimodality / context window / effort / temperature. Routines, conversations, and
     # the system model all reference an entry by NAME.
     models: dict[str, ModelConfig] = Field(default_factory=dict)
+    # The MACHINE catalog: name → an SSH-reachable host a routine may act on (GPU boxes,
+    # build servers). A resource like the model catalog — operator-only; a routine binds one
+    # by NAME (RoutineConfig.machines) and the reserved `remote` util acts on it. Key material
+    # lives in the Secrets store (per-entry key_var), never here. See docs/remote-machines.md.
+    machines: dict[str, MachineConfig] = Field(default_factory=dict)
     # The ONE fallback model for machine work that isn't a routine yet: workflow
     # generation/suggestion and the new-routine clarify wizard. A catalog model NAME;
     # routines set their own (also by name), falling back to this when a role is unset.
@@ -347,7 +379,8 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
 
     # extra="ignore" would drop a mistyped endpoint/model key silently — surface each as a
     # problem line (a warning; the entry still loads with the unknown key ignored).
-    for section, cls in (("endpoints", EndpointConfig), ("models", ModelConfig)):
+    for section, cls in (("endpoints", EndpointConfig), ("models", ModelConfig),
+                         ("machines", MachineConfig)):
         entries = raw.get(section)
         if isinstance(entries, dict):
             for name, entry in entries.items():
@@ -370,6 +403,8 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
                 problems.append(f"models.{name}: fallback {fb!r} is not a catalog model")
     if cfg.system_model and cfg.system_model not in cfg.models:
         problems.append(f"system_model: {cfg.system_model!r} is not a catalog model")
+    for name, mac in cfg.machines.items():
+        mac.name = name
     return cfg, problems
 
 
@@ -411,6 +446,11 @@ class RoutineConfig(_Config):
     # <PROVIDER>_ACCESS_TOKEN). A RESOURCE binding like models/fs_roots — the binding is the grant;
     # connections are user config, never set by a run. See docs/oauth-connections.md.
     connections: dict[str, str] = Field(default_factory=dict)
+    # Remote-machine bindings: catalog machine NAMES this routine may act on (Settings →
+    # Machines). A RESOURCE binding like connections/models — the list IS the grant; the
+    # reserved `remote` util receives the bound machines' connection details + private keys.
+    # Never set by a run. See docs/remote-machines.md.
+    machines: list[str] = Field(default_factory=list)
     budgets: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_BUDGETS))
     # The two permission layers (user-changeable only; explicit values win, otherwise a
     # new routine holds the defaults). `permissions` names the held CONDUCT docs (library
@@ -462,7 +502,7 @@ class RoutineConfig(_Config):
         return [str(t).strip() for t in v if str(t).strip()] if isinstance(v, list) else v
 
     @field_validator("fs_read_roots", "fs_write_roots", "models", "connections", "triggers",
-                     mode="before")
+                     "machines", mode="before")
     @classmethod
     def _none_as_absent(cls, v: object, info: ValidationInfo) -> object:
         # a bare `key:` (YAML null) reads as the FIELD'S OWN empty default ([] or {})

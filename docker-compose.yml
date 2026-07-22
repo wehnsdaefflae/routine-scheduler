@@ -45,3 +45,15 @@ services:
       # Playwright's browser cache: page-fetch downloads Chromium here once (user-level);
       # mounted so the ~170 MB download survives container recreation. Libs live in the image.
       - ${RSCHED_HOME:-/home/mark}/.cache/ms-playwright:/home/mark/.cache/ms-playwright
+    # Remote-machine share mounts (sshfs / FUSE): the engine mounts a bound machine's `share`
+    # into the routine dir so filesystem utils act on remote files. FUSE inside a container needs
+    # the fuse device + CAP_SYS_ADMIN (the mount syscall) + AppArmor unconfined (so the mount is
+    # not blocked). Only exercised when a routine binds a machine that sets `share`; inert
+    # otherwise. Drop these three lines if you never use remote-machine shares. See
+    # docs/remote-machines.md.
+    devices:
+      - /dev/fuse
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined

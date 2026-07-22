@@ -9,11 +9,13 @@ FROM python:3.12-slim-bookworm
 #   gh        — GitHub CLI: users run `gh auth login` at setup to clone/pull/push their (private) repos
 #   node + @anthropic-ai/claude-code — the `claude-cli` transport (self-audit) and the `gu claude` util
 #   curl/ca-certificates/gnupg — uv download, apt keys, HTTPS to OpenRouter/Anthropic
+#   sshfs     — mount a bound remote machine's `share` into a routine (docs/remote-machines.md);
+#     needs the fuse device + CAP_SYS_ADMIN at RUN time (see docker-compose.yml)
 #   lib*/fonts-* — Chromium's system libraries, so the page-fetch util's Playwright browser RUNS
 #     here (the ~170 MB browser itself is user-level: downloaded once by the util into the
 #     bind-mounted ~/.cache/ms-playwright — image carries the stable root-owned libs only)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git curl ca-certificates gnupg \
+        git curl ca-certificates gnupg sshfs \
     # GitHub CLI apt repo
     && mkdir -p -m 755 /etc/apt/keyrings \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \

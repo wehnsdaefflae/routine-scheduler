@@ -221,6 +221,13 @@ def routine_detail(request: Request, slug: str) -> dict:
         # OAuth connection bindings {provider: account}; the picker's options come from
         # GET /api/settings/oauth (the connected accounts).
         "connections": dict(info.cfg.connections),
+        # Remote-machine bindings (catalog machine names) + the catalog for the picker; details
+        # come from GET /api/settings/machines. A binding to a machine no longer in the catalog
+        # is kept as-is (resolves to nothing at run time) — the UI flags it.
+        "machines": list(info.cfg.machines),
+        "machine_catalog": [{"name": m.name, "description": m.description,
+                             "host": m.host, "user": m.user, "tags": list(m.tags)}
+                            for m in server.machines.values()],
         "deliberation": info.cfg.deliberation,
         # Practice modules this routine holds — the traits/ dir IS the state (see traits.py);
         # the picker's options come from GET /api/library (`traits`).
@@ -488,6 +495,7 @@ class RoutinePatch(BaseModel):
     budgets: dict | None = None
     models: dict | None = None              # {main|subroutine|tool_call|uncensored: catalog name}
     connections: dict | None = None         # {provider: account-label} OAuth connection bindings
+    machines: list[str] | None = None       # catalog machine names this routine may act on (SSH)
     name: str | None = None
     description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
@@ -577,6 +585,18 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
             if not isinstance(account, str) or not account:
                 raise HTTPException(400, f"connections.{prov}: must be an account label")
         raw["connections"] = updates.pop("connections")
+    # Validate machine bindings: each a name in the instance catalog; REPLACE wholesale (an empty
+    # list clears them). Unlike connections, we DO require catalog membership — a machine name is
+    # meaningless off the catalog, and the picker only offers catalog names.
+    if "machines" in updates:
+        catalog = _state(request).server.machines
+        names = updates["machines"] or []
+        if not isinstance(names, list) or any(not isinstance(n, str) for n in names):
+            raise HTTPException(400, "machines: must be a list of catalog machine names")
+        for n in names:
+            if n not in catalog:
+                raise HTTPException(400, f"unknown machine {n!r} (add it in Settings → Machines)")
+        raw["machines"] = updates.pop("machines")
     _apply_resource_fields(raw, updates)
     for key, val in updates.items():
         if isinstance(val, dict) and isinstance(raw.get(key), dict):

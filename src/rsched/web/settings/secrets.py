@@ -20,6 +20,7 @@ router = APIRouter()
 @router.get("/settings/secrets")
 def list_secrets(request: Request) -> dict:
     from ... import utils_lib
+    from ...machines import machine_env_vars
     from ...oauth.providers import connection_token_vars
     store_vals = secret_store.load_secrets()
     have = set(store_vals)
@@ -31,10 +32,11 @@ def list_secrets(request: Request) -> dict:
         parsed = _parse_map(raw)
         if parsed is not None:
             maps[k] = sorted(parsed)
-    # A util declares an OAuth connection's access token (e.g. NOTION_ACCESS_TOKEN) only so the
-    # sandbox lets the ENGINE-injected token through — the user never SETS it (it comes from binding
-    # a connection), so it must not appear as a needed store secret.
-    injected = connection_token_vars()
+    # A util declares an engine-injected var (an OAuth connection's access token like
+    # NOTION_ACCESS_TOKEN, or the remote-machine RSCHED_MACHINES/RSCHED_MACHINE_KEYS) only so the
+    # sandbox lets the ENGINE-injected value through — the user never SETS it (it comes from
+    # binding a connection / a machine), so it must not appear as a needed store secret.
+    injected = connection_token_vars() | machine_env_vars()
     # which env vars do the installed utils declare they need, and are they set yet?
     utils = utils_lib.list_utils(server_of(request).utils_home)
     by_name = {u["name"]: u for u in utils}

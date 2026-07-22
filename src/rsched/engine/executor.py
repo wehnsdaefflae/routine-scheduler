@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from .. import sandbox, utils_lib
+from .. import machines, sandbox, utils_lib
 from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, EndpointError, guess_media_type
 from ..ids import is_slug
 from ..oauth import store as oauth_store
@@ -40,6 +40,27 @@ def _connection_env(ctx: RunContext) -> dict[str, str]:
         return {}
     env, _warnings = oauth_store.tokens_for_routine(ctx.routine.connections)
     return env
+
+
+def _machine_env(ctx: RunContext) -> dict[str, str]:
+    """The routine's bound remote machines resolved to RSCHED_MACHINES (connection metadata) +
+    RSCHED_MACHINE_KEYS (private-key PEMs from the Secrets store), passed to run_util as
+    extra_secrets. Only the reserved `remote` util declares these, so only it receives them; an
+    unresolvable binding (missing catalog entry / unset key) is simply absent from the maps.
+    """
+    bound = getattr(ctx.routine, "machines", None)
+    if not bound:
+        return {}
+    env, _warnings = machines.machines_for_routine(bound, getattr(ctx.server, "machines", {}) or {})
+    return env
+
+
+def _extra_secrets(ctx: RunContext) -> dict[str, str]:
+    """Engine-resolved, per-run secrets a util may receive (still under the declared-only gate):
+    OAuth connection access tokens + bound remote-machine details/keys. The var names are
+    disjoint, so a plain merge is safe.
+    """
+    return {**_connection_env(ctx), **_machine_env(ctx)}
 
 
 def do_util(action: dict, ctx: RunContext) -> dict:
@@ -82,7 +103,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:
     code, out, err = utils_lib.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
         policy=sandbox.policy_for_run(ctx.server, ctx.routine),
-        extra_secrets=_connection_env(ctx))
+        extra_secrets=_extra_secrets(ctx))
     # Per-util reliability telemetry (util_stats → the Stats tab).
     ctx.count_util(name, "ok" if code == 0
                    else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))

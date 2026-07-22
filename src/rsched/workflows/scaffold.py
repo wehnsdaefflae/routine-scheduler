@@ -19,7 +19,7 @@ from ..config import (
 )
 from ..ids import is_slug
 
-GITIGNORE = "runs/\ninbox/\nquestions/\n"
+GITIGNORE = "runs/\ninbox/\nquestions/\nmnt/\n"   # mnt/ = transient remote-machine share mounts
 
 PRACTICES_HEADING = "## Standing practices"
 

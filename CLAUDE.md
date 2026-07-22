@@ -230,6 +230,50 @@ and passes them to `utils_lib.run_util` as `extra_secrets`; `_child_env` injects
 util declares the var — so a token reaches a util iff the routine binds the connection AND the util
 declares the var (the `notion` util declares `NOTION_ACCESS_TOKEN`). See docs/oauth-connections.md.
 
+## Remote machines (machines.py)
+
+A **machine** lets a routine run commands and move files on an SSH host (a GPU box, a build
+server) — hardware the daemon box lacks. Like connections, it is a RESOURCE binding, not a
+capability: the instance-wide `config.yaml` `machines:` catalog (`ServerConfig.machines` →
+`config.MachineConfig`: host/user/port/`key_var`/`host_key`/workdir/description/tags) is
+operator-only, the routine.yaml `machines: [names]` list IS the grant, and no run creates or
+changes either. **No secret lives in the catalog**: `key_var` names a Secrets-store key holding
+the private key (the one credential); `host_key` is the server's PUBLIC key, verified STRICTLY at
+connect (paramiko `RejectPolicy` — no TOFU in a headless run). Pieces:
+- **`machines.py`** — `machines_for_routine(names, catalog)` resolves a routine's bindings + the
+  Secrets store into two env vars: `RSCHED_MACHINES` (non-secret connection metadata) and
+  `RSCHED_MACHINE_KEYS` (`{name: PEM}`, a credential — its name ends in KEYS so the util-authoring
+  gate forces its declaration). `machine_env_vars()` keeps both out of the Settings "needed
+  secrets" list (like `connection_token_vars()`).
+- **The reserved `remote` util** (`library-seed/utils/remote`, paramiko; needs the new
+  `remote-machines` permission → `requires: utils: [remote]`, the same reserved-util mechanism as
+  `shell`): `list` / `exec` (short blocking) / `submit`·`status`·`logs`·`cancel` (DETACHED jobs
+  for long GPU work — a setsid process group, killable; `--notify-webhook <the routine's own
+  trigger URL>` lets the job ping the routine on completion instead of polling) / `push`·`pull`
+  (SFTP) / `scan-host` · `test`. Host keys pinned; a mismatch refuses.
+- **Engine injection** mirrors OAuth: `executor._machine_env(ctx)` (merged with `_connection_env`
+  in `_extra_secrets`) passes the two vars to `run_util` as `extra_secrets`, under the SAME
+  declared-var gate — a key reaches a util iff the routine binds the machine AND the util declares
+  the var. Bound machines are NAMED in the prompt's CAPABILITIES section (`capabilities_digest`),
+  so the model knows its hardware without a discovery turn.
+- **Filesystem shares** (`MachineConfig.share`): compute crosses via `remote exec`, the FILESYSTEM
+  via an sshfs mount. A bound machine whose catalog entry sets `share` gets that remote dir mounted
+  at `<routine>/mnt/<name>/` for the run — so ordinary filesystem utils act on remote files with no
+  transfer (`machines.mount_routine_shares` / `unmount_routine_shares`, hooked in a try/finally in
+  `runtime.run_routine`). The **engine** mounts (unsandboxed, like OAuth consent) so the key never
+  enters a util; key + pinned `known_hosts` go to a daemon-private `<config>/.mounts/` dir the
+  sandbox keeps invisible. The routine dir is already a sandbox write root and a Landlock rule on it
+  COVERS the sshfs sub-mount (verified empirically) — no sandbox change, no `remote-machines`
+  permission needed (that gates the compute util, not the filesystem). `mnt/` is gitignored so the
+  autocommit never slurps the remote FS; mounting is best-effort (unreachable/no-sshfs → warn +
+  proceed) and a crashed run's stale mount is cleared before the next remount. Docker: `sshfs` in
+  the image + `/dev/fuse` + `CAP_SYS_ADMIN` + apparmor:unconfined in compose (inert without a share).
+- **`web/settings/machines.py`** — Settings → Machines CRUD + `scan-host` + `test` (the last two
+  run the real `remote` util server-side with `base_policy`, so what Settings proves is what a run
+  gets); routine-page binding via `api_routines` PATCH `machines` (catalog-validated). `STRIP_VARS`
+  now also scrubs `SSH_AUTH_SOCK`/`SSH_AGENT_PID` so a forwarded agent can't bypass the binding;
+  `~/.ssh` stays sandbox-invisible (keys come from Secrets, not disk). See docs/remote-machines.md.
+
 ## Routines on disk
 
 A routine dir (`~/routines/<slug>`) owns its recipe — the workflow library is NEVER read at run time:
