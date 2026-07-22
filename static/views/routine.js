@@ -26,10 +26,11 @@ export async function render(view, slug, query = {}) {
   const runChip = (x) => (x.active_state ? chip(x.active_state, x.active_state)
     : x.enabled ? chip("idle", "idle") : chip("disabled", "disabled"));
   const chipHost = el("span", {}, runChip(d));
+  const titleH1 = el("h1", {}, d.name || slug);
   view.append(el("div", { class: "page-head" },
     el("div", {},
       el("div", { class: "kicker" }, "routine"),
-      el("h1", {}, d.name || slug)),
+      titleH1),
     el("div", { class: "row" }, chipHost,
       // the clarification template is wizard configuration: no run, no archive — the
       // server 403s both anyway; hiding the buttons says so up front
@@ -56,6 +57,23 @@ export async function render(view, slug, query = {}) {
     try { await api(`/api/routines/${slug}/archive`, { method: "POST" }); location.hash = "#/"; }
     catch (err) { toast(err.message, 4000, { error: true }); }
   }
+
+  // -- name (rename; the header + dashboard show it — slug stays the identity) ------
+  const nameInput = el("input", { type: "text", value: d.name || slug, placeholder: "routine name",
+    style: "width:100%;max-width:420px" });
+  view.append(el("h2", {}, "Name"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted small", style: "margin-bottom:8px" },
+        "the display name (the folder ", el("span", { class: "ref-tag" }, slug), " stays the identity)"),
+      el("div", { class: "row" }, nameInput,
+        el("button", { class: "btn primary", onclick: async () => {
+          const v = nameInput.value.trim();
+          if (!v) { toast("name can't be empty"); return; }
+          try {
+            await api(`/api/routines/${slug}`, { method: "PATCH", body: { name: v } });
+            titleH1.textContent = v; toast("name saved");
+          } catch (err) { toast(err.message, 4000, { error: true }); }
+        } }, "save name"))));
 
   // -- description (always present; shown here + on the dashboard) ----------------
   const descInput = el("input", { type: "text", value: d.description || "", placeholder: "one-line description",
@@ -95,7 +113,8 @@ export async function render(view, slug, query = {}) {
       nextFireLine.replaceChildren(...(nd.next_fire ? ["next run · ", when(nd.next_fire)] : []));
     } catch { /* cosmetic refresh — the save itself already succeeded */ }
   }
-  const sched = scheduleEditor(d.schedule_friendly || { frequency: "manual" }, d.server_tz);
+  const sched = scheduleEditor(d.schedule_friendly || { frequency: "manual" }, d.server_tz,
+    { catchup: d.catchup || "skip" });
   const enabledBox = el("input", { type: "checkbox", checked: d.enabled || null });
   const improveBox = el("input", { type: "checkbox", checked: d.improve !== false || null });
   view.append(el("h2", {}, "Schedule"),
@@ -109,7 +128,7 @@ export async function render(view, slug, query = {}) {
           try {
             await api(`/api/routines/${slug}`, { method: "PATCH",
               body: { enabled: enabledBox.checked, improve: improveBox.checked,
-                      schedule: { friendly: sched.value() } } });
+                      schedule: { friendly: sched.value(), catchup: sched.catchup() } } });
             toast("schedule saved"); refreshHead();
           } catch (err) { toast(err.message, 4000, { error: true }); }
         },
@@ -170,9 +189,10 @@ export async function render(view, slug, query = {}) {
       traitHost));
 
   // -- budgets (per-run ceilings — every invisible limit, surfaced) -----------------
-  const UNLIMITED_BUDGETS = ["max_total_tokens", "max_wall_clock_min", "max_cost"];  // -1 = unlimited
+  const UNLIMITED_BUDGETS = ["max_total_tokens", "max_wall_clock_min", "max_cost", "max_total_turns"];  // -1 = unlimited
   const BUDGET_FIELDS = [
     ["max_turns", "turns per run", "each model action is one turn; the run is stopped at the cap"],
+    ["max_total_turns", "turns across all resumes", "cumulative turns over every resume window (a conversation's whole life); -1 = unlimited (the default — inert for single-window scheduled routines)"],
     ["max_wall_clock_min", "minutes per run", "wall-clock ceiling (time waiting on you is credited back); -1 = unlimited"],
     ["max_total_tokens", "tokens per run", "cumulative input+output tokens; -1 = unlimited (the default — turns bound the run)"],
     ["max_cost", "cost cap per run ($)", "whole-dollar ceiling on real provider spend (reported by metered endpoints like OpenRouter); -1 = unlimited (the default)"],
@@ -212,6 +232,45 @@ export async function render(view, slug, query = {}) {
             toast("budgets saved"); }
           catch (err) { toast(err.message, 4000, { error: true }); }
         } }, "save budgets"))));
+
+  // -- retention: how many finished run dirs to keep ------------------------------
+  const keepRunsIn = el("input", { type: "number", min: "1", value: String(d.keep_runs ?? 30), style: "width:110px" });
+  view.append(el("h2", {}, "Retention"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted small", style: "margin-bottom:8px" },
+        "how many finished run directories to keep — older ones are pruned (transcripts gzip first). ",
+        "The durable usage stream (spend, health) survives pruning."),
+      el("div", { class: "row" }, keepRunsIn, el("span", {}, "runs kept"),
+        el("button", { class: "btn primary", onclick: async () => {
+          const n = parseInt(keepRunsIn.value, 10);
+          if (!Number.isFinite(n) || n < 1) { toast("keep at least 1 run"); return; }
+          try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { keep_runs: n } });
+            toast("retention saved"); }
+          catch (err) { toast(err.message, 4000, { error: true }); }
+        } }, "save retention"))));
+
+  // -- filesystem roots: extra dirs the run may read / write (resources, not capabilities) --
+  const rootLines = (ta) => ta.value.split("\n").map((s) => s.trim()).filter(Boolean);
+  const readTa = el("textarea", { class: "code", rows: "3", style: "width:100%",
+    placeholder: "one path per line (e.g. ~/projects/foo)" }, (d.fs_read_roots || []).join("\n"));
+  const writeTa = el("textarea", { class: "code", rows: "3", style: "width:100%",
+    placeholder: "one path per line" }, (d.fs_write_roots || []).join("\n"));
+  view.append(el("h2", {}, "Filesystem roots"),
+    el("div", { class: "panel" },
+      el("div", { class: "muted small", style: "margin-bottom:8px" },
+        "extra directories this routine may access beyond its own dir — one path per line. ",
+        el("strong", {}, "Write roots are powerful"), ": a write root that covers this routine's own ",
+        "directory unlocks editing its OWN recipe (main.md / stages / traits / tuning.yaml) — the same ",
+        "lever the routine-improver holds. routine.yaml stays sealed regardless. Takes effect next run."),
+      el("div", { class: "field" }, el("span", {}, "read roots"), readTa),
+      el("div", { class: "field mt" }, el("span", {}, "write roots"), writeTa),
+      el("div", { class: "row mt" }, el("button", { class: "btn primary", onclick: async () => {
+        try {
+          await api(`/api/routines/${slug}`, { method: "PATCH",
+            body: { fs_read_roots: rootLines(readTa), fs_write_roots: rootLines(writeTa) } });
+          toast("filesystem roots saved");
+        } catch (err) { toast(err.message, 4000, { error: true }); }
+      } }, "save roots"))));
 
   // -- models (per routine: main / subroutine / tool_call / uncensored) ----------
   const MODEL_KINDS = [["main", "the orchestrator loop"], ["subroutine", "spawned sub-workflows"],

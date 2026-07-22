@@ -531,8 +531,48 @@ export async function render(view, query = {}) {
   }
   const sourceReady = renderSource();
 
-  // -- server process (graceful restart onto committed code) -----------------------
+  // -- server process: runtime config knobs, then a graceful restart onto committed code ----
   view.append(sectionHead("server", "Server"));
+  const srvCfgBox = el("div", { class: "panel" });
+  srvCfgBox.append(skeleton(["50%", "70%"]));
+  view.append(srvCfgBox);
+  async function renderServerConfig() {
+    let c;
+    try { c = await api("/api/settings/server"); }
+    catch (err) { srvCfgBox.replaceChildren(el("div", { class: "muted" }, err.message)); return; }
+    const sandboxSel = el("select", {}, ["strict", "permissive", "off"].map((m) => el("option", {}, m)));
+    sandboxSel.value = c.sandbox || "permissive";
+    const concIn = el("input", { type: "number", min: "1", value: String(c.max_concurrent_runs ?? 2), style: "width:90px" });
+    const rescanIn = el("input", { type: "number", min: "1", value: String(c.registry_rescan_s ?? 30), style: "width:90px" });
+    const ghIn = el("input", { type: "text", value: c.github_client_id || "",
+      placeholder: "default: the gh CLI's client id", style: "width:100%;max-width:420px" });
+    const save = el("button", { class: "btn small primary" }, "save server settings");
+    save.onclick = async () => {
+      try {
+        const r = await api("/api/settings/server", { method: "PUT", body: {
+          sandbox: sandboxSel.value, max_concurrent_runs: Number(concIn.value),
+          registry_rescan_s: Number(rescanIn.value), github_client_id: ghIn.value.trim() } });
+        toast(r.restart_for?.length ? "server settings saved — restart to resize concurrency" : "server settings saved");
+      } catch (err) { toast(err.message, 5000, { error: true }); }
+    };
+    srvCfgBox.replaceChildren(
+      el("div", { class: "muted small", style: "margin-bottom:8px" },
+        "Runtime knobs in config.yaml. The sandbox mode applies to the next util call and the ",
+        "rescan cadence to the next scan; max concurrent runs sizes the run pool at startup, so it ",
+        "needs a restart (below). Homes, bind, port, and the auth token stay install-time."),
+      el("div", { class: "field-row" },
+        el("label", { class: "field" }, el("span", {}, "util sandbox"), sandboxSel),
+        el("label", { class: "field" }, el("span", {}, "max concurrent runs"), concIn),
+        el("label", { class: "field" }, el("span", {}, "registry rescan (s)"), rescanIn)),
+      el("div", { class: "field-row" },
+        el("label", { class: "field" }, el("span", {}, "github OAuth client id"), ghIn)),
+      el("div", { class: "row mt" }, save),
+      el("div", { class: "faint small", style: "margin-top:6px" },
+        "sandbox: strict = refuse to run a util unsandboxed · permissive = jail when the kernel ",
+        "allows, warn and run bare otherwise · off = never jail"));
+  }
+  const serverCfgReady = renderServerConfig();
+
   const srvBox = el("div", { class: "panel" });
   srvBox.append(skeleton(["50%", "80%"]));
   view.append(srvBox);
@@ -639,7 +679,7 @@ export async function render(view, query = {}) {
   // order, so each async render only fills its own box. Wait for all of them before the
   // deep-link jump so the anchor lands on settled heights.
   await Promise.all([endpointsReady, githubReady, connectionsReady, secretsReady, librariesReady,
-                     librarySyncReady, sourceReady, serverReady]);
+                     librarySyncReady, sourceReady, serverCfgReady, serverReady]);
 
   // Land on the requested section (deep link / reload). Everything above is now in the DOM, so
   // the anchor exists; jump without smooth-scroll on first paint.

@@ -110,6 +110,11 @@ system_model: glm                 # the fallback model for setup-time work — a
       ignore: [SomeProvider]   # e.g. providers whose constrained decoding corrupts output
   ```
 
+All of the above are editable on the endpoint's card in **Settings → Endpoints** (under *edit
+fields*: `temperature`, `key_env_file`, and — per kind — the `claude-cli` `credentials_env` or the
+`openai` `extra_body` as JSON). A save that omits a field the form doesn't show preserves the
+stored value rather than clearing it.
+
 ### Model fields (the catalog)
 
 A catalog model binds a provider `model` id to an `endpoint` and carries the attributes that

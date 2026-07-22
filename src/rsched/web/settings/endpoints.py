@@ -50,8 +50,10 @@ def _key_source(ep: EndpointConfig) -> dict:
 def _endpoint_view(name: str, ep: EndpointConfig) -> dict:
     return {"name": name, "kind": ep.kind, "base_url": ep.base_url,
             "key_env_file": ep.key_env_file, "key_var": ep.key_var,
+            "credentials_env": ep.credentials_env,
             "schema_mode": ep.schema_mode, "context_chars": ep.context_chars,
             "temperature": ep.temperature, "max_tokens": ep.max_tokens,
+            "extra_body": ep.extra_body,
             "has_inline_key": bool(ep.api_key), "key_source": _key_source(ep)}
 
 
@@ -130,10 +132,14 @@ class EndpointBody(BaseModel):
     api_key: str = ""
     key_env_file: str = ""
     key_var: str = ""
+    credentials_env: str = ""         # claude-cli only: subscription-token env file path
     schema_mode: str = "json_schema"
     context_chars: int = 100_000     # a DEFAULT catalog models inherit (per-model window wins)
     temperature: float | None = None  # a DEFAULT catalog models inherit
     max_tokens: int | None = None     # a DEFAULT catalog models inherit
+    # openai only: merged verbatim into every request body (aggregator/provider routing, e.g.
+    # OpenRouter {"provider": {...}}). None = leave whatever is in config.yaml untouched.
+    extra_body: dict | None = None
 
 
 @router.post("/settings/endpoints")
@@ -151,9 +157,11 @@ def upsert_endpoint(request: Request, body: EndpointBody, name: str | None = Non
         if not spec.get("api_key") and prev.get("api_key"):
             spec["api_key"] = prev["api_key"]
         # A PUT is a full replace, but the credential-save form sends only a subset — preserve
-        # config-only / omitted fields (temperature, extra_body, max_tokens) so saving a key
-        # never silently drops them.
-        for field in ("temperature", "extra_body", "max_tokens"):
+        # every config-only / omitted field so saving a key (or editing base_url) never silently
+        # drops one. credentials_env + key_env_file were missing here, so editing a claude-cli
+        # endpoint wiped a custom token path back to the default; both are covered now.
+        for field in ("temperature", "extra_body", "max_tokens", "credentials_env",
+                      "key_env_file"):
             if field not in spec and field in prev:
                 spec[field] = prev[field]
         endpoints[key] = spec

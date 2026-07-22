@@ -147,6 +147,34 @@ def test_patch_routine_and_409_guard(client):
                  json={"path": "main.md", "content": "x"}).status_code == 409
 
 
+def test_patch_routine_resource_fields(client):
+    """keep_runs (nested under retention:), the fs roots (top-level, stripped), and the
+    schedule catchup policy all save through PATCH and surface in the detail read."""
+    c, tmp = client
+
+    def raw():
+        return yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
+
+    r = c.patch("/api/routines/apir", json={
+        "keep_runs": 5,
+        "fs_read_roots": ["~/data", "  ~/more  "],
+        "fs_write_roots": ["~/out"],
+        "schedule": {"friendly": {"frequency": "daily", "time": "06:00"}, "catchup": "run_once"}})
+    assert r.status_code == 200
+    y = raw()
+    assert y["retention"]["keep_runs"] == 5
+    assert y["fs_read_roots"] == ["~/data", "~/more"]        # whitespace stripped
+    assert y["fs_write_roots"] == ["~/out"]
+    assert y["schedule"]["catchup"] == "run_once" and y["schedule"]["cron"] == "0 6 * * *"
+    detail = c.get("/api/routines/apir").json()
+    assert detail["keep_runs"] == 5 and detail["catchup"] == "run_once"
+    assert detail["fs_read_roots"] and detail["fs_write_roots"]   # resolved to absolute server paths
+    # validation: positive keep_runs, a known catchup policy, no empty root strings
+    assert c.patch("/api/routines/apir", json={"keep_runs": 0}).status_code == 400
+    assert c.patch("/api/routines/apir", json={"schedule": {"catchup": "bogus"}}).status_code == 400
+    assert c.patch("/api/routines/apir", json={"fs_read_roots": ["ok", ""]}).status_code == 400
+
+
 def test_put_routine_file(client):
     c, tmp = client
     r = c.put("/api/routines/apir/file", json={"path": "main.md", "content": "# New main"})
@@ -708,6 +736,67 @@ def test_endpoint_inline_key_saved_and_preserved(client):
     # editing another field with the key box left blank keeps the saved key
     c.put("/api/settings/endpoints/dummy", json={"name": "dummy", "kind": "openai", "base_url": "http://y/v1"})
     assert yaml.safe_load((tmp / "config.yaml").read_text())["endpoints"]["dummy"]["api_key"] == "sk-secret"
+
+
+def test_endpoint_credentials_env_preserved_on_edit(client):
+    """Regression: editing a claude-cli endpoint must not wipe a custom credentials_env /
+    key_env_file. A full-replace PUT that omits them used to reset the token path to the
+    default; both are now in the preserve list and survive an unrelated edit."""
+    c, tmp = client
+
+    def stored():
+        return yaml.safe_load((tmp / "config.yaml").read_text())["endpoints"]["cc"]
+
+    assert c.post("/api/settings/endpoints", json={
+        "name": "cc", "kind": "claude-cli", "credentials_env": "~/.creds/custom.env"}).status_code == 200
+    assert stored()["credentials_env"] == "~/.creds/custom.env"
+    # an edit that omits credentials_env preserves it (the bug was it fell through)
+    assert c.put("/api/settings/endpoints/cc", json={
+        "name": "cc", "kind": "claude-cli", "base_url": "http://x/v1"}).status_code == 200
+    assert stored()["credentials_env"] == "~/.creds/custom.env"
+    view = next(e for e in c.get("/api/settings/endpoints").json()["endpoints"] if e["name"] == "cc")
+    assert view["credentials_env"] == "~/.creds/custom.env"   # surfaced for the UI
+
+
+def test_endpoint_extra_body_set_view_and_preserved(client):
+    """extra_body (openai provider routing) is settable, surfaced in the view, preserved
+    across an unrelated edit, and clearable by sending {}."""
+    c, tmp = client
+
+    def stored():
+        return yaml.safe_load((tmp / "config.yaml").read_text())["endpoints"]["dummy"]
+
+    assert c.put("/api/settings/endpoints/dummy", json={
+        "name": "dummy", "kind": "openai", "base_url": "http://x/v1",
+        "extra_body": {"provider": {"ignore": ["foo"]}}}).status_code == 200
+    assert stored()["extra_body"] == {"provider": {"ignore": ["foo"]}}
+    view = next(e for e in c.get("/api/settings/endpoints").json()["endpoints"] if e["name"] == "dummy")
+    assert view["extra_body"] == {"provider": {"ignore": ["foo"]}}
+    # an omitting edit keeps it; an explicit {} clears it
+    c.put("/api/settings/endpoints/dummy", json={"name": "dummy", "kind": "openai", "base_url": "http://y/v1"})
+    assert stored()["extra_body"] == {"provider": {"ignore": ["foo"]}}
+    c.put("/api/settings/endpoints/dummy",
+          json={"name": "dummy", "kind": "openai", "base_url": "http://y/v1", "extra_body": {}})
+    assert stored()["extra_body"] == {}
+
+
+def test_settings_server_config(client):
+    """The runtime server knobs (sandbox, concurrency, rescan, github client id) round-trip
+    through config.yaml and the live ServerConfig, with validation."""
+    c, tmp = client
+    got = c.get("/api/settings/server").json()
+    assert got["sandbox"] == "permissive" and got["max_concurrent_runs"] == 2
+    r = c.put("/api/settings/server", json={
+        "sandbox": "strict", "max_concurrent_runs": 4, "registry_rescan_s": 15,
+        "github_client_id": "abc123"})
+    assert r.status_code == 200 and "max_concurrent_runs" in r.json()["restart_for"]
+    raw = yaml.safe_load((tmp / "config.yaml").read_text())
+    assert raw["sandbox"] == "strict" and raw["max_concurrent_runs"] == 4
+    assert raw["registry_rescan_s"] == 15 and raw["github_client_id"] == "abc123"
+    assert c.get("/api/settings/server").json()["sandbox"] == "strict"   # live object mirrors it
+    assert c.put("/api/settings/server", json={"sandbox": "bogus"}).status_code == 400
+    assert c.put("/api/settings/server", json={"max_concurrent_runs": 0}).status_code == 400
+    assert c.put("/api/settings/server", json={"registry_rescan_s": 0}).status_code == 400
 
 
 def test_endpoints_prefer_inline_key(monkeypatch):

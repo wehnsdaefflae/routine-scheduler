@@ -25,11 +25,14 @@ export function triggersCard(slug, initial, opts = {}) {
   }
 
   function render(rows) {
+    const cooldownIn = el("input", { type: "number", min: "0", value: "60", style: "width:80px",
+      title: "minimum seconds between trigger-initiated fires — more events coalesce into one" });
     body.replaceChildren(
       rows.length ? el("div", {}, ...rows.map(row))
         : el("div", { class: "muted small" }, "no triggers yet — this routine fires on schedule or manually only"),
-      opts.protected ? "" : el("div", { class: "row mt" },
-        el("button", { class: "btn primary", onclick: create }, "+ add webhook trigger")));
+      opts.protected ? "" : el("div", { class: "row mt", style: "gap:8px" },
+        el("span", { class: "muted small" }, "cooldown (s)"), cooldownIn,
+        el("button", { class: "btn primary", onclick: () => create(cooldownIn) }, "+ add webhook trigger")));
   }
 
   function row(t) {
@@ -62,9 +65,12 @@ export function triggersCard(slug, initial, opts = {}) {
     return el("div", { class: "row", style: "gap:8px;margin-bottom:6px" }, input, copy);
   }
 
-  async function create() {
+  async function create(cooldownIn) {
+    const cooldown = parseInt(cooldownIn?.value, 10);
     try {
-      await api(`/api/routines/${slug}/triggers`, { method: "POST", body: { type: "webhook" } });
+      await api(`/api/routines/${slug}/triggers`, { method: "POST",
+        body: { type: "webhook",
+                ...(Number.isFinite(cooldown) && cooldown >= 0 ? { cooldown_s: cooldown } : {}) } });
       toast("webhook trigger created");
       refresh();
     } catch (err) { toast(err.message, 4000, { error: true }); }

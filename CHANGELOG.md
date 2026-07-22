@@ -19,6 +19,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.82.0] — 2026-07-22
+
+### Fixed
+- **Editing a claude-cli endpoint no longer wipes its `credentials_env` / `key_env_file`.** A
+  full-replace `PUT /settings/endpoints/{name}` preserved only `temperature` / `extra_body` /
+  `max_tokens`, so any edit (even re-saving the token) reset a custom subscription-token path back
+  to the default `~/.credentials/claude-code-oauth.env` — silently breaking auth. Both fields are
+  in the preserve list now (`web/settings/endpoints.py`).
+
+### Added — config surfacing (every setting is now reachable in the UI)
+An audit found several config fields that had no editable control and could only be changed by
+hand-editing `routine.yaml` / `config.yaml`. All are now in the UI:
+- **Routine page:** a **Name** rename; a **Retention** control (`keep_runs`); a **Filesystem roots**
+  editor (`fs_read_roots` / `fs_write_roots` — a write root covering the routine's own dir is the
+  lever that unlocks recipe self-editing, the routine-improver's mechanism); the schedule **catchup**
+  policy (skip vs run-once) on the schedule editor; and the **`max_total_turns`** budget (was
+  conversation-only). `PATCH /routines/{slug}` accepts them (`keep_runs`, `fs_read_roots`,
+  `fs_write_roots`, `schedule.catchup`); the detail read surfaces them.
+- **Settings → Server:** a new panel for the runtime knobs — util **sandbox** mode
+  (strict/permissive/off), **max concurrent runs**, **registry rescan** interval, and the **GitHub
+  OAuth client id** (`GET`/`PUT /settings/server`, `web/settings/server.py`). Sandbox and rescan
+  apply live; concurrency needs a restart (the copy says so).
+- **Settings → endpoint cards:** inputs for **`temperature`**, **`key_env_file`**, the claude-cli
+  **`credentials_env`**, and the openai **`extra_body`** (JSON — OpenRouter provider routing);
+  `EndpointBody` + `_endpoint_view` carry the latter two.
+- **Triggers card:** a **cooldown** input on webhook-trigger creation (the backend already accepted
+  `cooldown_s`; the form never sent it).
+
+### Changed
+- `patch_routine` grew a `_apply_resource_fields` helper for the nested/validated fields, and now
+  handles the `deliberation` (tuning) write before any `routine.yaml` mutation — so a combined
+  patch can no longer early-return and drop an accompanying config change.
+
 ## [0.81.0] — 2026-07-21
 
 ### Added

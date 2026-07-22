@@ -317,15 +317,35 @@ export async function renderEndpoints(view) {
     const schemaSel = el("select", {}, SCHEMA_MODES.map((m) => el("option", {}, m))); schemaSel.value = ep.schema_mode || "json_schema";
     const baseIn = el("input", { type: "text", value: ep.base_url || "", placeholder: "https://host/v1" });
     const keyVarIn = el("input", { type: "text", value: ep.key_var || "", placeholder: "KEY_VAR in Secrets (optional)" });
+    const keyEnvIn = el("input", { type: "text", value: ep.key_env_file || "", placeholder: "path to an env file (optional)" });
     const ctxIn = el("input", { type: "number", value: ep.context_chars });
+    const tempIn = el("input", { type: "number", step: "0.1", value: ep.temperature ?? "", placeholder: "provider default" });
     const mtIn = el("input", { type: "number", value: ep.max_tokens ?? "", placeholder: "inherit (16,384)" });
+    // claude-cli only: the subscription-token env file (defaults to ~/.credentials/claude-code-oauth.env).
+    const credEnvIn = ep.kind === "claude-cli"
+      ? el("input", { type: "text", value: ep.credentials_env || "",
+          placeholder: "~/.credentials/claude-code-oauth.env" }) : null;
+    // openai only: extra_body merged verbatim into every request (e.g. OpenRouter provider routing), as JSON.
+    const extraBodyIn = ep.kind === "openai"
+      ? el("textarea", { class: "code", rows: "3", style: "width:100%",
+          placeholder: '{"provider": {"ignore": ["…"]}}' },
+          ep.extra_body ? JSON.stringify(ep.extra_body, null, 2) : "") : null;
     const saveEdit = el("button", { class: "btn small primary" }, "save changes");
     saveEdit.onclick = async () => {
+      const body = {
+        name: ep.name, kind: kindSel.value, base_url: baseIn.value.trim(),
+        key_env_file: keyEnvIn.value.trim(), key_var: keyVarIn.value.trim(),
+        schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 100000,
+        temperature: tempIn.value.trim() ? Number(tempIn.value) : null,
+        max_tokens: mtIn.value.trim() ? Number(mtIn.value) : null };
+      if (credEnvIn) body.credentials_env = credEnvIn.value.trim();
+      if (extraBodyIn) {
+        const raw = extraBodyIn.value.trim();
+        try { body.extra_body = raw ? JSON.parse(raw) : {}; }
+        catch { toast("extra_body must be valid JSON", 4000, { error: true }); return; }
+      }
       try {
-        await api(`/api/settings/endpoints/${ep.name}`, { method: "PUT", body: {
-          name: ep.name, kind: kindSel.value, base_url: baseIn.value.trim(), key_env_file: ep.key_env_file || "",
-          key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 100000,
-          max_tokens: mtIn.value.trim() ? Number(mtIn.value) : null } });
+        await api(`/api/settings/endpoints/${ep.name}`, { method: "PUT", body });
         toast(`${ep.name}: updated`); await load();
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
@@ -336,9 +356,17 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "base_url"), baseIn)),
       el("div", { class: "field-row" },
         el("label", { class: "field" }, el("span", {}, "key_var (Secrets)"), keyVarIn),
-        el("label", { class: "field" }, el("span", {}, "schema_mode"), schemaSel),
+        el("label", { class: "field" }, el("span", {}, "key_env_file"), keyEnvIn),
+        el("label", { class: "field" }, el("span", {}, "schema_mode"), schemaSel)),
+      el("div", { class: "field-row" },
         el("label", { class: "field" }, el("span", {}, "context_chars (default)"), ctxIn),
+        el("label", { class: "field" }, el("span", {}, "temperature (default)"), tempIn),
         el("label", { class: "field" }, el("span", {}, "max_tokens (default)"), mtIn)),
+      credEnvIn ? el("div", { class: "field-row" },
+        el("label", { class: "field" }, el("span", {}, "credentials_env (subscription token file)"), credEnvIn)) : null,
+      extraBodyIn ? el("div", { style: "margin-top:6px" },
+        el("div", { class: "field" },
+          el("span", {}, "extra_body (JSON — merged into every request)"), extraBodyIn)) : null,
       el("div", { class: "row" }, saveEdit));
 
     // Account balance, for providers that expose one (OpenRouter, Nano-GPT) — lazy per card.

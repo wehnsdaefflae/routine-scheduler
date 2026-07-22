@@ -74,6 +74,8 @@ its own declared secrets, not the store.
   naming the fix. Same for a `net: none` util on a fs-only (ABI < 4) kernel.
 - `off` — never wrap (pre-0.61 behavior). Secrets scoping still applies.
 
+Set it in **Settings → Server** (takes effect on the next util call) or in `config.yaml` directly.
+
 Verified 2026-07-17 on the production deployment: Landlock ABI 4 (filesystem + TCP) is
 fully functional **inside the rsched Docker container** under Docker's default seccomp
 profile (kernel 6.8) — no compose changes needed.

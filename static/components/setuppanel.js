@@ -224,9 +224,10 @@ export async function createSetupPanel(host, { ts }) {
           "on the routine page (only by you)."),
         ...(lib.permissions || []).map((p) => pickerRow(permBoxes, p, presetPerms))));
 
-    const UNLIMITED_BUDGETS = ["max_total_tokens", "max_wall_clock_min", "max_cost"];  // -1 = unlimited
+    const UNLIMITED_BUDGETS = ["max_total_tokens", "max_wall_clock_min", "max_cost", "max_total_turns"];  // -1 = unlimited
     const BUDGET_FIELDS = [
       ["max_turns", "turns per run"],
+      ["max_total_turns", "turns across all resumes (-1 = unlimited)"],
       ["max_wall_clock_min", "minutes per run (-1 = unlimited)"],
       ["max_total_tokens", "tokens per run (-1 = unlimited)"],
       ["max_cost", "cost cap $ per run (-1 = unlimited)"],

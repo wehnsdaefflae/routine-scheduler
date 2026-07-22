@@ -207,6 +207,7 @@ def routine_detail(request: Request, slug: str) -> dict:
         "referrals_total": referrals_total,
         "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
         "server_tz": schedule.server_tz(),
+        "catchup": info.cfg.catchup,   # skip | run_once when a scheduled fire was missed
         # Provenance is a CLAIM ("generated from") — in_library says whether the referenced
         # pattern actually exists in the current library, so the UI never implies a findable
         # workflow that isn't there (hand-authored recipes carry an empty slug).
@@ -238,6 +239,10 @@ def routine_detail(request: Request, slug: str) -> dict:
                   "elapsed_s": r.elapsed_s}
                  for r in info.runs[:50]],
         "budgets": info.cfg.budgets,
+        "keep_runs": info.cfg.keep_runs,
+        # fs roots resolve to absolute server paths on load; the editor shows + saves those.
+        "fs_read_roots": [str(p) for p in info.cfg.fs_read_roots],
+        "fs_write_roots": [str(p) for p in info.cfg.fs_write_roots],
     }
 
 
@@ -479,7 +484,7 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
 
 class RoutinePatch(BaseModel):
     enabled: bool | None = None
-    schedule: dict | None = None            # {"friendly": {...}} — converted to cron server-side
+    schedule: dict | None = None            # {"friendly":…, "catchup":…} (cron built server-side)
     budgets: dict | None = None
     models: dict | None = None              # {main|subroutine|tool_call|uncensored: catalog name}
     connections: dict | None = None         # {provider: account-label} OAuth connection bindings
@@ -488,6 +493,46 @@ class RoutinePatch(BaseModel):
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
     improve: bool | None = None             # include in the routine-improver's passes (default on)
     deliberation: str | None = None         # DELIBERATION_LEVELS — how much thinking lands on paper
+    keep_runs: int | None = None            # retention.keep_runs — how many run dirs to keep
+    fs_read_roots: list[str] | None = None  # dirs the run may READ beyond its own
+    fs_write_roots: list[str] | None = None  # dirs the run may WRITE (one covering the routine
+    #                                          dir unlocks recipe self-edit — the improver's lever)
+
+
+def _apply_resource_fields(raw: dict, updates: dict) -> None:
+    """Place the routine.yaml resource fields a PATCH carries that the caller's generic
+    top-level merge can't handle on its own: retention.keep_runs (nested under `retention:`),
+    the fs roots (validated, stripped — left in `updates` for the wholesale merge), and the
+    schedule (a friendly spec → cron + the server's tz, plus the catchup policy). Pops what
+    it consumes. A write root covering the routine's own dir unlocks recipe self-editing
+    (grants.py) — the user's deliberate choice here, the same lever the routine-improver holds.
+    """
+    if "keep_runs" in updates:
+        n = updates.pop("keep_runs")
+        if not isinstance(n, int) or n < 1:
+            raise HTTPException(400, "keep_runs must be a positive integer")
+        raw.setdefault("retention", {})["keep_runs"] = n
+    for roots_key in ("fs_read_roots", "fs_write_roots"):
+        if roots_key in updates:
+            vals = updates[roots_key] or []
+            if not isinstance(vals, list) or any(not isinstance(p, str) or not p.strip()
+                                                 for p in vals):
+                raise HTTPException(400, f"{roots_key}: must be a list of non-empty path strings")
+            updates[roots_key] = [p.strip() for p in vals]
+    if "schedule" in updates:
+        sched_patch = updates.pop("schedule") or {}
+        raw.setdefault("schedule", {})
+        if "friendly" in sched_patch:
+            try:
+                cron = schedule.friendly_to_cron(sched_patch.pop("friendly"))
+            except ValueError as exc:
+                raise HTTPException(400, f"invalid schedule: {exc}") from exc
+            raw["schedule"].update(cron=cron, tz=schedule.server_tz())
+        if sched_patch.get("catchup") not in (None, "skip", "run_once"):
+            raise HTTPException(400, "catchup must be 'skip' or 'run_once'")
+        # merge any remaining RAW keys (cron / tz / catchup) verbatim — a friendly spec was
+        # already translated and popped above; tz is preserved when only cron is sent.
+        raw["schedule"].update(sched_patch)
 
 
 @router.patch("/routines/{slug}")
@@ -497,6 +542,19 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     updates = patch.model_dump(exclude_none=True)
+    # deliberation is TUNING, not config — it lands in tuning.yaml (recipe-classed), never in
+    # routine.yaml (the user's sealed authority surface). Handle it FIRST, before any raw
+    # mutation, so a tuning-only patch returns without rewriting routine.yaml.
+    if "deliberation" in updates:
+        level = updates.pop("deliberation")
+        if level not in DELIBERATION_LEVELS:
+            raise HTTPException(400, f"deliberation: unknown level {level!r} "
+                                     f"(expected one of {DELIBERATION_LEVELS})")
+        write_tuning(info.cfg.dir, {"deliberation": level})
+        if not updates:
+            _git_commit(info.cfg.dir, "tuning.yaml edit via web (deliberation)")
+            _state(request).scheduler.rescan()
+            return {"ok": True, "updated": ["deliberation"]}
     # Validate per-routine models: known kinds, each a catalog model NAME. Models REPLACE
     # wholesale (not merge) so blanking a kind clears it back to the system_model fallback.
     if "models" in updates:
@@ -519,27 +577,7 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
             if not isinstance(account, str) or not account:
                 raise HTTPException(400, f"connections.{prov}: must be an account label")
         raw["connections"] = updates.pop("connections")
-    # deliberation is TUNING, not config — it lands in tuning.yaml (recipe-classed), never
-    # in routine.yaml (the user's sealed authority surface).
-    if "deliberation" in updates:
-        level = updates.pop("deliberation")
-        if level not in DELIBERATION_LEVELS:
-            raise HTTPException(400, f"deliberation: unknown level {level!r} "
-                                     f"(expected one of {DELIBERATION_LEVELS})")
-        write_tuning(info.cfg.dir, {"deliberation": level})
-        if not updates:   # a tuning-only patch never rewrites routine.yaml
-            _git_commit(info.cfg.dir, "tuning.yaml edit via web (deliberation)")
-            _state(request).scheduler.rescan()
-            return {"ok": True, "updated": ["deliberation"]}
-    # Translate the friendly schedule → cron + the server's own timezone (never asked of the user).
-    if "schedule" in updates and "friendly" in updates["schedule"]:
-        try:
-            cron = schedule.friendly_to_cron(updates["schedule"]["friendly"])
-        except ValueError as exc:
-            raise HTTPException(400, f"invalid schedule: {exc}") from exc
-        raw.setdefault("schedule", {})
-        raw["schedule"].update(cron=cron, tz=schedule.server_tz())
-        updates.pop("schedule")
+    _apply_resource_fields(raw, updates)
     for key, val in updates.items():
         if isinstance(val, dict) and isinstance(raw.get(key), dict):
             raw[key].update(val)
