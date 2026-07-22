@@ -41,13 +41,16 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         mode = "deferred"  # subruns / detached tasks cannot block the run on the user
     options = list(action.get("options") or [])
     default = str(action.get("default") or "").strip()
+    # config bridge: a proposed routine.yaml change the run can't make itself — rides the
+    # decision record for the Decisions page's one-click apply (see engine/revise.py).
+    cpatch = action.get("config_patch") if isinstance(action.get("config_patch"), dict) else None
     question = action["question"]
     extra = {"type": qtype, **({"default": default} if default else {})}
     ctx.transcript.event("question", {"qid": qid, "mode": mode, "question": question,
                                       "options": options, **extra})
     if mode == "deferred":
         inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                            qtype=qtype, default=default)
+                            qtype=qtype, default=default, config_patch=cpatch)
         ctx.asks_deferred += 1   # churn telemetry: a decision thrown over the wall
         return {"kind": "ask_user", "qid": qid, "mode": mode}
 
@@ -57,7 +60,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # blocking decisions are durable records too — the Decisions page never depends on a
     # live status.json to show one, and an aborted run leaves it behind as deferred
     inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                        mode="blocking", qtype=qtype, default=default, expires=expires)
+                        mode="blocking", qtype=qtype, default=default, expires=expires,
+                        config_patch=cpatch)
     mirror = decisions.mirror_blocking(ctx, qid, question, options, default, timeout_min)
     ctx.write_status("waiting_user",
                      question={"qid": qid, "question": question, "options": options,
@@ -107,7 +111,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
             # leaves it live for the next run instead of silently dropping it. Discord gets
             # no "resolved" note — the follow-up question is the reply.
             inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                                qtype=qtype, default=default)
+                                qtype=qtype, default=default, config_patch=cpatch)
             loop.dialog_qid = qid
             return {"kind": "ask_user", "qid": qid, "mode": mode, "dialog": True,
                     "user_message": answer["text"],

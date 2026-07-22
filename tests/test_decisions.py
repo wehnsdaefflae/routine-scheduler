@@ -75,6 +75,23 @@ def test_blocking_ask_files_a_durable_record_with_default_and_expiry(make_routin
     assert q["payload"]["type"] == "question" and q["payload"]["default"] == "hold the release"
 
 
+def test_deferred_ask_carries_config_patch_for_the_bridge(make_routine, scripted):
+    """The config bridge: a revise run routes a config-shaped request to a deferred ask_user
+    carrying a config_patch (a run can't edit routine.yaml itself); it rides the durable
+    decision record for the Decisions page's one-click apply."""
+    d = make_routine(slug="cbridge")
+    patch = {"budgets": {"max_turns": 120}}
+    scripted([
+        {"say": "propose the config change", "kind": "ask_user", "mode": "deferred",
+         "question": "Raise the turn budget to 120?", "config_patch": patch},
+        finish(),
+    ])
+    status, _ = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
+    assert len(recs) == 1 and recs[0]["config_patch"] == patch
+
+
 def test_blocking_answer_resolves_the_record(make_routine, scripted):
     d = make_routine(slug="resolved", budgets={"ask_timeout_min": 1})
 

@@ -170,6 +170,16 @@ ACTION_SCHEMA: dict = {
                            "that times out continues on this stated default; shown to the user "
                            "with the question",
         },
+        "config_patch": {
+            "type": "object",
+            "description": "ask_user: OPTIONAL — a proposed routine.yaml CONFIG change the user "
+                           "can one-click apply from the Decisions page (a run can never edit its "
+                           "own config). Shape = the PATCH /routines body, e.g. "
+                           '{"budgets": {"max_turns": 100}} or {"schedule": {"friendly": '
+                           '{"frequency": "hourly", "minute": 0}}}. Use it when a revise-recipe '
+                           "run is asked for a schedule / budget / model / permission / fs-roots "
+                           "change it cannot make itself.",
+        },
         # report_bug — the ungated, default-on bug channel every routine holds
         "title": {
             "type": "string",
@@ -275,7 +285,7 @@ _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "subruns": ((), ()),
     "kill": (("n",), ()),
     "wait": ((), ("n", "all", "timeout_s")),
-    "ask_user": (("question",), ("mode", "options", "default")),
+    "ask_user": (("question",), ("mode", "options", "default", "config_patch")),
     "report_bug": (("title",), ("detail",)),
     "finish": (("status", "summary"), ()),
 }

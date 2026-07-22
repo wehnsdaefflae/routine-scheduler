@@ -1367,6 +1367,35 @@ def test_converse_endpoint(client, monkeypatch):
     assert c.post(f"/api/runs/{rid}/converse", json={"text": "  "}).status_code == 400
 
 
+def test_revise_endpoint(client, monkeypatch):
+    """Revise-recipe: on a FINISHED routine run, /revise drops the recipe-unlock marker AND
+    injects the framed instruction, then resumes with reason='revise'. It refuses an active
+    run and empty text."""
+    c, tmp = client
+    run_dir = _mk_run(tmp / "routines", "apir", "20260709-120000", "running")
+    rid = "apir:20260709-120000"
+    # only once the run has finished
+    assert c.post(f"/api/runs/{rid}/revise",
+                  json={"text": "make the report shorter"}).status_code == 409
+    atomic_write_json(run_dir / "status.json", {"run_id": rid, "state": "finished"})
+    resumed = {}
+
+    async def fake_resume(cfg, ts, *, reason=""):
+        resumed.update(slug=cfg.slug, ts=ts, reason=reason)
+        return f"{cfg.slug}:{ts}"
+
+    monkeypatch.setattr(c.app.state.runner, "resume", fake_resume)
+    r = c.post(f"/api/runs/{rid}/revise", json={"text": "make the report shorter"})
+    assert r.status_code == 200 and r.json()["run_id"] == rid
+    assert resumed == {"slug": "apir", "ts": "20260709-120000", "reason": "revise"}
+    # the marker unlocks recipe self-write for the resumed leg…
+    assert read_json(run_dir / "revise.json")["instruction"] == "make the report shorter"
+    # …and the framed directive rode the inbox
+    msgs = [read_json(p)["text"] for p in (tmp / "routines" / "apir" / "inbox").glob("msg-*.json")]
+    assert any("REVISE YOUR OWN RECIPE" in m and "make the report shorter" in m for m in msgs)
+    assert c.post(f"/api/runs/{rid}/revise", json={"text": "  "}).status_code == 400
+
+
 def test_audit_decision_answer_survives_inbox_consumption(client):
     """The D2 re-surfacing loop: a mid-run delivery consumes the feedback message
     instantly, and with the report still listing the decision open it re-entered the

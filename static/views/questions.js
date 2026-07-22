@@ -258,6 +258,31 @@ export async function render(view) {
     });
     inputs.push(form.input);
     const controls = el("div", {}, form.node);
+    // Config bridge: a revise run can't edit routine.yaml, so it proposes the change as a
+    // config_patch on the decision; approving it here PATCHes the routine and resolves the ask.
+    const configBar = (q.config_patch && !q.meta) ? (() => {
+      const btn = el("button", { class: "btn small primary" }, "approve & apply");
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          await api(`/api/routines/${q.routine}`, { method: "PATCH", body: q.config_patch });
+          await api(`/api/questions/${q.qid}/answer`,
+            { method: "POST", body: { text: "approved & applied the proposed config change" } });
+          toast("config change applied to the routine");
+          panel.classList.remove("warn");
+          controls.replaceChildren(el("div", { class: "flow-note" },
+            chip("applied", "ok"), el("span", {}, "the config change was applied to the routine")));
+          state.items = state.items.filter((x) => x.qid !== q.qid);
+          syncToolbar();
+        } catch (err) { toast(err.message, 5000, { error: true }); btn.disabled = false; }
+      };
+      return el("div", { class: "flow-note mt" },
+        el("div", { class: "small", style: "margin-bottom:4px" },
+          "proposed config change — a run can't edit routine.yaml, so approve it here:"),
+        el("pre", { class: "doc", style: "margin:0 0 6px;white-space:pre-wrap" },
+          JSON.stringify(q.config_patch, null, 2)),
+        btn);
+    })() : null;
     const panel = el("div", { class: `panel question-item${q.mode === "blocking" ? " warn" : ""}` },
       el("div", { class: "q-meta" },
         expiringSoon(q) ? chip("expiring", "failed") : null,
@@ -277,6 +302,7 @@ export async function render(view) {
       q.default ? el("div", { class: "faint small mt",
         title: "what the routine does if this stays unanswered" },
         `↪ without an answer: ${q.default}`) : null,
+      configBar,
       controls);
     return panel;
   }

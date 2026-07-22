@@ -103,13 +103,18 @@ export async function render(view, runId, query = {}) {
     inject: "→ live run",
     converse: "→ continue this run",
     queue: "→ queue for next run",
+    revise: "→ revise this routine's recipe",
   };
   const modeSel = el("select", { class: "small", "data-nopersist": true,
     title: "where this message goes" });
   const msgInput = el("input", { type: "text", placeholder: "message…", style: "flex:1" });
   const sendBtn = el("button", { class: "btn primary" }, "send");
   function setModes(terminal) {
-    const keys = terminal ? ["converse", "queue"] : ["inject"];
+    // "revise" edits this routine's OWN recipe (routine runs only; never the protected
+    // clarification template, which the /revise endpoint would run its recipe against).
+    const reviseOk = terminal && slug !== "clarification";
+    const keys = terminal ? (reviseOk ? ["converse", "queue", "revise"] : ["converse", "queue"])
+      : ["inject"];
     if (![...modeSel.options].some((o) => keys.includes(o.value)) || modeSel.options.length !== keys.length) {
       modeSel.replaceChildren(...keys.map((k) => el("option", { value: k }, MODES[k])));
     }
@@ -328,6 +333,13 @@ export async function render(view, runId, query = {}) {
         toast("message delivered — waking the run to continue the conversation…");
         setTimeout(() => location.reload(), 800);   // reattach the tail to the now-live run
         return;                  // keep the button disabled until the reload lands
+      }
+      if (mode === "revise") {
+        await api(`/api/runs/${runId}/revise`, { method: "POST", body: { text } });
+        forgetField(msgInput);
+        toast("revising the recipe — the run resumes to apply your change, then commits it…");
+        setTimeout(() => location.reload(), 800);   // reattach to the now-live revise run
+        return;
       }
       const r = await api(`/api/runs/${runId}/inject`, { method: "POST", body: { text } });
       toast(r.delivery === "mid-run" ? "injected — picked up at the next turn" : "queued for the next run");

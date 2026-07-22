@@ -102,11 +102,21 @@ class EngineLoop:
         from ..paths import within
         unlocked = any(within(root, ctx.routine.dir)
                        for root in ctx.routine.fs_write_roots or [])
+        # A "revise recipe" run (the user asked from the run view to change this routine's OWN
+        # files) is granted recipe self-write + the file-edit kinds for THIS leg only — a marker
+        # the /revise endpoint drops in the run dir, read once and cleared here. No persisted
+        # fs_write_root, so the recipe stays sealed to every ordinary run (see engine/revise.py).
+        from .revise import REVISE_KINDS, clear_revise_marker, revise_marker
+        revising = revise_marker(ctx.run_dir) is not None
+        if revising:
+            clear_revise_marker(ctx.run_dir)
+            if self.allowed_tools is not None:
+                self.allowed_tools |= set(REVISE_KINDS)
         self.grants = ctx.grants = load_policy(ctx.server.permissions_home,
                                                ctx.routine.permissions,
                                                ctx.routine.capabilities,
                                                current_run_ts=ctx.run_ts,
-                                               recipe_unlocked=unlocked)
+                                               recipe_unlocked=unlocked or revising)
         self.util_reminder = self._build_util_reminder()
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
         self._last_deliberation_ts = ""   # edge-trigger for mid-run deliberation switches

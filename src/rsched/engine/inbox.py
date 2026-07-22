@@ -121,22 +121,25 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path) -> list[dict
 
 def file_question(routine_dir: Path, qid: str, question: str, options: list[str],
                   asked_ts: str, *, mode: str = "deferred", qtype: str = "question",
-                  default: str = "", expires: str = "") -> Path:
+                  default: str = "", expires: str = "", config_patch: dict | None = None) -> Path:
     """The ONE decision record every kind of required user feedback funnels into —
     plain asks and util approvals, deferred and blocking alike. Blocking records carry
     `expires` (when the run continues without an answer) and are rewritten as deferred
-    on timeout/abort; every surface (Decisions page, run view, Discord mirror) renders
-    from this shape.
+    on timeout/abort; `config_patch` (a proposed routine.yaml change a revise run can't make
+    itself) rides along for the Decisions page's one-click apply. Every surface (Decisions
+    page, run view, Discord mirror) renders from this shape.
     """
     from ..paths import atomic_write_json
 
     path = routine_dir / "questions" / "pending" / f"{qid}.json"
-    record = {"qid": qid, "question": question, "options": options,
-              "asked": asked_ts, "mode": mode, "type": qtype}
+    record: dict = {"qid": qid, "question": question, "options": options,
+                    "asked": asked_ts, "mode": mode, "type": qtype}
     if default:
         record["default"] = default
     if expires:
         record["expires"] = expires
+    if config_patch:
+        record["config_patch"] = config_patch
     atomic_write_json(path, record)
     return path
 

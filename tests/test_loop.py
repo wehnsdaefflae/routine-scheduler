@@ -2084,3 +2084,38 @@ def test_loop_compaction_archives_middle_to_history(make_routine, scripted, monk
     st = read_json(run_dir / "status.json")
     assert st["usage"]["in"] == 10 * len(ep.calls)
     assert comps[0]["usage"] == {"in": 10, "out": 5}
+
+
+def test_revise_marker_unlocks_recipe_for_the_leg(make_routine):
+    """A revise marker in the run dir grants recipe self-write + the file-edit kinds for THIS
+    leg (one-shot, cleared on read); an ordinary run keeps its recipe sealed, and routine.yaml
+    stays sealed even under revise (config is never recipe)."""
+    from rsched.config import load_routine
+    from rsched.engine.loop import EngineLoop
+    from rsched.engine.revise import REVISE_MARKER, write_revise_marker
+    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.transcript import Transcript
+
+    d = make_routine(slug="rv")
+    server = _server(d)
+    run_dir = d / "runs" / TS
+    run_dir.mkdir(parents=True)
+    cfg, _ = load_routine(d)
+
+    def build(allowed_tools=None):
+        ctx = RunContext(routine=cfg, server=server, registry=None, run_ts=TS, run_dir=run_dir,
+                         transcript=Transcript(run_dir / "transcript.jsonl"),
+                         budgets=Budgets.from_config(cfg.budgets))
+        return EngineLoop(ctx, "## Run flow", "instr", allowed_tools=allowed_tools)
+
+    assert build().grants.recipe_unlocked is False                    # ordinary run: sealed
+
+    write_revise_marker(run_dir, "trim the report stage")
+    loop = build(allowed_tools=["read_file"])   # a workflow tools: list that omits write/edit
+    assert loop.grants.recipe_unlocked is True                        # recipe self-write granted
+    assert {"read_file", "write_file", "edit_file"} <= loop.allowed_tools   # kinds widened
+    assert loop.grants.deny(
+        {"kind": "edit_file", "path": "stages/report.md", "old": "a", "new": "b"}) is None
+    assert not (run_dir / REVISE_MARKER).exists()                     # one-shot: cleared on read
+    assert loop.grants.deny(
+        {"kind": "write_file", "path": "routine.yaml", "content": "x"}) is not None  # config sealed

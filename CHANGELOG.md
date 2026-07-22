@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.83.0] — 2026-07-22
+
+### Added — Revise recipe (change a routine's recipe in natural language, from the run view)
+A finished routine run's message box gains a **"revise this routine's recipe"** mode: type the
+change ("make the report shorter", "stop checking X") and the run resumes with a **run-scoped
+recipe self-write grant** and edits its OWN `main.md` / `stages/` / `traits/` / `tuning.yaml` using
+its normal file tools — the warmest possible context (it just executed). No extra routine, no
+persisted grant.
+- **`engine/revise.py`** + the loop ([loop.py](src/rsched/engine/loop.py:102)): a marker the
+  `/revise` endpoint drops in the run dir is read ONCE at loop init — it grants `recipe_unlocked`
+  and widens `allowed_tools` with `read_file`/`write_file`/`edit_file` for that leg only, then
+  clears itself. Ordinary runs stay recipe-sealed; `routine.yaml` (config) stays sealed even under
+  revise.
+- **`POST /runs/{id}/revise`** ([api_runs.py](src/rsched/web/api_runs.py)): routine-only,
+  finished-runs-only; injects a framed directive (edit your recipe; route config asks to
+  `ask_user`) and resumes. UI: the "revise" mode in [run.js](static/views/run.js) (hidden for the
+  protected clarification template).
+- **Config bridge (one-click apply):** a run can't edit `routine.yaml`, so a config-shaped request
+  becomes an `ask_user` carrying an optional **`config_patch`** (the `PATCH /routines` body). The
+  Decisions page renders the proposed change with an **"approve & apply"** button that PATCHes the
+  routine and resolves the ask — reusing the config controls shipped in 0.82.0. `config_patch`
+  threads through `actions.py` → `interact.py` → the decision record (`inbox.file_question`) →
+  `questions.js`.
+
 ## [0.82.0] — 2026-07-22
 
 ### Fixed

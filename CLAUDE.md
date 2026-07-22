@@ -60,8 +60,10 @@ the limits (single-writer status.json preserved).
   the routine's **capabilities** (`grants.py`) are enforced there too: allowed kinds = workflow tools
   ∩ (base ∪ enabled capabilities), plus path gates (runs/ needs the previous-runs depth; a run NEVER
   writes its own recipe — main.md / stages/ / traits/ / **tuning.yaml** — a fixed rule unlocked only
-  when a user-granted fs_write_root covers the routine dir (the routine-improver's case);
-  `routine.yaml` is NEVER writable by any run, even under an fs_write_root — config is the user's,
+  by a user-granted fs_write_root covering the routine dir (the routine-improver's case) OR a
+  per-leg **revise marker** (`engine/revise.py`: the run-view "revise recipe" mode drops one, the
+  loop reads it ONCE and grants recipe self-write + the file-edit kinds for that leg only);
+  `routine.yaml` is NEVER writable by any run, even under an fs_write_root or a revise — config is the user's,
   no exceptions; the machine-tunable knobs live in tuning.yaml, where the FILE boundary is the
   permission boundary; executor.py backstops absolute paths and scopes `runs: last`).
   A disallowed/switched-off call is corrected inside the schema-retry cycle with an error naming the
