@@ -19,6 +19,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.83.1] — 2026-07-22
+
+### Fixed — Race conditions when the meta-routines run alongside other routines
+Concurrent runs are separate processes with isolated per-routine dirs, so ordinary routines never
+collide. But the meta-routines cross that boundary by design — **routine-improver** writes another
+routine's recipe, **workflow-curator / util review** rewrite or delete utils another run may be
+executing, and **self-audit** reads everything. Every engine write on those paths used a
+non-atomic `path.write_text()` (truncate-then-write), and the shared library repo was committed with
+an unlocked `git add -A`, so a concurrent reader/committer could see a torn file or sweep a
+sibling's change into the wrong commit. Now:
+- **Shared library repo commits are serialized and scoped** ([libgit.py](src/rsched/libgit.py)): the
+  three duplicate `git_commit` helpers ([utils_lib](src/rsched/utils_lib.py),
+  [library_docs](src/rsched/library_docs.py), [workflows/library](src/rsched/workflows/library.py))
+  delegate to one primitive that holds a per-repo file lock (`paths.file_lock` /
+  `paths.repo_lock_path`) and stages only the path it changed (`git add -A -- <path>`). Every
+  writer — engine `write_util`/`remove_util`, the Library-tab web edits, on-demand workflow
+  generation — passes its own pathspec, so no `git add` can sweep another writer's not-yet-committed
+  file and two writers never collide on `index.lock`.
+- **Engine writes are atomic** ([executor.py](src/rsched/engine/executor.py)): `write_file` (the
+  overwrite branch), `edit_file`, and `memory_write` go through `paths.atomic_write` (tmp+rename,
+  now mode-preserving so an existing file's bits — notably +x — survive an overwrite). The improver
+  rewriting a live routine's recipe, that routine's own git autocommit / pre-run recipe snapshot,
+  and self-audit reading any routine now see the old or new file whole, never a partial write.
+- **Util create/delete are atomic** ([utils_lib.py](src/rsched/utils_lib.py)): `write_util_file`
+  uses tmp+rename; `remove_util_file` renames the dir aside before deleting, so a routine executing
+  `gu <name>` concurrently sees the util whole or gone, never a half-emptied tree.
+
+Not addressed (out of scope, flagged for a follow-up decision): the improver editing a running
+routine's recipe is still a *logical* race — atomicity stops torn files, but a multi-file recipe
+edit is not a single transaction, and the target runs on its old in-memory recipe until its next
+run. A run-active guard for recipe writes is the open question.
+
 ## [0.83.0] — 2026-07-22
 
 ### Added — Revise recipe (change a routine's recipe in natural language, from the run view)

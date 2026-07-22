@@ -15,7 +15,7 @@ from .. import sandbox, utils_lib
 from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, EndpointError, guess_media_type
 from ..ids import is_slug
 from ..oauth import store as oauth_store
-from ..paths import resolve_rel
+from ..paths import atomic_write, resolve_rel
 from ..statemap import STAGES_DIR
 from .observations import truncate
 from .run_context import RunContext
@@ -342,7 +342,12 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(data)
         else:
-            path.write_text(data, encoding="utf-8")
+            # Atomic (tmp+rename): another process reading this path — self-audit reading any
+            # routine, or the target routine's own run when the improver rewrites its recipe
+            # under an fs_write_root — sees the old or new file whole, never a torn write. Its
+            # git autocommit / pre-run recipe snapshot can't stage a half-written file either.
+            keep = path.stat().st_mode & 0o7777 if path.exists() else None
+            atomic_write(path, data, mode=keep)
         ctx.seen_paths.add(str(path))   # written = seen: a rewrite of own output is grounded
         size = path.stat().st_size      # TOTAL bytes on disk after the write
     except (OSError, PermissionError) as exc:
@@ -379,7 +384,9 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
                              "or set all: true to replace every occurrence"}
         new_text = text.replace(anchor, replacement) if action.get("all") \
             else text.replace(anchor, replacement, 1)
-        path.write_text(new_text, encoding="utf-8")
+        # Atomic + mode-preserving (the file exists — checked above), same reasoning as
+        # do_write_file: no torn read/commit for a concurrent reader of this routine's dir.
+        atomic_write(path, new_text, mode=path.stat().st_mode & 0o7777)
         ctx.seen_paths.add(str(path))   # an anchored edit is grounded by its verbatim anchor
     except (OSError, PermissionError) as exc:
         return {"kind": "edit_file", "path": action["path"], "error": str(exc)}
@@ -404,7 +411,7 @@ def _memory_index_upsert(mem_dir, name: str, about: str | None) -> None:
     lines = [ln for ln in lines if not ln.startswith(prefix)]
     if about is not None:
         lines.append(f"{prefix} {about.strip()}")
-    index.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    atomic_write(index, "\n".join(lines) + ("\n" if lines else ""))
 
 
 def do_memory_read(action: dict, ctx: RunContext) -> dict:
@@ -466,7 +473,7 @@ def do_memory_write(action: dict, ctx: RunContext) -> dict:
     mem_dir.mkdir(exist_ok=True)
     created = not path.exists()
     data = str(action["content"]).rstrip() + "\n"
-    path.write_text(data, encoding="utf-8")
+    atomic_write(path, data)
     _memory_index_upsert(mem_dir, name, str(action["about"]))
     return {"kind": "memory_write", "name": name, "created": created,
             "lines": len(data.splitlines())}

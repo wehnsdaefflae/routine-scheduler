@@ -16,10 +16,12 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
-from . import sandbox
+from . import libgit, sandbox
 from .ids import is_slug
+from .paths import atomic_write
 
 # LLM-auth vars scrubbed from util subprocesses UNCONDITIONALLY (declared or not): a util
 # that needs an LLM (e.g. a `gu claude` equivalent) resolves its own credentials; it must
@@ -297,7 +299,9 @@ def read_util(home: Path, name: str) -> str | None:
 def write_util_file(home: Path, name: str, content: str) -> None:
     d = util_dir(home, name)
     d.mkdir(parents=True, exist_ok=True)
-    (d / "main.py").write_text(content, encoding="utf-8")
+    # Atomic (tmp+rename): a routine EXECUTING this util concurrently (the curator revising a
+    # util another run is calling) sees the old or new main.py whole, never a torn read.
+    atomic_write(d / "main.py", content)
 
 
 def referenced_by(home: Path, name: str) -> list[str]:
@@ -315,8 +319,18 @@ def remove_util_file(home: Path, name: str) -> None:
     git history. The no-callers guard lives in the remove_util action handler, not here.
     """
     d = util_dir(home, name)
-    if d.exists():
-        shutil.rmtree(d)
+    if not d.exists():
+        return
+    # Rename-aside then delete: the dir vanishes atomically for a concurrent reader
+    # (list_utils / a `gu <name>` about to exec), never a half-emptied tree. The dotted
+    # aside name is invisible to the `*/main.py` glob and outside the scoped `git add`.
+    aside = d.with_name(f".{d.name}.removing.{os.getpid()}")
+    try:
+        d.rename(aside)
+    except OSError:
+        shutil.rmtree(d, ignore_errors=True)
+        return
+    shutil.rmtree(aside, ignore_errors=True)
 
 
 def util_needs(home: Path, name: str) -> tuple[set[str], bool]:
@@ -423,10 +437,9 @@ def was_deleted(home: Path, name: str) -> bool:
     return r.returncode == 0 and bool(r.stdout.strip())
 
 
-def git_commit(home: Path, message: str) -> bool:
-    try:
-        _git(home, "add", "-A")
-        r = _git(home, "commit", "-qm", message)
-        return r.returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
+def git_commit(home: Path, message: str, *, paths: Sequence[str] | None = None) -> bool:
+    """Commit library changes under the shared repo lock (see libgit.commit). `paths` scopes
+    the stage to the util(s) this call touched so a concurrent writer's commit can't sweep
+    them — write_util / remove_util pass `utils/<name>`.
+    """
+    return libgit.commit(home, message, paths=paths)

@@ -69,7 +69,7 @@ def put_playbook(request: Request, slug: str, body: PlaybookBody) -> dict:
     if problems:
         raise HTTPException(422, "; ".join(problems))
     playbooks.write_playbook(home, slug, main=body.content)
-    library.git_commit(home, f"edit playbook {slug} via web")
+    library.git_commit(home, f"edit playbook {slug} via web", paths=[f"playbooks/{slug}"])
     return {"ok": True, "head": library.head_commit(home)}
 
 
@@ -78,5 +78,5 @@ def delete_playbook(request: Request, slug: str) -> dict:
     home = _home(request)
     if not playbooks.delete_playbook(home, slug):
         raise HTTPException(404, f"no playbook {slug!r}")
-    library.git_commit(home, f"delete playbook {slug} via web")
+    library.git_commit(home, f"delete playbook {slug} via web", paths=[f"playbooks/{slug}"])
     return {"ok": True, "head": library.head_commit(home)}

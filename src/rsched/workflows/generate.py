@@ -96,7 +96,8 @@ def generate(server: ServerConfig, instruction: str, hint: str = "",
                 slug = f"{slug}-2"
                 path = workflows_dir(home) / f"{slug}.py"
             path.write_text(draft.rstrip() + "\n", encoding="utf-8")
-            git_commit(home, f"draft workflow {slug} (generated on demand)")
+            git_commit(home, f"draft workflow {slug} (generated on demand)",
+                       paths=[f"workflows/{slug}.py"])
             return slug, ""
         if attempt == 0:
             fix = _complete([{"role": "user", "content":

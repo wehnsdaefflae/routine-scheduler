@@ -19,10 +19,13 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 import frontmatter
 import yaml
+
+from . import libgit
 
 # Title before the em-dash may be a kebab slug OR a readable phrase ("ask policy"); the summary is
 # whatever follows the em-dash. (Splitting on a bare hyphen would swallow hyphens inside a slug.)
@@ -95,12 +98,12 @@ def write_doc(home: Path, slug: str, content: str) -> None:
     (home / f"{slug}.md").write_text(content, encoding="utf-8")
 
 
-def git_commit(home: Path, message: str) -> bool:
-    try:
-        _git(home, "add", "-A")
-        return _git(home, "commit", "-qm", message).returncode == 0
-    except OSError:
-        return False
+def git_commit(home: Path, message: str, *, paths: Sequence[str] | None = None) -> bool:
+    """Commit a doc change under the shared library-repo lock (see libgit.commit); `paths`
+    (relative to `home`, e.g. `<slug>.md`) scopes the stage so a concurrent writer's commit
+    can't sweep it.
+    """
+    return libgit.commit(home, message, paths=paths)
 
 
 def git_log(home: Path, rel_path: str | None = None, limit: int = 20) -> list[dict]:

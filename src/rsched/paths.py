@@ -6,10 +6,13 @@ atomic_write so a reader never sees a partial file.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import tempfile
-from collections.abc import Sequence
+import time
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -24,17 +27,24 @@ def config_file() -> Path:
     return expand("~/.config/routine-scheduler/config.yaml")
 
 
-def atomic_write(path: str | Path, data: str | bytes) -> Path:
-    """Write via tmp file + rename in the target directory (same filesystem)."""
+def atomic_write(path: str | Path, data: str | bytes, *, mode: int | None = None) -> Path:
+    """Write via tmp file + rename in the target directory (same filesystem). A concurrent
+    reader sees the old file or the new one, never a partial write. `mode` (permission bits,
+    e.g. from a prior `stat().st_mode`) is applied to the new file before the rename — pass it
+    when overwriting so the temp file's default 0600 doesn't drop an existing file's bits
+    (notably +x); omit it for new files.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    mode, encoding = ("wb", None) if isinstance(data, bytes) else ("w", "utf-8")
+    fmode, encoding = ("wb", None) if isinstance(data, bytes) else ("w", "utf-8")
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
-        with os.fdopen(fd, mode, encoding=encoding) as fh:
+        with os.fdopen(fd, fmode, encoding=encoding) as fh:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
+        if mode is not None:
+            Path(tmp).chmod(mode)
         Path(tmp).replace(path)
     except BaseException:
         try:
@@ -77,3 +87,49 @@ def resolve_rel(base: Path, rel: str, extra_roots: Sequence[Path] = ()) -> Path:
             return candidate.resolve()
     allowed = ", ".join(str(r) for r in roots)
     raise PermissionError(f"path {rel!r} is outside the allowed roots ({allowed})")
+
+
+def repo_lock_path(home: Path) -> Path:
+    """The per-repo commit-lock file for the git repo containing `home`, placed inside the
+    shared `.git` dir so every writer of the SAME repo — no matter which subdir it passes as
+    `home` — agrees on one lock. Falls back to a dotfile at the tree root for the (never, for
+    the library) case of a worktree/submodule `.git` file or no repo at all.
+    """
+    cur = Path(home).resolve()
+    for d in (cur, *cur.parents):
+        g = d / ".git"
+        if g.is_dir():
+            return g / "rsched-commit.lock"
+        if g.is_file():
+            return d / ".rsched-commit.lock"
+    return cur / ".rsched-commit.lock"
+
+
+@contextmanager
+def file_lock(lock_path: str | Path, *, timeout: float = 30.0,
+              poll: float = 0.05) -> Iterator[bool]:
+    """Advisory exclusive lock across processes via `fcntl.flock`. Yields True once held,
+    or False if `timeout` elapsed without acquiring — in which case the caller proceeds
+    BEST-EFFORT (a stale/hung holder must never deadlock a commit; git's own 30s subprocess
+    timeout bounds the wait regardless). The lock file itself is never written or committed.
+    """
+    lock_path = Path(lock_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o600)
+    acquired = False
+    try:
+        end = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except OSError:
+                if time.monotonic() >= end:
+                    break
+                time.sleep(poll)
+        yield acquired
+    finally:
+        if acquired:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)

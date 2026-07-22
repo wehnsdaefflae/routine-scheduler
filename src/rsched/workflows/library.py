@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
+
+from .. import libgit
 
 
 def workflows_dir(home: Path) -> Path:
@@ -70,15 +73,12 @@ def head_commit(home: Path) -> str:
         return ""
 
 
-def git_commit(home: Path, message: str) -> bool:
-    try:
-        subprocess.run(["git", "add", "-A"], cwd=home, check=False,
-                       capture_output=True, timeout=30)
-        r = subprocess.run(["git", "commit", "-qm", message], cwd=home, check=False,
-                           capture_output=True, timeout=30)
-        return r.returncode == 0
-    except OSError:
-        return False
+def git_commit(home: Path, message: str, *, paths: Sequence[str] | None = None) -> bool:
+    """Commit a workflow/playbook change under the shared library-repo lock (see
+    libgit.commit); `paths` (relative to `home`, e.g. `workflows/<slug>.py`) scopes the stage
+    so a concurrent writer's commit can't sweep it.
+    """
+    return libgit.commit(home, message, paths=paths)
 
 
 def git_log(home: Path, rel_path: str | None = None, limit: int = 20) -> list[dict]:

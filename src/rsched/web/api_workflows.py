@@ -135,7 +135,7 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
     if problems:
         raise HTTPException(422, "; ".join(problems))
     library_docs.write_doc(home, slug, content.rstrip() + "\n")
-    library_docs.git_commit(home, f"edit {kind[:-1]} {slug} via web")
+    library_docs.git_commit(home, f"edit {kind[:-1]} {slug} via web", paths=[f"{slug}.md"])
     return {"ok": True}
 
 
@@ -157,7 +157,7 @@ def delete_library_doc(request: Request, kind: str, slug: str) -> dict:
     if not path.is_file():
         raise HTTPException(404, f"no {kind[:-1]} {slug!r}")
     path.unlink()
-    library_docs.git_commit(home, f"delete {kind[:-1]} {slug} via web")
+    library_docs.git_commit(home, f"delete {kind[:-1]} {slug} via web", paths=[f"{slug}.md"])
     return {"ok": True}
 
 
@@ -166,15 +166,14 @@ def delete_util(request: Request, name: str) -> dict:
     """Delete a global util — its whole <name>/ dir, committed, so it is recoverable from
     git history. Routines discover utils live; the catalog shrinks at their next run.
     """
-    import shutil
-
     from .. import utils_lib
 
     server = request.app.state.server
     if not utils_lib.exists(server.utils_home, name):
         raise HTTPException(404, f"no util {name!r}")
-    shutil.rmtree(utils_lib.util_dir(server.utils_home, name))
-    utils_lib.git_commit(server.utils_home, f"delete util {name} via web")
+    utils_lib.remove_util_file(server.utils_home, name)   # atomic rename-aside + delete
+    utils_lib.git_commit(server.utils_home, f"delete util {name} via web",
+                         paths=[f"utils/{name}"])
     return {"ok": True}
 
 
@@ -208,7 +207,7 @@ def put_util(request: Request, name: str, body: UtilBody) -> dict:
                                     policy=sandbox.base_policy(server))
     if not ok:
         raise HTTPException(422, f"selftest failed (not committed):\n{output[:800]}")
-    utils_lib.git_commit(server.utils_home, f"revise {name} via web")
+    utils_lib.git_commit(server.utils_home, f"revise {name} via web", paths=[f"utils/{name}"])
     return {"ok": True}
 
 
@@ -240,7 +239,7 @@ def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
         raise HTTPException(422, "; ".join(problems))
     rel = f"workflows/{slug}.py"
     (home / rel).write_text(body.content.rstrip() + "\n", encoding="utf-8")
-    library.git_commit(home, f"edit {rel} via web")
+    library.git_commit(home, f"edit {rel} via web", paths=[rel])
     return {"ok": True, "head": library.head_commit(home)}
 
 
@@ -259,7 +258,8 @@ def delete_workflow(request: Request, slug: str) -> dict:
     if path is None:
         raise HTTPException(404, f"no workflow {slug!r}")
     path.unlink()
-    library.git_commit(home, f"delete workflows/{slug}.py via web")
+    library.git_commit(home, f"delete workflows/{slug}.py via web",
+                       paths=[f"workflows/{slug}.py"])
     return {"ok": True, "head": library.head_commit(home)}
 
 

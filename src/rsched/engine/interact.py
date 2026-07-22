@@ -200,7 +200,8 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:
     if not ok:
         return {"kind": "write_util", "name": name, "created": creating,
                 "selftest_ok": False, "output": output[:2000]}
-    utils_lib.git_commit(home, f"{'create' if creating else 'revise'} {name}")
+    utils_lib.git_commit(home, f"{'create' if creating else 'revise'} {name}",
+                         paths=[f"utils/{name}"])
     return {"kind": "write_util", "name": name, "created": creating, "selftest_ok": True}
 
 
@@ -236,7 +237,7 @@ def handle_remove_util(loop, action: dict, poll_s: float) -> dict:
         if not _is_approval(ask["answer"]):
             return {"kind": "remove_util", "name": name, "declined": True}
     utils_lib.remove_util_file(home, name)
-    utils_lib.git_commit(home, f"remove {name}")
+    utils_lib.git_commit(home, f"remove {name}", paths=[f"utils/{name}"])
     return {"kind": "remove_util", "name": name, "removed": True}
 
 
