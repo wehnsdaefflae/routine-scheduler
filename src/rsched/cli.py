@@ -94,6 +94,16 @@ def _parse_model_overrides(values: list[str]) -> dict[str, str]:
     return out
 
 
+def _dir_across_homes(server, slug: str):
+    """Resolve a slug across routines, conversations, and background homes — `rsched
+    abort` applies to any of them (conversations and detached tasks are runs too).
+    """
+    for home in (server.routines_home, server.conversations_home, server.background_home):
+        if (home / slug / "routine.yaml").is_file():
+            return home / slug
+    return server.routines_home / slug   # let downstream produce the not-found error
+
+
 def _routine_dir(server, slug_or_path: str) -> Path:
     p = expand(slug_or_path)
     if p.is_dir() and (p / "routine.yaml").exists():
@@ -235,13 +245,13 @@ def cmd_abort(args) -> int:
         slug, ts = parse_run_id(target)
     else:
         slug = target
-        runs = registry.run_index(_routine_dir(server, slug), slug)
-        alive = [r for r in runs if r.state in ("running", "waiting_user", "paused", "starting")]
+        runs = registry.run_index(_dir_across_homes(server, slug), slug)
+        alive = [r for r in runs if r.state in registry.ACTIVE_STATES]
         if not alive:
             print(f"no active run for {slug}", file=sys.stderr)
             return 1
         ts = alive[0].ts
-    run_dir = _routine_dir(server, slug) / "runs" / ts
+    run_dir = _dir_across_homes(server, slug) / "runs" / ts
     st = read_json(run_dir / "status.json")
     pid = st.get("pid") if isinstance(st, dict) else None
     ok = asyncio.run(abort_process(pid, run_dir, f"{slug}:{ts}"))

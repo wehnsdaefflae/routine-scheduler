@@ -255,8 +255,8 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
     ts = make_run_ts()
     wid = f".wizard-{ts}"
     d = server.routines_home / wid
-    (d / "state").mkdir(parents=True)
-    (d / "inbox").mkdir()
+    (d / "state").mkdir(parents=True, exist_ok=True)   # same-second double-create: reuse
+    (d / "inbox").mkdir(exist_ok=True)
     commit = library.head_commit(server.library_home)
     (d / "instruction.md").write_text(draft.rstrip() + "\n", encoding="utf-8")
     (d / "LEDGER.md").write_text("# LEDGER — wizard session\n", encoding="utf-8")

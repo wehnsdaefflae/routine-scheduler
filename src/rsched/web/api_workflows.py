@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from ..paths import atomic_write
 from ..workflows import library
 from ..workflows.lint import lint_all, lint_permission_text, lint_trait_text, lint_workflow_py
 
@@ -238,7 +239,7 @@ def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
     if problems:
         raise HTTPException(422, "; ".join(problems))
     rel = f"workflows/{slug}.py"
-    (home / rel).write_text(body.content.rstrip() + "\n", encoding="utf-8")
+    atomic_write(home / rel, body.content.rstrip() + "\n")
     library.git_commit(home, f"edit {rel} via web", paths=[rel])
     return {"ok": True, "head": library.head_commit(home)}
 

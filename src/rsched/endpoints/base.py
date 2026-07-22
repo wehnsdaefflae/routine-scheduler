@@ -23,7 +23,6 @@ from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_expo
 Message = dict
 
 DEFAULT_TIMEOUT = 600
-DEFAULT_MAX_TOKENS = 8192
 
 # Native media the orchestrator can hand an endpoint. Base64 inflates ~33%, so the raw-byte
 # ceiling keeps most providers' ~10 MB request limit; a larger file (or an unlisted type)
@@ -167,8 +166,13 @@ def api_key_source(*, api_key: str, key_var: str, key_env_file: str) -> dict:
         return {"source": "inline", "var": key_var or None, "shadowed_secret": secret_set}
     if secret_set:
         return {"source": "secret", "var": key_var}
-    if key_env_file and key_var and key_from_env_file(key_env_file, key_var):
-        return {"source": "env_file", "var": key_var, "env_file": key_env_file}
+    if key_env_file and key_var:
+        if key_from_env_file(key_env_file, key_var):
+            return {"source": "env_file", "var": key_var, "env_file": key_env_file}
+        # the resolver RAISES here (an env file was explicitly configured and the key
+        # is not in it) — reporting a benign "none" made the Settings card lie
+        return {"source": "none", "var": key_var, "env_file": key_env_file,
+                "env_file_miss": True}
     return {"source": "none", "var": key_var or None}
 
 

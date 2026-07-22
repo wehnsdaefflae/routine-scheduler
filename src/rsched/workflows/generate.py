@@ -4,6 +4,8 @@ committed and immediately in circulation. Workflows are Python-pattern files (`.
 
 from __future__ import annotations
 
+import re
+
 from ..config import ServerConfig
 from ..endpoints import EndpointRegistry
 from ..ids import slugify
@@ -79,6 +81,7 @@ def generate(server: ServerConfig, instruction: str, hint: str = "",
 
     def _complete(messages, purpose):
         comp = endpoint.complete(messages, model=ref.model, temperature=ref.temperature,
+                                 effort=ref.effort, max_tokens=ref.max_tokens,
                                  timeout=180, purpose=purpose, kind="generate")
         if on_usage is not None and getattr(comp, "usage", None):
             on_usage(comp.usage)
@@ -92,9 +95,17 @@ def generate(server: ServerConfig, instruction: str, hint: str = "",
         problems = lint_workflow_py(draft, filename=f"{slug}.py", trait_slugs=traits)
         if not problems:
             path = workflows_dir(home) / f"{slug}.py"
-            if path.exists():
-                slug = f"{slug}-2"
+            base_slug, n = slug, 2
+            while path.exists():   # -2, -3, … — a second collision must never overwrite
+                slug = f"{base_slug}-{n}"
                 path = workflows_dir(home) / f"{slug}.py"
+                n += 1
+            if slug != base_slug:
+                # keep META["slug"] == filename, or the library lint flags it forever
+                # slug is kebab-case ([a-z0-9-]) — safe inside a replacement template
+                draft = re.sub(r"([\'\"]slug[\'\"]\s*:\s*[\'\"])"
+                               + re.escape(base_slug) + r"([\'\"])",
+                               r"\g<1>" + slug + r"\g<2>", draft, count=1)
             path.write_text(draft.rstrip() + "\n", encoding="utf-8")
             git_commit(home, f"draft workflow {slug} (generated on demand)",
                        paths=[f"workflows/{slug}.py"])

@@ -22,7 +22,7 @@ from ..config import RoutineConfig, ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
 from ..ids import run_ts as make_run_ts
-from ..paths import atomic_write_json, read_json
+from ..paths import atomic_write, atomic_write_json, read_json
 from . import registry
 from .events import EventBus
 from .llm_tailer import tail_llm_sidecar
@@ -95,6 +95,7 @@ class ActiveRun:
     holds_slot: bool = False
     sem: asyncio.Semaphore | None = None  # the pool this run draws from (cron vs interactive)
     background: bool = False  # a detached task — excluded from the self-update drain gate
+    cancelled: bool = False   # aborted while still QUEUED — the supervisor spawns nothing
 
 
 class Runner:
@@ -228,6 +229,8 @@ class Runner:
         run.holds_slot = True
         stderr = b""
         try:
+            if run.cancelled:   # aborted while queued — never spawn
+                return
             run.proc = await asyncio.create_subprocess_exec(
                 *engine_cmd(str(cfg.dir), run.run_ts, resume=resume),
                 stdout=asyncio.subprocess.DEVNULL,
@@ -269,12 +272,12 @@ class Runner:
             await asyncio.sleep(STATUS_POLL_S)
             st = read_json(run.run_dir / "status.json")
             state = st.get("state") if isinstance(st, dict) else None
-            if state == "waiting_user" and run.holds_slot:
+            if state in ("waiting_user", "paused") and run.holds_slot:
                 run.holds_slot = False
                 sem.release()
                 self.bus.publish({"event": "run_state", "routine": run.slug,
                                   "run_id": run.run_id, "state": state})
-            elif state not in ("waiting_user", None) and not run.holds_slot:
+            elif state not in ("waiting_user", "paused", None) and not run.holds_slot:
                 await sem.acquire()  # cancellation-safe: waiter is discarded
                 run.holds_slot = True
                 self.bus.publish({"event": "run_state", "routine": run.slug,
@@ -292,6 +295,8 @@ class Runner:
 
     def _reap(self, run: ActiveRun, cfg: RoutineConfig, stderr: bytes) -> None:
         self.active.pop(run.slug, None)
+        if run.cancelled and run.proc is None:
+            return   # aborted while queued: status already closed out, nothing ran
         rc = run.proc.returncode if run.proc else None
         info = registry.read_run(run.run_dir, run.slug)
         if info.state in ("queued", "running", "waiting_user", "paused", "starting", "unknown"):
@@ -335,7 +340,7 @@ class Runner:
         st: dict = raw if isinstance(raw, dict) else {"run_id": run_id}
         st.update(state="failed", updated=now_iso(), question=None)
         atomic_write_json(run_dir / "status.json", st)
-        (run_dir / "result.md").write_text(message + "\n", encoding="utf-8")
+        atomic_write(run_dir / "result.md", message + "\n")
         log_health_event(self.server.routines_home, "orphaned_run",
                          routine=run_id.split(":", maxsplit=1)[0] if ":" in run_id else run_id,
                          run_id=run_id, detail=message[:500])
@@ -345,7 +350,15 @@ class Runner:
         if not run:
             return False
         if run.proc is None:
-            return False  # still queued for a slot — the brief window is not abortable in v1
+            # still queued for a slot: flag it — the supervisor sees the flag right after
+            # its slot acquire (same event loop) and spawns nothing; close the status out
+            # here so the run reads aborted, not stuck queued
+            run.cancelled = True
+            raw = read_json(run.run_dir / "status.json")
+            st: dict = raw if isinstance(raw, dict) else {"run_id": run.run_id}
+            st.update(state="aborted", updated=now_iso(), question=None)
+            atomic_write_json(run.run_dir / "status.json", st)
+            return True
         return await abort_process(run.proc.pid, run.run_dir, run.run_id)
 
     def recover_orphans(self, catalog: dict[str, registry.RoutineInfo]) -> int:
@@ -366,9 +379,11 @@ def _pid_alive(pid: int | None) -> bool:
         return False
     try:
         os.kill(pid, 0)
-        return True
-    except (ProcessLookupError, PermissionError):
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        return True   # exists, owned by another uid — alive (EPERM is not ESRCH)
+    return True
 
 
 async def abort_process(pid: int | None, _run_dir: Path, _run_id: str) -> bool:

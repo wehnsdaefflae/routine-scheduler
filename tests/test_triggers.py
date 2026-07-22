@@ -185,20 +185,45 @@ async def test_tick_coalesces_while_active_and_draining(tmp_path):
 
 
 async def test_cooldown_defers_the_fire(tmp_path):
+    """Cooldown is PER TRIGGER (docs/triggers.md): the trigger's OWN last-fired stamp
+    gates it; a sibling trigger fires regardless of another's window."""
     server = _server(tmp_path)
     _routine(server, trig=[{**WEBHOOK, "cooldown_s": 3600}])
-    triggers.write_state(server.routines_home, "webby", {"last_fired": now_iso(), "fires": 1})
+    triggers.write_state(server.routines_home, "webby",
+                         {"last_fired": now_iso(), "fires": 1,
+                          "triggers": {"t-aaaa1111": {"last_fired": now_iso(), "events": 1}}})
     triggers.write_event(server.routines_home, "webby", trigger_id="t-aaaa1111", payload="x")
     runner = FakeRunner()
     mgr = TriggerManager(server, runner)
     await mgr.tick(registry.scan(server))
     assert runner.fired == []                                  # inside the window → waits
     assert len(triggers.pending_events(server.routines_home, "webby")) == 1
-    # a stale stamp outside the window releases it
+    # a stale per-trigger stamp outside the window releases it
     triggers.write_state(server.routines_home, "webby",
-                         {"last_fired": "2026-01-01T00:00:00+00:00", "fires": 1})
+                         {"last_fired": now_iso(), "fires": 1,
+                          "triggers": {"t-aaaa1111":
+                                       {"last_fired": "2026-01-01T00:00:00+00:00",
+                                        "events": 1}}})
     await mgr.tick(registry.scan(server))
     assert runner.fired == [("webby", "trigger")]
+
+
+async def test_cooldown_is_per_trigger_not_routine_global(tmp_path):
+    """One trigger cooling must not hold a SIBLING trigger's events hostage."""
+    server = _server(tmp_path)
+    other = {**WEBHOOK, "id": "t-bbbb2222", "token": "tok-bbbb",
+             "cooldown_s": 3600}
+    _routine(server, trig=[{**WEBHOOK, "cooldown_s": 3600}, other])
+    triggers.write_state(server.routines_home, "webby",
+                         {"last_fired": now_iso(), "fires": 1,
+                          "triggers": {"t-aaaa1111": {"last_fired": now_iso(), "events": 1}}})
+    triggers.write_event(server.routines_home, "webby", trigger_id="t-aaaa1111", payload="x")
+    triggers.write_event(server.routines_home, "webby", trigger_id="t-bbbb2222", payload="y")
+    runner = FakeRunner()
+    await TriggerManager(server, runner).tick(registry.scan(server))
+    assert runner.fired == [("webby", "trigger")]              # the sibling fired
+    remaining = triggers.pending_events(server.routines_home, "webby")
+    assert len(remaining) == 1                                 # the cooling one still spooled
 
 
 async def test_stale_events_dropped(tmp_path):

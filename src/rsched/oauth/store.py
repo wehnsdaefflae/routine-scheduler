@@ -96,6 +96,24 @@ def set_connection(conn: Connection) -> None:
         _write(conns)
 
 
+def update_connection(provider: str, account: str, mutate) -> bool:
+    """Load-mutate-write ONE record under the store lock — for writers whose new value
+    was computed OUTSIDE the lock (the refresh manager's token exchange takes seconds;
+    writing its stale snapshot back via set_connection could clobber a re-authorization
+    that landed meanwhile). `mutate(current | None) -> Connection | None`; returning
+    None aborts the write (record gone, or the caller's compare failed — the current
+    record is fresher than the caller's work). Returns True when written.
+    """
+    with _WRITE_LOCK:
+        conns = load_connections()
+        new = mutate(conns.get(_conn_key(provider, account)))
+        if new is None:
+            return False
+        conns[new.key()] = new
+        _write(conns)
+        return True
+
+
 def delete_connection(provider: str, account: str) -> bool:
     with _WRITE_LOCK:
         conns = load_connections()

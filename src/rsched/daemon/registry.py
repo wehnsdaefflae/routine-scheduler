@@ -284,5 +284,5 @@ def apply_retention(routine_dir: Path, slug: str, keep_runs: int) -> None:
             continue
         _gzip_in_place(r.dir / "transcript.jsonl")
         _gzip_in_place(r.dir / "llm-tasks.jsonl")
-        for sub in (r.dir / "sub").glob("*/transcript.jsonl"):
-            _gzip_in_place(sub)
+        for sub in (r.dir / "sub").rglob("transcript.jsonl"):
+            _gzip_in_place(sub)   # rglob: nested child trees (sub/N/sub/M/…) compress too

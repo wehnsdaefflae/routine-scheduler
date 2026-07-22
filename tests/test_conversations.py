@@ -156,7 +156,8 @@ def test_create_list_detail_message_delete(client):
                files=[("files", ("data.csv", b"a,b\n1,2", "text/csv"))])
     assert r.json()["delivery"] == "resumed"
     assert ("resume", slug) in c.app.state.runner.calls
-    newest = max((conv_dir / "inbox").glob("msg-*.json"))
+    newest = max((conv_dir / "inbox").glob("msg-*.json"),
+                 key=lambda f: f.stat().st_mtime_ns)   # names carry a uuid — mtime orders
     assert "data.csv" in newest.read_text()
 
     # home-aware run resolution: the conversation's run answers on /api/runs
@@ -574,7 +575,7 @@ def test_autolabel_rewrites_config_atomically(server, monkeypatch):
     class FakeRegistry:
         def __init__(self, _server): ...
         def for_model(self, kind, models):
-            return FakeEndpoint(), SimpleNamespace(model="m", effort=None, temperature=None)
+            return FakeEndpoint(), SimpleNamespace(model="m", effort=None, temperature=None, max_tokens=None)
 
     monkeypatch.setattr("rsched.endpoints.EndpointRegistry", FakeRegistry)
     conv_mod.autolabel(server, d, "track my garden beds")
@@ -604,7 +605,7 @@ def test_autolabel_uses_the_conversations_own_model(server, monkeypatch):
         def __init__(self, _server): ...
         def for_model(self, kind, models):
             seen["kind"], seen["models"] = kind, dict(models)
-            return FakeEndpoint(), SimpleNamespace(model="m", effort=None, temperature=None)
+            return FakeEndpoint(), SimpleNamespace(model="m", effort=None, temperature=None, max_tokens=None)
         def for_system(self):
             raise AssertionError("autolabel must resolve the conversation's model, not the system one")
 

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -146,7 +147,7 @@ def inject(request: Request, run_id: str, body: Inject) -> dict:
     inbox = wizard_store.session_inbox_dir(request.app.state.server, run_dir)
     st = read_json(run_dir / "status.json")
     state = st.get("state") if isinstance(st, dict) else None
-    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}.json",
+    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json",
                       {"text": body.text, "ts": now_iso(), "via": "web"})
     return {"ok": True,
             "delivery": "mid-run" if state not in TERMINAL_STATES else "next-run"}
@@ -166,14 +167,15 @@ async def converse(request: Request, run_id: str, body: Inject) -> dict:
     from . import wizard_store
 
     inbox = wizard_store.session_inbox_dir(request.app.state.server, run_dir)
-    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}.json",
+    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json",
                       {"text": body.text, "ts": now_iso(), "via": "web-converse"})
     st = read_json(run_dir / "status.json")
     state = st.get("state") if isinstance(st, dict) else None
     if state not in TERMINAL_STATES:
         return {"ok": True, "delivery": "mid-run"}
     from ..config import load_routine
-
+    from .api_routines import guard_template
+    guard_template(slug, "clarify sessions are driven by the wizard, never resumed directly")
     cfg, _ = load_routine(routine_dir)
     if cfg is None:
         raise HTTPException(404, f"routine {slug!r} not found")
@@ -221,6 +223,8 @@ async def revise(request: Request, run_id: str, body: Inject) -> dict:
     routine_dir = run_dir.parent.parent
     if not within(server.routines_home, routine_dir):
         raise HTTPException(400, "revise-recipe applies to routines only")
+    from .api_routines import guard_template
+    guard_template(slug, "the clarification template's recipe is fixed")
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:
         raise HTTPException(409, "revise the recipe once the run has finished")
@@ -233,7 +237,7 @@ async def revise(request: Request, run_id: str, body: Inject) -> dict:
         raise HTTPException(404, f"routine {slug!r} not found")
     write_revise_marker(run_dir, body.text.strip())
     inbox = wizard_store.session_inbox_dir(server, run_dir)
-    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}.json",
+    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json",
                       {"text": _revise_message(body.text.strip()), "ts": now_iso(),
                        "via": "web-revise"})
     rid = await request.app.state.runner.resume_terminal(cfg, run_dir.name, reason="revise")
@@ -322,6 +326,8 @@ async def resume_run(request: Request, run_id: str) -> dict:
     transcript so it continues where it left off (fresh budget window). Only terminal runs.
     """
     slug, run_dir = _run_dir(request, run_id)
+    from .api_routines import guard_template
+    guard_template(slug, "clarify sessions are driven by the wizard, never resumed directly")
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:
         raise HTTPException(409,

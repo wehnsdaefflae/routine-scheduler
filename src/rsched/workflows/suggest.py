@@ -53,6 +53,7 @@ def suggest(server: ServerConfig, instruction: str) -> dict:
     for _attempt in range(2):
         completion = endpoint.complete(messages, model=ref.model,
                                        schema=SUGGEST_SCHEMA, temperature=ref.temperature,
+                                       effort=ref.effort, max_tokens=ref.max_tokens,
                                        timeout=120, purpose="Rank library workflows",
                                        kind="suggest")
         try:
@@ -191,6 +192,7 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
         try:
             completion = endpoint.complete(messages, model=ref.model,
                                            schema=TRAITS_PERMS_SCHEMA, temperature=ref.temperature,
+                                           effort=ref.effort, max_tokens=ref.max_tokens,
                                            timeout=120,
                                            purpose="Suggest traits & permissions", kind="suggest")
         except Exception:
@@ -236,7 +238,8 @@ def suggest_tags(server: ServerConfig, instruction: str) -> list[str]:
     for _attempt in range(2):
         try:
             completion = endpoint.complete(messages, model=ref.model, schema=TAGS_SCHEMA,
-                                           temperature=ref.temperature, timeout=120,
+                                           temperature=ref.temperature, effort=ref.effort,
+                                           max_tokens=ref.max_tokens, timeout=120,
                                            purpose="Suggest tags", kind="suggest")
         except Exception:
             return []

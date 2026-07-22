@@ -18,6 +18,7 @@ import logging
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -126,13 +127,20 @@ def routine_mount_dir(routine_dir: Path) -> Path:
 def known_hosts_lines(host: str, port: int, host_key_text: str) -> list[str]:
     """Catalog `host_key` → known_hosts lines for THIS host:port (engine-side twin of the
     `remote` util's helper; a non-default port is keyed [host]:port, as ssh expects). Pure.
+
+    Accepts every shape an operator pastes: `ssh-keyscan` output (`host type key`), a
+    `.pub` file (`type key comment`), or a bare `type key`. The key TYPE token anchors
+    the parse — taking the last two tokens would silently pin `key comment` for a .pub
+    paste and every connection would then refuse.
     """
     entry_host = host if int(port) == 22 else f"[{host}]:{port}"
     out = []
     for line in host_key_text.splitlines():
         parts = line.split()
-        if len(parts) >= 2:
-            out.append(f"{entry_host} {parts[-2]} {parts[-1]}")
+        idx = next((i for i, tok in enumerate(parts)
+                    if tok.startswith(("ssh-", "ecdsa-", "sk-"))), None)
+        if idx is not None and len(parts) > idx + 1:
+            out.append(f"{entry_host} {parts[idx]} {parts[idx + 1]}")
     return out
 
 
@@ -203,6 +211,10 @@ def mount_routine_shares(routine: RoutineConfig, server: ServerConfig, *,
               if n in catalog and catalog[n].share]
     if not wanted:
         return []
+    # Gitignore mnt/ BEFORE any mount attempt: a crashed prior run's STALE mount must
+    # never be swept into the autocommit just because this run's own mounts failed early
+    # (no sshfs / no key) and the write further down was skipped.
+    _ensure_mnt_gitignored(routine.dir)
     if not shutil.which("sshfs"):
         log.warning("machines: sshfs not installed — cannot mount share(s) %s",
                     [n for n, _ in wanted])
@@ -219,6 +231,7 @@ def mount_routine_shares(routine: RoutineConfig, server: ServerConfig, *,
                         "no private key" if not pem else "no pinned host key")
             continue
         mp = routine_mount_dir(routine.dir) / name
+        keydir: Path | None = None
         try:
             _unmount_path(mp)                    # clear a stale mount from a crashed prior run
             mp.mkdir(parents=True, exist_ok=True)
@@ -240,9 +253,37 @@ def mount_routine_shares(routine: RoutineConfig, server: ServerConfig, *,
             log.info("machines: mounted %r share at %s", name, mp)
         except (OSError, subprocess.SubprocessError) as exc:
             log.warning("machines: mounting %r failed: %s", name, exc)
-    if mounted:
-        _ensure_mnt_gitignored(routine.dir)
+            if keydir is not None:   # the PEM must not outlive the failed attempt
+                shutil.rmtree(keydir, ignore_errors=True)
     return mounted
+
+
+# A keydir belongs to at most one live run; anything older than this at daemon boot is
+# residue from a crash (detached runs survive daemon restarts, so a fresh sweep must
+# not touch dirs a still-running engine could be using).
+MOUNT_KEYDIR_MAX_AGE_S = 48 * 3600
+
+
+def sweep_stale_mount_keys() -> int:
+    """Boot reconcile for `.mounts/`: remove key/known_hosts dirs abandoned by crashed
+    runs (unmount_routine_shares removes them on every clean exit — a SIGKILL does not).
+    Returns how many were removed.
+    """
+    base = config_file().parent / ".mounts"
+    if not base.is_dir():
+        return 0
+    cutoff = time.time() - MOUNT_KEYDIR_MAX_AGE_S
+    removed = 0
+    for d in base.iterdir():
+        try:
+            if d.is_dir() and d.stat().st_mtime < cutoff:
+                shutil.rmtree(d, ignore_errors=True)
+                removed += 1
+        except OSError:
+            continue
+    if removed:
+        log.warning("machines: swept %d stale mount key dir(s) from .mounts/", removed)
+    return removed
 
 
 def unmount_routine_shares(mounted: list[MountedShare]) -> None:

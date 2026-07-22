@@ -83,17 +83,20 @@ def _capped(text: str, cap: int = CAP) -> tuple[str, bool]:
 
 
 def hostkey_lines(host: str, port: int, host_key_text: str) -> list[str]:
-    """Normalize a catalog `host_key` (one or more lines, each "type base64" or a full
-    "host type base64" ssh-keyscan line) into known_hosts lines for THIS host:port. Pure.
+    """Normalize a catalog `host_key` (ssh-keyscan "host type base64", a .pub file's
+    "type base64 comment", or a bare "type base64") into known_hosts lines for THIS
+    host:port. The key TYPE token anchors the parse — taking the last two tokens would
+    pin "base64 comment" for a .pub paste and every connection would refuse. Pure.
     """
     entry_host = host if int(port) == 22 else f"[{host}]:{port}"
     out = []
     for line in host_key_text.splitlines():
         parts = line.split()
-        if len(parts) < 2:
+        idx = next((i for i, tok in enumerate(parts)
+                    if tok.startswith(("ssh-", "ecdsa-", "sk-"))), None)
+        if idx is None or len(parts) <= idx + 1:
             continue                       # blank / malformed → skip
-        keytype, b64 = parts[-2], parts[-1]
-        out.append(f"{entry_host} {keytype} {b64}")
+        out.append(f"{entry_host} {parts[idx]} {parts[idx + 1]}")
     return out
 
 

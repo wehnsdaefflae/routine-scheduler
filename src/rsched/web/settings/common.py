@@ -31,10 +31,13 @@ def update_config(request: Request, mutate) -> Path:
     """Read-modify-write config.yaml; returns the path so callers can reload derived state.
     The daemon-side ServerConfig is live-reloaded by callers; engine subprocesses read it fresh.
     """
+    from ...paths import atomic_write
+
     path = config_path(request)
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     mutate(raw)
-    path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    # atomic: engine subprocesses load config fresh mid-run — a torn read is a broken run
+    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
     return path
 
 

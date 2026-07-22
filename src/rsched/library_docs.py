@@ -26,6 +26,7 @@ import frontmatter
 import yaml
 
 from . import libgit
+from .paths import atomic_write
 
 # Title before the em-dash may be a kebab slug OR a readable phrase ("ask policy"); the summary is
 # whatever follows the em-dash. (Splitting on a bare hyphen would swallow hyphens inside a slug.)
@@ -95,7 +96,7 @@ def read_doc(home: Path, slug: str) -> str | None:
 
 
 def write_doc(home: Path, slug: str, content: str) -> None:
-    (home / f"{slug}.md").write_text(content, encoding="utf-8")
+    atomic_write(home / f"{slug}.md", content)
 
 
 def git_commit(home: Path, message: str, *, paths: Sequence[str] | None = None) -> bool:

@@ -393,8 +393,12 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
     if not isinstance(raw, dict):
         return ServerConfig(source=path), [f"{path}: expected a mapping at top level"]
 
-    # extra="ignore" would drop a mistyped endpoint/model key silently — surface each as a
-    # problem line (a warning; the entry still loads with the unknown key ignored).
+    # extra="ignore" would drop a mistyped key silently — the real field then reverts to
+    # its default with ZERO trace (a misspelled `endpints:` = every endpoint gone).
+    # Surface unknown top-level keys AND unknown per-entry keys as problem lines.
+    problems.extend(f"{key}: unknown config.yaml key — check the spelling (ignored)"
+                    for key in sorted(set(raw) - set(ServerConfig.model_fields))
+                    if isinstance(raw, dict))
     for section, cls in (("endpoints", EndpointConfig), ("models", ModelConfig),
                          ("machines", MachineConfig)):
         entries = raw.get(section)
@@ -622,6 +626,16 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     if not isinstance(raw.get("schedule") or {}, dict):
         problems.append("schedule: expected a mapping")
 
+    # aliased fields load from their CONTAINER key (schedule.cron, workflow.library_slug,
+    # playbook.slug); `kind: conversation` is a deliberate marker pydantic drops. Any other
+    # top-level key is a typo whose real field silently reverted to defaults (a misspelled
+    # `permisions:` = a permission reset with zero problems reported).
+    aliased = {"cron", "tz", "catchup", "workflow_slug", "workflow_commit",
+               "playbook_slug", "keep_runs"}
+    known = (set(RoutineConfig.model_fields) - aliased) | {"schedule", "workflow",
+                                                           "playbook", "retention", "kind"}
+    problems.extend(f"{key}: unknown routine.yaml key — check the spelling (ignored)"
+                    for key in sorted(set(raw) - known))
     cfg = _validate_lenient(RoutineConfig, {**raw, "slug": slug, "dir": routine_dir}, problems) \
         or RoutineConfig(slug=slug, dir=routine_dir)
     cfg.name = cfg.name or slug

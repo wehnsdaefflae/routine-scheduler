@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 from pathlib import Path
 
@@ -53,6 +54,8 @@ def materialize(home: Path, slug: str, *, today: str | None = None) -> tuple[str
     return dump_markdown(_routine_frontmatter(meta, slug, provenance, adapted),
                          render_markdown(raw, meta)), provenance
 
+
+log = logging.getLogger("rsched.adapt")
 
 DECOMPOSE_SCHEMA = {
     "type": "object", "additionalProperties": False,
@@ -172,7 +175,8 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
             + param_note + trait_note + pin_note
         comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
                                  schema=DECOMPOSE_SCHEMA, effort=ref.effort,
-                                 temperature=ref.temperature, timeout=180,
+                                 temperature=ref.temperature, max_tokens=ref.max_tokens,
+                                 timeout=180,
                                  purpose=f"Decompose workflow → {slug}", kind="decompose")
         data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
         stages = {m["name"]: m["body"] for m in (data.get("stages") or [])
@@ -188,5 +192,8 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
                    if t.get("slug") in trait_bodies and str(t.get("body", "")).strip()}
         return {"main": main, "stages": stages, "traits": adapted}
     except Exception:
+        # a stageless recipe is a real quality drop — the fallback must never be silent
+        log.warning("decompose(%s) failed — materializing the whole pattern as main.md",
+                    slug, exc_info=True)
         from .pyworkflow import render_markdown
         return {"main": render_markdown(raw, meta), "stages": {}, "traits": {}}

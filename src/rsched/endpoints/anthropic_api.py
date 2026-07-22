@@ -22,9 +22,8 @@ import json
 
 import httpx
 
-from ..config import EndpointConfig
+from ..config import DEFAULT_MODEL_MAX_TOKENS, EndpointConfig
 from .base import (
-    DEFAULT_MAX_TOKENS,
     DEFAULT_TIMEOUT,
     PDF_MIME,
     Completion,
@@ -165,7 +164,9 @@ class AnthropicEndpoint:
         system, rest = split_system(messages)
         body: dict = {
             "model": model,
-            "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
+            # the catalog's shared fallback — a call that passes no cap (a Settings
+            # probe) gets the same 16_384 an unset catalog model resolves to
+            "max_tokens": max_tokens or DEFAULT_MODEL_MAX_TOKENS,
             "messages": _mark_tail(_render_media(merge_consecutive(rest))),
         }
         temp = temperature if temperature is not None else self.temperature  # model wins

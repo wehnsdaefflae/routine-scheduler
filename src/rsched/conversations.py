@@ -240,7 +240,7 @@ def autolabel(server: ServerConfig, conv_dir: Path, text: str) -> None:
               "Title this new conversation with an agent, and tag it. First message:\n---\n"
               + text[:2000] + "\n---\nReturn ONLY the JSON object {title, tags}."}],
             model=ref.model, schema=_LABEL_SCHEMA, effort=ref.effort,
-            temperature=ref.temperature, timeout=60,
+            temperature=ref.temperature, max_tokens=ref.max_tokens, timeout=60,
             purpose="Conversation title & tags", kind="autolabel")
         import json
 

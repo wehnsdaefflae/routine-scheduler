@@ -222,7 +222,10 @@ def oauth_callback(state: str = "", code: str = "", error: str = "") -> HTMLResp
     if error:
         entry["status"], entry["error"] = "error", error
         log.warning("oauth callback: provider reported an error for %s", entry["provider"])
-        return _page("Connection failed", f"The provider reported an error: {error}.", 400)
+        # the ONE spot external text reaches an HTML page — escape it (query-carried)
+        import html
+        return _page("Connection failed",
+                     f"The provider reported an error: {html.escape(error[:200])}.", 400)
     if not code:
         entry["status"], entry["error"] = "error", "no authorization code returned"
         return _page("Connection failed", "No authorization code was returned.", 400)

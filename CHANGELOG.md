@@ -19,6 +19,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.85.4] — 2026-07-23
+
+### Fixed — transports, daemon, and web API sweep (overhaul batch 4)
+- **Remote machines**: `known_hosts` parsing anchors on the key-TYPE token — a `.pub`
+  paste used to pin `base64 comment` and every connection then refused (engine + the
+  seed `remote` util); a failed mount attempt no longer leaks its PEM key dir; stale
+  `.mounts/` key dirs are swept at daemon boot; `mnt/` is gitignored BEFORE any mount
+  attempt so a crashed run's stale mount can't be autocommitted.
+- **OAuth**: the refresh manager's slow token exchange now lands via compare-and-swap
+  (`store.update_connection`) so it can never clobber a re-authorization that happened
+  mid-exchange; a refresh response without `expires_in` gets an assumed 1h lifetime
+  instead of hammering the provider every 5s tick; a non-JSON 200 no longer aborts the
+  whole pass (per-connection isolation); the needs-reauth Discord ping is gated on a
+  binding routine actually holding the `communication` permission; the provider `error`
+  echoed on the public callback page is HTML-escaped.
+- **Model calls outside the engine get real limits.** Decompose, suggest, generate,
+  distill, and conversation autolabel now pass the resolved model's `max_tokens` (and
+  effort) — they silently ran at anthropic's 8192 fallback; the adapter fallback itself
+  now IS `config.DEFAULT_MODEL_MAX_TOKENS` (16 384), removing the two-constants
+  conflict. The Settings credential label flags a configured-but-missing env file
+  (`env_file_miss`) instead of reporting benign keylessness.
+- **Daemon**: a queued run is abortable (the supervisor honors a cancel flag after its
+  slot acquire); a PAUSED run releases its concurrency slot like waiting_user; a pid
+  the daemon may not signal (EPERM) counts as ALIVE; retention gzips nested subrun
+  transcripts (`rglob`); trigger cooldowns gate PER TRIGGER as documented (a cooling
+  trigger's events wait; a sibling's fire); `ensure_config` verifies the token actually
+  landed whatever the example says and writes atomically; `rsched abort` resolves
+  conversations and background tasks and counts queued runs.
+- **Web API**: inbox message filenames carry a uuid (same-second messages clobbered
+  each other); the protected clarification template can no longer be resumed or given
+  revise-recipe grants directly; the Decisions surface scans `background_home` (a
+  detached task's deferred asks were invisible); attachment uploads STREAM to disk with
+  the size cap enforced mid-flight (a big body used to buffer whole and OOM the 3.3GB
+  box), capped per message, same-name collisions suffixed, and a 413 no longer strands
+  a half-created conversation; web routine-dir commits take the shared repo lock;
+  `config.yaml`/library-doc/workflow writes are atomic; the wizard answer endpoint
+  validates `qid` (was a path segment); same-second wizard sessions no longer 500.
+- **Config**: unknown top-level keys in `config.yaml`/`routine.yaml` are reported as
+  problems — a misspelled `permisions:` used to silently reset the real field to
+  defaults with zero trace.
+- **Misc**: `stats.monthly_spend` skips malformed usage records instead of 500ing the
+  dashboard; on-demand workflow generation counts up `-2, -3…` on slug collisions and
+  rewrites the draft's META slug to match (no silent overwrite, no perma-lint flag);
+  the decompose fallback logs WHY it degraded; the playbook-distill digest keeps the
+  NEWEST exchanges when truncating (Update-playbook needs exactly those).
+
 ## [0.85.3] — 2026-07-23
 
 ### Fixed — engine resume/control correctness (overhaul batch 3)

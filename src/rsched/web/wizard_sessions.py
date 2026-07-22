@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import sys
 
 from fastapi import HTTPException, Request
@@ -131,6 +132,8 @@ class AnswerBody(BaseModel):
 @router.post("/wizard/{wid}/answer")
 def answer(request: Request, wid: str, body: AnswerBody) -> dict:
     d = _wizard_dir(request, wid)
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", body.qid):
+        raise HTTPException(400, "invalid qid")   # becomes a filename — never a path
     atomic_write_json(d / "inbox" / f"answer-{body.qid}.json",
                       {"qid": body.qid, "text": body.text, "source": "wizard",
                        "intermediate": body.intermediate, "ts": now_iso()})

@@ -100,17 +100,26 @@ def _record_dir(server, match: dict):
         workspace = server.routines_home / f".wizard-{ts}"
         if ts and workspace.is_dir():
             return workspace
+    if match.get("background"):
+        return server.background_home / match["routine"]
     home = server.conversations_home if match.get("conversation") else server.routines_home
     return home / match["routine"]
 
 
-def _all_questions(server, *, conversations: bool = False) -> list[dict]:
+def _all_questions(server, home_kind: str = "routine") -> list[dict]:
     """Open questions of one home's catalog. Conversation questions carry
-    `conversation: True` so the answer endpoint (and the UI) can tell the homes apart.
+    `conversation: True`, detached-task questions `background: True` (+ the owning
+    conversation's slug as `owner`), so the answer endpoint and the UI can tell the
+    homes apart. Background asks are deferred-only by design — surfacing them here is
+    what lets the user see and answer them at all (the answer lands durably in the
+    task's inbox).
     """
     from . import wizard_store
 
-    home = server.conversations_home if conversations else None
+    conversations = home_kind == "conversation"
+    home = {"routine": None, "conversation": server.conversations_home,
+            "background": server.background_home}[home_kind]
+    marker = {} if home_kind == "routine" else {home_kind: True}
     out: list[dict] = []
     for info in registry.scan(server, home).values():
         runs = {r.ts: r for r in info.runs}
@@ -120,8 +129,9 @@ def _all_questions(server, *, conversations: bool = False) -> list[dict]:
             seen.add(str(active.question.get("qid")))
             item = {**active.question, "routine": info.slug, "mode": "blocking",
                     "run_id": active.run_id, "run_state": active.state,
-                    "asked": active.question.get("asked") or active.ts,
-                    **({"conversation": True} if conversations else {})}
+                    "asked": active.question.get("asked") or active.ts, **marker}
+            if home_kind == "background" and isinstance(info.cfg.owner, dict):
+                item["owner"] = str(info.cfg.owner.get("slug") or "")
             if not conversations and info.slug == wizard_store.TEMPLATE_SLUG:
                 item["wizard"] = True   # a clarify session's ask — badged like one
             out.append(_mark_answered(_record_dir(server, item), item))
@@ -130,8 +140,9 @@ def _all_questions(server, *, conversations: bool = False) -> list[dict]:
                 continue   # a live blocking question also has a durable pending record
             # a blocking record with no live run behind it (crash/kill) is just deferred now
             mode = "deferred" if q.get("mode") == "blocking" else q.get("mode", "deferred")
-            item = {**q, "routine": info.slug, "mode": mode,
-                    **({"conversation": True} if conversations else {})}
+            item = {**q, "routine": info.slug, "mode": mode, **marker}
+            if home_kind == "background" and isinstance(info.cfg.owner, dict):
+                item["owner"] = str(info.cfg.owner.get("slug") or "")
             # a deferred question's `asked` is the run_ts it was filed from — link back to
             # that run (with its live state) when the run dir still exists, so a stale
             # question is recognizable against what its run actually did.
@@ -191,7 +202,8 @@ def open_decisions(server) -> list[dict]:
     future carries `snoozed: True` (still open, still visible to runs — hidden by default
     on the user surfaces only).
     """
-    items = (_all_questions(server) + _all_questions(server, conversations=True)
+    items = (_all_questions(server) + _all_questions(server, "conversation")
+             + _all_questions(server, "background")
              + _wizard_questions(server) + _audit_decisions(server))
     now = datetime.now(UTC)
     for item in items:
@@ -242,7 +254,8 @@ async def answer(request: Request, qid: str, body: Answer) -> dict:
         return {"ok": True, "routine": match["routine"], "mode": "deferred", "meta": True}
     server = request.app.state.server
     match = next((q for q in _all_questions(server)
-                  + _all_questions(server, conversations=True)
+                  + _all_questions(server, "conversation")
+                  + _all_questions(server, "background")
                   + _wizard_questions(server)
                   if q.get("qid") == qid), None)
     if match is None:
@@ -298,7 +311,8 @@ def _record_match(server, qid: str) -> dict:
     records — they can't be snoozed or deferred).
     """
     match = next((q for q in _all_questions(server)
-                  + _all_questions(server, conversations=True)
+                  + _all_questions(server, "conversation")
+                  + _all_questions(server, "background")
                   + _wizard_questions(server)
                   if q.get("qid") == qid), None)
     if match is None:

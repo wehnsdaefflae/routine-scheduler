@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import re
 import shutil
+import uuid
 from pathlib import Path
 from typing import Annotated
 
@@ -61,22 +62,47 @@ def conversation_info(request: Request, slug: str) -> registry.RoutineInfo:
                                 open_questions=[])
 
 
+MAX_ATTACHMENTS_PER_MESSAGE = 16
+_UPLOAD_CHUNK = 1 << 20
+
+
 async def _save_attachments(conv_dir: Path, files: list[UploadFile]) -> list[str]:
     """Store uploads under attachments/ (timestamped, safe basenames); returns the
-    conversation-relative paths for the message's attachment block.
+    conversation-relative paths for the message's attachment block. STREAMED to disk in
+    chunks with the size cap enforced as it arrives — `await f.read()` buffered the whole
+    upload first, so an oversized body OOM'd the box before the 413. Same-name files in
+    one message get a numbered suffix instead of overwriting each other.
     """
+    if files and len(files) > MAX_ATTACHMENTS_PER_MESSAGE:
+        raise HTTPException(413, f"at most {MAX_ATTACHMENTS_PER_MESSAGE} attachments "
+                                 "per message")
     rels: list[str] = []
+    taken: set[str] = set()
     stamp = run_ts()
     for i, f in enumerate(files or []):
         base = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(f.filename or f"file-{i}").name).strip("-.") \
             or f"file-{i}"
         rel = f"attachments/{stamp}-{base}"
-        data = await f.read()
-        if len(data) > MAX_ATTACHMENT_BYTES:
-            raise HTTPException(
-                413, f"attachment {base!r} exceeds {MAX_ATTACHMENT_BYTES // (1024 * 1024)}MB")
+        n = 2
+        while rel in taken or (conv_dir / rel).exists():
+            rel = f"attachments/{stamp}-{n}-{base}"
+            n += 1
+        taken.add(rel)
         (conv_dir / "attachments").mkdir(exist_ok=True)
-        (conv_dir / rel).write_bytes(data)
+        dest = conv_dir / rel
+        written = 0
+        try:
+            with dest.open("wb") as out:
+                while chunk := await f.read(_UPLOAD_CHUNK):
+                    written += len(chunk)
+                    if written > MAX_ATTACHMENT_BYTES:
+                        raise HTTPException(
+                            413, f"attachment {base!r} exceeds "
+                                 f"{MAX_ATTACHMENT_BYTES // (1024 * 1024)}MB")
+                    out.write(chunk)
+        except HTTPException:
+            dest.unlink(missing_ok=True)
+            raise
         rels.append(rel)
     return rels
 
@@ -173,7 +199,11 @@ async def create_conversation(request: Request, text: Annotated[str, Form()] = "
     except FileNotFoundError as exc:
         raise HTTPException(500, f"the library has no '{conv_mod.CONVERSE_WORKFLOW}' workflow "
                                  f"— restart the daemon to seed it ({exc})") from exc
-    rels = await _save_attachments(conv_dir, files or [])
+    try:
+        rels = await _save_attachments(conv_dir, files or [])
+    except HTTPException:
+        shutil.rmtree(conv_dir, ignore_errors=True)   # no orphan conversation on a 413
+        raise
     if rels:
         instruction = (conv_dir / "instruction.md").read_text(encoding="utf-8")
         (conv_dir / "instruction.md").write_text(
@@ -251,7 +281,8 @@ async def message(request: Request, slug: str, text: Annotated[str, Form()],
     conv_dir = info.cfg.dir
     rels = await _save_attachments(conv_dir, files or [])
     full = text.rstrip() + conv_mod.attachment_note(rels)
-    atomic_write_json(conv_dir / "inbox" / f"msg-{now_iso().replace(':', '')}.json",
+    atomic_write_json(conv_dir / "inbox"
+                      / f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json",
                       {"text": full, "ts": now_iso(), "via": "conversation",
                        **({"command": True} if command.strip() else {}),
                        **({"attachments": rels} if rels else {})})

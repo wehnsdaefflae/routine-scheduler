@@ -778,9 +778,12 @@ def test_api_key_source_ladder(tmp_path, monkeypatch):
     envf.write_text("K=sk-file\n", encoding="utf-8")
     assert api_key_source(api_key="", key_var="K", key_env_file=str(envf)) == {
         "source": "env_file", "var": "K", "env_file": str(envf)}
+    # env file CONFIGURED but the key is not in it: the resolver RAISES here, so the
+    # label must flag the miss instead of reporting a benign keyless "none"
     assert api_key_source(api_key="", key_var="K",
                           key_env_file=str(tmp_path / "missing.env")) == {
-        "source": "none", "var": "K"}
+        "source": "none", "var": "K", "env_file": str(tmp_path / "missing.env"),
+        "env_file_miss": True}
     assert api_key_source(api_key="sk-i", key_var="", key_env_file="") == {
         "source": "inline", "var": None, "shadowed_secret": False}
 

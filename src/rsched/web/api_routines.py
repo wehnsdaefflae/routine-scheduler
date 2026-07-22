@@ -5,7 +5,6 @@ manual fire, archive, file reads.
 from __future__ import annotations
 
 import shutil
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -94,12 +93,14 @@ def permission_layers_detail(server, cfg, *,
 
 
 def _git_commit(routine_dir: Path, message: str) -> None:
+    """Commit a web-side routine-dir edit under the SAME per-repo lock the engine's
+    autocommit takes (libgit) — a trait edit is allowed during a LIVE run and used to
+    race the engine on git's index, the loser failing silently.
+    """
     if not (routine_dir / ".git").exists():
         return
-    subprocess.run(["git", "add", "-A"], cwd=routine_dir, capture_output=True, timeout=30,
-                   check=False)
-    subprocess.run(["git", "commit", "-qm", message], cwd=routine_dir,
-                   capture_output=True, timeout=30, check=False)
+    from ..libgit import commit
+    commit(routine_dir, message)
 
 
 def _spend_line(monthly: dict, slug: str) -> dict | None:

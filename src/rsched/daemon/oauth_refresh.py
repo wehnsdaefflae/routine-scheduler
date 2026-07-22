@@ -29,6 +29,10 @@ from ..oauth.store import Connection
 log = logging.getLogger("rsched.oauth.refresh")
 
 REFRESH_MARGIN_S = 300   # refresh once a token is within 5 minutes of expiry
+# A refresh response that reports no expires_in gets this assumed lifetime — writing
+# expires_at=0 instead made "unknown" look permanently due and hammered the provider
+# every 5-second tick.
+DEFAULT_TOKEN_LIFETIME_S = 3600.0
 
 
 class OAuthRefreshManager:
@@ -52,7 +56,10 @@ class OAuthRefreshManager:
             # expires_at == 0 means "unknown/never" — refresh it too, defensively
             if conn.expires_at and conn.expires_at - now > REFRESH_MARGIN_S:
                 continue
-            self._refresh_one(conn, prov)
+            try:
+                self._refresh_one(conn, prov)
+            except Exception:   # one bad connection must not starve the rest of the pass
+                log.exception("oauth refresh: %s failed", conn.key())
 
     def _refresh_one(self, conn: Connection, prov: Provider) -> None:
         creds = providers.client_creds(conn.provider)
@@ -80,25 +87,67 @@ class OAuthRefreshManager:
         if resp.status_code != 200:
             self._mark_reauth(conn, f"refresh HTTP {resp.status_code}")
             return
-        payload = resp.json()
+        try:
+            payload = resp.json()
+        except ValueError:
+            # a 200 with a garbled body is a provider anomaly, not a dead grant —
+            # transient like a network error; try again next tick
+            log.warning("oauth refresh: %s returned unparseable JSON — retrying later",
+                        conn.key())
+            return
         access = payload.get("access_token")
         if not access:
             self._mark_reauth(conn, "refresh returned no access_token")
             return
-        conn.access_token = access
-        if payload.get("refresh_token"):        # rotation: persist the NEW refresh token
-            conn.refresh_token = payload["refresh_token"]
         expires_in = payload.get("expires_in")
-        conn.expires_at = time.time() + float(expires_in) if expires_in else 0.0
-        conn.needs_reauth = False
-        store.set_connection(conn)
-        log.info("oauth refresh: renewed %s", conn.key())
+        old_refresh = conn.refresh_token
+
+        def apply(cur: Connection | None) -> Connection | None:
+            # Compare-and-swap on the refresh token: if the record changed while our
+            # exchange was in flight (the user re-authorized in Settings), the CURRENT
+            # record is fresher — writing our result would clobber the new grant.
+            if cur is None or cur.refresh_token != old_refresh:
+                return None
+            cur.access_token = access
+            if payload.get("refresh_token"):    # rotation: persist the NEW refresh token
+                cur.refresh_token = payload["refresh_token"]
+            cur.expires_at = time.time() + (float(expires_in) if expires_in
+                                            else DEFAULT_TOKEN_LIFETIME_S)
+            cur.needs_reauth = False
+            return cur
+
+        if store.update_connection(conn.provider, conn.account, apply):
+            log.info("oauth refresh: renewed %s", conn.key())
+        else:
+            log.info("oauth refresh: %s changed during the exchange — kept the newer record",
+                     conn.key())
 
     def _mark_reauth(self, conn: Connection, why: str) -> None:
-        conn.needs_reauth = True
-        store.set_connection(conn)
+        def apply(cur: Connection | None) -> Connection | None:
+            if cur is None or cur.refresh_token != conn.refresh_token:
+                return None   # re-authorized meanwhile — nothing to flag
+            cur.needs_reauth = True
+            return cur
+
+        if not store.update_connection(conn.provider, conn.account, apply):
+            return
         log.warning("oauth refresh: %s needs re-auth (%s)", conn.key(), why)
-        notify.send(self.server,
-                    f"OAuth connection {conn.key()} needs re-authorization ({why}). "
-                    f"Reconnect it in Settings → Connections.",
-                    title="Connection expired")
+        # Discord is OPT-IN (the communication permission). An instance-level event pings
+        # only when a routine/conversation actually BINDS this connection and holds the
+        # permission — the web record (Settings badge) is the always-on surface.
+        if self._discord_opted_in(conn):
+            notify.send(self.server,
+                        f"OAuth connection {conn.key()} needs re-authorization ({why}). "
+                        f"Reconnect it in Settings → Connections.",
+                        title="Connection expired")
+
+    def _discord_opted_in(self, conn: Connection) -> bool:
+        from . import registry
+
+        for home in (self.server.routines_home, self.server.conversations_home):
+            for info in registry.scan(self.server, home).values():
+                if (info.cfg.connections.get(conn.provider) == conn.account
+                        and notify.discord_enabled(self.server,
+                                                   permissions=info.cfg.permissions)):
+                    return True
+        return False

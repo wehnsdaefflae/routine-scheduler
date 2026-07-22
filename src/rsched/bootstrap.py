@@ -34,12 +34,16 @@ def ensure_config() -> bool:
     token = secrets.token_urlsafe(24)
     example = repo_root() / "config" / "config.example.yaml"
     if example.exists():
-        text = re.sub(r'token:\s*"change-me".*', f'token: "{token}"',
-                      example.read_text(encoding="utf-8"))
+        # replace WHATEVER token line the example carries (a drifted placeholder must
+        # never ship as a known token / an empty token = an open API); none → append
+        text, n = re.subn(r"(?m)^token:.*$", f'token: "{token}"',
+                          example.read_text(encoding="utf-8"), count=1)
+        if not n:
+            text = text.rstrip() + f'\ntoken: "{token}"\n'
     else:
         text = f'bind: 127.0.0.1\nport: 8321\ntoken: "{token}"\n'
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    atomic_write(path, text)
     log.warning("first boot: generated %s with a fresh access token", path)
     return True
 

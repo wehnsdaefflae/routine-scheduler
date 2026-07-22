@@ -98,13 +98,19 @@ def monthly_spend(server: ServerConfig) -> dict:
         slug = str(rec.get("routine") or "?")
         if m := _BG_SLUG.fullmatch(slug):
             slug = m.group(1)
+        try:   # compute BEFORE folding: one malformed record (tokens as a dict, a
+            tokens = int(rec.get("tokens") or 0)          # stray string cost) is skipped
+            cost = float(rec.get("cost") or 0.0)          # whole, like unparseable JSON —
+            referrals = int(rec.get("referrals") or 0)    # never a 500 on the dashboard
+        except (TypeError, ValueError):
+            continue
         months.add(month)
         cell = by_routine[slug].setdefault(month, {"runs": 0, "tokens": 0, "cost": 0.0,
                                                    "referrals": 0})
         cell["runs"] += 1
-        cell["tokens"] += int(rec.get("tokens") or 0)
-        cell["cost"] = round(cell["cost"] + float(rec.get("cost") or 0.0), 6)
-        cell["referrals"] += int(rec.get("referrals") or 0)
+        cell["tokens"] += tokens
+        cell["cost"] = round(cell["cost"] + cost, 6)
+        cell["referrals"] += referrals
     latest = max(months) if months else ""
     ordered = sorted(by_routine.items(),
                      key=lambda kv: kv[1].get(latest, {}).get("tokens", 0), reverse=True)

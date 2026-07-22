@@ -121,7 +121,10 @@ def conversation_digest(conv_dir: Path, *, max_chars: int = 24_000) -> str:
             elif t == "answer":
                 lines.append("USER (answer): " + str(p.get("text", "")).strip())
     text = "\n".join(ln for ln in lines if ln)
-    return text[:max_chars]
+    if len(text) <= max_chars:
+        return text
+    # keep the TAIL: the newest exchanges are exactly what an Update-playbook distils
+    return "[earlier conversation truncated]\n" + text[-max_chars:]
 
 
 def _oneline(v: object) -> str:
@@ -159,8 +162,8 @@ def _infer(server, prompt: str, *, purpose: str, kind: str) -> dict:
     endpoint, ref = EndpointRegistry(server).for_system()
     comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
                              schema=PLAYBOOK_SCHEMA, effort=ref.effort,
-                             temperature=ref.temperature, timeout=180,
-                             purpose=purpose, kind=kind)
+                             temperature=ref.temperature, max_tokens=ref.max_tokens,
+                             timeout=180, purpose=purpose, kind=kind)
     data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
     return _normalize(data)
 

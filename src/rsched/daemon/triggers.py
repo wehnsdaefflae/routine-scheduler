@@ -81,15 +81,21 @@ class TriggerManager:
         if self.runner.draining or self.runner.is_active(slug):
             return
         state = triggers.read_state(self.home, slug)
-        cooldown = max(int(configured[str(ev.get("trigger"))].get("cooldown_s") or 0)
-                       for _, ev in live)
-        if self._cooling(state, cooldown):
+        raw_per = state.get("triggers")
+        per: dict = raw_per if isinstance(raw_per, dict) else {}
+        # cooldown is PER TRIGGER (docs/triggers.md): an event whose own trigger is still
+        # cooling stays spooled for a later tick; a sibling trigger's events fire now.
+        ready = [(path, ev) for path, ev in live
+                 if not self._cooling(
+                     per.get(str(ev.get("trigger"))) or {},
+                     int(configured[str(ev.get("trigger"))].get("cooldown_s") or 0))]
+        if not ready:
             return
-        await self._fire(slug, info, live, state)
+        await self._fire(slug, info, ready, state)
 
     @staticmethod
-    def _cooling(state: dict, cooldown_s: int) -> bool:
-        last = str(state.get("last_fired") or "")
+    def _cooling(trigger_state: dict, cooldown_s: int) -> bool:
+        last = str(trigger_state.get("last_fired") or "")
         if not last or cooldown_s <= 0:
             return False
         try:
