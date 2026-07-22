@@ -14,7 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ..daemon import registry
+from .. import registry
 from ..paths import atomic_write_json, read_json
 
 router = APIRouter(tags=["summary"])

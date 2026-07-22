@@ -10,9 +10,8 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from rsched import schedule_once
+from rsched import registry, schedule_once
 from rsched.config import ServerConfig
-from rsched.daemon import registry
 from rsched.daemon.schedule_once import OneShotManager
 from rsched.engine.actions import validate_action
 from rsched.engine.interact import handle_schedule_run

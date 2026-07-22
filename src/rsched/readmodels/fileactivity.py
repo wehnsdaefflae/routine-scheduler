@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .engine.transcript import read_events
+from ..engine.transcript import read_events
 
 _READ_KINDS = frozenset({"read_file", "view_image"})
 _WRITE_OPS = {"write_file": "writes", "edit_file": "edits"}
@@ -38,7 +38,15 @@ def file_activity(run_dir: Path) -> list[dict]:
 
     `bytes` totals successful write_file payloads; a failed touch counts only under
     `errors` (the op never happened). `sub` marks a path any CHILD run touched.
+    Memoized on the run's transcript fingerprints (rail-polled endpoint).
     """
+    from . import memo
+
+    return memo.memoized(f"files:{run_dir}", memo.transcript_paths(run_dir),
+                         lambda: _file_activity(run_dir))
+
+
+def _file_activity(run_dir: Path) -> list[dict]:
     rows: dict[str, dict] = {}
 
     def walk(d: Path, *, sub: bool) -> None:

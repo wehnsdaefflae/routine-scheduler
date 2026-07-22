@@ -34,6 +34,11 @@ STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
               "OPENROUTER_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY",
               "SSH_AUTH_SOCK", "SSH_AGENT_PID")
 
+# Exit code 2 = argparse's bad-arguments convention — a USAGE error (the caller sent
+# wrong flags), distinct from a real failure. Part of the util CONTRACT, so telemetry
+# (engine executor + the Stats read-model) classifies on it.
+USAGE_ERROR_EXIT = 2
+
 # Cap on captured stdout/stderr per util run — observations truncate far below this; the
 # cap only stops a runaway printer from ballooning engine memory.
 OUTPUT_CAP = 1_000_000

@@ -6,7 +6,7 @@ import yaml
 
 from rsched.config import EndpointConfig, ModelConfig, ServerConfig
 from rsched.paths import atomic_write_json
-from rsched.stats import aggregate, monthly_spend
+from rsched.readmodels.stats import aggregate, monthly_spend
 
 
 def _server(tmp_path) -> ServerConfig:

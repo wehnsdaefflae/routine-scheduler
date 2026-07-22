@@ -18,12 +18,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from .. import registry
 from ..config import RoutineConfig, ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
 from ..ids import run_ts as make_run_ts
 from ..paths import atomic_write, atomic_write_json, read_json
-from . import registry
 from .events import EventBus
 from .llm_tailer import tail_llm_sidecar
 

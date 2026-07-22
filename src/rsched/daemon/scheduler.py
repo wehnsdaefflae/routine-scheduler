@@ -15,10 +15,10 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-from .. import library_sync
+from .. import library_sync, registry
 from ..config import ServerConfig
 from ..ids import now_iso
-from . import registry, restart
+from . import restart
 from .detached import DetachedManager
 from .events import EventBus
 from .oauth_refresh import OAuthRefreshManager

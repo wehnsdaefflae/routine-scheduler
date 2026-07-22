@@ -12,13 +12,12 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import schedule
+from .. import registry, schedule
 from .. import triggers as triggers_mod
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
-from ..daemon import registry
 from ..ids import now_iso, parse_run_id, run_ts
 from ..paths import atomic_write, atomic_write_json, read_json, resolve_rel
-from ..stats import monthly_spend
+from ..readmodels.stats import monthly_spend
 from . import artifacts
 from .api_questions import _snooze_active
 from .wizard_store import TEMPLATE_SLUG
@@ -262,7 +261,7 @@ def recipe_health(request: Request, slug: str) -> dict:
     health section. Flag-first: reverting is the user's explicit POST below, never
     automatic.
     """
-    from ..run_health import routine_health
+    from ..readmodels.run_health import routine_health
 
     info = _info(request, slug)
     return routine_health(_state(request).server, info.cfg.dir, slug)
@@ -297,7 +296,7 @@ def stategraph(request: Request, slug: str) -> dict:
     current phase (the stage module the latest run last read) — the UI's live diagram;
     phase transitions arrive over the run SSE `state` events.
     """
-    from .. import statemap
+    from ..readmodels import statemap
 
     info = _info(request, slug)
     return statemap.state_graph(info.cfg.dir)
@@ -309,7 +308,7 @@ def recipe(request: Request, slug: str) -> dict:
     trait modules, each with its heading outline. Powers the routine page's file browser; edits
     still go through the generic /file endpoint.
     """
-    from .. import statemap
+    from ..readmodels import statemap
 
     info = _info(request, slug)
     return statemap.recipe_tree(info.cfg.dir)

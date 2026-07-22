@@ -19,6 +19,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.86.0] — 2026-07-23
+
+### Changed — the read-model architecture gets an honest home (overhaul batch 5)
+The audit's architecture verdict: the registry was "a universal read-model at a daemon/
+address" (21 importers, 10 of them web), its siblings were scattered across four homes,
+and every rail poll re-derived its view from raw transcripts.
+
+- **`rsched/registry.py`** — the catalog/run-index read-model moves OUT of `daemon/`
+  (every importer rewritten; nothing re-exported). The daemon OWNS processes; it does
+  not own the shared view of the disk.
+- **`rsched/readmodels/`** — the derived-view home: `stats`, `run_health`, `util_stats`,
+  `statemap`, `fileactivity`, and `tasktree` (formerly `web/tasktree.py`) move in, with
+  two shared primitives:
+  - `memo` — stat-fingerprint caching (inode+mtime+size, the registry's idiom): a
+    derived view recomputes only when an input file actually changed, and cached values
+    return as deep copies. `statemap.phase_stats`, `fileactivity.file_activity`, and
+    `tasktree.build_tree` — all polled every few seconds by the run rail — now hit this
+    instead of re-parsing whole transcripts per tick.
+  - `usage_stream` — the ONE parser of `workflow-usage.jsonl` (stats' monthly spend,
+    run_health's buckets, and util_stats' table each had their own), memoized on the
+    stream's fingerprint.
+- **Search**: queries run on their own WAL read connection — a long refresh pass no
+  longer makes the search box hang behind the writer's lock; the refresh budget now
+  covers the stat-walk too (it was spent before the first budget check at scale).
+- `USAGE_ERROR_EXIT` moves to `utils_lib` (the util contract) — the Stats read-model no
+  longer reaches into `engine.executor` for a constant.
+
 ## [0.85.4] — 2026-07-23
 
 ### Fixed — transports, daemon, and web API sweep (overhaul batch 4)

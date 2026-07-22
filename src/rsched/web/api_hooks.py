@@ -27,8 +27,7 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from .. import triggers
-from ..daemon import registry
+from .. import registry, triggers
 from ..paths import atomic_write
 from .api_routines import _git_commit, _info, _state, guard_not_active, guard_template
 

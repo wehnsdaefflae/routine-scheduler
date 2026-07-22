@@ -24,8 +24,8 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from .. import conversations as conv_mod
+from .. import registry
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, load_routine, write_tuning
-from ..daemon import registry
 from ..ids import now_iso, run_ts
 from ..paths import atomic_write, atomic_write_json
 from . import artifacts

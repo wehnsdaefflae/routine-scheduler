@@ -21,13 +21,11 @@ reverting is the user's one click, never automatic.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 
-from .config import ServerConfig
-from .health_events import WORKFLOW_USAGE_FILE
-from .recipes import recipe_log
+from ..config import ServerConfig
+from ..recipes import recipe_log
 
 # --- regression heuristic constants (each with its reason) ---------------------------
 # Runs compared on each side of the newest recipe change. 5 ≈ one week of a daily
@@ -69,21 +67,10 @@ def _parse_dt(raw: str) -> datetime | None:
 
 def _stream_records(server: ServerConfig, slug: str) -> list[dict]:
     """This routine's depth-0 usage records, in append (chronological) order."""
-    path = server.routines_home / ".control" / WORKFLOW_USAGE_FILE
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-    out = []
-    for line in lines:
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(rec, dict) or rec.get("depth") or rec.get("routine") != slug:
-            continue
-        out.append(rec)
-    return out
+    from .usage_stream import usage_records
+
+    return [rec for rec in usage_records(server.routines_home)
+            if not rec.get("depth") and rec.get("routine") == slug]
 
 
 def _empty_bucket(version: dict, *, current: bool) -> dict:

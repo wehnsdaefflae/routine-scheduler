@@ -157,7 +157,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
         # and the util-review routine both read) now that this run's usage record has landed.
         # Best-effort: a telemetry write must never break a finished run.
         try:
-            from ..util_stats import write_util_stats_snapshot
+            from ..readmodels.util_stats import write_util_stats_snapshot
             write_util_stats_snapshot(server)
         except Exception:  # stats telemetry must never break a run — but leave a breadcrumb
             log.warning("util-stats snapshot refresh failed at run finish", exc_info=True)

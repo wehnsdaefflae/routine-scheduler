@@ -32,10 +32,10 @@ from pathlib import Path
 
 import yaml
 
+from .. import registry
 from ..config import DEFAULT_BUDGETS, ServerConfig, load_routine
 from ..ids import now_iso
 from ..paths import atomic_write, atomic_write_json, read_json
-from . import registry
 from .runner import Runner, _pid_alive
 
 log = logging.getLogger("rsched.detached")

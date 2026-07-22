@@ -9,7 +9,7 @@ import json
 import subprocess
 
 from rsched.config import ServerConfig
-from rsched.util_stats import util_stats
+from rsched.readmodels.util_stats import util_stats
 
 UTIL_SRC = '''"""fetch — fetches a page.
 
@@ -165,7 +165,7 @@ def test_backfill_tolerates_unreadable_transcript(tmp_path, monkeypatch):
     """A single corrupt/unreadable transcript must NOT raise out of util_stats() and zero
     the whole snapshot — the run-finish hook swallows exceptions, so a raise here silently
     yields no snapshot at all. The bad run is skipped; every other source still counts."""
-    import rsched.util_stats as us
+    import rsched.readmodels.util_stats as us
 
     server = _server(tmp_path)
     _add_util(server, "fetch")
@@ -190,7 +190,7 @@ def test_write_snapshot_persists_to_xdg_state(tmp_path, monkeypatch):
     """write_util_stats_snapshot persists util_stats() to snapshot_path() (under
     XDG_STATE_HOME so a Landlock-jailed util can read it) with a `generated` stamp — the
     single file both the Stats tab and the util-review routine's `util-stats` util read."""
-    from rsched.util_stats import snapshot_path, write_util_stats_snapshot
+    from rsched.readmodels.util_stats import snapshot_path, write_util_stats_snapshot
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     server = _server(tmp_path)
@@ -220,7 +220,7 @@ def test_backfill_tolerates_unreadable_home(tmp_path, monkeypatch):
     did not cover."""
     from pathlib import Path
 
-    import rsched.util_stats as us
+    import rsched.readmodels.util_stats as us
 
     server = _server(tmp_path)
     _add_util(server, "fetch")
@@ -246,8 +246,8 @@ def test_write_snapshot_degrades_when_util_stats_raises(tmp_path, monkeypatch):
     there used to yield NO snapshot file at all (silently, via the best-effort run-finish
     hook — the root of F97's never-materializing snapshot). It must instead ALWAYS create
     the file, degraded and marked with the error, so the failure is observable next run."""
-    import rsched.util_stats as us
-    from rsched.util_stats import snapshot_path, write_util_stats_snapshot
+    import rsched.readmodels.util_stats as us
+    from rsched.readmodels.util_stats import snapshot_path, write_util_stats_snapshot
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     server = _server(tmp_path)
@@ -274,7 +274,7 @@ def test_write_snapshot_logs_breadcrumb_when_state_dir_unwritable(tmp_path, monk
     breadcrumb naming the unwritable path so the misconfiguration is diagnosable."""
     import logging
 
-    from rsched.util_stats import snapshot_path, write_util_stats_snapshot
+    from rsched.readmodels.util_stats import snapshot_path, write_util_stats_snapshot
 
     # Point XDG_STATE_HOME below a FILE, so mkdir(parents=True) raises an OSError on the write
     # (a stand-in for the real EACCES on a root-owned ~/.local).

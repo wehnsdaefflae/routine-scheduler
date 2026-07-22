@@ -100,7 +100,7 @@ def clarify_states(server: ServerConfig) -> list[str]:
     from datetime import UTC, datetime
 
     from ..paths import read_json
-    from .registry import TERMINAL_STATES
+    from ..registry import TERMINAL_STATES
     from .runner import _pid_alive
 
     out: list[str] = []

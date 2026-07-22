@@ -11,13 +11,13 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sse_starlette import EventSourceResponse
 
+from .. import registry
 from ..config import DELIBERATION_LEVELS
-from ..daemon import registry
-from ..daemon.registry import TERMINAL_STATES
 from ..daemon.runner import abort_process
 from ..engine.transcript import read_events
 from ..ids import now_iso, parse_run_id
 from ..paths import atomic_write_json, read_json
+from ..registry import TERMINAL_STATES
 from .sse import run_stream
 
 router = APIRouter(tags=["runs"])
@@ -104,7 +104,7 @@ def run_phases(request: Request, run_id: str) -> dict:
     """Per-phase instrumentation (turns / tokens / cost / wall-clock) derived from the
     run's transcript — the state-graph rail's numbers.
     """
-    from ..statemap import phase_stats
+    from ..readmodels.statemap import phase_stats
 
     _, run_dir = _run_dir(request, run_id)
     return {"phases": phase_stats(run_dir)}
@@ -115,7 +115,7 @@ def run_files(request: Request, run_id: str) -> dict:
     """Which files the run read and wrote — per-path counts derived from the transcript
     (subruns and user slash commands included) — the rail's file-activity card.
     """
-    from ..fileactivity import file_activity
+    from ..readmodels.fileactivity import file_activity
 
     _, run_dir = _run_dir(request, run_id)
     return {"files": file_activity(run_dir)}
@@ -127,7 +127,7 @@ def run_tree(request: Request, run_id: str) -> dict:
     with mode / state / live turns / allotted budget and its own children nested. A read-model
     over the on-disk sub/ transcripts (nothing is written) — the rail's decomposition view.
     """
-    from .tasktree import build_tree
+    from ..readmodels.tasktree import build_tree
 
     _, run_dir = _run_dir(request, run_id)
     return {"tree": build_tree(run_dir)}

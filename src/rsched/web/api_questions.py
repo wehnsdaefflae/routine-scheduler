@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ..daemon import registry
+from .. import registry
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
 

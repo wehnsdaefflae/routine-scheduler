@@ -5,8 +5,7 @@ web→daemon handoff, and the routine-page CRUD with its 409/403 guards."""
 import yaml
 from fastapi.testclient import TestClient
 
-from rsched import triggers
-from rsched.daemon import registry
+from rsched import registry, triggers
 from rsched.daemon.triggers import TriggerManager
 from rsched.paths import atomic_write_json, read_json
 

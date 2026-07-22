@@ -31,13 +31,12 @@ import os
 import subprocess
 from pathlib import Path
 
-from . import utils_lib
-from .config import ServerConfig
-from .engine.executor import USAGE_ERROR_EXIT
-from .engine.transcript import read_events
-from .health_events import WORKFLOW_USAGE_FILE
-from .ids import now_iso
-from .workflows.library import head_commit
+from .. import utils_lib
+from ..config import ServerConfig
+from ..engine.transcript import read_events
+from ..ids import now_iso
+from ..utils_lib import USAGE_ERROR_EXIT
+from ..workflows.library import head_commit
 
 log = logging.getLogger("rsched.util_stats")
 
@@ -45,7 +44,7 @@ OUTCOMES = ("ok", "error", "usage_error", "missing", "denied", "rejected")
 _EXECUTED = ("ok", "error", "usage_error")   # outcomes where the util actually ran
 _PSEUDO = ("list", "show")                   # catalog discovery, not execution
 
-# Stat-validated memos (see daemon/registry.py): re-decided from the filesystem on every
+# Stat-validated memos (see rsched/registry.py): re-decided from the filesystem on every
 # lookup, so the disk stays the source of truth. Terminal transcripts never change, so
 # each is parsed exactly once per process; the git walk re-runs only when HEAD moves.
 _transcript_memo: dict[str, tuple[tuple, dict]] = {}
@@ -114,20 +113,13 @@ def _stream_utils(server: ServerConfig) -> tuple[dict, set[str], int]:
     id (`slug:ts`) marks the whole run dir (subruns included: their records carry the
     key from the same engine version) as covered for the transcript backfill.
     """
-    path = server.routines_home / ".control" / WORKFLOW_USAGE_FILE
+    from .usage_stream import usage_records
+
     agg: dict[str, dict] = {}
     covered: set[str] = set()
     counted = 0
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return agg, covered, counted
-    for line in lines:
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(rec, dict) or "utils" not in rec:
+    for rec in usage_records(server.routines_home):
+        if "utils" not in rec:
             continue
         covered.add(str(rec.get("run_id") or "").split("#")[0])
         counted += 1

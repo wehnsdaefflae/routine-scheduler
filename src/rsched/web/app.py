@@ -239,8 +239,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
 
     @app.get("/api/status", dependencies=deps)
     def status() -> dict:
-        from .. import __version__
-        from ..daemon import registry
+        from .. import __version__, registry
         from ..schedule import server_tz
 
         marker = _setup_marker()

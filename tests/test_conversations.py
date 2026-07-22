@@ -485,7 +485,7 @@ def test_runner_reserved_interactive_slots(server):
 
 def test_registry_scan_conversations_home(server):
     conv_mod.create_conversation(server, slug="c-scan", first_message="hello there")
-    from rsched.daemon import registry
+    from rsched import registry
 
     assert "c-scan" not in registry.scan(server)                     # not a routine
     catalog = registry.scan(server, server.conversations_home)

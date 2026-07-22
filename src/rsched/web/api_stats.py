@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from ..stats import aggregate, monthly_spend
-from ..util_stats import util_stats
+from ..readmodels.stats import aggregate, monthly_spend
+from ..readmodels.util_stats import util_stats
 
 router = APIRouter(tags=["stats"])
 

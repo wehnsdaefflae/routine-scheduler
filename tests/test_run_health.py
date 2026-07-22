@@ -7,7 +7,7 @@ import json
 import subprocess
 
 from rsched.config import ServerConfig
-from rsched.run_health import (
+from rsched.readmodels.run_health import (
     BALLOON_RATIO,
     FAIL_RATE_JUMP,
     MIN_RUNS,

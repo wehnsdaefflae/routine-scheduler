@@ -10,8 +10,8 @@ from pathlib import Path
 
 import yaml
 
+from .. import registry
 from ..config import load_tuning, write_tuning
-from ..daemon import registry
 from ..daemon.runner import _pid_alive
 from ..ids import now_iso
 from ..ids import run_ts as make_run_ts

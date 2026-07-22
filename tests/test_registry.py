@@ -4,8 +4,8 @@ import json
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from rsched import registry
 from rsched.config import ServerConfig, load_routine
-from rsched.daemon import registry
 from rsched.engine.transcript import read_events
 from rsched.paths import atomic_write_json
 

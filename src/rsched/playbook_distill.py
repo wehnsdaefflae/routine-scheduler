@@ -95,7 +95,7 @@ def conversation_digest(conv_dir: Path, *, max_chars: int = 24_000) -> str:
     transcript) followed by each user message, assistant action (the procedure), and reply from the
     conversation's one continuous run.
     """
-    from .daemon import registry
+    from . import registry
     from .engine.transcript import read_events
 
     lines: list[str] = []

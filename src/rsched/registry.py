@@ -19,9 +19,9 @@ from zoneinfo import ZoneInfo
 
 from croniter import croniter
 
-from ..config import RoutineConfig, ServerConfig, load_routine
-from ..engine.inbox import open_questions
-from ..paths import read_json
+from .config import RoutineConfig, ServerConfig, load_routine
+from .engine.inbox import open_questions
+from .paths import read_json
 
 GZIP_AFTER_RUNS = 5  # transcripts older than the N most recent runs get gzipped
 

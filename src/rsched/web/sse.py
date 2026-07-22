@@ -12,9 +12,9 @@ import asyncio
 import json
 from pathlib import Path
 
-from ..daemon.registry import TERMINAL_STATES
 from ..engine.transcript import read_events
 from ..paths import read_json
+from ..registry import TERMINAL_STATES
 
 POLL_S = 0.4
 

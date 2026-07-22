@@ -2,7 +2,7 @@
 on-disk sub/ transcripts, with live stats for running nodes and nested grandchildren."""
 
 from rsched.engine.transcript import Transcript
-from rsched.web.tasktree import build_tree
+from rsched.readmodels.tasktree import build_tree
 
 
 def test_build_tree_reconstructs_recursive_children(tmp_path):

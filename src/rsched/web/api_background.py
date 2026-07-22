@@ -12,8 +12,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request
 
+from .. import registry
 from ..config import load_routine
-from ..daemon import registry
 from ..daemon.runner import abort_process
 from ..ids import background_task_id
 from ..paths import atomic_write_json, read_json

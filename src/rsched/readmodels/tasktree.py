@@ -37,7 +37,17 @@ def build_tree(run_dir: Path, depth_left: int = MAX_DEPTH) -> list[dict]:
     {n, label, workflow, mode, budget:{turns,tokens}, state, turns, usage, summary, children:[…]}.
     `mode` is "sequential" (a subtask) or "parallel" (a spawn); `state` is running|ok|partial|
     failed|aborted.
+
+    Memoized on the whole tree's transcript fingerprints — the rail polls this and used
+    to re-read every transcript from byte 0 per tick.
     """
+    from . import memo
+
+    return memo.memoized(f"tree:{run_dir}", memo.transcript_paths(run_dir),
+                         lambda: _build_tree(run_dir, depth_left))
+
+
+def _build_tree(run_dir: Path, depth_left: int) -> list[dict]:
     events, _ = read_events(run_dir / "transcript.jsonl", 0)
     nodes: dict[int, dict] = {}
     order: list[int] = []

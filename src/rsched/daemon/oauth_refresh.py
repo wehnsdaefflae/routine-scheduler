@@ -142,7 +142,7 @@ class OAuthRefreshManager:
                         title="Connection expired")
 
     def _discord_opted_in(self, conn: Connection) -> bool:
-        from . import registry
+        from .. import registry
 
         for home in (self.server.routines_home, self.server.conversations_home):
             for info in registry.scan(self.server, home).values():

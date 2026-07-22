@@ -9,11 +9,11 @@ import rsched.daemon.runner as runner_mod
 import rsched.daemon.scheduler as sched_mod
 from rsched.config import ServerConfig, load_routine
 from rsched.daemon.events import EventBus
-from rsched.daemon.registry import read_run, scan
 from rsched.daemon.runner import Runner, _notable_stderr
 from rsched.daemon.scheduler import Scheduler
 from rsched.engine.transcript import read_events
 from rsched.paths import atomic_write_json, read_json
+from rsched.registry import read_run, scan
 
 
 def _server(tmp_path, max_concurrent=2) -> ServerConfig:

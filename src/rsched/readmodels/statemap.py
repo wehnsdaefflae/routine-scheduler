@@ -107,10 +107,21 @@ def phase_stats(run_dir: Path) -> list[dict]:
     (the engine stamps it); a turn's wall-clock is the gap from the previous event,
     and the tail after the last action (its dispatch) lands on the last phase. The
     empty-string phase collects turns from before any state/phase.json write.
+
+    Memoized on the transcript's stat fingerprint — the rail polls this endpoint every
+    few seconds and used to re-parse the whole transcript each tick.
     """
+    from . import memo
+
+    return memo.memoized(f"phases:{run_dir}",
+                         [run_dir / "transcript.jsonl", run_dir / "transcript.jsonl.gz"],
+                         lambda: _phase_stats(run_dir))
+
+
+def _phase_stats(run_dir: Path) -> list[dict]:
     from datetime import datetime
 
-    from .engine.transcript import read_events
+    from ..engine.transcript import read_events
 
     events, _ = read_events(run_dir / "transcript.jsonl")
 

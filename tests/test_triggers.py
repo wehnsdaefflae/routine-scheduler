@@ -4,9 +4,8 @@ tests/test_detached.py — on-disk fixtures, no subprocess, asyncio_mode=auto.""
 
 import yaml
 
-from rsched import triggers
+from rsched import registry, triggers
 from rsched.config import ServerConfig, load_routine
-from rsched.daemon import registry
 from rsched.daemon.triggers import TriggerManager, _event_text
 from rsched.ids import now_iso
 from rsched.paths import read_json

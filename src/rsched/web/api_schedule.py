@@ -12,8 +12,7 @@ from croniter import croniter
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import schedule_once
-from ..daemon import registry
+from .. import registry, schedule_once
 
 router = APIRouter(tags=["schedule"])
 

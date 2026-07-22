@@ -2,7 +2,7 @@
 
 import json
 
-from rsched.fileactivity import file_activity
+from rsched.readmodels.fileactivity import file_activity
 
 
 def _write_transcript(d, events):

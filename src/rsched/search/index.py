@@ -147,12 +147,13 @@ class SearchIndex:
     # ---- indexing -------------------------------------------------------------------------
 
     def refresh(self, budget_s: float | None = None) -> dict:
-        """One incremental pass: prune rows for files gone from disk, reindex files whose
-        stat fingerprint changed — newest run dirs first, so fresh results surface before
-        a deep backlog clears — stopping once `budget_s` is spent. The budget is checked
-        AFTER each file, so every pass makes progress (any backlog eventually drains no
-        matter how small the budget). Returns {"indexed", "pending", "files"};
-        pending > 0 means a later call continues the work.
+        """One incremental pass: prune rows for files gone from disk, then walk the
+        candidates NEWEST run first, fingerprinting and reindexing in a single budgeted
+        loop — the budget covers the stat()s too, not just the reindexing (a stat-walk
+        over 10⁴ files was previously spent before the first budget check). Checked
+        AFTER each file, so every pass makes progress and any backlog eventually drains.
+        Returns {"indexed", "pending", "files"}; pending counts files not yet CONFIRMED
+        fresh this pass — a later call continues the work.
         """
         t0 = time.monotonic()
         with self._lock:
@@ -161,17 +162,18 @@ class SearchIndex:
             known = dict(db.execute("SELECT path, fingerprint FROM files").fetchall())
             for path in [p for p in known if p not in found]:
                 self._drop_file(db, path)
-            stale = [(path, src) for path, src in found.items()
-                     if _fingerprint(src.path) != known.get(path)]
-            stale.sort(key=lambda item: item[1].run_ts, reverse=True)
-            indexed = 0
-            for _path, src in stale:
-                self._index_file(db, src)
-                indexed += 1
+            candidates = sorted(found.items(), key=lambda item: item[1].run_ts, reverse=True)
+            indexed = scanned = 0
+            for path, src in candidates:
+                if _fingerprint(src.path) != known.get(path):
+                    self._index_file(db, src)
+                    indexed += 1
+                scanned += 1
                 if budget_s is not None and time.monotonic() - t0 >= budget_s:
                     break
             db.commit()
-            return {"indexed": indexed, "pending": len(stale) - indexed, "files": len(found)}
+            return {"indexed": indexed, "pending": len(candidates) - scanned,
+                    "files": len(found)}
 
     def _drop_file(self, db: sqlite3.Connection, path: str) -> None:
         row = db.execute("SELECT id FROM files WHERE path=?", (path,)).fetchone()
@@ -213,12 +215,23 @@ class SearchIndex:
         if not q:
             raise ValueError("empty query")
         limit = max(1, min(int(limit), MAX_LIMIT))
-        with self._lock:
-            db = self._db()
+        # A dedicated read connection per query: WAL lets readers run WHILE the writer
+        # indexes, so a long refresh pass never makes the search box hang behind
+        # self._lock (the lock stays the writer's — refresh/close/schema).
+        if not self.path.exists():
+            return []
+        conn = sqlite3.connect(self.path, check_same_thread=False)
+        try:
+            conn.execute("PRAGMA busy_timeout=5000")
             try:
-                return self._match(db, q, limit)
+                return self._match(conn, q, limit)
             except sqlite3.OperationalError:
-                return self._match(db, _escape_query(q), limit)
+                try:
+                    return self._match(conn, _escape_query(q), limit)
+                except sqlite3.OperationalError:
+                    return []   # schema not created yet (first boot, empty cache)
+        finally:
+            conn.close()
 
     def _match(self, db: sqlite3.Connection, fts_query: str, limit: int) -> list[dict]:
         rows = db.execute(

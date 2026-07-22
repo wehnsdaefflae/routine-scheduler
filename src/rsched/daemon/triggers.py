@@ -28,11 +28,10 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .. import triggers
+from .. import registry, triggers
 from ..config import ServerConfig
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
-from . import registry
 from .runner import Runner
 
 log = logging.getLogger("rsched.triggers")

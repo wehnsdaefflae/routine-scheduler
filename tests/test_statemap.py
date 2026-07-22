@@ -3,7 +3,7 @@ from prose, so every routine with stage modules has a diagram, unconditionally."
 
 import json
 
-from rsched import statemap
+from rsched.readmodels import statemap
 
 
 def test_stage_states_ordered_by_main_md_mention(tmp_path):
@@ -107,7 +107,7 @@ def test_phase_stats_aggregates_turns_tokens_time(tmp_path):
     their own bucket."""
     import json
 
-    from rsched.statemap import phase_stats
+    from rsched.readmodels.statemap import phase_stats
 
     lines = [
         {"ts": "2026-07-15T10:00:00+00:00", "type": "header", "payload": {}},
@@ -130,6 +130,6 @@ def test_phase_stats_aggregates_turns_tokens_time(tmp_path):
 
 
 def test_phase_stats_empty_without_transcript(tmp_path):
-    from rsched.statemap import phase_stats
+    from rsched.readmodels.statemap import phase_stats
 
     assert phase_stats(tmp_path) == []

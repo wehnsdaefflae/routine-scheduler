@@ -9,15 +9,14 @@ unit-testable without a running server.
 
 from __future__ import annotations
 
-import json
 import re
 from collections import defaultdict
 from datetime import UTC, date, datetime
 
-from .config import ServerConfig
-from .daemon import registry
-from .endpoints import EndpointError, EndpointRegistry
-from .paths import read_json
+from .. import registry
+from ..config import ServerConfig
+from ..endpoints import EndpointError, EndpointRegistry
+from ..paths import read_json
 
 # a detached background task's slug (`bg-<owner>-<hex8>`) → its owner, so spend lands on
 # the conversation the user actually launched, not on a transient id
@@ -78,19 +77,12 @@ def monthly_spend(server: ServerConfig) -> dict:
     conversation. Shape: {"months": [...asc], "by_routine": {slug: {month: {runs, tokens,
     cost}}}} — routines sorted by latest-month tokens, descending.
     """
-    path = server.routines_home / ".control" / "workflow-usage.jsonl"
+    from .usage_stream import usage_records
+
     months: set[str] = set()
     by_routine: dict[str, dict[str, dict]] = defaultdict(dict)
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return {"months": [], "by_routine": {}}
-    for line in lines:
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(rec, dict) or rec.get("depth"):
+    for rec in usage_records(server.routines_home):
+        if rec.get("depth"):
             continue
         month = str(rec.get("ts") or "")[:7]
         if len(month) != 7:

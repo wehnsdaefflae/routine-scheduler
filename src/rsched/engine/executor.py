@@ -16,7 +16,8 @@ from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, EndpointError, guess_media_
 from ..ids import is_slug
 from ..oauth import store as oauth_store
 from ..paths import atomic_write, resolve_rel
-from ..statemap import STAGES_DIR
+from ..readmodels.statemap import STAGES_DIR
+from ..utils_lib import USAGE_ERROR_EXIT
 from .observations import truncate
 from .run_context import RunContext
 
@@ -25,7 +26,6 @@ UTIL_DEFAULT_TIMEOUT_S = 300
 # argparse exits 2 on bad arguments — the deterministic "called with wrong syntax" signal
 # for per-util telemetry (a util not using argparse may exit 1 for everything; then its
 # usage errors count as plain errors, which is the honest fallback).
-USAGE_ERROR_EXIT = 2
 VISION_UTIL = "vision"
 VIEW_DEFAULT_PROMPT = ("Describe this file in full detail — transcribe any text verbatim and "
                        "note structure, data, and notable visual elements.")
