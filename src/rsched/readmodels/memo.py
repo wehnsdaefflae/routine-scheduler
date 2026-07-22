@@ -13,6 +13,11 @@ import copy
 import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import TypeVar
+
+# a classic TypeVar, not PEP 695 generics: pdoc (the Help tab's API docs) cannot parse
+# `def f[T](…)` yet and warns on every docs build
+T = TypeVar("T")
 
 _MAX_ENTRIES = 512
 
@@ -35,13 +40,13 @@ def fingerprint(paths: Sequence[Path]) -> tuple:
     return tuple(out)
 
 
-def memoized[T](key: str, paths: Sequence[Path], compute: Callable[[], T]) -> T:
+def memoized(key: str, paths: Sequence[Path], compute: Callable[[], T]) -> T:  # noqa: UP047 — pdoc can't parse PEP 695 generics
     """`compute()`'s result for `key`, reused while every path in `paths` is unchanged."""
     return _memoized(key, paths, compute, share=False)
 
 
-def memoized_shared[T](key: str, paths: Sequence[Path],
-                     compute: Callable[[], T]) -> T:
+def memoized_shared(key: str, paths: Sequence[Path],  # noqa: UP047 — see memoized
+                    compute: Callable[[], T]) -> T:
     """Like `memoized`, but the cached value itself is returned (no deep copy) — for big
     flat record lists where copying per request would cost what the memo saves. The
     caller's contract: treat the result as IMMUTABLE.
@@ -49,8 +54,8 @@ def memoized_shared[T](key: str, paths: Sequence[Path],
     return _memoized(key, paths, compute, share=True)
 
 
-def _memoized[T](key: str, paths: Sequence[Path], compute: Callable[[], T],
-                 *, share: bool) -> T:
+def _memoized(key: str, paths: Sequence[Path], compute: Callable[[], T],  # noqa: UP047
+              *, share: bool) -> T:
     fp = fingerprint(paths)
     with _lock:
         hit = _cache.get(key)
