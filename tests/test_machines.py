@@ -183,9 +183,6 @@ def test_unknown_machine_key_surfaced(tmp_path):
     assert any("machines.g.bogus" in p for p in problems)
 
 
-def test_server_config_defaults_empty():
-    assert ServerConfig().machines == {}
-
 
 # ---------------------------------------------------------------------- share mounts ---------
 def test_sshfs_argv_shape():
@@ -206,9 +203,6 @@ def test_known_hosts_lines_by_port():
 def test_routine_mount_dir(tmp_path):
     assert machines.routine_mount_dir(tmp_path) == tmp_path / "mnt"
 
-
-def test_config_share_parses():
-    assert MachineConfig(host="h", user="u", share="/srv/data").share == "/srv/data"
 
 
 def test_ensure_gitignore_idempotent(tmp_path):

@@ -36,7 +36,7 @@ def _set_capabilities(routine_dir, **updates) -> None:
     path.write_text(_yaml.safe_dump(raw), encoding="utf-8")
 
 
-def _server(routine_dir, *, util_authoring: str | None = "false") -> ServerConfig:
+def _server(routine_dir, *, util_authoring: str | None = "never") -> ServerConfig:
     s = ServerConfig()
     # hermetic: the library holds only what a test declares (no utils) → sub-workflows use
     # the builtin fallback body; util actions on a missing name return a "missing"
@@ -48,10 +48,8 @@ def _server(routine_dir, *, util_authoring: str | None = "false") -> ServerConfi
     caps_actions = ["memory_read", "memory_write"]
     if util_authoring is not None:
         _library_permission(s, "util-authoring", "requires:\n  actions: [write_util]")
-        confirm = {"true": "always", "false": "never",
-                   "revisions-only": "creations"}.get(util_authoring, util_authoring)
         caps_actions = ["write_util", *caps_actions]
-        _set_capabilities(routine_dir, actions=caps_actions, confirm=confirm)
+        _set_capabilities(routine_dir, actions=caps_actions, confirm=util_authoring)
     else:
         _set_capabilities(routine_dir, actions=caps_actions)
     return s
@@ -457,7 +455,7 @@ def test_write_util_confirmation_declined(make_routine, scripted, monkeypatch):
     d = make_routine(slug="wuconfirm")
     qid = f"q-{TS}-1"
     atomic_write_json(d / "inbox" / f"answer-{qid}.json", {"qid": qid, "text": "decline"})
-    server = _server(d, util_authoring="true")   # grant with approval gate ON
+    server = _server(d, util_authoring="always")   # grant with approval gate ON
     scripted([
         {"say": "Propose a util.", "kind": "write_util", "name": "risky", "content": util_src("risky")},
         finish(status="partial", summary="util declined"),
@@ -506,7 +504,7 @@ def test_write_util_autonomous_revisions(make_routine, scripted, monkeypatch):
         {"say": "Fix it.", "kind": "write_util", "name": "adder", "content": util_src("adder")},
         finish(summary="revised without a question"),
     ])
-    status, run_dir = run_routine(d, _server(d, util_authoring="revisions-only"), run_ts=TS)
+    status, run_dir = run_routine(d, _server(d, util_authoring="creations"), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert status == "ok"
     assert not any(e["type"] == "question" for e in events)             # no approval round
@@ -1433,8 +1431,6 @@ tools: [read_file, write_file]
 def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):
     """Every finished run — and every finished sub-workflow — appends one line to
     .control/workflow-usage.jsonl, the meta-workflows routine's evidence stream."""
-    from rsched.paths import read_json as _rj  # noqa: F401 — parity import
-
     d, _ep, status, _run_dir, _events = _run(make_routine, scripted, [
         (PARENT, spawn("CHILD-B: do the small thing.", label="c1")),
         ("CHILD-B", finish(summary="child done")),
@@ -2161,7 +2157,7 @@ def test_write_util_selftest_failure_restores_revision(make_routine, scripted, m
         {"say": "Fix it.", "kind": "write_util", "name": "adder", "content": util_src("adder")},
         finish(status="partial", summary="revision failed selftest"),
     ])
-    status, _run_dir = run_routine(d, _server(d, util_authoring="revisions-only"), run_ts=TS)
+    status, _run_dir = run_routine(d, _server(d, util_authoring="creations"), run_ts=TS)
     assert status == "partial"
     assert len(writes) == 2 and writes[1] == "OLD WORKING SOURCE"
 
@@ -2176,7 +2172,7 @@ def test_write_util_path_name_rejected_in_schema_cycle(make_routine, scripted):
         probe(),
         finish(summary="stayed inside the rules"),
     ])
-    status, run_dir = run_routine(d, _server(d, util_authoring="true"), run_ts=TS)
+    status, run_dir = run_routine(d, _server(d, util_authoring="always"), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert status == "ok"
     errs = [e for e in events if e["type"] == "error" and e["payload"]["where"] == "schema"]

@@ -198,7 +198,7 @@ def api_client(tmp_path):
 def make_routine(tmp_path):
     def _make(slug: str = "testr", *, budgets: dict | None = None,
               workflow_md: str = WORKFLOW_MD,
-              instruction: str = "Test instruction: do the minimal thing.") -> Path:
+              instruction: str | None = None) -> Path:
         d = tmp_path / "routines" / slug
         (d / "state").mkdir(parents=True)
         (d / "inbox").mkdir()
@@ -212,7 +212,8 @@ def make_routine(tmp_path):
                         **(budgets or {})},
         }
         (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
-        (d / "instruction.md").write_text(instruction, encoding="utf-8")
+        if instruction is not None:   # real routines don't persist a seed; wizard-shaped tests do
+            (d / "instruction.md").write_text(instruction, encoding="utf-8")
         (d / "main.md").write_text(workflow_md, encoding="utf-8")   # the routine's materialized recipe
         (d / "LEDGER.md").write_text("# LEDGER\n\n### seed — routine created for tests\n",
                                      encoding="utf-8")

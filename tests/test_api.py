@@ -695,7 +695,7 @@ def test_settings_endpoints_crud(client):
     names = {e["name"] for e in c.get("/api/settings/endpoints").json()["endpoints"]}
     assert names == {"dummy", "vllm"}
     # unknown/harness kinds are rejected; claude-cli (stripped transport) is allowed
-    r = c.post("/api/settings/endpoints", json={"name": "cc", "kind": "agент-sdk"})
+    r = c.post("/api/settings/endpoints", json={"name": "cc", "kind": "agent-sdk"})
     assert r.status_code == 400
     r = c.post("/api/settings/endpoints", json={"name": "cc", "kind": "claude-cli"})
     assert r.status_code == 200

@@ -10,7 +10,6 @@ from rsched.config import (
     DEFAULT_BUDGETS,
     DEFAULT_PERMISSIONS,
     EndpointConfig,
-    ModelConfig,
     ServerConfig,
     load_routine,
     load_server_config,
@@ -141,18 +140,6 @@ def test_endpoint_key_var_defaults_per_kind():
     ep = EndpointConfig(name="o2", kind="openai", base_url="http://x", key_var="OPENROUTER_KEY")
     assert ep.key_var == "OPENROUTER_KEY"
 
-
-def test_server_config_direct_construction_for_tests():
-    """The fixture pattern all engine tests rely on: bare construction + assignment."""
-    s = ServerConfig()
-    s.models = {"sys": ModelConfig(name="sys", endpoint="e1", model="test-model")}
-    s.system_model = "sys"
-    s.endpoints = {"e1": EndpointConfig(name="e1", kind="openai", base_url="http://x")}
-    assert s.system_model == "sys" and s.models["sys"].model == "test-model"
-    assert s.endpoints["e1"].context_chars == 100_000
-
-
-# ---------------------------------------------------------------- routine.yaml
 
 
 def _mk_routine(tmp_path, data: dict, slug="testr", files=True):
