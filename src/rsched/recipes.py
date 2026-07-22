@@ -26,6 +26,7 @@ import subprocess
 from pathlib import Path
 
 from .grants import RECIPE_PREFIXES
+from .paths import file_lock, repo_lock_path
 
 # git pathspecs for the recipe set — RECIPE_PREFIXES minus the dir-prefix slashes
 RECIPE_PATHSPECS: tuple[str, ...] = tuple(p.rstrip("/") for p in RECIPE_PREFIXES)
@@ -70,9 +71,12 @@ def current_recipe_commit(routine_dir: Path) -> str | None:
         return None
     try:
         if _recipe_paths_dirty(routine_dir) and (specs := _matchable_specs(routine_dir)):
-            _git(routine_dir, "add", "-A", "--", *specs)
-            _git(routine_dir, *_GIT_IDENTITY, "commit", "-qm", "recipe: pre-run snapshot",
-                 "--", *specs)
+            # Under the per-repo lock: the improver may be committing this same target dir
+            # via git-sync at this instant (this snapshot runs at the target's run start).
+            with file_lock(repo_lock_path(routine_dir)):
+                _git(routine_dir, "add", "-A", "--", *specs)
+                _git(routine_dir, *_GIT_IDENTITY, "commit", "-qm", "recipe: pre-run snapshot",
+                     "--", *specs)
         r = _git(routine_dir, "log", "-1", "--format=%H", "--", *RECIPE_PATHSPECS)
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -127,20 +131,22 @@ def revert_recipe(routine_dir: Path, commit: str) -> dict:
         # by the reverted change disappear), then check out the parent's copies. Per-path
         # checkout with check=False skips paths absent in the parent (e.g. no tuning.yaml
         # yet) — the staged removal keeps those deleted, which is exactly the parent state.
-        _git(routine_dir, "rm", "-rq", "--ignore-unmatch", "--", *RECIPE_PATHSPECS)
-        for spec in RECIPE_PATHSPECS:
-            _git(routine_dir, "checkout", f"{ref}^", "--", spec)
-        # commit only pathspecs git can name post-restore (worktree or HEAD — HEAD still
-        # holds a file the revert deletes, so its deletion is committed too)
-        specs = _matchable_specs(routine_dir)
-        committed = _git(routine_dir, *_GIT_IDENTITY, "commit",
-                         "-qm", f"recipe: revert to pre-{parent.stdout.strip() or ref[:9]} (web)",
-                         "--", *specs)
-        if committed.returncode != 0:
-            # nothing to commit — the working recipe already matches the pre-change state
-            _git(routine_dir, "checkout", "HEAD", "--", *specs)
-            raise RecipeError("the recipe already matches the state before that commit")
-        new = _git(routine_dir, "log", "-1", "--format=%H", "--", *RECIPE_PATHSPECS)
+        # Under the per-repo lock (like autocommit / the pre-run snapshot / the git-sync util),
+        # so this multi-step restore is not interleaved with another writer of this dir.
+        with file_lock(repo_lock_path(routine_dir)):
+            _git(routine_dir, "rm", "-rq", "--ignore-unmatch", "--", *RECIPE_PATHSPECS)
+            for spec in RECIPE_PATHSPECS:
+                _git(routine_dir, "checkout", f"{ref}^", "--", spec)
+            # commit only pathspecs git can name post-restore (worktree or HEAD — HEAD still
+            # holds a file the revert deletes, so its deletion is committed too)
+            specs = _matchable_specs(routine_dir)
+            msg = f"recipe: revert to pre-{parent.stdout.strip() or ref[:9]} (web)"
+            committed = _git(routine_dir, *_GIT_IDENTITY, "commit", "-qm", msg, "--", *specs)
+            if committed.returncode != 0:
+                # nothing to commit — the working recipe already matches the pre-change state
+                _git(routine_dir, "checkout", "HEAD", "--", *specs)
+                raise RecipeError("the recipe already matches the state before that commit")
+            new = _git(routine_dir, "log", "-1", "--format=%H", "--", *RECIPE_PATHSPECS)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RecipeError(f"git failed: {exc}") from exc
     return {"reverted": ref, "restored_from": f"{ref}^",

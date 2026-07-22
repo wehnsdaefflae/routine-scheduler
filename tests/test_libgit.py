@@ -81,6 +81,33 @@ def test_file_lock_is_exclusive_then_reacquirable(tmp_path):
         assert third is True
 
 
+def _init_repo(path) -> None:
+    for args in (["init", "-q", "-b", "main"], ["config", "user.email", "t@t"],
+                 ["config", "user.name", "t"]):
+        subprocess.run(["git", "-C", str(path), *args], check=True)
+
+
+def test_autocommit_takes_the_repo_lock(tmp_path):
+    """The routine-dir autocommit runs under the same per-repo lock the git-sync util takes,
+    so a target's autocommit and the improver's git-sync of that target take turns."""
+    from rsched.engine.autocommit import autocommit
+
+    _init_repo(tmp_path)
+    (tmp_path / "state.txt").write_text("x\n", encoding="utf-8")
+    autocommit(tmp_path, "run state")
+    assert (tmp_path / ".git" / "rsched-commit.lock").exists()
+    assert "run state" in _git(tmp_path, "log", "-1", "--format=%s")
+
+
+def test_recipe_snapshot_takes_the_repo_lock(tmp_path):
+    from rsched.recipes import current_recipe_commit
+
+    _init_repo(tmp_path)
+    (tmp_path / "main.md").write_text("# recipe\n", encoding="utf-8")   # a dirty recipe file
+    assert current_recipe_commit(tmp_path)                             # snapshotted into a commit
+    assert (tmp_path / ".git" / "rsched-commit.lock").exists()
+
+
 def test_atomic_write_mode(tmp_path):
     p = tmp_path / "f"
     atomic_write(p, "x\n", mode=0o750)

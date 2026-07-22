@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.83.2] — 2026-07-22
+
+### Fixed — Routine-dir commits queue instead of racing (finishes the 0.83.1 race work)
+0.83.1 made the shared LIBRARY repo's commits lock-serialized. This does the same for a
+ROUTINE's own git repo, closing the last meta-routine race: the **routine-improver commits a
+target routine's dir itself** (via the `git-sync` util at its `record` stage), so when that
+target is mid-run, two processes were committing one repo — the improver's `git-sync` and the
+target's own autocommit / pre-run recipe snapshot — colliding on `index.lock`. Now every writer
+of a routine dir takes the **same per-repo lock** (`<repo>/.git/rsched-commit.lock`) and they
+queue instead of racing:
+- **Engine** ([autocommit.py](src/rsched/engine/autocommit.py), [recipes.py](src/rsched/recipes.py)):
+  the run-end autocommit, the pre-run recipe snapshot (`current_recipe_commit`), and the web
+  recipe revert (`revert_recipe`) all commit under `paths.file_lock(repo_lock_path(dir))`.
+- **`git-sync` util** (library repo): holds the same flock around its local `add`/`commit`/`rebase`
+  (push stays outside — it's network-only and doesn't touch the index). Shipped to the library
+  (daemon reads utils live — no restart).
+- Tests: routine-dir lock coverage in [test_libgit.py](tests/test_libgit.py); the util's `--selftest`
+  asserts the lock file is taken.
+
+Still a *logical* (not corruption) gap, unchanged: a multi-file recipe edit isn't one transaction
+and the target runs on its old in-memory recipe until its next run — acceptable, since the recipe
+only takes effect at the next run anyway.
+
 ## [0.83.1] — 2026-07-22
 
 ### Fixed — Race conditions when the meta-routines run alongside other routines
