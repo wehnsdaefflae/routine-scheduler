@@ -12,9 +12,8 @@ from ..secrets import load_secrets
 
 @dataclass(frozen=True)
 class Provider:
-    """One OAuth provider. `expiring` drives the refresh manager (False = long-lived token, no
-    refresh — Notion); `device_url` set = an RFC 8628 device flow is available (no redirect_uri
-    needed); `uses_pkce` = auth-code with an S256 code challenge.
+    """One OAuth provider. `expiring` drives the refresh manager (False = long-lived token,
+    no refresh — Notion); `uses_pkce` = auth-code with an S256 code challenge.
     """
 
     id: str
@@ -23,7 +22,6 @@ class Provider:
     token_url: str
     console_url: str = ""       # where the user creates the OAuth app (the provider's dev console)
     default_scopes: tuple[str, ...] = ()
-    device_url: str | None = None
     uses_pkce: bool = True
     expiring: bool = True
     # Provider-specific quirks of the authorize URL + token exchange:
@@ -43,7 +41,6 @@ PROVIDERS: dict[str, Provider] = {
         token_url="https://api.notion.com/v1/oauth/token",  # noqa: S106 — token ENDPOINT URL, not a secret
         console_url="https://www.notion.so/my-integrations",
         default_scopes=(),          # Notion scopes are fixed on the integration, not per-request
-        device_url=None,            # Notion has no device flow → auth-code + callback only
         uses_pkce=True,
         expiring=False,             # Notion bearer tokens are long-lived; no refresh_token issued
         authorize_extra=(("owner", "user"),),   # Notion requires owner=user on the authorize URL
@@ -57,7 +54,6 @@ PROVIDERS: dict[str, Provider] = {
         token_url="https://oauth2.googleapis.com/token",  # noqa: S106 — token ENDPOINT URL, not a secret
         console_url="https://console.cloud.google.com/apis/credentials",
         default_scopes=("openid", "email"),
-        device_url="https://oauth2.googleapis.com/device/code",
         uses_pkce=True,
         expiring=True,
         # access_type=offline + prompt=consent make Google return a (stable) refresh_token.
@@ -70,7 +66,6 @@ PROVIDERS: dict[str, Provider] = {
         token_url="https://slack.com/api/oauth.v2.access",  # noqa: S106 — token ENDPOINT URL, not a secret
         console_url="https://api.slack.com/apps",
         default_scopes=("users:read",),
-        device_url=None,
         uses_pkce=True,
         expiring=True,
     ),

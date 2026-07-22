@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.86.2] — 2026-07-23
+
+### Changed — hygiene and dedupe sweep (overhaul batch 7)
+- **Dead code removed** (each verified caller-less): `grants._PERMISSIVENESS` +
+  `grants.unsatisfied_requires`, `lint_materialized_text` + `PLACEHOLDER_RE`,
+  `bug_reports.read_bug_reports`, `scaffold._git_init`, `library_docs._git`,
+  `schema_guard.parse_reply`'s never-passed `semantic` hook, `read_workflow`'s
+  redundant 3-tuple (body==raw), the openai adapter's unreachable
+  `structured_outputs` hint, and the OAuth provider registry's consumer-less
+  `device_url` scaffold field.
+- **One home per idiom**: `libgit.git_log` replaces the two byte-identical copies
+  (library_docs / workflows.library); every mid-run control.json signal writes through
+  ONE `merge_control` helper (api_runs, reused by the trait live-add) instead of six
+  hand-rolled read-modify-writes; the runner reads `registry.ACTIVE_STATES` instead of
+  two drifted inline tuples; the CLI's turn renderer falls back to `BRIEF_FIELD` for
+  any kind without a rich label (six kinds rendered blank).
+- **The server's zone, not a hardcoded city**: conversations, wizard sessions, detached
+  tasks, and `rsched scaffold` now default tz to `server_tz()` instead of
+  Europe/Berlin.
+- `runtime`'s dead "fatal problem" substring classification is gone (no load problem
+  ever matched it); `suggest_workflows` degrades gracefully like its sibling
+  suggesters instead of 500ing the wizard on an endpoint failure; the api_audit
+  legacy-shape recovery and the registry's pre-`elapsed_s` fallback carry MIGRATION
+  markers; `atomic_write` documents its deliberate no-fsync durability posture and
+  `FileSink.__del__` its real contract.
+
 ## [0.86.1] — 2026-07-23
 
 ### Fixed — frontend sweep (overhaul batch 6)

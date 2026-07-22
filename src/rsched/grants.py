@@ -164,7 +164,6 @@ def read_library_requires(permissions_home: Path) -> dict[str, dict]:
     return out
 
 
-_PERMISSIVENESS = {level: n for n, level in enumerate(CONFIRM_LEVELS)}
 _RUNS_RANK = {level: n for n, level in enumerate(RUN_HISTORY_LEVELS)}
 _WORKFLOW_RANK = {level: n for n, level in enumerate(WORKFLOW_LEVELS)}
 
@@ -235,33 +234,6 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
     workflows = (caps.get("workflows") or "catalog") if grants_wf else "catalog"
     return {"actions": actions, "utils": utils,
             "confirm": caps.get("confirm") or "always", "runs": runs, "workflows": workflows}
-
-
-def unsatisfied_requires(active: list[str], capabilities: dict,
-                         lib: dict[str, dict]) -> dict[str, list[str]]:
-    """Doc slug → the capabilities its requires: names that the mapping does NOT cover —
-    the deactivation cascade's input (the UI drops these docs; enforcement doesn't care:
-    it fails closed on capabilities alone).
-    """
-    caps, _ = normalize_capabilities(capabilities)
-    actions = set(caps.get("actions") or [])
-    utils = set(caps.get("utils") or [])
-    runs = caps.get("runs") or "none"
-    workflows = caps.get("workflows") or "catalog"
-    out: dict[str, list[str]] = {}
-    for slug in active:
-        req = lib.get(slug) or {}
-        missing = [a for a in req.get("actions") or [] if a not in actions]
-        missing += [f"util:{u}" for u in req.get("utils") or [] if u not in utils]
-        need = req.get("runs")
-        if need and _RUNS_RANK.get(runs, 0) < _RUNS_RANK.get(need, 0):
-            missing.append(f"runs:{need}")
-        need_wf = req.get("workflows")
-        if need_wf and _WORKFLOW_RANK.get(workflows, 0) < _WORKFLOW_RANK.get(need_wf, 0):
-            missing.append(f"workflows:{need_wf}")
-        if missing:
-            out[slug] = missing
-    return out
 
 
 def _norm_rel(path: str) -> str:

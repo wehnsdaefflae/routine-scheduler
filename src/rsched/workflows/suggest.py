@@ -51,11 +51,17 @@ def suggest(server: ServerConfig, instruction: str) -> dict:
     messages = [{"role": "user", "content": prompt}]
     obj = None
     for _attempt in range(2):
-        completion = endpoint.complete(messages, model=ref.model,
-                                       schema=SUGGEST_SCHEMA, temperature=ref.temperature,
-                                       effort=ref.effort, max_tokens=ref.max_tokens,
-                                       timeout=120, purpose="Rank library workflows",
-                                       kind="suggest")
+        try:
+            completion = endpoint.complete(messages, model=ref.model,
+                                           schema=SUGGEST_SCHEMA, temperature=ref.temperature,
+                                           effort=ref.effort, max_tokens=ref.max_tokens,
+                                           timeout=120, purpose="Rank library workflows",
+                                           kind="suggest")
+        except Exception:
+            # same graceful discipline as the sibling suggesters: creation flows degrade
+            # to manual picking, they never 500 the wizard
+            return {"suggestions": [], "none_fit": True,
+                    "new_workflow_hint": "suggester unavailable; pick manually"}
         try:
             obj = completion.parsed if completion.parsed is not None else parse_reply(
                 completion.text, SUGGEST_SCHEMA)

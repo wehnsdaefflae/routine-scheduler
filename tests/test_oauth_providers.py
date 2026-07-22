@@ -12,7 +12,6 @@ def test_notion_provider_shape():
     assert p is not None
     assert p.uses_pkce is True
     assert p.expiring is False          # long-lived bearer → the refresh manager skips it
-    assert p.device_url is None         # no device flow → auth-code + callback only
     assert p.authorize_url.startswith("https://api.notion.com/")
     assert p.token_url.startswith("https://api.notion.com/")
 

@@ -30,6 +30,27 @@ def _git(home: Path, *args: str) -> subprocess.CompletedProcess[str]:
                           text=True, timeout=_TIMEOUT, check=False)
 
 
+def git_log(home: Path, rel_path: str | None = None, limit: int = 20) -> list[dict]:
+    """Recent commits ({hash, date, subject}) for the repo (or one path) — the Library
+    tab's history strip. Two byte-identical copies of this once lived in library_docs and
+    workflows.library; this is the only one.
+    """
+    cmd = ["git", "-C", str(home), "log", f"-{limit}", "--format=%h%x09%ad%x09%s",
+           "--date=short"]
+    if rel_path:
+        cmd += ["--", rel_path]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, check=False)
+    except OSError:
+        return []
+    out = []
+    for line in r.stdout.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) == 3:
+            out.append({"hash": parts[0], "date": parts[1], "subject": parts[2]})
+    return out
+
+
 def commit(home: Path, message: str, *, paths: Sequence[str] | None = None) -> bool:
     """Stage (scoped to `paths` when given) and commit under the repo lock. Returns True on
     a successful commit, False on nothing-to-commit or any git/OS error.

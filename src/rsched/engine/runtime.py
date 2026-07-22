@@ -43,7 +43,7 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
     traits = sorted(p.stem for p in traits_dir.glob("*.md")) if traits_dir.is_dir() else []
     result = decompose(server, cfg.workflow_slug, instruction, traits=traits)
     try:
-        meta, _, _ = library.read_workflow(server.library_home, cfg.workflow_slug)
+        meta, _ = library.read_workflow(server.library_home, cfg.workflow_slug)
     except FileNotFoundError:
         meta = {}
     main_meta = {"name": cfg.name, "slug": cfg.slug,
@@ -101,9 +101,8 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     cfg, problems = load_routine(routine_dir)
     if cfg is None:
         raise RuntimeError("; ".join(problems))
-    fatal = [p for p in problems if "missing" in p]
-    if fatal:
-        raise RuntimeError(f"routine {routine_dir.name}: " + "; ".join(fatal))
+    # every non-fatal load problem is best-effort by design (the registry surfaces them);
+    # only an unloadable file (cfg None) stops a run
     if model_overrides:
         cfg.models.update(model_overrides)
     registry = EndpointRegistry(server)

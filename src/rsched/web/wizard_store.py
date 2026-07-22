@@ -16,6 +16,7 @@ from ..daemon.runner import _pid_alive
 from ..ids import now_iso
 from ..ids import run_ts as make_run_ts
 from ..paths import atomic_write, atomic_write_json, read_json
+from ..schedule import server_tz
 from ..schema_guard import loads_tolerant
 from ..workflows.scaffold import GITIGNORE
 
@@ -272,7 +273,7 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
         "name": "New-routine wizard",
         "slug": TEMPLATE_SLUG if tpl is not None else f"wizard-{ts}", "enabled": False,
         "description": "New-routine clarification wizard session.",
-        "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
+        "schedule": {"cron": "", "tz": server_tz(), "catchup": "skip"},
         "workflow": {"library_slug": "clarify-instruction", "library_commit": commit},
         "budgets": budgets, **({"models": models} if models else {}),
         "permissions": [], "capabilities": {},   # the clarify session holds nothing gated;
@@ -316,7 +317,7 @@ def write_candidates(server, d: Path) -> None:
              "to generate a new one. A pattern's parameter contract is its dummy imports.", ""]
     for w in candidate_patterns(server):
         try:
-            _, _, raw = library.read_workflow(server.library_home, w["slug"])
+            _, raw = library.read_workflow(server.library_home, w["slug"])
         except FileNotFoundError:
             continue
         parts += [f"## {w['slug']} — {w['description']}", f"when_to_use: {w['when_to_use']}", "",

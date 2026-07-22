@@ -299,7 +299,7 @@ class Runner:
             return   # aborted while queued: status already closed out, nothing ran
         rc = run.proc.returncode if run.proc else None
         info = registry.read_run(run.run_dir, run.slug)
-        if info.state in ("queued", "running", "waiting_user", "paused", "starting", "unknown"):
+        if info.state in (*registry.ACTIVE_STATES, "unknown"):
             # engine died without closing out (SIGKILL, crash) — the daemon finalizes
             self._close_out(run.run_dir, run.run_id,
                             f"engine exited rc={rc} without a finish "
@@ -366,7 +366,7 @@ class Runner:
         fixed = 0
         for info in catalog.values():
             for r in info.runs:
-                if r.state in ("queued", "running", "waiting_user", "paused", "starting") \
+                if r.state in registry.ACTIVE_STATES \
                         and not _pid_alive(r.pid):
                     self._close_out(r.dir, r.run_id, "orphaned by daemon restart")
                     fixed += 1

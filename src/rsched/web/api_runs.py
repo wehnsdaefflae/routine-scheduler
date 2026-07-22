@@ -40,6 +40,17 @@ def _run_dir(request: Request, run_id: str) -> tuple[str, Path]:
     raise HTTPException(404, f"no run {run_id!r}")
 
 
+def merge_control(run_dir: Path, updates: dict) -> None:
+    """Merge `updates` into the run's web-owned control.json (read-modify-write, atomic).
+    ONE writer path for every mid-run signal — pause, switch_model, set_deliberation,
+    add_traits — so no endpoint can drop a sibling's pending signal.
+    """
+    ctrl = read_json(run_dir / "control.json")
+    ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}
+    ctrl.update(updates)
+    atomic_write_json(run_dir / "control.json", ctrl)
+
+
 @router.get("/runs")
 def run_index(request: Request, routine: str | None = None, limit: int = 30) -> list[dict]:
     """Recent runs, newest first. `routine` filters to ONE slug, resolved across all three
@@ -263,10 +274,7 @@ def _set_pause(request: Request, run_id: str, value: bool) -> dict:
     state = st.get("state") if isinstance(st, dict) else None
     if state in TERMINAL_STATES:
         raise HTTPException(409, f"run is already {state}")
-    ctrl = read_json(run_dir / "control.json")
-    ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}       # keep any pending switch_model
-    ctrl.update({"pause": value, "ts": now_iso()})
-    atomic_write_json(run_dir / "control.json", ctrl)
+    merge_control(run_dir, {"pause": value, "ts": now_iso()})
     return {"ok": True, "pause": value}
 
 
@@ -289,10 +297,7 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) in TERMINAL_STATES:
         raise HTTPException(409, "run is not active; nothing to switch")
-    ctrl = read_json(run_dir / "control.json")
-    ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}       # keep pause
-    ctrl["switch_model"] = {body.kind: body.model, "ts": now_iso()}
-    atomic_write_json(run_dir / "control.json", ctrl)
+    merge_control(run_dir, {"switch_model": {body.kind: body.model, "ts": now_iso()}})
     return {"ok": True, "switch": f"{body.kind} → {body.model}"}
 
 
@@ -313,10 +318,7 @@ def switch_deliberation(request: Request, run_id: str, body: DeliberationSwitch)
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) in TERMINAL_STATES:
         raise HTTPException(409, "run is not active; nothing to switch")
-    ctrl = read_json(run_dir / "control.json")
-    ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}       # keep pause + switch_model
-    ctrl["set_deliberation"] = {"level": body.level, "ts": now_iso()}
-    atomic_write_json(run_dir / "control.json", ctrl)
+    merge_control(run_dir, {"set_deliberation": {"level": body.level, "ts": now_iso()}})
     return {"ok": True, "switch": f"deliberation → {body.level}"}
 
 

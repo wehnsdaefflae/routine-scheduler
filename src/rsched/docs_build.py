@@ -91,8 +91,6 @@ GUIDE_ORDER = ["getting-started", "examples", "conversations", "playbooks",
 
 def docs_out_dir() -> Path:
     """Where generated docs live — outside the repo, so builds never dirty the source tree."""
-    import os
-
     return expand(os.environ.get("RSCHED_DOCS_DIR") or "~/.cache/routine-scheduler/docs")
 
 

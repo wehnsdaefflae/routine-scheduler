@@ -48,7 +48,7 @@ def materialize(home: Path, slug: str, *, today: str | None = None) -> tuple[str
     """
     from .pyworkflow import render_markdown
 
-    meta, _, raw = read_workflow(home, slug)
+    meta, raw = read_workflow(home, slug)
     provenance = {"slug": slug, "commit": head_commit(home), "version": meta.get("version", 0)}
     adapted = today or date.today().isoformat()  # noqa: DTZ011 — a local-date stamp is the point
     return dump_markdown(_routine_frontmatter(meta, slug, provenance, adapted),
@@ -146,7 +146,7 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
     """
     from .. import library_docs
 
-    meta, _, raw = read_workflow(server.library_home, slug)
+    meta, raw = read_workflow(server.library_home, slug)
     # A pattern may PIN deliverable paths (META["pin"]: str | list) that MUST survive
     # decomposition — the tailored files must still name them. The observed failure mode:
     # applied to a draft that itself describes a routine (the wizard's clarify-instruction),

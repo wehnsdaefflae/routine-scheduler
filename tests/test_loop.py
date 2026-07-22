@@ -122,7 +122,7 @@ def test_ensure_decomposed_builds_main_on_run(make_routine, monkeypatch):
     (d / "main.md").unlink()                                   # make it un-decomposed
     (d / "instruction.md").write_text("Refine this draft.\n")
     monkeypatch.setattr(lib_mod, "read_workflow", lambda home, slug: (
-        {"tools": ["ask_user", "write_file", "finish"], "includes": ["ask-policy"], "version": 4}, "", ""))
+        {"tools": ["ask_user", "write_file", "finish"], "includes": ["ask-policy"], "version": 4}, ""))
     monkeypatch.setattr(lib_mod, "head_commit", lambda home: "deadbee")
     monkeypatch.setattr(adapt_mod, "decompose", lambda server, slug, instruction, **k: {
         "main": "## Run flow\n1. ask\n## Completion criteria\ndone", "stages": {"ask-step": "ask the user"}})

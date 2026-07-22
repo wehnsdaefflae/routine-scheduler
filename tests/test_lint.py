@@ -7,7 +7,7 @@ import yaml
 
 from rsched.config import ServerConfig, load_routine
 from rsched.workflows.adapt import materialize
-from rsched.workflows.lint import lint_all, lint_materialized_text, lint_workflow_py
+from rsched.workflows.lint import lint_all, lint_workflow_py
 from rsched.workflows.scaffold import scaffold
 
 SEED = Path(__file__).resolve().parents[1] / "library-seed"
@@ -57,7 +57,6 @@ def test_materialize_carries_workflow_and_provenance():
     assert "## Run flow" in body and "## Completion criteria" in body
     assert "```python" in body and "def main():" in body          # the pattern is carried verbatim
     assert "## Standing practices" not in content and "# trait:" not in content
-    assert lint_materialized_text(content) == []
 
 
 def test_python_workflow_parse_and_lint():

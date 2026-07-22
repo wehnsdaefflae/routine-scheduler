@@ -106,8 +106,9 @@ class FileSink:
                 self._fh = None
 
     def __del__(self) -> None:
-        # Backstop, not the contract: the engine process closes its sink explicitly at
-        # exit; this keeps a replaced/abandoned sink from leaking its append handle.
+        # The engine does NOT close its sink explicitly at exit — process teardown (and
+        # this backstop for a replaced sink) releases the append handle; the file is
+        # line-buffered + flushed per record, so nothing is lost either way.
         try:
             self.close()
         except Exception:

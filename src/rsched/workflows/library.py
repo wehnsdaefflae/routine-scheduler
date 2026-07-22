@@ -55,13 +55,13 @@ def list_traits(home: Path) -> list[str]:
     return sorted(p.stem for p in d.glob("*.md")) if d.is_dir() else []
 
 
-def read_workflow(home: Path, slug: str) -> tuple[dict, str, str]:
-    """(meta, body, raw) for `<slug>.py`. body==raw==the source — the whole file is the pattern.
+def read_workflow(home: Path, slug: str) -> tuple[dict, str]:
+    """(meta, raw source) for `<slug>.py` — the whole file is the pattern.
     Raises FileNotFoundError.
     """
     from .pyworkflow import parse_py
     raw = (workflows_dir(home) / f"{slug}.py").read_text(encoding="utf-8")
-    return parse_py(raw), raw, raw
+    return parse_py(raw), raw
 
 
 def head_commit(home: Path) -> str:
@@ -82,17 +82,5 @@ def git_commit(home: Path, message: str, *, paths: Sequence[str] | None = None) 
 
 
 def git_log(home: Path, rel_path: str | None = None, limit: int = 20) -> list[dict]:
-    cmd = ["git", "log", f"-{limit}", "--format=%h%x09%ad%x09%s", "--date=short"]
-    if rel_path:
-        cmd += ["--", rel_path]
-    try:
-        r = subprocess.run(cmd, cwd=home, check=False, capture_output=True, text=True, timeout=15)
-    except OSError:
-        return []
-    out = []
-    for line in r.stdout.splitlines():
-        parts = line.split("\t", 2)
-        if len(parts) == 3:
-            out.append({"commit": parts[0], "date": parts[1], "subject": parts[2]})
-    return out
-
+    from ..libgit import git_log as _git_log
+    return _git_log(home, rel_path, limit)

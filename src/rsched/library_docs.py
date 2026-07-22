@@ -18,7 +18,6 @@ Both are one markdown file per doc with a `# trait: <name> — <summary>` /
 from __future__ import annotations
 
 import re
-import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -54,11 +53,6 @@ def ensure_dir(home: Path) -> None:
     utils_lib.ensure_library; here we only make sure the directory exists.
     """
     home.mkdir(parents=True, exist_ok=True)
-
-
-def _git(home: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(home), *args], capture_output=True, text=True,
-                          timeout=30, check=False)
 
 
 def list_docs(home: Path) -> list[dict]:
@@ -108,16 +102,4 @@ def git_commit(home: Path, message: str, *, paths: Sequence[str] | None = None) 
 
 
 def git_log(home: Path, rel_path: str | None = None, limit: int = 20) -> list[dict]:
-    cmd = ["git", "-C", str(home), "log", f"-{limit}", "--format=%h%x09%ad%x09%s", "--date=short"]
-    if rel_path:
-        cmd += ["--", rel_path]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, check=False)
-    except OSError:
-        return []
-    out = []
-    for line in r.stdout.splitlines():
-        parts = line.split("\t", 2)
-        if len(parts) == 3:
-            out.append({"commit": parts[0], "date": parts[1], "subject": parts[2]})
-    return out
+    return libgit.git_log(home, rel_path, limit)

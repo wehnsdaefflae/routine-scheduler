@@ -8,7 +8,6 @@ well-formed `requires:` key (the capabilities their instructions presume — see
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import frontmatter
@@ -16,8 +15,6 @@ import yaml
 
 from ..ids import is_slug
 from .library import permissions_dir, traits_dir, workflows_dir
-
-PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-z0-9_]+)\s*\}\}")
 
 
 def lint_workflow_py(source: str, *, filename: str, trait_slugs: list[str]) -> list[str]:
@@ -137,24 +134,6 @@ def lint_playbook_text(raw: str, *, filename: str = "MAIN.md") -> list[str]:
         problems.append(f"{filename}: needs at least one tag")
     if "## Instructions" not in body:
         problems.append(f"{filename}: body must have an '## Instructions' section")
-    return problems
-
-
-def lint_materialized_text(raw: str, *, filename: str = "main.md") -> list[str]:
-    problems = []
-    try:
-        meta, body = frontmatter.parse(raw)
-    except yaml.YAMLError as exc:
-        return [f"{filename}: invalid YAML frontmatter: {exc}"]
-    prov = meta.get("materialized_from")
-    if not isinstance(prov, dict) or "slug" not in prov:
-        problems.append(f"{filename}: frontmatter missing materialized_from.slug provenance")
-    leftovers = PLACEHOLDER_RE.findall(body)
-    if leftovers:
-        problems.append(f"{filename}: unresolved placeholders: {sorted(set(leftovers))}")
-    problems.extend(f"{filename}: missing section {section!r}"
-                    for section in ("## Run flow", "## Completion criteria")
-                    if section not in body)
     return problems
 
 

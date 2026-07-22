@@ -13,7 +13,13 @@ import sys
 from pathlib import Path
 
 from .config import MODEL_KINDS, load_server_config
+from .engine.actions import BRIEF_FIELD
 from .paths import expand
+
+
+def _server_tz() -> str:
+    from .schedule import server_tz
+    return server_tz()
 
 
 def _render_event(obj: dict) -> str | None:  # noqa: PLR0911 — one return per event type
@@ -36,7 +42,11 @@ def _render_event(obj: dict) -> str | None:  # noqa: PLR0911 — one return per 
                  "kill": f"#{p.get('n')}", "wait": "all" if p.get("all") else
                  (f"#{p.get('n')}" if p.get("n") else "any"),
                  "ask_user": (p.get("question") or "")[:60],
-                 "finish": f"{p.get('status')}" }.get(p.get("kind"), "")
+                 "finish": f"{p.get('status')}" }.get(
+                     p.get("kind"),
+                     # any kind without a rich renderer falls back to its BRIEF_FIELD —
+                     # a new action kind can never render blank here again
+                     str(p.get(BRIEF_FIELD.get(str(p.get("kind")), ""), "") or ""))
         return f"[{obj.get('turn')}] {say}\n    → {p.get('kind')}: {brief}"
     if t == "observation":
         kind = p.get("kind")
@@ -302,7 +312,8 @@ def cmd_scaffold(args) -> int:
             instruction=Path(args.instruction_file).read_text(encoding="utf-8")
             if args.instruction_file
             else f"# Instruction\n\n(fill in) — scaffolded for {args.slug}",
-            workflow_slug=args.workflow, cron=args.cron or "", tz=args.tz,
+            workflow_slug=args.workflow, cron=args.cron or "",
+            tz=args.tz or _server_tz(),
             description=args.description or "",
             tags=args.tag or None,
             fs_read_roots=args.read_root or None, fs_write_roots=args.write_root or None,
@@ -361,7 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("slug")
     sc.add_argument("--workflow", required=True, help="library workflow slug")
     sc.add_argument("--cron", default="")
-    sc.add_argument("--tz", default="Europe/Berlin")
+    sc.add_argument("--tz", default="")   # empty → the server's own zone at scaffold time
     sc.add_argument("--name", default="")
     sc.add_argument("--description", default="",
                     help="one-line description shown in the UI (defaults to name)")

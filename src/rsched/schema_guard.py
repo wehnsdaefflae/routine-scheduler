@@ -70,14 +70,12 @@ def validate(obj: dict, schema: dict) -> list[str]:
     return problems
 
 
-def parse_reply(text: str, schema: dict, semantic=None) -> dict:
-    """Full pipeline: extract → JSON-Schema validate → optional semantic check.
-    Returns the object or raises SchemaViolation with everything that is wrong.
+def parse_reply(text: str, schema: dict) -> dict:
+    """Full pipeline: extract → JSON-Schema validate. Returns the object or raises
+    SchemaViolation with everything that is wrong.
     """
     obj = extract_json(text)
     problems = validate(obj, schema)
-    if not problems and semantic is not None:
-        problems = semantic(obj)
     if problems:
         raise SchemaViolation(problems)
     return obj

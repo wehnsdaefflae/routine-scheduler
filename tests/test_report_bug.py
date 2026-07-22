@@ -5,12 +5,19 @@ regardless of the workflow tools allowlist or the capability set."""
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
-from rsched import bug_reports
 from rsched.engine.actions import ALWAYS_KINDS, KIND_EXAMPLES, KINDS, validate_action
 from rsched.engine.interact import handle_report_bug
 from rsched.grants import GATED_KINDS, GrantPolicy
+
+
+def _read_reports(home):
+    path = home / ".control" / "bug-reports.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
 
 
 def _loop(tmp_path, *, slug="some-routine", run_id="some-routine:20260719-161821"):
@@ -61,7 +68,7 @@ def test_handle_report_bug_appends_to_the_stream(tmp_path):
     assert obs == {"kind": "report_bug", "title": "gmail-body-dump perm-denied", "filed": True}
     path = home / ".control" / "bug-reports.jsonl"
     assert path.is_file()
-    reports = bug_reports.read_bug_reports(home)
+    reports = _read_reports(home)
     assert len(reports) == 1
     rec = reports[0]
     assert rec["routine"] == "bahnbonus-seat-position"
@@ -75,11 +82,6 @@ def test_report_bug_appends_do_not_clobber(tmp_path):
     loop, home = _loop(tmp_path)
     handle_report_bug(loop, {"title": "bug one"})
     handle_report_bug(loop, {"title": "bug two", "detail": "second"})
-    reports = bug_reports.read_bug_reports(home)
+    reports = _read_reports(home)
     assert [r["title"] for r in reports] == ["bug one", "bug two"]
 
-
-def test_read_bug_reports_missing_file_is_empty(tmp_path):
-    home = tmp_path / "routines"
-    home.mkdir()
-    assert bug_reports.read_bug_reports(home) == []

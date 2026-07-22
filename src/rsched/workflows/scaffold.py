@@ -111,7 +111,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # traits default to the workflow's `includes` (its suggested practice set), else the
     # standard set; validate against the library. Permissions validate against theirs.
     try:
-        meta, _, _ = library.read_workflow(server.library_home, workflow_slug)
+        meta, _ = library.read_workflow(server.library_home, workflow_slug)
     except FileNotFoundError as exc:
         raise ValueError(f"workflow {workflow_slug!r} not found in the library") from exc
     available_traits = set(library_docs.slugs(server.traits_home))
@@ -189,7 +189,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
                                if deliberation in DELIBERATION_LEVELS
                                else DEFAULT_DELIBERATION})
 
-    _git_init(routine_dir, f"scaffold {slug} from workflow {workflow_slug}")
+    init_repo(routine_dir, f"scaffold {slug} from workflow {workflow_slug}")
     return routine_dir
 
 
@@ -224,6 +224,3 @@ def init_repo(repo_dir: Path, message: str) -> None:
     except OSError:
         pass  # a routine without git still runs; the workflow can init later
 
-
-def _git_init(routine_dir: Path, message: str) -> None:
-    init_repo(routine_dir, message)

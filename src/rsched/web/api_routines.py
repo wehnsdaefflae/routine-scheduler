@@ -16,7 +16,7 @@ from .. import registry, schedule
 from .. import triggers as triggers_mod
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
 from ..ids import now_iso, parse_run_id, run_ts
-from ..paths import atomic_write, atomic_write_json, read_json, resolve_rel
+from ..paths import atomic_write, resolve_rel
 from ..readmodels.stats import monthly_spend
 from . import artifacts
 from .api_questions import _snooze_active
@@ -414,10 +414,8 @@ def apply_trait_edit(request: Request, routine_dir: Path, body: TraitsBody,
             routine_dir)}
     _git_commit(routine_dir, f"traits via web (+{len(added)}/-{len(removed)})")
     if added and active_run_dir is not None:
-        ctrl = read_json(active_run_dir / "control.json")
-        ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}   # keep pause/model/deliberation
-        ctrl["add_traits"] = {"slugs": added, "ts": now_iso()}
-        atomic_write_json(active_run_dir / "control.json", ctrl)
+        from .api_runs import merge_control
+        merge_control(active_run_dir, {"add_traits": {"slugs": added, "ts": now_iso()}})
     return {"ok": True, "added": added, "removed": removed,
             "live": bool(added and active_run_dir is not None),
             "traits": traits_mod.current_traits(routine_dir)}

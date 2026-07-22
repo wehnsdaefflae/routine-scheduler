@@ -36,6 +36,7 @@ from .. import registry
 from ..config import DEFAULT_BUDGETS, ServerConfig, load_routine
 from ..ids import now_iso
 from ..paths import atomic_write, atomic_write_json, read_json
+from ..schedule import server_tz
 from .runner import Runner, _pid_alive
 
 log = logging.getLogger("rsched.detached")
@@ -153,7 +154,7 @@ class DetachedManager:
             "slug": taskid,
             "description": f"background task for {req['owner'].get('slug', '?')}: {label}",
             "enabled": True,
-            "schedule": {"cron": "", "tz": raw.get("schedule", {}).get("tz", "Europe/Berlin"),
+            "schedule": {"cron": "", "tz": raw.get("schedule", {}).get("tz", server_tz()),
                          "catchup": "skip"},
             "workflow": {"library_slug": workflow,
                          "library_commit": head_commit(self.server.library_home)},

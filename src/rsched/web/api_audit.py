@@ -55,8 +55,9 @@ def _read_changelog(path: Path, limit: int = 100) -> list[dict]:
     return out[:limit]
 
 
-# messages written before feedback became editable carry only the formatted text —
-# recover their structured fields so they stay editable too
+# MIGRATION(expires=2026-09-01): messages written before feedback became editable carry
+# only the formatted text — recover their structured fields so they stay editable too.
+# Delete once the production audit inboxes hold no pre-0.8x plain-text feedback items.
 _LEGACY_COMMENT_RE = re.compile(r"^\[AUDIT feedback · finding ([^\]]+)\]\s*(.*)$", re.DOTALL)
 _LEGACY_NOTE_RE = re.compile(r"^\[AUDIT note\]\s*(.*)$", re.DOTALL)
 

@@ -14,7 +14,6 @@ from rsched.grants import (
     load_policy,
     normalize_capabilities,
     read_library_requires,
-    unsatisfied_requires,
 )
 
 
@@ -199,30 +198,12 @@ def test_workflows_generate_capability_binds_to_its_permission(tmp_path):
     orphan = {"workflows": "generate"}
     assert floor_capabilities([], lib, orphan)["workflows"] == "catalog"
     assert floor_capabilities(["workflow-generation"], lib, orphan)["workflows"] == "generate"
-    # unsatisfied: the doc's requirement is named when the mapping doesn't cover it
-    assert unsatisfied_requires(["workflow-generation"], {}, lib) == {
-        "workflow-generation": ["workflows:generate"]}
     # policy: the run-facing switch
     assert load_policy(home, [], {"workflows": "generate"}).may_generate_workflow() is True
     assert load_policy(home, [], {}).may_generate_workflow() is False
     # requires-mode rejects the no-op level (catalog is the absence of a requirement)
     _, probs = normalize_capabilities({"workflows": "catalog"}, label="requires", requires=True)
     assert any("workflows must be generate" in p for p in probs)
-
-
-def test_unsatisfied_requires_names_the_missing_capabilities(tmp_path):
-    home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION,
-                           "run-history": RUN_HISTORY})
-    lib = read_library_requires(home)
-    missing = unsatisfied_requires(["util-authoring", "communication", "run-history"],
-                                   {"actions": ["write_util"]}, lib)
-    assert missing == {"communication": ["util:discord"], "run-history": ["runs:last"]}
-    full = capabilities_for(["util-authoring", "communication", "run-history"], lib)
-    assert unsatisfied_requires(["util-authoring", "communication", "run-history"],
-                                full, lib) == {}
-
-
-# ------------------------------------------------------------------ policy derivation
 
 
 def test_policy_enforces_capabilities_not_docs(tmp_path):

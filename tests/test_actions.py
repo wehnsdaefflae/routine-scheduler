@@ -9,6 +9,17 @@ from rsched.engine.actions import ACTION_SCHEMA, KINDS, example_action, validate
 from rsched.schema_guard import SchemaViolation, extract_json, parse_reply, retry_message
 
 
+def _parse_both_layers(text: str) -> dict:
+    """Schema layer then per-kind semantic layer — the composition the engine's
+    action_candidate performs (parse_reply no longer carries a semantic hook)."""
+    obj = parse_reply(text, ACTION_SCHEMA)
+    problems = validate_action(obj)
+    if problems:
+        raise SchemaViolation(problems)
+    return obj
+
+
+
 def test_schema_compiles_and_example_passes():
     jsonschema.Draft202012Validator.check_schema(ACTION_SCHEMA)
     obj = example_action()
@@ -50,7 +61,7 @@ def test_schema_compiles_and_example_passes():
     ids=KINDS,
 )
 def test_valid_actions_pass_both_layers(action):
-    assert parse_reply(json.dumps(action), ACTION_SCHEMA, validate_action) == action
+    assert _parse_both_layers(json.dumps(action)) == action
 
 
 @pytest.mark.parametrize(
@@ -88,10 +99,10 @@ def test_memory_write_delete_needs_no_content():
 
 def test_schema_layer_rejects_unknown_kind_and_extra_props():
     with pytest.raises(SchemaViolation):
-        parse_reply(json.dumps({"say": "s", "kind": "dance"}), ACTION_SCHEMA, validate_action)
+        _parse_both_layers(json.dumps({"say": "s", "kind": "dance"}))
     with pytest.raises(SchemaViolation):
-        parse_reply(json.dumps({"say": "s", "kind": "util", "name": "ls", "extra": 1}),
-                    ACTION_SCHEMA, validate_action)
+        _parse_both_layers(json.dumps({"say": "s", "kind": "util", "name": "ls",
+                                       "extra": 1}))
 
 
 def test_validate_action_enforces_workflow_allowlist():

@@ -35,7 +35,7 @@ from .base import (
     with_retries,
 )
 
-_RF_ERROR_HINTS = ("response_format", "json_schema", "structured", "structured_outputs")
+_RF_ERROR_HINTS = ("response_format", "json_schema", "structured")
 
 
 def _openai_content(content: str, media: list[dict]) -> list[dict]:

@@ -33,6 +33,10 @@ def atomic_write(path: str | Path, data: str | bytes, *, mode: int | None = None
     e.g. from a prior `stat().st_mode`) is applied to the new file before the rename — pass it
     when overwriting so the temp file's default 0600 doesn't drop an existing file's bits
     (notably +x); omit it for new files.
+
+    Deliberately NO fsync (file or directory): the guarantee is concurrent-reader
+    atomicity, not power-loss durability — every consumer here is a cache, telemetry, or
+    state that a crashed box legitimately rebuilds/re-derives.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

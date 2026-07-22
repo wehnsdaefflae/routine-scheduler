@@ -40,27 +40,3 @@ def file_bug_report(routines_home: Path, *, routine: str, run_id: str,
         return path
     except OSError:
         return None
-
-
-def read_bug_reports(routines_home: Path) -> list[dict]:
-    """All filed bug reports, oldest first — the read side self-audit's gather-evidence
-    uses to turn entries into findings. Malformed lines are skipped; a missing file is an
-    empty stream (not an error).
-    """
-    path = Path(routines_home) / ".control" / BUG_REPORTS_FILE
-    out: list[dict] = []
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return out
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            rec = json.loads(stripped)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(rec, dict):
-            out.append(rec)
-    return out

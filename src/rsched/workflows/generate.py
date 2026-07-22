@@ -66,7 +66,7 @@ def generate(server: ServerConfig, instruction: str, hint: str = "",
     """
     home = server.library_home
     traits = list_traits(home)
-    _, _, example_raw = read_workflow(home, "general-task")   # a good Python workflow to imitate
+    _, example_raw = read_workflow(home, "general-task")   # a good Python workflow to imitate
     prompt = (
         "Draft ONE new workflow file for the workflow library, for recurring instructions "
         f"shaped like this one:\n\nINSTRUCTION:\n{instruction}\n\n"

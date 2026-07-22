@@ -27,6 +27,7 @@ from .config import (
 )
 from .ids import run_ts
 from .paths import atomic_write
+from .schedule import server_tz
 
 log = logging.getLogger("rsched.conversations")
 
@@ -148,7 +149,7 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
     conv_dir = server.conversations_home / slug
     if conv_dir.exists():
         raise ValueError(f"conversation dir {conv_dir} already exists")
-    meta, _, raw = read_workflow(server.library_home, CONVERSE_WORKFLOW)
+    meta, raw = read_workflow(server.library_home, CONVERSE_WORKFLOW)
     pb = playbooks.read_playbook(server.library_home, playbook_slug) if playbook_slug else None
     title = fallback_title(first_message if first_message.strip()
                            else (str(pb["meta"].get("title")) if pb else "conversation"))
@@ -185,7 +186,7 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
         "kind": "conversation",
         "description": title,
         "enabled": True,
-        "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
+        "schedule": {"cron": "", "tz": server_tz(), "catchup": "skip"},
         "workflow": {"library_slug": CONVERSE_WORKFLOW, "library_commit": commit},
         **({"playbook": {"slug": playbook_slug, "commit": commit}} if pb else {}),
         **({"models": models} if models else {}),
