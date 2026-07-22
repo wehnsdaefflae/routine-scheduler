@@ -73,8 +73,11 @@ def boot(loop) -> None:
         # for a child that can never finish.
         orphans = orphaned_children(events)
         for o in orphans:
+            # same payload shape as subruns._collect emits, so every consumer of
+            # subrun_end (tree read-model, replay announcements) reads one shape
             ctx.transcript.event("subrun_end", {
-                "n": o["n"], "label": o["label"], "mode": o["mode"], "status": "aborted",
+                "n": o["n"], "label": o["label"], "workflow": o.get("workflow", ""),
+                "mode": o["mode"], "status": "aborted",
                 "summary": "did not survive the run's interruption",
                 "turns": 0, "usage": {}})
         if orphans:
@@ -114,6 +117,12 @@ def boot(loop) -> None:
                                  "content": loop.messages[-1]["content"] + loop.util_reminder}
         _ingest(loop, msgs, resuming=True)   # commands execute; prose injects after the note
     else:
+        # Fresh-boot prose rides the composed prompt's MESSAGES section — but it must ALSO
+        # be a transcript event (`boot` payload marker): the renderer shows what the user
+        # said, and a later resume replays it (the rebuilt system prompt excludes it).
+        for m in msgs:
+            if not m.get("command"):
+                ctx.transcript.event("user_injection", {"text": m["text"], "boot": True})
         kickoff = {"role": "user", "content": kickoff_message(ctx) + loop.util_reminder}
         attach_first_message_media(loop, kickoff)  # conversation: images the user attached
         loop.messages = [{"role": "system", "content": system}, kickoff]

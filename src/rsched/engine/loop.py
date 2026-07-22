@@ -122,6 +122,10 @@ class EngineLoop:
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
         self._last_deliberation_ts = ""   # edge-trigger for mid-run deliberation switches
         self._last_traits_ts = ""   # edge-trigger for user-added practice modules
+        # A signal already applied by an earlier leg must not re-fire on this one —
+        # the run's applied ledger (engine-owned) seeds the edge-triggers.
+        from .control import load_applied_baselines
+        load_applied_baselines(self)
         ctx.deliberation = ctx.routine.deliberation   # live level; control.json may re-set it
         # Repeat-streak escape hatch: identical-but-valid actions in a row are the second
         # signature of provider grammar distortion (a model narrating "I keep forgetting args"
@@ -240,7 +244,7 @@ class EngineLoop:
                         unbacked = unbacked_action_claims(
                             action.get("summary", ""),
                             {r["kind"] for r in self.turn_records},
-                            is_meta="meta" in (getattr(ctx.routine, "tags", None) or []))
+                            is_meta="meta" in (ctx.routine.tags or []))
                         if unbacked:
                             obs = {"kind": "finish", "rejected": True,
                                    "unbacked_claims": unbacked}

@@ -181,14 +181,34 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
     (messages, last_turn, turn_records); the caller prepends the freshly-composed system message.
     Every turn is replayed (compaction events are ignored — this reconstitutes the full
     conversation and maybe_compact re-compacts it on the next turn if it's too big).
+
+    Two live message feeds have no 1:1 event: child-exit ANNOUNCEMENTS are reconstituted
+    from `subrun_end` events (flushed where the live message sat — before the next
+    assistant turn; a child whose summary rode a `wait` observation is not re-announced),
+    and blocking-ask answers are NOT replayed from `answer` events — the answer text
+    already lives inside the ask_user observation, so replaying both would duplicate it.
     """
+    from .control import child_finished_message, render_command_result
+
     messages: list[dict] = []
     records: list[dict] = []
     last_turn = 0
+    # subrun_end events whose announcement has not been placed yet: n → payload
+    pending_children: dict[int, dict] = {}
+
+    def flush_children() -> None:
+        messages.extend({"role": "user", "content": child_finished_message(
+            mode=str(p.get("mode") or "parallel"), n=int(p.get("n") or 0),
+            label=str(p.get("label") or ""), workflow=str(p.get("workflow") or ""),
+            status=str(p.get("status") or "?"), turns=int(p.get("turns") or 0),
+            summary=str(p.get("summary") or ""))} for p in pending_children.values())
+        pending_children.clear()
+
     for ev in events:
         kind_ev = ev.get("type")
         p = ev.get("payload") or {}
         if kind_ev == "assistant_action":
+            flush_children()   # live, announcements precede the model's next action
             messages.append({"role": "assistant", "content": json.dumps(p, ensure_ascii=False)})
             turn = ev.get("turn")
             if isinstance(turn, int):
@@ -199,16 +219,28 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
                                 "brief": json.dumps(brief, ensure_ascii=False),
                                 "say": p.get("say", "")})
         elif kind_ev == "observation":
-            rendered = (f"COMMAND ERROR: {p.get('error')}" if p.get("kind") == "user_command"
+            if p.get("kind") == "wait":
+                # a child listed in this wait's finished rows was delivered BY it —
+                # replaying an announcement on top would double its summary
+                for row in p.get("finished") or []:
+                    if isinstance(row, dict) and isinstance(row.get("n"), int):
+                        pending_children.pop(row["n"], None)
+            rendered = (render_command_result(p) if p.get("user_command")
                         else format_observation(p))
             messages.append({"role": "user", "content": rendered})
         elif kind_ev == "user_injection":
             label = ("USER COMMAND (executed directly)" if p.get("command")
                      else "USER MESSAGE (injected mid-run)")
             messages.append({"role": "user", "content": f"{label}: {p.get('text', '')}"})
-        elif kind_ev == "answer":
-            messages.append({"role": "user", "content": f"ANSWER: {p.get('text', '')}"})
-        # header / question / compaction / finish / error / subrun_* are not part of the prompt
+        elif kind_ev == "subrun_end":
+            n = p.get("n")
+            if isinstance(n, int):
+                pending_children[n] = p
+        elif kind_ev == "finish":
+            # the run concluded knowing (or not needing) these — never re-announce after
+            pending_children.clear()
+        # header / question / answer / compaction / error / subrun_start stay out of the prompt
+    flush_children()   # a crash between _collect and the next turn still delivers the result
     return messages, last_turn, records
 
 
@@ -227,7 +259,8 @@ def orphaned_children(events: list[dict]) -> list[dict]:
         if not isinstance(n, int):
             continue
         if ev.get("type") == "subrun_start":
-            started[n] = {"n": n, "label": p.get("label"), "mode": p.get("mode", "parallel")}
+            started[n] = {"n": n, "label": p.get("label"), "mode": p.get("mode", "parallel"),
+                          "workflow": p.get("workflow", "")}
         elif ev.get("type") == "subrun_end":
             ended.add(n)
     return [info for n, info in started.items() if n not in ended]

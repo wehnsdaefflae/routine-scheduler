@@ -88,24 +88,19 @@ class DiscordMirror:
 
 
 def _reply_texts(raw: str) -> list[str]:
-    """Tolerant parse of `discord read --json` output: a JSON list of strings or of
-    objects with a text-ish field; anything else reads as no replies.
+    """Parse `discord read --json` output — ONE pinned shape: a JSON list of message
+    objects whose text rides the `message` field (the util's _emit contract). Anything
+    else reads as no replies; if the util's shape ever changes, change it here too —
+    never re-grow tolerant multi-shape parsing.
     """
     try:
         data = json.loads(raw.strip() or "[]")
     except ValueError:
         return []
-    if isinstance(data, dict):
-        data = data.get("messages") or data.get("replies") or []
-    out = []
-    for item in data if isinstance(data, list) else []:
-        if isinstance(item, str) and item.strip():
-            out.append(item.strip())
-        elif isinstance(item, dict):
-            text = str(item.get("text") or item.get("content") or item.get("message") or "").strip()
-            if text:
-                out.append(text)
-    return out
+    if not isinstance(data, list):
+        return []
+    return [str(item["message"]).strip() for item in data
+            if isinstance(item, dict) and str(item.get("message") or "").strip()]
 
 
 def mirror_blocking(ctx, qid: str, question: str, options: list[str], default: str,

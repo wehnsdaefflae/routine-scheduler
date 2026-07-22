@@ -90,7 +90,6 @@ def arm(routines_home: Path, slug: str, *, fire_at: datetime, reason: str,
     rec = {
         "id": new_id(),
         "fire_at": fire_at.astimezone(UTC).isoformat(),
-        "active": True,
         "reason": str(reason or ""),
         "requested_by": str(requested_by or ""),
         "created": now_iso(),
@@ -157,7 +156,6 @@ def describe(routines_home: Path, slug: str) -> dict:
         r = read_request(p)
         if r:
             armed.append({"id": str(r.get("id")), "fire_at": str(r.get("fire_at") or ""),
-                          "active": bool(r.get("active", True)),
                           "reason": str(r.get("reason") or ""),
                           "requested_by": str(r.get("requested_by") or ""),
                           "created": str(r.get("created") or ""),

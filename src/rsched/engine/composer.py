@@ -22,12 +22,8 @@ def _is_conversation(ctx: RunContext) -> bool:
     conversation's task lives in instruction.md (the first message), unlike a scheduled
     routine whose task is its self-contained recipe.
     """
-    server = getattr(ctx, "server", None)
-    home = getattr(server, "conversations_home", None)
-    if home is None:
-        return False
     try:
-        return ctx.routine.dir.resolve().parent == Path(home).resolve()
+        return ctx.routine.dir.resolve().parent == Path(ctx.server.conversations_home).resolve()
     except OSError:
         return False
 

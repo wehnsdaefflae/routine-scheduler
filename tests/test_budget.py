@@ -46,12 +46,6 @@ def test_violation_is_first_hard_budget_exceeded_in_order():
     assert led.violation({"turns": 1, "tokens": 1, "cost": 0}) is None
 
 
-def test_soft_budget_does_not_violate_but_warns():
-    led = BudgetLedger([Budget("tokens", 100, hard=False)])
-    assert led.violation({"tokens": 200}) is None          # soft: never a hard stop
-    assert led.warning({"tokens": 90}) == "~10 tokens left"  # but still warns
-
-
 def test_warning_wording_per_resource():
     led = _run_ledger()
     assert led.warning({"turns": 55}) == "~5 turns left"                 # 55 >= 0.85*60

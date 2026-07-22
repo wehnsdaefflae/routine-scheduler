@@ -31,9 +31,10 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
             return (f"OBSERVATION (util show — source of {obs['target']!r}; to revise it, "
                     "write_util the COMPLETE corrected script):\n" + obs["source"])
         if obs.get("missing"):
+            names = ", ".join(obs.get("available") or []) or "(none yet)"
             return (f"OBSERVATION (util {(obs.get('target') or obs['name'])!r} does not exist). "
-                    "Run `util name=list` to see what exists, or write it with write_util, "
-                    "then call it.")
+                    f"Available: {names}. Pick one of those (run `util name=list` for their "
+                    "usage), or write it with write_util, then call it.")
         head = f"OBSERVATION (util {obs['name']}, exit {obs['exit']})"
         body = obs.get("stdout") or "(no stdout)"
         if obs.get("stderr"):

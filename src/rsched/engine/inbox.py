@@ -9,6 +9,7 @@ Consumed files move to <run_dir>/consumed/ for the audit trail.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -39,22 +40,25 @@ def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
     out: list[dict] = []
     for path in sorted(p for p in inbox.iterdir()
                        if p.is_file() and not p.name.startswith("answer-")):
-        obj = read_json(path)
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError as exc:   # transiently unreadable (fs blip) — never consume blind
+            log.warning("inbox: cannot read %s (%s) — leaving it for the next drain",
+                        path.name, exc)
+            continue
+        try:
+            obj = json.loads(raw)
+        except ValueError:
+            obj = None
         if isinstance(obj, dict) and obj.get("text"):
             out.append({"text": str(obj["text"]),
                         "attachments": [str(a) for a in (obj.get("attachments") or [])],
                         **({"command": True} if obj.get("command") else {})})
         else:
-            try:
-                text = path.read_text(encoding="utf-8").strip()
-            except OSError as exc:
-                log.warning("inbox: cannot read %s (%s) — leaving it for the next drain",
-                            path.name, exc)
-                continue
-            if text:
-                out.append({"text": text, "attachments": []})
-            else:
-                log.warning("inbox: %s carried no text — consumed without injection", path.name)
+            # every writer produces {"text": …} JSON (web layer, daemon managers) — a
+            # readable file that is not that is corrupt; consume it so it can't loop
+            log.warning("inbox: %s is not a message file — consumed without injection",
+                        path.name)
         _consume(path, consumed_dir)
     return out
 

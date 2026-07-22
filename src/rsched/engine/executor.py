@@ -48,10 +48,10 @@ def _machine_env(ctx: RunContext) -> dict[str, str]:
     extra_secrets. Only the reserved `remote` util declares these, so only it receives them; an
     unresolvable binding (missing catalog entry / unset key) is simply absent from the maps.
     """
-    bound = getattr(ctx.routine, "machines", None)
+    bound = ctx.routine.machines
     if not bound:
         return {}
-    env, _warnings = machines.machines_for_routine(bound, getattr(ctx.server, "machines", {}) or {})
+    env, _warnings = machines.machines_for_routine(bound, ctx.server.machines)
     return env
 
 
@@ -320,15 +320,14 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
         return ("routine.yaml is config (permissions, capabilities, budgets, roots) — no run "
                 "edits it, not even the routine-improver (machine-tunable knobs live in "
                 "tuning.yaml); file a deferred ask_user instead")
-    if not getattr(g, "recipe_unlocked", False):
-        from ..grants import RECIPE_PREFIXES
+    if not g.recipe_unlocked:
+        from ..grants import is_recipe_path
 
         try:
             rel = resolved.relative_to(ctx.routine.dir)
         except ValueError:
             return None
-        rel_s = str(rel)
-        if any(rel_s == p.rstrip("/") or rel_s.startswith(p) for p in RECIPE_PREFIXES):
+        if is_recipe_path(str(rel)):
             return ("a run never edits its own recipe (main.md / stages/ / traits/ / "
                     "tuning.yaml) — the routine-improver refines it; file a deferred "
                     "ask_user instead")
@@ -460,10 +459,7 @@ def do_read_trait(action: dict, ctx: RunContext) -> dict:
     from .. import library_docs
 
     name = action["name"]
-    try:
-        home = ctx.server.traits_home
-    except AttributeError:      # bare test contexts carry no server config
-        return {"kind": "read_trait", "name": name, "missing": True, "available": []}
+    home = ctx.server.traits_home
     catalog = library_docs.list_docs(home)
     # "held" = already one of this routine's own standing practices, so the model can tell a
     # module it should ALREADY be following from one it is consulting for the first time.

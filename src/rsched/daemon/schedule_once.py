@@ -55,25 +55,30 @@ class OneShotManager:
         self.home = server.routines_home
 
     async def tick(self, catalog: dict[str, registry.RoutineInfo]) -> None:
-        """One pass over the spool. Never raises into the scheduler loop."""
+        """One pass over the spool. Never raises into the scheduler loop. `conv--<slug>`
+        entries (a conversation's self-armed one-shots — engine/interact.handle_schedule_run
+        namespaces them so a same-named routine can never be mis-fired) resolve to
+        conversations_home and wake the conversation by RESUME, like a detached delivery.
+        """
         try:
             for slug in schedule_once.slugs_with_requests(self.home):
-                await self._service(slug, catalog.get(slug))
+                if slug.startswith("conv--"):
+                    await self._service_conversation(slug)
+                else:
+                    await self._service(slug, catalog.get(slug))
         except Exception:
             log.exception("schedule-once tick failed")
 
-    async def _service(self, slug: str, info: registry.RoutineInfo | None) -> None:
-        paths = schedule_once.pending_requests(self.home, slug)
-        if not paths:
-            return
-        if info is None or not info.cfg.enabled:
-            self._drop(slug, paths, "routine missing or disabled")
-            return
+    def _due_request(self, slug: str, paths: list[Path]) -> tuple[Path, dict] | None:
+        """The earliest-due armed request, dropping corrupt/expired files as it goes (an
+        unreadable request would otherwise be rescanned every 5s forever).
+        """
         now = datetime.now(UTC)
         due: list[tuple[Path, dict, datetime]] = []
         for path in paths:
             rec = schedule_once.read_request(path)
-            if not rec or not rec.get("active", True):
+            if not rec:
+                self._drop(slug, [path], "unreadable request file")
                 continue
             exp = _parse(rec.get("expires_at")) if rec.get("expires_at") else None
             if exp is not None and exp <= now:
@@ -86,21 +91,55 @@ class OneShotManager:
             if fire_at <= now:
                 due.append((path, rec, fire_at))
         if not due:
+            return None
+        due.sort(key=lambda d: d[2])
+        return due[0][0], due[0][1]
+
+    async def _service(self, slug: str, info: registry.RoutineInfo | None) -> None:
+        paths = schedule_once.pending_requests(self.home, slug)
+        if not paths:
+            return
+        if info is None or not info.cfg.enabled:
+            self._drop(slug, paths, "routine missing or disabled")
             return
         # one-run-per-routine: fire the EARLIEST-due request; any others fire on later ticks
         # once the routine is free again (the one-shot analog of trigger coalescing).
-        if self.runner.draining or self.runner.is_active(slug):
+        first = self._due_request(slug, paths)
+        if first is None or self.runner.draining or self.runner.is_active(slug):
             return
-        due.sort(key=lambda d: d[2])
-        await self._fire(slug, info, due[0][0], due[0][1])
+        await self._fire(slug, info.cfg, first[0], first[1], resume_ts=None)
 
-    async def _fire(self, slug: str, info: registry.RoutineInfo, path: Path, rec: dict) -> None:
+    async def _service_conversation(self, spool_slug: str) -> None:
+        paths = schedule_once.pending_requests(self.home, spool_slug)
+        if not paths:
+            return
+        from ..config import load_routine
+
+        conv_dir = self.server.conversations_home / spool_slug.removeprefix("conv--")
+        cfg = load_routine(conv_dir)[0] if (conv_dir / "routine.yaml").is_file() else None
+        if cfg is None:
+            self._drop(spool_slug, paths, "conversation missing")
+            return
+        first = self._due_request(spool_slug, paths)
+        if first is None or self.runner.draining or self.runner.is_active(cfg.slug):
+            return
+        # a conversation continues its ONE run in place (finish-per-reply): wake it by
+        # resuming the latest run; a conversation with no run yet fires fresh
+        runs = sorted((conv_dir / "runs").iterdir()) if (conv_dir / "runs").is_dir() else []
+        await self._fire(spool_slug, cfg, first[0], first[1],
+                         resume_ts=runs[-1].name if runs else None)
+
+    async def _fire(self, slug: str, cfg, path: Path, rec: dict,
+                    *, resume_ts: str | None) -> None:
         # Inject-then-fire with no await between the is_active gate and runner.fire's own
         # re-check: one event loop, so nothing can slip a competing run in between.
-        inbox = info.cfg.dir / "inbox"
+        inbox = cfg.dir / "inbox"
         atomic_write_json(inbox / f"msg-once-{rec.get('id')}.json",
                           {"text": _fire_text(rec), "ts": now_iso(), "via": "schedule_once"})
-        rid = await self.runner.fire(info.cfg, reason="schedule_once")
+        if resume_ts:
+            rid = await self.runner.resume(cfg, resume_ts, reason="schedule_once")
+        else:
+            rid = await self.runner.fire(cfg, reason="schedule_once")
         # auto-deactivate = consume: the armed file is gone, nothing can re-fire it
         path.unlink(missing_ok=True)
         now = now_iso()

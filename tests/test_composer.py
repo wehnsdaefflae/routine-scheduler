@@ -445,3 +445,66 @@ def test_harness_contract_renders_unlimited_token_budget(make_routine, tmp_path)
     text = harness_contract(ctx)
     assert "unlimited total tokens" in text
     assert "-1" not in text.split("Budgets for this run")[1][:150]
+
+
+def test_replay_reconstitutes_child_announcements():
+    """A child's exit announcement is a live message-list append with no 1:1 event — replay
+    rebuilds it from `subrun_end`, placed where the live message sat (before the model's
+    next action). A child whose summary rode a `wait` observation is NOT re-announced."""
+    from rsched.engine.history import replay_messages
+
+    events = [
+        {"type": "assistant_action", "turn": 1,
+         "payload": {"kind": "subtask", "prompt": "p", "label": "t1", "say": "s"}},
+        {"type": "observation", "turn": 1, "payload": {"kind": "subtask", "n": 1,
+                                                       "label": "t1", "started": True}},
+        # the child finishes between turns; announcement precedes the next action live
+        {"type": "subrun_end", "payload": {"n": 1, "label": "t1", "workflow": "general-task",
+                                           "mode": "sequential", "status": "ok",
+                                           "summary": "CHILD-RESULT-SENTINEL", "turns": 4}},
+        {"type": "assistant_action", "turn": 2,
+         "payload": {"kind": "finish", "status": "ok", "summary": "done", "say": "s"}},
+    ]
+    msgs, _, _ = replay_messages(events)
+    contents = [m["content"] for m in msgs]
+    assert any("SUBTASK FINISHED" in c and "CHILD-RESULT-SENTINEL" in c for c in contents)
+    # placement: the announcement sits between turn 1's observation and turn 2's action
+    idx = next(i for i, c in enumerate(contents) if "SUBTASK FINISHED" in c)
+    assert "finish" in contents[idx + 1]
+
+    # wait-delivered: the summary is inside the wait observation — no extra announcement
+    events_wait = [
+        {"type": "assistant_action", "turn": 1,
+         "payload": {"kind": "wait", "n": 1, "say": "s"}},
+        {"type": "subrun_end", "payload": {"n": 1, "label": "t1", "workflow": "general-task",
+                                           "mode": "sequential", "status": "ok",
+                                           "summary": "WAITED-RESULT", "turns": 4}},
+        {"type": "observation", "turn": 1,
+         "payload": {"kind": "wait", "timed_out": False, "still_running": [],
+                     "finished": [{"n": 1, "label": "t1", "status": "ok", "turns": 4,
+                                   "mode": "sequential", "summary": "WAITED-RESULT"}]}},
+        {"type": "assistant_action", "turn": 2,
+         "payload": {"kind": "finish", "status": "ok", "summary": "done", "say": "s"}},
+    ]
+    msgs2, _, _ = replay_messages(events_wait)
+    joined = "\n".join(m["content"] for m in msgs2)
+    assert joined.count("WAITED-RESULT") == 1     # once (in the wait obs), never twice
+
+
+def test_replay_does_not_duplicate_blocking_answers():
+    """The answer text already lives inside the ask_user observation — replaying the
+    `answer` event too used to inject it twice."""
+    from rsched.engine.history import replay_messages
+
+    events = [
+        {"type": "assistant_action", "turn": 1,
+         "payload": {"kind": "ask_user", "question": "Go?", "mode": "blocking", "say": "s"}},
+        {"type": "question", "payload": {"qid": "q1", "question": "Go?", "mode": "blocking"}},
+        {"type": "answer", "payload": {"qid": "q1", "text": "UNIQUE-ANSWER", "source": "web"}},
+        {"type": "observation", "turn": 1,
+         "payload": {"kind": "ask_user", "qid": "q1", "mode": "blocking", "answered": True,
+                     "answer": "UNIQUE-ANSWER", "source": "web"}},
+    ]
+    msgs, _, _ = replay_messages(events)
+    joined = "\n".join(m["content"] for m in msgs)
+    assert joined.count("UNIQUE-ANSWER") == 1

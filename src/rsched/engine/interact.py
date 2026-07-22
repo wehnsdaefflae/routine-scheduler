@@ -31,7 +31,7 @@ def _is_approval(text: str) -> bool:
 
 def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> dict:
     ctx = loop.ctx
-    if qtype == "question" and getattr(loop, "dialog_qid", None):
+    if qtype == "question" and loop.dialog_qid:
         # a re-ask after a dialog reply supersedes the still-open previous record
         inbox.resolve_question(ctx.routine.dir, loop.dialog_qid)
         loop.dialog_qid = None
@@ -259,7 +259,16 @@ def handle_schedule_run(loop, action: dict) -> dict:
     ctx = loop.ctx
     target = str(action.get("target") or "")
     home = ctx.server.routines_home
-    if not (home / target / "routine.yaml").is_file():
+    # Self-target is ALWAYS allowed (the schema promises it) — including for a
+    # CONVERSATION, which lives outside routines_home: its spool entry is namespaced
+    # (`conv--<slug>`) so a same-named routine can never be mis-fired, and the daemon's
+    # OneShotManager resolves that namespace back to conversations_home (waking the
+    # conversation by RESUMING it — the "remind me in 3 days" flow).
+    spool_slug = target
+    if target == ctx.routine.slug and not (home / target / "routine.yaml").is_file() \
+            and (ctx.routine.dir / "routine.yaml").is_file():
+        spool_slug = f"conv--{target}"
+    elif not (home / target / "routine.yaml").is_file():
         # Discoverability: a scheduling routine guessing a sibling's slug (the train-seat
         # friction) should get the valid slugs + close matches back, not a bare rejection.
         slugs = sorted(p.name for p in home.iterdir()
@@ -269,13 +278,13 @@ def handle_schedule_run(loop, action: dict) -> dict:
                 "valid_targets": slugs}
     if action.get("cancel"):
         req_id = str(action.get("id")).strip() if action.get("id") else None
-        removed = schedule_once.cancel(home, target, req_id)
+        removed = schedule_once.cancel(home, spool_slug, req_id)
         return {"kind": "schedule_run", "target": target, "cancelled": removed, "id": req_id}
     try:
         fire_at = schedule_once.parse_fire_at(str(action.get("fire_at") or ""))
     except ValueError as exc:
         return {"kind": "schedule_run", "target": target, "bad_fire_at": str(exc)}
-    rec = schedule_once.arm(home, target, fire_at=fire_at,
+    rec = schedule_once.arm(home, spool_slug, fire_at=fire_at,
                             reason=str(action.get("reason") or ""),
                             requested_by=ctx.run_id)
     return {"kind": "schedule_run", "target": target, "armed": rec["id"],

@@ -27,6 +27,20 @@ POLL_S = 2.0
 GEN_FLOOR_TOKENS = 20_000
 
 
+def _usage_snapshot(usage: dict) -> dict:
+    """Copy a possibly-still-mutating usage dict (a child that ignored its abort long
+    enough for kill_all to give up on it). A concurrent key insert can make dict(x)
+    raise — retry, then fall back to the guaranteed keys. Spend the straggler adds
+    AFTER the snapshot is lost; that is the price of not blocking the parent's exit.
+    """
+    for _ in range(3):
+        try:
+            return dict(usage)
+        except RuntimeError:
+            continue
+    return {"in": int(usage.get("in", 0)), "out": int(usage.get("out", 0))}
+
+
 class SubrunManager:
     """The parent loop's window onto its children: `spawn` (a parallel subroutine), `subtask` (a
     sequential subtask the parent blocks on), monitor (`subruns`/`wait`), `kill`, auto-announce
@@ -129,7 +143,7 @@ class SubrunManager:
         if action.get("workflow") != "generate":
             return action, ""
         ctx = self.parent.ctx
-        grants = getattr(self.parent, "grants", None)
+        grants = self.parent.grants
         if grants is None or not grants.may_generate_workflow():
             action["workflow"] = None
             return action, ("workflow generation is off for this routine (capability "
@@ -163,12 +177,16 @@ class SubrunManager:
     def _collect(self, sub: Subrun) -> None:
         if not sub.collected:
             sub.collected = True
-            self.parent.ctx.add_usage(sub.ctx.usage)
+            # kill_all can collect a child that REFUSED to stop (still running in its
+            # thread, still mutating its usage dict) — snapshot defensively so the fold
+            # and the event agree, and a concurrent key insert can't blow the copy.
+            usage = _usage_snapshot(sub.ctx.usage)
+            self.parent.ctx.add_usage(usage)
             self.parent.ctx.referrals += sub.ctx.referrals
             self.parent.ctx.transcript.event("subrun_end", {
                 "n": sub.n, "label": sub.label, "workflow": sub.workflow, "mode": sub.mode,
                 "status": sub.status, "summary": sub.summary,
-                "turns": sub.ctx.turn, "usage": dict(sub.ctx.usage)})
+                "turns": sub.ctx.turn, "usage": usage})
             # children feed workflow-library optimization like any other run
             from ..health_events import log_workflow_usage
 
@@ -177,9 +195,8 @@ class SubrunManager:
                                run_id=f"{pctx.run_id}#sub{sub.n}", workflow=sub.workflow,
                                depth=sub.ctx.depth, status=sub.status or "unknown",
                                turns=sub.ctx.turn,
-                               tokens=int(sub.ctx.usage.get("in", 0))
-                                      + int(sub.ctx.usage.get("out", 0)),
-                               cost=float(sub.ctx.usage.get("cost") or 0.0),
+                               tokens=int(usage.get("in", 0)) + int(usage.get("out", 0)),
+                               cost=float(usage.get("cost") or 0.0),
                                referrals=sub.ctx.referrals,
                                # the child ran under the parent's recipe version; its util
                                # counts are its OWN (parents never fold them — the Stats

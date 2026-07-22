@@ -19,6 +19,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.85.3] — 2026-07-23
+
+### Fixed — engine resume/control correctness (overhaul batch 3)
+- **A resumed parent gets its children's results back.** Child-exit announcements are
+  live message appends with no 1:1 transcript event — a resume replayed everything BUT
+  them, so a parent interrupted after a subtask finished lost the child's summary.
+  `replay_messages` now reconstitutes announcements from `subrun_end` events (placed
+  where the live message sat; children delivered via a `wait` observation are not
+  re-announced), sharing one wording builder with the live announcer.
+- **Blocking answers are no longer duplicated on resume.** The answer text lives inside
+  the ask_user observation; replaying the `answer` event too injected it twice.
+- **Mid-run switches fire once, not once per leg.** control.json is web-owned, so a
+  consumed switch_model/set_deliberation/add_traits signal could never be cleared —
+  every resume leg re-applied it (re-pinning models the user had changed back and
+  re-injecting the same engine notes). The engine now keeps a per-run applied ledger
+  (`control-applied.json`) that seeds the edge-triggers on every leg.
+- **Fresh-boot inbox prose is transcripted.** Messages drained at kickoff rode only the
+  composed prompt — invisible to the transcript renderer and lost on resume. They are
+  `user_injection` events now (with a `boot` marker) and replay correctly.
+- **`schedule_run` self-target works for conversations.** The schema always promised it;
+  the handler only resolved routines_home. A conversation's one-shot lands in a
+  namespaced spool (`conv--<slug>`, so a same-named routine can never be mis-fired) and
+  the daemon wakes the conversation by RESUMING its run — the "remind me in 3 days"
+  flow. Corrupt one-shot request files are dropped instead of rescanned every 5s; the
+  dead `active` flag is gone from spool records.
+- **Aborting a paused run credits the paused time**; killing a still-running child at
+  parent exit snapshots its usage race-free; parallel `spawn` catalogs are listed for
+  subtask/detach-only workflows too; a missing util's observation now names the
+  available utils inline (no discovery turn); `orphaned_children` carries the workflow
+  slug so boot's synthesized `subrun_end` matches the collector's shape.
+- Hygiene: the inbox's raw-text fallback (no writer produces it) is gone — corrupt
+  message files are consumed with a warning, transiently-unreadable ones still wait;
+  `decisions._reply_texts` pins the discord util's ONE output shape; the dead
+  `Budget.hard` knob is removed; tolerant `getattr` debris dropped across
+  loop/subruns/interact/executor/capabilities/composer (test stubs now carry real
+  fields); `executor` reuses `grants.is_recipe_path`.
+
 ## [0.85.2] — 2026-07-22
 
 ### Fixed — daemon + web security/robustness sweep (overhaul batch 2)

@@ -30,6 +30,7 @@ def _server(tmp_path) -> ServerConfig:
 class FakeRunner:
     def __init__(self):
         self.fired: list[tuple[str, str]] = []
+        self.resumed: list[tuple[str, str, str]] = []
         self.active: dict[str, str] = {}
         self.draining = False
 
@@ -40,6 +41,11 @@ class FakeRunner:
         self.fired.append((cfg.slug, reason))
         self.active[cfg.slug] = "20260717-120000"
         return f"{cfg.slug}:20260717-120000"
+
+    async def resume(self, cfg, ts, *, reason="resume") -> str:
+        self.resumed.append((cfg.slug, ts, reason))
+        self.active[cfg.slug] = ts
+        return f"{cfg.slug}:{ts}"
 
 
 def _routine(server, slug="oneshot", *, enabled=True):
@@ -54,8 +60,10 @@ def _routine(server, slug="oneshot", *, enabled=True):
     return d
 
 
-def _loop(server, *, run_id="run:1"):
+def _loop(server, *, run_id="run:1", slug="runner-r", dir_=None):
     ctx = SimpleNamespace(server=SimpleNamespace(routines_home=server.routines_home),
+                          routine=SimpleNamespace(slug=slug,
+                                                  dir=dir_ or server.routines_home / slug),
                           run_id=run_id)
     return SimpleNamespace(ctx=ctx)
 
@@ -94,7 +102,7 @@ def test_spool_roundtrip_and_cancel(tmp_path):
                            reason="a", requested_by="ui")
     schedule_once.arm(home, "oneshot", fire_at=datetime(2026, 6, 2, tzinfo=UTC),
                       reason="b", requested_by="x:1")
-    assert r1["id"].startswith("so-") and r1["active"] is True
+    assert r1["id"].startswith("so-")
     assert len(schedule_once.pending_requests(home, "oneshot")) == 2
     assert schedule_once.slugs_with_requests(home) == ["oneshot"]
     desc = schedule_once.describe(home, "oneshot")
@@ -296,3 +304,50 @@ def test_api_week_surfaces_armed_one_shots(sched_client):
     entry = next(r for r in c.get("/api/schedule/week").json()["routines"]
                  if r["slug"] == "weekly")
     assert entry["one_shots"] == []
+
+
+def test_handle_schedule_run_conversation_self_target(tmp_path):
+    """A conversation may always self-target (the schema promises it): its spool entry is
+    namespaced conv--<slug> so a same-named routine can never be mis-fired."""
+    server = _server(tmp_path)
+    conv_dir = tmp_path / "conversations" / "chatty"
+    conv_dir.mkdir(parents=True)
+    (conv_dir / "routine.yaml").write_text("slug: chatty\n", encoding="utf-8")
+    loop = _loop(server, run_id="chatty:20260722-101010", slug="chatty", dir_=conv_dir)
+    obs = handle_schedule_run(loop, {"target": "chatty", "fire_at": "+2h",
+                                     "reason": "remind me"})
+    assert obs.get("armed", "").startswith("so-")
+    assert schedule_once.pending_requests(server.routines_home, "conv--chatty")
+    assert not schedule_once.pending_requests(server.routines_home, "chatty")
+    # cancel routes to the same namespaced spool
+    obs2 = handle_schedule_run(loop, {"target": "chatty", "cancel": True})
+    assert obs2["cancelled"] == 1
+
+
+async def test_manager_wakes_conversation_by_resume(tmp_path):
+    """A due conv-- one-shot resumes the conversation's latest run (finish-per-reply:
+    a conversation continues its ONE run in place) with the reason injected first."""
+    from datetime import UTC, datetime, timedelta
+
+    from rsched.daemon.schedule_once import OneShotManager
+
+    server = _server(tmp_path)
+    conv_dir = tmp_path / "conversations" / "chatty"
+    (conv_dir / "runs" / "20260722-090000").mkdir(parents=True)
+    (conv_dir / "inbox").mkdir()
+    (conv_dir / "routine.yaml").write_text(
+        "slug: chatty\ndescription: test conversation\n", encoding="utf-8")
+    server.conversations_home = tmp_path / "conversations"
+    runner = FakeRunner()
+    mgr = OneShotManager(server, runner)
+    schedule_once.arm(server.routines_home, "conv--chatty",
+                      fire_at=datetime.now(UTC) + timedelta(milliseconds=1),
+                      reason="wake up", requested_by="chatty:20260722-090000")
+    import asyncio
+    await asyncio.sleep(0.01)
+    await mgr.tick({})
+    assert runner.resumed == [("chatty", "20260722-090000", "schedule_once")]
+    assert runner.fired == []
+    msgs = list((conv_dir / "inbox").glob("msg-once-*.json"))
+    assert len(msgs) == 1 and "wake up" in msgs[0].read_text(encoding="utf-8")
+    assert schedule_once.pending_requests(server.routines_home, "conv--chatty") == []

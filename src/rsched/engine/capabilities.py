@@ -18,10 +18,7 @@ def _permission_notes(ctx: RunContext, g) -> str:
     """
     from .. import library_docs
 
-    try:
-        home = ctx.server.permissions_home
-    except AttributeError:      # bare test contexts
-        return ""
+    home = ctx.server.permissions_home
     chunks = []
     for slug in g.active:
         raw = library_docs.read_doc(home, slug)
@@ -98,7 +95,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         # Bound remote machines are a resource the run can act on (via the `remote` util);
         # naming them here saves a discovery turn. Non-secret metadata only — readiness
         # (key/host-key set) is reported live by `remote list`.
-        catalog = getattr(ctx.server, "machines", {}) or {}
+        catalog = ctx.server.machines
         rows = []
         for name in bound:
             mac = catalog.get(name)
@@ -108,12 +105,12 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             desc = mac.description or f"{mac.user}@{mac.host}"
             tags = f" [{', '.join(mac.tags)}]" if mac.tags else ""
             share = (f" · files mounted at mnt/{name}/ (read/write remote files there with "
-                     "normal file utils)") if getattr(mac, "share", "") else ""
+                     "normal file utils)") if mac.share else ""
             rows.append(f"- {name} — {desc}{tags}{share}")
         parts.append("Remote machines this routine is bound to (run commands with the `remote` "
                      "util — `remote list` for readiness; a mounted share means the filesystem "
                      "is already local):\n" + "\n".join(rows))
-    if "spawn" in kinds:
+    if {"spawn", "subtask", "detach"} & set(kinds):
         try:
             from ..workflows.library import list_workflows
 
@@ -121,8 +118,8 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         except Exception:
             patterns = []
         if patterns:
-            parts.append("Sub-workflow patterns for spawn — pick the one matching the CHILD's "
-                         "purpose, never reflexively the default:\n"
+            parts.append("Sub-workflow patterns for spawn/subtask/detach — pick the one "
+                         "matching the CHILD's purpose, never reflexively the default:\n"
                          + "\n".join(f"- {w['slug']} — {w['description']}" for w in patterns))
     utils = utils_lib.list_utils(ctx.server.utils_home)
     if utils:

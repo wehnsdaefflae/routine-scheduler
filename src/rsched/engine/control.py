@@ -26,6 +26,33 @@ def request_abort() -> None:
     _ABORT["flag"] = True
 
 
+def _applied_path(loop):
+    return loop.ctx.root_run_dir / "control-applied.json"
+
+
+def load_applied_baselines(loop) -> None:
+    """Seed the mid-run-switch edge-triggers from the run's applied ledger. control.json is
+    web-owned (the engine never writes it), so a consumed signal can't be cleared there —
+    without this ledger every RESUME leg would re-fire the run's stale switch_model /
+    set_deliberation / add_traits signals (re-pinning models the user has since changed
+    back, and re-injecting the same engine notes every leg).
+    """
+    applied = read_json(_applied_path(loop))
+    if isinstance(applied, dict):
+        loop._last_switch_ts = str(applied.get("switch_model") or "")
+        loop._last_deliberation_ts = str(applied.get("set_deliberation") or "")
+        loop._last_traits_ts = str(applied.get("add_traits") or "")
+
+
+def _mark_applied(loop, signal: str, ts: str) -> None:
+    from ..paths import atomic_write_json
+
+    applied = read_json(_applied_path(loop))
+    applied = applied if isinstance(applied, dict) else {}
+    applied[signal] = ts
+    atomic_write_json(_applied_path(loop), applied)
+
+
 class RunAborted(Exception):  # noqa: N818 — control-flow signal (caught to finish as aborted)
     """Raised at a turn boundary when an abort was requested (signal or control.json);
     the loop catches it to finish the run as `aborted`.
@@ -43,14 +70,18 @@ def pause_gate(loop, poll_s: float) -> None:
         return
     ctx.write_status("paused")
     started = time.monotonic()
-    while True:
-        if loop._aborted():
-            raise RunAborted
-        time.sleep(poll_s)
-        obj = read_json(control)
-        if not (isinstance(obj, dict) and obj.get("pause")):
-            break
-    ctx.credit_suspended(time.monotonic() - started)
+    try:
+        while True:
+            if loop._aborted():
+                raise RunAborted
+            time.sleep(poll_s)
+            obj = read_json(control)
+            if not (isinstance(obj, dict) and obj.get("pause")):
+                break
+    finally:
+        # an abort mid-pause credits the waited time too — paused waiting must never be
+        # booked as active wall-clock in the final status
+        ctx.credit_suspended(time.monotonic() - started)
     ctx.write_status("running")
 
 
@@ -66,6 +97,7 @@ def apply_model_switch(loop) -> None:
     if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_switch_ts:
         return
     loop._last_switch_ts = str(sw["ts"])
+    _mark_applied(loop, "switch_model", str(sw["ts"]))
     applied = []
     for kind in ("main", "subroutine", "tool_call"):
         name = sw.get(kind)   # a catalog model NAME; roles re-resolve every turn via for_model
@@ -91,6 +123,7 @@ def apply_deliberation_switch(loop) -> None:
     if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_deliberation_ts:
         return
     loop._last_deliberation_ts = str(sw["ts"])
+    _mark_applied(loop, "set_deliberation", str(sw["ts"]))
     level = sw.get("level")
     if level not in DELIBERATION_LEVELS or level == ctx.deliberation:
         return
@@ -115,6 +148,7 @@ def apply_trait_additions(loop) -> None:
     if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_traits_ts:
         return
     loop._last_traits_ts = str(sw["ts"])
+    _mark_applied(loop, "add_traits", str(sw["ts"]))
     for slug in sw.get("slugs") or []:
         if not isinstance(slug, str) or slug in ctx.consulted_traits:
             continue
@@ -147,6 +181,15 @@ def inject_user_message(loop, m: dict) -> None:
     loop.messages.append(msg)
 
 
+def render_command_result(obs: dict) -> str:
+    """One rendering for a slash command's outcome — live (run_user_command) and replayed
+    (history.replay_messages) prompts must read identically.
+    """
+    if obs.get("kind") == "user_command":
+        return f"COMMAND ERROR: {obs.get('error')}"
+    return format_observation(obs)
+
+
 def run_user_command(loop, m: dict) -> None:
     """Execute ONE user-authored action (a chat slash command) at the turn boundary —
     the model action's exact path (parse → schema validate → validate_action against the
@@ -177,8 +220,7 @@ def run_user_command(loop, m: dict) -> None:
     except Exception as exc:  # a failing command must never kill the run
         obs = {"kind": "user_command", "error": f"command failed: {exc}"}
     ctx.transcript.event("observation", {**obs, "user_command": True})
-    rendered = (f"COMMAND ERROR: {obs['error']}" if obs.get("kind") == "user_command"
-                else format_observation(obs))
+    rendered = render_command_result(obs)
     msg: dict = {"role": "user", "content":
                  f"USER COMMAND (the user executed this action directly):\n{text}\n{rendered}"}
     if obs.get("media"):  # a /view_image the model can show natively
@@ -199,19 +241,27 @@ def drain_injections(loop) -> None:
         inject_user_message(loop, m)
 
 
+def child_finished_message(*, mode: str, n: int, label: str, workflow: str, status: str,
+                           turns: int, summary: str) -> str:
+    """The one wording for a child-exit notification — used live by
+    announce_finished_subruns AND by history.replay_messages when it reconstitutes an
+    announcement from a `subrun_end` event, so a resumed prompt reads like the live one.
+    """
+    head, _ = truncate(summary, cap=4000)
+    if mode == "sequential":
+        return (f"SUBTASK FINISHED — #{n} {label!r} (workflow {workflow}, status "
+                f"{status}, {turns} turns). Fold this result into your next subtask's "
+                f"brief, or finish:\n{head}")
+    return (f"SUB-WORKFLOW FINISHED — #{n} {label!r} (workflow {workflow}, "
+            f"status {status}, {turns} turns):\n{head}")
+
+
 def announce_finished_subruns(loop) -> None:
     """Turn-boundary notification: children that exited since the last boundary — the
     "child finished" hook. A SEQUENTIAL subtask's completion prompts result-forwarding; a
     PARALLEL subrun's is informational (keeps `SUB-WORKFLOW FINISHED`, pinned in the docs).
     """
     for sub in loop.subruns.take_finished_unannounced():
-        summary, _ = truncate(sub.summary, cap=4000)
-        if getattr(sub, "mode", "parallel") == "sequential":
-            loop.messages.append({"role": "user", "content":
-                f"SUBTASK FINISHED — #{sub.n} {sub.label!r} (workflow {sub.workflow}, status "
-                f"{sub.status}, {sub.ctx.turn} turns). Fold this result into your next subtask's "
-                f"brief, or finish:\n{summary}"})
-        else:
-            loop.messages.append({"role": "user", "content":
-                f"SUB-WORKFLOW FINISHED — #{sub.n} {sub.label!r} (workflow {sub.workflow}, "
-                f"status {sub.status}, {sub.ctx.turn} turns):\n{summary}"})
+        loop.messages.append({"role": "user", "content": child_finished_message(
+            mode=sub.mode, n=sub.n, label=sub.label, workflow=sub.workflow,
+            status=sub.status, turns=sub.ctx.turn, summary=sub.summary)})

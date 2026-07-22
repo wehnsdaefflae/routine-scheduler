@@ -275,7 +275,7 @@ def test_mirror_requires_the_communication_permission(make_routine, monkeypatch)
 
 def test_mirror_sends_polls_and_notifies(make_routine, monkeypatch):
     # one empty read (cursor prime), then a reply on the first poll
-    fake = _FakeDiscord(replies=[[], [{"text": "yes please"}]])
+    fake = _FakeDiscord(replies=[[], [{"message": "yes please"}]])
     monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
@@ -297,7 +297,7 @@ def test_mirror_sends_polls_and_notifies(make_routine, monkeypatch):
 
 def test_mirror_reply_resolves_the_blocking_ask(make_routine, scripted, monkeypatch):
 
-    fake = _FakeDiscord(replies=[[], ["approved — go"]])
+    fake = _FakeDiscord(replies=[[], [{"message": "approved — go"}]])
     monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
@@ -326,10 +326,13 @@ def test_mirror_reply_resolves_the_blocking_ask(make_routine, scripted, monkeypa
     assert any("got it" in a[1] for a in fake.sends())   # the channel was told it counted
 
 
-def test_reply_texts_parses_tolerantly():
-    assert decisions._reply_texts('["a", "b"]') == ["a", "b"]
-    assert decisions._reply_texts('[{"text": "x"}, {"content": "y"}]') == ["x", "y"]
-    assert decisions._reply_texts('{"messages": [{"text": "z"}]}') == ["z"]
+def test_reply_texts_pins_the_discord_util_shape():
+    """ONE pinned shape — the discord util's `read --json` emits a list of message
+    objects whose text is the `message` field. Anything else reads as no replies."""
+    assert decisions._reply_texts(
+        '[{"message": "x", "author": "u", "time": "t"}, {"message": " y "}]') == ["x", "y"]
     assert decisions._reply_texts("") == []
     assert decisions._reply_texts("not json") == []
     assert decisions._reply_texts('[{"foo": 1}]') == []
+    assert decisions._reply_texts('{"messages": [{"message": "z"}]}') == []  # not a list
+    assert decisions._reply_texts('["bare string"]') == []                   # not an object

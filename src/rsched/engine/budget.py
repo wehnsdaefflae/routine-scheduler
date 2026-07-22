@@ -59,14 +59,13 @@ def _fmt_left(resource: str, left: float) -> str:
 
 @dataclass(frozen=True)
 class Budget:
-    """One resource's stop condition: a `limit` (-1 = unlimited), whether exceeding it is
-    `hard` (stops the run) vs soft (warning only), and the fraction `warn_at` at which to warn.
-    Pure — it never holds live consumption; a `current` value is passed to every method.
+    """One resource's stop condition: a `limit` (-1 = unlimited) and the fraction
+    `warn_at` at which to warn. Pure — it never holds live consumption; a `current`
+    value is passed to every method.
     """
 
     resource: str
     limit: float = -1
-    hard: bool = True
     warn_at: float = 0.85
 
     @property
@@ -97,7 +96,7 @@ class BudgetLedger:
 
     def violation(self, meter: dict) -> str | None:
         for b in self.budgets:
-            if b.hard and b.exceeded(meter.get(b.resource, 0)):
+            if b.exceeded(meter.get(b.resource, 0)):
                 return _fmt_exhausted(b.resource, b.limit)
         return None
 
@@ -126,11 +125,11 @@ class BudgetLedger:
         out: list[Budget] = []
         for b in self.budgets:
             if b.resource in overrides:
-                out.append(Budget(b.resource, float(overrides[b.resource]), b.hard, b.warn_at))
+                out.append(Budget(b.resource, float(overrides[b.resource]), b.warn_at))
             elif b.resource in CONSUMABLE and not b.unlimited:
                 left = b.left(meter.get(b.resource, 0)) or 0.0
                 lim = max(FLOOR.get(b.resource, 1), int(left * fraction))
-                out.append(Budget(b.resource, lim, b.hard, b.warn_at))
+                out.append(Budget(b.resource, lim, b.warn_at))
             else:
-                out.append(Budget(b.resource, b.limit, b.hard, b.warn_at))
+                out.append(Budget(b.resource, b.limit, b.warn_at))
         return BudgetLedger(out)
