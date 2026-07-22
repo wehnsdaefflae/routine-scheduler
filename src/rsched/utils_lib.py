@@ -34,6 +34,15 @@ STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
               "OPENROUTER_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY",
               "SSH_AUTH_SOCK", "SSH_AGENT_PID")
 
+# Cap on captured stdout/stderr per util run — observations truncate far below this; the
+# cap only stops a runaway printer from ballooning engine memory.
+OUTPUT_CAP = 1_000_000
+
+# `["gu", "<sibling>"]` exec sites in util code — the one home for this pattern
+# (header_problems flags undeclared calls with it; bootstrap's header migration repairs
+# them with the same regex, so the two can never drift).
+GU_CALL_RE = re.compile(r"""\[\s*["']gu["']\s*,\s*["']([a-z0-9][a-z0-9-]*)["']""")
+
 DISPATCHER = '''#!/usr/bin/env python3
 """gu — run a global util: `gu <name> [args...]`, or `gu list`. Utils call each other
 through this dispatcher (this directory is on PATH when a util runs)."""
@@ -56,7 +65,10 @@ def _summary(name):
 def main():
     args = sys.argv[1:]
     if not args or args[0] in ("list", "-h", "--help"):
-        names = sorted(d for d in os.listdir(UTILS)) if os.path.isdir(UTILS) else []
+        # only real utils: skips __pycache__, removal residue, stray files
+        names = sorted(d for d in os.listdir(UTILS)
+                       if os.path.isfile(os.path.join(UTILS, d, "main.py"))) \\
+            if os.path.isdir(UTILS) else []
         for n in names:
             print(f"{n} — {_summary(n)}")
         if not names:
@@ -269,6 +281,14 @@ def header_problems(content: str) -> list[str]:
                         f"'secrets:' line: {', '.join(undeclared)} — declare them there "
                         "(the Settings page only prompts for declared secrets, and the "
                         "sandbox injects only declared ones)")
+    declared_calls = set(h["calls"])
+    undeclared_calls = sorted({c for c in GU_CALL_RE.findall(content)
+                               if c not in declared_calls})
+    if undeclared_calls:
+        problems.append("code execs sibling util(s) not declared on the docstring's "
+                        f"'calls:' line: {', '.join(undeclared_calls)} — declare them "
+                        "(the sandbox resolves secrets and net access transitively over "
+                        "declared calls; an undeclared sibling runs without its needs)")
     return problems
 
 
@@ -301,6 +321,8 @@ def read_util(home: Path, name: str) -> str | None:
 
 
 def write_util_file(home: Path, name: str, content: str) -> None:
+    if not is_slug(name):   # backstop — a non-slug would write OUTSIDE utils/
+        raise ValueError(f"invalid util name {name!r}")
     d = util_dir(home, name)
     d.mkdir(parents=True, exist_ok=True)
     # Atomic (tmp+rename): a routine EXECUTING this util concurrently (the curator revising a
@@ -322,6 +344,8 @@ def remove_util_file(home: Path, name: str) -> None:
     write_util_file). Committed by the caller via git_commit, so it stays recoverable from
     git history. The no-callers guard lives in the remove_util action handler, not here.
     """
+    if not is_slug(name):   # backstop — a non-slug would delete OUTSIDE utils/
+        raise ValueError(f"invalid util name {name!r}")
     d = util_dir(home, name)
     if not d.exists():
         return
@@ -412,12 +436,38 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
                             *args], policy=policy, utils_home=home, net=net)
     except sandbox.SandboxRefusal as exc:
         return 2, "", str(exc)
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
-                           env=env, cwd=str(home), check=False)
-        return r.returncode, r.stdout, r.stderr
-    except subprocess.TimeoutExpired:
-        return -1, "", f"util {name!r} timed out after {timeout}s"
+    # File-backed capture + own process GROUP: `uv run` re-execs the script as a grandchild,
+    # which a plain subprocess.run timeout never kills — it would survive the timeout and
+    # keep the pipes open, blocking the engine turn forever. killpg reaps the whole tree,
+    # and spool files (instead of PIPEs) bound memory however much the util prints.
+    import signal
+    import tempfile
+    with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as out_f, \
+            tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as err_f:
+        proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, stdin=subprocess.DEVNULL,
+                                text=True, env=env, cwd=str(home), start_new_session=True)
+        timed_out = False
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+            proc.wait()
+
+        def _read_capped(fh) -> str:
+            fh.seek(0)
+            text = fh.read(OUTPUT_CAP + 1)
+            if len(text) > OUTPUT_CAP:
+                text = text[:OUTPUT_CAP] + "\n[output truncated at 1 MB]"
+            return text
+
+        if timed_out:
+            return -1, "", (f"util {name!r} timed out after {timeout}s "
+                            "(process group killed)")
+        return proc.returncode, _read_capped(out_f), _read_capped(err_f)
 
 
 def selftest(home: Path, name: str, *, timeout: int = 120,

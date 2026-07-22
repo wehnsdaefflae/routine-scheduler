@@ -368,8 +368,14 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
         val = obj.get(field)
         if val is None or (isinstance(val, str) and not val.strip()):
             problems.append(f"kind={kind} requires a non-empty {field!r} field")
-    if kind == "write_util" and not isinstance(obj.get("content"), str | None):
-        problems.append("kind=write_util requires 'content' to be the script text (one string)")
+    if kind == "write_util":
+        if not isinstance(obj.get("content"), str | None):
+            problems.append("kind=write_util requires 'content' to be the script text "
+                            "(one string)")
+        # The name becomes a directory under the library — a non-slug (path separators,
+        # dots) would write OUTSIDE utils/; rejected here like every permission problem.
+        if not is_slug(str(obj.get("name") or "")):
+            problems.append("kind=write_util requires 'name' to be a kebab-case util name")
     if kind == "remove_util" and not is_slug(str(obj.get("name") or "")):
         problems.append("kind=remove_util requires 'name' to be a kebab-case util name")
     if kind == "schedule_run":

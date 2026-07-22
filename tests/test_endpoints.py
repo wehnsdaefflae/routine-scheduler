@@ -468,13 +468,13 @@ def test_render_prompt():
 
 
 def test_parse_result_envelopes():
-    text, parsed, usage = parse_result(json.dumps(
+    text, parsed, usage, _stop = parse_result(json.dumps(
         {"is_error": False, "result": "hi", "usage": {"input_tokens": 1, "output_tokens": 2}}), False)
     assert text == "hi" and parsed is None and usage == {"in": 1, "out": 2}
-    _, parsed, _ = parse_result(json.dumps(
+    _, parsed, _, _ = parse_result(json.dumps(
         {"is_error": False, "result": "x", "structured_output": {"b": 2}}), True)
     assert parsed == {"b": 2}
-    _, parsed, _ = parse_result(json.dumps({"is_error": False, "result": '{"a": 1}'}), True)
+    _, parsed, _, _ = parse_result(json.dumps({"is_error": False, "result": '{"a": 1}'}), True)
     assert parsed == {"a": 1}
     with pytest.raises(EndpointError) as exc:
         parse_result(json.dumps({"is_error": True, "result": "401 unauthorized"}), False)
@@ -526,15 +526,40 @@ def test_claude_cli_nonzero_exit_empty_stdout_is_retryable(monkeypatch, tmp_path
     assert "exited 1" in str(exc.value) and "ECONNRESET" in str(exc.value)
 
 
-def test_claude_cli_unparseable_stdout_is_not_retryable(monkeypatch, tmp_path):
+def test_claude_cli_unparseable_stdout_retried_then_raised(monkeypatch, tmp_path):
+    """Garbled CLI stdout is a transport fault (a truncated envelope), mirroring
+    json_or_raise for HTTP bodies: with_retries re-invokes the CLI, then the last
+    error propagates retryable."""
     ep = _cli_endpoint(monkeypatch, tmp_path)
+    calls = []
     monkeypatch.setattr(
         "rsched.endpoints.claude_cli.subprocess.run",
-        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout="plain text, no envelope", stderr=""))
+        lambda cmd, **kw: (calls.append(1), subprocess.CompletedProcess(
+            cmd, 0, stdout="plain text, no envelope", stderr=""))[1])
     with pytest.raises(EndpointError) as exc:
         ep.complete(MESSAGES, model="opus")
-    assert not exc.value.retryable
+    assert exc.value.retryable
+    assert len(calls) == 3   # the with_retries contract: 3 tries total
     assert "unparseable CLI output" in str(exc.value) and "plain text" in str(exc.value)
+
+
+def test_claude_cli_transient_failure_recovered_by_retry(monkeypatch, tmp_path):
+    """One bad invocation (nonzero exit, empty stdout) must not fail the turn — the
+    retry wrapper runs the CLI again and the second attempt's reply is returned."""
+    ep = _cli_endpoint(monkeypatch, tmp_path)
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(1)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="blip")
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(
+            {"is_error": False, "result": "recovered",
+             "usage": {"input_tokens": 1, "output_tokens": 1}}), stderr="")
+
+    monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
+    c = ep.complete(MESSAGES, model="opus")
+    assert c.text == "recovered" and len(calls) == 2
 
 
 def test_claude_cli_timeout_is_retryable(monkeypatch, tmp_path):
@@ -552,7 +577,7 @@ def test_claude_cli_timeout_is_retryable(monkeypatch, tmp_path):
 def test_claude_cli_cache_usage_captured():
     """Same cross-adapter invariant as the API adapters: cache traffic rides
     cached_in/cache_write, kept out of "in"."""
-    _, _, usage = parse_result(json.dumps(
+    _, _, usage, _ = parse_result(json.dumps(
         {"is_error": False, "result": "hi",
          "usage": {"input_tokens": 4, "output_tokens": 2,
                    "cache_read_input_tokens": 30000, "cache_creation_input_tokens": 1200}}), False)

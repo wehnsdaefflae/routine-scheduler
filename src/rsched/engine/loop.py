@@ -83,6 +83,7 @@ class EngineLoop:
         self.final_summary = ""
         self.dialog_qid: str | None = None   # open ask_user record a dialog reply left behind
         self.executed_actions = 0  # actions that produced an observation this run
+        self._referred_turn = False  # the uncensored model produced the CURRENT turn's action
         # This leg's wake, set in boot. The speaker turn is the USER's after the model hands
         # it back with an authored finish (`leg_after_authored`); a message that resumes then
         # keeps the turn with the user if it only EXECUTES commands (`leg_commands`, no
@@ -193,6 +194,9 @@ class EngineLoop:
                 drain_injections(self)
                 announce_finished_subruns(self)
                 action, usage = next_action(self)
+                # Book the spend IMMEDIATELY: tokens burned by failed schema attempts or a
+                # turn preempted by abort are real spend even when no action lands.
+                ctx.add_usage(usage)
                 if self._aborted():
                     raise RunAborted  # a kill during the completion preempts the action
                 if action is None:
@@ -202,10 +206,8 @@ class EngineLoop:
                 ctx.turn += 1
                 ctx.transcript.event("assistant_action", dict(action), turn=ctx.turn, usage=usage,
                                      **({"phase": ctx.phase} if ctx.phase else {}),
-                                     **({"referred": True} if getattr(self, "_referred_turn", False)
-                                        else {}))
+                                     **({"referred": True} if self._referred_turn else {}))
                 notes.capture(ctx, action)   # the note channel: turn-free, stamped, best-effort
-                ctx.add_usage(usage)
                 self.messages.append({"role": "assistant",
                                       "content": json.dumps(action, ensure_ascii=False)})
                 self._record_turn(action)
@@ -334,7 +336,8 @@ class EngineLoop:
                              detail=summary[:500])
         self.final_summary = self.final_summary or summary
         if ctx.depth == 0:
-            (ctx.run_dir / "result.md").write_text(summary + "\n", encoding="utf-8")
+            from ..paths import atomic_write
+            atomic_write(ctx.run_dir / "result.md", summary + "\n")
             _autocommit(ctx.routine.dir, f"{ctx.run_id}: {status}")  # routines never run git
             state = {"ok": "finished", "partial": "finished", "failed": "failed",
                      "aborted": "aborted"}.get(status, "finished")

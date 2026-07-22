@@ -222,4 +222,5 @@ class AnthropicEndpoint:
             text="\n".join(texts),
             parsed=parsed if isinstance(parsed, dict) else None,
             usage=anthropic_usage(data.get("usage") or {}),  # reads ~0.1x, writes ~1.25x
+            stop_reason=str(data.get("stop_reason") or ""),
         )

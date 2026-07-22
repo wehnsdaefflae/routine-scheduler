@@ -176,7 +176,13 @@ class OpenAICompatEndpoint:
             options["temperature"] = temperature
         if max_tokens:
             options["num_predict"] = max_tokens
-        body = {"model": model, "messages": messages, "format": schema, "stream": False,
+        # Ollama's native chat takes images as a per-message base64 `images` list; the
+        # engine-side `media` key must never ride the request (it holds local paths).
+        native_msgs = [{"role": m["role"], "content": m.get("content", ""),
+                        **({"images": [read_media_b64(i["path"]) for i in m["media"]]}
+                           if m.get("media") else {})}
+                       for m in messages]
+        body = {"model": model, "messages": native_msgs, "format": schema, "stream": False,
                 "options": options}
 
         def call() -> Completion:
@@ -186,7 +192,8 @@ class OpenAICompatEndpoint:
             text = (data.get("message") or {}).get("content", "") or ""
             return Completion(text=text,
                               usage={"in": int(data.get("prompt_eval_count") or 0),
-                                     "out": int(data.get("eval_count") or 0)})
+                                     "out": int(data.get("eval_count") or 0)},
+                              stop_reason=str(data.get("done_reason") or ""))
 
         return with_retries(call)
 
@@ -221,4 +228,5 @@ class OpenAICompatEndpoint:
             out["cached_in"] = cached
         if usage.get("cost") is not None:   # OpenRouter usage accounting → $ (credits)
             out["cost"] = float(usage.get("cost") or 0)
-        return Completion(text=text, usage=out, provider=str(data.get("provider") or ""))
+        return Completion(text=text, usage=out, provider=str(data.get("provider") or ""),
+                          stop_reason=str(data["choices"][0].get("finish_reason") or ""))

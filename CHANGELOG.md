@@ -19,6 +19,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.85.1] — 2026-07-22
+
+### Fixed — engine + transport correctness sweep (overhaul batch 1)
+Security/correctness-critical fixes from the external audit's findings ledger.
+
+- **Empty completions engage failover and referral (the refusal-gap fix).** Adapters now
+  surface the provider's stop reason on every `Completion` (`stop_reason`: anthropic
+  `stop_reason`, openai `finish_reason` / ollama `done_reason`, the CLI envelope's
+  `stop_reason`/`subtype`). An EMPTY completion with `stop_reason: refusal` — a classifier
+  refusal, previously indistinguishable from a hiccup — is referred to the routine's
+  `uncensored` model like a free-text refusal; the SECOND consecutive empty from one model
+  engages the fallback chain exactly like a hard `EndpointError` (logged as the same
+  `failover` payload) instead of blind same-model retries until the run died.
+- **Cooldowns are a provider-health signal.** `InstrumentedEndpoint` now starts the 5-min
+  failover cooldown only for retryable-class failures (outage, rate limit, network) — a
+  bad key or a Settings probe with a wrong credential no longer poisons resolution for
+  5 minutes. The engine still cools any model it abandons mid-turn (the judgment moved to
+  `completion._switch_to_fallback`, which now marks the failed model itself).
+- **claude-cli transport hardening**: calls now run under the shared `with_retries`
+  backoff (one transient CLI failure no longer costs a cooldown + failover); garbled CLI
+  stdout is retryable like an unparseable HTTP body; the stream-json image capability
+  latch flips only after retries exhaust (not on one blip) and a fresh-session reseed
+  carrying OLD in-context images degrades them to placeholders instead of hard-failing;
+  per-run session cwds under `~/.cache/rsched/claude-cli/` are pruned after a week;
+  `SSH_AUTH_SOCK`/`SSH_AGENT_PID` are scrubbed from the CLI child like every util child.
+- **`write_util` traversal guard + selftest rollback.** A `write_util`/`remove_util` name
+  must be a kebab-case slug (validated in the schema cycle, backstopped in
+  `utils_lib.write_util_file`/`remove_util_file`) — a path-shaped name could write outside
+  the library. A FAILED selftest now rolls the write back (a new util's dir removed, a
+  revision restored to the previous working text) instead of leaving the broken script
+  live for concurrent `gu` callers.
+- **Util subprocess timeouts kill the whole process group.** `run_util` starts utils in
+  their own session and `killpg`s on timeout — the `uv run` grandchild used to survive
+  (holding the pipes open and blocking the engine turn past its timeout forever). Output
+  capture is file-backed and capped at 1 MB per stream. The seeded `gu` dispatcher's
+  `list` skips `__pycache__`/removal residue; `header_problems` now also rejects
+  undeclared `["gu", "<sibling>"]` exec sites (same regex the boot migration uses —
+  moved to `utils_lib.GU_CALL_RE`).
+- **Child tasks keep their workflow's `tools:` allowlist.** `childrun.build_child` loaded
+  the materialized pattern's allowlist and then dropped it — every spawn/subtask child ran
+  unrestricted. The child number allocation is also lock-protected now (parallel spawns
+  could collide), and child/recipe/result writes are atomic (`materialize_to_disk`,
+  `_ensure_decomposed`, `result.md`).
+- **Blocking-ask re-files keep `config_patch`.** The abort/defer/timeout re-file paths
+  dropped a pending config proposal; only the dialog path kept it.
+- **Spend from failed turns is booked.** Usage burned by schema-retry cycles that never
+  produced an action (force-fail, abort preempt) now lands in the run's usage.
+- Empty-completion retry backoff honors `RSCHED_RETRY_BASE_DELAY` (suite runs the logic,
+  not the clock); `run_context` sheds its `__import__("os")` debris.
+
 ## [0.85.0] — 2026-07-22
 
 ### Added — Runtime duration bars on the dashboard "this week" strip

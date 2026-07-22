@@ -102,15 +102,22 @@ def test_for_model_avoids_cooling_provider(tmp_path):
     assert reg.for_model("main", {})[1].name == "prime"      # all cooling → primary
 
 
-def test_instrumented_endpoint_marks_hard_failures():
-    ep = InstrumentedEndpoint(ScriptedEndpoint([EndpointError("boom")]))
+def test_instrumented_endpoint_marks_provider_health_failures():
+    # a retryable-class failure (outage/rate limit — the adapter's retries exhausted) cools
+    ep = InstrumentedEndpoint(ScriptedEndpoint([EndpointError("overloaded", retryable=True)]))
     with pytest.raises(EndpointError):
         ep.complete([{"role": "user", "content": "hi"}], model="test-model")
     assert failover.is_cooling("scripted", "test-model")
+    # a DETERMINISTIC failure (bad key / malformed request — a config error) must NOT cool:
+    # a Settings probe with a wrong credential would otherwise poison resolution for 5 min
+    ep2 = InstrumentedEndpoint(ScriptedEndpoint([EndpointError("bad key", auth=True)]))
+    with pytest.raises(EndpointError):
+        ep2.complete([{"role": "user", "content": "hi"}], model="cfg-model")
+    assert not failover.is_cooling("scripted", "cfg-model")
     # a NON-EndpointError (a bug, not a provider failure) must not mark a cooldown
-    ep2 = InstrumentedEndpoint(ScriptedEndpoint([ValueError("bug")]))
+    ep3 = InstrumentedEndpoint(ScriptedEndpoint([ValueError("bug")]))
     with pytest.raises(ValueError, match="bug"):
-        ep2.complete([{"role": "user", "content": "hi"}], model="other-model")
+        ep3.complete([{"role": "user", "content": "hi"}], model="other-model")
     assert not failover.is_cooling("scripted", "other-model")
 
 
@@ -185,3 +192,70 @@ def test_resolve_time_avoidance_skips_cooling_primary(make_routine, monkeypatch)
     status, _ = run_routine(d, server, run_ts=TS)
     assert status == "ok"
     assert eps["epA"].calls == []   # never probed while cooling
+
+
+# ---- empty completions: the refusal gap ------------------------------------------------------
+
+def test_empty_completions_fail_over_to_fallback(make_routine, monkeypatch):
+    """Two consecutive EMPTY completions from one model engage the failover chain exactly
+    like a hard EndpointError — same-model blind retries can never fix a broken/refusing
+    model, so the turn moves on and the model cools (the refusal-gap fix)."""
+    from rsched.endpoints.base import Completion
+
+    d = make_routine("emptyfo")
+    server = _catalog_server(d.parent)
+    eps = _wire(monkeypatch, server, {
+        "epA": [Completion(text="", stop_reason="refusal"),
+                Completion(text="", stop_reason="refusal")],
+        "epB": [write_file("state/probe.txt", say="grounding work"),
+                finish(summary="served by the backup model")]})
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "ok"
+    assert len(eps["epA"].calls) == 2       # exactly two empties, then the chain advances
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    empties = [e for e in events if e["type"] == "error"
+               and "empty completion (no content" in e["payload"].get("message", "")]
+    assert len(empties) == 2
+    assert "stop_reason=refusal" in empties[0]["payload"]["message"]
+    switch = [e for e in events if e["type"] == "error" and e["payload"].get("failover")]
+    assert switch and switch[0]["payload"]["failover"]["to"] == "backup"
+    assert failover.is_cooling("epA", "m-a")
+    turns = [e for e in events if e["type"] == "assistant_action"]
+    assert [t["usage"]["model"] for t in turns] == ["epB/m-b", "epB/m-b"]
+
+
+def test_empty_refusal_referred_to_uncensored(make_routine, monkeypatch):
+    """An EMPTY completion whose stop_reason is `refusal` (a classifier refusal — there is
+    no free text to sniff) is referred to the routine's `uncensored` model exactly like a
+    free-text refusal: the referred action serves the turn and the referral is audited."""
+    import json as _json
+
+    import yaml as _yaml
+
+    from rsched.endpoints.base import Completion
+
+    d = make_routine("emptyref")
+    cfg = _yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
+    cfg["models"] = {"uncensored": "unc"}
+    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg), encoding="utf-8")
+    server = _catalog_server(d.parent)
+    server.endpoints["epU"] = __import__("rsched.config", fromlist=["EndpointConfig"]) \
+        .EndpointConfig(kind="openai", base_url="http://127.0.0.1:3/v1")
+    server.endpoints["epU"].name = "epU"
+    server.models["unc"] = __import__("rsched.config", fromlist=["ModelConfig"]) \
+        .ModelConfig(endpoint="epU", model="m-u")
+    server.models["unc"].name = "unc"
+    eps = _wire(monkeypatch, server, {
+        "epA": [Completion(text="", stop_reason="refusal"),
+                finish(summary="finished after the referred turn")],
+        "epB": [],
+        "epU": [write_file("state/probe.txt", say="the uncensored model serves the turn")]})
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "ok"
+    assert len(eps["epU"].calls) == 1 and len(eps["epA"].calls) == 2
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    turns = [e for e in events if e["type"] == "assistant_action"]
+    assert turns[0].get("referred") is True
+    assert turns[0]["usage"]["model"] == "epU/m-u"
+    status_json = _json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
+    assert status_json["referrals"] == 1

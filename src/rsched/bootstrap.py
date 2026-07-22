@@ -307,7 +307,6 @@ def sync_seed_utils(libraries_home: Path) -> int:
 # `calls:` from literal ["gu", "<name>" invocations, and appends undeclared credential
 # env vars to `secrets:`. Idempotent (a compliant header changes nothing); runs at every
 # daemon boot until deleted after the production instance converges.
-_GU_CALL_RE = re.compile(r"""\[\s*["']gu["']\s*,\s*["']([a-z0-9][a-z0-9-]*)["']""")
 
 
 def _with_header_line(content: str, line: str, after: tuple[str, ...]) -> str:
@@ -338,7 +337,7 @@ def migrate_util_headers(libraries_home: Path) -> int:
         name = main_py.parent.name
         content = original = main_py.read_text(encoding="utf-8")
         header = utils_lib.parse_header(content)
-        calls_found = sorted({c for c in _GU_CALL_RE.findall(content) if c != name}
+        calls_found = sorted({c for c in utils_lib.GU_CALL_RE.findall(content) if c != name}
                              - set(header["calls"]))
         if calls_found:
             declared = [*header["calls"], *calls_found]

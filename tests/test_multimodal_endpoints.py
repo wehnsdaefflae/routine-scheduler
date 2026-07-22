@@ -180,7 +180,8 @@ def test_claude_cli_parse_stream_json_output():
                     "structured_output": {"say": "hi", "kind": "finish"},
                     "usage": {"input_tokens": 3, "output_tokens": 2}}),
     ])
-    _text, parsed, usage = claude_cli.parse_result(stream, want_json=True, stream_out=True)
+    _text, parsed, usage, _stop = claude_cli.parse_result(stream, want_json=True,
+                                                          stream_out=True)
     assert parsed == {"say": "hi", "kind": "finish"} and usage["in"] == 3 and usage["out"] == 2
     with pytest.raises(EndpointError):   # no result event in the stream → clean error
         claude_cli.parse_result(json.dumps({"type": "system"}), want_json=True, stream_out=True)
@@ -190,12 +191,28 @@ def test_claude_cli_encode_gates_on_probe(tmp_path):
     png = _file(tmp_path)
     ep = claude_cli.ClaudeCliEndpoint(EndpointConfig(kind="claude-cli", name="c"))
     media_msgs = [{"role": "user", "content": "look", "media": _media(png)}]
-    stdin, stream = ep._encode(media_msgs, plain="IGNORED")     # untested probe → stream-json
+    render = lambda ms: "\n\n".join(m["content"] for m in ms)  # noqa: E731 — test shorthand
+    stdin, stream = ep._encode(media_msgs, render)              # untested probe → stream-json
     assert stream is True and json.loads(stdin)["type"] == "user"
-    ep._media_capable = False                                    # known-broken → raise → loop falls back
+    ep._media_capable = False                        # known-broken TAIL image → raise → loop falls back
     with pytest.raises(EndpointError):
-        ep._encode(media_msgs, plain="IGNORED")
-    assert ep._encode([{"role": "user", "content": "hi"}], plain="PLAIN") == ("PLAIN", False)
+        ep._encode(media_msgs, render)
+    assert ep._encode([{"role": "user", "content": "hi"}], render) == ("hi", False)
+
+
+def test_claude_cli_encode_degrades_old_media_when_incapable(tmp_path):
+    """A reseed replaying EARLIER media turns (which the model already saw) must not
+    hard-fail when native image input is broken — old media degrades to a placeholder;
+    only a tail image raises (the engine's vision fallback repairs the tail)."""
+    png = _file(tmp_path)
+    ep = claude_cli.ClaudeCliEndpoint(EndpointConfig(kind="claude-cli", name="c"))
+    ep._media_capable = False
+    msgs = [{"role": "user", "content": "look", "media": _media(png)},
+            {"role": "assistant", "content": "seen"},
+            {"role": "user", "content": "continue"}]
+    stdin, stream = ep._encode(msgs, lambda ms: "\n\n".join(m["content"] for m in ms))
+    assert stream is False
+    assert "shown earlier — not re-sent" in stdin and "continue" in stdin
 
 
 def test_claude_cli_msg_hashes_text_stable_media_distinct(tmp_path):

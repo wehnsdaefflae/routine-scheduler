@@ -2120,3 +2120,94 @@ def test_revise_marker_unlocks_recipe_for_the_leg(make_routine):
     assert not (run_dir / REVISE_MARKER).exists()                     # one-shot: cleared on read
     assert loop.grants.deny(
         {"kind": "write_file", "path": "routine.yaml", "content": "x"}) is not None  # config sealed
+
+
+def test_write_util_selftest_failure_rolls_back_creation(make_routine, scripted, monkeypatch):
+    """A failed selftest must not leave the broken script live in the library: a NEW util's
+    write is undone (removed), so concurrent `gu` callers never see it."""
+    import rsched.utils_lib as ul
+
+    calls = []
+    monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
+    monkeypatch.setattr(ul, "exists", lambda home, name: False)
+    monkeypatch.setattr(ul, "write_util_file",
+                        lambda home, name, content: calls.append(("write", name)))
+    monkeypatch.setattr(ul, "remove_util_file", lambda home, name: calls.append(("remove", name)))
+    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (False, "boom"))
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
+        {"say": "Create it.", "kind": "write_util", "name": "bad", "content": util_src("bad")},
+        finish(status="partial", summary="util did not pass selftest"),
+    ], slug="wuroll")
+    assert status == "partial"
+    assert calls == [("write", "bad"), ("remove", "bad")]
+    wu = next(e for e in events if e["type"] == "observation"
+              and e["payload"]["kind"] == "write_util")
+    assert wu["payload"]["reverted"] is True
+
+
+def test_write_util_selftest_failure_restores_revision(make_routine, scripted, monkeypatch):
+    """Revising an existing util: a failed selftest restores the PREVIOUS working text."""
+    import rsched.utils_lib as ul
+
+    writes = []
+    monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
+    monkeypatch.setattr(ul, "exists", lambda home, name: True)
+    monkeypatch.setattr(ul, "read_util", lambda home, name: "OLD WORKING SOURCE")
+    monkeypatch.setattr(ul, "write_util_file",
+                        lambda home, name, content: writes.append(content))
+    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (False, "boom"))
+    d = make_routine(slug="wurest")
+    scripted([
+        {"say": "Fix it.", "kind": "write_util", "name": "adder", "content": util_src("adder")},
+        finish(status="partial", summary="revision failed selftest"),
+    ])
+    status, _run_dir = run_routine(d, _server(d, util_authoring="revisions-only"), run_ts=TS)
+    assert status == "partial"
+    assert len(writes) == 2 and writes[1] == "OLD WORKING SOURCE"
+
+
+def test_write_util_path_name_rejected_in_schema_cycle(make_routine, scripted):
+    """A write_util whose name is not a kebab-case slug (a path, dots) is corrected inside
+    the schema-retry cycle — it must never reach the library writer (traversal guard)."""
+    d = make_routine(slug="wuslug")
+    scripted([
+        {"say": "Write outside the library.", "kind": "write_util",
+         "name": "../../evil", "content": "# x"},
+        probe(),
+        finish(summary="stayed inside the rules"),
+    ])
+    status, run_dir = run_routine(d, _server(d, util_authoring="true"), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    errs = [e for e in events if e["type"] == "error" and e["payload"]["where"] == "schema"]
+    assert errs and "kebab-case" in errs[0]["payload"]["message"]
+    obs_kinds = [e["payload"]["kind"] for e in events if e["type"] == "observation"]
+    assert "write_util" not in obs_kinds
+
+
+def test_build_child_carries_tools_allowlist(make_routine, monkeypatch):
+    """A child materialized from a pattern with a `tools:` allowlist gets that allowlist on
+    its EngineLoop — the restriction must not be dropped between materialize and the loop."""
+    from rsched.engine.childrun import build_child
+    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.transcript import Transcript
+    from rsched.workflows import adapt
+
+    d = make_routine(slug="childtools")
+    monkeypatch.setattr(adapt, "materialize", lambda home, slug: (
+        "---\nname: T\nslug: t\nmaterialized_from: {slug: t, commit: '', version: 1}\n"
+        "tools: [read_file, ask_user]\n---\n\nBody.\n", {}))
+    from conftest import ScriptedEndpoint
+    from rsched.config import load_routine
+    cfg, _ = load_routine(d)
+    server = _server(d)
+    registry = ScriptedRegistry(ScriptedEndpoint([]))
+    run_dir = d / "runs" / TS
+    run_dir.mkdir(parents=True)
+    ctx = RunContext(routine=cfg, server=server, registry=registry, run_ts=TS,
+                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
+                     budgets=Budgets.from_config(cfg.budgets))
+    events = []
+    sub = build_child(ctx, {"prompt": "do a thing", "label": "c1"}, mode="parallel",
+                      default_label="c1", emit=lambda t, p: events.append((t, p)))
+    assert sub.loop.allowed_tools == {"read_file", "ask_user", "finish"}

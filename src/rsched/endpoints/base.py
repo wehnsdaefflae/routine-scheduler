@@ -83,6 +83,11 @@ class Completion:
     parsed: dict | None = None    # object from the endpoint's native schema mode, if any
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
     provider: str = ""            # serving provider behind an aggregator (OpenRouter), if reported
+    # Why generation stopped, VERBATIM from the provider (anthropic stop_reason, openai
+    # finish_reason, the CLI envelope's subtype) — "" when unreported. The engine keys off
+    # it to tell a classifier refusal (an EMPTY completion with stop_reason "refusal")
+    # from a provider hiccup: the first is referred/failed over, not blind-retried.
+    stop_reason: str = ""
 
 
 class ChatEndpoint(Protocol):

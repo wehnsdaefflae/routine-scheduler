@@ -327,3 +327,85 @@ def test_was_deleted_reads_git_history(tmp_path):
     _write_header_util(tmp_path, "doomed")
     utils_lib.git_commit(tmp_path, "recreate doomed")
     assert utils_lib.was_deleted(tmp_path, "doomed") is True
+
+
+def test_write_and_remove_reject_non_slug_names(tmp_path):
+    """Backstop under validate_action's slug gate: a traversal-shaped name must never
+    resolve to a path outside utils/."""
+    home = tmp_path / "utils-home"
+    utils_lib.ensure_library(home)
+    with pytest.raises(ValueError, match="invalid util name"):
+        utils_lib.write_util_file(home, "../../evil", "# x")
+    with pytest.raises(ValueError, match="invalid util name"):
+        utils_lib.remove_util_file(home, "../adder")
+
+
+def test_dispatcher_list_skips_non_util_entries(tmp_path):
+    """`gu list` shows only real utils — __pycache__, removal residue, and stray files
+    must not appear."""
+    import subprocess as sp
+    import sys
+
+    home = tmp_path / "utils-home"
+    utils_lib.ensure_library(home)
+    utils_lib.write_util_file(home, "adder", ADDER)
+    (home / "utils" / "__pycache__").mkdir()
+    (home / "utils" / ".ghost.removing.123").mkdir()
+    (home / "utils" / "stray.txt").write_text("junk", encoding="utf-8")
+    r = sp.run([sys.executable, str(home / "gu"), "list"],
+               capture_output=True, text=True, timeout=30, check=False)
+    assert r.returncode == 0
+    assert "adder" in r.stdout
+    assert "__pycache__" not in r.stdout and "removing" not in r.stdout
+    assert "stray" not in r.stdout
+
+
+def test_run_util_timeout_kills_grandchildren(tmp_path):
+    """The timeout must kill the whole process GROUP: `uv run` re-execs the script as a
+    grandchild that a plain kill leaves alive — holding the pipes open and blocking the
+    engine turn forever. With killpg the call returns promptly and the tree is dead."""
+    import os as _os
+    import time as _time
+
+    home = tmp_path / "utils-home"
+    utils_lib.ensure_library(home)
+    pidfile = tmp_path / "grandchild.pid"
+    sleeper = f'''# /// script
+# dependencies = []
+# ///
+"""sleeper — sleeps forever. usage: gu sleeper"""
+import pathlib, sys, time
+if "--selftest" in sys.argv:
+    print("selftest: ok"); sys.exit(0)
+pathlib.Path({str(pidfile)!r}).write_text(str(__import__("os").getpid()))
+time.sleep(120)
+'''
+    utils_lib.write_util_file(home, "sleeper", sleeper)
+    start = _time.monotonic()
+    code, _out, err = utils_lib.run_util(home, "sleeper", [], timeout=3, policy=OFF)
+    elapsed = _time.monotonic() - start
+    assert code == -1 and "timed out" in err
+    assert elapsed < 30, f"run_util blocked {elapsed:.0f}s past its timeout"
+    # the grandchild (the uv-run python script) must be dead, not just the direct child
+    if pidfile.exists():
+        pid = int(pidfile.read_text())
+        for _ in range(50):   # killpg is async — give the kernel a moment
+            try:
+                _os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            _time.sleep(0.1)
+        else:
+            raise AssertionError(f"grandchild {pid} survived the timeout kill")
+
+
+def test_header_problems_flags_undeclared_gu_calls():
+    """Code exec'ing a sibling via ["gu", "<name>"] without declaring it on `calls:` is
+    rejected — transitive secret/net resolution only walks DECLARED calls."""
+    base = ('"""caller — calls a sibling.\n\nusage: gu caller\ntags: test\n'
+            'secrets: (none)\n{calls_line}net: none\n"""\n'
+            'import subprocess\n'
+            'subprocess.run(["gu", "adder", "1", "2"])\n')
+    problems = utils_lib.header_problems(base.format(calls_line=""))
+    assert any("adder" in p and "calls:" in p for p in problems)
+    assert not utils_lib.header_problems(base.format(calls_line="calls: adder\n"))

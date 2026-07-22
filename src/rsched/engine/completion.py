@@ -67,7 +67,9 @@ def next_action(loop) -> tuple[dict | None, dict]:
         loop._shed_schema_turns -= 1
         schema = None
     prev_raw: str | None = None
-    referral_tried = False   # refer a free-text refusal to the uncensored model once (D8 C)
+    # Shared across attempts: one uncensored referral per turn (free-text OR empty-refusal
+    # path), and the consecutive-empty streak from the CURRENT model.
+    refstate = {"referral_tried": False, "empty": 0}
     base_len = len(loop.messages)   # schema-retry debris beyond this is dropped on success
     attempt = 0
     while attempt < MAX_SCHEMA_ATTEMPTS:
@@ -106,16 +108,24 @@ def next_action(loop) -> tuple[dict | None, dict]:
             continue
         fold_usage(usage_sum, completion)
         if completion.parsed is None and not completion.text.strip():
-            # Empty reply = provider hiccup, not a model mistake: retry cleanly (no
-            # poisoned context); the last attempt drops the provider-side format
-            # constraint entirely — the contract in the system prompt still demands JSON.
-            ctx.transcript.event("error", {
-                "where": "endpoint", "attempt": attempt,
-                "message": "empty completion (no content/reasoning)"})
+            referred_action, switched = _handle_empty(loop, completion, chain, ref,
+                                                      usage_sum, base_len, attempt, refstate)
+            if referred_action is not None:
+                loop._referred_turn = True
+                return referred_action, usage_sum
+            if switched is not None:
+                endpoint, ref = switched
+                ctx.main_model = f"{ref.endpoint}/{ref.model}"
+                attempt -= 1   # the fallback model gets this attempt
+                continue
             if attempt == MAX_SCHEMA_ATTEMPTS - 1:
                 schema = None
-            time.sleep(1.5 * attempt)
+            # Same test knob as endpoints.base.with_retries: the retry LOGIC always runs,
+            # the backoff clock is zeroed in the suite (RSCHED_RETRY_BASE_DELAY).
+            import os
+            time.sleep(1.5 * attempt * float(os.environ.get("RSCHED_RETRY_BASE_DELAY", "1.0")))
             continue
+        refstate["empty"] = 0
         kind_hint: str | None = None
         try:
             candidate, problems = action_candidate(loop, completion)
@@ -144,9 +154,9 @@ def next_action(loop) -> tuple[dict | None, dict]:
             # DECLINED the turn. If the routine configured an `uncensored` model, re-issue
             # this turn to it once; a schema-valid action from it continues the loop
             # untouched. Inert when the role is unset (for_uncensored → None).
-            if (not referral_tried and completion.parsed is None
+            if (not refstate["referral_tried"] and completion.parsed is None
                     and executor._looks_like_refusal(completion.text)):
-                referral_tried = True
+                refstate["referral_tried"] = True
                 referred_action = refer_turn_to_uncensored(loop, usage_sum, base_len)
                 if referred_action is not None:
                     loop._referred_turn = True
@@ -163,13 +173,52 @@ def next_action(loop) -> tuple[dict | None, dict]:
     return None, usage_sum
 
 
+def _handle_empty(loop, completion, chain, ref, usage_sum: dict, base_len: int,
+                  attempt: int, refstate: dict) -> tuple[dict | None, tuple | None]:
+    """One empty completion (no content, no parsed object). A provider hiccup gets a clean
+    same-model retry (no poisoned context) — but an empty reply is also how a CLASSIFIER
+    REFUSAL surfaces (stop_reason "refusal"), and how a hard-broken model keeps failing,
+    so it must not be blind-retried into a dead run: a refusal is referred to the
+    `uncensored` model like a free-text refusal, and the SECOND empty in one turn engages
+    the failover chain exactly like a hard EndpointError (the refusal gap: same-model
+    retries can never fix either). Returns (referred_action, switched_chain_entry) — at
+    most one is set; both None = plain retry.
+    """
+    stop = completion.stop_reason
+    loop.ctx.transcript.event("error", {
+        "where": "endpoint", "attempt": attempt,
+        "message": "empty completion (no content/reasoning; "
+                   f"stop_reason={stop or 'unreported'})"})
+    if stop == "refusal" and not refstate["referral_tried"]:
+        refstate["referral_tried"] = True
+        referred = refer_turn_to_uncensored(loop, usage_sum, base_len)
+        if referred is not None:
+            return referred, None
+    refstate["empty"] += 1
+    if refstate["empty"] >= 2:
+        failure = EndpointError(
+            f"empty completion x{refstate['empty']} (stop_reason={stop or 'unreported'})")
+        switched = _switch_to_fallback(loop, chain, ref, failure)
+        if switched is not None:
+            refstate["empty"] = 0
+            return None, switched
+        # chain exhausted (or none configured): the caller keeps the pre-failover
+        # behavior — remaining attempts run schema-free
+    return None, None
+
+
 def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
     """The picked model failed hard mid-turn (its adapter's transport retries are already
-    exhausted, and InstrumentedEndpoint has marked it cooling). Advance to the next chain
-    member not in cooldown and log the switch VISIBLY: a transcript `error` event whose
+    exhausted, or it kept returning empty completions). Advance to the next chain member
+    not in cooldown and log the switch VISIBLY: a transcript `error` event whose
     `failover` payload names both models — so the run records which model serves from here
     (status.json follows via ctx.main_model). None = chain exhausted.
+
+    The abandoned model is marked cooling HERE — the engine's own judgment that it failed
+    a real turn. (InstrumentedEndpoint only cools retryable-class transport failures; a
+    deterministic error or an empty-reply pattern is visible only at this seam.)
     """
+    failover.mark_failed(failed_ref.endpoint, failed_ref.model)
     nxt = failover.next_after(chain, failed_ref)
     if nxt is None:
         return None

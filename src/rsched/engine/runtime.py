@@ -53,12 +53,12 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
                  "stages": sorted(result["stages"])}
     if meta.get("tools") is not None:
         main_meta["tools"] = meta["tools"]
+    from ..paths import atomic_write
+
     (routine_dir / "stages").mkdir(exist_ok=True)
     for stage_name, stage_body in result["stages"].items():
-        (routine_dir / "stages" / f"{stage_name}.md").write_text(stage_body.rstrip() + "\n",
-                                                                 encoding="utf-8")
-    (routine_dir / "main.md").write_text(
-        dump_markdown(main_meta, result["main"]), encoding="utf-8")
+        atomic_write(routine_dir / "stages" / f"{stage_name}.md", stage_body.rstrip() + "\n")
+    atomic_write(routine_dir / "main.md", dump_markdown(main_meta, result["main"]))
 
 
 def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:

@@ -36,8 +36,10 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import uuid
 from collections.abc import Mapping
+from pathlib import Path
 
 from ..config import EndpointConfig
 from ..paths import expand
@@ -50,6 +52,7 @@ from .base import (
     read_media_b64,
     split_system,
     supports_media_type,
+    with_retries,
 )
 
 
@@ -80,10 +83,31 @@ def stream_json_stdin(messages: list[Message]) -> str:
                                 ensure_ascii=False))
     return "\n".join(lines)
 
-# Vars that would re-route the child CLI to metered API-key auth (or a proxy).
+# Vars that would re-route the child CLI to metered API-key auth (or a proxy), plus the
+# SSH agent socket — the same never-inherit rule utils_lib.STRIP_VARS applies to util
+# subprocesses (a forwarded agent must not reach ANY child we spawn).
 STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
-              "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS")
+              "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS",
+              "SSH_AUTH_SOCK", "SSH_AGENT_PID")
 TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 — the env var's NAME, not a credential
+
+
+# Per-run CLI session dirs live under one cache root; each run mints one and nothing else
+# removes them. Swept opportunistically when a new session opens (best-effort — the dir is
+# shared, concurrent engines race freely and losers just skip).
+SESSION_CWD_MAX_AGE_S = 7 * 86400
+
+
+def _gc_session_cwds(root: Path) -> None:
+    if not root.is_dir():
+        return
+    cutoff = time.time() - SESSION_CWD_MAX_AGE_S
+    for d in root.iterdir():
+        try:
+            if d.is_dir() and d.stat().st_mtime < cutoff:
+                shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            continue
 
 
 def find_cli() -> str | None:
@@ -210,14 +234,17 @@ def _result_event(stdout_text: str) -> dict:
 
 
 def parse_result(stdout_text: str, want_json: bool,
-                 stream_out: bool = False) -> tuple[str, dict | None, dict]:
+                 stream_out: bool = False) -> tuple[str, dict | None, dict, str]:
     """CLI --output-format json envelope (or the final `result` event of a stream-json
-    output stream, used for image turns) → (text, parsed, usage).
+    output stream, used for image turns) → (text, parsed, usage, stop_reason).
+    A garbled/truncated stdout is a transport fault — retryable, like an unparseable
+    HTTP body (json_or_raise), so with_retries catches it.
     """
     try:
         obj = _result_event(stdout_text) if stream_out else json.loads(stdout_text)
     except json.JSONDecodeError as exc:
-        raise EndpointError(f"claude-cli: unparseable CLI output: {stdout_text[:300]}") from exc
+        raise EndpointError(f"claude-cli: unparseable CLI output: {stdout_text[:300]}",
+                            retryable=True) from exc
     if obj.get("is_error"):
         msg = str(obj.get("result") or "claude CLI reported an error")
         raise EndpointError(f"claude-cli: {msg}", auth="401" in msg)
@@ -225,6 +252,11 @@ def parse_result(stdout_text: str, want_json: bool,
     # shows "in=4" while the real prompt was served from (and written into) the cache.
     usage = anthropic_usage(obj.get("usage") or {})
     text = obj.get("result", "") or ""
+    # The envelope reports why generation stopped as `stop_reason` (newer CLIs) or only the
+    # result `subtype` (e.g. success / error_during_execution) — surface what it has.
+    stop = str(obj.get("stop_reason") or "")
+    if not stop and str(obj.get("subtype") or "") not in ("", "success"):
+        stop = str(obj["subtype"])
     parsed = None
     if want_json:
         structured = obj.get("structured_output")
@@ -236,7 +268,7 @@ def parse_result(stdout_text: str, want_json: bool,
                 parsed = cand if isinstance(cand, dict) else None
             except json.JSONDecodeError:
                 parsed = None
-    return text, parsed, usage
+    return text, parsed, usage, stop
 
 
 def _msg_hashes(messages: list[Message]) -> list[str]:
@@ -314,38 +346,47 @@ class ClaudeCliEndpoint:
                     return self._run_session(cli, model, system, schema_str, effort, env,
                                              timeout, session, st["sid"], st["cwd"],
                                              msgs=delta,
-                                             plain="\n\n".join(m["content"] for m in delta),
+                                             render=lambda ms: "\n\n".join(m["content"]
+                                                                           for m in ms),
                                              hashes=hashes, resume=True,
                                              want_json=schema is not None)
                 except EndpointError:
                     # a broken/expired CLI session must never break the run — reseed fresh
                     with self._lock:
                         self._sessions.pop(session, None)
-            sid = str(uuid.uuid4())
             cwd = expand("~/.cache/rsched/claude-cli") / hashlib.sha1(
                 session.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
+            _gc_session_cwds(cwd.parent)   # once per run: prune week-old sibling dirs
             cwd.mkdir(parents=True, exist_ok=True)
             return self._run_session(cli, model, system, schema_str, effort, env, timeout,
-                                     session, sid, str(cwd), msgs=rest,
-                                     plain=render_prompt(rest), hashes=hashes, resume=False,
+                                     session, "", str(cwd), msgs=rest,
+                                     render=render_prompt, hashes=hashes, resume=False,
                                      want_json=schema is not None)
 
         prompt = render_prompt(rest)
         cmd = build_cmd(cli, model, system=system or None, schema_str=schema_str, effort=effort)
-        try:
-            with tempfile.TemporaryDirectory(prefix="rsched-claude-") as tmp_cwd:
-                r = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
-                                   timeout=timeout, env=env, cwd=tmp_cwd, check=False)
-        except subprocess.TimeoutExpired as exc:
-            raise EndpointError(f"claude-cli: call timed out after {timeout}s",
-                                retryable=True) from exc
-        if r.returncode != 0 and not r.stdout.strip():
-            raise EndpointError(
-                f"claude-cli: exited {r.returncode}: {r.stderr.strip()[:300] or '(no stderr)'}",
-                retryable=True,
-            )
-        text, parsed, usage = parse_result(r.stdout, want_json=schema is not None)
-        return Completion(text=text, parsed=parsed, usage=usage)
+
+        def attempt() -> Completion:
+            try:
+                with tempfile.TemporaryDirectory(prefix="rsched-claude-") as tmp_cwd:
+                    r = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+                                       timeout=timeout, env=env, cwd=tmp_cwd, check=False)
+            except subprocess.TimeoutExpired as exc:
+                raise EndpointError(f"claude-cli: call timed out after {timeout}s",
+                                    retryable=True) from exc
+            if r.returncode != 0 and not r.stdout.strip():
+                raise EndpointError(
+                    f"claude-cli: exited {r.returncode}: "
+                    f"{r.stderr.strip()[:300] or '(no stderr)'}",
+                    retryable=True,
+                )
+            text, parsed, usage, stop = parse_result(r.stdout, want_json=schema is not None)
+            return Completion(text=text, parsed=parsed, usage=usage, stop_reason=stop)
+
+        # The CLI spawns a fresh process per call, so a transient failure (OOM kill, a
+        # dropped upstream connection) surfaces as one bad invocation — back off and retry
+        # like the HTTP adapters instead of failing the turn on a single blip.
+        return with_retries(attempt)
 
     @staticmethod
     def _session_delta(st: dict, messages: list[Message],
@@ -367,47 +408,71 @@ class ClaudeCliEndpoint:
             return None
         return new
 
-    def _encode(self, msgs: list[Message], plain: str) -> tuple[str, bool]:
-        """(stdin, use_stream_json). Media present → an NDJSON stream-json body; else the
-        plain text prompt. If native image input is already known-broken this run, raise so
-        the engine's runtime net falls back to the vision util for the current image.
+    def _encode(self, msgs: list[Message], render) -> tuple[str, bool]:
+        """(stdin, use_stream_json). Media present → an NDJSON stream-json body; else
+        `render(msgs)` as the plain text prompt. When native image input is known-broken:
+        a TAIL image raises (the engine's runtime net converts it via the vision util),
+        while OLDER in-context media — a reseed replaying turns whose images the model
+        already saw — degrades to a placeholder note so the reseed still succeeds.
         """
         if _has_media(msgs):
-            if self._media_capable is False:
+            if self._media_capable is not False:
+                return stream_json_stdin(msgs), True
+            if msgs[-1].get("media"):
                 raise EndpointError("claude-cli: native image input unavailable this run — "
                                     "routing to the vision util")
-            return stream_json_stdin(msgs), True
-        return plain, False
+            msgs = [{**{k: v for k, v in m.items() if k != "media"},
+                     "content": m["content"] + "\n[" + ", ".join(
+                         Path(i["path"]).name for i in m["media"])
+                     + ": shown earlier — not re-sent]"}
+                    if m.get("media") else m for m in msgs]
+        return render(msgs), False
 
     # One arg per CLI invocation fact — a params object would rename the width, not reduce it.
     def _run_session(self, cli, model, system, schema_str, effort, env, timeout,  # noqa: PLR0913
-                     session: str, sid: str, cwd: str, *, msgs: list[Message], plain: str,
+                     session: str, sid: str, cwd: str, *, msgs: list[Message], render,
                      hashes: list[str], resume: bool, want_json: bool) -> Completion:
-        stdin, stream = self._encode(msgs, plain)
-        cmd = build_cmd(cli, model, system=system or None, schema_str=schema_str,
-                        effort=effort, session_id=None if resume else sid,
-                        resume=sid if resume else None, input_stream_json=stream)
+        stdin, stream = self._encode(msgs, render)
+        sid_used = sid
+
+        def attempt() -> Completion:
+            nonlocal sid_used
+            # A fresh session id per OPEN attempt: if a garbled first attempt already
+            # created the CLI session, retrying the same --session-id would refuse.
+            sid_used = sid if resume else str(uuid.uuid4())
+            cmd = build_cmd(cli, model, system=system or None, schema_str=schema_str,
+                            effort=effort, session_id=None if resume else sid_used,
+                            resume=sid_used if resume else None, input_stream_json=stream)
+            try:
+                r = subprocess.run(cmd, input=stdin, capture_output=True, text=True,
+                                   timeout=timeout, env=env, cwd=cwd, check=False)
+            except subprocess.TimeoutExpired as exc:
+                raise EndpointError(f"claude-cli: call timed out after {timeout}s",
+                                    retryable=True) from exc
+            if r.returncode != 0 and not r.stdout.strip():
+                raise EndpointError(
+                    f"claude-cli: exited {r.returncode}: "
+                    f"{r.stderr.strip()[:300] or '(no stderr)'}",
+                    retryable=True,
+                )
+            text, parsed, usage, stop = parse_result(r.stdout, want_json=want_json,
+                                                     stream_out=stream)
+            return Completion(text=text, parsed=parsed, usage=usage, stop_reason=stop)
+
         try:
-            r = subprocess.run(cmd, input=stdin, capture_output=True, text=True,
-                               timeout=timeout, env=env, cwd=cwd, check=False)
-        except subprocess.TimeoutExpired as exc:
-            raise EndpointError(f"claude-cli: call timed out after {timeout}s",
-                                retryable=True) from exc
-        if r.returncode != 0 and not r.stdout.strip():
-            if stream:                    # a stream-json (image) send failed — stop trying it
-                self._media_capable = False
-            raise EndpointError(
-                f"claude-cli: exited {r.returncode}: {r.stderr.strip()[:300] or '(no stderr)'}",
-                retryable=True,
-            )
-        try:
-            text, parsed, usage = parse_result(r.stdout, want_json=want_json, stream_out=stream)
+            # A RESUME gets one attempt only — its failure path (reseed a fresh session)
+            # is itself the retry, and re-running a broken resume 3x would just delay it.
+            # Fresh seeds and one-shot session opens get the standard backoff.
+            comp = with_retries(attempt, tries=1 if resume else 3)
         except EndpointError:
-            if stream:
+            if stream and not resume:
+                # Retries exhausted on a stream-json send — evidence the CLI can't take
+                # image input (not a one-call blip): route further images to the vision
+                # util for the rest of this process.
                 self._media_capable = False
             raise
         if stream:
             self._media_capable = True    # native image input works on this CLI
         with self._lock:
-            self._sessions[session] = {"sid": sid, "hashes": list(hashes), "cwd": cwd}
-        return Completion(text=text, parsed=parsed, usage=usage)
+            self._sessions[session] = {"sid": sid_used, "hashes": list(hashes), "cwd": cwd}
+        return comp

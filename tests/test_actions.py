@@ -184,3 +184,14 @@ def test_normalize_drops_nonempty_strays_when_complete():
     assert "status" in out2                     # kept: the error must name it
     problems = validate_action(out2)
     assert any("content" in p for p in problems) and any("status" in p for p in problems)
+
+
+def test_write_util_name_must_be_slug():
+    """The name becomes a directory under the library — path shapes are rejected in the
+    schema cycle (the engine-side traversal guard)."""
+    for bad in ("../../evil", "a/b", "UPPER", "dots.py"):
+        problems = validate_action({"say": "s", "kind": "write_util",
+                                    "name": bad, "content": "# x"})
+        assert any("kebab-case" in p for p in problems), bad
+    assert validate_action({"say": "s", "kind": "write_util",
+                            "name": "good-name", "content": "# x"}) == []

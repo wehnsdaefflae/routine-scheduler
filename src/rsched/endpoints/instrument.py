@@ -166,12 +166,8 @@ class InstrumentedEndpoint:
         if sink is None:                       # fast path: nothing observing
             try:
                 return self._inner.complete(messages, **inner_kwargs)
-            except EndpointError:
-                # An EndpointError escaping the adapter means HARD failure (its own
-                # transport retries are exhausted, or it was never retryable): start the
-                # failover cooldown. This wrapper is the one seam every LLM call passes
-                # through, so a failure anywhere steers every later resolution.
-                failover.mark_failed(self._inner.name, model)
+            except EndpointError as exc:
+                self._mark_health(exc, model)
                 raise
         common = {"id": uuid.uuid4().hex[:12], "endpoint": self._inner.name, "model": model,
                   "purpose": purpose or "LLM call", "kind": kind,
@@ -180,13 +176,25 @@ class InstrumentedEndpoint:
         try:
             comp = self._inner.complete(messages, **inner_kwargs)
         except BaseException as exc:
-            if isinstance(exc, EndpointError):   # hard failure — see the fast path above
-                failover.mark_failed(self._inner.name, model)
+            if isinstance(exc, EndpointError):
+                self._mark_health(exc, model)
             _emit(sink, make_record("failed", **common, error=str(exc)[:300]))
             raise
         _emit(sink, make_record("finished", **common, usage=comp.usage,
                                 provider=comp.provider or None))
         return comp
+
+    def _mark_health(self, exc: EndpointError, model: str) -> None:
+        """Cooldowns are a PROVIDER-HEALTH signal: start one only when the adapter's own
+        transport retries were exhausted on a retryable-class failure (outage, rate limit,
+        network). A deterministic failure — bad key, malformed request, a Settings probe
+        with a wrong credential — is a CONFIG error: cooling it would poison resolution
+        for 5 minutes after the user fixes the config. (The engine's turn completion still
+        cools a model it abandons MID-TURN, whatever the error class — that judgment lives
+        at the engine seam, engine/completion.py.)
+        """
+        if exc.retryable:
+            failover.mark_failed(self._inner.name, model)
 
 
 def _emit(sink, rec: dict) -> None:

@@ -84,7 +84,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     except RunAborted:
         # the run dies but the decision survives — as a deferred question for the next run
         inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                            qtype=qtype, default=default)
+                            qtype=qtype, default=default, config_patch=cpatch)
         ctx.asks_deferred += 1
         raise
     finally:
@@ -94,7 +94,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         # The user parked the decision from the Decisions page — continue exactly like a
         # timeout: on the stated default, the record staying open as deferred.
         inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                            qtype=qtype, default=default)
+                            qtype=qtype, default=default, config_patch=cpatch)
         ctx.asks_deferred += 1
         if mirror:
             mirror.notify_deferred(default)
@@ -129,7 +129,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # timeout: continue WITHOUT the decision — on the stated default when there is one.
     # The record stays open (now deferred) so a late answer still reaches a future run.
     inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                        qtype=qtype, default=default)
+                        qtype=qtype, default=default, config_patch=cpatch)
     ctx.asks_deferred += 1
     if mirror:
         mirror.notify_timeout(default)
@@ -195,11 +195,19 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:
                     "qid": ask.get("qid")}
         if not _is_approval(ask["answer"]):
             return {"kind": "write_util", "name": name, "declined": True}
+    # Selftest gates the LIBRARY, not just the observation: on failure the write is rolled
+    # back — a new util's dir removed, a revision restored to the previous working text —
+    # so a broken script is never left live for concurrent `gu` callers.
+    previous = None if creating else utils_lib.read_util(home, name)
     utils_lib.write_util_file(home, name, content)
     ok, output = utils_lib.selftest(home, name, policy=sandbox.base_policy(ctx.server))
     if not ok:
+        if previous is None:
+            utils_lib.remove_util_file(home, name)
+        else:
+            utils_lib.write_util_file(home, name, previous)
         return {"kind": "write_util", "name": name, "created": creating,
-                "selftest_ok": False, "output": output[:2000]}
+                "selftest_ok": False, "reverted": True, "output": output[:2000]}
     utils_lib.git_commit(home, f"{'create' if creating else 'revise'} {name}",
                          paths=[f"utils/{name}"])
     return {"kind": "write_util", "name": name, "created": creating, "selftest_ok": True}

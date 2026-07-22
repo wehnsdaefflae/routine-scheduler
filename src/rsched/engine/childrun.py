@@ -67,20 +67,21 @@ def materialize_to_disk(server, slug: str, sub_dir, prompt: str) -> tuple[str, s
     routine while it runs. Returns (effective slug, note). Permissions stay OFF — a child
     reports through its finish summary; it keeps no LEDGER/audit of its own.
     """
+    from ..paths import atomic_write
     try:
         from ..workflows.adapt import materialize
 
         # a child is not decomposed (no per-spawn LLM) — the whole workflow is its main.md
         main_content, _ = materialize(server.library_home, slug)
-        (sub_dir / "main.md").write_text(main_content, encoding="utf-8")
-        (sub_dir / "instruction.md").write_text(prompt, encoding="utf-8")
+        atomic_write(sub_dir / "main.md", main_content)
+        atomic_write(sub_dir / "instruction.md", prompt)
         return slug, ""
     except Exception as exc:  # missing library/recipe/params → degrade, don't fail
-        (sub_dir / "main.md").write_text(
-            "---\nname: Fallback\nslug: fallback\n"
-            "materialized_from: {slug: fallback, commit: '', version: 0}\n---\n\n"
-            + FALLBACK_SUB_BODY + "\n", encoding="utf-8")
-        (sub_dir / "instruction.md").write_text(prompt, encoding="utf-8")
+        atomic_write(sub_dir / "main.md",
+                     "---\nname: Fallback\nslug: fallback\n"
+                     "materialized_from: {slug: fallback, commit: '', version: 0}\n---\n\n"
+                     + FALLBACK_SUB_BODY + "\n")
+        atomic_write(sub_dir / "instruction.md", prompt)
         return "(builtin-fallback)", f"recipe {slug!r} unavailable ({exc}) — builtin fallback"
 
 
@@ -95,8 +96,9 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
     label = action.get("label") or default_label
     recipe_slug = action.get("workflow") or "general-task"
 
-    parent_ctx.sub_counter[0] += 1
-    n = parent_ctx.sub_counter[0]
+    with parent_ctx.sub_lock:   # tree-wide counter; parallel spawns race without it
+        parent_ctx.sub_counter[0] += 1
+        n = parent_ctx.sub_counter[0]
     sub_dir = parent_ctx.run_dir / "sub" / str(n)
     sub_dir.mkdir(parents=True, exist_ok=True)
     recipe_slug, note = materialize_to_disk(parent_ctx.server, recipe_slug, sub_dir,
@@ -110,7 +112,7 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
         server=parent_ctx.server, registry=parent_ctx.registry, run_ts=parent_ctx.run_ts,
         run_dir=sub_dir, transcript=transcript, budgets=child_budgets,
         depth=parent_ctx.depth + 1, parent_run_id=parent_ctx.run_id,
-        sub_counter=parent_ctx.sub_counter,
+        sub_counter=parent_ctx.sub_counter, sub_lock=parent_ctx.sub_lock,
     )
     transcript.header(run_id=f"{parent_ctx.run_id}#sub{n}", routine=parent_ctx.routine.slug,
                       workflow={"slug": recipe_slug, "commit": "", "version": 0},
@@ -119,9 +121,13 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
     from .loop import EngineLoop  # local import: loop imports this module
     from .runtime import load_workflow
 
-    body, _prov, _tools = load_workflow(sub_dir, child_ctx.routine)
+    body, _prov, tools = load_workflow(sub_dir, child_ctx.routine)
     abort_event = threading.Event()
-    child_loop = EngineLoop(child_ctx, body, action["prompt"], abort_event=abort_event)
+    # The child's workflow `tools:` allowlist binds the child exactly as a top-level run's
+    # binds it — materialize carries the pattern's frontmatter through, load_workflow reads
+    # it, and dropping it here would let any child use every kind.
+    child_loop = EngineLoop(child_ctx, body, action["prompt"], abort_event=abort_event,
+                            allowed_tools=tools)
     sub = Subrun(n=n, label=label, workflow=recipe_slug, mode=mode, note=note,
                  ctx=child_ctx, loop=child_loop, abort_event=abort_event,
                  started_mono=time.monotonic())

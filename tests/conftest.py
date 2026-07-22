@@ -121,6 +121,8 @@ class ScriptedEndpoint:
             item = item()
         if isinstance(item, Exception):
             raise item
+        if isinstance(item, Completion):   # a fully-scripted reply (empty/stop_reason cases)
+            return item
         usage = {"in": 10, "out": 5}
         if isinstance(item, dict):
             return Completion(text=json.dumps(item), parsed=item if schema else None, usage=usage)

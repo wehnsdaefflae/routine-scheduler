@@ -6,6 +6,8 @@ Wall-clock accrual excludes time spent paused or waiting for a blocking answer.
 
 from __future__ import annotations
 
+import os
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -79,6 +81,9 @@ class RunContext:
     depth: int = 0
     parent_run_id: str | None = None
     sub_counter: list[int] = field(default_factory=lambda: [0])  # shared across the whole tree
+    # Guards sub_counter: parallel spawn threads allocate child numbers concurrently.
+    # Shared tree-wide like the counter itself (childrun passes both to every child ctx).
+    sub_lock: threading.Lock = field(default_factory=threading.Lock)
     # The run's grant policy, set by EngineLoop from the routine's capabilities mapping
     # (+ the library's requires: index for denial wording).
     # None (direct construction) = unrestricted.
@@ -253,7 +258,7 @@ class RunContext:
         wall_left_min = ledger.remaining("wall_clock", meter)
         atomic_write_json(self.run_dir / "status.json", {
             "run_id": self.run_id,
-            "pid": __import__("os").getpid(),
+            "pid": os.getpid(),
             "state": self.state,
             "outcome": self.outcome,
             "started": self.run_ts,
