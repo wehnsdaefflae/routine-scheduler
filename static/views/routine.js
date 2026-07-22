@@ -13,6 +13,7 @@ import { scheduleOnceCard } from "/static/components/schedule-once.js";
 import { permissionsPanel } from "/static/components/permissions.js";
 import { traitPicker } from "/static/components/traitpicker.js";
 import { recipeNav } from "/static/components/recipenav.js";
+import { rootsEditor } from "/static/components/fsroots.js";
 import { chip, el, emptyState, fmtDur, fmtNum, fmtTokens, skeleton, toast, when } from "/static/util.js";
 
 export async function render(view, slug, query = {}) {
@@ -250,24 +251,23 @@ export async function render(view, slug, query = {}) {
         } }, "save retention"))));
 
   // -- filesystem roots: extra dirs the run may read / write (resources, not capabilities) --
-  const rootLines = (ta) => ta.value.split("\n").map((s) => s.trim()).filter(Boolean);
-  const readTa = el("textarea", { class: "code", rows: "3", style: "width:100%",
-    placeholder: "one path per line (e.g. ~/projects/foo)" }, (d.fs_read_roots || []).join("\n"));
-  const writeTa = el("textarea", { class: "code", rows: "3", style: "width:100%",
-    placeholder: "one path per line" }, (d.fs_write_roots || []).join("\n"));
+  // Real server paths, so each is chosen with the server-side directory browser (fsroots.js →
+  // dirpicker.js) rather than typed blind; value() yields the path list the PATCH expects.
+  const readRoots = rootsEditor(d.fs_read_roots, { pickTitle: "add a read root" });
+  const writeRoots = rootsEditor(d.fs_write_roots, { pickTitle: "add a write root" });
   view.append(el("h2", {}, "Filesystem roots"),
     el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:8px" },
-        "extra directories this routine may access beyond its own dir — one path per line. ",
+      el("div", { class: "muted small", style: "margin-bottom:10px" },
+        "extra directories this routine may access beyond its own dir — browse to each. ",
         el("strong", {}, "Write roots are powerful"), ": a write root that covers this routine's own ",
         "directory unlocks editing its OWN recipe (main.md / stages / traits / tuning.yaml) — the same ",
         "lever the routine-improver holds. routine.yaml stays sealed regardless. Takes effect next run."),
-      el("div", { class: "field" }, el("span", {}, "read roots"), readTa),
-      el("div", { class: "field mt" }, el("span", {}, "write roots"), writeTa),
+      el("div", { class: "field" }, el("span", {}, "read roots"), readRoots.node),
+      el("div", { class: "field mt" }, el("span", {}, "write roots"), writeRoots.node),
       el("div", { class: "row mt" }, el("button", { class: "btn primary", onclick: async () => {
         try {
           await api(`/api/routines/${slug}`, { method: "PATCH",
-            body: { fs_read_roots: rootLines(readTa), fs_write_roots: rootLines(writeTa) } });
+            body: { fs_read_roots: readRoots.value(), fs_write_roots: writeRoots.value() } });
           toast("filesystem roots saved");
         } catch (err) { toast(err.message, 4000, { error: true }); }
       } }, "save roots"))));

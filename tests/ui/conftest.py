@@ -103,12 +103,12 @@ class UiHarness:
 
     def seed_run(self, slug: str, ts: str, state: str, *, summary: str = "",
                  home: Path | None = None, question: dict | None = None,
-                 usage: dict | None = None, phase: str = "") -> Path:
+                 usage: dict | None = None, phase: str = "", elapsed_s: int = 60) -> Path:
         run_dir = (home or self.routines) / slug / "runs" / ts
         run_dir.mkdir(parents=True, exist_ok=True)
         atomic_write_json(run_dir / "status.json", {
             "run_id": f"{slug}:{ts}", "state": state, "pid": 4242, "turn": 2,
-            "usage": usage or {"in": 10, "out": 4}, "elapsed_s": 60, "phase": phase,
+            "usage": usage or {"in": 10, "out": 4}, "elapsed_s": elapsed_s, "phase": phase,
             "question": question, "started": ts, "updated": "2026-07-15T12:00:00+00:00"})
         if summary:
             (run_dir / "result.md").write_text(summary, encoding="utf-8")

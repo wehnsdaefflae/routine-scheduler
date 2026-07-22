@@ -19,6 +19,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.85.0] — 2026-07-22
+
+### Added — Runtime duration bars on the dashboard "this week" strip
+Each fire on the week strip is now a **duration bar** instead of a point: it starts at the fire
+time and its width is the routine's **average runtime drawn true to scale** against a day's width
+(a full day column = 24h), so a mark's length is an honest read of how long a run takes
+(`components/weekgrid.js`).
+
+- The average is computed in the browser from the `recent_runs` window each card already carries
+  (`avgRuntime` over `elapsed_s`); no API change. A **2px minimum width** keeps even a short run
+  visible, and the **exact runtime is in the hover tooltip** (bars for minutes-long runs sit near
+  the floor — that's the honest scale on a week-wide axis).
+- Routine **identity moved to a legend below the strip** (colour swatch + name + schedule), which
+  frees the timeline to use the full width; the routine's average also shows on legend hover.
+
+### Added — Sections side-TOC on the routine page
+The routine detail page now grows the same sticky **"On this page"** rail Settings has, listing its
+`<h2>` sections on wide viewports (`components/toc.js`). The page's recipe file tree is a
+within-section nav and no longer suppresses the page-level TOC.
+
+### Changed — Filesystem roots are picked, not typed
+The routine page's read/write **filesystem roots** are now chosen with a real **server-side
+directory browser** instead of a free-text "one path per line" textarea — browse the daemon's
+filesystem and select an actual directory (`components/dirpicker.js` + `components/fsroots.js`,
+backed by the new bearer-authed `GET /api/fs/list` — `web/api_fs.py`, names + is-dir only, never
+file contents). Each root is a removable row; the save payload is unchanged.
+
 ## [0.84.0] — 2026-07-22
 
 ### Added — Remote machines: routines act on SSH hosts (GPU boxes, build servers)

@@ -6,8 +6,10 @@
 import { el } from "/static/util.js";
 
 export function mountToc(box) {
-  // Views with their own navigation column don't get a second one.
-  if (box.querySelector(".run-rail, .recipe-navcol")) return null;
+  // Views with their own page-level rail don't get a second one. The routine page's
+  // .recipe-navcol is a WITHIN-section file tree, not a page rail, so it doesn't disqualify
+  // the page from a sections TOC (the routine page is long and wants one, like Settings).
+  if (box.querySelector(".run-rail")) return null;
   const heads = [...box.querySelectorAll("h2")].filter((h) => (h.textContent || "").trim());
   if (heads.length < 2) return null;   // nothing worth a TOC
 

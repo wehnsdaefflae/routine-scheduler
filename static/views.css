@@ -62,12 +62,20 @@ td.hb-cell { min-width: 155px; }
 .weekgrid .wg-grid { stroke: var(--line); }
 .weekgrid .wg-today { fill: rgba(255, 180, 84, 0.05); }
 .weekgrid .wg-day { fill: var(--faint); font-size: 10px; letter-spacing: 0.12em; }
-.weekgrid .wg-name { fill: var(--muted); font-size: 11px; }
 .weekgrid .wg-rowbg { fill: transparent; }
 .weekgrid .wg-row:hover .wg-rowbg { fill: rgba(133, 152, 169, 0.07); }
-.weekgrid .wg-row:hover .wg-name { fill: var(--text); }
-.weekgrid .wg-dot.past { opacity: 0.35; }
+.weekgrid .wg-bar { transition: opacity 0.15s; }
+.weekgrid .wg-bar.past { opacity: 0.4; }
+.weekgrid .wg-row:hover .wg-bar.past { opacity: 0.7; }
 .weekgrid .wg-now { stroke: var(--live); stroke-width: 1.2; opacity: 0.8; }
+/* routine legend below the strip — identity lives here so the timeline keeps the full width */
+.weekgrid .wg-legend { display: flex; flex-wrap: wrap; gap: 5px 16px; margin-top: 10px;
+  padding-top: 9px; border-top: 1px solid var(--line); }
+.weekgrid .wg-leg { display: inline-flex; align-items: center; gap: 7px; text-decoration: none;
+  color: var(--muted); font-size: 12px; }
+.weekgrid .wg-leg:hover { color: var(--text); }
+.weekgrid .wg-swatch { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
+.weekgrid .wg-leg-sched { color: var(--faint); font-size: 11px; }
 
 /* ---------- log: stats strip + feed rows ---------- */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 12px; margin: 14px 0 6px; }
@@ -599,3 +607,22 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .ev.cmd-result { border-left: 2px solid var(--line); padding-left: 10px; margin: 6px 0 10px; }
 .ev.cmd-result pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 320px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .ev.cmd-result.err pre { color: var(--err); }
+
+/* filesystem-root picker (components/dirpicker.js) + the root list (components/fsroots.js) */
+.modal-overlay .panel.dirpicker { width: 560px; display: flex; flex-direction: column; gap: 10px; }
+.dirpicker-list { border: 1px solid var(--line); border-radius: 8px; min-height: 180px;
+  max-height: 46vh; overflow-y: auto; background: var(--ink-2); }
+.dp-row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; cursor: pointer;
+  font-size: 12.5px; color: var(--text); border-bottom: 1px solid var(--line); }
+.dp-row:last-child { border-bottom: 0; }
+.dp-row:hover { background: var(--surface-2); }
+.dp-row.file { cursor: default; color: var(--faint); }
+.dp-row.file:hover { background: transparent; }
+.dp-ic { flex: 0 0 auto; width: 18px; text-align: center; }
+.dp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.roots-list { display: flex; flex-direction: column; gap: 5px; }
+.root-row { display: flex; align-items: center; gap: 8px; }
+.root-path { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--ink-2);
+  border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; max-width: 560px; }
