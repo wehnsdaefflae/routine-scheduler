@@ -59,7 +59,13 @@ export async function render(view, slug, _query = {}) {
 
   // ---- sidebar --------------------------------------------------------------------------------
   async function loadList() {
-    try { items = await api("/api/conversations"); } catch { return; }
+    try { items = await api("/api/conversations"); }
+    catch (err) {
+      const retry = el("button", { class: "btn small", onclick: loadList }, "retry");
+      sideList.replaceChildren(el("div", { class: "empty" },
+        el("div", {}, `couldn't load conversations: ${err.message}`), retry));
+      return;
+    }
     renderList();
   }
 

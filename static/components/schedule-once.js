@@ -71,7 +71,7 @@ export function scheduleOnceCard(slug, opts = {}) {
   }
 
   async function cancel(o) {
-    if (!(await confirmDialog(`Cancel the one-shot armed for ${when(o.fire_at)}? It will not fire.`,
+    if (!(await confirmDialog(`Cancel the one-shot armed for ${new Date(o.fire_at).toLocaleString()}? It will not fire.`,
                               { confirmLabel: "cancel one-shot" }))) return;
     try {
       await api(`/api/routines/${slug}/schedule-once/${o.id}`, { method: "DELETE" });

@@ -66,18 +66,12 @@ function requestToken(message) {
   return gatePromise;
 }
 
-export async function api(path, { method = "GET", body } = {}) {
+// The one authed-fetch loop (token prompt + one 401 retry) both call shapes share.
+async function authedJson(path, makeInit) {
   for (let attempt = 0; ; attempt++) {
     let token = getToken();
     if (!token) token = await requestToken("This console is token-protected. Sign in to continue.");
-    const resp = await fetch(path, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    const resp = await fetch(path, makeInit(token));
     if (resp.status === 401 && attempt === 0) {
       clearToken();
       await requestToken("Token rejected — enter the current one.");
@@ -93,27 +87,22 @@ export async function api(path, { method = "GET", body } = {}) {
   }
 }
 
+export async function api(path, { method = "GET", body } = {}) {
+  return authedJson(path, (token) => ({
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  }));
+}
+
 // Multipart upload (message attachments): same token/gate handling as api(), but the body
 // is a FormData — the browser sets the multipart boundary, so no Content-Type of ours.
 export async function apiUpload(path, formData) {
-  for (let attempt = 0; ; attempt++) {
-    let token = getToken();
-    if (!token) token = await requestToken("This console is token-protected. Sign in to continue.");
-    const resp = await fetch(path, { method: "POST",
-      headers: { Authorization: `Bearer ${token}` }, body: formData });
-    if (resp.status === 401 && attempt === 0) {
-      clearToken();
-      await requestToken("Token rejected — enter the current one.");
-      continue;
-    }
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      const err = new Error(data.detail || `${resp.status} ${resp.statusText}`);
-      err.status = resp.status;
-      throw err;
-    }
-    return data;
-  }
+  return authedJson(path, (token) => ({
+    method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData }));
 }
 
 // Authenticated binary fetch → object URL, for content that renders via src attributes

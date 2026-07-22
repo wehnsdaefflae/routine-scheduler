@@ -8,22 +8,17 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import re
 import sys
 
 from fastapi import HTTPException, Request
 from pydantic import BaseModel
-from sse_starlette import EventSourceResponse
 
 from ..daemon.llm_tailer import tail_llm_sidecar
 from ..daemon.runner import abort_process
-from ..ids import now_iso
-from ..paths import atomic_write_json, read_json
+from ..paths import read_json
 from . import wizard_store
-from .sse import run_stream
 from .wizard_common import (
     _center,
-    _clarify_run_dir,
     _stop_tailer,
     _wizard_dir,
     _wizard_pid,
@@ -107,34 +102,5 @@ async def start(request: Request, body: StartBody) -> dict:
             "run_id": wizard_store.clarify_run_id(server, d, ts)}
 
 
-@router.get("/wizard/{wid}/events")
-async def events(request: Request, wid: str, offset: int = 0):
-    return EventSourceResponse(run_stream(_clarify_run_dir(request, wid), offset))
 
 
-@router.get("/wizard/{wid}/transcript")
-def wizard_transcript(request: Request, wid: str, offset: int = 0) -> dict:
-    """Paged clarify-chat transcript (mirrors /runs/{id}/transcript) — the byte offset it
-    returns is what the UI resumes its SSE tail from after a dropped connection.
-    """
-    from ..engine.transcript import read_events
-
-    events, new_offset = read_events(_clarify_run_dir(request, wid) / "transcript.jsonl", offset)
-    return {"events": events, "offset": new_offset}
-
-
-class AnswerBody(BaseModel):
-    qid: str
-    text: str
-    intermediate: bool = False   # dialog reply — the question stays open (see interact.handle_ask)
-
-
-@router.post("/wizard/{wid}/answer")
-def answer(request: Request, wid: str, body: AnswerBody) -> dict:
-    d = _wizard_dir(request, wid)
-    if not re.fullmatch(r"[A-Za-z0-9._-]+", body.qid):
-        raise HTTPException(400, "invalid qid")   # becomes a filename — never a path
-    atomic_write_json(d / "inbox" / f"answer-{body.qid}.json",
-                      {"qid": body.qid, "text": body.text, "source": "wizard",
-                       "intermediate": body.intermediate, "ts": now_iso()})
-    return {"ok": True}

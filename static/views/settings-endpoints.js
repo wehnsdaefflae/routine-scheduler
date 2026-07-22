@@ -133,7 +133,7 @@ export async function renderEndpoints(view) {
       try { await api(`/api/settings/models/${encodeURIComponent(m.name)}`, { method: "DELETE" }); await load(); }
       catch (err) { toast(err.message, 4000, { error: true }); }
     };
-    return el("div", { class: "panel mt", style: "background:var(--bg)" },
+    return el("div", { class: "panel mt", style: "background:var(--ink-2)" },
       el("div", { class: "row spread" },
         el("div", {}, el("strong", {}, m.name), " ",
           el("span", { class: "muted small" }, `${m.endpoint} / ${m.model}`), " ",

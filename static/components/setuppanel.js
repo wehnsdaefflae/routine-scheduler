@@ -12,6 +12,7 @@ import { scheduleEditor } from "/static/components/schedule.js";
 import { busy, el, requiresSummary, toast } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
 import { trace } from "/static/trace.js";
+import { BUDGET_FIELDS, UNLIMITED_BUDGETS } from "/static/components/budgetfields.js";
 
 // Tell app.js the session advanced / was canceled / finalized so the setup banner updates.
 const notifyChanged = () => window.dispatchEvent(new CustomEvent("rsched-wizard-changed"));
@@ -224,17 +225,6 @@ export async function createSetupPanel(host, { ts }) {
           "on the routine page (only by you)."),
         ...(lib.permissions || []).map((p) => pickerRow(permBoxes, p, presetPerms))));
 
-    const UNLIMITED_BUDGETS = ["max_total_tokens", "max_wall_clock_min", "max_cost", "max_total_turns"];  // -1 = unlimited
-    const BUDGET_FIELDS = [
-      ["max_turns", "turns per run"],
-      ["max_total_turns", "turns across all resumes (-1 = unlimited)"],
-      ["max_wall_clock_min", "minutes per run (-1 = unlimited)"],
-      ["max_total_tokens", "tokens per run (-1 = unlimited)"],
-      ["max_cost", "cost cap $ per run (-1 = unlimited)"],
-      ["max_subruns", "sub-workflows per run"],
-      ["max_subrun_depth", "sub-workflow depth"],
-      ["ask_timeout_min", "blocking-question timeout (min)"],
-    ];
     const budgetInputs = {};
     box.append(el("h2", {}, "Budgets"),
       el("div", { class: "panel" },
@@ -242,12 +232,12 @@ export async function createSetupPanel(host, { ts }) {
           "hard per-run ceilings (turns, time, tokens, sub-workflows, how long a blocking question ",
           "waits for you). The defaults suit most routines — adjustable here and on the routine page."),
         el("div", { class: "row", style: "flex-wrap:wrap;gap:10px" },
-          ...BUDGET_FIELDS.map(([key, label]) => {
+          ...BUDGET_FIELDS.map(([key, label, help]) => {
             const input = el("input", { type: "number", style: "width:110px",
               min: UNLIMITED_BUDGETS.includes(key) ? "-1" : "1",   // -1 = unlimited (tokens/time/cost)
               value: String((lib.default_budgets || {})[key] ?? "") });
             budgetInputs[key] = input;
-            return el("label", { class: "field", style: "min-width:170px" },
+            return el("label", { class: "field", style: "min-width:170px", title: help },
               el("span", {}, label), input);
           }))));
 

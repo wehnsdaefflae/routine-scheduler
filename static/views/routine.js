@@ -1,6 +1,7 @@
 // Routine detail: schedule, permissions (user-only toggles), budgets, models, origin, and the
 // navigable recipe (main.md + stage modules + trait modules), then state & runs.
 
+import { BUDGET_FIELDS, UNLIMITED_BUDGETS } from "/static/components/budgetfields.js";
 import { api } from "/static/api.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { confirmDialog } from "/static/components/dialog.js";
@@ -190,17 +191,6 @@ export async function render(view, slug, query = {}) {
       traitHost));
 
   // -- budgets (per-run ceilings — every invisible limit, surfaced) -----------------
-  const UNLIMITED_BUDGETS = ["max_total_tokens", "max_wall_clock_min", "max_cost", "max_total_turns"];  // -1 = unlimited
-  const BUDGET_FIELDS = [
-    ["max_turns", "turns per run", "each model action is one turn; the run is stopped at the cap"],
-    ["max_total_turns", "turns across all resumes", "cumulative turns over every resume window (a conversation's whole life); -1 = unlimited (the default — inert for single-window scheduled routines)"],
-    ["max_wall_clock_min", "minutes per run", "wall-clock ceiling (time waiting on you is credited back); -1 = unlimited"],
-    ["max_total_tokens", "tokens per run", "cumulative input+output tokens; -1 = unlimited (the default — turns bound the run)"],
-    ["max_cost", "cost cap per run ($)", "whole-dollar ceiling on real provider spend (reported by metered endpoints like OpenRouter); -1 = unlimited (the default)"],
-    ["max_subruns", "sub-workflows per run", "how many parallel children a run may spawn in total"],
-    ["max_subrun_depth", "sub-workflow depth", "how deep children may nest (children get half the parent's remainder)"],
-    ["ask_timeout_min", "blocking-question timeout (min)", "minutes a blocking decision waits for you before the run continues without it (the question stays open on the Decisions page)"],
-  ];
   const budgetInputs = {};
   const budgetRows = BUDGET_FIELDS.map(([key, label, help]) => {
     const input = el("input", { type: "number", min: UNLIMITED_BUDGETS.includes(key) ? "-1" : "0",
@@ -577,7 +567,9 @@ export async function render(view, slug, query = {}) {
           el("span", { class: "prose" }, q.answered ? "✓ " : "❓ ", mdInline(q.question)),
           q.answered
             ? chip("answered — queued for next run", "waiting_user")
-            : el("a", { class: "btn small primary", href: "#/questions" }, "answer")))));
+            : el("a", { class: "btn small primary",
+                        href: `#/questions?routine=${encodeURIComponent(slug)}` },
+                 "answer")))));
   }
 
   // -- state + ledger -------------------------------------------------------------
@@ -591,6 +583,28 @@ export async function render(view, slug, query = {}) {
 
   // -- runs -----------------------------------------------------------------------
   view.append(el("h2", {}, "Runs"));
+  const runsBox = el("div", {});
+  view.append(runsBox);
+  renderRuns(d);
+
+  // The page used to be a static snapshot — a run finishing while you look at it left a
+  // stale hub. Its own run lifecycle events refresh the header chip, health, and runs.
+  const onBus = async (e) => {
+    const ev = e.detail || {};
+    if (!["run_started", "run_finished"].includes(ev.event)) return;
+    if (!String(ev.run_id || "").startsWith(`${slug}:`)) return;
+    refreshHead();
+    if (ev.event === "run_finished") {
+      loadHealth();
+      try { renderRuns(await api(`/api/routines/${slug}`)); } catch { /* keep the old table */ }
+    }
+  };
+  window.addEventListener("rsched-bus", onBus);
+  return () => window.removeEventListener("rsched-bus", onBus);
+
+  function renderRuns(d) {
+  runsBox.replaceChildren();
+  const view = runsBox;
   const rows = (d.runs || []).map((r) => el("tr", {},
     el("td", {}, el("a", { href: `#/run/${r.run_id}` }, when(r.ts))),
     el("td", {}, chip(r.state, r.state)),
@@ -605,4 +619,5 @@ export async function render(view, slug, query = {}) {
         el("thead", {}, el("tr", {}, ["when", "state", "turns", "duration", "tokens", "summary"].map((h) => el("th", {}, h)))),
         el("tbody", {}, rows.length ? rows
           : el("tr", {}, el("td", { class: "muted", colspan: 6 }, "no runs yet — fire one with ▶ run now")))))));
+}
 }

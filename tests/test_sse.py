@@ -1,6 +1,6 @@
 """SSE: the run-tail generators (header + incremental appends + state + end) unit-tested
 directly, and the three endpoints (/api/events, /api/runs/{id}/events,
-/api/wizard/{wid}/events) through the app for sse-starlette wire format and the
+through the app for sse-starlette wire format and the
 token-in-query auth that native EventSource clients rely on.
 
 The endpoint tests use runs that are already terminal: TestClient buffers a response to
@@ -174,16 +174,6 @@ def test_run_events_endpoint_wire_contract(client):
     assert ("state", "finished") in [(e, d.get("state")) for e, d in pairs]
     assert pairs[-1] == ("end", {"state": "finished"})
 
-
-def test_wizard_events_endpoint_same_contract(client):
-    c, tmp = client
-    wid = f".wizard-{TS}"
-    _mk_run(tmp / "routines", wid, TS, "finished")
-    r = c.get(f"/api/wizard/{wid}/events")
-    assert r.status_code == 200
-    pairs = _wire_events(r.text)
-    assert (pairs[0][0], pairs[0][1]["type"]) == ("transcript", "header")
-    assert pairs[-1] == ("end", {"state": "finished"})
 
 
 def test_bus_endpoint_wire_and_sse_ticket(client, monkeypatch):

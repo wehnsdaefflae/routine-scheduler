@@ -88,4 +88,7 @@ export async function render(view, query = {}) {
 
   syncToolbar();
   await load();
+  const onBus = (e) => { if (e.detail?.event === "run_finished") load(); };
+  window.addEventListener("rsched-bus", onBus);
+  return () => window.removeEventListener("rsched-bus", onBus);
 }

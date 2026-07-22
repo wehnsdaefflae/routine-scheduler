@@ -244,6 +244,21 @@ async function refreshBadges() {
   } catch { /* daemon lamp covers connectivity */ }
 }
 
+// Coalesce badge refreshes: the bus can storm (llm_task lifecycle events fire sub-second
+// during a busy run) and every event used to cost a GET /api/questions. llm_task events
+// can't change decisions at all; everything else refreshes at most once per window,
+// with one trailing refresh so the final state always lands.
+const BADGE_REFRESH_MIN_MS = 3000;
+let badgeCooldown = 0, badgeTrailing = false;
+function scheduleBadgeRefresh() {
+  if (badgeCooldown) { badgeTrailing = true; return; }
+  refreshBadges();
+  badgeCooldown = setTimeout(() => {
+    badgeCooldown = 0;
+    if (badgeTrailing) { badgeTrailing = false; scheduleBadgeRefresh(); }
+  }, BADGE_REFRESH_MIN_MS);
+}
+
 function globalStream() {
   sse("/api/events", {
     bus: (ev) => {
@@ -252,7 +267,7 @@ function globalStream() {
       if (ev.event === "routine_created") { toast(`routine ${ev.slug} is ready`, 5000); refreshSetupBanner(); }
       if (ev.event === "routine_failed") { toast(`routine ${ev.slug} build failed`, 7000, { error: true }); refreshSetupBanner(); }
       if (ev.event === "library_sync" && ev.status !== "ok") toast(`library sync ${ev.status}`, 7000, { error: true });
-      refreshBadges();
+      if (ev.event !== "llm_task") scheduleBadgeRefresh();
       window.dispatchEvent(new CustomEvent("rsched-bus", { detail: ev }));
     },
     onopen: () => document.getElementById("daemon-dot").classList.add("on"),

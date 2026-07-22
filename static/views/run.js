@@ -1,6 +1,6 @@
 // Run view: live transcript (resilient SSE tail with visible reconnect state), intervention
 // controls, and a sub-run selector. Which sub-run you're reading — and the transcript offset —
-// live in the URL (#/run/{id}?sub=N&offset=M), so a deep link reopens the exact view.
+// live in the URL (#/run/{id}?sub=N), so a deep link reopens the exact view.
 
 import { api } from "/static/api.js";
 import { answerForm } from "/static/components/answerform.js";
@@ -24,8 +24,9 @@ import { trace } from "/static/trace.js";
 
 export async function render(view, runId, query = {}) {
   const [slug, ts] = runId.split(":");
-  const initialSub = query.sub != null && query.sub !== "" ? Number(query.sub) : null;
-  const initialOffset = Number(query.offset) || 0;
+  // sub ids are path-like strings ("2", or "2/1" from a search hit into a NESTED child —
+  // the tab bar only has top-level tabs, so a nested link lands on its top-level subtree)
+  const initialSub = query.sub != null && query.sub !== "" ? String(query.sub) : null;
 
   const stateChip = chip("connecting", "loading");
   const usageSpan = el("span", { class: "muted small" });
@@ -402,7 +403,11 @@ export async function render(view, runId, query = {}) {
   }
   showQuestion(detail.question);
   for (const n of detail.subruns || []) subs.set(n, `sub ${n}`);
-  viewingSub = (initialSub != null && (detail.subruns || []).includes(initialSub)) ? initialSub : null;
+  const subIds = (detail.subruns || []).map(String);
+  const wantedSub = initialSub == null ? null
+    : subIds.includes(initialSub) ? initialSub
+    : subIds.includes(initialSub.split("/")[0]) ? initialSub.split("/")[0] : null;
+  viewingSub = wantedSub == null ? null : Number(wantedSub);
   renderSubBar();
   mainBox.hidden = viewingSub != null;
   subBox.hidden = viewingSub == null;
@@ -412,7 +417,7 @@ export async function render(view, runId, query = {}) {
   tail = liveTail({
     page: (o) => `/api/runs/${runId}/transcript?offset=${o}`,
     events: (o) => `/api/runs/${runId}/events?offset=${o}`,
-    offset: viewingSub == null ? initialOffset : 0,
+    offset: 0,
     onEvent: (ev) => {
       if (ev.type === "subrun_start") { addSubTab(ev.payload.n, ev.payload.label); taskTree.refresh(); }
       if (ev.type === "subrun_end") taskTree.refresh();
@@ -437,7 +442,7 @@ export async function render(view, runId, query = {}) {
     onStatus: (s) => stream.set(s),
     onGone: () => stream.set("ended"),
   });
-  if (viewingSub != null) mountSubPolling(viewingSub, initialOffset);
+  if (viewingSub != null) mountSubPolling(viewingSub, 0);
 
   // Manual scroll pauses following; scrolling back to the bottom resumes it (follow.js —
   // only an upward move pauses). The checkbox mirrors the live follow state.

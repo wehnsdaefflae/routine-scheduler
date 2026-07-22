@@ -19,6 +19,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.86.1] — 2026-07-23
+
+### Fixed — frontend sweep (overhaul batch 6)
+- **Badge refreshes are coalesced.** Every bus event — including sub-second `llm_task`
+  storms during a busy run — fired its own `GET /api/questions`; llm_task events now
+  skip the badge entirely and everything else refreshes at most once per 3s window with
+  a trailing refresh.
+- The routine page is live: its own run start/finish events refresh the header chip,
+  recipe health, and the runs table (it was a static snapshot — a stale hub).
+- Question filters live in the URL (`#/questions?filter=…&routine=…`); a routine page's
+  "answer" button deep-links straight to that routine's open decisions.
+- Search hits into a NESTED subrun (`?sub=2/1`) land on the child's top-level subtree
+  instead of NaN-ing back to the main transcript; the never-produced `?offset=` deep
+  link is gone.
+- Library rows carry REAL section deep-links (`#/library/<kind>/<slug>`) — middle-click
+  and open-in-new-tab work; a failed conversations-list load shows an error + retry
+  instead of a silent blank rail; the Summary tab's filter/read states are actually
+  styled and the list refreshes when a run finishes; the one-shot cancel dialog prints
+  the fire time instead of `[object HTMLSpanElement]`; the models panel uses a CSS token
+  that exists.
+- a11y: toasts announce via `role="status"` + `aria-live`; the refer (↩) buttons are
+  visible on keyboard focus.
+- Dedupe/dead-code: ONE authed-fetch loop behind `api()`/`apiUpload()`; ONE
+  `BUDGET_FIELDS` vocabulary (`components/budgetfields.js` — the two copies had drifted
+  labels, and the wizard panel now shows the help lines too); dead `.tag.meta` CSS
+  dropped. Server-side dead routes removed: `GET /api/workflows` + `POST
+  /api/workflows/lint` (uncalled), the three shadowed `/library/utils/{name}`
+  registrations (the `{kind}/{slug}` routes dispatch), `POST /settings/machines` (PUT
+  upserts), and the pre-D11 wizard `events`/`transcript`/`answer` shims.
+
 ## [0.86.0] — 2026-07-23
 
 ### Changed — the read-model architecture gets an honest home (overhaul batch 5)

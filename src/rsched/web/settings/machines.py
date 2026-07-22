@@ -65,7 +65,6 @@ class MachineBody(BaseModel):
     tags: list[str] = []
 
 
-@router.post("/settings/machines")
 @router.put("/settings/machines/{name}")
 def upsert_machine(request: Request, body: MachineBody, name: str | None = None) -> dict:
     key = name or body.name

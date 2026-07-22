@@ -5,6 +5,7 @@
 // autofocuses, Enter submits, ↑/↓ move, 1–9 pick an option. Toolbar: filter by kind or
 // routine, sort by priority/age/routine (non-priority sorts render flat).
 
+import { replaceHash } from "/static/router.js";
 import { api } from "/static/api.js";
 import { answerForm } from "/static/components/answerform.js";
 import { linkifyRefs } from "/static/components/reflinks.js";
@@ -46,7 +47,7 @@ const sourceLink = (q) => (q.wizard
               : el("span", { class: "muted" }, "new-routine setup"))
   : el("a", { href: `#/routine/${q.routine}` }, q.routine));
 
-export async function render(view) {
+export async function render(view, query = {}) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
       el("div", { class: "kicker" }, "console / decisions"),
@@ -56,18 +57,24 @@ export async function render(view) {
       el("kbd", {}, "↵"), " answer · ", el("kbd", {}, "↑"), el("kbd", {}, "↓"), " move · ",
       el("kbd", {}, "1"), "–", el("kbd", {}, "9"), " pick option")));
 
-  const state = { filter: "all", routine: "", sort: "priority", items: [] };
+  // filter + routine live in the URL (#/questions?filter=…&routine=…) so a routine
+  // page's "answer" link can deep-link straight to its own open decisions
+  const state = { filter: query.filter || "all", routine: query.routine || "",
+                  sort: "priority", items: [] };
+  const syncURL = () => replaceHash("#/questions", {
+    ...(state.filter !== "all" ? { filter: state.filter } : {}),
+    ...(state.routine ? { routine: state.routine } : {}) });
 
   const filterChips = new Map();
   const chipRow = el("div", { class: "row", style: "gap:6px" });
   for (const [key, label] of FILTERS) {
     const b = el("button", { class: "btn small" }, label);
-    b.onclick = () => { state.filter = key; renderList(); };
+    b.onclick = () => { state.filter = key; syncURL(); renderList(); };
     filterChips.set(key, b);
     chipRow.append(b);
   }
   const routineSel = el("select", { class: "small" });
-  routineSel.onchange = () => { state.routine = routineSel.value; renderList(); };
+  routineSel.onchange = () => { state.routine = routineSel.value; syncURL(); renderList(); };
   const sortSel = el("select", { class: "small" });
   for (const [key, label] of SORTS) sortSel.append(el("option", { value: key }, `sort: ${label}`));
   sortSel.onchange = () => { state.sort = sortSel.value; renderList(); };

@@ -28,17 +28,6 @@ def _workflow_file(home, slug: str):
     return path if path.exists() else None
 
 
-@router.get("/workflows")
-def list_workflows(request: Request) -> dict:
-    home = _home(request)
-    lint = lint_all(home)
-    return {
-        "workflows": [{**w, "problems": lint.get(f"workflows/{w['file']}", [])}
-                      for w in library.list_workflows(home)],
-        "head": library.head_commit(home),
-    }
-
-
 @router.get("/library")
 def library_overview(request: Request) -> dict:
     """Everything under the Library tab: workflows, traits, permissions, playbooks, global utils."""
@@ -162,7 +151,6 @@ def delete_library_doc(request: Request, kind: str, slug: str) -> dict:
     return {"ok": True}
 
 
-@router.delete("/library/utils/{name}")
 def delete_util(request: Request, name: str) -> dict:
     """Delete a global util — its whole <name>/ dir, committed, so it is recoverable from
     git history. Routines discover utils live; the catalog shrinks at their next run.
@@ -178,8 +166,9 @@ def delete_util(request: Request, name: str) -> dict:
     return {"ok": True}
 
 
-@router.get("/library/utils/{name}")
 def util_detail(request: Request, name: str) -> dict:
+    # reached via /library/{kind}/{slug} with kind="utils" (library_doc_detail dispatches
+    # here) — a direct route registration would be shadowed by that pattern anyway
     from .. import utils_lib
 
     server = request.app.state.server
@@ -193,7 +182,6 @@ class UtilBody(BaseModel):
     content: str
 
 
-@router.put("/library/utils/{name}")
 def put_util(request: Request, name: str, body: UtilBody) -> dict:
     """Edit a global util (selftest-gated, committed) — mirrors the write_util engine action."""
     from .. import sandbox, utils_lib
@@ -262,9 +250,4 @@ def delete_workflow(request: Request, slug: str) -> dict:
     library.git_commit(home, f"delete workflows/{slug}.py via web",
                        paths=[f"workflows/{slug}.py"])
     return {"ok": True, "head": library.head_commit(home)}
-
-
-@router.post("/workflows/lint")
-def lint(request: Request) -> dict:
-    return {"results": lint_all(_home(request))}
 

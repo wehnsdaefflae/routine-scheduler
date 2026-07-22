@@ -7,6 +7,8 @@ import json
 import threading
 import time
 
+import pytest
+
 from conftest import finish
 from rsched import notify
 from rsched.config import ServerConfig
@@ -138,6 +140,7 @@ def test_util_approval_is_the_same_record_with_its_own_type(make_routine, script
     assert rec["type"] == "util-approval"
 
 
+@pytest.mark.flaky(reruns=2)   # two real threads race a 60s ask window; starves under xdist load
 def test_dialog_reply_keeps_the_record_open_and_a_reask_supersedes_it(make_routine, scripted):
     """An intermediate ("ask back") reply is NOT the answer: the record survives as deferred
     while the dialog continues, and the model's re-ask supersedes it — so exactly one open

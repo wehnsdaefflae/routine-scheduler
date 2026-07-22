@@ -1194,23 +1194,6 @@ def test_library_reports_defaults_and_both_doc_sets(client):
     assert isinstance(lib["traits"], list) and isinstance(lib["permissions"], list)
 
 
-def test_wizard_transcript_paging_and_event_offset(client):
-    """The clarify chat is tailable like a run: a paged transcript endpoint returns a byte
-    offset, and /events accepts that offset — the UI's reconnect-with-resume path."""
-    c, tmp = client
-    wid, d = _mk_wizard(tmp / "routines", "20260710-180000")
-    run_dir = d / "runs" / "20260710-180000"
-    with (run_dir / "transcript.jsonl").open("w") as fh:
-        fh.write(json.dumps({"type": "header", "run_id": f"{wid}:20260710-180000"}) + "\n")
-        fh.write(json.dumps({"ts": "t", "type": "assistant_action", "turn": 1,
-                             "payload": {"say": "hi", "kind": "ask_user", "question": "?"}}) + "\n")
-    tr = c.get(f"/api/wizard/{wid}/transcript").json()
-    assert [e["type"] for e in tr["events"]] == ["header", "assistant_action"]
-    assert tr["offset"] > 0
-    tr2 = c.get(f"/api/wizard/{wid}/transcript", params={"offset": tr["offset"]}).json()
-    assert tr2["events"] == [] and tr2["offset"] == tr["offset"]
-    assert c.get("/api/wizard/.wizard-nope/transcript").status_code == 404
-
 
 def test_test_remote_endpoint(client):
     """The Settings 'Test' button: reachable+authorized remote → ok; junk → surfaced error."""

@@ -55,10 +55,12 @@ export async function render(view, sub, query = {}) {
     sections.replaceChildren();
     section("Workflows", "the control-flow patterns routines follow",
       data.workflows.filter((w) => matches(w.tags)).map((w) =>
-        item(w.name || w.slug, w.problems, w.tags, () => openWorkflow(w.slug), w.description)));
+        item(w.name || w.slug, w.problems, w.tags, () => openWorkflow(w.slug), w.description,
+             `#/library/workflow/${w.slug}`)));
     section("Traits", "reusable practices — adapted into each new routine at creation, then owned by the routine (this is only the template)",
       data.traits.filter((f) => matches(f.tags)).map((f) =>
-        item(f.slug, f.problems, f.tags, () => openDoc("traits", f.slug), f.summary)),
+        item(f.slug, f.problems, f.tags, () => openDoc("traits", f.slug), f.summary,
+             `#/library/trait/${f.slug}`)),
       el("button", { class: "btn ghost small", onclick: () => newDoc("traits") }, "+ new trait"));
     section("Permissions", "conduct docs — held per routine via its Permissions panel; the requires: frontmatter names the capabilities each doc's instructions presume (activating the doc switches them on; open a doc to edit the mapping)",
       data.permissions.filter((f) => matches(f.tags)).map((f) => {
@@ -67,15 +69,18 @@ export async function render(view, sub, query = {}) {
           ? el("span", {}, f.summary || "",
               el("span", { style: "color:var(--warn)" }, ` ▸ ${req}`))
           : f.summary;
-        return item(f.slug, f.problems, f.tags, () => openDoc("permissions", f.slug), summary);
+        return item(f.slug, f.problems, f.tags, () => openDoc("permissions", f.slug), summary,
+                    `#/library/permission/${f.slug}`);
       }),
       el("button", { class: "btn ghost small", onclick: () => newDoc("permissions") }, "+ new permission"));
     section("Playbooks", "one-shot recipes — saved from a conversation (Save as playbook) and reused to seed a new one; MAIN.md is the always-loaded brief",
       data.playbooks.filter((p) => matches(p.tags)).map((p) =>
-        item(p.title || p.slug, p.problems, p.tags, () => openPlaybook(p.slug), p.summary)));
+        item(p.title || p.slug, p.problems, p.tags, () => openPlaybook(p.slug), p.summary,
+             `#/library/playbook/${p.slug}`)));
     section("Global utils", "the tools routines run (created + revised on demand, selftest-gated)",
       data.utils.filter((u) => matches(u.tags)).map((u) =>
-        item(u.name, [], u.tags, () => openUtil(u.name), u.summary)));
+        item(u.name, [], u.tags, () => openUtil(u.name), u.summary,
+             `#/library/util/${u.name}`)));
   }
 
   function section(title, desc, rows, action) {
@@ -89,9 +94,14 @@ export async function render(view, sub, query = {}) {
           : el("tr", {}, el("td", { class: "muted" }, active.size ? "none match this filter" : "none")))))));
   }
 
-  function item(label, problems, tags, onopen, summary) {
+  function item(label, problems, tags, onopen, summary, href) {
+    // a REAL href (the section deep-link) so middle-click/new-tab work; a plain click
+    // still opens the inline editor without a re-route
     return el("tr", {},
-      el("td", {}, el("a", { href: "#", onclick: (e) => { e.preventDefault(); onopen(); } }, label)),
+      el("td", {}, el("a", { href: href || "#", onclick: (e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+        e.preventDefault(); onopen();
+      } }, label)),
       el("td", {}, (tags || []).length ? el("div", { class: "tags" }, tags.map((t) => tagChip(t))) : ""),
       el("td", { class: "muted prose", style: "max-width:460px" }, summary || ""),
       el("td", {}, (problems && problems.length)
