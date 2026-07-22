@@ -14,6 +14,7 @@ read by the Settings page), and a failure additionally logs a health event.
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 from pathlib import Path
 
@@ -92,9 +93,15 @@ def _sanitized_routine_yaml(data: bytes) -> bytes:
     return yaml.safe_dump(obj, sort_keys=False, allow_unicode=True).encode("utf-8")
 
 
+# credentials embedded in a URL value (`https://user:token@host/…`) — the git-remote /
+# webhook shape a key-name scan can never catch
+_URL_CRED_RE = re.compile(r"(?<=://)[^/@\s]+@")
+
+
 def _redact(obj) -> int:
     """Recursively blank secret values: any token/api_key entry with a non-empty value
-    becomes REDACTED (empty stays empty — it honestly says 'nothing was set').
+    becomes REDACTED (empty stays empty — it honestly says 'nothing was set'), and
+    user:pass@ segments inside URL strings are scrubbed wherever they appear.
     """
     hits = 0
     if isinstance(obj, dict):
@@ -102,11 +109,18 @@ def _redact(obj) -> int:
             if key in REDACT_KEYS and isinstance(val, (str, int, float)) and str(val).strip():
                 obj[key] = "REDACTED"
                 hits += 1
+            elif isinstance(val, str) and _URL_CRED_RE.search(val):
+                obj[key] = _URL_CRED_RE.sub("REDACTED@", val)
+                hits += 1
             else:
                 hits += _redact(val)
     elif isinstance(obj, list):
-        for item in obj:
-            hits += _redact(item)
+        for i, item in enumerate(obj):
+            if isinstance(item, str) and _URL_CRED_RE.search(item):
+                obj[i] = _URL_CRED_RE.sub("REDACTED@", item)
+                hits += 1
+            else:
+                hits += _redact(item)
     return hits
 
 
@@ -129,28 +143,52 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
                           capture_output=True, text=True, timeout=120, check=False)
 
 
+# What the instance sync OWNS in the library repo. Its stage is scoped to these so it can
+# never sweep a concurrent writer's not-yet-committed file (a util an engine run is writing
+# at that moment) into an "instance sync" commit — the same discipline as libgit.commit.
+SYNC_PATHS = ("routines", "config")
+
+
 def git_sync(repo: Path, message: str = "instance sync") -> dict:
-    """Commit local changes → pull --rebase from origin → push. Aborts cleanly on a
-    rebase conflict (pull_error) and never tries to resolve it.
+    """Commit the sync's own paths → pull --rebase from origin → push. Aborts cleanly on
+    a rebase conflict (pull_error) and never pushes over a failed pull. Stage + commit run
+    under the shared per-repo lock (libgit), so a concurrent engine `write_util` commit
+    queues instead of racing this one on git's index.
     """
+    from .paths import file_lock, repo_lock_path
+
     if not (repo / ".git").is_dir():
         raise ValueError(f"{repo} is not a git repository")
-    _git(repo, "add", "-A")
-    status = _git(repo, "status", "--porcelain").stdout.strip()
-    committed = False
-    if status:
-        committed = _git(repo, *GIT_IDENTITY, "commit", "-qm", message).returncode == 0
+    with file_lock(repo_lock_path(repo)):
+        # a pathspec matching NOTHING makes `git add` fail whole — pass only paths that
+        # exist in the worktree or are tracked (a fully-deleted dir still needs staging)
+        present = [p for p in SYNC_PATHS
+                   if (repo / p).exists() or _git(repo, "ls-files", "--", p).stdout.strip()]
+        status = ""
+        committed = False
+        if present:
+            _git(repo, "add", "-A", "--", *present)
+            status = _git(repo, "status", "--porcelain", "--", *present).stdout.strip()
+        if status:
+            committed = _git(repo, *GIT_IDENTITY, "commit", "-qm", message,
+                             "--", *present).returncode == 0
     has_remote = bool(_git(repo, "remote").stdout.strip())
     branch = _git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() or "main"
     pulled = pushed = False
     pull_error = ""
     if has_remote:
-        r = _git(repo, *GIT_IDENTITY, "pull", "--rebase", "--quiet", "origin", branch)
+        # --autostash: a concurrent writer's not-yet-committed worktree file (an engine
+        # mid-write_util) must not fail the whole pull — stash around the rebase instead.
+        r = _git(repo, *GIT_IDENTITY, "pull", "--rebase", "--autostash", "--quiet",
+                 "origin", branch)
         pulled = r.returncode == 0
         if not pulled:
             _git(repo, "rebase", "--abort")
             pull_error = (r.stderr or r.stdout).strip()[:200]
-        pushed = _git(repo, "push", "--quiet", "origin", branch).returncode == 0
+        else:
+            # never push over a failed pull: the push would be rejected (non-FF) anyway,
+            # and reporting pushed=False against pull_error keeps the status honest
+            pushed = _git(repo, "push", "--quiet", "origin", branch).returncode == 0
     return {"committed": committed, "had_changes": bool(status), "has_remote": has_remote,
             "pulled": pulled, "pushed": pushed,
             **({"pull_error": pull_error} if pull_error else {})}

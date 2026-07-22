@@ -103,3 +103,35 @@ def test_run_sync_error_is_contained_and_logged(tmp_path):
     assert library_sync.read_status(s)["status"] == "error"
     events = (s.routines_home / ".control" / "health-events.jsonl").read_text(encoding="utf-8")
     assert "library_sync_error" in events
+
+
+def test_git_sync_scoped_add_never_sweeps_concurrent_writes(tmp_path):
+    """The sync stages only its own paths (routines/ + config/): a concurrent writer's
+    not-yet-committed file (a util an engine run is writing) must never be swept into an
+    'instance sync' commit — and the sync commit still lands under the shared repo lock."""
+    repo = tmp_path / "lib"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "-q", "-b", "main"], check=True)
+    (repo / "routines").mkdir()
+    (repo / "routines" / "r.yaml").write_text("a: 1\n", encoding="utf-8")
+    # a concurrent write_util in flight: file written, its own commit not yet taken
+    (repo / "utils" / "newborn").mkdir(parents=True)
+    (repo / "utils" / "newborn" / "main.py").write_text("# wip\n", encoding="utf-8")
+    result = library_sync.git_sync(repo)
+    assert result["committed"] is True
+    show = subprocess.run(["git", "-C", str(repo), "show", "--stat", "--name-only", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout
+    assert "routines/r.yaml" in show
+    assert "newborn" not in show          # the concurrent write stayed out of the sync commit
+    status = subprocess.run(["git", "-C", str(repo), "status", "--porcelain"],
+                            capture_output=True, text=True, check=True).stdout
+    assert "utils/" in status             # still uncommitted, awaiting its own commit
+
+
+def test_redaction_scrubs_url_embedded_credentials(tmp_path):
+    obj = {"libraries_remote": "https://x-access-token:ghp_secret123@github.com/u/r.git",
+           "nested": {"urls": ["https://user:pw@host/path", "https://plain.example/x"]}}
+    hits = library_sync._redact(obj)
+    assert hits == 2
+    assert obj["libraries_remote"] == "https://REDACTED@github.com/u/r.git"
+    assert obj["nested"]["urls"] == ["https://REDACTED@host/path", "https://plain.example/x"]

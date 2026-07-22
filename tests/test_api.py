@@ -76,19 +76,24 @@ def test_auth_required(client):
 
 
 def test_sse_ticket_flow(client):
-    """EventSource auth: a short-lived ticket minted over the authed channel works in the
-    query string; garbage and expired tickets do not."""
-    c, _ = client
+    """EventSource auth: a short-lived ticket minted over the authed channel authenticates
+    the SSE endpoints ONLY — a URL-carriable credential must never be a full-API bearer
+    substitute. Garbage and expired tickets fail even there."""
+    c, _tmp = client
     bare = TestClient(c.app)
     minted = c.post("/api/sse-ticket").json()
     assert minted["ttl"] == 60
     ticket = minted["ticket"]
-    assert bare.get(f"/api/routines?ticket={ticket}").status_code == 200
+    # valid ONLY on the SSE surfaces: auth passes there (the handler then 404s on the
+    # unknown run — a 404, not a 401, proves the ticket authenticated)
+    assert bare.get(f"/api/runs/ghost:00000000-000000/events?ticket={ticket}").status_code == 404
+    assert bare.get("/api/runs/ghost:00000000-000000/events").status_code == 401
+    # every other route still requires the bearer — ticket or not
+    assert bare.get(f"/api/routines?ticket={ticket}").status_code == 401
+    assert bare.post(f"/api/settings/restart?ticket={ticket}").status_code == 401
     assert bare.get("/api/routines?ticket=bogus").status_code == 401
     c.app.state.sse_tickets[ticket] = 0.0   # fast-forward: long expired
-    assert bare.get(f"/api/routines?ticket={ticket}").status_code == 401
-    # expired tickets are purged at the next mint
-    c.post("/api/sse-ticket")
+    c.post("/api/sse-ticket")               # expired tickets are purged at the next mint
     assert ticket not in c.app.state.sse_tickets
 
 

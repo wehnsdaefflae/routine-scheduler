@@ -81,12 +81,15 @@ CLARIFY_FRESH_S = 15 * 60
 
 
 def clarify_states(server: ServerConfig) -> list[str]:
-    """Live clarify-run states of in-flight new-routine wizard sessions (.wizard-* dirs).
+    """Live clarify-run states of in-flight new-routine wizard sessions.
 
-    The registry deliberately skips dot-dirs, so these engine runs are invisible to
-    runner.active_states() — but a restart mid-clarification kills the user's setup
+    A clarify session's engine subprocess is spawned DIRECTLY by the web layer
+    (wizard_sessions.start_clarify), never via Runner.fire — so it is invisible to
+    runner.active_states(). Its run lives under the protected `clarification` template
+    routine (`<home>/clarification/runs/<ts>`, D13=B) while the engine executes in the
+    hidden .wizard-<ts> workspace; a restart mid-clarification kills the user's setup
     conversation (observed 2026-07-16: a drain fired while a fresh clarify run was still
-    decomposing and orphaned it at turn 0). Folding their states into restart_action's
+    decomposing and orphaned it at turn 0). Folding these states into restart_action's
     active_states gives clarify runs the same protection ordinary runs have: waiting_user
     defers the restart, running/starting drains it.
 
@@ -101,10 +104,9 @@ def clarify_states(server: ServerConfig) -> list[str]:
     from .runner import _pid_alive
 
     out: list[str] = []
-    home = server.routines_home
-    for d in sorted(home.glob(".wizard-*")) if home.is_dir() else []:
-        runs = sorted((d / "runs").glob("*")) if (d / "runs").is_dir() else []
-        st = read_json(runs[-1] / "status.json") if runs else None
+    runs_dir = server.routines_home / "clarification" / "runs"
+    for rd in sorted(runs_dir.iterdir()) if runs_dir.is_dir() else []:
+        st = read_json(rd / "status.json")
         if not isinstance(st, dict) or st.get("state") in TERMINAL_STATES:
             continue
         state = str(st.get("state") or "unknown")

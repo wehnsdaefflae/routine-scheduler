@@ -19,7 +19,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
-## [0.85.1] — 2026-07-22
+## [0.85.2] — 2026-07-22
+
+### Fixed — daemon + web security/robustness sweep (overhaul batch 2)
+- **SSE tickets are SSE-only credentials.** A minted ticket used to satisfy `require_auth`
+  on EVERY `/api` route — a 60-second URL-carriable full-API bearer, writes included. It
+  now authenticates only the two EventSource surfaces (`/api/events`,
+  `/api/runs/{id}/events`), GET only.
+- **The fs picker refuses credential stores.** `/api/fs/list` browsed anything the daemon
+  user can reach — including `~/.credentials`, the config dir (secrets.env, vapid keys,
+  `.mounts/`), `~/.ssh`, `~/.claude`. Those roots (and descendants) now 403.
+- **One bad scheduler tick no longer kills scheduling.** The cron tick body is guarded:
+  an exception (a tz typo surfacing in next_fire, a disk blip) is logged + flagged as a
+  health event and the loop keeps ticking — it used to unwind `run_forever` silently
+  while the web UI kept serving. Lifespan background tasks (scheduler, push, search) get
+  a died-silently observer; routine/library-sync `tz` values are validated at load/save.
+- **Restart protection for clarify runs works again.** `restart.clarify_states` still
+  scanned the pre-D13 `.wizard-*/runs` layout, where no run has lived since the wizard
+  unification — the drain gate for in-flight setup conversations was silently inert. It
+  now reads `clarification/runs/*` (the real layout); the tests pin the real layout too.
+- **The scheduled library sync respects the commit serialization.** `git_sync` committed
+  with an unscoped `git add -A` and no repo lock — sweeping any concurrent writer's
+  uncommitted util into an "instance sync" commit and racing engine commits on git's
+  index (bypassing the 0.83.1/0.83.2 discipline daily). It now stages only its own paths
+  (`routines/ config/`) under the shared per-repo lock, pulls `--autostash`, and no
+  longer pushes over a failed pull. Config-export redaction also scrubs URL-embedded
+  credentials (`https://user:token@host` in remote URLs).
+- **Multi-line secrets survive the store.** A pasted SSH private key (the
+  remote-machines `key_var` flow) was silently corrupted by the line-based secrets store
+  (docs tell the operator to paste one). Values containing newlines are now JSON-quoted
+  onto one line; single-line values keep the historical format byte-identically.
 
 ### Fixed — engine + transport correctness sweep (overhaul batch 1)
 Security/correctness-critical fixes from the external audit's findings ledger.

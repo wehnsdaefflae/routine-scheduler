@@ -18,6 +18,30 @@ router = APIRouter(tags=["fs"])
 MAX_ENTRIES = 2000  # cap a pathologically large directory; the picker notes truncation
 
 
+def _denied_roots() -> list[Path]:
+    """Credential stores the picker must not browse. The sandbox spends real machinery
+    keeping these invisible to runs; the picker must not hand their layout (key file
+    names, connection accounts, mount keys) to any bearer holder either. Names only is
+    still reconnaissance.
+    """
+    from ..paths import config_file
+
+    home = Path("~").expanduser()
+    return [config_file().parent,      # secrets.env, connections.json, vapid keys, .mounts/
+            home / ".credentials", home / ".ssh", home / ".claude"]
+
+
+def _deny_sensitive(target: Path) -> None:
+    for root in _denied_roots():
+        try:
+            root = root.resolve()
+        except OSError:
+            continue
+        if target == root or root in target.parents:
+            raise HTTPException(403, "that directory holds instance credentials — "
+                                     "not browsable")
+
+
 def _is_dir(p: Path) -> bool:
     try:
         return p.is_dir()
@@ -39,6 +63,7 @@ def list_dir(path: str = "") -> dict:
         target = target.resolve()
     except OSError as exc:
         raise HTTPException(400, f"bad path: {exc}") from exc
+    _deny_sensitive(target)
     if not target.exists():
         raise HTTPException(404, f"no such directory: {target}")
     if not _is_dir(target):

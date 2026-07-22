@@ -38,3 +38,17 @@ def test_missing_is_404_and_file_is_400(api_client):
     f = tmp / "afile"
     f.write_text("x", encoding="utf-8")
     assert c.get(f"/api/fs/list?path={f}").status_code == 400
+
+
+def test_credential_stores_are_not_browsable(api_client, monkeypatch):
+    """The picker must not hand credential-store layouts (secrets.env, key files, .mounts)
+    to a bearer holder — the sandbox works to keep exactly these invisible to runs."""
+    client, tmp = api_client
+    cfg_dir = tmp / "config-home"
+    (cfg_dir / ".mounts").mkdir(parents=True)
+    (cfg_dir / "secrets.env").write_text("K=v", encoding="utf-8")
+    monkeypatch.setattr("rsched.paths.config_file", lambda: cfg_dir / "config.yaml")
+    r = client.get("/api/fs/list", params={"path": str(cfg_dir)})
+    assert r.status_code == 403 and "credentials" in r.json()["detail"]
+    assert client.get("/api/fs/list",
+                      params={"path": str(cfg_dir / ".mounts")}).status_code == 403

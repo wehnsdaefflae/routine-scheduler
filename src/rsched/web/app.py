@@ -45,7 +45,32 @@ def build_stamp(repo: Path | None) -> str:
         return ""
 
 
+def _observe(task: asyncio.Task, name: str) -> None:
+    """A lifespan background task must never die silently: without this, an exception in
+    e.g. the scheduler task unwinds it while the web app keeps serving — the daemon looks
+    alive with its heart stopped. The tick body has its own guard; this catches startup
+    crashes and anything the guard can't.
+    """
+    def _done(t: asyncio.Task) -> None:
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is not None:
+            log.critical("background task %r died: %s", name, exc, exc_info=exc)
+    task.add_done_callback(_done)
+
+
 SSE_TICKET_TTL_S = 60
+
+
+def _is_sse_path(path: str) -> bool:
+    """The ONLY endpoints an SSE ticket may authenticate: the global event stream and a
+    run's transcript stream — the two EventSource surfaces the frontend opens. A ticket is
+    a URL-carriable credential (it leaks into logs/history far more easily than a bearer
+    header), so it must never be a full-API bearer substitute: scoped to these read-only
+    streams, a leaked ticket can at worst read events for its 60s TTL.
+    """
+    return path == "/api/events" or (path.startswith("/api/runs/") and path.endswith("/events"))
 
 
 def require_auth(request: Request) -> None:
@@ -56,11 +81,13 @@ def require_auth(request: Request) -> None:
     if header == f"Bearer {token}":
         return
     # EventSource cannot send headers, and the bearer token in a query string would leak
-    # into access logs — a SHORT-LIVED ticket (POST /api/sse-ticket) rides there instead.
-    ticket = request.query_params.get("ticket") or ""
-    expiry = request.app.state.sse_tickets.get(ticket)
-    if ticket and expiry is not None and expiry >= time.monotonic():
-        return
+    # into access logs — a SHORT-LIVED ticket (POST /api/sse-ticket) rides there instead,
+    # valid ONLY for the SSE GET endpoints themselves (never a general API credential).
+    if request.method == "GET" and _is_sse_path(request.url.path):
+        ticket = request.query_params.get("ticket") or ""
+        expiry = request.app.state.sse_tickets.get(ticket)
+        if ticket and expiry is not None and expiry >= time.monotonic():
+            return
     raise HTTPException(status_code=401, detail="missing or invalid token")
 
 
@@ -103,10 +130,12 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         task = None
         if with_scheduler and not os.environ.get("RSCHED_NO_SCHEDULER"):
             task = asyncio.create_task(app.state.scheduler.run_forever())
+            _observe(task, "scheduler")
         # Web Push sender: idles until a browser subscribes, then pushes new decisions
         from . import push as push_mod
 
         push_task = asyncio.create_task(push_mod.bus_listener(server, bus))
+        _observe(push_task, "web-push listener")
         # The LLM task manager sink: every instrumented complete() (run in threadpool/to_thread
         # workers) marshals its lifecycle records onto THIS loop, where the task center + bus live.
         set_sink(DaemonSink(task_center, asyncio.get_running_loop()))
@@ -116,6 +145,7 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         from . import api_search
 
         search_task = asyncio.create_task(api_search.maintain(app.state.search))
+        _observe(search_task, "search maintainer")
         yield
         set_sink(None)
         search_task.cancel()

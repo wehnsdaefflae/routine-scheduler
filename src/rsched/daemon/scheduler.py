@@ -31,6 +31,10 @@ log = logging.getLogger("rsched.scheduler")
 TICK_S = 5.0
 
 
+class _TickSkip(Exception):  # noqa: N818 — a control-flow signal, not an error condition
+    """Control flow only: the restart state machine says fire nothing this tick."""
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -113,32 +117,55 @@ class Scheduler:
                  {s: t.isoformat(timespec="minutes") for s, t in self.next_fires.items()})
         while True:
             await asyncio.sleep(TICK_S)
-            if self._maybe_restart():
+            # One bad tick must never kill scheduling for good: an exception anywhere in
+            # the tick body (a tz typo surfacing in next_fire, a disk-full stat, an sshfs
+            # blip) used to unwind run_forever silently while the web UI kept serving —
+            # the daemon looked alive with its heart stopped. Log it, flag it, keep
+            # ticking. (CancelledError is a BaseException and still propagates.)
+            try:
+                self._tick_once(loop)
+                now = _now()
+                for slug, due in list(self.next_fires.items()):
+                    if now < due:
+                        continue
+                    info = self.catalog.get(slug)
+                    if info is None:
+                        self.next_fires.pop(slug, None)
+                        continue
+                    self.next_fires[slug] = registry.next_fire(info.cfg, now) or due
+                    await self.runner.fire(info.cfg, reason="schedule")
+                if self.sync_next is not None and now >= self.sync_next:
+                    self.sync_next = registry.next_fire(self.server.library_sync, now)  # type: ignore[arg-type]
+                    self._fire_library_sync()
+                # detached background tasks: intake requests, deliver results, wake owners
+                await self.detached.tick(now)
+                # event triggers: spooled webhook events → coalesced fires
+                await self.triggers.tick(self.catalog)
+                # one-shot time triggers: due requests → a single fire, then consumed
+                await self.oneshots.tick(self.catalog)
+                # OAuth token upkeep: refresh expiring connections nearing their deadline
+                await self.oauth.tick()
+            except _TickSkip:
                 continue  # draining / shutting down: fire nothing this tick
-            if loop.time() - self._last_scan >= self.server.registry_rescan_s:
-                self.rescan()
-                self._last_scan = loop.time()
-            now = _now()
-            for slug, due in list(self.next_fires.items()):
-                if now < due:
-                    continue
-                info = self.catalog.get(slug)
-                if info is None:
-                    self.next_fires.pop(slug, None)
-                    continue
-                self.next_fires[slug] = registry.next_fire(info.cfg, now) or due
-                await self.runner.fire(info.cfg, reason="schedule")
-            if self.sync_next is not None and now >= self.sync_next:
-                self.sync_next = registry.next_fire(self.server.library_sync, now)  # type: ignore[arg-type]
-                self._fire_library_sync()
-            # detached background tasks: intake new requests, deliver finished ones, wake owners
-            await self.detached.tick(now)
-            # event triggers: spooled webhook events → coalesced fires (one per free routine)
-            await self.triggers.tick(self.catalog)
-            # one-shot time triggers: due requests → a single fire, then consumed
-            await self.oneshots.tick(self.catalog)
-            # OAuth token upkeep: refresh expiring connections nearing their deadline
-            await self.oauth.tick()
+            except Exception:
+                log.exception("scheduler tick failed — continuing")
+                try:
+                    from ..health_events import log_health_event
+                    log_health_event(self.server.routines_home, "scheduler_tick_error",
+                                     routine="(daemon)", run_id="",
+                                     detail="scheduler tick raised; see daemon log")
+                except Exception:  # the guard itself must never take the loop down
+                    pass
+
+    def _tick_once(self, loop) -> None:
+        """The tick preamble: restart state machine, then a due registry rescan. Raises
+        _TickSkip when the restart machine says to fire nothing this tick.
+        """
+        if self._maybe_restart():
+            raise _TickSkip
+        if loop.time() - self._last_scan >= self.server.registry_rescan_s:
+            self.rescan()
+            self._last_scan = loop.time()
 
     def _fire_library_sync(self) -> None:
         """Run the sync off-loop (git talks to the network); one at a time — an overrun

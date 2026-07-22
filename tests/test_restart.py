@@ -153,16 +153,22 @@ def test_scheduler_waits_for_wizard_build(tmp_path, monkeypatch):
 # ---- clarify runs hold the restart (2026-07-16 incident) ---------------------------------------
 
 
-def _clarify_session(home, name, **status):
-    """A dot-hidden wizard session with one run's status.json (no engine process)."""
-    rd = home / name / "runs" / "20260716-101112"
+_CLARIFY_N = [0]
+
+
+def _clarify_session(home, _name, **status):
+    """One clarify run's status.json under the REAL layout — the protected clarification
+    template's runs/ dir (D13=B; the .wizard-* workspace holds no run state)."""
+    _CLARIFY_N[0] += 1
+    rd = home / "clarification" / "runs" / f"20260716-10111{_CLARIFY_N[0]}"
     rd.mkdir(parents=True)
     (rd / "status.json").write_text(json.dumps({"state": "running", **status}))
     return rd
 
 
 def test_clarify_states_counts_live_sessions(tmp_path):
-    """Clarify runs live in dot-dirs the registry skips — clarify_states surfaces them for the
+    """Clarify engine runs are spawned by the web layer, never via Runner.fire — invisible
+    to active_states(). clarify_states surfaces them from clarification/runs for the
     restart gate: a live pid counts with its state, a dead pid and a terminal run do not."""
     import os
 

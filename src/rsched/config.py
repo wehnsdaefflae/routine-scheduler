@@ -231,6 +231,20 @@ class MachineConfig(_Config):
     tags: list[str] = Field(default_factory=list)
 
 
+
+def _known_tz(v: str) -> str:
+    """Shared tz validator: a typo'd zone must surface as a config problem at load/save
+    time, not as a ZoneInfoNotFoundError inside the scheduler tick.
+    """
+    import zoneinfo
+
+    try:
+        zoneinfo.ZoneInfo(v)
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError(f"unknown timezone {v!r}") from exc
+    return v
+
+
 class LibrarySyncConfig(_Config):
     """The daemon-scheduled library sync (`library_sync:` in config.yaml): mirror the
     instance into the ONE library repo and git-sync it. Deliberately NOT a routine —
@@ -240,6 +254,8 @@ class LibrarySyncConfig(_Config):
     enabled: bool = False
     cron: BlankableStr = "0 6 * * *"   # friendly-representable (daily 06:00) for the UI editor
     tz: str = "Europe/Berlin"
+
+    _tz_known = field_validator("tz")(_known_tz)
 
     @field_validator("cron")
     @classmethod
@@ -488,6 +504,8 @@ class RoutineConfig(_Config):
             except (ValueError, KeyError) as exc:
                 raise ValueError(str(exc)) from exc
         return v
+
+    _tz_known = field_validator("tz")(_known_tz)
 
     @field_validator("description")
     @classmethod
