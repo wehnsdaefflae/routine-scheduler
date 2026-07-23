@@ -560,6 +560,34 @@ def test_routine_page_saves(ui, ui_page):
     assert raw["permissions"]   # the toggled doc landed in config without a reload
 
 
+def test_routine_page_permission_help_and_doc_expand(ui, ui_page):
+    """F178: the permissions panel explains itself — capability rows carry concrete
+    example help, and conduct-permission / practice-module rows expand to the FULL
+    library doc (the same prose the run's prompt receives)."""
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    perm_panel = ui_page.locator(
+        ".panel", has=ui_page.get_by_role("button", name="save permissions"))
+    # capability rows explain themselves with examples (bare kind/util names told nothing)
+    expect(perm_panel.get_by_text("become a proper util", exact=False)).to_be_visible()
+    expect(perm_panel.get_by_text("two-hour bulk conversion", exact=False)).to_be_visible()
+
+    # a conduct-permission row expands to the full library doc without flipping its checkbox
+    row = perm_panel.locator(
+        ".perm-doc", has=ui_page.locator(".t-title", has_text="memory")).first
+    box = row.locator('input[type="checkbox"]')
+    checked_before = box.is_checked()
+    row.get_by_role("button", name="full description").click()
+    expect(row.locator(".doc-expand-body")).to_be_visible()
+    expect(row.locator(".doc-expand-body")).to_contain_text("notebook")
+    assert box.is_checked() == checked_before
+
+    # practice-module rows expand the same way
+    trait_row = ui_page.locator(".trait-doc").first
+    trait_row.get_by_role("button", name="full description").click()
+    expect(trait_row.locator(".doc-expand-body")).to_be_visible()
+    expect(trait_row.locator(".doc-expand-body")).not_to_be_empty()
+
+
 # ---- 3b. Spend surfaces (dashboard card line + Stats monthly table) -----------------------
 
 

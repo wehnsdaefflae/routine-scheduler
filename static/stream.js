@@ -48,7 +48,7 @@ export function liveTail({ page, events, offset = 0, onEvent, onState, onStatus,
       const detail = openedAt
         ? `alive ${Math.round((Date.now() - openedAt) / 1000)}s, ${seenSinceOpen} events`
         : "before first open";
-      import("/static/trace.js").then(({ trace }) => trace("reconnect", events, detail)).catch(() => {});
+      import("/static/trace.js").then(({ trace }) => trace("reconnect", events(base), detail)).catch(() => {});
     }
     const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** retry);
     retry += 1;

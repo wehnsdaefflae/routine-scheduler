@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 
 from ..engine.transcript import read_events
@@ -60,6 +61,41 @@ async def run_stream(run_dir: Path, start_offset: int = 0):
                 yield _event("end", {"state": state})
                 return
         await asyncio.sleep(POLL_S)
+
+
+async def traced_run_stream(run_dir: Path, start_offset: int, server):
+    """run_stream wrapped in close-cause telemetry (F175): when the stream closes — the run
+    ended (`end`), the transport was torn down under us (`cancelled` mid-await, `closed` on
+    generator teardown), or the generator itself failed (`error`) — one `sse-close` line
+    lands in the ui-trace day file with the stream's lifetime and events carried. Client
+    `reconnect` traces record how a drop LOOKED from the browser; this records what the
+    server SAW, so an audit can tell a server-side fault from a transport kill: a drop the
+    client reports while the server logs `cancelled` originated outside the app.
+    """
+    from .api_traces import record_server_trace
+
+    started = time.monotonic()
+    carried = 0
+    cause = "end"
+    try:
+        async for ev in run_stream(run_dir, start_offset):
+            if ev.get("event") == "transcript":
+                carried += 1
+            yield ev
+    except asyncio.CancelledError:
+        cause = "cancelled"
+        raise
+    except GeneratorExit:
+        cause = "closed"
+        raise
+    except Exception:
+        cause = "error"
+        raise
+    finally:
+        run_id = f"{run_dir.parent.parent.name}:{run_dir.name}"
+        record_server_trace(server, kind="sse-close", target=run_id,
+                            detail=f"{cause} after {round(time.monotonic() - started)}s, "
+                                   f"{carried} events")
 
 
 async def bus_stream(bus):

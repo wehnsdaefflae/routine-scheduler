@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.93.0] — 2026-07-23
+### Added
+- **The permissions & practice-module panels explain themselves**: every capability row
+  (gated actions, reserved utils, run-history depth, subtask-pattern sourcing) now carries a
+  descriptive help line with a concrete example, and every conduct-permission and
+  practice-module row gains a "▸ full description" expander that renders the complete
+  library doc inline — the exact prose the run's prompt receives (new shared
+  `docexpand.js`; applies to the routine page, the conversation composer, and the wizard).
+- Stream diagnostics (F175): the server now records an `sse-close` ui-trace line whenever a
+  run event stream closes — cause (`end` / `cancelled` / `closed` / `error`), lifetime, and
+  events carried — so client-side `reconnect` traces can be matched against what the server
+  saw; the client's reconnect trace now logs the resolved stream path instead of the
+  URL-builder's source text.
+
 ## [0.92.0] — 2026-07-23
 ### Changed
 - Run view: the revise-recipe affordance is now an **"editable recipe" checkbox** right next to the composer input on finished routine runs (off by default) — checked, the SAME conversation continues via `/converse` with a run-scoped recipe unlock (the user's text rides the inbox verbatim; no framed pivot message). The `✎ revise recipe` button, the `revise` composer mode, and the `/api/runs/{id}/revise` endpoint are removed.

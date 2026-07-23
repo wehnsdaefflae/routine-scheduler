@@ -49,23 +49,18 @@ def _prune(d) -> None:
             p.unlink(missing_ok=True)
 
 
-@router.post("/ui-trace")
-def ingest(request: Request, body: TraceBatch) -> dict:
-    server = request.app.state.server
+def _append(server, records: list[dict]) -> int:
+    """Append vetted trace records to today's day file; returns the count written."""
     now = dt.datetime.now(dt.UTC)
-    lines = []
-    for ev in body.events:
-        if ev.kind not in KINDS:
-            continue
-        lines.append(json.dumps({
-            "ts": now.isoformat(timespec="seconds"),
-            "kind": ev.kind,
-            "view": ev.view[:MAX_FIELD],
-            "target": ev.target[:MAX_FIELD],
-            "detail": ev.detail[:MAX_FIELD],
-        }, ensure_ascii=False))
+    lines = [json.dumps({
+        "ts": now.isoformat(timespec="seconds"),
+        "kind": str(r.get("kind", ""))[:MAX_FIELD],
+        "view": str(r.get("view", ""))[:MAX_FIELD],
+        "target": str(r.get("target", ""))[:MAX_FIELD],
+        "detail": str(r.get("detail", ""))[:MAX_FIELD],
+    }, ensure_ascii=False) for r in records]
     if not lines:
-        return {"recorded": 0}
+        return 0
     d = traces_dir(server)
     d.mkdir(parents=True, exist_ok=True)
     day_file = d / f"{now.strftime('%Y%m%d')}.jsonl"
@@ -74,8 +69,24 @@ def ingest(request: Request, body: TraceBatch) -> dict:
             fh.write("\n".join(lines) + "\n")
         _prune(d)
     except OSError as exc:
-        # Tracing must never 500 the console, but a dead trace store shouldn't be silent
-        # either — and the count must be honest.
+        # Tracing must never take its caller down, but a dead trace store shouldn't be
+        # silent either — and the count must be honest.
         log.warning("ui-trace write failed: %s", exc)
-        return {"recorded": 0}
-    return {"recorded": len(lines)}
+        return 0
+    return len(lines)
+
+
+def record_server_trace(server, *, kind: str, target: str = "", detail: str = "",
+                        view: str = "server") -> None:
+    """A SERVER-originated trace event, appended to the same day file the browser batches
+    land in — one evidence stream for the audits. First use: `sse-close` (F175), so client
+    `reconnect` traces can be matched against what the server saw at the same moment.
+    """
+    _append(server, [{"kind": kind, "view": view, "target": target, "detail": detail}])
+
+
+@router.post("/ui-trace")
+def ingest(request: Request, body: TraceBatch) -> dict:
+    server = request.app.state.server
+    return {"recorded": _append(server, [ev.model_dump() for ev in body.events
+                                         if ev.kind in KINDS])}

@@ -18,7 +18,7 @@ from ..engine.transcript import read_events
 from ..ids import now_iso, parse_run_id
 from ..paths import atomic_write_json, read_json
 from ..registry import TERMINAL_STATES
-from .sse import run_stream
+from .sse import traced_run_stream
 
 router = APIRouter(tags=["runs"])
 
@@ -117,7 +117,7 @@ def run_transcript(request: Request, run_id: str, offset: int = 0, sub: str | No
 @router.get("/runs/{run_id}/events")
 async def run_events(request: Request, run_id: str, offset: int = 0):
     _, run_dir = _run_dir(request, run_id)
-    return EventSourceResponse(run_stream(run_dir, offset))
+    return EventSourceResponse(traced_run_stream(run_dir, offset, request.app.state.server))
 
 
 @router.get("/runs/{run_id}/phases")

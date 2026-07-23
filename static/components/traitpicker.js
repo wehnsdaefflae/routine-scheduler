@@ -10,6 +10,7 @@
 // and reports a diff; the caller owns the POST.
 
 import { el, toast } from "/static/util.js";
+import { docExpander } from "/static/components/docexpand.js";
 
 // available: [{slug, summary, tags}] from GET /api/library · held: [slug]
 // opts: {onSave(payload) -> Promise, base?: "routines"|"conversations", live?: boolean}
@@ -54,9 +55,13 @@ export function traitPicker(available, held, opts = {}) {
     const box = el("input", { type: "checkbox", "data-nopersist": true,
                               checked: now.has(t.slug) });
     box.onchange = () => { box.checked ? now.add(t.slug) : now.delete(t.slug); paint(); };
-    rows.append(el("label", { class: "toggle-row" }, box,
-      el("div", {}, el("div", { class: "t-title" }, t.slug),
-        el("div", { class: "muted small" }, t.summary || ""))));
+    const doc = docExpander("traits", t.slug);
+    rows.append(el("div", { class: "trait-doc" },
+      el("label", { class: "toggle-row" }, box,
+        el("div", {}, el("div", { class: "t-title" }, t.slug),
+          el("div", { class: "muted small" }, t.summary || ""),
+          doc.btn)),
+      doc.body));
   }
   if (!(available || []).length) {
     rows.append(el("div", { class: "muted small" }, "the library carries no practice modules"));

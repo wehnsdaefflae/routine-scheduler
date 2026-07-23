@@ -6,6 +6,7 @@
 // rail — the server re-applies the activation cascade, so the invariant holds either way.
 
 import { el, requiresSummary, toast } from "/static/util.js";
+import { docExpander } from "/static/components/docexpand.js";
 
 const CONFIRM_OPTIONS = [
   ["off", "off — engine rejects write_util"],
@@ -24,6 +25,42 @@ const WF_OPTIONS = [
   ["generate", "generate — also draft a new pattern when none fits"],
 ];
 const WF_RANK = { catalog: 0, generate: 1 };
+
+// What each machine-enforced capability MEANS, with a concrete example — a bare action
+// kind or util name on its own told the user nothing (F178, user order 2026-07-23).
+const ACTION_HELP = {
+  write_util: "create or revise the shared global utils every routine can call — e.g. write a "
+    + "`pdf-stamp` script once and every routine can sign PDFs from then on; the level sets "
+    + "when a change needs your approval",
+  remove_util: "retire a global util from the shared library (refused while another util still "
+    + "calls it) — e.g. delete a scraper after its site shut down",
+  memory_read: "read the routine's .memory/ notebook — facts earlier runs paid to learn, "
+    + "e.g. \"the API rejects requests without a language header\"",
+  memory_write: "add or revise .memory/ notes when reality contradicts an assumption — "
+    + "e.g. record the working login flow so no future run has to rediscover it",
+  detach: "start a long background job that outlives the current reply — e.g. kick off a "
+    + "two-hour bulk conversion, keep chatting, and the result is delivered back to the "
+    + "conversation when it finishes",
+  schedule_run: "arm a one-shot future run of this or a sibling routine — e.g. \"re-check the "
+    + "parcel status in 3 days\" instead of waiting for the next scheduled fire",
+  read_trait: "consult a library practice module mid-run without holding it — e.g. read the "
+    + "web-research discipline once before an unusual research step",
+};
+const UTIL_HELP = {
+  discord: "the phone channel: blocking questions mirror to Discord and are answerable in one "
+    + "reply — e.g. \"apply to this project? approve / decline\" reaches you away from the console",
+  shell: "arbitrary one-off shell commands on the host — the escape hatch around the no-shell "
+    + "design, e.g. a quick `git log` or disk-usage check no util covers; anything a routine "
+    + "does twice should become a proper util instead",
+  remote: "act on a bound remote machine over SSH — e.g. fetch a file from the NAS or restart "
+    + "a service on another box",
+};
+const RUNS_HELP = "read earlier runs' transcripts and results under runs/ — e.g. recover the "
+  + "exact error message a past summary compressed away, or trace when a regression first "
+  + "appeared; depth: the last run only, or the whole history";
+const WF_HELP = "how a subtask child sources its workflow: pick from the pattern catalog only, "
+  + "or additionally DRAFT a brand-new pattern when none fits (one system-model call; the "
+  + "draft joins the shared library)";
 
 // permissions: [{slug, summary, requires, active, routine_only?}]
 // capabilities: {active: {actions, utils, confirm, runs, workflows}, vocabulary: {actions, utils}}
@@ -95,12 +132,16 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
         render();
       };
       const req = requiresSummary(p.requires);
-      docsCol.append(el("label", { class: `toggle-row${p.routine_only ? " faint" : ""}`,
-        title: p.routine_only ? "only meaningful for scheduled routines" : "" }, box,
-        el("div", {},
-          el("div", { class: "t-title" }, p.slug, p.routine_only ? " (routines only)" : ""),
-          el("div", { class: "muted prose small" }, p.summary || ""),
-          req ? el("div", { class: "small", style: "color:var(--warn)" }, `▸ ${req}`) : null)));
+      const doc = docExpander("permissions", p.slug);
+      docsCol.append(el("div", { class: "perm-doc" },
+        el("label", { class: `toggle-row${p.routine_only ? " faint" : ""}`,
+          title: p.routine_only ? "only meaningful for scheduled routines" : "" }, box,
+          el("div", {},
+            el("div", { class: "t-title" }, p.slug, p.routine_only ? " (routines only)" : ""),
+            el("div", { class: "muted prose small" }, p.summary || ""),
+            req ? el("div", { class: "small", style: "color:var(--warn)" }, `▸ ${req}`) : null,
+            doc.btn)),
+        doc.body));
     }
     if (!docs.length) docsCol.append(el("div", { class: "muted" }, "no permissions in the library"));
   }
@@ -130,7 +171,7 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
           render();
         };
         capsCol.append(capRow(sel, "write_util — author global utils",
-          "create/revise shared utils; the level is your approval policy",
+          ACTION_HELP.write_util,
           badge(requiredBy((r) => (r.actions || []).includes("write_util")))));
       } else {
         const box = el("input", { type: "checkbox", checked: caps.actions.has(a) ? "" : null });
@@ -140,7 +181,7 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
           render();
         };
         capsCol.append(capRow(box, `${a} — action`,
-          a.startsWith("memory") ? "the .memory/ notebook of hard-won facts" : "",
+          ACTION_HELP[a] || "",
           badge(requiredBy((r) => (r.actions || []).includes(a)))));
       }
     }
@@ -151,7 +192,8 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
         else { caps.utils.delete(u); dropUnsatisfied(); }
         render();
       };
-      capsCol.append(capRow(box, `util ${u} — reserved channel`, "",
+      capsCol.append(capRow(box, `util ${u} — reserved channel`,
+        UTIL_HELP[u] || "a util reserved to routines the user grants it explicitly",
         badge(requiredBy((r) => (r.utils || []).includes(u)))));
     }
     const runsSel = el("select", { disabled: opts.disableRuns ? "" : null },
@@ -164,7 +206,7 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
       render();
     };
     capsCol.append(capRow(runsSel, "previous runs — read depth",
-      opts.disableRuns || "read_file on earlier runs' transcripts and results under runs/",
+      opts.disableRuns || RUNS_HELP,
       badge(requiredBy((r) => !!r.runs))));
     const wfSel = el("select", {},
       ...WF_OPTIONS.map(([v, label]) =>
@@ -175,8 +217,7 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
       dropUnsatisfied();
       render();
     };
-    capsCol.append(capRow(wfSel, "subtask patterns — sourcing",
-      "how a subtask sources its workflow: pick from the catalog, or DRAFT a new one when none fits",
+    capsCol.append(capRow(wfSel, "subtask patterns — sourcing", WF_HELP,
       badge(requiredBy((r) => !!r.workflows))));
   }
 
