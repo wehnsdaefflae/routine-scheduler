@@ -26,6 +26,9 @@ Rewrite the report the Audit tab reads: `audit/report.json`. Exactly this shape:
    decision automatically (meta badge). NEVER also file them as deferred `ask_user`: that
    would double-surface them. `ask_user` remains for questions that are not report
    decisions (mid-run clarifications).
+6. **Rewrite `audit/report-index.md` beside the report** — one line per item, nothing more:
+   `F1 | problem | open|fixed | <title>` / `D1 | open|settled | <title>`. It is the cheap
+   id-stability surface the next run's orient reads instead of the full report.
 
 ## Next
 Write `state/phase.json` = `{"phase": "request-restart"}` and read `stages/request-restart.md`.

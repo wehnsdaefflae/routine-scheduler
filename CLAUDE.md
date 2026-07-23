@@ -480,8 +480,13 @@ traits + permissions + playbooks),
 enabled; a seed added after first boot reaches existing instances via
 `bootstrap.adopt_seed_routine` at daemon boot, which respects an archived copy). `self-audit`
 works LOOKUP-FIRST from `.codemap/` — a compact derived map of this repo (module API surface,
-routes + JS callers, contract literals, mechanical audit flags) the library `codemap` util
-regenerates at orient (gitignored; delete-and-rebuild, never hand-edited). `token-lab` is
+routes + JS callers, contract literals, mechanical audit flags — orphan candidates
+pre-verified by a whole-repo reference scan) the library `codemap` util regenerates at orient
+(gitignored; delete-and-rebuild, never hand-edited; `--since` prints the symbol-level change
+set for the since-anchor review). Its companions: `sym` (syntax-aware surgery — read one
+complete symbol with a content hash, compare-and-swap replace with a whole-file re-parse
+gate, `check` as a syntax pre-gate before pytest) and `run-digest` (one-observation triage
+of every new routine run; raw transcripts opened only on anomaly). `token-lab` is
 the token-efficiency R&D loop: measures real usage, tests methods via llm subcalls ONLY (never
 integrates), publishes `artifacts/report.html`. The **library sync**
 (`library_sync.py`, a scheduled DAEMON job — Settings → Library sync, deliberately not a routine)

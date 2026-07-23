@@ -10,17 +10,24 @@ If APPLY is empty, skip straight to Next (a no-change run is a good run — say 
 ## For each change
 1. **Locate via the codemap, then read narrowly**: `modules-*.md` names the owning module,
    symbol and line; `routes.md` maps an endpoint to its handler and its static/ callers;
-   `frontend.md` maps a JS module's exports/imports. Open only the file(s) and lines the
-   map names; fall back to grep only where the map has no answer.
-2. Edit the **smallest responsible file(s)** with `write_file`; keep diffs small and reviewable.
-   Respect the repo's one-responsibility / ≤~350-line rule.
+   `frontend.md` maps a JS module's exports/imports. Fetch with `util sym read <file> <Symbol>`
+   (keep the returned hash) or a `read_file` window; fall back to grep only where the map has
+   no answer.
+2. Edit the **smallest responsible file(s)**; keep diffs small and reviewable, and respect the
+   repo's one-responsibility / ≤~350-line rule. Pick the tool by scale: a function/class
+   rewrite is `util sym replace <file> <Symbol> --hash <from THIS run's read> --body …` —
+   compare-and-swap plus a whole-file re-parse, so a stale read or a syntax break is rejected
+   loudly and nothing lands; line-scale tweaks and prose are `edit_file`; new files are
+   `write_file`.
 3. **Add or adjust tests in the SAME change** — the repo requires tests with every change. For an
    instrumentation finding, add exactly the logging/telemetry you specified (+ its test).
 4. **Do NOT touch the contracts** (action schema, transcript `EVENT_TYPES`, CLAUDE.md ownership
    rules) here — those are decisions; they should already be in SURFACE, not APPLY.
 
 ## Test-gate — the hard gate
-Run `util pytest-run /home/mark/git-repos/routine-scheduler`.
+**Pre-gate first**: `util sym check <every .py/.js/.json file you edited>` — a syntax break
+caught here costs seconds; the same break at the pytest gate costs a full test cycle plus a
+revert. Then run `util pytest-run /home/mark/git-repos/routine-scheduler`.
 - **GREEN** →
   1. `util git-sync /home/mark/git-repos/routine-scheduler -m "self-audit: <one line>"` (commit+push).
   2. Read the new commit hash back (the git-log util from gather-evidence; if none exists,

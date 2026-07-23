@@ -11,13 +11,20 @@ instead of re-exploring the tree.
   <last_commit>..HEAD --stat` (first run: log the recent history broadly, e.g. last ~20 commits).
 - Capture: which files changed, churn hot-spots, any file now over the ~350-line one-responsibility
   budget, changes that touch contracts (action schema, transcript `EVENT_TYPES`, CLAUDE.md).
+- **Symbol-level view**: `util codemap args=["--repo", "/home/mark/git-repos/routine-scheduler",
+  "--since", "<last_commit>"]` prints exactly which functions/classes were added/changed/removed
+  per file — review the delta at that altitude and open a raw diff only where a changed symbol
+  warrants it.
 
 ## B. Routine runtime behaviour (`/home/mark/routines`)
-- Enumerate the routines home with a directory-listing util (`util name=list`; if none exists,
-  `write_util` a tiny one). **Skip dot-dirs and this routine itself.**
-- For runs newer than `last_ts`, read the top-level `transcript.jsonl` + `LEDGER.md` (+ peek
-  `status.json`). **Cap the newest ~5 runs each.**
-- **`spawn` parallel readers** (prompt = the file paths + the rubric below), then `wait` all.
+- **Triage first, read second**: `util run-digest /home/mark/routines --since <last_ts> --per 0`
+  digests EVERY new run in one observation — outcome, turns, action counts, errors, questions,
+  subruns, finish summary, and ⚑ flags (failed/partial, errors, budget-forced finish,
+  unanswered questions). It skips dot-dirs and this routine by itself.
+- Open a raw `transcript.jsonl` / `LEDGER.md` ONLY for flagged or otherwise anomalous runs —
+  for several, **`spawn` parallel readers** (prompt = the file paths + the rubric below + the
+  relevant `.codemap/` excerpt), then `wait` all. An all-clean digest sweep is a healthy
+  signal, not a reason to go digging.
 - Rubric — collect per run: finish outcome (authored vs budget-forced), schema-retry storms,
   repeated-action warnings, fabrication-guard rejections, wasted turns, questions asked
   (answered vs ignored), and any workflow-vs-run conflicts.
@@ -30,6 +37,10 @@ instead of re-exploring the tree.
 - Tests: `util pytest-run /home/mark/git-repos/routine-scheduler` — record pass/fail + tail.
 - Lint: if a lint util exists (`util name=list`), run it and record status; otherwise skip —
   the pytest gate is the hard gate.
+- **Bug reports**: tail `/home/mark/routines/.control/bug-reports.jsonl` since the anchor —
+  every entry is a defect a ROUTINE filed against the scheduler via `report_bug` (the ungated
+  channel that exists to feed this audit). Triage each new entry into a finding or an explicit
+  dismissal with a reason; an empty tail is a clean signal.
 
 ## D. UI friction
 - Read the newest 1–2 files under `/home/mark/routines/.ui-traces/` (`<YYYYMMDD>.jsonl`,
@@ -43,8 +54,10 @@ instead of re-exploring the tree.
 - The codemap regenerated at orient (`/home/mark/git-repos/routine-scheduler/.codemap/index.md`)
   pre-computes the cruft inventory: files over the ~350-line budget, orphan-module candidates,
   modules no test imports, skipped tests, TODO/FIXME lines, MIGRATION markers with expiry,
-  stale path references in docs, churn hotspots. Treat each flag as a CANDIDATE: verify
-  (grep / zero-reference check) before it becomes a finding — precision over recall.
+  stale path references in docs, churn hotspots. Treat each flag as a CANDIDATE: verify before
+  it becomes a finding — precision over recall. Exception: orphan candidates arrive
+  PRE-verified with a whole-repo reference scan ("NO dotted/path refs anywhere" needs no
+  further grepping; a flag listing references tells you exactly where to look).
 
 ## Next
 Write `state/phase.json` = `{"phase": "analyse-findings"}` and read `stages/analyse-findings.md`.

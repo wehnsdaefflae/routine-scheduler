@@ -19,6 +19,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.95.0] — 2026-07-23
+### Added
+- **Self-audit efficiency/effectiveness batch** (evidence-driven — profiling showed 55–77%
+  of run observation volume was shell-based code exploration): the new library `sym` util
+  (syntax-aware surgery: `read` fetches one complete symbol with a content hash, `replace`
+  is compare-and-swap at the ast span with a whole-file re-parse gate, `refs` counts
+  references, `check` is a fast syntax pre-gate for .py/.js/.json — ESM-safe on Node 20);
+  the new `run-digest` util (one-observation triage digests of every new routine run —
+  outcome, action counts, errors, questions, flags — so raw transcripts are opened only on
+  anomaly, raising coverage from ~5 runs per routine to all); `codemap --since COMMIT`
+  (symbol-level change set for the since-anchor review) and pre-verified orphan flags
+  (whole-repo dotted-key/path reference scan rides the flag line). Codemap's import graph
+  now counts function-local lazy imports and package-`__init__` relative imports — the two
+  patterns that had 43 modules crying wolf as orphans (real count: 0). The doc-staleness
+  check derives its scope from the tree (a reference is checked only when its first
+  segment is a real directory under a candidate root) instead of a hardcoded namespace
+  list. Self-audit recipe (live + seed): symbol-delta review, digest-first transcript
+  triage, the `report_bug` stream (`.control/bug-reports.jsonl`) as a named evidence
+  source, `sym`/windowed reads as the fetch discipline, `sym check` before the pytest
+  gate, and a one-line-per-item `audit/report-index.md` replacing the full report re-read
+  at orient.
+
 ## [0.94.0] — 2026-07-23
 ### Added
 - **Self-audit works lookup-first from a generated codemap**: the new library `codemap`
