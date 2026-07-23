@@ -25,9 +25,13 @@ If APPLY is empty, skip straight to Next (a no-change run is a good run — say 
    rules) here — those are decisions; they should already be in SURFACE, not APPLY.
 
 ## Test-gate — the hard gate
-**Pre-gate first**: `util sym check <every .py/.js/.json file you edited>` — a syntax break
-caught here costs seconds; the same break at the pytest gate costs a full test cycle plus a
-revert. Then run `util pytest-run /home/mark/git-repos/routine-scheduler`.
+**Pre-gate first**:
+1. Self-review each edited file: `util sym diff <file>` (no `--since` = HEAD → working tree)
+   shows exactly what you changed, scoped per symbol — catch over-replacement and stray edits
+   while they cost one observation, not a test cycle.
+2. `util sym check <every .py/.js/.json file you edited>` — a syntax break caught here costs
+   seconds; the same break at the pytest gate costs a full test cycle plus a revert.
+Then run `util pytest-run /home/mark/git-repos/routine-scheduler`.
 - **GREEN** →
   1. `util git-sync /home/mark/git-repos/routine-scheduler -m "self-audit: <one line>"` (commit+push).
   2. Read the new commit hash back (the git-log util from gather-evidence; if none exists,

@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.96.0] — 2026-07-24
+### Added
+- **`sym diff` — scoped, symbol-addressed change review**: old side from any git ref
+  (default HEAD), new side from disk, diff cut per symbol with class changes recursing to
+  the changed methods; signature changes carry a `! signature changed · N files reference
+  it` impact note. Single-symbol drill-down or whole-file listing (added/removed symbols
+  collapsed to their roots). Scope was decided by measurement, not folklore: over the last
+  40 commits only 2% of changed symbols were formatting/docstring-only (agent-authored,
+  ruff-gated commits), so the classification tags and a difftastic/GumTree dependency were
+  rejected; scoped diffs measured at 41–49% of full-file diff volume. Self-audit recipe
+  (live + seed): §A drills into suspicious delta symbols via `sym diff --since <anchor>`;
+  act-apply-fixes self-reviews every edited file (`sym diff <file>`, HEAD → working tree)
+  before the syntax pre-gate and the pytest gate.
+
 ## [0.95.0] — 2026-07-23
 ### Added
 - **Self-audit efficiency/effectiveness batch** (evidence-driven — profiling showed 55–77%

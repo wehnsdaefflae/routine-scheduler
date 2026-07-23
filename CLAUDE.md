@@ -485,8 +485,9 @@ pre-verified by a whole-repo reference scan) the library `codemap` util regenera
 (gitignored; delete-and-rebuild, never hand-edited; `--since` prints the symbol-level change
 set for the since-anchor review). Its companions: `sym` (syntax-aware surgery — read one
 complete symbol with a content hash, compare-and-swap replace with a whole-file re-parse
-gate, `check` as a syntax pre-gate before pytest) and `run-digest` (one-observation triage
-of every new routine run; raw transcripts opened only on anomaly). `token-lab` is
+gate, `diff` as a scoped per-symbol old→new review with signature-impact notes, `check` as
+a syntax pre-gate before pytest) and `run-digest` (one-observation triage of every new
+routine run; raw transcripts opened only on anomaly). `token-lab` is
 the token-efficiency R&D loop: measures real usage, tests methods via llm subcalls ONLY (never
 integrates), publishes `artifacts/report.html`. The **library sync**
 (`library_sync.py`, a scheduled DAEMON job — Settings → Library sync, deliberately not a routine)

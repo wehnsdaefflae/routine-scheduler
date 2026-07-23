@@ -13,8 +13,10 @@ instead of re-exploring the tree.
   budget, changes that touch contracts (action schema, transcript `EVENT_TYPES`, CLAUDE.md).
 - **Symbol-level view**: `util codemap args=["--repo", "/home/mark/git-repos/routine-scheduler",
   "--since", "<last_commit>"]` prints exactly which functions/classes were added/changed/removed
-  per file — review the delta at that altitude and open a raw diff only where a changed symbol
-  warrants it.
+  per file — review the delta at that altitude. Drill into a suspicious symbol with
+  `util sym args=["diff", "<file>", "<Symbol>", "--since", "<last_commit>"]` — the scoped
+  old→new diff, with a `! signature changed · N files reference it` impact note. A raw
+  full-file diff is the last resort.
 
 ## B. Routine runtime behaviour (`/home/mark/routines`)
 - **Triage first, read second**: `util run-digest /home/mark/routines --since <last_ts> --per 0`
