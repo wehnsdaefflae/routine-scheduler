@@ -547,8 +547,10 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   grants.py builds the run policy from it alone, so a doc-without-capability config fails closed);
   a doc's `requires:` names what its instructions presume and drives the UI cascades (activating a
   doc switches its requirements on; switching a capability off deactivates the docs requiring it —
-  the server re-applies the activation cascade on save). Both layers user-changeable ONLY; routines
-  can't self-grant. The doc set: `util-authoring` (requires write_util — the approval level
+  and the server runs the SAME raise-then-floor on every path that persists a mapping: save AND
+  creation (scaffold, conversation create, the composer's ⚙ payload, the /defaults preview), so a
+  mapping never expresses a capability its held docs don't require — from birth, not first edit).
+  Both layers user-changeable ONLY; routines can't self-grant. The doc set: `util-authoring` (requires write_util — the approval level
   always/creations/never is a CAPABILITY setting, default), `memory` (memory_read/memory_write —
   indexed ≤100-line notes in `.memory/`; INDEX.md engine-maintained, surfaced in the state digest;
   default), `communication` (requires `discord`; the enabled capability also turns on engine-side

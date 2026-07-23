@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.87.5] — 2026-07-23
+
+The creation-path floor decision (the findings ledger's last behavioral item).
+
+### Changed
+- **A capabilities mapping is floored from birth, on every path**: the conversation
+  default-creation path and the `/conversations/defaults` preview now run the same
+  raise-then-floor the save paths and routine scaffold already apply — no persisted
+  (or previewed) mapping can express a capability its held conduct docs did not require.
+  Enforcement is unchanged (capabilities-only, fail-closed); production data audited —
+  no live routine/conversation carried an orphan capability, so nothing migrated.
+
+### Fixed
+- docs/traits-permissions.md still claimed a capability could be enabled bare, without a
+  conduct doc — stale since the floor landed (D8). The two-invariant wording now matches
+  the code; CLAUDE.md names creation alongside save.
+
 ## [0.87.4] — 2026-07-23
 
 Last small closers from the findings ledger.

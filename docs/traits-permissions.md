@@ -28,10 +28,15 @@ do; permissions instruct it in what it may do.**
 Activating a permission switches on the capabilities its `requires:` names. Switching a
 capability off deactivates every permission that requires it. Both cascades live in the
 UI (the routine page shows the two layers side by side, each capability badged with the
-docs requiring it); the server re-applies the activation cascade on save, so the
-invariant — *a held doc's requirements are always on* — holds regardless of the client.
-A capability may also be enabled bare, without any conduct doc: that is your call to
-make, fully visible in the panel.
+docs requiring it); the server re-runs the same raise-then-**floor** on every path that
+persists a mapping — save *and* creation (routine scaffold, conversation create, the
+composer's pre-start panel, the `/conversations/defaults` preview) — so two invariants
+hold regardless of the client: *a held doc's requirements are always on*, and *a saved
+mapping never expresses a capability its held permissions did not ask for*. A gated
+action or reserved util cannot be enabled bare: the conduct doc is the switch, the
+capability is only the means of asking for it. (The policy dials that ride a
+capability — write_util's approval level, the run-history depth — stay yours and are
+preserved across the floor.)
 
 Enforcement reads **capabilities only** (`grants.py` builds the run policy from the
 routine's own mapping); a doc-without-capability misconfiguration therefore fails

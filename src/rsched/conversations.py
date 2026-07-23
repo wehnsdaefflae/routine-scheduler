@@ -173,13 +173,16 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
     available_perms = set(library_docs.slugs(server.permissions_home))
     active_perms = [p for p in (permissions if permissions is not None
                                 else CONVERSATION_PERMISSIONS) if p in available_perms]
-    from .grants import capabilities_for, read_library_requires
+    from .grants import capabilities_for, floor_capabilities, read_library_requires
 
     # a caller-resolved mapping (the composer's ⚙ panel, already validated + floored by
-    # resolve_permission_layers) wins; otherwise derive it from the active docs
+    # resolve_permission_layers) wins; otherwise derive it from the active docs — under
+    # the SAME raise-then-floor discipline every save applies (decided 2026-07-23: a
+    # mapping is floored from BIRTH on every path, so no orphan capability ever persists)
     if capabilities is None:
-        capabilities = capabilities_for(active_perms,
-                                        read_library_requires(server.permissions_home))
+        lib = read_library_requires(server.permissions_home)
+        capabilities = floor_capabilities(active_perms, lib,
+                                          capabilities_for(active_perms, lib))
     cfg = {
         "name": title,
         "slug": slug,

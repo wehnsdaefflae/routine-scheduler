@@ -627,3 +627,20 @@ def test_commands_catalog_and_command_flagged_message(client):
     flagged = [m for m in msgs if (_rj(m) or {}).get("command")]
     assert len(flagged) == 1
     assert _rj(flagged[0])["text"] == "/read_file instruction.md"
+
+
+def test_creation_floors_capabilities_like_save(server):
+    """The default creation path applies the SAME raise->floor as every save: a held doc
+    whose requires names a non-gated action cannot smuggle it into the persisted mapping
+    (raise adds it, the floor strips it), while its reserved util survives."""
+    (server.permissions_home / "leaky.md").write_text(
+        "---\nrequires:\n  actions: [finish]\n  utils: [remote]\n---\n"
+        "# permission: leaky\n\nA doc whose requires lists the ungated `finish` kind.\n",
+        encoding="utf-8")
+    d = conv_mod.create_conversation(server, slug="c-floor", first_message="hi",
+                                     permissions=["leaky"])
+    cfg, problems = load_routine(d)
+    assert not problems and cfg is not None
+    assert cfg.permissions == ["leaky"]
+    assert cfg.capabilities["utils"] == ["remote"]      # required by the held doc - kept
+    assert cfg.capabilities["actions"] == []            # finish is not a gated kind - floored

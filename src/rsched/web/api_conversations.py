@@ -153,12 +153,14 @@ def conversation_defaults(request: Request) -> dict:
     from types import SimpleNamespace
 
     from .. import library_docs
-    from ..grants import capabilities_for, read_library_requires
+    from ..grants import capabilities_for, floor_capabilities, read_library_requires
 
     server = request.app.state.server
     available = set(library_docs.slugs(server.permissions_home))
     active = [p for p in conv_mod.CONVERSATION_PERMISSIONS if p in available]
-    caps = capabilities_for(active, read_library_requires(server.permissions_home))
+    # floored like the create path — the preview must show what will actually persist
+    lib = read_library_requires(server.permissions_home)
+    caps = floor_capabilities(active, lib, capabilities_for(active, lib))
     permissions, capabilities = permission_layers_detail(
         server, SimpleNamespace(permissions=active, capabilities=caps),
         routine_only=conv_mod.ROUTINE_ONLY_PERMISSIONS)
