@@ -49,7 +49,10 @@ def _hermetic_home(tmp_path, monkeypatch):
         if s == "~" or s.startswith("~/"):
             return fake_home / s[2:] if len(s) > 1 else fake_home
         return real(v)
-    monkeypatch.setattr("rsched.config.expand", expand)
+    # the config package resolves `expand` at call time in TWO modules (field defaults
+    # in server.py, the HomePath validator in base.py) — patch both
+    monkeypatch.setattr("rsched.config.base.expand", expand)
+    monkeypatch.setattr("rsched.config.server.expand", expand)
     monkeypatch.setattr("rsched.secrets.secrets_path",
                         lambda: fake_home / ".config/routine-scheduler/secrets.env")
 

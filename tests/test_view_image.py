@@ -7,7 +7,7 @@ import json
 from types import SimpleNamespace
 
 from rsched.endpoints.base import EndpointError, supports_media_type
-from rsched.engine import executor
+from rsched.engine import executor, fileops
 from rsched.engine.actions import KIND_EXAMPLES, KINDS, validate_action
 
 # --- action schema -----------------------------------------------------------
@@ -63,7 +63,7 @@ def test_do_view_image_native(tmp_path):
 
 def test_do_view_image_vision_fallback(tmp_path, monkeypatch):
     (tmp_path / "shot.png").write_bytes(b"IMG")
-    monkeypatch.setattr(executor, "vision_describe", lambda ctx, ab, pr: "a red square")
+    monkeypatch.setattr(fileops, "vision_describe", lambda ctx, ab, pr: "a red square")
     obs = executor.do_view_image({"kind": "view_image", "path": "shot.png", "prompt": "?"},
                                  _ctx(tmp_path, _Endpoint(False)))
     assert "media" not in obs
@@ -72,7 +72,7 @@ def test_do_view_image_vision_fallback(tmp_path, monkeypatch):
 
 def test_do_view_image_no_endpoint_uses_vision(tmp_path, monkeypatch):
     (tmp_path / "shot.png").write_bytes(b"IMG")
-    monkeypatch.setattr(executor, "vision_describe", lambda *a: "described")
+    monkeypatch.setattr(fileops, "vision_describe", lambda *a: "described")
     obs = executor.do_view_image({"kind": "view_image", "path": "shot.png"}, _ctx(tmp_path, None))
     assert obs["files"][0]["via"] == "vision-util"
 
@@ -91,8 +91,8 @@ def test_do_view_image_missing_file(tmp_path):
 
 
 def test_do_view_image_oversize_uses_vision(tmp_path, monkeypatch):
-    monkeypatch.setattr(executor, "NATIVE_MEDIA_MAX_BYTES", 4)
-    monkeypatch.setattr(executor, "vision_describe", lambda *a: "described")
+    monkeypatch.setattr("rsched.engine.fileops.NATIVE_MEDIA_MAX_BYTES", 4)
+    monkeypatch.setattr(fileops, "vision_describe", lambda *a: "described")
     (tmp_path / "shot.png").write_bytes(b"toolong")
     obs = executor.do_view_image({"kind": "view_image", "path": "shot.png"},
                                  _ctx(tmp_path, _Endpoint(True)))
@@ -120,11 +120,11 @@ def test_vision_describe_parses_and_errors(tmp_path, monkeypatch):
     monkeypatch.setattr(utils_lib, "run_util",
                         lambda home, n, args, timeout=300, policy=None:
                         (0, json.dumps({"text": "hi"}), ""))
-    assert executor.vision_describe(ctx, "/x.png", "?") == "hi"
+    assert fileops.vision_describe(ctx, "/x.png", "?") == "hi"
     monkeypatch.setattr(utils_lib, "run_util", lambda *a, **k: (1, "", "boom"))
-    assert executor.vision_describe(ctx, "/x.png", "?").startswith("error:")
+    assert fileops.vision_describe(ctx, "/x.png", "?").startswith("error:")
     monkeypatch.setattr(utils_lib, "exists", lambda home, n: False)
-    assert "not installed" in executor.vision_describe(ctx, "/x.png", "?")
+    assert "not installed" in fileops.vision_describe(ctx, "/x.png", "?")
 
 
 # --- auto-attach helper + inbox drain ----------------------------------------
@@ -133,10 +133,10 @@ def test_media_from_paths_filters(tmp_path):
     (tmp_path / "a.png").write_bytes(b"x")
     (tmp_path / "b.txt").write_text("x")
     (tmp_path / "c.pdf").write_bytes(b"x")
-    out = executor.media_from_paths(_ctx(tmp_path, _Endpoint(True)),
+    out = fileops.media_from_paths(_ctx(tmp_path, _Endpoint(True)),
                                     ["a.png", "b.txt", "c.pdf", "missing.png"])
     assert {m["media_type"] for m in out} == {"image/png", "application/pdf"}
-    assert executor.media_from_paths(_ctx(tmp_path, _Endpoint(False)), ["a.png"]) == []
+    assert fileops.media_from_paths(_ctx(tmp_path, _Endpoint(False)), ["a.png"]) == []
 
 
 def test_drain_messages_carries_attachments(tmp_path):
@@ -172,7 +172,7 @@ def _loop(make_routine, tmp_path):
 
 
 def test_apply_media_fallback(make_routine, tmp_path, monkeypatch):
-    monkeypatch.setattr(executor, "vision_describe", lambda ctx, ab, pr: "DESCRIBED")
+    monkeypatch.setattr(fileops, "vision_describe", lambda ctx, ab, pr: "DESCRIBED")
     loop = _loop(make_routine, tmp_path)
     loop.messages = [{"role": "user", "content": "OBS",
                       "media": [{"path": str(tmp_path / "x.png"), "media_type": "image/png"}]}]

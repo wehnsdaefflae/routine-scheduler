@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 
 from .. import registry, triggers
 from ..paths import atomic_write
-from .api_routines import _git_commit, _info, _state, guard_not_active, guard_template
+from .routines_common import _git_commit, _info, _state, guard_not_active, guard_template
 
 log = logging.getLogger("rsched.hooks")
 

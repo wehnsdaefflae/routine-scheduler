@@ -14,7 +14,7 @@ import time
 from ..config import DELIBERATION_LEVELS
 from ..paths import read_json
 from ..schema_guard import validate
-from . import deliberation, executor, inbox
+from . import deliberation, executor, fileops, inbox
 from .actions import ACTION_SCHEMA, util_rejection_outcome, validate_action
 from .commands import CommandError, parse_command
 from .observations import format_observation, truncate
@@ -176,7 +176,7 @@ def inject_user_message(loop, m: dict) -> None:
     ctx = loop.ctx
     ctx.transcript.event("user_injection", {"text": m["text"]})
     msg: dict = {"role": "user", "content": f"USER MESSAGE (injected mid-run):\n{m['text']}"}
-    if m.get("attachments") and (media := executor.media_from_paths(ctx, m["attachments"])):
+    if m.get("attachments") and (media := fileops.media_from_paths(ctx, m["attachments"])):
         msg["media"] = media
     loop.messages.append(msg)
 

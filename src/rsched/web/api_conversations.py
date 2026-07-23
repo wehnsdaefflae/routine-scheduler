@@ -13,10 +13,8 @@ here for the chat's artifact panel. Its detached background tasks live in api_ba
 from __future__ import annotations
 
 import asyncio
-import re
 import shutil
 import uuid
-from pathlib import Path
 from typing import Annotated
 
 import yaml
@@ -26,107 +24,28 @@ from pydantic import BaseModel
 from .. import conversations as conv_mod
 from .. import registry
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, load_routine, write_tuning
-from ..ids import now_iso, run_ts
+from ..ids import now_iso
 from ..paths import atomic_write, atomic_write_json
 from . import artifacts
 from .api_background import list_background_rows, teardown_background
-from .api_routines import (
+from .api_routine_edit import (
     PermissionsBody,
     TraitsBody,
-    active_run_dir,
     apply_trait_edit,
-    guard_not_active,
-    permission_layers_detail,
     resolve_permission_layers,
 )
+from .routines_common import active_run_dir, guard_not_active, permission_layers_detail
 
 router = APIRouter(tags=["conversations"])
 
-MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 _autolabel_tasks: set[asyncio.Task] = set()   # strong refs for fire-and-forget autolabel tasks
 
-
-def _home(request: Request) -> Path:
-    return request.app.state.server.conversations_home
-
-
-def conversation_info(request: Request, slug: str) -> registry.RoutineInfo:
-    d = _home(request) / slug
-    if not (d / "routine.yaml").exists():
-        raise HTTPException(404, f"no conversation {slug!r}")
-    cfg, problems = load_routine(d)
-    if cfg is None:
-        raise HTTPException(500, "; ".join(problems))
-    return registry.RoutineInfo(cfg=cfg, problems=problems,
-                                runs=registry.run_index(d, cfg.slug),
-                                open_questions=[])
-
-
-MAX_ATTACHMENTS_PER_MESSAGE = 16
-_UPLOAD_CHUNK = 1 << 20
-
-
-async def _save_attachments(conv_dir: Path, files: list[UploadFile]) -> list[str]:
-    """Store uploads under attachments/ (timestamped, safe basenames); returns the
-    conversation-relative paths for the message's attachment block. STREAMED to disk in
-    chunks with the size cap enforced as it arrives — `await f.read()` buffered the whole
-    upload first, so an oversized body OOM'd the box before the 413. Same-name files in
-    one message get a numbered suffix instead of overwriting each other.
-    """
-    if files and len(files) > MAX_ATTACHMENTS_PER_MESSAGE:
-        raise HTTPException(413, f"at most {MAX_ATTACHMENTS_PER_MESSAGE} attachments "
-                                 "per message")
-    rels: list[str] = []
-    taken: set[str] = set()
-    stamp = run_ts()
-    for i, f in enumerate(files or []):
-        base = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(f.filename or f"file-{i}").name).strip("-.") \
-            or f"file-{i}"
-        rel = f"attachments/{stamp}-{base}"
-        n = 2
-        while rel in taken or (conv_dir / rel).exists():
-            rel = f"attachments/{stamp}-{n}-{base}"
-            n += 1
-        taken.add(rel)
-        (conv_dir / "attachments").mkdir(exist_ok=True)
-        dest = conv_dir / rel
-        written = 0
-        try:
-            with dest.open("wb") as out:
-                while chunk := await f.read(_UPLOAD_CHUNK):
-                    written += len(chunk)
-                    if written > MAX_ATTACHMENT_BYTES:
-                        raise HTTPException(
-                            413, f"attachment {base!r} exceeds "
-                                 f"{MAX_ATTACHMENT_BYTES // (1024 * 1024)}MB")
-                    out.write(chunk)
-        except HTTPException:
-            dest.unlink(missing_ok=True)
-            raise
-        rels.append(rel)
-    return rels
-
-
-def _snippet(info: registry.RoutineInfo) -> str:
-    last = info.last_run
-    return (last.summary.strip().splitlines()[0][:160]
-            if last and last.summary else "")
-
-
-def _item(info: registry.RoutineInfo) -> dict:
-    last = info.last_run
-    return {
-        "slug": info.slug,
-        "title": info.cfg.name,
-        "tags": info.cfg.tags,
-        "state": last.state if last else "new",
-        "updated": (last.updated or last.ts) if last else "",
-        "snippet": _snippet(info),
-        "run_id": last.run_id if last else None,
-        "turns": last.turn if last else 0,
-        "usage": last.usage if last else {},
-        "question": bool(last and last.question),
-    }
+from .conversations_common import (  # noqa: E402
+    _home,
+    _item,
+    _save_attachments,
+    conversation_info,
+)
 
 
 @router.get("/conversations")
@@ -419,63 +338,6 @@ async def delete_conversation(request: Request, slug: str) -> dict:
     await teardown_background(request, slug)
     shutil.rmtree(info.cfg.dir)
     return {"ok": True}
-
-
-@router.post("/conversations/{slug}/playbook")
-def save_playbook(request: Request, slug: str) -> dict:
-    """Distil this conversation (its intent + the procedure that satisfied it) into a NEW library
-    playbook via the system model, committed to the library. Always creates a new playbook (slug
-    suffixed on collision) — use PUT to refine the one a conversation was seeded from. A sync def:
-    FastAPI runs it in a worker thread, so the blocking inference never stalls the event loop.
-    """
-    from .. import playbook_distill, playbooks
-    from ..workflows import library
-
-    info = conversation_info(request, slug)
-    server = request.app.state.server
-    home = server.libraries_home
-    try:
-        pb = playbook_distill.distill_playbook(server, info.cfg.dir)
-    except Exception as exc:
-        raise HTTPException(502, f"could not distil a playbook: {exc}") from exc
-    pb["slug"] = playbooks.unique_slug(home, pb["slug"])
-    main_text, details = playbook_distill.materialize(pb)
-    playbooks.write_playbook(home, pb["slug"], main=main_text, details=details)
-    library.git_commit(home, f"save playbook {pb['slug']} (from conversation {slug})",
-                       paths=[f"playbooks/{pb['slug']}"])
-    return {"ok": True, "slug": pb["slug"], "title": pb["title"], "when": pb["when"],
-            "axis": pb["axis"]}
-
-
-@router.put("/conversations/{slug}/playbook")
-def update_playbook(request: Request, slug: str) -> dict:
-    """Revise the playbook this conversation was SEEDED from, folding in the deltas the user made
-    by adjusting/intervening in the conversation (committed). 400 if the conversation has no bound
-    playbook; 404 if that playbook was since deleted (Save a new one instead).
-    """
-    from .. import playbook_distill, playbooks
-    from ..workflows import library
-
-    info = conversation_info(request, slug)
-    server = request.app.state.server
-    home = server.libraries_home
-    bound = info.cfg.playbook_slug
-    if not bound:
-        raise HTTPException(400, "this conversation was not created from a playbook")
-    existing = playbooks.read_playbook(home, bound)
-    if existing is None:
-        raise HTTPException(
-            404, f"playbook {bound!r} no longer exists — use Save as playbook instead")
-    try:
-        pb = playbook_distill.revise_playbook(server, info.cfg.dir, existing["content"], bound)
-    except Exception as exc:
-        raise HTTPException(502, f"could not revise the playbook: {exc}") from exc
-    main_text, details = playbook_distill.materialize(pb)
-    playbooks.write_playbook(home, bound, main=main_text, details=details)
-    library.git_commit(home, f"update playbook {bound} (from conversation {slug})",
-                       paths=[f"playbooks/{bound}"])
-    return {"ok": True, "slug": bound, "title": pb["title"], "axis": pb["axis"]}
-
 
 @router.get("/conversations/{slug}/stategraph")
 def stategraph(request: Request, slug: str) -> dict:

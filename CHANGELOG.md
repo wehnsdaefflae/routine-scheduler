@@ -19,6 +19,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.87.0] — 2026-07-23
+
+### Changed — the oversized modules split along their seams (overhaul batch 8)
+Every file the audit flagged over the ~350-line standard now has one responsibility
+(public surfaces unchanged — same imports, same routes):
+- `engine/executor.py` (595) → executor (dispatch, util runner, llm subcall) +
+  **`engine/fileops.py`** (read/view/write/edit, memory actions, read_trait, the shared
+  path gates).
+- `config.py` (666) → the **`config/` package**: `base` (vocabulary + lenient
+  validation), `modelconf` (endpoints/models/machines), `server`, `routine` —
+  `from rsched.config import X` is unchanged for every consumer.
+- `web/api_routines.py` (630) → read surfaces + **`web/api_routine_edit.py`** (traits,
+  permissions, PATCH, run-now, archive) + **`web/routines_common.py`** (the guards and
+  lookups four sibling routers used to reach into api_routines for).
+- `web/api_conversations.py` (506) → main + **`web/conversations_common.py`** (lookups,
+  streamed attachment saving) + **`web/api_conversation_playbooks.py`** (save/update
+  playbook).
+- `endpoints/claude_cli.py` (478) → the adapter (sessions, retries, media latch) +
+  **`endpoints/claude_cli_wire.py`** (command construction, env scrubbing, token
+  resolution, envelope parsing).
+- `engine/actions.py` stays whole on purpose — it is the documented single home of the
+  action contract.
+
+### Fixed/Changed — remaining deferred hygiene (batch 8, same commit series)
+- ONE home each for: the lenient frontmatter parse (`library_docs.parse_lenient`), the
+  neutral git identity (`libgit.GIT_USER/IDENTITY_*`), the Standing-practices tail
+  (`scaffold.render_practices_tail` — the two copies' lead wording had drifted), the
+  cross-home probe (`registry.all_homes`), and the abort-with-pid-fallback sequence
+  (`api_runs.abort_with_fallback`, reused by background cancel — which now 409s
+  honestly instead of `ok:true cancelled:false`).
+- Bootstrap's five add+commit pairs go through `libgit.commit` (per-repo lock, scoped
+  stage); `registry.next_fire` takes a real `Schedulable` protocol (the library-sync
+  duck-typing `type:ignore`s are gone); `RunInfo` carries `model` so the Stats
+  aggregate stops re-reading every status.json per request; `_run_ref` drops its two
+  retired-shape tolerances; scaffold filters unknown budget keys and applies the same
+  raise-then-floor capability discipline as the save path; GitHub device flows are
+  pruned; the `library_home`/`utils_home` twin properties collapse into
+  `libraries_home`; expired GitHub device flows are pruned on each start.
+
 ## [0.86.2] — 2026-07-23
 
 ### Changed — hygiene and dedupe sweep (overhaul batch 7)

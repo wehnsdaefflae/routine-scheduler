@@ -14,7 +14,7 @@ from pathlib import Path
 from ..endpoints import failover
 from ..endpoints.base import EndpointError
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import executor
+from . import executor, fileops
 from .actions import (
     ACTION_SCHEMA,
     KIND_EXAMPLES,
@@ -375,7 +375,7 @@ def apply_media_fallback(loop, exc: EndpointError) -> bool:
         return False
     notes = []
     for item in media:
-        desc = executor.vision_describe(loop.ctx, item["path"], "")
+        desc = fileops.vision_describe(loop.ctx, item["path"], "")
         notes.append(f"[{Path(item['path']).name}: this run's model could not display it — "
                      f"description from the vision util]\n{desc}")
     last.pop("media", None)

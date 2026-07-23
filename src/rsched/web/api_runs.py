@@ -184,7 +184,7 @@ async def converse(request: Request, run_id: str, body: Inject) -> dict:
     if state not in TERMINAL_STATES:
         return {"ok": True, "delivery": "mid-run"}
     from ..config import load_routine
-    from .api_routines import guard_template
+    from .routines_common import guard_template
     guard_template(slug, "clarify sessions are driven by the wizard, never resumed directly")
     cfg, _ = load_routine(routine_dir)
     if cfg is None:
@@ -233,7 +233,7 @@ async def revise(request: Request, run_id: str, body: Inject) -> dict:
     routine_dir = run_dir.parent.parent
     if not within(server.routines_home, routine_dir):
         raise HTTPException(400, "revise-recipe applies to routines only")
-    from .api_routines import guard_template
+    from .routines_common import guard_template
     guard_template(slug, "the clarification template's recipe is fixed")
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:
@@ -327,7 +327,7 @@ async def resume_run(request: Request, run_id: str) -> dict:
     transcript so it continues where it left off (fresh budget window). Only terminal runs.
     """
     slug, run_dir = _run_dir(request, run_id)
-    from .api_routines import guard_template
+    from .routines_common import guard_template
     guard_template(slug, "clarify sessions are driven by the wizard, never resumed directly")
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:
