@@ -483,6 +483,22 @@ def test_is_approval_accepts_natural_affirmatives():
     assert not _is_approval("")
 
 
+def test_approval_settles_only_on_clear_words():
+    """D38: a blocking approval is settled by a clear approve OR a clear decline —
+    anything else is not an answer (the wait loop holds it as a delayed user message
+    and keeps the question open)."""
+    from rsched.engine.interact import _settles_approval
+
+    assert _settles_approval("Approve")
+    assert _settles_approval("Do it. The mail is x@example.org")
+    assert _settles_approval("no, keep the old one")
+    assert _settles_approval("Decline.")
+    assert _settles_approval("nein danke")
+    assert not _settles_approval("Bin hier")                 # presence ping
+    assert not _settles_approval("what does this util do?")  # a question back
+    assert not _settles_approval("")
+
+
 def test_write_util_denied_without_grant(make_routine, scripted):
     """write_util switched off in the capabilities → the call is rejected inside the
     schema-retry cycle (naming the covering permission), never becomes a turn, and the

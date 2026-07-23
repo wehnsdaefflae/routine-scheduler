@@ -114,7 +114,24 @@ export async function render(view, runId, query = {}) {
     title: "where this message goes" });
   const msgInput = el("input", { type: "text", placeholder: "message…", style: "flex:1" });
   const sendBtn = el("button", { class: "btn primary" }, "send");
+  // D37: the revise-mode placeholder says what the dropdown alone couldn't — the revision
+  // run reads this ENTIRE conversation as context for the recipe change.
+  let isTerminal = false;
+  const syncPlaceholder = () => {
+    msgInput.placeholder = modeSel.value === "revise"
+      ? "describe the recipe change — the revision sees this whole conversation…"
+      : isTerminal ? "message… (the mode selector says where it goes)"
+      : "inject a message into the run…";
+  };
+  modeSel.onchange = syncPlaceholder;
+  // D37: the revise affordance sits RIGHT NEXT to the input — visible without opening the
+  // mode dropdown; clicking it preselects the mode and the placeholder explains the scope.
+  const reviseBtn = el("button", { class: "btn small", hidden: true,
+    title: "revise this routine's recipe — the revision run sees this run's full conversation" },
+    "✎ revise recipe");
+  reviseBtn.onclick = () => { modeSel.value = "revise"; syncPlaceholder(); msgInput.focus(); };
   function setModes(terminal) {
+    isTerminal = terminal;
     // "revise" edits this routine's OWN recipe (routine runs only; never the protected
     // clarification template, which the /revise endpoint would run its recipe against).
     const reviseOk = terminal && slug !== "clarification";
@@ -124,14 +141,13 @@ export async function render(view, runId, query = {}) {
       modeSel.replaceChildren(...keys.map((k) => el("option", { value: k }, MODES[k])));
     }
     modeSel.disabled = keys.length === 1;
-    msgInput.placeholder = terminal
-      ? "message… (the mode selector says where it goes)"
-      : "inject a message into the run…";
+    reviseBtn.hidden = !reviseOk;
+    syncPlaceholder();
   }
   setModes(false);
   const ref = referChip(msgInput, { className: "composer-ref mt" });
   const setRef = ref.setRef;
-  view.append(ref.node, el("div", { class: "row mt" }, modeSel, msgInput, sendBtn));
+  view.append(ref.node, el("div", { class: "row mt" }, modeSel, msgInput, sendBtn, reviseBtn));
 
   // Auto-scroll ("follow"): on by default; the user can toggle it, and scrolling up pauses it.
   let autoscroll = true;

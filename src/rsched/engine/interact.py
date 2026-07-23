@@ -26,11 +26,27 @@ from .control import RunAborted
 # two real approvals were recorded DECLINED because "do" was missing here).
 _APPROVE_WORDS = ("approve", "approved", "yes", "y", "ok", "okay", "go", "accept", "confirm",
                   "do", "sure", "yep", "yeah", "proceed", "ja")
+# Explicit declines only. An approval question is settled by a clear yes OR a clear no —
+# anything else is NOT an answer (D38): the wait loop holds it as a delayed user message
+# and keeps the question open instead of letting a presence ping decline a util.
+_DECLINE_WORDS = ("decline", "declined", "no", "n", "deny", "denied", "reject", "rejected",
+                  "stop", "cancel", "don't", "dont", "nein", "nope", "never", "skip")
+
+
+def _head_word(text: str) -> str:
+    return text.strip().lower().split()[0].strip(".,!:;") if text.strip() else ""
 
 
 def _is_approval(text: str) -> bool:
-    head = text.strip().lower().split()[0].strip(".,!:;") if text.strip() else ""
-    return head in _APPROVE_WORDS
+    return _head_word(text) in _APPROVE_WORDS
+
+
+def _settles_approval(text: str) -> bool:
+    """True when the text is a clear approve OR a clear decline — the only two replies
+    that may settle a blocking util-approval (D38).
+    """
+    head = _head_word(text)
+    return head in _APPROVE_WORDS or head in _DECLINE_WORDS
 
 
 def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> dict:
@@ -79,10 +95,25 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
             if loop._aborted():
                 raise RunAborted
             answer = inbox.take_answer(ctx.routine.dir, qid, loop.consumed_dir)
-            if answer:
-                break
-            if mirror and (reply := mirror.poll()):
+            if not answer and mirror and (reply := mirror.poll()):
                 answer = {"text": reply, "source": "discord"}
+            if answer and qtype == "util-approval" and answer.get("text") \
+                    and not answer.get("defer") and not answer.get("intermediate") \
+                    and not _settles_approval(str(answer["text"])):
+                # D38: an approval is settled ONLY by a clear approve/decline. Any other
+                # reply ("Bin hier", an unrelated instruction) is user INPUT that arrived
+                # while the question blocks — hold it as a normal delayed message (drained
+                # at the next turn boundary, i.e. after this decision) and keep waiting;
+                # the channel is told the question is still open.
+                src = str(answer.get("source", "web"))
+                ctx.transcript.event("answer", {"qid": qid, "text": str(answer["text"]),
+                                                "source": src, "held": True})
+                inbox.file_message(ctx.routine.dir, str(answer["text"]), source=src)
+                if mirror:
+                    mirror.notify_held(str(answer["text"]))
+                answer = None
+                continue
+            if answer:
                 break
             time.sleep(poll_s)
     except RunAborted:

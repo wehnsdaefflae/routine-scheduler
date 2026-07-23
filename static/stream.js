@@ -16,6 +16,7 @@ export function liveTail({ page, events, offset = 0, onEvent, onState, onStatus,
   let base = offset;       // last byte offset confirmed by a REST page
   let seen = 0;            // events delivered by SSE since `base` (skip on catch-up)
   let source = null, timer = null, retry = 0, stopped = false, ended = false;
+  let openedAt = 0, seenSinceOpen = 0;   // F175: how long each stream lived + what it carried
 
   const status = (s) => { if (!stopped && onStatus) onStatus(s); };
   const close = () => { if (source) { try { source.close(); } catch { /* already closed */ } source = null; } };
@@ -30,10 +31,10 @@ export function liveTail({ page, events, offset = 0, onEvent, onState, onStatus,
   function open() {
     if (stopped || ended) return;
     source = sse(events(base), {
-      transcript: (ev) => { retry = 0; seen += 1; onEvent(ev); },
+      transcript: (ev) => { retry = 0; seen += 1; seenSinceOpen += 1; onEvent(ev); },
       state: (s) => { retry = 0; if (onState) onState(s); },
       end: () => { ended = true; close(); status("ended"); if (onEnd) onEnd(); },
-      onopen: () => status("live"),
+      onopen: () => { openedAt = Date.now(); seenSinceOpen = 0; status("live"); },
       onerror: () => { if (stopped || ended) return; close(); reconnect(); },
     });
   }
@@ -41,8 +42,13 @@ export function liveTail({ page, events, offset = 0, onEvent, onState, onStatus,
   function reconnect() {
     status("reconnecting");
     if (retry === 0) {
-      // first drop only — backoff retries of the same outage aren't new friction evidence
-      import("/static/trace.js").then(({ trace }) => trace("reconnect", events)).catch(() => {});
+      // first drop only — backoff retries of the same outage aren't new friction evidence.
+      // The detail records the stream's age and traffic (F175: run-view streams die every
+      // ~2min — age/traffic tells an idle-timeout kill from a mid-burst one).
+      const detail = openedAt
+        ? `alive ${Math.round((Date.now() - openedAt) / 1000)}s, ${seenSinceOpen} events`
+        : "before first open";
+      import("/static/trace.js").then(({ trace }) => trace("reconnect", events, detail)).catch(() => {});
     }
     const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** retry);
     retry += 1;

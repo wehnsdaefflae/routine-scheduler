@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.91.0] — 2026-07-23
+### Added
+- Run page: a dedicated **✎ revise recipe** button beside the composer input on terminal
+  routine runs — preselects the revise mode; the placeholder states that the revision run
+  sees this whole conversation as context (D37).
+- Blocking **util-approval questions are settled only by a clear approve or decline** (D38):
+  any other reply — a presence ping, an unrelated instruction — is held as a normal delayed
+  user message (delivered at the next turn boundary, after the decision), the question stays
+  open, and the Discord mirror re-prompts for approve/decline. New `inbox.file_message`
+  engine-side writer; held replies are visible in the transcript (`answer` event, `held`).
+- Stream diagnostics: the first-drop `reconnect` UI trace now records how long the SSE
+  stream lived and how many events it carried (F175 — run-view streams observed dying
+  every ~2 minutes; age/traffic distinguishes an idle-timeout kill from a mid-burst one).
+
 ## [0.90.1] — 2026-07-23
 
 ### Fixed

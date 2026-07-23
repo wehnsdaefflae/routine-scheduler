@@ -339,3 +339,47 @@ def test_reply_texts_pins_the_discord_util_shape():
     assert decisions._reply_texts('[{"foo": 1}]') == []
     assert decisions._reply_texts('{"messages": [{"message": "z"}]}') == []  # not a list
     assert decisions._reply_texts('["bare string"]') == []                   # not an object
+
+
+def test_ambiguous_approval_reply_is_held_not_consumed(make_routine, scripted, monkeypatch):
+    """D38: a reply that names neither option must not settle a blocking util-approval —
+    it is HELD as a delayed user message (drained at the next turn boundary, i.e. after
+    the decision), the channel is re-prompted, and the question stays open until a clear
+    approve/decline arrives."""
+    fake = _FakeDiscord(replies=[[], [{"message": "Bin hier"}], [{"message": "no thanks"}]])
+    monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
+    d = make_routine(slug="heldreply", budgets={"ask_timeout_min": 1})
+    server = _server(d)
+    server.permissions_home.mkdir(parents=True, exist_ok=True)
+    (server.permissions_home / "communication.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
+        "# permission: communication — discord\nbody\n", encoding="utf-8")
+    import yaml as _yaml
+    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
+    cfg["permissions"] = ["communication"]
+    cfg["capabilities"] = {"actions": ["write_util"], "utils": ["discord"],
+                           "confirm": "always"}
+    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+    scripted([
+        {"say": "new util", "kind": "write_util", "name": "frob",
+         "content": '"""frob — test util.\n\nusage: gu frob\ntags: test, demo\nnet: none\n"""\n'},
+        finish(),
+    ])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "ok"
+    events = _events(run_dir)
+    answers = [e["payload"] for e in events if e["type"] == "answer"]
+    assert answers[0]["text"] == "Bin hier" and answers[0]["held"] is True
+    assert answers[1]["text"] == "no thanks" and "held" not in answers[1]
+    wu = next(e for e in events if e["type"] == "observation"
+              and e["payload"]["kind"] == "write_util")
+    assert wu["payload"]["declined"] and wu["payload"]["answer"] == "no thanks"
+    # the held text reached the run as a NORMAL delayed message, after the decision
+    assert any("Bin hier" in p.read_text(encoding="utf-8")
+               for p in (run_dir / "consumed").glob("msg-*.json"))
+    # the channel was told the reply was held and the question stayed open
+    held_note = next(a[1] for a in fake.sends() if "neither option" in a[1])
+    assert "Bin hier" in held_note
+    assert not list((d / "questions" / "pending").glob("*.json"))   # decline resolved it

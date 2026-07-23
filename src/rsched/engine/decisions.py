@@ -70,6 +70,18 @@ class DiscordMirror:
             f"✔ resolved on the {source or 'web'} console: {answer.strip()[:300]}"
         self._run(["send", note, "--title", f"{self.ctx.routine.slug}: decision {self.qid}"])
 
+    def notify_held(self, text: str) -> None:
+        """The reply named neither option (D38): tell the channel it is HELD as a normal
+        message for the run — delivered after this decision — and the question is still
+        open, instead of silently consuming it as approve/decline.
+        """
+        if self._dead:
+            return
+        note = ("✋ that names neither option — I'm holding it for the run to read after "
+                f"this decision: “{text.strip()[:200]}”. Still waiting — reply approve "
+                "or decline.")
+        self._run(["send", note, "--title", f"{self.ctx.routine.slug}: decision {self.qid}"])
+
     def notify_deferred(self, default: str) -> None:
         if self._dead:
             return

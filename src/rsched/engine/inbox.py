@@ -75,6 +75,25 @@ def has_pending_messages(routine_dir: Path) -> bool:
     return any(p.is_file() and not p.name.startswith("answer-") for p in inbox.iterdir())
 
 
+def file_message(routine_dir: Path, text: str, *, source: str = "") -> Path:
+    """Queue TEXT as an injected user message — the exact msg-* shape the web layer
+    writes, drained at the next turn boundary. The engine's own writer for D38: a reply
+    that reaches a blocking APPROVAL but names neither option is not the answer; it is
+    held here, DELAYED until the question no longer blocks the run.
+    """
+    import uuid
+    from datetime import datetime
+
+    from ..paths import atomic_write_json
+
+    ts = datetime.now().astimezone().isoformat(timespec="seconds")
+    path = (routine_dir / "inbox"
+            / f"msg-{ts.replace(':', '')}-{uuid.uuid4().hex[:8]}.json")
+    atomic_write_json(path, {"text": text, "ts": ts,
+                             **({"source": source} if source else {})})
+    return path
+
+
 def take_answer(routine_dir: Path, qid: str, consumed_dir: Path) -> dict | None:
     """The answer file for a specific question, if present (consumed on read). A defer
     marker (`{"defer": true}`, written by the Decisions page's defer-to-next-run action)
