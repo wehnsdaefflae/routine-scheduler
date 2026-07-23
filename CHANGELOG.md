@@ -19,6 +19,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.89.0] — 2026-07-23
+
+Operator-settled decisions D34/D35/D36 + the run-page model widget (self-audit).
+
+### Added
+- **Global scheduling pause (D34, option A)**: a dashboard button drops a durable
+  `.control/pause.request` sentinel (sibling of the restart sentinel). While set, the
+  scheduler skips scheduled fires (the fire table still advances, so resuming never
+  backlog-fires), defers trigger/one-shot intake (nothing is consumed unfired), and a
+  loud dashboard banner owns the resume control. Manual "▶ run now" stays available as
+  the explicit override. `/api/status` reports `paused`; `POST/DELETE /api/settings/pause`
+  toggle it idempotently. (`daemon/pause.py`, `daemon/scheduler.py`,
+  `web/settings/pause.py`, `static/views/dashboard.js`)
+
+### Changed
+- **Config saves are allowed during a live run (D35, option A)**: `PATCH /routines/{slug}`
+  and `PUT /routines/{slug}/permissions` no longer 409 while a run is active — verified
+  that the engine reads `routine.yaml` exactly once at run boot (`runtime.run_routine`),
+  so a mid-run save cleanly applies to the NEXT run. Recipe/file edits, recipe revert and
+  archive keep their busy-guard: stage/trait files ARE read mid-run.
+- **Run page model widget tells the truth (F166)**: `GET /runs/{id}` now falls back to the
+  routine's configured `models.main` when the pre-engine boot stub has no model yet, and
+  the "switch model" select mirrors the run's LIVE model instead of resting on the
+  catalog's first entry (which read as "the run uses Haiku" on manual starts).
+- **Composer hint (D36, option B)**: the conversations composer placeholder now names
+  Shift+Enter for a new line (chat/transcript/answer composers already did).
+
 ## [0.88.2] — 2026-07-23
 
 ### Fixed

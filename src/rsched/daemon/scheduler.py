@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from .. import library_sync, registry
 from ..config import ServerConfig
 from ..ids import now_iso
-from . import restart
+from . import pause, restart
 from .detached import DetachedManager
 from .events import EventBus
 from .oauth_refresh import OAuthRefreshManager
@@ -128,6 +128,9 @@ class Scheduler:
             try:
                 self._tick_once(loop)
                 now = _now()
+                # global pause (D34): skip our own fires, but keep ADVANCING the fire
+                # table — resuming must not backlog-fire everything that came due.
+                is_paused = pause.paused(self.server)
                 for slug, due in list(self.next_fires.items()):
                     if now < due:
                         continue
@@ -136,16 +139,21 @@ class Scheduler:
                         self.next_fires.pop(slug, None)
                         continue
                     self.next_fires[slug] = registry.next_fire(info.cfg, now) or due
+                    if is_paused:
+                        log.info("scheduling paused — skipped due fire of %r", slug)
+                        continue
                     await self.runner.fire(info.cfg, reason="schedule")
                 if self.sync_next is not None and now >= self.sync_next:
                     self.sync_next = registry.next_fire(self.server.library_sync, now)
                     self._fire_library_sync()
                 # detached background tasks: intake requests, deliver results, wake owners
                 await self.detached.tick(now)
-                # event triggers: spooled webhook events → coalesced fires
-                await self.triggers.tick(self.catalog)
-                # one-shot time triggers: due requests → a single fire, then consumed
-                await self.oneshots.tick(self.catalog)
+                if not is_paused:
+                    # event triggers: spooled webhook events → coalesced fires
+                    await self.triggers.tick(self.catalog)
+                    # one-shot time triggers: due requests → a single fire, then consumed
+                    # (paused: intake deferred, so nothing is consumed unfired)
+                    await self.oneshots.tick(self.catalog)
                 # OAuth token upkeep: refresh expiring connections nearing their deadline
                 await self.oauth.tick()
             except _TickSkip:
@@ -231,5 +239,6 @@ class Scheduler:
             "draining": self.runner.draining,
             "started": self.started,
             "restart_requested": restart.restart_requested(self.server),
+            "paused": pause.paused(self.server),
             "library_sync_next": self.sync_next.isoformat() if self.sync_next else None,
         }

@@ -121,7 +121,8 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     became the routine's own files at creation.
     """
     info = _info(request, slug)
-    guard_not_active(request, info)
+    # No busy-guard (D35): the engine reads routine.yaml exactly ONCE, at run boot
+    # (runtime.run_routine); a save during a live run cleanly applies to the NEXT run.
     server = _state(request).server
     active, caps = resolve_permission_layers(server, body, info.cfg.capabilities or {})
     path = info.cfg.dir / "routine.yaml"
@@ -190,7 +191,8 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
 @router.patch("/routines/{slug}")
 def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     info = _info(request, slug)
-    guard_not_active(request, info)
+    # No busy-guard (D35): pure routine.yaml config, read at run START only — saving
+    # mid-run applies at the next run. Destructive ops (archive) keep their guard.
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     updates = patch.model_dump(exclude_none=True)

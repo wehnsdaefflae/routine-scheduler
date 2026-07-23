@@ -277,7 +277,7 @@ export async function render(view, slug, _query = {}) {
     }));
 
     function buildComposer() {
-      const input = el("textarea", { rows: 2, placeholder: "message…  ( / for commands )" });
+      const input = el("textarea", { rows: 2, placeholder: "message…  (Shift+Enter for a new line · / for commands)" });
       const { picker, files, clearFiles, wirePaste } = filePicker();
       wirePaste(input);
       const send = el("button", { class: "btn primary" }, "send");

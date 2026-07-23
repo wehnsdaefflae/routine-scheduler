@@ -27,3 +27,16 @@ def test_week_panel_shows_avg_runtime(ui, ui_page):
     expect(bar).to_be_visible(timeout=10_000)
     assert bar.get_attribute("width") == "3"   # 30 min to scale against a 24h day column
     expect(ui_page.locator(".weekpanel .wg-legend")).to_contain_text("Test uir", timeout=10_000)
+
+
+def test_pause_scheduling_toggle(ui, ui_page):
+    """D34: the dashboard's pause control drops the durable pause sentinel — the loud
+    warn banner appears (owning the resume control, the head button hides), and resume
+    clears it again. Run-now stays available throughout (option A semantics)."""
+    ui_page.goto(ui.url)
+    ui_page.wait_for_selector("h1:has-text('Routines')", timeout=10_000)
+    ui_page.click("button:has-text('pause scheduling')")
+    expect(ui_page.locator(".panel.warn")).to_contain_text("Scheduling is paused", timeout=10_000)
+    ui_page.click("button:has-text('resume scheduling')")
+    expect(ui_page.locator("body")).not_to_contain_text("Scheduling is paused", timeout=10_000)
+    expect(ui_page.locator("button:has-text('pause scheduling')")).to_be_visible(timeout=10_000)

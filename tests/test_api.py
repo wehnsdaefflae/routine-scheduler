@@ -132,7 +132,12 @@ def test_patch_routine_and_409_guard(client):
     assert raw["enabled"] is False and raw["schedule"]["cron"] == "0 9 * * 2"
     assert raw["schedule"]["tz"] == "Europe/Berlin"  # merged, not replaced
     _mk_run(tmp / "routines", "apir", "20260708-090000", "running")
-    assert c.patch("/api/routines/apir", json={"enabled": True}).status_code == 409
+    # config saves are allowed DURING a run (D35): the engine reads routine.yaml at run
+    # START only, so the edit cleanly applies to the next run. Recipe/file edits keep
+    # their 409 — stages/traits ARE read mid-run.
+    assert c.patch("/api/routines/apir", json={"enabled": True}).status_code == 200
+    assert yaml.safe_load(
+        (tmp / "routines" / "apir" / "routine.yaml").read_text())["enabled"] is True
     assert c.put("/api/routines/apir/file",
                  json={"path": "main.md", "content": "x"}).status_code == 409
 
@@ -1652,3 +1657,32 @@ def test_endpoint_credential_source_labels(client, monkeypatch):
     ep = next(e for e in c.get("/api/settings/endpoints").json()["endpoints"]
               if e["name"] == "cc")
     assert ep["key_source"] == {"source": "secret", "var": "CLAUDE_CODE_OAUTH_TOKEN"}
+
+
+def test_pause_toggle_endpoints(client):
+    """D34: POST/DELETE /api/settings/pause toggle the durable sentinel, idempotently
+    both ways; the scheduler's tick and /api/status key off the same file."""
+    from rsched.daemon import pause
+    c, _ = client
+    server = c.app.state.server
+    assert pause.paused(server) is False
+    assert c.post("/api/settings/pause").json() == {"ok": True, "paused": True}
+    assert pause.paused(server) is True
+    assert c.post("/api/settings/pause").status_code == 200       # idempotent re-pause
+    assert c.delete("/api/settings/pause").json() == {"ok": True, "paused": False}
+    assert pause.paused(server) is False
+    assert c.delete("/api/settings/pause").status_code == 200     # idempotent re-resume
+
+
+def test_run_detail_model_falls_back_to_config(client):
+    """F166: a pre-engine boot stub carries no model in status.json — the detail endpoint
+    then reports the routine's CONFIGURED main model instead of nothing (the run page's
+    switch-select showed the catalog's first entry as if it were the live setting)."""
+    c, tmp = client
+    raw_path = tmp / "routines" / "apir" / "routine.yaml"
+    raw = yaml.safe_load(raw_path.read_text())
+    raw["models"] = {"main": "Fable"}
+    raw_path.write_text(yaml.safe_dump(raw))
+    _mk_run(tmp / "routines", "apir", "20260709-090000", "queued")
+    d = c.get("/api/runs/apir:20260709-090000").json()
+    assert d["model"] == "Fable"

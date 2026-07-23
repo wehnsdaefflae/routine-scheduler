@@ -63,11 +63,20 @@ function statsLine(run) {
 }
 
 export async function render(view) {
+  const pauseBtn = el("button", { class: "btn small", hidden: true,
+    title: "skip scheduled/triggered/one-shot fires — “run now” stays available",
+    onclick: async () => {
+      pauseBtn.disabled = true;
+      try { await api("/api/settings/pause", { method: "POST" }); toast("scheduling paused"); await load(); }
+      catch (err) { toast(err.message, 4000, { error: true }); }
+      pauseBtn.disabled = false;
+    } }, "⏸ pause scheduling");
   view.append(
     el("div", { class: "page-head" },
       el("div", {},
         el("div", { class: "kicker" }, "console / routines"),
-        el("h1", {}, "Routines"))));
+        el("h1", {}, "Routines")),
+      pauseBtn));
   const banner = el("div", {});
   const week = weekGrid();
   const weekPanel = el("details", { class: "panel weekpanel",
@@ -188,6 +197,16 @@ export async function render(view) {
       el("span", { class: "muted" }, "add an endpoint and set the system model in "),
       el("a", { href: "#/settings" }, "Settings"),
       el("span", { class: "muted" }, " to create or run routines.")));
+    pauseBtn.hidden = !!status.paused;   // while paused the banner owns the control
+    if (status.paused) banner.append(el("div", { class: "panel warn", style: "margin:12px 0" },
+      el("strong", {}, "⏸ Scheduling is paused — "),
+      el("span", { class: "muted" },
+        "no scheduled, triggered or one-shot runs fire; “▶ run now” still works. "),
+      el("button", { class: "btn small primary", onclick: async (e) => {
+        e.target.disabled = true;
+        try { await api("/api/settings/pause", { method: "DELETE" }); toast("scheduling resumed"); await load(); }
+        catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
+      } }, "▶ resume scheduling")));
     renderFilterBar();
     renderBody();
   }

@@ -157,12 +157,19 @@ export async function render(view, runId, query = {}) {
   // Live model + mid-run switch (applies at the next turn; the engine re-resolves every turn).
   const switchBox = el("details", { class: "small" },
     el("summary", { style: "cursor:pointer;color:var(--muted)" }, "⚙ switch model"));
-  const setModel = (m) => { modelSpan.textContent = m ? `model ${m}` : ""; };
+  let mSelRef = null, curModel = "";   // the switch-select mirrors the LIVE model (F166)
+  const setModel = (m) => {
+    if (m) curModel = m;
+    modelSpan.textContent = m ? `model ${m}` : "";
+    if (mSelRef && curModel) mSelRef.value = curModel;
+  };
   api("/api/settings/models").then((d) => {
     const models = d.models || [];
     if (!models.length) return;
     const mSel = el("select", { style: "width:auto;font-size:11.5px;padding:3px 6px" },
       models.map((m) => el("option", {}, m.name)));
+    mSelRef = mSel;
+    if (curModel) mSel.value = curModel;   // preselect the run's actual model, not option #1
     const go = el("button", { class: "btn small primary" }, "switch");
     go.onclick = async () => {
       try {

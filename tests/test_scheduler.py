@@ -61,6 +61,28 @@ async def test_fire_on_due_tick(make_routine, tmp_path, monkeypatch):
     assert sched.next_fires["ticker"] > datetime.now(UTC)  # advanced past the fire
 
 
+async def test_paused_tick_skips_fires_but_advances(make_routine, tmp_path, monkeypatch):
+    """D34: with the pause sentinel set, a due tick fires NOTHING — but the fire table
+    still advances (resuming must not backlog-fire), and the snapshot reports the flag."""
+    from rsched.daemon import pause
+    make_routine(slug="ticker")
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+    server = _server(tmp_path)
+    pause.set_paused(server, True)
+    fr = FakeRunner()
+    sched = Scheduler(server, fr, EventBus())
+    task = asyncio.create_task(sched.run_forever())
+    await asyncio.sleep(0.05)
+    sched.next_fires["ticker"] = datetime.now(UTC) - timedelta(seconds=1)
+    await asyncio.sleep(0.1)
+    task.cancel()
+    assert fr.fired == []                                    # paused: nothing fired
+    assert sched.next_fires["ticker"] > datetime.now(UTC)    # yet the table advanced
+    assert sched.snapshot()["paused"] is True
+    pause.set_paused(server, False)                          # resume: flag clears
+    assert sched.snapshot()["paused"] is False
+
+
 async def test_library_sync_fires_on_due_tick(tmp_path, monkeypatch):
     server = _server(tmp_path)
     server.library_sync.enabled = True

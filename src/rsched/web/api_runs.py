@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from sse_starlette import EventSourceResponse
 
 from .. import registry
-from ..config import DELIBERATION_LEVELS
+from ..config import DELIBERATION_LEVELS, load_routine
 from ..daemon.runner import abort_process
 from ..engine.transcript import read_events
 from ..ids import now_iso, parse_run_id
@@ -79,6 +79,12 @@ def run_detail(request: Request, run_id: str) -> dict:
                   if p.name.isdigit()) if (run_dir / "sub").is_dir() else []
     st = read_json(run_dir / "status.json")
     model = st.get("model") if isinstance(st, dict) else ""
+    if not model:
+        # pre-engine boot stub: status.json has no model yet — report the routine's
+        # CONFIGURED main model instead of nothing (the run page's widget showed the
+        # catalog's first entry as if it were the setting; F166, operator note 2026-07-23)
+        cfg, _ = load_routine(run_dir.parent.parent)
+        model = (cfg.models.get("main") or "") if cfg is not None else ""
     deliberation = st.get("deliberation") if isinstance(st, dict) else ""
     server = request.app.state.server
     owner = run_dir.parent.parent.parent  # run_dir = <home>/<slug>/runs/<ts>

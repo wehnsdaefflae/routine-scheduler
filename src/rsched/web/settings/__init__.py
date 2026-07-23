@@ -14,6 +14,7 @@ from . import (
     library_sync,
     machines,
     oauth,
+    pause,
     restart,
     secrets,
     server,
@@ -22,5 +23,5 @@ from . import (
 
 router = APIRouter(tags=["settings"])
 for _mod in (endpoints, library, library_sync, source, github, oauth, machines, secrets, server,
-             restart):
+             restart, pause):
     router.include_router(_mod.router)
