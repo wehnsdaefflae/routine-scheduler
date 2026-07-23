@@ -208,9 +208,22 @@ export async function render(view, runId, query = {}) {
   let subPoll = null, subOffset = 0, subTranscript = null;
 
   const scrollDown = () => { if (autoscroll) window.scrollTo(0, document.body.scrollHeight); };
+  // What the run is ACTUALLY doing (F170): the engine emits assistant_action when a
+  // turn's action starts executing and observation when it lands — between the two the
+  // run waits on the ACTION (a util, a sub-run, a file op), not on the model.
+  let pendingAction = null;
+  const waitingLabel = () => {
+    const p = pendingAction;
+    if (!p || !p.kind) return "waiting for the model…";
+    if (p.kind === "util") return p.name ? `running util ${p.name}…` : "running a util…";
+    if (p.kind === "llm") return "running an LLM subcall…";
+    if (["spawn", "subtask", "detach", "wait"].includes(p.kind)) return "waiting on sub-runs…";
+    if (p.kind === "ask_user") return "waiting for your answer…";
+    return `executing ${p.kind}…`;
+  };
   const setWaiting = (active) => {   // shown only for the main run (a sub-run is polled, not live)
     waitingBox.replaceChildren();
-    if (active && viewingSub == null) waitingBox.append(busy("waiting for the model…"));
+    if (active && viewingSub == null) waitingBox.append(busy(waitingLabel()));
   };
 
   function stopSubPoll() { if (subPoll) { clearInterval(subPoll); subPoll = null; } }
@@ -423,6 +436,11 @@ export async function render(view, runId, query = {}) {
     events: (o) => `/api/runs/${runId}/events?offset=${o}`,
     offset: 0,
     onEvent: (ev) => {
+      if (ev.type === "assistant_action") {
+        pendingAction = ev.payload || null; setWaiting(WORKING.has(curState));
+      } else if (ev.type === "observation" || ev.type === "finish") {
+        pendingAction = null; setWaiting(WORKING.has(curState));
+      }
       if (ev.type === "subrun_start") { addSubTab(ev.payload.n, ev.payload.label); taskTree.refresh(); }
       if (ev.type === "subrun_end") taskTree.refresh();
       // a deliverable landed — the rail refreshes without waiting for run end

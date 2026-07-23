@@ -7,10 +7,19 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
+from ..readmodels.claude_usage import claude_usage
 from ..readmodels.stats import aggregate, monthly_spend
 from ..readmodels.util_stats import util_stats
 
 router = APIRouter(tags=["stats"])
+
+
+@router.get("/stats/claude-usage")
+def claude_usage_stats(request: Request) -> dict:
+    """Local Claude-subscription usage in the rolling 5h/7d windows (D33) — the
+    Settings endpoint card's widget; no official balance API exists for subscriptions.
+    """
+    return claude_usage(request.app.state.server)
 
 
 @router.get("/stats")

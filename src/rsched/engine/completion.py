@@ -185,10 +185,14 @@ def _handle_empty(loop, completion, chain, ref, usage_sum: dict, base_len: int,
     most one is set; both None = plain retry.
     """
     stop = completion.stop_reason
+    # stop_details (CLI envelope diagnostic, e.g. {"category": ...} on a classifier
+    # refusal) rides along VERBATIM so the transcript shows WHY the reply was empty (F164).
+    details = getattr(completion, "stop_details", None) or {}
     loop.ctx.transcript.event("error", {
         "where": "endpoint", "attempt": attempt,
         "message": "empty completion (no content/reasoning; "
-                   f"stop_reason={stop or 'unreported'})"})
+                   f"stop_reason={stop or 'unreported'}"
+                   + (f", stop_details={details}" if details else "") + ")"})
     if stop == "refusal" and not refstate["referral_tried"]:
         refstate["referral_tried"] = True
         referred = refer_turn_to_uncensored(loop, usage_sum, base_len)

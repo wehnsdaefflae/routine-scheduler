@@ -386,6 +386,26 @@ export async function renderEndpoints(view) {
       }).catch(() => creditsRow.replaceChildren());
     }
 
+    // Claude subscription (claude-cli): no official balance/quota API — show the LOCAL
+    // usage tally from run telemetry in the quota windows instead (D33, rolling 5h/7d).
+    const usageRow = el("div", { class: "small muted", style: "margin-top:4px" });
+    if (ep.kind === "claude-cli") {
+      usageRow.textContent = "subscription use: checking…";
+      api("/api/stats/claude-usage").then((u) => {
+        if (!u.supported) { usageRow.replaceChildren(); return; }
+        const fmtT = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M`
+          : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
+        const win = (k, label) => {
+          const w = u.windows[k];
+          return `${label}: ${fmtT(w.tokens_in)} in (+${fmtT(w.tokens_cached)} cached) / `
+            + `${fmtT(w.tokens_out)} out · ${w.runs} run${w.runs === 1 ? "" : "s"}`;
+        };
+        usageRow.replaceChildren(el("span",
+          { title: "local tally from run telemetry — Anthropic exposes no quota API for subscriptions" },
+          `subscription use — ${win("5h", "last 5h")} — ${win("7d", "7d")}`));
+      }).catch(() => usageRow.replaceChildren());
+    }
+
     return el("div", { class: "panel mt" },
       el("div", { class: "row spread" },
         el("div", {}, el("strong", {}, ep.name), " ", el("span", { class: "chip bare" }, ep.kind), " ",
@@ -395,6 +415,7 @@ export async function renderEndpoints(view) {
       el("div", { class: "muted small", style: "margin-bottom:2px" }, info.hint),
       credSourceLine(ep),
       creditsRow,
+      usageRow,
       keyRow,
       el("div", { class: "row mt" }, modelInput, testBtn),
       resultBox,

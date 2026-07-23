@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.90.0] — 2026-07-23
+
+Claude-subscription usage widget (D33) + an honest run-page waiting line (self-audit).
+
+### Added
+- **Local Claude-subscription usage widget (D33, option A)**: the claude-cli endpoint
+  card in Settings → endpoints now shows the LOCAL token tally for the rolling 5h
+  (Anthropic's subscription quota window) and 7d windows, computed from run telemetry
+  (both homes, running runs count live) — Anthropic exposes no balance/quota API for
+  subscriptions. New `GET /api/stats/claude-usage` + `readmodels/claude_usage.py`.
+- **Refusal diagnosability (F164)**: the claude-cli result envelope's `stop_details`
+  (e.g. `{"category": …}` on a classifier refusal) now rides the `Completion` verbatim
+  and is included in the empty-completion transcript error event, so an empty reply's
+  WHY is visible in the transcript.
+
+### Changed
+- **The run page's waiting line is honest about what it waits on (F170, operator
+  note)**: between an `assistant_action` and its `observation` it names the executing
+  action — "running util pytest-run…", "waiting on sub-runs…", "running an LLM
+  subcall…" — instead of the blanket "waiting for the model…". (`static/views/run.js`)
+
 ## [0.89.0] — 2026-07-23
 
 Operator-settled decisions D34/D35/D36 + the run-page model widget (self-audit).

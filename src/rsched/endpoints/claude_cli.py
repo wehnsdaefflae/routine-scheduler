@@ -166,8 +166,10 @@ class ClaudeCliEndpoint:
                     f"{r.stderr.strip()[:300] or '(no stderr)'}",
                     retryable=True,
                 )
-            text, parsed, usage, stop = parse_result(r.stdout, want_json=schema is not None)
-            return Completion(text=text, parsed=parsed, usage=usage, stop_reason=stop)
+            text, parsed, usage, stop, details = parse_result(
+                r.stdout, want_json=schema is not None)
+            return Completion(text=text, parsed=parsed, usage=usage, stop_reason=stop,
+                              stop_details=details)
 
         # The CLI spawns a fresh process per call, so a transient failure (OOM kill, a
         # dropped upstream connection) surfaces as one bad invocation — back off and retry
@@ -241,9 +243,10 @@ class ClaudeCliEndpoint:
                     f"{r.stderr.strip()[:300] or '(no stderr)'}",
                     retryable=True,
                 )
-            text, parsed, usage, stop = parse_result(r.stdout, want_json=want_json,
-                                                     stream_out=stream)
-            return Completion(text=text, parsed=parsed, usage=usage, stop_reason=stop)
+            text, parsed, usage, stop, details = parse_result(r.stdout, want_json=want_json,
+                                                              stream_out=stream)
+            return Completion(text=text, parsed=parsed, usage=usage, stop_reason=stop,
+                              stop_details=details)
 
         try:
             # A RESUME gets one attempt only — its failure path (reseed a fresh session)

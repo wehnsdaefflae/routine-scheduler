@@ -87,6 +87,11 @@ class Completion:
     # it to tell a classifier refusal (an EMPTY completion with stop_reason "refusal")
     # from a provider hiccup: the first is referred/failed over, not blind-retried.
     stop_reason: str = ""
+    # Provider detail on WHY it stopped, verbatim (the CLI envelope's `stop_details`,
+    # e.g. {"category": ...} on a classifier refusal) — {} when unreported. Diagnostic
+    # only: surfaced in the empty-completion error event so a refusal's category is
+    # visible in the transcript (F164); the engine never branches on it.
+    stop_details: dict = field(default_factory=dict)
 
 
 class ChatEndpoint(Protocol):

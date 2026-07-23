@@ -180,7 +180,7 @@ def test_claude_cli_parse_stream_json_output():
                     "structured_output": {"say": "hi", "kind": "finish"},
                     "usage": {"input_tokens": 3, "output_tokens": 2}}),
     ])
-    _text, parsed, usage, _stop = claude_cli.parse_result(stream, want_json=True,
+    _text, parsed, usage, _stop, _details = claude_cli.parse_result(stream, want_json=True,
                                                           stream_out=True)
     assert parsed == {"say": "hi", "kind": "finish"} and usage["in"] == 3 and usage["out"] == 2
     with pytest.raises(EndpointError):   # no result event in the stream → clean error

@@ -496,14 +496,20 @@ def test_render_prompt():
 
 
 def test_parse_result_envelopes():
-    text, parsed, usage, _stop = parse_result(json.dumps(
+    text, parsed, usage, _stop, details = parse_result(json.dumps(
         {"is_error": False, "result": "hi", "usage": {"input_tokens": 1, "output_tokens": 2}}), False)
     assert text == "hi" and parsed is None and usage == {"in": 1, "out": 2}
-    _, parsed, _, _ = parse_result(json.dumps(
+    assert details == {}
+    _, parsed, _, _, _ = parse_result(json.dumps(
         {"is_error": False, "result": "x", "structured_output": {"b": 2}}), True)
     assert parsed == {"b": 2}
-    _, parsed, _, _ = parse_result(json.dumps({"is_error": False, "result": '{"a": 1}'}), True)
+    _, parsed, _, _, _ = parse_result(json.dumps({"is_error": False, "result": '{"a": 1}'}), True)
     assert parsed == {"a": 1}
+    # a classifier refusal's diagnostic dict rides along verbatim (F164)
+    _, _, _, stop, details = parse_result(json.dumps(
+        {"is_error": False, "result": "", "stop_reason": "refusal",
+         "stop_details": {"category": "harmful_content"}}), False)
+    assert stop == "refusal" and details == {"category": "harmful_content"}
     with pytest.raises(EndpointError) as exc:
         parse_result(json.dumps({"is_error": True, "result": "401 unauthorized"}), False)
     assert exc.value.auth
@@ -605,7 +611,7 @@ def test_claude_cli_timeout_is_retryable(monkeypatch, tmp_path):
 def test_claude_cli_cache_usage_captured():
     """Same cross-adapter invariant as the API adapters: cache traffic rides
     cached_in/cache_write, kept out of "in"."""
-    _, _, usage, _ = parse_result(json.dumps(
+    _, _, usage, _, _ = parse_result(json.dumps(
         {"is_error": False, "result": "hi",
          "usage": {"input_tokens": 4, "output_tokens": 2,
                    "cache_read_input_tokens": 30000, "cache_creation_input_tokens": 1200}}), False)

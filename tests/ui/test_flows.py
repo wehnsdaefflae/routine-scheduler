@@ -1089,3 +1089,26 @@ def test_conversation_header_trait_picker(ui, ui_page):
     picker.get_by_role("button", name="apply").click()
     expect(_toast(ui_page)).to_contain_text("practices updated")
     assert (conv_dir / "traits" / "interface-design.md").is_file()
+
+
+def test_run_waiting_line_names_the_executing_action(ui, ui_page):
+    """The bottom "working" line is HONEST about what the run waits on (F170, operator
+    note 2026-07-23): after an assistant_action lands with no observation yet, it names
+    the executing action ("running util pytest-run…"); once the observation arrives the
+    next wait is the model's again."""
+    run_dir = ui.seed_run("uiwait", "20260715-160000", "running")
+    events = [
+        {"type": "assistant_action", "turn": 1,
+         "payload": {"kind": "util", "name": "websearch", "say": "searching"}},
+        {"type": "observation", "turn": 1,
+         "payload": {"kind": "util", "name": "websearch", "exit": 0, "stdout": "ok"}},
+        {"type": "assistant_action", "turn": 2,
+         "payload": {"kind": "util", "name": "pytest-run", "say": "gating"}},
+    ]
+    with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
+        fh.writelines(json.dumps(e) + "\n" for e in events)
+
+    ui_page.goto(f"{ui.url}/#/run/uiwait:20260715-160000")
+    waiting = ui_page.locator(".busy", has_text="running util")
+    expect(waiting).to_be_visible()
+    expect(waiting).to_contain_text("running util pytest-run…")

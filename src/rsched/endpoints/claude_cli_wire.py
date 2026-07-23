@@ -201,9 +201,11 @@ def _result_event(stdout_text: str) -> dict:
 
 
 def parse_result(stdout_text: str, want_json: bool,
-                 stream_out: bool = False) -> tuple[str, dict | None, dict, str]:
+                 stream_out: bool = False) -> tuple[str, dict | None, dict, str, dict]:
     """CLI --output-format json envelope (or the final `result` event of a stream-json
-    output stream, used for image turns) → (text, parsed, usage, stop_reason).
+    output stream, used for image turns) → (text, parsed, usage, stop_reason,
+    stop_details — the envelope's diagnostic dict, e.g. {"category": ...} on a
+    classifier refusal; {} when absent).
     A garbled/truncated stdout is a transport fault — retryable, like an unparseable
     HTTP body (json_or_raise), so with_retries catches it.
     """
@@ -235,7 +237,8 @@ def parse_result(stdout_text: str, want_json: bool,
                 parsed = cand if isinstance(cand, dict) else None
             except json.JSONDecodeError:
                 parsed = None
-    return text, parsed, usage, stop
+    details = obj.get("stop_details")
+    return text, parsed, usage, stop, details if isinstance(details, dict) else {}
 
 
 def _msg_hashes(messages: list[Message]) -> list[str]:
