@@ -14,9 +14,8 @@ from fastapi import APIRouter, Form, HTTPException, Request
 
 from .. import registry
 from ..config import load_routine
-from ..daemon.runner import abort_process
 from ..ids import background_task_id
-from ..paths import atomic_write_json, read_json
+from ..paths import atomic_write_json
 
 router = APIRouter(tags=["background"])
 
@@ -85,26 +84,29 @@ async def cancel_background(request: Request, slug: str, taskid: str) -> dict:
     cfg, _ = load_routine(task_dir) if (task_dir / "routine.yaml").exists() else (None, [])
     if cfg is None or (cfg.owner or {}).get("slug") != slug:
         raise HTTPException(404, f"no background task {taskid!r} for conversation {slug!r}")
+    from .api_runs import abort_with_fallback
+
     runner = request.app.state.runner
-    ok = await runner.abort(taskid)
-    if not ok:  # not daemon-owned (survived a restart) — signal the last run's recorded pid
-        last = registry.run_index(task_dir, taskid)
-        st = read_json(last[0].dir / "status.json") if last else None
-        pid = st.get("pid") if isinstance(st, dict) else None
-        ok = await abort_process(pid, last[0].dir, last[0].run_id) if last else False
-    return {"ok": True, "cancelled": ok}
+    last = registry.run_index(task_dir, taskid)
+    cancelled = (await abort_with_fallback(runner, taskid, last[0].dir, last[0].run_id)
+                 if last else await runner.abort(taskid))
+    if not cancelled:
+        # honesty: the UI used to toast "cancelling…" off ok:true while nothing died
+        raise HTTPException(409, "no live process for this task — it may already be done")
+    return {"ok": True, "cancelled": True}
 
 
 async def teardown_background(request: Request, slug: str) -> None:
     """On conversation delete: abort + remove its detached tasks (pid fallback for a task that
     outlived a restart), reusing the run abort path.
     """
+    from .api_runs import abort_with_fallback
+
     runner = request.app.state.runner
     for taskid, ti in _background_tasks(request, slug):
-        if not await runner.abort(taskid):
-            last = ti.last_run
-            st = read_json(last.dir / "status.json") if last else None
-            pid = st.get("pid") if isinstance(st, dict) else None
-            if last and pid:
-                await abort_process(pid, last.dir, last.run_id)
+        last = ti.last_run
+        if last:
+            await abort_with_fallback(runner, taskid, last.dir, last.run_id)
+        else:
+            await runner.abort(taskid)
         shutil.rmtree(ti.cfg.dir, ignore_errors=True)

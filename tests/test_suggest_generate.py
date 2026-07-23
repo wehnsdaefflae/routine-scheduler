@@ -82,7 +82,7 @@ def test_generate_lints_writes_and_uniquifies_the_slug(server, monkeypatch):
                                   hint="a poll-and-digest shape", on_usage=spent.append)
     assert note == ""
     assert slug == "general-task-2"                   # base slug taken by the seed → -2
-    written = server.library_home / "workflows" / "general-task-2.py"
+    written = server.libraries_home / "workflows" / "general-task-2.py"
     assert written.exists() and "META" in written.read_text(encoding="utf-8")
     assert spent == [{"in": 7, "out": 3}]             # the draft call's spend hit on_usage
     prompt = ep.calls[0]["messages"][0]["content"]
@@ -107,10 +107,10 @@ def test_generate_raises_when_lint_never_passes(server, monkeypatch):
 
     ep = _SysEndpoint(["garbage one", "garbage two"])
     _patch_system_model(monkeypatch, "rsched.workflows.generate", ep)
-    before = sorted(p.name for p in (server.library_home / "workflows").glob("*.py"))
+    before = sorted(p.name for p in (server.libraries_home / "workflows").glob("*.py"))
     with pytest.raises(RuntimeError, match="failed lint twice"):
         gen_mod.generate(server, "instruction")
-    after = sorted(p.name for p in (server.library_home / "workflows").glob("*.py"))
+    after = sorted(p.name for p in (server.libraries_home / "workflows").glob("*.py"))
     assert after == before                            # nothing landed in the library
 
 

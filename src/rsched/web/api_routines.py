@@ -196,7 +196,7 @@ def routine_detail(request: Request, slug: str) -> dict:
     # this routine's), plus the machine-enforced capabilities mapping + its vocabulary
     permissions, capabilities = permission_layers_detail(server, info.cfg)
     in_library = bool(info.cfg.workflow_slug) and \
-        (server.library_home / "workflows" / f"{info.cfg.workflow_slug}.py").exists()
+        (server.libraries_home / "workflows" / f"{info.cfg.workflow_slug}.py").exists()
     monthly = monthly_spend(server)
     # uncensored-referral audit: how often a turn/llm call was answered by the uncensored
     # model (durable stream; the current month rides spend.current.referrals)

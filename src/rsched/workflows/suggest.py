@@ -32,7 +32,7 @@ SUGGEST_SCHEMA = {
 }
 
 def suggest(server: ServerConfig, instruction: str) -> dict:
-    candidates = list(list_workflows(server.library_home))
+    candidates = list(list_workflows(server.libraries_home))
     if not candidates:
         return {"suggestions": [], "none_fit": True,
                 "new_workflow_hint": "library has no workflows yet"}
@@ -94,12 +94,12 @@ def existing_tags(server: ServerConfig) -> list[str]:
 
     from .. import library_docs, utils_lib
     tags: set[str] = set()
-    for w in list_workflows(server.library_home):
+    for w in list_workflows(server.libraries_home):
         tags.update(w.get("tags") or [])
     for home in (server.traits_home, server.permissions_home):
         for d in library_docs.list_docs(home):
             tags.update(d.get("tags") or [])
-    for u in utils_lib.list_utils(server.utils_home):
+    for u in utils_lib.list_utils(server.libraries_home):
         tags.update(u.get("tags") or [])
     for y in sorted(server.routines_home.glob("*/routine.yaml")):
         try:
@@ -152,7 +152,7 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
         return fallback
     workflow_note = ""
     if workflow_slug:
-        wf = next((w for w in list_workflows(server.library_home)
+        wf = next((w for w in list_workflows(server.libraries_home)
                    if w["slug"] == workflow_slug), None)
         if wf:
             workflow_note = (f"\nCHOSEN WORKFLOW: {wf['slug']} — {wf['description']}\n"

@@ -16,7 +16,7 @@ router = APIRouter(tags=["workflows"])
 
 
 def _home(request: Request):
-    home = request.app.state.server.library_home
+    home = request.app.state.server.libraries_home
     if not home.is_dir():
         raise HTTPException(503, f"workflow library not found at {home} — run deploy/install.sh")
     return home
@@ -46,7 +46,7 @@ def library_overview(request: Request) -> dict:
                         for p in library_docs.list_docs(server.permissions_home)],
         "playbooks": [{**p, "problems": lint.get(f"playbooks/{p['slug']}/MAIN.md", [])}
                       for p in playbooks.list_playbooks(home)],
-        "utils": utils_lib.list_utils(server.utils_home),
+        "utils": utils_lib.list_utils(server.libraries_home),
         "default_traits": list(DEFAULT_TRAITS),
         "default_permissions": list(DEFAULT_PERMISSIONS),
         "default_budgets": dict(DEFAULT_BUDGETS),
@@ -158,10 +158,10 @@ def delete_util(request: Request, name: str) -> dict:
     from .. import utils_lib
 
     server = request.app.state.server
-    if not utils_lib.exists(server.utils_home, name):
+    if not utils_lib.exists(server.libraries_home, name):
         raise HTTPException(404, f"no util {name!r}")
-    utils_lib.remove_util_file(server.utils_home, name)   # atomic rename-aside + delete
-    utils_lib.git_commit(server.utils_home, f"delete util {name} via web",
+    utils_lib.remove_util_file(server.libraries_home, name)   # atomic rename-aside + delete
+    utils_lib.git_commit(server.libraries_home, f"delete util {name} via web",
                          paths=[f"utils/{name}"])
     return {"ok": True}
 
@@ -172,7 +172,7 @@ def util_detail(request: Request, name: str) -> dict:
     from .. import utils_lib
 
     server = request.app.state.server
-    content = utils_lib.read_util(server.utils_home, name)
+    content = utils_lib.read_util(server.libraries_home, name)
     if content is None:
         raise HTTPException(404, f"no util {name!r}")
     return {"name": name, "content": content}
@@ -190,13 +190,13 @@ def put_util(request: Request, name: str, body: UtilBody) -> dict:
     problems = utils_lib.header_problems(body.content)
     if problems:
         raise HTTPException(422, "header problems (not saved): " + "; ".join(problems))
-    utils_lib.ensure_library(server.utils_home, remote=server.libraries_remote)
-    utils_lib.write_util_file(server.utils_home, name, body.content)
-    ok, output = utils_lib.selftest(server.utils_home, name,
+    utils_lib.ensure_library(server.libraries_home, remote=server.libraries_remote)
+    utils_lib.write_util_file(server.libraries_home, name, body.content)
+    ok, output = utils_lib.selftest(server.libraries_home, name,
                                     policy=sandbox.base_policy(server))
     if not ok:
         raise HTTPException(422, f"selftest failed (not committed):\n{output[:800]}")
-    utils_lib.git_commit(server.utils_home, f"revise {name} via web", paths=[f"utils/{name}"])
+    utils_lib.git_commit(server.libraries_home, f"revise {name} via web", paths=[f"utils/{name}"])
     return {"ok": True}
 
 

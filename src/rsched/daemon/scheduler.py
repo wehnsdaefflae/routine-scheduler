@@ -89,7 +89,7 @@ class Scheduler:
             fires[slug] = prev if (prev is not None and prev <= now) else nf
         self.next_fires = fires
         # library sync: LibrarySyncConfig carries the same enabled/cron/tz trio next_fire reads
-        nf = registry.next_fire(self.server.library_sync, now)  # type: ignore[arg-type]
+        nf = registry.next_fire(self.server.library_sync, now)
         self.sync_next = self.sync_next if (nf is not None and self.sync_next is not None
                                             and self.sync_next <= now) else nf
 
@@ -138,7 +138,7 @@ class Scheduler:
                     self.next_fires[slug] = registry.next_fire(info.cfg, now) or due
                     await self.runner.fire(info.cfg, reason="schedule")
                 if self.sync_next is not None and now >= self.sync_next:
-                    self.sync_next = registry.next_fire(self.server.library_sync, now)  # type: ignore[arg-type]
+                    self.sync_next = registry.next_fire(self.server.library_sync, now)
                     self._fire_library_sync()
                 # detached background tasks: intake requests, deliver results, wake owners
                 await self.detached.tick(now)

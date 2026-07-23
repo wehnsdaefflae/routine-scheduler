@@ -258,7 +258,7 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
     d = server.routines_home / wid
     (d / "state").mkdir(parents=True, exist_ok=True)   # same-second double-create: reuse
     (d / "inbox").mkdir(exist_ok=True)
-    commit = library.head_commit(server.library_home)
+    commit = library.head_commit(server.libraries_home)
     (d / "instruction.md").write_text(draft.rstrip() + "\n", encoding="utf-8")
     (d / "LEDGER.md").write_text("# LEDGER — wizard session\n", encoding="utf-8")
     (d / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
@@ -301,7 +301,7 @@ def create_session(server, draft: str) -> tuple[str, str, Path]:
 
 def candidate_patterns(server) -> list[dict]:
     from ..workflows import library
-    return list(library.list_workflows(server.library_home))
+    return list(library.list_workflows(server.libraries_home))
 
 
 def write_candidates(server, d: Path) -> None:
@@ -317,7 +317,7 @@ def write_candidates(server, d: Path) -> None:
              "to generate a new one. A pattern's parameter contract is its dummy imports.", ""]
     for w in candidate_patterns(server):
         try:
-            _, raw = library.read_workflow(server.library_home, w["slug"])
+            _, raw = library.read_workflow(server.libraries_home, w["slug"])
         except FileNotFoundError:
             continue
         parts += [f"## {w['slug']} — {w['description']}", f"when_to_use: {w['when_to_use']}", "",

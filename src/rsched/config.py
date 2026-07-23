@@ -326,11 +326,6 @@ class ServerConfig(_Config):
     source: Path | None = None
 
     @property
-    def library_home(self) -> Path:
-        """The library repo root — workflows live in its workflows/ subdir."""
-        return self.libraries_home
-
-    @property
     def traits_home(self) -> Path:
         """The library repo's traits/ subdir (reusable practice prose)."""
         return self.libraries_home / "traits"
@@ -339,11 +334,6 @@ class ServerConfig(_Config):
     def permissions_home(self) -> Path:
         """The library repo's permissions/ subdir (engine-enforced capabilities)."""
         return self.libraries_home / "permissions"
-
-    @property
-    def utils_home(self) -> Path:
-        """The library repo root — utils live in its utils/ subdir (with `gu` at the root)."""
-        return self.libraries_home
 
     @property
     def playbooks_home(self) -> Path:

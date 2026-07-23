@@ -108,7 +108,9 @@ def _dir_across_homes(server, slug: str):
     """Resolve a slug across routines, conversations, and background homes — `rsched
     abort` applies to any of them (conversations and detached tasks are runs too).
     """
-    for home in (server.routines_home, server.conversations_home, server.background_home):
+    from . import registry
+
+    for home in registry.all_homes(server):
         if (home / slug / "routine.yaml").is_file():
             return home / slug
     return server.routines_home / slug   # let downstream produce the not-found error

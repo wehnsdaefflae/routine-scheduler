@@ -17,7 +17,7 @@ router = APIRouter(tags=["playbooks"])
 
 
 def _home(request: Request):
-    home = request.app.state.server.library_home
+    home = request.app.state.server.libraries_home
     if not home.is_dir():
         raise HTTPException(503, f"library not found at {home} — run deploy/install.sh")
     return home

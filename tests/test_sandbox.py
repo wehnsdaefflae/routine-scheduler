@@ -21,7 +21,7 @@ def _force_abi(monkeypatch, version: int) -> None:
 def test_mode_off_never_wraps(tmp_path, monkeypatch):
     _force_abi(monkeypatch, 4)
     policy = sandbox.SandboxPolicy(mode="off")
-    assert sandbox.wrap(CMD, policy=policy, utils_home=tmp_path, net=True) == CMD
+    assert sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=True) == CMD
 
 
 def test_available_wraps_with_spec(tmp_path, monkeypatch):
@@ -29,7 +29,7 @@ def test_available_wraps_with_spec(tmp_path, monkeypatch):
     policy = sandbox.SandboxPolicy(mode="permissive",
                                    read_roots=(Path("/data/in"),),
                                    write_roots=(tmp_path / "routine",))
-    cmd = sandbox.wrap(CMD, policy=policy, utils_home=tmp_path, net=False)
+    cmd = sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=False)
     assert cmd[:2] == [__import__("sys").executable, str(Path(landlock.__file__).resolve())]
     assert cmd[-len(CMD):] == CMD and cmd[-len(CMD) - 1] == "--"
     spec = json.loads(cmd[2])
@@ -50,7 +50,7 @@ def test_unavailable_strict_refuses(tmp_path, monkeypatch):
     _force_abi(monkeypatch, 0)
     policy = sandbox.SandboxPolicy(mode="strict")
     with pytest.raises(sandbox.SandboxRefusal, match="strict"):
-        sandbox.wrap(CMD, policy=policy, utils_home=tmp_path, net=True)
+        sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=True)
 
 
 def test_unavailable_permissive_runs_bare_and_warns_once(tmp_path, monkeypatch, caplog):
@@ -58,8 +58,8 @@ def test_unavailable_permissive_runs_bare_and_warns_once(tmp_path, monkeypatch, 
     monkeypatch.setattr(sandbox, "_warned", set())
     policy = sandbox.SandboxPolicy(mode="permissive")
     with caplog.at_level("WARNING", logger="rsched.sandbox"):
-        assert sandbox.wrap(CMD, policy=policy, utils_home=tmp_path, net=True) == CMD
-        assert sandbox.wrap(CMD, policy=policy, utils_home=tmp_path, net=True) == CMD
+        assert sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=True) == CMD
+        assert sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=True) == CMD
     assert sum("UNSANDBOXED" in r.message for r in caplog.records) == 1
 
 
@@ -70,13 +70,13 @@ def test_net_denial_needs_abi4(tmp_path, monkeypatch):
     monkeypatch.setattr(sandbox, "_warned", set())
     with pytest.raises(sandbox.SandboxRefusal, match="ABI"):
         sandbox.wrap(CMD, policy=sandbox.SandboxPolicy(mode="strict"),
-                     utils_home=tmp_path, net=False)
+                     libraries_home=tmp_path, net=False)
     cmd = sandbox.wrap(CMD, policy=sandbox.SandboxPolicy(mode="permissive"),
-                       utils_home=tmp_path, net=False)
+                       libraries_home=tmp_path, net=False)
     assert json.loads(cmd[2])["net"] is True     # fs jail engages, TCP stays open
     # net: outbound utils are unaffected by the ABI gap
     cmd = sandbox.wrap(CMD, policy=sandbox.SandboxPolicy(mode="strict"),
-                       utils_home=tmp_path, net=True)
+                       libraries_home=tmp_path, net=True)
     assert json.loads(cmd[2])["net"] is True
 
 

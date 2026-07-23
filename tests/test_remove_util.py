@@ -33,7 +33,7 @@ def _write(home, name, calls=""):
 
 
 def _loop(home, *, depth=0, grants=None):
-    ctx = SimpleNamespace(server=SimpleNamespace(utils_home=home, libraries_remote=""),
+    ctx = SimpleNamespace(server=SimpleNamespace(libraries_home=home, libraries_remote=""),
                           depth=depth, grants=grants)
     return SimpleNamespace(ctx=ctx, grants=grants)
 

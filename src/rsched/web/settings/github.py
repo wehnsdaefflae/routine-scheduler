@@ -53,6 +53,9 @@ def github_device_start(request: Request) -> dict:
     if r.status_code != 200:
         raise HTTPException(502, f"github device/code failed: {r.text[:200]}")
     d = r.json()
+    # prune expired flows here — nothing else ever removes an abandoned one
+    for fid in [f for f, fl in _device_flows.items() if fl["expires_at"] <= time.time()]:
+        _device_flows.pop(fid, None)
     flow_id = secrets.token_urlsafe(8)
     verification_uri = d.get("verification_uri", "https://github.com/login/device")
     interval = d.get("interval", 5)

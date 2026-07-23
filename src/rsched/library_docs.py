@@ -33,14 +33,18 @@ DOC_RE = re.compile(r"^#\s*(?:trait|permission):\s*(?P<slug>.+?)\s*—\s*(?P<sum
                     re.MULTILINE)
 
 
-def _parse(text: str) -> tuple[dict, str]:
+def parse_lenient(text: str) -> tuple[dict, str]:
     """frontmatter.parse for user-editable files: broken YAML reads as no frontmatter, so a
-    bad edit never crashes a run or the listing.
+    bad edit never crashes a run or the listing. The ONE lenient parser — playbooks and
+    grants import it rather than growing their own copies.
     """
     try:
         return frontmatter.parse(text)
     except yaml.YAMLError:
         return {}, text
+
+
+_parse = parse_lenient   # module-internal alias (call sites below predate the export)
 
 
 def doc_body(raw: str) -> str:

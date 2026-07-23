@@ -24,6 +24,14 @@ from .paths import file_lock, repo_lock_path
 
 _TIMEOUT = 30
 
+# The neutral identity for every managed repo — the user's real name never authors a
+# commit. Two shapes for the two idioms: persisted `git config` pairs (repo init) and
+# per-invocation `-c` flags (commits in repos that may lack the persisted config).
+GIT_USER = "routine-scheduler"
+GIT_EMAIL = "noreply@routine-scheduler.local"
+IDENTITY_PAIRS = (("user.name", GIT_USER), ("user.email", GIT_EMAIL))
+IDENTITY_FLAGS = ("-c", f"user.name={GIT_USER}", "-c", f"user.email={GIT_EMAIL}")
+
 
 def _git(home: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", "-C", str(home), *args], capture_output=True,

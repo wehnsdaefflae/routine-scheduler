@@ -20,11 +20,8 @@ from pathlib import Path
 
 from . import library_docs
 from .ids import is_slug
-from .workflows.scaffold import PRACTICES_HEADING
-
-_TAIL_LEAD = ("These practice modules are this routine's own standards — read each with "
-              "read_file before the situation it governs (the routine-improver meta routine "
-              "refines them over time):")
+from .paths import atomic_write
+from .workflows.scaffold import PRACTICES_HEADING, render_practices_tail, trait_line
 
 
 def current_traits(routine_dir: Path) -> list[str]:
@@ -55,12 +52,11 @@ def sync_practices_tail(routine_dir: Path) -> None:
     lines = []
     for slug in current_traits(routine_dir):
         raw = (routine_dir / "traits" / f"{slug}.md").read_text(encoding="utf-8")
-        lines.append(f"- `traits/{slug}.md` — {trait_summary(raw, slug)}")
+        lines.append(trait_line(slug, trait_summary(raw, slug)))
     if not lines:
-        main.write_text(head.rstrip() + "\n", encoding="utf-8")
+        atomic_write(main, head.rstrip() + "\n")
         return
-    tail = [PRACTICES_HEADING, "", _TAIL_LEAD, *lines]
-    main.write_text(head.rstrip() + "\n\n" + "\n".join(tail) + "\n", encoding="utf-8")
+    atomic_write(main, head.rstrip() + "\n\n" + render_practices_tail(lines) + "\n")
 
 
 def add_trait(traits_home: Path, routine_dir: Path, slug: str) -> str:

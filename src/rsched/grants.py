@@ -46,9 +46,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import frontmatter
-import yaml
-
 from .engine.actions import KINDS
 from .ids import is_slug
 
@@ -136,13 +133,11 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
 
 
 def _parse(text: str) -> dict:
-    """Lenient frontmatter meta: broken YAML reads as no frontmatter (mirrors
-    library_docs), so a bad edit never takes policy loading down.
+    """Lenient frontmatter meta — the shared parser; a bad edit never takes policy
+    loading down.
     """
-    try:
-        return frontmatter.parse(text)[0]
-    except yaml.YAMLError:
-        return {}
+    from .library_docs import parse_lenient
+    return parse_lenient(text)[0]
 
 
 def read_library_requires(permissions_home: Path) -> dict[str, dict]:

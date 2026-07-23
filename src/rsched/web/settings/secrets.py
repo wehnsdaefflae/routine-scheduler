@@ -38,7 +38,7 @@ def list_secrets(request: Request) -> dict:
     # binding a connection / a machine), so it must not appear as a needed store secret.
     injected = connection_token_vars() | machine_env_vars()
     # which env vars do the installed utils declare they need, and are they set yet?
-    utils = utils_lib.list_utils(server_of(request).utils_home)
+    utils = utils_lib.list_utils(server_of(request).libraries_home)
     by_name = {u["name"]: u for u in utils}
     declared: dict[str, list[str]] = {}
     for u in utils:

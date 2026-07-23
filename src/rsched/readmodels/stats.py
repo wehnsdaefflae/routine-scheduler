@@ -16,7 +16,6 @@ from datetime import UTC, date, datetime
 from .. import registry
 from ..config import ServerConfig
 from ..endpoints import EndpointError, EndpointRegistry
-from ..paths import read_json
 
 # a detached background task's slug (`bg-<owner>-<hex8>`) → its owner, so spend lands on
 # the conversation the user actually launched, not on a transient id
@@ -45,7 +44,8 @@ def _add(acc: dict, usage: dict, elapsed_s) -> None:
 
 def _run_day(ts: str) -> str:
     """A run dir name is `YYYYMMDD-HHMMSS`; the day is its date part. A pure string
-    reformat of the (local-time) dir name — no timezone semantics, so no tz to attach.
+    reformat of the run-ts dir name (server-local wall clock, by ids.run_ts design)
+    — no tz to attach.
     """
     raw = str(ts)[:8]
     try:
@@ -54,19 +54,17 @@ def _run_day(ts: str) -> str:
         return "unknown"
 
 
-def _run_ref(recorded, main_ref) -> tuple[str, str]:
+def _run_ref(recorded: str, main_ref) -> tuple[str, str]:
     """(endpoint, model) attribution for one run. status.json's `model` is the engine's
     resolved `<endpoint>/<model>` for that run — authoritative, it survives a mid-run
-    switch_model. The routine's main ref (already system_model-backed by the caller,
-    mirroring `EndpointRegistry.for_model`) covers legacy runs that predate the field.
+    switch_model. An EMPTY field (a run that died before its first resolution, or a
+    pre-field run still inside retention) falls back to the routine's main ref.
     """
-    endpoint, sep, model = str(recorded or "").partition("/")
+    endpoint, sep, model = recorded.partition("/")
     if sep:
         return endpoint, model
-    fallback = main_ref.endpoint if main_ref else "unknown"
-    if endpoint:  # a bare model name with no endpoint prefix (old status.json shape)
-        return fallback, endpoint
-    return fallback, (main_ref.model if main_ref else "unknown")
+    return (main_ref.endpoint if main_ref else "unknown",
+            main_ref.model if main_ref else "unknown")
 
 
 def monthly_spend(server: ServerConfig) -> dict:
@@ -136,9 +134,7 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
                 main_ref = None
             racc = _empty()
             for r in info.runs:
-                st = read_json(r.dir / "status.json")
-                endpoint, model = _run_ref(
-                    st.get("model") if isinstance(st, dict) else "", main_ref)
+                endpoint, model = _run_ref(r.model, main_ref)
                 _add(totals, r.usage, r.elapsed_s)
                 _add(racc, r.usage, r.elapsed_s)
                 _add(by_model[model], r.usage, r.elapsed_s)

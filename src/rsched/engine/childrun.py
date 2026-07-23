@@ -72,7 +72,7 @@ def materialize_to_disk(server, slug: str, sub_dir, prompt: str) -> tuple[str, s
         from ..workflows.adapt import materialize
 
         # a child is not decomposed (no per-spawn LLM) — the whole workflow is its main.md
-        main_content, _ = materialize(server.library_home, slug)
+        main_content, _ = materialize(server.libraries_home, slug)
         atomic_write(sub_dir / "main.md", main_content)
         atomic_write(sub_dir / "instruction.md", prompt)
         return slug, ""

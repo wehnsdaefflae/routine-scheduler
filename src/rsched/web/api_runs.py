@@ -33,7 +33,7 @@ def _run_dir(request: Request, run_id: str) -> tuple[str, Path]:
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     server = request.app.state.server
-    for home in (server.routines_home, server.conversations_home, server.background_home):
+    for home in registry.all_homes(server):
         run_dir = home / slug / "runs" / ts
         if run_dir.is_dir():
             return slug, run_dir
@@ -60,8 +60,7 @@ def run_index(request: Request, routine: str | None = None, limit: int = 30) -> 
     server = request.app.state.server
     if routine:
         runs = next((registry.run_index(home / routine, routine)
-                     for home in (server.routines_home, server.conversations_home,
-                                  server.background_home)
+                     for home in registry.all_homes(server)
                      if (home / routine / "routine.yaml").exists()), [])
     else:
         runs = [r for info in registry.scan(server).values() for r in info.runs]
@@ -345,15 +344,21 @@ async def resume_run(request: Request, run_id: str) -> dict:
     return {"ok": True, "run_id": rid}
 
 
+async def abort_with_fallback(runner, slug: str, run_dir: Path, run_id: str) -> bool:
+    """Abort via the runner (daemon-owned runs) with a recorded-pid fallback for runs the
+    daemon doesn't track (a CLI run, a pre-restart orphan) — the ONE abort sequence the
+    run, conversation, and background endpoints all share.
+    """
+    if await runner.abort(slug):
+        return True
+    st = read_json(run_dir / "status.json")
+    pid = st.get("pid") if isinstance(st, dict) else None
+    return await abort_process(pid, run_dir, run_id)
+
+
 @router.post("/runs/{run_id}/abort")
 async def abort(request: Request, run_id: str) -> dict:
     slug, run_dir = _run_dir(request, run_id)
-    runner = request.app.state.runner
-    ok = await runner.abort(slug)
-    if not ok:  # not daemon-owned (CLI run?) — fall back to the recorded pid
-        st = read_json(run_dir / "status.json")
-        pid = st.get("pid") if isinstance(st, dict) else None
-        ok = await abort_process(pid, run_dir, run_id)
-    if not ok:
+    if not await abort_with_fallback(request.app.state.runner, slug, run_dir, run_id):
         raise HTTPException(409, "no live process for this run")
     return {"ok": True}

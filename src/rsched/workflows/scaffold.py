@@ -22,25 +22,34 @@ from ..ids import is_slug
 GITIGNORE = "runs/\ninbox/\nquestions/\nmnt/\n"   # mnt/ = transient remote-machine share mounts
 
 PRACTICES_HEADING = "## Standing practices"
+TAIL_LEAD = ("These practice modules are this routine's own standards — read each with "
+             "read_file before the situation it governs (the routine-improver meta routine "
+             "refines them over time):")
+
+
+def render_practices_tail(trait_lines: list[str]) -> str:
+    """The Standing-practices section body — heading, lead, one line per trait. The ONE
+    place the tail's shape lives: scaffold/conversation creation appends it, traits.py's
+    post-creation resync rebuilds it (two drifted copies of the lead once disagreed).
+    """
+    return "\n".join([PRACTICES_HEADING, "", TAIL_LEAD, *trait_lines])
+
+
+def trait_line(slug: str, summary: str) -> str:
+    return f"- `traits/{slug}.md` — {summary or slug.replace('-', ' ')}"
 
 
 def with_practices_tail(main_body: str, trait_summaries: dict[str, str]) -> str:
     """Guarantee main.md ends with a Standing practices section referencing every trait file —
     the generator is asked to write one, but the reference must survive a forgetful LLM (and
-    the no-LLM fallback). One line per trait: file + when to read it. Shared by routine
-    scaffolding and conversation creation — the ONE place the tail's shape lives.
+    the no-LLM fallback).
     """
     if not trait_summaries:
         return main_body
     if PRACTICES_HEADING.lower() in main_body.lower():
         return main_body
-    lines = [f"- `traits/{slug}.md` — {summary or slug.replace('-', ' ')}"
-             for slug, summary in trait_summaries.items()]
-    tail = [PRACTICES_HEADING, "",
-            "These practice modules are this routine's own adapted standards — read each with "
-            "read_file before the situation it governs (the routine-improver meta routine "
-            "refines them over time):", *lines]
-    return main_body.rstrip() + "\n\n" + "\n".join(tail) + "\n"
+    lines = [trait_line(slug, summary) for slug, summary in trait_summaries.items()]
+    return main_body.rstrip() + "\n\n" + render_practices_tail(lines) + "\n"
 
 
 def copy_traits(traits_home, dest_dir, slugs: list[str],
@@ -111,7 +120,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # traits default to the workflow's `includes` (its suggested practice set), else the
     # standard set; validate against the library. Permissions validate against theirs.
     try:
-        meta, _ = library.read_workflow(server.library_home, workflow_slug)
+        meta, _ = library.read_workflow(server.libraries_home, workflow_slug)
     except FileNotFoundError as exc:
         raise ValueError(f"workflow {workflow_slug!r} not found in the library") from exc
     available_traits = set(library_docs.slugs(server.traits_home))
@@ -122,10 +131,13 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     active_perms = [p for p in active_perms if p in available_perms]
     # the activation cascade: the capabilities the chosen conduct docs require, switched
     # on from the start (the user tunes both layers on the routine page afterwards)
-    from ..grants import capabilities_for, read_library_requires
+    from ..grants import capabilities_for, floor_capabilities, read_library_requires
 
-    capabilities = capabilities_for(active_perms, read_library_requires(server.permissions_home))
-    commit = library.head_commit(server.library_home)
+    # the SAME raise-then-floor discipline the save path applies (api_routines) — creation
+    # used to raise only, so a floor violation surfaced on first edit instead of at birth
+    lib = read_library_requires(server.permissions_home)
+    capabilities = floor_capabilities(active_perms, lib, capabilities_for(active_perms, lib))
+    commit = library.head_commit(server.libraries_home)
 
     from .adapt import decompose, dump_markdown
 
@@ -174,7 +186,10 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         **({"models": models} if models else {}),
         "permissions": active_perms,
         "capabilities": capabilities,
-        "budgets": {**DEFAULT_BUDGETS, **(budgets or {})},
+        # unknown keys are dropped, not persisted — a caller typo must not seed junk
+        # config that the strict loader then flags on every read
+        "budgets": {**DEFAULT_BUDGETS,
+                    **{k: v for k, v in (budgets or {}).items() if k in DEFAULT_BUDGETS}},
         "retention": {"keep_runs": 30},
     }
     if fs_read_roots:
@@ -199,9 +214,7 @@ def _tilde(path: str) -> str:
     return "~" + path[len(home):] if path.startswith(home) else path
 
 
-# Neutral identity for managed repos — the user's real name never authors a commit.
-GIT_IDENTITY = (("user.name", "routine-scheduler"),
-                ("user.email", "noreply@routine-scheduler.local"))
+from ..libgit import IDENTITY_PAIRS as GIT_IDENTITY  # noqa: E402 — one identity home
 
 
 def init_repo(repo_dir: Path, message: str) -> None:

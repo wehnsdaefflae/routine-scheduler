@@ -139,8 +139,8 @@ def ensure_library(home: Path, *, remote: str = "") -> None:
 
 
 def _configure_repo(home: Path) -> None:
-    _git(home, "config", "user.name", "routine-scheduler")
-    _git(home, "config", "user.email", "noreply@routine-scheduler.local")
+    for key, val in libgit.IDENTITY_PAIRS:
+        _git(home, "config", key, val)
 
 
 def _install_dispatcher(home: Path) -> None:
@@ -438,7 +438,7 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     _, net = util_needs(home, name)
     try:
         cmd = sandbox.wrap(["uv", "run", "--script", str(util_dir(home, name) / "main.py"),
-                            *args], policy=policy, utils_home=home, net=net)
+                            *args], policy=policy, libraries_home=home, net=net)
     except sandbox.SandboxRefusal as exc:
         return 2, "", str(exc)
     # File-backed capture + own process GROUP: `uv run` re-execs the script as a grandchild,

@@ -112,7 +112,7 @@ _REPLY = {"slug": "clean-and-chart-a-dataset", "title": "Clean and chart a datas
 # ---- storage ------------------------------------------------------------------------------------
 
 def test_storage_roundtrip(server):
-    home = server.library_home
+    home = server.libraries_home
     main = ("---\nslug: demo\ntitle: Demo\nwhen: when to use\ntags:\n- x\naxis: the thing\n"
             "updated: 2026-07-14\n---\n\n## Instructions\n1. do it\n")
     playbooks.write_playbook(home, "demo", main=main, details={"extra": "# extra\nlong stuff"})
@@ -131,7 +131,7 @@ def test_storage_roundtrip(server):
 
 
 def test_read_detail_rejects_traversal(server):
-    home = server.library_home
+    home = server.libraries_home
     playbooks.write_playbook(home, "d", main="---\nslug: d\n---\n\n## Instructions\n1. x",
                              details={"note": "hi"})
     assert playbooks.read_detail(home, "d", "note.md") == "hi\n"
@@ -221,7 +221,7 @@ def test_playbook_edit_detail_and_delete_routes(client):
     """The Library tab's write surface: PUT is lint-gated (a degraded MAIN.md never lands),
     detail files are served, DELETE removes the whole playbook — 404s stay honest."""
     c, server = client
-    home = server.library_home
+    home = server.libraries_home
     pb = playbooks.read_playbook(home, "research-and-report")
 
     # detail files: 404 for a name the playbook doesn't carry; 200 once one exists
@@ -286,7 +286,7 @@ def test_save_playbook_endpoint(client, monkeypatch):
     r = c.post(f"/api/conversations/{slug}/playbook")
     assert r.status_code == 200, r.text
     assert r.json()["slug"] == "clean-and-chart-a-dataset"
-    assert playbooks.read_playbook(server.library_home, "clean-and-chart-a-dataset") is not None
+    assert playbooks.read_playbook(server.libraries_home, "clean-and-chart-a-dataset") is not None
 
 
 def test_update_playbook_endpoint(client, monkeypatch):
@@ -303,7 +303,7 @@ def test_update_playbook_endpoint(client, monkeypatch):
     _patch_system_model(monkeypatch, reply)
     r = c.put(f"/api/conversations/{slug}/playbook")
     assert r.status_code == 200, r.text
-    updated = playbooks.read_playbook(server.library_home, "research-and-report")["content"]
+    updated = playbooks.read_playbook(server.libraries_home, "research-and-report")["content"]
     assert "NEW verification step" in updated
 
 

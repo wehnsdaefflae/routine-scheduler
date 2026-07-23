@@ -262,7 +262,7 @@ def commands(request: Request, slug: str) -> dict:
     server = request.app.state.server
     policy = load_policy(server.permissions_home, info.cfg.permissions,
                          info.cfg.capabilities)
-    return command_catalog(policy, utils_lib.list_utils(server.utils_home))
+    return command_catalog(policy, utils_lib.list_utils(server.libraries_home))
 
 
 @router.post("/conversations/{slug}/message")
@@ -433,7 +433,7 @@ def save_playbook(request: Request, slug: str) -> dict:
 
     info = conversation_info(request, slug)
     server = request.app.state.server
-    home = server.library_home
+    home = server.libraries_home
     try:
         pb = playbook_distill.distill_playbook(server, info.cfg.dir)
     except Exception as exc:
@@ -458,7 +458,7 @@ def update_playbook(request: Request, slug: str) -> dict:
 
     info = conversation_info(request, slug)
     server = request.app.state.server
-    home = server.library_home
+    home = server.libraries_home
     bound = info.cfg.playbook_slug
     if not bound:
         raise HTTPException(400, "this conversation was not created from a playbook")

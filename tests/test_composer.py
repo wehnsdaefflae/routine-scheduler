@@ -194,7 +194,7 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
 
     ctx = _ctx(make_routine, tmp_path, slug="caps")
     for name, summary in (("frob", "flips widgets"), ("discord", "phone channel")):
-        d = ctx.server.utils_home / "utils" / name
+        d = ctx.server.libraries_home / "utils" / name
         d.mkdir(parents=True)
         (d / "main.py").write_text(f'"""{name} — {summary}.\n\nusage: gu {name} X\n"""\n',
                                    encoding="utf-8")

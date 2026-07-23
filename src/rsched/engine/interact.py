@@ -151,7 +151,7 @@ def recreate_denial(loop, action: dict) -> list[str]:
     name = str(action.get("name") or "")
     if ctx.depth > 0 or not name or not is_slug(name):
         return []   # subruns can't write utils at all — handle_write_util declines them
-    home = ctx.server.utils_home
+    home = ctx.server.libraries_home
     if utils_lib.exists(home, name) or not utils_lib.was_deleted(home, name):
         return []   # a revision, or a slug that never existed — no recreation involved
     if any(name.lower() in str(a.get("question") or "").lower()
@@ -177,7 +177,7 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:
     if problems:
         return {"kind": "write_util", "name": name, "header_ok": False,
                 "problems": problems}
-    home = ctx.server.utils_home
+    home = ctx.server.libraries_home
     utils_lib.ensure_library(home, remote=ctx.server.libraries_remote)
     creating = not utils_lib.exists(home, name)
     # Approval policy is the routine's write_util capability level (always: every change;
@@ -225,7 +225,7 @@ def handle_remove_util(loop, action: dict, poll_s: float) -> dict:
     if ctx.depth > 0:
         return {"kind": "remove_util", "name": name, "declined": True,
                 "reason": "sub-workflows cannot remove utils — curation is a top-level action"}
-    home = ctx.server.utils_home
+    home = ctx.server.libraries_home
     utils_lib.ensure_library(home, remote=ctx.server.libraries_remote)
     if not utils_lib.exists(home, name):
         return {"kind": "remove_util", "name": name, "missing": True}

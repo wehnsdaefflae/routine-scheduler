@@ -114,14 +114,14 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         try:
             from ..workflows.library import list_workflows
 
-            patterns = list(list_workflows(ctx.server.library_home))
+            patterns = list(list_workflows(ctx.server.libraries_home))
         except Exception:
             patterns = []
         if patterns:
             parts.append("Sub-workflow patterns for spawn/subtask/detach — pick the one "
                          "matching the CHILD's purpose, never reflexively the default:\n"
                          + "\n".join(f"- {w['slug']} — {w['description']}" for w in patterns))
-    utils = utils_lib.list_utils(ctx.server.utils_home)
+    utils = utils_lib.list_utils(ctx.server.libraries_home)
     if utils:
         lines = []
         for u in utils:

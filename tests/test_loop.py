@@ -1848,13 +1848,13 @@ def test_util_list_with_name_returns_one_entry(make_routine, scripted):
     whole catalog the prompt already carries."""
     d = make_routine(slug="lister")
     server = _server(d)
-    util_dir = server.utils_home / "utils" / "frob"
+    util_dir = server.libraries_home / "utils" / "frob"
     util_dir.mkdir(parents=True)
     util_dir.joinpath("main.py").write_text(
         '"""frob — frobnicates things.\n\nusage: gu frob TARGET [--json]\n\ntags: test\n"""\n',
         encoding="utf-8")
-    (server.utils_home / "utils" / "other").mkdir(parents=True)
-    (server.utils_home / "utils" / "other" / "main.py").write_text(
+    (server.libraries_home / "utils" / "other").mkdir(parents=True)
+    (server.libraries_home / "utils" / "other" / "main.py").write_text(
         '"""other — another util.\n\nusage: gu other\n\ntags: test\n"""\n', encoding="utf-8")
     scripted([
         util("list", args=["frob"]),

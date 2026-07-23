@@ -17,6 +17,10 @@ import json
 import re
 from pathlib import Path
 
+# Diagram cap: the rail's SVG renders one column of nodes — beyond ~16 the graph is
+# unreadable and a recipe with more stages is itself the smell (decompose produces 3-8).
+# A capped listing drops the LEAST-mentioned modules (files are pre-ranked by first
+# mention), so the visible graph is always the recipe's spine.
 MAX_STATES = 16
 STAGES_DIR = "stages"   # THE module dir — every routine on disk follows it (0.49.1)
 

@@ -43,12 +43,12 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
     traits = sorted(p.stem for p in traits_dir.glob("*.md")) if traits_dir.is_dir() else []
     result = decompose(server, cfg.workflow_slug, instruction, traits=traits)
     try:
-        meta, _ = library.read_workflow(server.library_home, cfg.workflow_slug)
+        meta, _ = library.read_workflow(server.libraries_home, cfg.workflow_slug)
     except FileNotFoundError:
         meta = {}
     main_meta = {"name": cfg.name, "slug": cfg.slug,
                  "materialized_from": {"slug": cfg.workflow_slug,
-                                       "commit": library.head_commit(server.library_home),
+                                       "commit": library.head_commit(server.libraries_home),
                                        "version": meta.get("version", 0)},
                  "stages": sorted(result["stages"])}
     if meta.get("tools") is not None:

@@ -44,7 +44,7 @@ def _seed_deleted_util(home, name="doomed"):
 
 
 def _loop(home, *, depth=0, user_answers=()):
-    ctx = SimpleNamespace(server=SimpleNamespace(utils_home=home), depth=depth,
+    ctx = SimpleNamespace(server=SimpleNamespace(libraries_home=home), depth=depth,
                           user_answers=list(user_answers))
     return SimpleNamespace(ctx=ctx, allowed_tools=None, grants=None)
 
@@ -94,7 +94,7 @@ def test_ask_then_recreate_flow(make_routine, scripted):
 
     d = make_routine(slug="guardian", budgets={"ask_timeout_min": 1})
     server = _server(d)   # confirm "never": the recreate rule must gate on its own
-    _seed_deleted_util(server.utils_home)
+    _seed_deleted_util(server.libraries_home)
 
     def answer_soon():
         deadline = time.time() + 10
@@ -129,7 +129,7 @@ def test_ask_then_recreate_flow(make_routine, scripted):
     wu_obs = [e for e in events if e["type"] == "observation"
               and e["payload"].get("kind") == "write_util"]
     assert len(wu_obs) == 1 and wu_obs[0]["payload"].get("selftest_ok") is True
-    assert utils_lib.exists(server.utils_home, "doomed")
+    assert utils_lib.exists(server.libraries_home, "doomed")
 
 
 def test_seed_sync_never_resurrects_deleted(tmp_path, monkeypatch):

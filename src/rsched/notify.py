@@ -43,7 +43,7 @@ def discord_enabled(server, *, granted_utils=None, permissions=None) -> bool:
         return False
     if permissions is not None and _CHANNEL_PERMISSION not in permissions:
         return False
-    return utils_lib.exists(server.utils_home, _CHANNEL_UTIL)
+    return utils_lib.exists(server.libraries_home, _CHANNEL_UTIL)
 
 
 def run_channel(server, args: list[str], timeout: int = UTIL_TIMEOUT_S) -> tuple[int, str]:
@@ -52,7 +52,7 @@ def run_channel(server, args: list[str], timeout: int = UTIL_TIMEOUT_S) -> tuple
     """
     try:
         from . import sandbox
-        code, out, err = utils_lib.run_util(server.utils_home, _CHANNEL_UTIL, args,
+        code, out, err = utils_lib.run_util(server.libraries_home, _CHANNEL_UTIL, args,
                                             timeout=timeout,
                                             policy=sandbox.base_policy(server))
     except Exception as exc:  # a channel must never take the caller down

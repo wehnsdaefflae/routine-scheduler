@@ -64,7 +64,7 @@ def generate(server: ServerConfig, instruction: str, hint: str = "",
     `on_usage(usage)` is called with each completion's usage — the seam that lets an IN-RUN
     generation (a subtask drafting a pattern) fold its system-model spend into the run's budget.
     """
-    home = server.library_home
+    home = server.libraries_home
     traits = list_traits(home)
     _, example_raw = read_workflow(home, "general-task")   # a good Python workflow to imitate
     prompt = (

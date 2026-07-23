@@ -31,8 +31,7 @@ from .paths import file_lock, repo_lock_path
 # git pathspecs for the recipe set — RECIPE_PREFIXES minus the dir-prefix slashes
 RECIPE_PATHSPECS: tuple[str, ...] = tuple(p.rstrip("/") for p in RECIPE_PREFIXES)
 
-_GIT_IDENTITY = ("-c", "user.name=routine-scheduler",
-                 "-c", "user.email=noreply@routine-scheduler.local")
+from .libgit import IDENTITY_FLAGS as _GIT_IDENTITY  # noqa: E402 — one identity home
 
 
 class RecipeError(Exception):

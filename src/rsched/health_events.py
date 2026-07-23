@@ -45,7 +45,7 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noq
                        recipe_commit: str | None = None, utils: dict | None = None,
                        asks_deferred: int = 0) -> None:
     """Append one line per finished (sub)run to <routines_home>/.control/workflow-usage.jsonl —
-    the feedback stream the meta-workflows routine mines to optimize the library, and the
+    the feedback stream the workflow-curator routine mines to optimize the library, and the
     DURABLE spend series (run dirs fall to retention; this stream survives — monthly spend
     aggregation reads it). Subruns report like any other run (depth > 0), so per-purpose
     child workflows inform pattern evolution too. Best-effort, like the health log.

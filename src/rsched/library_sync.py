@@ -31,8 +31,7 @@ STATUS_FILE = "library-sync.json"
 # transient run state that never leaves the instance; everything else in a routine dir syncs
 EXCLUDE = {"runs", ".git", "inbox", "questions", "status.json"}
 REDACT_KEYS = {"token", "api_key"}
-GIT_IDENTITY = ["-c", "user.name=routine-scheduler",
-                "-c", "user.email=noreply@routine-scheduler.local"]
+from .libgit import IDENTITY_FLAGS as GIT_IDENTITY  # noqa: E402 — one identity home
 
 
 def _wanted_files(routine_dir: Path) -> list[Path]:

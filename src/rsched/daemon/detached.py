@@ -157,7 +157,7 @@ class DetachedManager:
             "schedule": {"cron": "", "tz": raw.get("schedule", {}).get("tz", server_tz()),
                          "catchup": "skip"},
             "workflow": {"library_slug": workflow,
-                         "library_commit": head_commit(self.server.library_home)},
+                         "library_commit": head_commit(self.server.libraries_home)},
             "owner": {"slug": str(req["owner"].get("slug", "")), "dir": str(owner_dir)},
             **({"models": raw["models"]} if raw.get("models") else {}),
             "permissions": list(raw.get("permissions") or []),

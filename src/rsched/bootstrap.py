@@ -15,6 +15,7 @@ from pathlib import Path
 
 import yaml
 
+from . import libgit
 from .paths import atomic_write, config_file
 
 log = logging.getLogger("rsched.bootstrap")
@@ -66,10 +67,10 @@ def _install_seed_routine(src: Path, dst: Path) -> None:
     shutil.copytree(src, dst)
     if not (dst / ".git").is_dir():
         _git(dst, "init", "-q", "-b", "main")
-    _git(dst, "config", "user.name", "routine-scheduler")
-    _git(dst, "config", "user.email", "noreply@routine-scheduler.local")
-    _git(dst, "add", "-A")
-    _git(dst, "commit", "-qm", f"seed {src.name} routine")
+    from .libgit import IDENTITY_PAIRS
+    for key, val in IDENTITY_PAIRS:
+        _git(dst, "config", key, val)
+    libgit.commit(dst, f"seed {src.name} routine")
 
 
 def adopt_seed_routine(routines_home: Path, slug: str) -> bool:
@@ -128,8 +129,8 @@ def _ensure_library_permission(permissions_home: Path, slug: str) -> str | None:
     if not permissions_home.is_dir() or not src.exists():
         return None
     shutil.copy(src, dst)
-    _git(permissions_home.parent, "add", "-A")        # the library repo root (best-effort)
-    _git(permissions_home.parent, "commit", "-qm", f"seed new default permission: {slug}")
+    libgit.commit(permissions_home.parent, f"seed new default permission: {slug}",
+                  paths=[f"{permissions_home.name}/{slug}.md"])
     return dst.read_text(encoding="utf-8")
 
 
@@ -171,8 +172,7 @@ def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
                             read_library_requires(permissions_home).get(slug) or {})
             atomic_write(rdir / "routine.yaml",
                          yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
-            _git(rdir, "add", "-A")
-            _git(rdir, "commit", "-qm", f"adopt default permission: {slug}")
+            libgit.commit(rdir, f"adopt default permission: {slug}")
             touched += 1
         newly_done.add(slug)
     if newly_done:
@@ -225,10 +225,10 @@ def seed_libraries(home: Path) -> None:
         shutil.copytree(root / "util-seed" / "utils", home / "utils", dirs_exist_ok=True)
     if not (home / ".git").is_dir():
         _git(home, "init", "-q", "-b", "main")
-    _git(home, "config", "user.name", "routine-scheduler")
-    _git(home, "config", "user.email", "noreply@routine-scheduler.local")
-    _git(home, "add", "-A")
-    _git(home, "commit", "-qm", "seed library repo")
+    from .libgit import IDENTITY_PAIRS
+    for key, val in IDENTITY_PAIRS:
+        _git(home, "config", key, val)
+    libgit.commit(home, "seed library repo")
     install_push_hook(home)
 
 
@@ -262,9 +262,9 @@ def sync_seed_library_docs(libraries_home: Path) -> int:
                 installed.append(f"playbooks/{d.name}")
     if installed:
         log.warning("seed-sync: installed new library doc(s): %s", ", ".join(installed))
-        _git(libraries_home, "add", "-A")
-        _git(libraries_home, "commit", "-qm",
-             f"seed-sync: install new library doc(s): {', '.join(installed)}")
+        libgit.commit(libraries_home,
+                      f"seed-sync: install new library doc(s): {', '.join(installed)}",
+                      paths=installed)
     return len(installed)
 
 
@@ -296,9 +296,9 @@ def sync_seed_utils(libraries_home: Path) -> int:
         installed.append(d.name)
     if installed:
         log.warning("seed-sync: installed new seed util(s): %s", ", ".join(installed))
-        _git(libraries_home, "add", "-A")
-        _git(libraries_home, "commit", "-qm",
-             f"seed-sync: install new seed util(s): {', '.join(installed)}")
+        libgit.commit(libraries_home,
+                      f"seed-sync: install new seed util(s): {', '.join(installed)}",
+                      paths=[f"utils/{n}" for n in installed])
     return len(installed)
 
 
@@ -371,7 +371,7 @@ def migrate_util_headers(libraries_home: Path) -> int:
     if touched:
         log.warning("sandbox rollout: migrated %d util header(s): %s",
                     len(touched), ", ".join(touched))
-        _git(libraries_home, "add", "-A")
-        _git(libraries_home, "commit", "-qm",
-             "migrate util headers: declare net/calls/secrets (sandbox rollout)")
+        libgit.commit(libraries_home,
+                      "migrate util headers: declare net/calls/secrets (sandbox rollout)",
+                      paths=[f"utils/{n}" for n in touched])
     return len(touched)

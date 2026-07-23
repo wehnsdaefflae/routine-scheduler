@@ -146,7 +146,7 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
     """
     from .. import library_docs
 
-    meta, raw = read_workflow(server.library_home, slug)
+    meta, raw = read_workflow(server.libraries_home, slug)
     # A pattern may PIN deliverable paths (META["pin"]: str | list) that MUST survive
     # decomposition — the tailored files must still name them. The observed failure mode:
     # applied to a draft that itself describes a routine (the wizard's clarify-instruction),

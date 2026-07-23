@@ -216,7 +216,7 @@ def util_stats(server: ServerConfig) -> dict:
     has no created/revised date, one never seen executing has zero counts and no
     first/last timestamps.
     """
-    home = server.utils_home
+    home = server.libraries_home
     catalog = {u["name"]: u for u in utils_lib.list_utils(home)}
     dates = _git_dates(home)
     stream_agg, covered, stream_runs = _stream_utils(server)

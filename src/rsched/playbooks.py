@@ -19,7 +19,6 @@ import re
 import shutil
 from pathlib import Path
 
-import frontmatter
 import yaml
 
 MAIN = "MAIN.md"
@@ -34,13 +33,8 @@ def playbooks_dir(home: Path) -> Path:
 
 
 def _parse(text: str) -> tuple[dict, str]:
-    """frontmatter.parse for user-editable files: broken YAML reads as no frontmatter, so a bad
-    edit never crashes listing or a run.
-    """
-    try:
-        return frontmatter.parse(text)
-    except yaml.YAMLError:
-        return {}, text
+    from .library_docs import parse_lenient
+    return parse_lenient(text)
 
 
 def doc_body(text: str) -> str:

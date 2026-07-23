@@ -66,7 +66,7 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
 def do_util(action: dict, ctx: RunContext) -> dict:
     name = action["name"]
     args = [str(a) for a in (action.get("args") or [])]
-    home = ctx.server.utils_home
+    home = ctx.server.libraries_home
     if name == "list":  # discovery: `gu list` — the catalog is derived live, never stale
         # With a util name in args, list ONLY that util's entry (usage + tags + secrets):
         # the full catalog is already in CAPABILITIES, so re-listing everything to learn
@@ -209,7 +209,7 @@ def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
     single fallback used both by do_view_image and the loop's runtime net when the main
     endpoint can't take a file natively; the util bills its own key, out of the run's usage.
     """
-    home = ctx.server.utils_home
+    home = ctx.server.libraries_home
     if not utils_lib.exists(home, VISION_UTIL):
         return "error: the `vision` util is not installed, so this file cannot be described"
     args = [abspath, "--prompt", prompt or VIEW_DEFAULT_PROMPT, "--json"]

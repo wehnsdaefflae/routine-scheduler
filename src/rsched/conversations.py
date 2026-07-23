@@ -149,8 +149,8 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
     conv_dir = server.conversations_home / slug
     if conv_dir.exists():
         raise ValueError(f"conversation dir {conv_dir} already exists")
-    meta, raw = read_workflow(server.library_home, CONVERSE_WORKFLOW)
-    pb = playbooks.read_playbook(server.library_home, playbook_slug) if playbook_slug else None
+    meta, raw = read_workflow(server.libraries_home, CONVERSE_WORKFLOW)
+    pb = playbooks.read_playbook(server.libraries_home, playbook_slug) if playbook_slug else None
     title = fallback_title(first_message if first_message.strip()
                            else (str(pb["meta"].get("title")) if pb else "conversation"))
 
@@ -159,7 +159,7 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
     # trait copies: library text verbatim — the conversation's own files from here on
     # (refined by the routine-improver meta routine, like any routine's).
     trait_summaries = copy_traits(server.traits_home, conv_dir, list(CONVERSATION_TRAITS))
-    commit = head_commit(server.library_home)
+    commit = head_commit(server.libraries_home)
     main_meta = {"name": title, "slug": slug,
                  "materialized_from": {"slug": CONVERSE_WORKFLOW, "commit": commit,
                                        "version": meta.get("version", 0)},

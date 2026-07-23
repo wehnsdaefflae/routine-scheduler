@@ -64,7 +64,7 @@ def test_deployed_config_keys_load_exactly(tmp_path):
     assert mc.multimodal is False and mc.context_chars == 200_000 and mc.effort == "high"
     assert server.system_model == "ds"
     # derived properties hang off libraries_home
-    assert server.library_home == server.libraries_home == server.utils_home
+    assert server.libraries_home == server.libraries_home == server.libraries_home
     assert server.traits_home == server.libraries_home / "traits"
     assert server.permissions_home == server.libraries_home / "permissions"
     assert server.library_sync.enabled is True and server.library_sync.cron == "0 6 * * *"

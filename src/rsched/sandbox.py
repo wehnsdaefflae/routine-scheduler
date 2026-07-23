@@ -107,7 +107,8 @@ def _toolchain() -> tuple[list[str], list[str]]:
     return ro, rw
 
 
-def wrap(cmd: list[str], *, policy: SandboxPolicy, utils_home: Path, net: bool) -> list[str]:
+def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
+         net: bool) -> list[str]:
     """The command that actually runs: `cmd` wrapped in the landlock.py child wrapper when
     the sandbox engages, `cmd` itself when the mode says (or allows) running bare. Raises
     SandboxRefusal when mode=strict and the jail can't close as specified — the caller
@@ -133,7 +134,7 @@ def wrap(cmd: list[str], *, policy: SandboxPolicy, utils_home: Path, net: bool) 
         _warn_once("net", f"{msg} — sandbox mode 'permissive': filesystem jail only")
         net = True
     ro, rw = _toolchain()
-    ro.append(str(utils_home))
+    ro.append(str(libraries_home))
     ro += [str(p) for p in policy.read_roots]
     rw += [str(p) for p in policy.write_roots]
     spec = {"ro": sorted(set(ro)), "rw": sorted(set(rw)), "net": bool(net)}

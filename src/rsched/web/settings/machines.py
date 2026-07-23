@@ -99,7 +99,7 @@ def _run_remote(server, args: list[str], extra_secrets: dict[str, str]) -> tuple
     """Run the reserved `remote` util from the daemon/web process (base sandbox policy — no run
     filesystem roots; the util only needs the network its `net:` line declares).
     """
-    return utils_lib.run_util(server.utils_home, REMOTE_UTIL, args, timeout=90,
+    return utils_lib.run_util(server.libraries_home, REMOTE_UTIL, args, timeout=90,
                               policy=sandbox.base_policy(server), extra_secrets=extra_secrets)
 
 

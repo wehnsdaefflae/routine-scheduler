@@ -15,6 +15,7 @@ import shutil
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from croniter import croniter
@@ -49,6 +50,7 @@ class RunInfo:
     usage: dict = field(default_factory=dict)
     question: dict | None = None
     updated: str = ""
+    model: str = ""              # the engine's resolved "<endpoint>/<model>" for this run
     elapsed_s: int | None = None   # active wall-clock (final write = the run's duration)
 
 
@@ -127,6 +129,7 @@ def _read_run_fresh(run_dir: Path, slug: str) -> RunInfo:
         info.state = st.get("state", "unknown")
         info.outcome = st.get("outcome")
         info.pid = st.get("pid")
+        info.model = str(st.get("model") or "")
         info.turn = int(st.get("turn") or 0)
         info.usage = st.get("usage") or {}
         info.question = st.get("question")
@@ -214,7 +217,24 @@ def _open_questions_memo(d: Path) -> list[dict]:
     return copy.deepcopy(hit[1])
 
 
-def next_fire(cfg: RoutineConfig, after: datetime) -> datetime | None:
+def all_homes(server: ServerConfig) -> tuple[Path, Path, Path]:
+    """The three run homes, in resolution order — every cross-home probe iterates THIS
+    tuple (drifted inline copies once disagreed on which homes exist).
+    """
+    return (server.routines_home, server.conversations_home, server.background_home)
+
+
+class Schedulable(Protocol):
+    """What next_fire needs — RoutineConfig and LibrarySyncConfig both satisfy it, so
+    the library-sync job rides the same cron math without duck-typed type:ignores.
+    """
+
+    cron: str
+    tz: str
+    enabled: bool
+
+
+def next_fire(cfg: Schedulable, after: datetime) -> datetime | None:
     if not cfg.cron or not cfg.enabled:
         return None
     tz = ZoneInfo(cfg.tz)
