@@ -8,11 +8,15 @@ the safety condition, plus decisions the user settled.
 If APPLY is empty, skip straight to Next (a no-change run is a good run — say so in the report).
 
 ## For each change
-1. Edit the **smallest responsible file(s)** with `write_file`; keep diffs small and reviewable.
+1. **Locate via the codemap, then read narrowly**: `modules-*.md` names the owning module,
+   symbol and line; `routes.md` maps an endpoint to its handler and its static/ callers;
+   `frontend.md` maps a JS module's exports/imports. Open only the file(s) and lines the
+   map names; fall back to grep only where the map has no answer.
+2. Edit the **smallest responsible file(s)** with `write_file`; keep diffs small and reviewable.
    Respect the repo's one-responsibility / ≤~350-line rule.
-2. **Add or adjust tests in the SAME change** — the repo requires tests with every change. For an
+3. **Add or adjust tests in the SAME change** — the repo requires tests with every change. For an
    instrumentation finding, add exactly the logging/telemetry you specified (+ its test).
-3. **Do NOT touch the contracts** (action schema, transcript `EVENT_TYPES`, CLAUDE.md ownership
+4. **Do NOT touch the contracts** (action schema, transcript `EVENT_TYPES`, CLAUDE.md ownership
    rules) here — those are decisions; they should already be in SURFACE, not APPLY.
 
 ## Test-gate — the hard gate

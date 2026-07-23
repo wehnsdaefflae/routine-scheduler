@@ -27,7 +27,7 @@ At run start the engine stamps the current recipe commit into the run
 
 ## The health view (routine page → Recipe health)
 
-`rsched/run_health.py` buckets the routine's depth-0 usage records by recipe version:
+`rsched/readmodels/run_health.py` buckets the routine's depth-0 usage records by recipe version:
 runs, ok/partial/failed/aborted, fail rate, median turns and tokens, and
 deferred-question churn (`asks_deferred` — decisions the runs threw over the wall: a
 deferred ask, or a blocking ask that timed out / was parked / died with an abort).

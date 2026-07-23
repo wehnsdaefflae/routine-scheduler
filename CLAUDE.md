@@ -354,7 +354,7 @@ and the capabilities digest's catalog listing):
   the `general-task` seed workflow carries a standardized `decompose_decision()` gate
   (inline | sequential | parallel); `converse` handles decomposition as inline prose.
   Children are killed at parent finish (never outlive it); exits fold usage into the parent. The
-  recursive tree is visualized live in the run/conversation rail (`web/tasktree.py` read-model →
+  recursive tree is visualized live in the run/conversation rail (`rsched/readmodels/tasktree.py` →
   `static/components/tasktree.js`). `subrun_start`/`subrun_end` events carry `mode` (sequential/parallel)
   + the child's allotted budget — payload EXTENSIONS, not new event types. Children running at an interruption are dead on resume — boot marks each aborted
   (`history.orphaned_children` → a synthesized `subrun_end`) and tells the model; finished-child
@@ -478,7 +478,10 @@ traits + permissions + playbooks),
 `util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `routine-improver`,
 `workflow-curator`, `token-lab` — installed **disabled**; the dashboard shows a notice until
 enabled; a seed added after first boot reaches existing instances via
-`bootstrap.adopt_seed_routine` at daemon boot, which respects an archived copy). `token-lab` is
+`bootstrap.adopt_seed_routine` at daemon boot, which respects an archived copy). `self-audit`
+works LOOKUP-FIRST from `.codemap/` — a compact derived map of this repo (module API surface,
+routes + JS callers, contract literals, mechanical audit flags) the library `codemap` util
+regenerates at orient (gitignored; delete-and-rebuild, never hand-edited). `token-lab` is
 the token-efficiency R&D loop: measures real usage, tests methods via llm subcalls ONLY (never
 integrates), publishes `artifacts/report.html`. The **library sync**
 (`library_sync.py`, a scheduled DAEMON job — Settings → Library sync, deliberately not a routine)

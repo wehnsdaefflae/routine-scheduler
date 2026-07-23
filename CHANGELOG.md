@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.94.0] — 2026-07-23
+### Added
+- **Self-audit works lookup-first from a generated codemap**: the new library `codemap`
+  util (stdlib-only, offline, seconds) derives a compact map of this repo into a
+  gitignored `.codemap/` — per-module API surface with line numbers, signatures,
+  reverse-import counts and covering tests; the full HTTP surface with auth level and the
+  static/ files calling each route (nested-router chains and shared-router imports
+  resolved); frontend module exports/imports; contract literals and config-model fields;
+  and a mechanical audit-flag inventory (over-budget files, orphan/untested-module
+  candidates, skipped tests, TODO + MIGRATION markers, stale doc path references, churn
+  hotspots). The self-audit recipe (live + seed) regenerates the map at orient, treats it
+  as the lookup surface for the whole run, starts the fresh-eyes sweep from its flags, and
+  refreshes it after committing — replacing most token-expensive code exploration with
+  reads of pre-derived files.
+
+### Fixed
+- Two stale doc references the first codemap run surfaced: `CLAUDE.md` still pointed the
+  task-tree read-model at `web/tasktree.py` and `docs/run-analytics.md` the health view at
+  `rsched/run_health.py` — both live under `rsched/readmodels/` since the 0.87 split.
+
 ## [0.93.0] — 2026-07-23
 ### Added
 - **The permissions & practice-module panels explain themselves**: every capability row

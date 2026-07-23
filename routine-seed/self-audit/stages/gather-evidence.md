@@ -1,6 +1,9 @@
 # Step: gather-evidence (read-only)
 
 Collect the raw signal. Touch nothing; keep your own context small by spawning parallel readers.
+Lookups go through the codemap first (orient step 4); when spawning a reader, name the relevant
+`.codemap/` file (or paste the few lines that matter) in its brief so the child looks up too
+instead of re-exploring the tree.
 
 ## A. Scheduler code changes since the anchor
 - Use a util to git-log the repo since `last_commit` (`util name=list` to find one). If no such
@@ -35,6 +38,13 @@ Collect the raw signal. Touch nothing; keep your own context small by spawning p
 - Collect: `error` events (broken flows — pair each with its view), repeated `click` on one
   target within a minute (friction/rage-clicks), `reconnect` bursts (stream instability).
   These feed the interface-quality lens in analyse-findings.
+
+## E. Mechanical inventory — free from the codemap
+- The codemap regenerated at orient (`/home/mark/git-repos/routine-scheduler/.codemap/index.md`)
+  pre-computes the cruft inventory: files over the ~350-line budget, orphan-module candidates,
+  modules no test imports, skipped tests, TODO/FIXME lines, MIGRATION markers with expiry,
+  stale path references in docs, churn hotspots. Treat each flag as a CANDIDATE: verify
+  (grep / zero-reference check) before it becomes a finding — precision over recall.
 
 ## Next
 Write `state/phase.json` = `{"phase": "analyse-findings"}` and read `stages/analyse-findings.md`.

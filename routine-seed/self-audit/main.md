@@ -38,6 +38,8 @@ specific routine becomes a report entry or a decision naming it, never a fix you
 
 Fixed paths for this routine:
 - **Scheduler repo** (edit + test + commit here): `/home/mark/git-repos/routine-scheduler`
+- **Codemap** (lookup-first surface, regenerated at orient — `util codemap`):
+  `/home/mark/git-repos/routine-scheduler/.codemap/` (start at `index.md`)
 - **Routines home** (read transcripts; restart sentinel in its `.control/`): `/home/mark/routines`
 - **Restart sentinel**: `/home/mark/routines/.control/restart.request`
 - Daemon service (journal): `routine-scheduler.service`

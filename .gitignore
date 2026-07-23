@@ -8,6 +8,10 @@ dist/
 # a self-audit run pointed at the source tree writes here — never commit it
 audit/
 
+# derived codebase map (library `codemap` util, regenerated at self-audit orient) — a pure
+# derivation of the tree, delete-and-rebuild; committing it would only add churn
+.codemap/
+
 # quality-gate artifacts (ruff/mypy/coverage run in-repo on the server)
 .ruff_cache/
 .mypy_cache/
