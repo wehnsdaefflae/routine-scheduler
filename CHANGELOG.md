@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.88.2] — 2026-07-23
+
+### Fixed
+- **The system prompt no longer lies to the routine-improver about its own recipe**
+  (`engine/composer.py`): the ownership paragraph stated "Your own recipe (main.md, stages/,
+  traits/) is READ-ONLY to you" **unconditionally**, while the engine (grants/fileops) actually
+  UNLOCKS own-recipe writes when a user `fs_write_root` covers the routine's dir — exactly the
+  routine-improver's configuration. Consequence: with its "include in improvement" toggle on,
+  the improver queued itself as a target and then skipped every lens on the self target,
+  citing the sealed sentence (run 20260723-112446, turns 11/13). The recipe line is now
+  conditional on `grants.recipe_unlocked` — an unlocked run is told its recipe IS writable.
+  (+1 prompt test; docs/prompt-anatomy.md notes the variant.)
+
 ## [0.88.1] — 2026-07-23
 
 Self-audit fix batch for six operator-reported defects (2026-07-23 audit notes).

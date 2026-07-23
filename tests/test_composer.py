@@ -557,3 +557,20 @@ def test_compaction_gate_cached_waits_for_80pct(monkeypatch):
     loop, calls = _gate_loop(monkeypatch, usage={"cached_in": 5_000})
     compact_if_needed(loop, endpoint=None, ref=ModelRef("e", "m", context_chars=100_000))
     assert not calls, "with cache hits, 70k over 100k sits under the 0.8 gate - no compaction"
+
+
+def test_harness_contract_recipe_line_follows_unlock(make_routine, tmp_path):
+    """The prompt must tell the TRUTH about recipe ownership: sealed by default, but a run
+    whose grants carry recipe_unlocked (a user fs_write_root covers the routine's own dir —
+    the routine-improver's case) must be told its recipe IS writable. The unconditional
+    "READ-ONLY to you" sentence made the improver skip every lens on its own self-target
+    despite the include-toggle being on (F165, routine-improver:20260723-112446 t11/t13)."""
+    from rsched.grants import GrantPolicy
+
+    ctx = _ctx(make_routine, tmp_path, slug="recun")
+    ctx.grants = GrantPolicy()                        # sealed — the default for every run
+    assert "READ-ONLY to you" in harness_contract(ctx)
+    ctx.grants = GrantPolicy(recipe_unlocked=True)    # user write root covers the own dir
+    text = harness_contract(ctx)
+    assert "IS WRITABLE" in text
+    assert "READ-ONLY to you" not in text

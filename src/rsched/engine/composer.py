@@ -90,6 +90,18 @@ contradictions. read_file / write_file are rejected on .memory/ paths.""")
                      "main.md entry and the stages/<name>.md modules it routes to) fully defines "
                      "your task: goal, deliverable, constraints, completion criteria. It is the "
                      "single source of truth for what to do. ")
+    # Recipe ownership must match what the ENGINE enforces: fileops/grants unlock own-recipe
+    # writes when a user fs_write_root covers the routine dir (the routine-improver's case).
+    # Telling such a run its recipe is "READ-ONLY to you" is a falsehood it will obey —
+    # routine-improver:20260723-112446 queued ITSELF (include-toggle on) and then skipped
+    # every lens on the self target, citing this very sentence (F165).
+    if g is not None and g.recipe_unlocked:
+        recipe_line = ("Your own recipe (main.md, stages/, traits/, tuning.yaml) IS WRITABLE "
+                       "to you this run — a user-granted write root covers your routine dir; "
+                       "edit it as deliberately as any target's recipe and record why")
+    else:
+        recipe_line = ("Your own recipe (main.md, stages/, traits/) is "
+                       "READ-ONLY to you — the routine-improver meta routine refines recipes")
     # The say contract scales with the routine's deliberation level (the user's knob over
     # how much thinking lands on paper); think-on-paper adds a standing notes-file paragraph.
     level = ctx.deliberation or r.deliberation
@@ -121,8 +133,7 @@ You never run git yourself: the engine commits your working directory automatica
 {ownership}Cross-cutting conduct (when to ask the user, after-run improvement \
 passes, util and research discipline) lives in this routine's PRACTICE MODULES under \
 traits/ — your own adapted copies, referenced at the end of the workflow below; read the \
-relevant one before the situation it governs. Your own recipe (main.md, stages/, traits/) is \
-READ-ONLY to you — the routine-improver meta routine refines recipes; routine.yaml config is \
+relevant one before the situation it governs. {recipe_line}; routine.yaml config is \
 the user's — file a deferred ask_user for changes you believe are needed. What you are ALLOWED \
 to do (util authoring, reserved channels, memory, \
 previous runs) is a separate matter: CAPABILITIES, set only by the user and enforced by the \
