@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.87.2] — 2026-07-23
+
+### Changed
+- **Mega-view splits** (the ≤~350-line rule, applied to the frontend): `settings.js`
+  874 → 99 lines (eight `settings-*.js` section modules — github, connections, machines,
+  secrets, library+sync, source, server, notifications — plus `settings-common.js` for the
+  shared remote tester; the pre-existing `settings-endpoints.js` convention, applied to
+  every section); `conversations.js` 754 → 442 (`conversations-new.js` composer,
+  `conversations-head.js` header, `components/filepicker.js`); `routine.js` 623 → 147
+  (`routine-config.js` — every config panel, Name…Origin — `routine-health.js`,
+  `routine-recipe.js`). Pure refactor: same DOM order, same behavior, all 56 UI tests
+  green unchanged.
+
 ## [0.87.1] — 2026-07-23
 
 Frontend polish sweep (the findings ledger's deferred UI batch).

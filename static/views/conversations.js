@@ -8,11 +8,11 @@
 // finished one resumes it in place, so the view remounts its tail after every send.
 
 import { referChip } from "/static/components/referchip.js";
+import { filePicker } from "/static/components/filepicker.js";
+import { mountComposerOnly, PREFILL_KEY } from "/static/views/conversations-new.js";
+import { renderHead } from "/static/views/conversations-head.js";
 import { api, apiUpload } from "/static/api.js";
-import { deliberationControl } from "/static/components/deliberation.js";
 import { questionPanel } from "/static/components/answerform.js";
-import { confirmDialog } from "/static/components/dialog.js";
-import { tagsEditor } from "/static/components/tags.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
@@ -21,14 +21,10 @@ import { createArtifacts } from "/static/components/artifacts.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createStateGraph } from "/static/components/stategraph.js";
 import { createTaskTree } from "/static/components/tasktree.js";
-import { permissionsPanel } from "/static/components/permissions.js";
-import { traitPicker } from "/static/components/traitpicker.js";
 import { busy, chip, el, emptyState, relTime, toast } from "/static/util.js";
 import { followScroll } from "/static/follow.js";
 import { enabled as notifyEnabled } from "/static/notify.js";
 import { TERMINAL, WORKING } from "/static/states.js";
-
-const PREFILL_KEY = "conv-new-prefill";
 
 export async function render(view, slug, _query = {}) {
   view.classList.add("conv-view");
@@ -133,7 +129,7 @@ export async function render(view, slug, _query = {}) {
   // ---- the center pane ------------------------------------------------------------------------
   const unmount = () => { for (const fn of cleanup.splice(0)) { try { fn(); } catch { /* gone */ } } };
 
-  if (!slug) mountComposerOnly();
+  if (!slug) mountComposerOnly(main);
   else await mountConversation();
 
   loadList();
@@ -149,130 +145,6 @@ export async function render(view, slug, _query = {}) {
   window.addEventListener("rsched-bus", onBus);
   return () => { unmount(); clearInterval(listTimer); window.removeEventListener("rsched-bus", onBus); };
 
-  // ---- new-conversation composer ---------------------------------------------------------------
-  function mountComposerOnly() {
-    const text = el("textarea", { rows: 5,
-      placeholder: "What should the agent do? The first message becomes the conversation's task…" });
-    const prefill = sessionStorage.getItem(PREFILL_KEY);
-    if (prefill) { text.value = prefill; sessionStorage.removeItem(PREFILL_KEY); }
-    // Playbook picker (the use-instruction analog): a picked playbook's brief seeds the
-    // conversation; the first-message box then just SPECIALIZES it, and may be left empty.
-    const pbSel = el("select", { "data-nopersist": "" },
-      el("option", { value: "" }, "no playbook · start fresh"));
-    const pbHint = el("div", { class: "faint small" });
-    let pbList = [];
-    api("/api/playbooks").then((r) => {
-      pbList = r.playbooks || [];
-      pbList.forEach((p) => pbSel.append(el("option", { value: p.slug }, p.title || p.slug)));
-    }).catch(() => { /* library unreachable — picker stays empty, plain conversation still works */ });
-    pbSel.onchange = () => {
-      const p = pbList.find((x) => x.slug === pbSel.value);
-      pbHint.textContent = p ? `▸ ${p.when || ""}${p.axis ? `  ·  varies: ${p.axis}` : ""}` : "";
-      text.placeholder = pbSel.value
-        ? "Optional — anything specific for this run? The playbook is the brief…"
-        : "What should the agent do? The first message becomes the conversation's task…";
-    };
-    const workdir = el("input", { type: "text", placeholder: "~/path/to/project (optional)" });
-    // Pre-start budgets: per-REPLY ceilings + a cumulative cap over the WHOLE conversation
-    // (all optional — blank keeps the default; -1 = unlimited).
-    const turnsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "10",
-      style: "width:80px", title: "max turns per reply (-1 = unlimited)" });
-    const totalTurnsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "∞",
-      style: "width:80px", title: "max turns for the whole conversation (blank or -1 = unlimited)" });
-    const minsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "30",
-      style: "width:80px", title: "max minutes per reply (-1 = unlimited)" });
-    const tokIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "400000",
-      style: "width:100px", title: "max tokens per reply (-1 = unlimited)" });
-    // Pre-start model picker: pick a catalog model by NAME (or fall back to the system model),
-    // so a conversation can start on the right model instead of system-default-then-switch.
-    const modelSel = el("select", { "data-nopersist": "" },
-      el("option", { value: "" }, "default · system model"));
-    api("/api/settings/models").then((r) => {
-      if (r.system_model) modelSel.options[0].textContent = `default · ${r.system_model}`;
-      (r.models || []).forEach((m) => modelSel.append(el("option", { value: m.name }, m.name)));
-    }).catch(() => { /* settings unreachable — the default option still works */ });
-    // ⚙ capabilities & budgets — the SAME surface the conversation header offers, but
-    // BEFORE create: the first reply fires on create, so a permission, budget, or
-    // deliberation level that must govern reply #1 has to be set here (afterwards the
-    // header panel takes over). Fed by /api/conversations/defaults; the collected
-    // permission payload rides the create request.
-    const delib = deliberationControl("deliberate");
-    let permPanel = null;   // {node, value} once the defaults load
-    const capsBody = el("div", { class: "conv-opts" },
-      el("label", {}, "project directory — the agent may read & edit it", workdir),
-      el("div", { class: "row mt", style: "gap:10px;align-items:flex-start" },
-        el("span", { class: "faint small", style: "min-width:150px;padding-top:4px" },
-          "deliberation — thinking on paper"),
-        delib.node));
-    api("/api/conversations/defaults").then((d) => {
-      if (d.deliberation) delib.set(d.deliberation);
-      const b = d.budgets || {};
-      if (b.max_turns != null) turnsIn.placeholder = String(b.max_turns);
-      if (b.max_wall_clock_min != null) minsIn.placeholder = String(b.max_wall_clock_min);
-      if (b.max_total_tokens != null) tokIn.placeholder = String(b.max_total_tokens);
-      permPanel = permissionsPanel(d.permissions, d.capabilities, {
-        disableRuns: "a conversation is one continuous run — previous-run depth is routine-only" });
-      capsBody.append(el("div", { class: "mt" }), permPanel.node);
-    }).catch(() => {
-      capsBody.append(el("div", { class: "muted small mt" },
-        "permission defaults unavailable — the conversation starts with the standard set; ",
-        "tune it in the header panel afterwards"));
-    });
-    const { picker, files, clearFiles, wirePaste } = filePicker();
-    wirePaste(text);
-    const send = el("button", { class: "btn primary" }, "start conversation");
-    send.onclick = async () => {
-      if (!text.value.trim() && !pbSel.value) { toast("write the first message or pick a playbook"); return; }
-      send.disabled = true;
-      try {
-        const fd = new FormData();
-        fd.append("text", text.value);
-        if (pbSel.value) fd.append("playbook", pbSel.value);
-        if (modelSel.value) fd.append("model", modelSel.value);
-        if (workdir.value.trim()) fd.append("workdir", workdir.value.trim());
-        if (turnsIn.value.trim()) fd.append("max_turns", turnsIn.value.trim());
-        if (totalTurnsIn.value.trim()) fd.append("max_total_turns", totalTurnsIn.value.trim());
-        if (minsIn.value.trim()) fd.append("max_wall_clock_min", minsIn.value.trim());
-        if (tokIn.value.trim()) fd.append("max_total_tokens", tokIn.value.trim());
-        fd.append("deliberation", delib.value);
-        if (permPanel) fd.append("permissions", JSON.stringify(permPanel.value()));
-        for (const f of files()) fd.append("files", f);
-        const r = await apiUpload("/api/conversations", fd);
-        forgetField(text); forgetField(workdir);   // submitted — never refill the next composer
-        clearFiles();
-        navigate(`#/conversations/${r.slug}`);
-      } catch (err) { toast(err.message, 5000, { error: true }); send.disabled = false; }
-    };
-    main.replaceChildren(
-      el("div", { class: "page-head" }, el("div", {},
-        el("div", { class: "kicker" }, "conversations"),
-        el("h1", {}, "New conversation"))),
-      el("div", { class: "panel conv-new" },
-        text,
-        el("div", { class: "row mt", style: "gap:8px;align-items:center;flex-wrap:wrap" },
-          el("span", { class: "faint small" }, "playbook"), pbSel),
-        pbHint,
-        el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, send),
-        el("div", { class: "row mt", style: "gap:8px;align-items:center" },
-          el("span", { class: "faint small" }, "model"), modelSel),
-        el("div", { class: "row mt", style: "gap:12px;align-items:center;flex-wrap:wrap" },
-          el("span", { class: "faint small" }, "budget"),
-          el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
-            "turns / reply", turnsIn),
-          el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
-            "minutes / reply", minsIn),
-          el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
-            "tokens / reply", tokIn),
-          el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
-            "whole conversation (turns)", totalTurnsIn)),
-        el("details", { class: "mt small" },
-          el("summary", { style: "cursor:pointer;color:var(--muted)" },
-            "⚙ capabilities & budgets · project dir, permissions, deliberation"),
-          capsBody),
-        el("div", { class: "faint small mt" },
-          "pick a model above or start on the system default — switch it any time at the top of the conversation")));
-    text.focus();
-  }
 
   // ---- an existing conversation -----------------------------------------------------------------
   async function mountConversation() {
@@ -285,7 +157,8 @@ export async function render(view, slug, _query = {}) {
     }
     const stateChip = chip(detail.state, detail.state);
     const head = el("div", { class: "conv-head" });
-    renderHead(head, detail, stateChip, () => !TERMINAL.has(curState));
+    renderHead(head, detail, stateChip,
+               { slug, isLive: () => !TERMINAL.has(curState), onListChanged: loadList });
     const chatBox = el("div", { class: "conv-chat" });
     const waiting = el("div", {});
     const questionBox = el("div", {});
@@ -565,169 +438,5 @@ export async function render(view, slug, _query = {}) {
 
   const showQuestion = questionPanel;   // the shared panel (answerform.js) — same record shape
 
-  // The model line at the top of a conversation: shows the EFFECTIVE model (override or
-  // system default) and switches it at any point — routine.yaml is patched (each reply
-  // boots on it), and a live reply additionally gets the mid-run control.json switch.
-  function modelControl(detail, isLive) {
-    const cur = detail.models?.main || "";        // a catalog model NAME, or "" = system default
-    const sysLabel = detail.system_model || "system model";
-    const sel = el("select", { style: "width:auto;font-size:11.5px;padding:3px 6px" },
-      el("option", { value: "" }, `default · ${sysLabel}`),
-      (detail.catalog || []).map((n) =>
-        el("option", { value: n, selected: cur === n || null }, n)));
-    const apply = el("button", { class: "btn small primary", hidden: true }, "apply");
-    sel.onchange = () => { apply.hidden = false; };
-    apply.onclick = async () => {
-      const name = sel.value;
-      const models = name ? { main: name, subroutine: name, tool_call: name } : {};
-      try {
-        await api(`/api/conversations/${slug}`, { method: "PATCH", body: { models } });
-        if (name && isLive() && detail.run_id) {
-          // the current reply switches its main too, at its next turn boundary
-          await api(`/api/runs/${detail.run_id}/model`,
-            { method: "POST", body: { model: name } }).catch(() => {});
-        }
-        toast(name ? `model → ${name}` : `model → ${sysLabel}`);
-        apply.hidden = true;
-      } catch (err) { toast(err.message, 4000, { error: true }); }
-    };
-    return el("span", { class: "conv-model" },
-      el("span", { class: "faint small" }, "model"), sel, apply);
-  }
 
-  function renderHead(head, detail, stateChip, isLive) {
-    const title = el("h1", { class: "conv-h1", contenteditable: "plaintext-only",
-      spellcheck: "false" }, detail.title || slug);
-    title.onblur = async () => {
-      const t = title.textContent.trim();
-      if (!t || t === detail.title) return;
-      try { await api(`/api/conversations/${slug}`, { method: "PATCH", body: { title: t } }); loadList(); }
-      catch (err) { toast(err.message, 4000, { error: true }); }
-    };
-    const tagsRow = el("span", { class: "conv-tagline" },
-      tagsEditor(detail.tags, async (next) => {
-        await api(`/api/conversations/${slug}`, { method: "PATCH", body: { tags: next } });
-        loadList();
-      }, { placeholder: "add tag…" }));
-    const del = el("button", { class: "btn small danger" }, "delete");
-    del.onclick = async () => {
-      if (!(await confirmDialog("Delete this conversation? It is unversioned — this cannot be undone.", { confirmLabel: "delete" }))) return;
-      try { await api(`/api/conversations/${slug}`, { method: "DELETE" }); navigate("#/conversations"); }
-      catch (err) { toast(err.message, 4000, { error: true }); }
-    };
-    // capabilities: budgets (per-reply ceilings) + permission toggles (routine-only ones
-    // greyed) + traits read-only
-    const caps = el("details", { class: "small conv-caps" },
-      el("summary", { style: "cursor:pointer;color:var(--muted)" },
-        `⚙ capabilities & budgets${detail.workdir ? ` · project: ${detail.workdir}` : ""}`));
-    const capBody = el("div", { class: "conv-opts" });
-    const b = detail.budgets || {};
-    const numIn = (v, min = "1") => el("input", { type: "number", min, value: v,
-      style: "width:90px;font-size:11.5px;padding:3px 6px" });
-    const turnsIn = numIn(b.max_turns ?? 10);
-    const minsIn = numIn(b.max_wall_clock_min ?? 30, "-1");    // -1 = unlimited time
-    const tokIn = numIn(b.max_total_tokens ?? 400000, "-1");   // -1 = unlimited tokens
-    const saveBudgets = el("button", { class: "btn small" }, "save budgets");
-    saveBudgets.onclick = async () => {
-      try {
-        await api(`/api/conversations/${slug}`, { method: "PATCH", body: { budgets: {
-          max_turns: +turnsIn.value || 10, max_wall_clock_min: +minsIn.value || 30,
-          max_total_tokens: +tokIn.value || 400000 } } });
-        toast("budgets saved — they cap EACH reply, from the next one");
-      } catch (err) { toast(err.message, 4000, { error: true }); }
-    };
-    const budgetField = (label, input) => el("label", { style: "flex-direction:column" },
-      el("span", { class: "faint" }, label), input);
-    capBody.append(el("div", { class: "row", style: "gap:12px;flex-wrap:wrap;align-items:flex-end" },
-      budgetField("turns / reply", turnsIn), budgetField("minutes / reply (-1=∞)", minsIn),
-      budgetField("tokens / reply (-1=∞)", tokIn), saveBudgets));
-    // Deliberation: saved to config on release (next reply composes with it) AND, when a
-    // reply is live, the current run is re-leveled too — a conversation IS one run, so the
-    // durable/live distinction collapses here.
-    const delib = deliberationControl(detail.deliberation || "deliberate", {
-      onCommit: async (level) => {
-        try {
-          await api(`/api/conversations/${slug}`, { method: "PATCH",
-            body: { deliberation: level } });
-          if (isLive() && detail.run_id) {
-            await api(`/api/runs/${detail.run_id}/deliberation`,
-              { method: "POST", body: { level } }).catch(() => {});
-          }
-          toast(`deliberation: ${level}`);
-        } catch (err) { toast(err.message, 4000, { error: true }); }
-      },
-    });
-    capBody.append(el("div", { class: "row mt", style: "gap:10px;align-items:flex-start" },
-      el("span", { class: "faint small", style: "min-width:150px;padding-top:4px" },
-        "deliberation — thinking on paper"),
-      delib.node));
-    capBody.append(permissionsPanel(detail.permissions, detail.capabilities, {
-      disableRuns: "a conversation is one continuous run — previous-run depth is routine-only",
-      saveLabel: "save permissions",
-      onSave: async (payload) => {
-        try {
-          await api(`/api/conversations/${slug}/permissions`, { method: "PUT", body: payload });
-          toast("permissions saved — they apply from the next reply");
-        } catch (err) { toast(err.message, 4000, { error: true }); }
-      },
-    }).node);
-    // Practice modules: a conversation shifts topic mid-thread, so an addition is pushed to
-    // the reply in flight as well as saved for every reply after it (the server does both).
-    const traitHost = el("div", { class: "mt" });
-    const buildTraits = async () => {
-      const lib = await api("/api/library").catch(() => ({ traits: [] }));
-      return traitPicker(lib.traits || [], detail.traits || [], {
-        live: isLive(),
-        onSave: async (payload) => {
-          await api(`/api/conversations/${slug}/traits`, { method: "POST", body: payload });
-        },
-      }).node;
-    };
-    capBody.append(el("div", { class: "faint small mt" }, "practice modules — its own standing "
-      + "practices; an addition applies from the current reply on"), traitHost);
-    buildTraits().then((n) => traitHost.replaceChildren(n));
-    caps.append(capBody);
-    head.replaceChildren(
-      el("div", { class: "conv-head-row" }, stateChip, title,
-        el("span", { style: "margin-left:auto" }), del),
-      el("div", { class: "conv-head-row sub" }, modelControl(detail, isLive),
-        el("span", { class: "conv-tagwrap" }, el("span", { class: "faint small" }, "tags"), tagsRow)),
-      caps);
-  }
-
-  function filePicker() {
-    const input = el("input", { type: "file", multiple: true, hidden: true });
-    const chips = el("span", { class: "attach-chips" });
-    const btn = el("button", { class: "btn small", onclick: () => input.click() }, "📎 attach");
-    let pending = [];
-    const renderChips = () => {
-      chips.replaceChildren(...pending.map((f, i) =>
-        el("span", { class: "attach-chip removable", title: "click to remove",
-          onclick: () => { pending.splice(i, 1); renderChips(); } }, f.name, " ×")));
-    };
-    const addFiles = (list) => {
-      for (const f of list) {
-        // a pasted screenshot arrives as a nameless/generic blob — give it a real name
-        const name = f.name && f.name !== "image.png" ? f.name
-          : `pasted-${Date.now()}.${(f.type.split("/")[1] || "png").replace("+xml", "")}`;
-        pending.push(new File([f], name, { type: f.type }));
-      }
-      renderChips();
-    };
-    input.onchange = () => { addFiles([...input.files]); input.value = ""; };
-    // Ctrl/Cmd-V straight into the message box: clipboard files (screenshots, copied
-    // images/documents) become attachments; plain text pastes stay untouched.
-    const wirePaste = (target) => target.addEventListener("paste", (e) => {
-      const files = [...(e.clipboardData?.files || [])];
-      if (!files.length) return;
-      e.preventDefault();
-      addFiles(files);
-    });
-    return {
-      picker: el("span", { class: "row", style: "gap:6px" }, btn, input, chips),
-      files: () => [...pending],
-      clearFiles: () => { pending = []; input.value = ""; renderChips(); },
-      wirePaste,
-    };
-  }
 }
