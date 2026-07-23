@@ -5,9 +5,29 @@ import { api } from "/static/api.js";
 import { renderConfigSections } from "/static/views/routine-config.js";
 import { mountHealth } from "/static/views/routine-health.js";
 import { mountRecipe } from "/static/views/routine-recipe.js";
+import { groupSections, routineHero } from "/static/views/routine-overview.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, fmtDur, fmtNum, fmtTokens, skeleton, toast, when } from "/static/util.js";
+
+// The config sections (rendered flat by routine-config.js + the recipe/state blocks below)
+// are regrouped into these labeled, collapsible groups — an operator scans the group they
+// need instead of a single wall. Order = most-touched first; every heading each module emits
+// is claimed here, and groupSections keeps any stray in a trailing "More" group.
+const SECTION_GROUPS = [
+  { title: "Schedule & triggers", hint: "when and how it fires",
+    headings: ["Schedule", "Triggers", "Schedule once"] },
+  { title: "Permissions & practices", hint: "what it may do, and how it works",
+    headings: ["Permissions & capabilities", "Practice modules"] },
+  { title: "Budgets & limits", hint: "per-run ceilings · retention · filesystem reach",
+    headings: ["Budgets", "Retention", "Filesystem roots"] },
+  { title: "Models & resources", hint: "models · connections · machines",
+    headings: ["Models", "Connections", "Machines"] },
+  { title: "Recipe & memory", hint: "the workflow files, their health, and run state",
+    headings: ["Recipe health", "Recipe", "State & memory"] },
+  { title: "Identity & origin", hint: "name · description · tags · provenance",
+    headings: ["Name", "Description", "Tags", "Origin"] },
+];
 
 export async function render(view, slug, query = {}) {
   view.append(skeleton(["35%", "100%", "70%"]));
@@ -40,9 +60,8 @@ export async function render(view, slug, query = {}) {
       d.problems.map((p) => el("div", { style: "color:var(--err)" }, `⚠ ${p}`))));
   }
 
-  const { refreshHead } = renderConfigSections(view, d,
-    { slug, titleH1, chipHost, runChip });
-
+  // --- overview hero: the informative first screen (status · last run · spend · decisions) ---
+  view.append(routineHero(d, slug));
 
   async function runNow(e) {
     e.target.disabled = true;
@@ -56,33 +75,7 @@ export async function render(view, slug, query = {}) {
     catch (err) { toast(err.message, 4000, { error: true }); }
   }
 
-  // -- recipe health: runs bucketed by the recipe version that produced them --------
-  // (engine-stamped recipe commit; the durable usage stream survives run retention).
-  // A deterministic heuristic flags the newest recipe change when the runs after it are
-  // clearly worse than the runs before — flag-first, the roll-back is YOUR click.
-  const healthBox = el("div", { class: "panel" }, skeleton(["60%", "90%"]));
-  view.append(el("h2", {}, "Recipe health"), healthBox);
-  // (filled by mountHealth below, after the recipe editor exists - its roll-back
-  // re-syncs the recipe tree)
-
-  // -- recipe: the routine's OWN workflow files (main.md + stage modules + practice traits) -----
-  // A navigable tree that mirrors the markdown files; edits go through the generic /file endpoint.
-  // A run never edits its own recipe or config — the routine-improver refines recipes, the user
-  // owns config (above) — so this editor is the human's lever on the recipe.
-  view.append(el("h2", {}, "Recipe"));
-  const navCol = el("div", { class: "recipe-navcol" }, skeleton(["80%", "60%", "70%"]));
-  const editorCol = el("div", { class: "recipe-editorcol" },
-    el("div", { class: "muted small" }, "pick a file on the left to view or edit it"));
-  view.append(el("div", { class: "panel" },
-    el("div", { class: "muted small", style: "margin-bottom:10px" },
-      "the routine's OWN workflow — ", el("strong", {}, "main.md"), " routes through the ",
-      el("strong", {}, "stage"), " modules (in run-flow order); ", el("strong", {}, "traits"),
-      " are its adapted practices. Edit freely; the routine-improver may also refine these."),
-    el("div", { class: "recipe-wrap" }, navCol, editorCol)));
-  const recipe = mountRecipe(navCol, editorCol, slug, query.file || "");
-  const health = mountHealth(healthBox, slug, { onRecipeChanged: recipe.refreshTree });
-
-  // -- questions ------------------------------------------------------------------
+  // -- decisions (actionable — kept in the overview zone, never folded into a config group) --
   if (d.questions?.length) {
     const openCount = d.questions.filter((q) => !q.answered).length;
     view.append(el("h2", {}, `Decisions · ${openCount}`),
@@ -96,20 +89,50 @@ export async function render(view, slug, query = {}) {
                  "answer")))));
   }
 
-  // -- state + ledger -------------------------------------------------------------
+  // -- runs (recent activity — kept in the overview zone) --------------------------
+  view.append(el("h2", {}, "Runs"));
+  const runsBox = el("div", {});
+  view.append(runsBox);
+  renderRuns(d);
+
+  // -- config + recipe: rendered flat into a DETACHED host, then regrouped by groupSections
+  // into labeled, collapsible groups. Every section body is untouched; the async panels
+  // (permissions/traits/connections/machines) fill node refs that grouping only relocates. --
+  const cfgHost = el("div", {});
+  const { refreshHead } = renderConfigSections(cfgHost, d, { slug, titleH1, chipHost, runChip });
+
+  // recipe health: runs bucketed by the recipe version that produced them (engine-stamped
+  // commit; the durable usage stream survives retention). Flags a regressing recipe change —
+  // flag-first, the roll-back is the user's click.
+  const healthBox = el("div", { class: "panel" }, skeleton(["60%", "90%"]));
+  cfgHost.append(el("h2", {}, "Recipe health"), healthBox);
+
+  // recipe: the routine's OWN workflow files (main.md + stage modules + practice traits) — a
+  // navigable tree; edits go through the generic /file endpoint. A run never edits its own
+  // recipe/config, so this editor is the human's lever on the recipe.
+  cfgHost.append(el("h2", {}, "Recipe"));
+  const navCol = el("div", { class: "recipe-navcol" }, skeleton(["80%", "60%", "70%"]));
+  const editorCol = el("div", { class: "recipe-editorcol" },
+    el("div", { class: "muted small" }, "pick a file on the left to view or edit it"));
+  cfgHost.append(el("div", { class: "panel" },
+    el("div", { class: "muted small", style: "margin-bottom:10px" },
+      "the routine's OWN workflow — ", el("strong", {}, "main.md"), " routes through the ",
+      el("strong", {}, "stage"), " modules (in run-flow order); ", el("strong", {}, "traits"),
+      " are its adapted practices. Edit freely; the routine-improver may also refine these."),
+    el("div", { class: "recipe-wrap" }, navCol, editorCol)));
+  const recipe = mountRecipe(navCol, editorCol, slug, query.file || "");
+  const health = mountHealth(healthBox, slug, { onRecipeChanged: recipe.refreshTree });
+
+  // state + ledger
   const stateFiles = (d.files?.state) || [];
-  view.append(el("h2", {}, "State & memory"),
+  cfgHost.append(el("h2", {}, "State & memory"),
     el("div", { class: "panel" },
       el("div", { class: "muted small" },
         stateFiles.length ? `state/ · ${stateFiles.join("  ·  ")}` : "no state files yet"),
       el("details", { class: "mt" }, el("summary", { style: "cursor:pointer" }, "LEDGER tail"),
         el("pre", { class: "doc mt" }, d.ledger_tail || "(empty)"))));
 
-  // -- runs -----------------------------------------------------------------------
-  view.append(el("h2", {}, "Runs"));
-  const runsBox = el("div", {});
-  view.append(runsBox);
-  renderRuns(d);
+  view.append(groupSections(cfgHost, SECTION_GROUPS));
 
   // The page used to be a static snapshot — a run finishing while you look at it left a
   // stale hub. Its own run lifecycle events refresh the header chip, health, and runs.

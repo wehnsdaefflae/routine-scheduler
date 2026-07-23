@@ -19,6 +19,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.88.0] — 2026-07-23
+
+The routine page becomes an overview, not a wall. It used to open on a "Name" field and
+scroll ~7,500px through twenty stacked config sections with no status in sight; now it leads
+with an instrument band and folds the configuration into labeled, collapsible groups —
+"informative first, the nitty-gritty one fold away".
+
+### Added
+- **Routine overview hero** (`static/views/routine-overview.js`): a compact instrument band
+  at the top of every routine page — live/idle/disabled status with the next fire, the last
+  run's outcome and cost, the recent-run heartbeat, this month's spend, and any open
+  decisions — each linking to the run, decisions, or history it summarizes. Reads only fields
+  the detail payload already carried, so it costs no new request.
+- **Collapsible config groups**: the ~15 configuration sections plus recipe/health/state are
+  regrouped (`groupSections`) into six labeled, foldable groups — Schedule & triggers,
+  Permissions & practices, Budgets & limits, Models & resources, Recipe & memory, Identity &
+  origin — so the page is scannable instead of one undifferentiated column. The section `<h2>`s
+  are preserved, so the sticky "on this page" rail still lists and jumps to every one, and
+  Decisions and Runs stay in the always-visible overview zone above the groups.
+
+### Changed
+- `static/views/routine.js` now renders the hero and overview zone, then routes the config and
+  recipe sections through a detached host into the grouped layout; no section body changed, so
+  every existing control and its behavior (and the UI tests that drive them) are untouched.
+- The "signal deck" stylesheet grows a hero-tile cluster and `rgroup` group styling in the
+  same mono/amber instrument idiom (`static/views.css`), no new tokens or assets.
+
 ## [0.87.5] — 2026-07-23
 
 The creation-path floor decision (the findings ledger's last behavioral item).
