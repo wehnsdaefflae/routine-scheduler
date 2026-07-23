@@ -1338,16 +1338,18 @@ def test_converse_endpoint(client, monkeypatch):
     assert c.post(f"/api/runs/{rid}/converse", json={"text": "  "}).status_code == 400
 
 
-def test_revise_endpoint(client, monkeypatch):
-    """Revise-recipe: on a FINISHED routine run, /revise drops the recipe-unlock marker AND
-    injects the framed instruction, then resumes with reason='revise'. It refuses an active
-    run and empty text."""
+def test_converse_recipe_edit(client, monkeypatch):
+    """The "editable recipe" checkbox (D37, revised): /converse with recipe_edit=true on a
+    FINISHED routine run drops the recipe-unlock marker and resumes the SAME conversation —
+    the user's text rides the inbox verbatim, no framed pivot message. A live run rejects
+    the flag BEFORE anything is delivered."""
     c, tmp = client
     run_dir = _mk_run(tmp / "routines", "apir", "20260709-120000", "running")
     rid = "apir:20260709-120000"
-    # only once the run has finished
-    assert c.post(f"/api/runs/{rid}/revise",
-                  json={"text": "make the report shorter"}).status_code == 409
+    # a live run refuses the unlock — and must not have delivered the message
+    assert c.post(f"/api/runs/{rid}/converse",
+                  json={"text": "tighten the report stage", "recipe_edit": True}).status_code == 409
+    assert not list((tmp / "routines" / "apir" / "inbox").glob("msg-*.json"))
     atomic_write_json(run_dir / "status.json", {"run_id": rid, "state": "finished"})
     resumed = {}
 
@@ -1356,15 +1358,15 @@ def test_revise_endpoint(client, monkeypatch):
         return f"{cfg.slug}:{ts}"
 
     monkeypatch.setattr(c.app.state.runner, "resume", fake_resume)
-    r = c.post(f"/api/runs/{rid}/revise", json={"text": "make the report shorter"})
-    assert r.status_code == 200 and r.json()["run_id"] == rid
-    assert resumed == {"slug": "apir", "ts": "20260709-120000", "reason": "revise"}
+    r = c.post(f"/api/runs/{rid}/converse",
+               json={"text": "tighten the report stage", "recipe_edit": True})
+    assert r.status_code == 200 and r.json()["delivery"] == "resumed"
+    assert resumed == {"slug": "apir", "ts": "20260709-120000", "reason": "converse"}
     # the marker unlocks recipe self-write for the resumed leg…
-    assert read_json(run_dir / "revise.json")["instruction"] == "make the report shorter"
-    # …and the framed directive rode the inbox
+    assert read_json(run_dir / "revise.json")["instruction"] == "tighten the report stage"
+    # …and the message rode the inbox VERBATIM — the conversation continues as it would
     msgs = [read_json(p)["text"] for p in (tmp / "routines" / "apir" / "inbox").glob("msg-*.json")]
-    assert any("REVISE YOUR OWN RECIPE" in m and "make the report shorter" in m for m in msgs)
-    assert c.post(f"/api/runs/{rid}/revise", json={"text": "  "}).status_code == 400
+    assert msgs == ["tighten the report stage"]
 
 
 def test_audit_decision_answer_survives_inbox_consumption(client):

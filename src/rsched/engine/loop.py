@@ -265,6 +265,11 @@ class EngineLoop:
                     obs = interact.handle_write_util(self, action, poll_s=POLL_S)
                 elif action["kind"] == "remove_util":
                     obs = interact.handle_remove_util(self, action, poll_s=POLL_S)
+                elif action["kind"] == "util":
+                    # D39: per-routine secret exposure is decided at CALL time — the gate
+                    # asks/refuses/passes; None means the call proceeds normally.
+                    obs = interact.gate_util_secrets(self, action, poll_s=POLL_S) \
+                        or executor.dispatch(action, ctx)
                 elif action["kind"] == "schedule_run":
                     obs = interact.handle_schedule_run(self, action)
                 elif action["kind"] == "report_bug":

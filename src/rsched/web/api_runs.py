@@ -156,6 +156,10 @@ def run_tree(request: Request, run_id: str) -> dict:
 
 class Inject(BaseModel):
     text: str
+    # Converse only — the "editable recipe" checkbox beside the composer: resume the
+    # finished run as a NORMAL conversation whose leg may edit this routine's own recipe
+    # (main.md / stages/ / traits/ / tuning.yaml) via the run-scoped revise marker.
+    recipe_edit: bool = False
 
 
 @router.post("/runs/{run_id}/inject")
@@ -185,6 +189,17 @@ async def converse(request: Request, run_id: str, body: Inject) -> dict:
     if not body.text.strip():
         raise HTTPException(400, "empty message")
     routine_dir = run_dir.parent.parent
+    if body.recipe_edit:
+        # Validate BEFORE the message is filed, so a rejected unlock delivers nothing.
+        from ..paths import within
+        from .routines_common import guard_template
+        if not within(request.app.state.server.routines_home, routine_dir):
+            raise HTTPException(400, "recipe editing applies to routine runs only")
+        guard_template(slug, "the clarification template's recipe is fixed")
+        st0 = read_json(run_dir / "status.json")
+        if (st0.get("state") if isinstance(st0, dict) else None) not in TERMINAL_STATES:
+            raise HTTPException(409, "recipe editing unlocks when a FINISHED run is "
+                                     "resumed — wait for the run to finish")
     from . import wizard_store
 
     inbox = wizard_store.session_inbox_dir(request.app.state.server, run_dir)
@@ -200,72 +215,17 @@ async def converse(request: Request, run_id: str, body: Inject) -> dict:
     cfg, _ = load_routine(routine_dir)
     if cfg is None:
         raise HTTPException(404, f"routine {slug!r} not found")
+    if body.recipe_edit:
+        # The "editable recipe" checkbox: the SAME conversation continues, with the sole
+        # difference that this leg may edit the routine's own recipe files (one-shot
+        # marker, engine/revise.py — cleared when the loop reads it at init).
+        from ..engine.revise import write_revise_marker
+        write_revise_marker(run_dir, body.text.strip())
     rid = await request.app.state.runner.resume_terminal(cfg, run_dir.name, reason="converse")
     if not rid:
         raise HTTPException(409, "could not resume — another run of this routine is active, "
                                  "or the daemon is draining")
     return {"ok": True, "delivery": "resumed", "run_id": rid}
-
-
-def _revise_message(instruction: str) -> str:
-    """The framed directive injected into the resumed run — it pivots the orchestrator from
-    its finished task to editing its own recipe, and routes config-shaped asks to ask_user.
-    """
-    return (
-        "REVISE YOUR OWN RECIPE — this message asks you to change THIS routine's recipe "
-        "files, not to continue its task.\n\n"
-        f"The user wants:\n{instruction}\n\n"
-        "Your recipe is main.md, the stages/ modules, traits/, and tuning.yaml, in this "
-        "routine's own directory. Read the relevant file(s) (and this run's own transcript "
-        "for context), make the change with edit_file/write_file, verify by reading it back, "
-        "add a one-line note to LEDGER.md, then finish with a short summary of what you "
-        "changed. Change nothing else.\n\n"
-        "If the request is actually about CONFIG — the schedule, budgets, models, "
-        "permissions/capabilities, or filesystem roots (i.e. routine.yaml) — you CANNOT edit "
-        "that here; instead call ask_user with a config_patch: the exact change as a "
-        'PATCH /routines body (e.g. {"budgets": {"max_turns": 100}}), so the user can one-click '
-        "apply it from the Decisions page.")
-
-
-@router.post("/runs/{run_id}/revise")
-async def revise(request: Request, run_id: str, body: Inject) -> dict:
-    """Revise this routine's OWN recipe from the run view ("Revise recipe"): inject the framed
-    instruction and resume the finished run with a run-scoped recipe self-write grant
-    (engine/revise.py) so the orchestrator can edit main.md / stages / traits / tuning.yaml.
-    Routines only (a conversation's recipe is the fixed converse workflow; background tasks are
-    ephemeral), and only once the run has finished.
-    """
-    slug, run_dir = _run_dir(request, run_id)
-    if not body.text.strip():
-        raise HTTPException(400, "empty revision request")
-    from ..paths import within
-
-    server = request.app.state.server
-    routine_dir = run_dir.parent.parent
-    if not within(server.routines_home, routine_dir):
-        raise HTTPException(400, "revise-recipe applies to routines only")
-    from .routines_common import guard_template
-    guard_template(slug, "the clarification template's recipe is fixed")
-    st = read_json(run_dir / "status.json")
-    if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:
-        raise HTTPException(409, "revise the recipe once the run has finished")
-    from ..config import load_routine
-    from ..engine.revise import write_revise_marker
-    from . import wizard_store
-
-    cfg, _ = load_routine(routine_dir)
-    if cfg is None:
-        raise HTTPException(404, f"routine {slug!r} not found")
-    write_revise_marker(run_dir, body.text.strip())
-    inbox = wizard_store.session_inbox_dir(server, run_dir)
-    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json",
-                      {"text": _revise_message(body.text.strip()), "ts": now_iso(),
-                       "via": "web-revise"})
-    rid = await request.app.state.runner.resume_terminal(cfg, run_dir.name, reason="revise")
-    if not rid:
-        raise HTTPException(409, "could not start the revision — another run of this routine "
-                                 "is active, or the daemon is draining")
-    return {"ok": True, "run_id": rid}
 
 
 @router.post("/runs/{run_id}/pause")

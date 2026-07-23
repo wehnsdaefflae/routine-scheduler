@@ -276,25 +276,25 @@ def test_run_view_message_modes(ui, ui_page):
                for m in inbox.glob("msg-*.json"))
 
 
-def test_run_view_revise_affordance(ui, ui_page):
-    """D37: a terminal routine run shows the ✎ revise-recipe button RIGHT NEXT to the
-    composer input; clicking it preselects the revise mode and the placeholder says the
-    revision sees this whole conversation. A live run hides the button."""
+def test_run_view_recipe_edit_checkbox(ui, ui_page):
+    """D37 (revised): a terminal routine run shows the "editable recipe" CHECKBOX right
+    next to the composer input — OFF by default; checking it flips the placeholder to say
+    the continuation may edit the recipe files. A live run hides it."""
     ui.seed_run("uir", "20260723-090000", "running")
     ui_page.goto(f"{ui.url}/#/run/uir:20260723-090000")
     expect(ui_page.locator('select[title="where this message goes"]')).to_have_value("inject")
-    expect(ui_page.get_by_role("button", name="✎ revise recipe")).to_be_hidden()
+    expect(ui_page.get_by_label("editable recipe")).to_be_hidden()
 
     ui.seed_run("uir", "20260723-100000", "finished", summary="done")
     ui_page.goto(f"{ui.url}/#/run/uir:20260723-100000")
-    btn = ui_page.get_by_role("button", name="✎ revise recipe")
-    expect(btn).to_be_visible()
-    btn.click()
-    expect(ui_page.locator('select[title="where this message goes"]')).to_have_value("revise")
-    expect(ui_page.locator('input[placeholder*="whole conversation"]')).to_be_visible()
-    # switching back to another mode restores the generic placeholder
-    ui_page.locator('select[title="where this message goes"]').select_option("queue")
-    expect(ui_page.locator('input[placeholder^="message…"]')).to_be_visible()
+    chk = ui_page.get_by_label("editable recipe")
+    expect(chk).to_be_visible()
+    expect(chk).not_to_be_checked()                     # off by default
+    chk.check()
+    expect(ui_page.locator('input[placeholder*="may edit the routine"]')).to_be_visible()
+    chk.uncheck()
+    expect(ui_page.locator(
+        'input[placeholder="message… (the mode selector says where it goes)"]')).to_be_visible()
 
 
 def test_run_view_deliberation_relevel(ui, ui_page):

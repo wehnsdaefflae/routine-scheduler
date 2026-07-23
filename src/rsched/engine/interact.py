@@ -17,6 +17,7 @@ import time
 from datetime import datetime, timedelta
 
 from .. import bug_reports, sandbox, schedule_once, utils_lib
+from ..config.routine import record_secret_grants
 from ..ids import is_slug, question_id
 from . import decisions, detach, inbox
 from .control import RunAborted
@@ -198,6 +199,68 @@ def recreate_denial(loop, action: dict) -> list[str]:
             f"'Recreate the deleted util {name!r}? <reason>'); recreate only after an "
             f"explicit yes this run. On a no or a timeout, work without it and note the "
             f"gap in your finish summary."]
+
+
+def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
+    """D39: per-routine secret exposure, decided at CALL time. A util call whose transitive
+    `secrets:` declarations name secrets PRESENT in the store runs only once the user has
+    granted this routine those secrets: an undecided name files ONE blocking approval
+    (mirrored to Discord; the D38 hold semantics apply), and the answer is persisted to
+    routine.yaml's `secret_grants` — editable later on the routine page. Returns None to
+    let the call proceed, or the refusing/pending observation.
+    """
+    ctx = loop.ctx
+    name = str(action.get("name") or "")
+    home = ctx.server.libraries_home
+    if name in ("list", "show") or not utils_lib.exists(home, name):
+        return None                     # discovery / missing-util paths expose no secrets
+    needed, _net = utils_lib.util_needs(home, name)
+    from ..secrets import load_secrets
+    present = sorted(needed & set(load_secrets())) if needed else []
+    if not present:
+        return None   # nothing exposable — a declared-but-unset secret fails visibly inside
+    grants = dict(getattr(ctx.routine, "secret_grants", None) or {})
+    denied = [s for s in present if grants.get(s) is False]
+    if denied:
+        return {"kind": "util", "name": name, "declined_secrets": denied,
+                "reason": f"the user has declined exposing {', '.join(denied)} to this "
+                          "routine — the util was not run. The mapping is editable on the "
+                          "routine page (secret exposure); work without this util, or file "
+                          "a deferred ask_user explaining why it is needed."}
+    undecided = [s for s in present if s not in grants]
+    if not undecided:
+        return None
+    if ctx.depth > 0:
+        return {"kind": "util", "name": name, "pending_secrets": undecided,
+                "reason": "secret exposure to this routine is not yet granted, and a "
+                          "sub-workflow cannot ask the user — the TOP-LEVEL run must call "
+                          f"util {name!r} once to trigger the approval."}
+    ask = handle_ask(loop, {
+        "question": f"Expose secret{'s' if len(undecided) > 1 else ''} "
+                    f"{', '.join(undecided)} to routine '{ctx.routine.slug}'? Its util "
+                    f"call '{name}' declares them. The answer is remembered in the "
+                    "routine's config and editable on the routine page.",
+        "mode": "blocking", "options": ["approve", "decline"],
+        "default": "the util is NOT run and the secrets stay unexposed until approved"},
+        poll_s, qtype="util-approval")
+    if not ask.get("answered"):
+        return {"kind": "util", "name": name, "pending_secrets": undecided,
+                "pending_approval": True, "qid": ask.get("qid"),
+                "reason": "the secret-exposure approval is still open — do other work and "
+                          "retry the util once it is settled."}
+    approved = _is_approval(str(ask["answer"]))
+    verdict = dict.fromkeys(undecided, approved)
+    record_secret_grants(ctx.routine.dir, verdict)
+    try:
+        ctx.routine.secret_grants.update(verdict)
+    except (AttributeError, TypeError):
+        pass   # stale/foreign cfg object — the persisted mapping still governs next runs
+    if approved:
+        return None
+    return {"kind": "util", "name": name, "declined_secrets": undecided,
+            "answer": str(ask["answer"])[:200],
+            "reason": "the user declined exposing these secrets to this routine — the util "
+                      "was not run."}
 
 
 def handle_write_util(loop, action: dict, poll_s: float) -> dict:

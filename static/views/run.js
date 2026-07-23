@@ -108,46 +108,48 @@ export async function render(view, runId, query = {}) {
     inject: "→ live run",
     converse: "→ continue this run",
     queue: "→ queue for next run",
-    revise: "→ revise this routine's recipe",
   };
   const modeSel = el("select", { class: "small", "data-nopersist": true,
     title: "where this message goes" });
   const msgInput = el("input", { type: "text", placeholder: "message…", style: "flex:1" });
   const sendBtn = el("button", { class: "btn primary" }, "send");
-  // D37: the revise-mode placeholder says what the dropdown alone couldn't — the revision
-  // run reads this ENTIRE conversation as context for the recipe change.
+  // "editable recipe" checkbox (D37, revised): sits right next to the input, OFF by
+  // default. Checked, the finished run resumes as the SAME conversation — the sole
+  // difference is that the continued leg may edit this routine's own recipe files
+  // (main.md / stages/ / traits/ / tuning.yaml) via the run-scoped unlock.
   let isTerminal = false;
+  const recipeChk = el("input", { type: "checkbox", "data-nopersist": true });
+  const recipeLbl = el("label", { class: "row small", hidden: true,
+    style: "gap:4px;align-items:center;white-space:nowrap;color:var(--muted)",
+    title: "when checked, the continued conversation may edit this routine's recipe files "
+      + "(main.md, stages/, traits/, tuning.yaml) — it still sees this whole conversation" },
+    recipeChk, el("span", {}, "editable recipe"));
   const syncPlaceholder = () => {
-    msgInput.placeholder = modeSel.value === "revise"
-      ? "describe the recipe change — the revision sees this whole conversation…"
+    msgInput.placeholder = recipeChk.checked
+      ? "message… (this continuation may edit the routine's recipe files)"
       : isTerminal ? "message… (the mode selector says where it goes)"
       : "inject a message into the run…";
   };
   modeSel.onchange = syncPlaceholder;
-  // D37: the revise affordance sits RIGHT NEXT to the input — visible without opening the
-  // mode dropdown; clicking it preselects the mode and the placeholder explains the scope.
-  const reviseBtn = el("button", { class: "btn small", hidden: true,
-    title: "revise this routine's recipe — the revision run sees this run's full conversation" },
-    "✎ revise recipe");
-  reviseBtn.onclick = () => { modeSel.value = "revise"; syncPlaceholder(); msgInput.focus(); };
+  recipeChk.onchange = syncPlaceholder;
   function setModes(terminal) {
     isTerminal = terminal;
-    // "revise" edits this routine's OWN recipe (routine runs only; never the protected
-    // clarification template, which the /revise endpoint would run its recipe against).
-    const reviseOk = terminal && slug !== "clarification";
-    const keys = terminal ? (reviseOk ? ["converse", "queue", "revise"] : ["converse", "queue"])
-      : ["inject"];
+    // recipe editing targets this routine's OWN files (routine runs only; never the
+    // protected clarification template) and unlocks on resuming a FINISHED run.
+    const recipeOk = terminal && slug !== "clarification";
+    const keys = terminal ? ["converse", "queue"] : ["inject"];
     if (![...modeSel.options].some((o) => keys.includes(o.value)) || modeSel.options.length !== keys.length) {
       modeSel.replaceChildren(...keys.map((k) => el("option", { value: k }, MODES[k])));
     }
     modeSel.disabled = keys.length === 1;
-    reviseBtn.hidden = !reviseOk;
+    recipeLbl.hidden = !recipeOk;
+    if (!recipeOk) recipeChk.checked = false;
     syncPlaceholder();
   }
   setModes(false);
   const ref = referChip(msgInput, { className: "composer-ref mt" });
   const setRef = ref.setRef;
-  view.append(ref.node, el("div", { class: "row mt" }, modeSel, msgInput, sendBtn, reviseBtn));
+  view.append(ref.node, el("div", { class: "row mt" }, modeSel, msgInput, sendBtn, recipeLbl));
 
   // Auto-scroll ("follow"): on by default; the user can toggle it, and scrolling up pauses it.
   let autoscroll = true;
@@ -342,18 +344,14 @@ export async function render(view, runId, query = {}) {
     sendBtn.disabled = true;
     try {
       if (mode === "converse") {
-        await api(`/api/runs/${runId}/converse`, { method: "POST", body: { text } });
+        await api(`/api/runs/${runId}/converse`,
+          { method: "POST", body: { text, recipe_edit: recipeChk.checked } });
         forgetField(msgInput);   // delivered — must not refill after the reload below
-        toast("message delivered — waking the run to continue the conversation…");
+        toast(recipeChk.checked
+          ? "message delivered — the conversation continues with an editable recipe…"
+          : "message delivered — waking the run to continue the conversation…");
         setTimeout(remount, 800);   // reattach the tail to the now-live run
         return;                  // keep the button disabled until the remount lands
-      }
-      if (mode === "revise") {
-        await api(`/api/runs/${runId}/revise`, { method: "POST", body: { text } });
-        forgetField(msgInput);
-        toast("revising the recipe — the run resumes to apply your change, then commits it…");
-        setTimeout(remount, 800);   // reattach to the now-live revise run
-        return;
       }
       const r = await api(`/api/runs/${runId}/inject`, { method: "POST", body: { text } });
       toast(r.delivery === "mid-run" ? "injected — picked up at the next turn" : "queued for the next run");

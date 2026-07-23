@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.92.0] — 2026-07-23
+### Changed
+- Run view: the revise-recipe affordance is now an **"editable recipe" checkbox** right next to the composer input on finished routine runs (off by default) — checked, the SAME conversation continues via `/converse` with a run-scoped recipe unlock (the user's text rides the inbox verbatim; no framed pivot message). The `✎ revise recipe` button, the `revise` composer mode, and the `/api/runs/{id}/revise` endpoint are removed.
+### Added
+- **Per-routine secret exposure (D39)**: a util call whose transitive `secrets:` declarations name secrets present in the store now runs only once the user has granted this routine those secrets — the first call files ONE blocking approval (Discord-mirrored; ambiguous replies are held, D38), and the answer is persisted to routine.yaml's `secret_grants`. The routine page gains a "Secret exposure" panel (ask on first use / expose / withhold per store secret), editable any time; `PATCH /api/routines/{slug}` accepts `secret_grants`.
+
 ## [0.91.0] — 2026-07-23
 ### Added
 - Run page: a dedicated **✎ revise recipe** button beside the composer input on terminal

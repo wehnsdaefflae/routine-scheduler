@@ -140,6 +140,7 @@ class RoutinePatch(BaseModel):
     budgets: dict | None = None
     models: dict | None = None              # {main|subroutine|tool_call|uncensored: catalog name}
     connections: dict | None = None         # {provider: account-label} OAuth connection bindings
+    secret_grants: dict | None = None       # {SECRET_NAME: bool} exposure map (D39)
     machines: list[str] | None = None       # catalog machine names this routine may act on (SSH)
     name: str | None = None
     description: str | None = None
@@ -243,6 +244,18 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
             if n not in catalog:
                 raise HTTPException(400, f"unknown machine {n!r} (add it in Settings → Machines)")
         raw["machines"] = updates.pop("machines")
+    # Validate the secret-exposure map (D39): env-var-shaped keys, boolean values; REPLACE
+    # wholesale — removing an entry returns that secret to ask-on-first-use.
+    if "secret_grants" in updates:
+        from ..secrets import KEY_RE
+        gmap = updates["secret_grants"] or {}
+        for k, v in gmap.items():
+            if not isinstance(k, str) or not KEY_RE.match(k):
+                raise HTTPException(400, f"secret_grants: {k!r} is not a valid secret name")
+            if not isinstance(v, bool):
+                raise HTTPException(
+                    400, f"secret_grants.{k}: must be true (expose) or false (withhold)")
+        raw["secret_grants"] = updates.pop("secret_grants")
     _apply_resource_fields(raw, updates)
     for key, val in updates.items():
         if isinstance(val, dict) and isinstance(raw.get(key), dict):

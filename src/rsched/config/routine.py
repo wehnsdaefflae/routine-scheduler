@@ -69,6 +69,12 @@ class RoutineConfig(_Config):
     # reserved `remote` util receives the bound machines' connection details + private keys.
     # Never set by a run. See docs/remote-machines.md.
     machines: list[str] = Field(default_factory=list)
+    # Per-routine secret exposure (D39): store secret NAME → True (expose to this routine's
+    # util calls) / False (withhold). A name ABSENT here is undecided — the engine asks the
+    # user the FIRST time a util call declares that secret, records the answer here
+    # (record_secret_grants — the one sanctioned engine writer), and the routine page edits
+    # the mapping. User authority like connections/machines — never set by a run itself.
+    secret_grants: dict[str, bool] = Field(default_factory=dict)
     budgets: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_BUDGETS))
     # The two permission layers (user-changeable only; explicit values win, otherwise a
     # new routine holds the defaults). `permissions` names the held CONDUCT docs (library
@@ -196,6 +202,23 @@ def write_tuning(routine_dir: Path, updates: dict) -> None:
         raw = {}
     raw = raw if isinstance(raw, dict) else {}
     raw.update(updates)
+    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+
+
+def record_secret_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
+    """Persist the user's secret-exposure answers (D39) into routine.yaml's `secret_grants`
+    mapping. The ONE sanctioned engine writer for this file: it records an explicit user
+    decision (a blocking approval answer), exactly like the decisions-page config apply —
+    a run never calls this on its own authority.
+    """
+    path = routine_dir / "routine.yaml"
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        raise TypeError(f"{path}: expected a mapping at top level")
+    grants = raw.get("secret_grants")
+    grants = dict(grants) if isinstance(grants, dict) else {}
+    grants.update({str(k): bool(v) for k, v in updates.items()})
+    raw["secret_grants"] = grants
     atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
 
 

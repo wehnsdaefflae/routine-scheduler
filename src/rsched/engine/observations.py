@@ -35,6 +35,15 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
             return (f"OBSERVATION (util {(obs.get('target') or obs['name'])!r} does not exist). "
                     f"Available: {names}. Pick one of those (run `util name=list` for their "
                     "usage), or write it with write_util, then call it.")
+        if obs.get("declined_secrets") or obs.get("pending_secrets"):
+            # D39 secret-exposure gate: the util was NOT run — say why and what to do next.
+            held = obs.get("declined_secrets") or obs.get("pending_secrets") or []
+            text = (f"OBSERVATION (util {obs['name']} NOT run — secret exposure "
+                    f"{'declined' if obs.get('declined_secrets') else 'pending'} "
+                    f"for {', '.join(held)}): {obs['reason']}")
+            if obs.get("answer"):
+                text += f"\nThe user's verbatim reply: {obs['answer']}"
+            return text
         head = f"OBSERVATION (util {obs['name']}, exit {obs['exit']})"
         body = obs.get("stdout") or "(no stdout)"
         if obs.get("stderr"):

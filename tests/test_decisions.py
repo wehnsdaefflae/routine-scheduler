@@ -329,6 +329,89 @@ def test_mirror_reply_resolves_the_blocking_ask(make_routine, scripted, monkeypa
     assert any("got it" in a[1] for a in fake.sends())   # the channel was told it counted
 
 
+def test_util_secret_gate_asks_once_and_persists_grant(make_routine, scripted, monkeypatch):
+    """D39: the FIRST util call declaring a store secret files ONE blocking approval; a
+    clear approve runs the util, persists {secret: true} into routine.yaml's
+    `secret_grants`, and the next call proceeds without re-asking."""
+    from rsched import secrets as secrets_mod
+
+    fake = _FakeDiscord(replies=[[], [{"message": "approve"}]])
+    ran = []
+
+    def fake_run(home, name, args, timeout=0, policy=None, extra_secrets=None):
+        if name == "discord":
+            return fake.run_util(home, name, args, timeout=timeout, policy=policy)
+        ran.append((name, list(args)))
+        return 0, "ran", ""
+
+    monkeypatch.setattr(notify.utils_lib, "run_util", fake_run)
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(notify.utils_lib, "util_needs",
+                        lambda home, name: ({"FOO_KEY"}, False))
+    monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
+    monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
+    d = make_routine(slug="secgate", budgets={"ask_timeout_min": 1})
+    server = _server(d)
+    server.permissions_home.mkdir(parents=True, exist_ok=True)
+    (server.permissions_home / "communication.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
+        "# permission: communication — discord\nbody\n", encoding="utf-8")
+    import yaml as _yaml
+    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
+    cfg["permissions"] = ["communication"]
+    cfg["capabilities"] = {"utils": ["discord"]}
+    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+    scripted([
+        {"say": "call it", "kind": "util", "name": "frob", "args": []},
+        {"say": "call it again", "kind": "util", "name": "frob", "args": []},
+        finish(),
+    ])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "ok"
+    events = _events(run_dir)
+    questions = [e for e in events if e["type"] == "question"]
+    assert len(questions) == 1 and "FOO_KEY" in questions[0]["payload"]["question"]
+    assert next(e for e in events if e["type"] == "answer")["payload"]["text"] == "approve"
+    assert ran == [("frob", []), ("frob", [])]        # both calls ran, ONE approval
+    persisted = _yaml.safe_load((d / "routine.yaml").read_text())
+    assert persisted["secret_grants"] == {"FOO_KEY": True}
+
+
+def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, scripted,
+                                                                  monkeypatch):
+    """D39: a routine whose `secret_grants` maps the secret to false gets a refusing
+    observation — the util never runs and NO question is filed (the mapping is the
+    routine page's to change)."""
+    from rsched import secrets as secrets_mod
+
+    ran = []
+    monkeypatch.setattr(notify.utils_lib, "run_util",
+                        lambda home, name, args, timeout=0, policy=None, extra_secrets=None:
+                        (ran.append((name, list(args))) or (0, "ran", "")))
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(notify.utils_lib, "util_needs",
+                        lambda home, name: ({"FOO_KEY"}, False))
+    monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
+    d = make_routine(slug="secdeny")
+    import yaml as _yaml
+    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
+    cfg["secret_grants"] = {"FOO_KEY": False}
+    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+    scripted([
+        {"say": "call it", "kind": "util", "name": "frob", "args": []},
+        finish(),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    events = _events(run_dir)
+    assert not any(e["type"] == "question" for e in events)
+    obs = next(e for e in events if e["type"] == "observation"
+               and e["payload"]["kind"] == "util")
+    assert obs["payload"]["declined_secrets"] == ["FOO_KEY"]
+    assert "routine page" in obs["payload"]["reason"]
+    assert ran == []                                   # the util never executed
+
+
 def test_reply_texts_pins_the_discord_util_shape():
     """ONE pinned shape — the discord util's `read --json` emits a list of message
     objects whose text is the `message` field. Anything else reads as no replies."""

@@ -308,6 +308,45 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
       } }, "save connections")));
   }).catch((err) => connBox.replaceChildren(el("div", { class: "muted" }, err.message)));
 
+  // -- secret exposure: which store secrets this routine's util calls may receive (D39) --------
+  const secBox = el("div", { class: "panel" }, skeleton(["50%"]));
+  view.append(el("h2", {}, "Secret exposure"), secBox);
+  api("/api/settings/secrets").then((sec) => {
+    const grants = d.secret_grants || {};
+    const names = [...new Set([...(sec.keys || []), ...Object.keys(grants)])].sort();
+    secBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:8px" },
+      "Which store secrets this routine's util calls may receive. An undecided secret is asked ",
+      "about the FIRST time a util call declares it (a blocking question, remembered here). ",
+      "Manage the secrets themselves in ",
+      el("a", { href: "#/settings?section=secrets" }, "Settings → Secrets"), "."));
+    if (!names.length) {
+      secBox.append(el("div", { class: "muted small" }, "no secrets in the store yet"));
+      return;
+    }
+    const secSelects = {};
+    for (const name of names) {
+      const sel = el("select", {}, [
+        el("option", { value: "" }, "ask on first use"),
+        el("option", { value: "true" }, "expose"),
+        el("option", { value: "false" }, "withhold")]);
+      sel.value = name in grants ? String(!!grants[name]) : "";
+      secSelects[name] = sel;
+      secBox.append(el("div", { class: "row", style: "margin:5px 0", "data-secret-row": name },
+        el("code", { class: "small", style: "min-width:240px" }, name), sel,
+        (sec.keys || []).includes(name) ? null
+          : el("span", { class: "muted small" }, "not in the store (stale entry)")));
+    }
+    secBox.append(el("div", { class: "row mt" }, el("button", { class: "btn primary",
+      onclick: async () => {
+        const secret_grants = {};
+        for (const [name, sel] of Object.entries(secSelects))
+          if (sel.value) secret_grants[name] = sel.value === "true";
+        try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { secret_grants } });
+          toast("secret exposure saved"); }
+        catch (err) { toast(err.message, 4000, { error: true }); }
+      } }, "save secret exposure")));
+  }).catch((err) => secBox.replaceChildren(el("div", { class: "muted" }, err.message)));
+
   // -- machines: bind the remote SSH hosts this routine may act on (Settings → Machines) --------
   const catalogM = d.machine_catalog || [];   // instance-wide machine catalog (name + summary)
   const boundM = new Set(d.machines || []);    // names this routine currently binds
