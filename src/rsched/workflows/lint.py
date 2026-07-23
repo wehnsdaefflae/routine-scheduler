@@ -51,6 +51,17 @@ def lint_workflow_py(source: str, *, filename: str, trait_slugs: list[str]) -> l
         problems.append(f"{filename}: missing PHASES (the cross-run progression)")
     if not str(meta.get("completion") or "").strip():
         problems.append(f"{filename}: missing COMPLETION (done-for-run / done-overall)")
+    tools = meta.get("tools")
+    if tools is not None:
+        from ..engine.actions import KINDS
+
+        if not isinstance(tools, list):
+            problems.append(f"{filename}: tools must be a list of action kinds")
+        else:
+            unknown = [t for t in tools if t not in KINDS]
+            if unknown:
+                problems.append(f"{filename}: tools names unknown action kind(s) "
+                                f"{unknown} — the vocabulary is engine/actions.KINDS")
     return problems
 
 

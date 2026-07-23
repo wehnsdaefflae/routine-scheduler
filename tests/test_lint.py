@@ -355,3 +355,22 @@ def test_cmd_lint_libraries_home_skips_server_config(tmp_path, monkeypatch):
     # without the flag it falls back to load_server_config (here our boom fires)
     with pytest.raises(AssertionError):
         cli.cmd_lint(SimpleNamespace(target=None, libraries_home=None))
+
+
+def test_lint_validates_meta_tools_vocabulary():
+    """META tools: entries must name real action kinds (engine/actions.KINDS) — a typo'd
+    allowlist used to pass lint and silently allow nothing at run time."""
+    # the seed META carries an explicit `"tools": None` (= everything allowed) — REPLACE
+    # that entry; a duplicate key inserted at the top would be overwritten by it (dict
+    # literals are last-wins)
+    src = (SEED / "workflows" / "general-task.py").read_text()
+    assert '"tools": None,' in src
+    traits = ["ask-policy", "global-utils", "web-research", "ledger-discipline"]
+    good = src.replace('"tools": None,', '"tools": ["read_file", "finish"],', 1)
+    assert lint_workflow_py(good, filename="general-task.py", trait_slugs=traits) == []
+    bad = src.replace('"tools": None,', '"tools": ["read_file", "reed_file"],', 1)
+    probs = lint_workflow_py(bad, filename="general-task.py", trait_slugs=[])
+    assert any("unknown action kind" in p and "reed_file" in p for p in probs)
+    notlist = src.replace('"tools": None,', '"tools": "read_file",', 1)
+    probs = lint_workflow_py(notlist, filename="general-task.py", trait_slugs=[])
+    assert any("tools must be a list" in p for p in probs)

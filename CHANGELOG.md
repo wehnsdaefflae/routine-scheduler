@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.87.4] — 2026-07-23
+
+Last small closers from the findings ledger.
+
+### Fixed
+- A broken connection/machine **binding no longer fails silently**: the resolver warnings
+  the executor used to discard ("key X unset", "machine Y not in catalog") now land in the
+  engine log on every util call that resolves bindings.
+- **Workflow lint validates `tools:`**: a META allowlist naming an unknown action kind
+  (or not being a list) is a lint problem — a typo'd entry used to pass lint and silently
+  allow nothing at run time. Vocabulary = `engine/actions.KINDS`.
+- Playbook writes (`MAIN.md` + detail files) are atomic (`paths.atomic_write`) — they are
+  read cross-process by the web layer and library sync.
+
 ## [0.87.3] — 2026-07-23
 
 Test-suite consolidation + the findings ledger's coverage list.

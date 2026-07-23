@@ -21,6 +21,8 @@ from pathlib import Path
 
 import yaml
 
+from .paths import atomic_write
+
 MAIN = "MAIN.md"
 # The front-matter keys that define a playbook, in the order MAIN.md writes them. `when` is the
 # one-line catalog entry (== the doc's description); `axis` is the generalization axis.
@@ -120,13 +122,13 @@ def write_playbook(home: Path, slug: str, *,
     """
     sub = playbooks_dir(home) / slug
     sub.mkdir(parents=True, exist_ok=True)
-    (sub / MAIN).write_text(main.rstrip() + "\n", encoding="utf-8")
+    atomic_write(sub / MAIN, main.rstrip() + "\n")
     if details is None:
         return
     keep = {MAIN}
     for name, body in details.items():
         fn = _safe_detail_name(name)
-        (sub / fn).write_text(body.rstrip() + "\n", encoding="utf-8")
+        atomic_write(sub / fn, body.rstrip() + "\n")
         keep.add(fn)
     for p in sub.glob("*.md"):
         if p.name not in keep:

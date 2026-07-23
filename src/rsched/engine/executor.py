@@ -10,6 +10,7 @@ composer.format_observation) the next user message.
 from __future__ import annotations
 
 import json
+import logging
 
 from .. import machines, sandbox, utils_lib
 from ..endpoints.base import EndpointError
@@ -29,6 +30,8 @@ from .fileops import (
 from .observations import truncate
 from .run_context import RunContext
 
+log = logging.getLogger("rsched.engine")
+
 READ_DEFAULT_MAX_LINES = 200
 # argparse exits 2 on bad arguments — the deterministic "called with wrong syntax" signal
 # for per-util telemetry (a util not using argparse may exit 1 for everything; then its
@@ -42,7 +45,9 @@ def _connection_env(ctx: RunContext) -> dict[str, str]:
     """
     if not ctx.routine.connections:
         return {}
-    env, _warnings = oauth_store.tokens_for_routine(ctx.routine.connections)
+    env, warnings = oauth_store.tokens_for_routine(ctx.routine.connections)
+    for w in warnings:                       # a broken binding must not fail SILENTLY
+        log.warning("connections: %s", w)
     return env
 
 
@@ -55,7 +60,9 @@ def _machine_env(ctx: RunContext) -> dict[str, str]:
     bound = ctx.routine.machines
     if not bound:
         return {}
-    env, _warnings = machines.machines_for_routine(bound, ctx.server.machines)
+    env, warnings = machines.machines_for_routine(bound, ctx.server.machines)
+    for w in warnings:                       # a broken binding must not fail SILENTLY
+        log.warning("machines: %s", w)
     return env
 
 
