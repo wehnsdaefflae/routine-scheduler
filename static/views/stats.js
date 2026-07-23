@@ -30,10 +30,11 @@ function tokensOf(d) {
 }
 
 function card(label, value, sub) {
-  return el("div", { class: "stat-card" },
-    el("div", { class: "stat-value" }, value),
-    el("div", { class: "stat-label" }, label),
-    sub ? el("div", { class: "stat-sub" }, sub) : null);
+  // the ONE stat-tile system (.stats/.stat — shared with the log view's strip)
+  return el("div", { class: "stat" },
+    el("div", { class: "v" }, value),
+    el("div", { class: "l" }, label),
+    sub ? el("div", { class: "s" }, sub) : null);
 }
 
 // The configurable charts panel: each card = one chart spec the user edits inline;
@@ -98,8 +99,13 @@ function chartsSection(runs) {
   return box;
 }
 
+// Deep link for a routine/conversation row — null (plain text) when the home is unknown.
+const routineHref = (slug, kind) =>
+  kind === "routine" ? `#/routine/${slug}`
+    : kind === "conversation" ? `#/conversations/${slug}` : null;
+
 // A table over a {key: metrics} slice, sorted by total tokens desc.
-function sliceTable(title, slice, keyLabel, extraCols) {
+function sliceTable(title, slice, keyLabel, extraCols, link) {
   const rows = Object.entries(slice || {});
   if (!rows.length) return null;
   const head = el("tr", {},
@@ -111,7 +117,7 @@ function sliceTable(title, slice, keyLabel, extraCols) {
     el("th", { class: "num" }, "cost"),
     el("th", { class: "num" }, "time"));
   const body = rows.map(([k, d]) => el("tr", {},
-    el("td", {}, k),
+    el("td", {}, link?.(k, d) ? el("a", { href: link(k, d) }, k) : k),
     ...(extraCols || []).map((c) => el("td", {}, c.get(d) || NBSP)),
     el("td", { class: "num" }, fmtInt(d.runs)),
     el("td", { class: "num" }, fmtInt(d.tokens_in)),
@@ -128,7 +134,7 @@ function sliceTable(title, slice, keyLabel, extraCols) {
 // Monthly spend by routine — the durable series (workflow-usage stream, survives run
 // retention): one row per routine, one column per month, tokens + cost per cell, a
 // growth chip when the latest month runs >20% over the one before.
-function monthlySection(monthly) {
+function monthlySection(monthly, kinds) {
   const months = (monthly?.months || []).slice(-6);
   const rows = Object.entries(monthly?.by_routine || {});
   if (!months.length || !rows.length) return null;
@@ -143,8 +149,9 @@ function monthlySection(monthly) {
     const before = prev ? cells[prev] : null;
     const growing = cur && before && cur.tokens > before.tokens * 1.2;
     const shrinking = cur && before && cur.tokens < before.tokens * 0.8;
+    const href = routineHref(slug, kinds?.[slug]);
     return el("tr", {},
-      el("td", {}, slug),
+      el("td", {}, href ? el("a", { href }, slug) : slug),
       ...months.map((m) => el("td", { class: "num" }, cell(cells[m]))),
       el("td", {}, growing ? el("span", { class: "chip partial" }, "↑ growing")
         : shrinking ? el("span", { class: "chip ok" }, "↓ shrinking")
@@ -238,7 +245,7 @@ export async function render(view) {
 
     // ---- headline cards ---------------------------------------------------
     const successPct = t.success_rate == null ? "—" : Math.round(t.success_rate * 100) + "%";
-    parts.push(el("div", { class: "stat-cards" },
+    parts.push(el("div", { class: "stats" },
       card("total runs", fmtInt(t.runs), `${fmtInt(t.routines)} routines · ${fmtInt(t.conversations)} conversations`),
       card("tokens", fmtNum(tokensOf(t)), `${fmtNum(t.tokens_in)} in · ${fmtNum(t.tokens_out)} out`),
       card("cost", fmtUsd(t.cost), "provider-reported"),
@@ -249,7 +256,8 @@ export async function render(view) {
     parts.push(chartsSection(agg.runs || []));
 
     // ---- monthly spend (durable series) ------------------------------------
-    parts.push(monthlySection(agg.monthly));
+    parts.push(monthlySection(agg.monthly, Object.fromEntries(
+      Object.entries(agg.by_routine || {}).map(([k, d]) => [k, d.kind]))));
 
     // ---- per-util execution stats -------------------------------------------
     parts.push(utilsSection(agg.utils));
@@ -259,7 +267,7 @@ export async function render(view) {
       { label: "kind", get: (d) => d.kind },
       { label: "endpoint", get: (d) => d.endpoint },
       { label: "model", get: (d) => d.model },
-    ]));
+    ], (k, d) => routineHref(k, d.kind)));
     parts.push(sliceTable("By model", agg.by_model, "model"));
     parts.push(sliceTable("By endpoint", agg.by_endpoint, "endpoint"));
     parts.push(sliceTable("By kind", agg.by_kind, "kind"));

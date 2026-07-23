@@ -2,12 +2,12 @@
 // controls, and a sub-run selector. Which sub-run you're reading — and the transcript offset —
 // live in the URL (#/run/{id}?sub=N), so a deep link reopens the exact view.
 
+import { referChip } from "/static/components/referchip.js";
 import { api } from "/static/api.js";
-import { answerForm } from "/static/components/answerform.js";
+import { questionPanel } from "/static/components/answerform.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { mdInline } from "/static/md.js";
-import { setQuery } from "/static/router.js";
+import { setQuery, remount } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
@@ -16,7 +16,7 @@ import { createStateGraph } from "/static/components/stategraph.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtDur, fmtTokens, fmtTs, skeleton, streamStatus,
-         toDate, toast, when } from "/static/util.js";
+         toDate, toast } from "/static/util.js";
 import { forgetField } from "/static/formpersist.js";
 import { followScroll } from "/static/follow.js";
 import { TERMINAL, WORKING } from "/static/states.js";
@@ -34,10 +34,14 @@ export async function render(view, runId, query = {}) {
   const modelSpan = el("span", { class: "muted small" });
   const stream = streamStatus();
   const controls = el("div", { class: "row" });
+  // Home-aware breadcrumb: a conversation-home (or background) run must not link to a
+  // routine page that 404s — retargeted once the run detail names its home (boot below).
+  const kickerEl = el("div", { class: "kicker" }, `routine / ${slug}`);
+  const titleLink = el("a", { href: `#/routine/${slug}` }, slug);
   view.append(el("div", { class: "page-head" },
     el("div", {},
-      el("div", { class: "kicker" }, `routine / ${slug}`),
-      el("h1", {}, el("a", { href: `#/routine/${slug}` }, slug), ` · run ${fmtTs(ts)}`)),
+      kickerEl,
+      el("h1", {}, titleLink, ` · run ${fmtTs(ts)}`)),
     controls));
   view.append(el("div", { class: "runbar" }, stateChip, stream.node, usageSpan, durSpan, modelSpan));
 
@@ -74,13 +78,13 @@ export async function render(view, runId, query = {}) {
     el("div", { class: "rail-cap" }, "tasks"), treeBody,
     el("div", { class: "rail-cap" }, "files"), filesBody,
     el("div", { class: "rail-cap" }, "artifacts"), artBody));
-  const stateGraph = createStateGraph(graphBody, {
-    graphUrl: `/api/routines/${slug}/stategraph`,
-    statsUrl: `/api/runs/${runId}/phases` });
+  // stategraph + artifacts are HOME-scoped (routines vs conversations routes) — created
+  // at boot once the run detail names its home; tree/files key off the run id (home-free).
+  let stateGraph = null;
+  let artifacts = null;
   const taskTree = createTaskTree(treeBody, {
     treeUrl: `/api/runs/${runId}/tree`, isLive: () => !TERMINAL.has(curState) });
   const fileActivity = createFileActivity(filesBody, { url: `/api/runs/${runId}/files` });
-  const artifacts = createArtifacts(artBody, { slug, base: "routines" });
 
   // sub-run selector (main + each spawned child); hidden until there is at least one sub-run
   const subBar = el("div", { class: "subbar", hidden: true });
@@ -125,19 +129,9 @@ export async function render(view, runId, query = {}) {
       : "inject a message into the run…";
   }
   setModes(false);
-  // "refer to" (the messenger reply analog): a hover ↩ on any transcript message primes
-  // this chip; the send prepends the quoted reference line to the message text.
-  let pendingRef = null;
-  const refText = el("span", { class: "ref-text" });
-  const refClear = el("button", { class: "btn small ghost", title: "drop the reference" }, "✕");
-  const refBar = el("div", { class: "composer-ref mt", hidden: true }, "↩ ", refText, refClear);
-  const setRef = (r) => {
-    pendingRef = r;
-    refBar.hidden = !r;
-    if (r) { refText.textContent = `${r.label}: ${r.snippet}`; msgInput.focus(); }
-  };
-  refClear.onclick = () => setRef(null);
-  view.append(refBar, el("div", { class: "row mt" }, modeSel, msgInput, sendBtn));
+  const ref = referChip(msgInput, { className: "composer-ref mt" });
+  const setRef = ref.setRef;
+  view.append(ref.node, el("div", { class: "row mt" }, modeSel, msgInput, sendBtn));
 
   // Auto-scroll ("follow"): on by default; the user can toggle it, and scrolling up pauses it.
   let autoscroll = true;
@@ -155,7 +149,7 @@ export async function render(view, runId, query = {}) {
     try {
       await api(`/api/runs/${runId}/resume-run`, { method: "POST" });
       toast("resuming where it left off — reconnecting…");
-      setTimeout(() => location.reload(), 800);
+      setTimeout(remount, 800);
     } catch (err) { toast(err.message, 4000, { error: true }); resumeBtn.disabled = false; }
   };
   controls.append(pauseBtn, abortBtn, resumeBtn);
@@ -287,28 +281,11 @@ export async function render(view, runId, query = {}) {
 
   let shownQid = null;
   function showQuestion(q) {
-    questionBox.replaceChildren();
     // Diagnostic (F93): trace only real transitions of the shown question (SSE state events
     // fire often) — captures whether/when the run page rendered a given clarify question.
     const qid = q ? q.qid : null;
     if (qid !== shownQid) { trace("run-question", qid || "none", curState); shownQid = qid; }
-    if (!q) return;
-    const form = answerForm(q, {
-      submitText: (text, intermediate) => api(`/api/questions/${q.qid}/answer`,
-        { method: "POST", body: { text, intermediate } }),
-      askBack: true,
-      toastText: (i) => (i ? "sent — the model will reply and re-ask" : "answer sent"),
-      onSuccess: () => questionBox.replaceChildren(),
-    });
-    questionBox.append(el("div", { class: "panel warn mt" },
-      el("div", { class: "prose" },
-        "❓ ", q.type === "util-approval" ? el("strong", {}, "[util approval] ") : null,
-        mdInline(q.question)),
-      q.expires ? el("div", { class: "faint small" },
-        "the run continues without you ", when(q.expires, { mode: "rel" }),
-        " — also answerable on the Decisions page",
-        q.mirrored ? " and on Discord" : "") : null,
-      form.node));
+    questionPanel(questionBox, q);
   }
 
   pauseBtn.onclick = async () => {
@@ -323,8 +300,8 @@ export async function render(view, runId, query = {}) {
   const doSend = async () => {
     if (!msgInput.value.trim()) return;
     const mode = modeSel.value;
-    const text = pendingRef
-      ? `> re ${pendingRef.label}: ${pendingRef.snippet}\n\n${msgInput.value}`
+    const text = ref.pending
+      ? `> re ${ref.pending.label}: ${ref.pending.snippet}\n\n${msgInput.value}`
       : msgInput.value;
     sendBtn.disabled = true;
     try {
@@ -332,14 +309,14 @@ export async function render(view, runId, query = {}) {
         await api(`/api/runs/${runId}/converse`, { method: "POST", body: { text } });
         forgetField(msgInput);   // delivered — must not refill after the reload below
         toast("message delivered — waking the run to continue the conversation…");
-        setTimeout(() => location.reload(), 800);   // reattach the tail to the now-live run
-        return;                  // keep the button disabled until the reload lands
+        setTimeout(remount, 800);   // reattach the tail to the now-live run
+        return;                  // keep the button disabled until the remount lands
       }
       if (mode === "revise") {
         await api(`/api/runs/${runId}/revise`, { method: "POST", body: { text } });
         forgetField(msgInput);
         toast("revising the recipe — the run resumes to apply your change, then commits it…");
-        setTimeout(() => location.reload(), 800);   // reattach to the now-live revise run
+        setTimeout(remount, 800);   // reattach to the now-live revise run
         return;
       }
       const r = await api(`/api/runs/${runId}/inject`, { method: "POST", body: { text } });
@@ -360,6 +337,26 @@ export async function render(view, runId, query = {}) {
     mainBox.replaceChildren(emptyState("✕", "Run not found",
       `${err.message} — it may have been pruned by retention.`));
     return;
+  }
+  const home = detail.home || "routine";
+  if (home === "conversation") {
+    kickerEl.textContent = `conversation / ${slug}`;
+    titleLink.href = `#/conversations/${slug}`;
+    stateGraph = createStateGraph(graphBody, {
+      graphUrl: `/api/conversations/${slug}/stategraph`,
+      statsUrl: `/api/runs/${runId}/phases` });
+    artifacts = createArtifacts(artBody, { slug, base: "conversations" });
+  } else if (home === "background") {
+    // a detached task has no page/routes of its own — results deliver to the owner
+    kickerEl.textContent = `background task / ${slug}`;
+    titleLink.removeAttribute("href");
+    graphBody.append(el("div", { class: "faint small" },
+      "detached background task — its result is delivered to the owning conversation"));
+  } else {
+    stateGraph = createStateGraph(graphBody, {
+      graphUrl: `/api/routines/${slug}/stategraph`,
+      statsUrl: `/api/runs/${runId}/phases` });
+    artifacts = createArtifacts(artBody, { slug, base: "routines" });
   }
   if (slug === "clarification") setup = await createSetupPanel(setupBox, { ts });
   mainBox.replaceChildren();
@@ -424,7 +421,7 @@ export async function render(view, runId, query = {}) {
       // a deliverable landed — the rail refreshes without waiting for run end
       if (ev.type === "observation" && !ev.payload?.error
           && (ev.payload?.kind === "write_file" || ev.payload?.kind === "edit_file")
-          && String(ev.payload?.path || "").includes("artifacts/")) artifacts.refresh();
+          && String(ev.payload?.path || "").includes("artifacts/")) artifacts?.refresh();
       if (ev.type === "observation" && ["read_file", "view_image", "write_file", "edit_file"]
           .includes(ev.payload?.kind)) fileActivity.poke();
       transcript.add(ev);
@@ -433,11 +430,11 @@ export async function render(view, runId, query = {}) {
     onState: (s) => {
       if (s.updated) lastUpdated = s.updated;
       setState(s.state);
-      stateGraph.setPhase(s.phase);
+      stateGraph?.setPhase(s.phase);
       if (s.usage) usageSpan.textContent = fmtTokens(s.usage);
       if (s.model) setModel(s.model);
       showQuestion(s.question);
-      if (TERMINAL.has(s.state)) { artifacts.refresh(); taskTree.refresh(); fileActivity.refresh(); }
+      if (TERMINAL.has(s.state)) { artifacts?.refresh(); taskTree.refresh(); fileActivity.refresh(); }
     },
     onStatus: (s) => stream.set(s),
     onGone: () => stream.set("ended"),
@@ -452,7 +449,7 @@ export async function render(view, runId, query = {}) {
   });
 
   return () => { if (tail) tail.stop(); stopSubPoll(); clearInterval(durTimer);
-                 artifacts.destroy();
+                 artifacts?.destroy();
                  setup?.destroy();
                  stopFollow();
                  window.removeEventListener("rsched-bus", onBus); };

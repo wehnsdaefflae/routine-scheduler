@@ -40,9 +40,15 @@ export function createFileActivity(container, { url }) {
     }
   }
 
+  let loadedOnce = false;
   async function refresh() {
-    try { paint((await api(url)).files || []); }
-    catch { /* instrumentation is decoration — never break the view */ }
+    try { paint((await api(url)).files || []); loadedOnce = true; }
+    catch (err) {
+      // decoration on refresh (keep the last render) — but a FIRST load failing
+      // must not read as "no file activity"
+      if (!loadedOnce) box.replaceChildren(
+        el("div", { class: "faint small" }, `file activity unavailable — ${err.message}`));
+    }
   }
 
   refresh();

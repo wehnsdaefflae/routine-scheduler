@@ -9,11 +9,18 @@ import { el } from "/static/util.js";
 function modal({ message, input = null, confirmLabel, danger }) {
   return new Promise((resolve) => {
     const cancelValue = input ? null : false;
-    const done = (value) => { overlay.remove(); resolve(value); };
+    // a11y: focus is TRAPPED inside the dialog while it is open and RESTORED to the
+    // invoking element on close — keyboard users used to tab straight out of it
+    const opener = document.activeElement;
+    const done = (value) => {
+      overlay.remove();
+      if (opener && document.contains(opener)) opener.focus();
+      resolve(value);
+    };
     const ok = el("button", { class: danger ? "btn danger" : "btn primary" }, confirmLabel);
     const cancel = el("button", { class: "btn" }, "cancel");
     const overlay = el("div", { class: "modal-overlay" },
-      el("div", { class: "panel" },
+      el("div", { class: "panel", role: "dialog", "aria-modal": "true" },
         el("div", { class: "dlg-msg" }, message),
         input,
         el("div", { class: "row mt", style: "justify-content:flex-end; gap:8px" },
@@ -24,6 +31,14 @@ function modal({ message, input = null, confirmLabel, danger }) {
     overlay.onkeydown = (e) => {
       if (e.key === "Escape") { e.preventDefault(); done(cancelValue); }
       else if (e.key === "Enter") { e.preventDefault(); ok.onclick(); }
+      else if (e.key === "Tab") {
+        const stops = [input, cancel, ok].filter(Boolean);
+        const idx = stops.indexOf(document.activeElement);
+        const next = e.shiftKey ? (idx <= 0 ? stops.length - 1 : idx - 1)
+                                : (idx === stops.length - 1 ? 0 : idx + 1);
+        e.preventDefault();
+        stops[next].focus();
+      }
     };
     document.body.append(overlay);
     (input || ok).focus();

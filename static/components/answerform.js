@@ -6,8 +6,10 @@
 // stays with the host, which gets `{ node, input, submit, setSettled }` back — `input`
 // so a host can manage focus order, `setSettled` so a bus event can close the form.
 
+import { api } from "/static/api.js";
 import { forgetField } from "/static/formpersist.js";
-import { el, toast } from "/static/util.js";
+import { mdInline } from "/static/md.js";
+import { el, toast, when } from "/static/util.js";
 
 export function answerForm(q, {
   control = "textarea",        // "textarea" (Shift+Enter for newline) | "input" (Enter sends)
@@ -75,4 +77,31 @@ export function answerForm(q, {
   const setSettled = (note) =>
     node.replaceChildren(el("span", { class: "faint small" }, note));
   return { node, input, submit, setSettled };
+}
+
+
+/** The blocking-question panel (run view + conversation — the same decision-record shape):
+ * the ❓ prompt, the util-approval tag when the record is one, the timeout/Decisions line
+ * when it expires, and the shared answer form. Renders into `box` (cleared first); a null
+ * question just clears it.
+ */
+export function questionPanel(box, q, { onAnswered } = {}) {
+  box.replaceChildren();
+  if (!q) return;
+  const form = answerForm(q, {
+    submitText: (text, intermediate) => api(`/api/questions/${q.qid}/answer`,
+      { method: "POST", body: { text, intermediate } }),
+    askBack: true,
+    toastText: (i) => (i ? "sent — the model will reply and re-ask" : "answer sent"),
+    onSuccess: () => { box.replaceChildren(); onAnswered?.(); },
+  });
+  box.append(el("div", { class: "panel warn mt" },
+    el("div", { class: "prose" },
+      "❓ ", q.type === "util-approval" ? el("strong", {}, "[util approval] ") : null,
+      mdInline(q.question || "")),
+    q.expires ? el("div", { class: "faint small" },
+      "the run continues without you ", when(q.expires, { mode: "rel" }),
+      " — also answerable on the Decisions page",
+      q.mirrored ? " and on Discord" : "") : null,
+    form.node));
 }

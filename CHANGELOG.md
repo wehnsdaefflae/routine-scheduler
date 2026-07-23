@@ -19,6 +19,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.87.1] — 2026-07-23
+
+Frontend polish sweep (the findings ledger's deferred UI batch).
+
+### Added
+- **Shared components**: `components/referchip.js` (the refer-to chip the run view and chat
+  composer both mount — one convention, one implementation) and `questionPanel` in
+  `components/answerform.js` (the blocking-question panel; the conversation now also shows
+  the util-approval tag and the timeout/Decisions line — same record shape, same chrome).
+- Run detail API (`GET /api/runs/{id}`) carries `home` (routine | conversation |
+  background) — a payload extension.
+
+### Changed
+- **SPA remount replaces `location.reload()`** everywhere (run resume/converse/revise
+  reattach, library delete): `router.remount()` re-renders the current view in place —
+  no full page reload, no flash. Library **save** now also refreshes in place (list +
+  tags), reopening the editor via its deep link.
+- **Run view is home-aware**: a conversation-home run's breadcrumb links
+  `#/conversations/<slug>` (it used to 404 onto the routine page), its rail uses the
+  conversation stategraph/artifacts routes; a background task labels itself and skips
+  the routes it doesn't have.
+- Stats: routine/conversation names in "By routine" and "Monthly spend" link to their
+  pages; the two stat-tile CSS systems (`.stat` / `.stat-card`) collapsed into one.
+- Week grid colors are slug-stable (hash, not row index) — a routine keeps its color
+  as the list reorders.
+
+### Fixed
+- **Accessibility**: dialogs trap Tab focus and restore it to the opener on close
+  (`role=dialog aria-modal`); the search box is a real combobox/listbox
+  (`aria-expanded`, `aria-activedescendant`, option roles); the conversation state dot
+  carries `title` + `aria-label` (it was color-only).
+- **Error-vs-empty honesty**: a failed fetch no longer renders as "empty" — the state
+  graph, help tab, artifacts, file-activity, and subtask-tree rails each say the load
+  failed (first load only; later transient errors keep the last good render).
+
 ## [0.87.0] — 2026-07-23
 
 ### Changed — the oversized modules split along their seams (overhaul batch 8)

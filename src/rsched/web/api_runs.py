@@ -80,10 +80,15 @@ def run_detail(request: Request, run_id: str) -> dict:
     st = read_json(run_dir / "status.json")
     model = st.get("model") if isinstance(st, dict) else ""
     deliberation = st.get("deliberation") if isinstance(st, dict) else ""
+    server = request.app.state.server
+    owner = run_dir.parent.parent.parent  # run_dir = <home>/<slug>/runs/<ts>
+    home = ("conversation" if owner == server.conversations_home
+            else "background" if owner == server.background_home else "routine")
     return {"run_id": info.run_id, "routine": slug, "ts": info.ts, "state": info.state,
             "turn": info.turn, "usage": info.usage, "elapsed_s": info.elapsed_s,
             "question": info.question, "model": model, "deliberation": deliberation or "",
-            "summary": info.summary, "updated": info.updated, "subruns": subs}
+            "summary": info.summary, "updated": info.updated, "subruns": subs,
+            "home": home}
 
 
 @router.get("/runs/{run_id}/transcript")

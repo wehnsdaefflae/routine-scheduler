@@ -78,7 +78,7 @@ td.hb-cell { min-width: 155px; }
 .weekgrid .wg-leg-sched { color: var(--faint); font-size: 11px; }
 
 /* ---------- log: stats strip + feed rows ---------- */
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 12px; margin: 14px 0 6px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 14px 0 6px; }
 .stat {
   background: linear-gradient(180deg, var(--surface), var(--surface-2));
   border: 1px solid var(--line); border-radius: 8px; padding: 11px 14px;
@@ -87,6 +87,7 @@ td.hb-cell { min-width: 155px; }
 .stat.click:hover { border-color: var(--faint); }
 .stat .v { font-weight: 700; font-size: 23px; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--faint); margin-top: 5px; }
+.stat .s { font-size: 11px; color: var(--muted); font-family: var(--sans); margin-top: 3px; }
 .stat.live .v { color: var(--live); } .stat.warn .v { color: var(--warn); }
 .stat.err .v { color: var(--err); } .stat.amber .v { color: var(--amber); }
 .logbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
@@ -405,15 +406,6 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 
 
 /* ---------- stats: usage analytics ---------- */
-.stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 14px 0; }
-.stat-card {
-  background: linear-gradient(180deg, var(--surface), var(--surface-2));
-  border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow);
-  padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
-}
-.stat-card .stat-value { font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: 0.01em; }
-.stat-card .stat-label { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
-.stat-card .stat-sub { font-size: 11px; color: var(--muted); font-family: var(--sans); }
 .stat-section { margin: 22px 0; }
 .stat-section h2 { font-size: 14px; color: var(--text); margin: 0 0 10px; letter-spacing: 0.01em; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }

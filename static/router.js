@@ -39,6 +39,13 @@ export function navigate(path, query = {}) {
   location.hash = buildHash(path, query);
 }
 
+// Re-render the CURRENT view in place (teardown + fresh mount) without a full page
+// reload — the SPA analog of location.reload(). route() ignores the event detail and
+// re-reads location.hash, so a synthetic hashchange is exactly a remount.
+export function remount() {
+  window.dispatchEvent(new HashChangeEvent("hashchange"));
+}
+
 // Rewrite the whole hash (path + query) in place — no hashchange, no re-render. For a view that
 // wants its deep state (e.g. an open editor) addressable without tearing itself down.
 export function replaceHash(path, query = {}) {

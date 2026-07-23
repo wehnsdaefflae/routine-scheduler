@@ -71,9 +71,10 @@ export function initSearchBox() {
   const input = el("input", {
     class: "gs-input", type: "search", autocomplete: "off", spellcheck: "false",
     placeholder: REST_HINT, title: "search everything ( / or Ctrl-K )",
-    "aria-label": "search everything",
+    "aria-label": "search everything", role: "combobox", "aria-autocomplete": "list",
+    "aria-expanded": "false", "aria-controls": "gs-pop",
   });
-  const pop = el("div", { class: "gs-pop", role: "listbox", hidden: true });
+  const pop = el("div", { class: "gs-pop", id: "gs-pop", role: "listbox", hidden: true });
   slot.classList.add("gsearch");
   slot.append(input, pop);
 
@@ -87,13 +88,19 @@ export function initSearchBox() {
     pop.hidden = true;
     pop.replaceChildren();
     active = -1;
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
   }
 
   function setActive(i) {
     const list = rows();
     if (!list.length) return;
     active = (i + list.length) % list.length;
-    list.forEach((r, n) => r.classList.toggle("active", n === active));
+    list.forEach((r, n) => {
+      r.classList.toggle("active", n === active);
+      r.setAttribute("aria-selected", n === active ? "true" : "false");
+    });
+    input.setAttribute("aria-activedescendant", list[active].id);
     list[active].scrollIntoView({ block: "nearest" });
   }
 
@@ -108,7 +115,8 @@ export function initSearchBox() {
         el("span", { class: `chip ${g.home === "conversation" ? "" : "ok"}` }, g.home),
         el("b", {}, g.slug)));
       for (const h of g.hits) {
-        const row = el("a", { class: "gs-hit", href: hitHref(h), tabindex: "-1" },
+        const row = el("a", { class: "gs-hit", href: hitHref(h), tabindex: "-1",
+          role: "option", id: `gs-opt-${rows().length}`, "aria-selected": "false" },
           el("span", { class: "gs-kind" }, h.kind),
           markSnippet(h.snippet),
           el("span", { class: "gs-meta" }, hitMeta(h)));
@@ -121,7 +129,9 @@ export function initSearchBox() {
         `still indexing — ${data.index.pending} file(s) pending, results may be incomplete`));
     }
     pop.hidden = false;
+    input.setAttribute("aria-expanded", "true");
     active = -1;
+    input.removeAttribute("aria-activedescendant");
   }
 
   async function run() {
@@ -136,6 +146,7 @@ export function initSearchBox() {
       if (my !== seq) return;
       pop.replaceChildren(el("div", { class: "gs-empty" }, err.message));
       pop.hidden = false;
+      input.setAttribute("aria-expanded", "true");
     }
   }
 

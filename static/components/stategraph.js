@@ -20,6 +20,7 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
   container.append(box);
   let states = [];
   let phase = "";
+  let loadError = "";    // graph fetch failure — distinct from "genuinely no stages"
   let stats = {};        // norm(phase) → {turns, tokens, cost, elapsed_s}
   let statsLoaded = false;  // only a LOADED stats map can prove a state was skipped
   let unphased = null;   // turns from before the run entered any stage
@@ -36,7 +37,9 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
   function renderInto() {
     box.replaceChildren();
     if (!states.length && !phase) {
-      box.append(el("div", { class: "faint small" }, "no state graph — this routine has no stage modules"));
+      box.append(el("div", { class: "faint small" }, loadError
+        ? `state graph unavailable — ${loadError}`
+        : "no state graph — this routine has no stage modules"));
       return;
     }
     const cur = norm(phase);
@@ -91,7 +94,8 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
       const g = await api(graphUrl);
       states = g.states || [];
       phase = g.current || "";
-    } catch { states = []; }
+      loadError = "";
+    } catch (err) { states = []; loadError = err.message || "fetch failed"; }
     renderInto();
     refreshStats();
   }

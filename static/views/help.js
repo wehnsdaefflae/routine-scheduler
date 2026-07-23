@@ -13,15 +13,19 @@ export async function render(view, sub, query = {}) {
       el("h1", {}, "Help"))));
 
   let index = null;
+  let fetchError = "";   // a network/server failure is NOT "still being generated"
   try {
     const resp = await fetch("/docs/index.json");
     if (resp.ok) index = await resp.json();
-  } catch { /* treated as not-built below */ }
+    else if (resp.status !== 404) fetchError = `the server answered ${resp.status}`;
+  } catch (err) { fetchError = err.message || "the request failed"; }
   if (!index || !Array.isArray(index.guides)) {
     view.append(el("div", { class: "empty" },
-      el("div", { class: "t" }, "documentation is still being generated"),
-      el("div", { class: "d" },
-        "the daemon builds it in the background at boot (a few seconds) — reload shortly")));
+      el("div", { class: "t" }, fetchError
+        ? "documentation could not be loaded" : "documentation is still being generated"),
+      el("div", { class: "d" }, fetchError
+        ? `${fetchError} — check the daemon log, then reload`
+        : "the daemon builds it in the background at boot (a few seconds) — reload shortly")));
     return;
   }
 

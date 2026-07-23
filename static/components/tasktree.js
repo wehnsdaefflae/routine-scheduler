@@ -53,11 +53,18 @@ export function createTaskTree(container, { treeUrl, isLive }) {
     tree.forEach((n) => box.append(node(n)));
   }
 
+  let loadedOnce = false;
   async function refresh() {
     try {
       const r = await api(treeUrl);
       renderInto(r.tree || []);
-    } catch { /* keep the last render on a transient error */ }
+      loadedOnce = true;
+    } catch (err) {
+      // transient refresh errors keep the last render; a FIRST load failing must
+      // not read as "no subtasks yet"
+      if (!loadedOnce) box.replaceChildren(
+        el("div", { class: "faint small" }, `subtask tree unavailable — ${err.message}`));
+    }
   }
 
   function poll() {

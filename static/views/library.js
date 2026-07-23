@@ -6,7 +6,7 @@
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { codeEditor } from "/static/components/code.js";
-import { replaceHash } from "/static/router.js";
+import { replaceHash, remount } from "/static/router.js";
 import { el, emptyState, requiresSummary, skeleton, tagChip, toast, when } from "/static/util.js";
 
 export async function render(view, sub, query = {}) {
@@ -270,7 +270,7 @@ export async function render(view, sub, query = {}) {
             toast("deleted + committed");
             openSub = null;     // the deep link points at a file that no longer exists
             updateURL();
-            location.reload();
+            remount();          // re-render the view in place — the list drops the file
             return;
           }
         } catch (err) { toast(err.message, 5000, { error: true }); }
@@ -281,7 +281,12 @@ export async function render(view, sub, query = {}) {
     btn.onclick = async () => {
       btn.disabled = true;
       errBox.replaceChildren();
-      try { await save(ed.value); toast("saved + committed — reload to see tag changes"); }
+      try {
+        await save(ed.value);
+        toast("saved + committed");
+        remount();   // refresh the list/tags in place; the deep link reopens this editor
+        return;
+      }
       catch (err) {
         // lint / selftest output arrives as the error detail — show it AT the editor, in full
         errBox.append(el("div", { class: "save-errors" },

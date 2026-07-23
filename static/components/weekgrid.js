@@ -10,6 +10,14 @@
 import { el, fmtDur } from "/static/util.js";
 import { SERIES_COLORS } from "/static/components/charts.js";
 
+// Stable color identity: hash the slug into the palette so a routine keeps its
+// color across reorders / additions (an index-based pick reshuffles everyone).
+function slugColor(slug) {
+  let h = 0;
+  for (const ch of String(slug)) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return SERIES_COLORS[h % SERIES_COLORS.length];
+}
+
 const NS = "http://www.w3.org/2000/svg";
 const DAY_MS = 86_400_000, DAY_SECONDS = 86_400;
 // No left label column any more — routine identity moved to the legend below, so the day columns
@@ -95,7 +103,7 @@ export function weekGrid() {
     const legendItems = [];
     rows.forEach((r, i) => {
       const y = HEAD_H + i * ROW_H, cy = y + ROW_H / 2;
-      const color = SERIES_COLORS[i % SERIES_COLORS.length];
+      const color = slugColor(r.c.slug);
       const name = r.c.name || r.c.slug;
       const avg = avgRuntime(r.c);
       const runNote = avg ? ` · runs ~${fmtDur(avg.secs)}` : " · never run";

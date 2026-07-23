@@ -103,9 +103,16 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
     }
   }
 
+  let loadedOnce = false;
   async function refresh() {
-    try { items = await api(`/api/${base}/${slug}/artifacts`); }
-    catch { return; }
+    try { items = await api(`/api/${base}/${slug}/artifacts`); loadedOnce = true; }
+    catch (err) {
+      // first load failing must not read as "no artifacts" — say so; later
+      // transient errors keep the last good render
+      if (!loadedOnce) listBox.replaceChildren(
+        el("div", { class: "faint small" }, `artifacts unavailable — ${err.message}`));
+      return;
+    }
     renderList();
     // the open artifact may have been re-written — reload it in place
     if (openPath) {

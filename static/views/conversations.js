@@ -7,9 +7,10 @@
 // A conversation is one continuous run: sending into a live reply injects; sending into a
 // finished one resumes it in place, so the view remounts its tail after every send.
 
+import { referChip } from "/static/components/referchip.js";
 import { api, apiUpload } from "/static/api.js";
 import { deliberationControl } from "/static/components/deliberation.js";
-import { answerForm } from "/static/components/answerform.js";
+import { questionPanel } from "/static/components/answerform.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { navigate } from "/static/router.js";
@@ -26,7 +27,6 @@ import { busy, chip, el, emptyState, relTime, toast } from "/static/util.js";
 import { followScroll } from "/static/follow.js";
 import { enabled as notifyEnabled } from "/static/notify.js";
 import { TERMINAL, WORKING } from "/static/states.js";
-import { mdInline } from "/static/md.js";
 
 const PREFILL_KEY = "conv-new-prefill";
 
@@ -116,7 +116,8 @@ export async function render(view, slug, _query = {}) {
       const row = el("a", {
         class: `conv-item${it.slug === slug ? " on" : ""}`,
         href: `#/conversations/${it.slug}` },
-        el("span", { class: `dot ${it.state}` }),
+        el("span", { class: `dot ${it.state}`, role: "img", title: it.state,
+          "aria-label": `state: ${it.state}` }),
         el("span", { class: "conv-title" }, it.title || it.slug),
         it.question ? el("span", { class: "conv-q", title: "waiting for you" }, "❓") : null,
         el("span", { class: "conv-when" }, relTime(it.updated)));
@@ -408,18 +409,9 @@ export async function render(view, slug, _query = {}) {
       wirePaste(input);
       const send = el("button", { class: "btn primary" }, "send");
 
-      // "refer to" (the messenger reply analog): a hover ↩ on any chat message or work step
-      // primes this chip; the send prepends the quoted reference line to the message text.
-      let pendingRef = null;
-      const refText = el("span", { class: "ref-text" });
-      const refClear = el("button", { class: "btn small ghost", title: "drop the reference" }, "✕");
-      const refBar = el("div", { class: "composer-ref", hidden: true }, "↩ ", refText, refClear);
-      const setRef = (r) => {
-        pendingRef = r;
-        refBar.hidden = !r;
-        if (r) { refText.textContent = `${r.label}: ${r.snippet}`; input.focus(); }
-      };
-      refClear.onclick = () => setRef(null);
+      const ref = referChip(input);
+      const refBar = ref.node;
+      const setRef = ref.setRef;
 
       // ---- slash commands: the user runs the SAME actions/utils the assistant can ----
       let catalog = null;
@@ -538,8 +530,8 @@ export async function render(view, slug, _query = {}) {
             && (await loadCatalog()).kinds.some((k) => k.kind === head[1]));
           // a primed reference rides the text as one leading quoted line (prose only — a
           // command must keep its /<kind> head)
-          fd.append("text", pendingRef && !isCommand
-            ? `> re ${pendingRef.label}: ${pendingRef.snippet}\n\n${input.value}`
+          fd.append("text", ref.pending && !isCommand
+            ? `> re ${ref.pending.label}: ${ref.pending.snippet}\n\n${input.value}`
             : input.value);
           if (isCommand) fd.append("command", "1");
           for (const f of files()) fd.append("files", f);
@@ -571,20 +563,7 @@ export async function render(view, slug, _query = {}) {
     }
   }
 
-  function showQuestion(box, q) {
-    box.replaceChildren();
-    if (!q) return;
-    const form = answerForm(q, {
-      submitText: (text, intermediate) => api(`/api/questions/${q.qid}/answer`,
-        { method: "POST", body: { text, intermediate } }),
-      askBack: true,
-      toastText: (i) => (i ? "sent — the model will reply and re-ask" : "answer sent"),
-      onSuccess: () => box.replaceChildren(),
-    });
-    box.append(el("div", { class: "panel warn mt" },
-      el("div", { class: "prose" }, "❓ ", mdInline(q.question || "")),
-      form.node));
-  }
+  const showQuestion = questionPanel;   // the shared panel (answerform.js) — same record shape
 
   // The model line at the top of a conversation: shows the EFFECTIVE model (override or
   // system default) and switches it at any point — routine.yaml is patched (each reply
