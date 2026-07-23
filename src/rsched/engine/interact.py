@@ -21,7 +21,11 @@ from ..ids import is_slug, question_id
 from . import decisions, detach, inbox
 from .control import RunAborted
 
-_APPROVE_WORDS = ("approve", "approved", "yes", "y", "ok", "okay", "go", "accept", "confirm")
+# Natural affirmatives count: approval answers arrive as free text (Discord mirrors the
+# question to a phone), and "Do it. The mail is …" must not read as a decline (F161 —
+# two real approvals were recorded DECLINED because "do" was missing here).
+_APPROVE_WORDS = ("approve", "approved", "yes", "y", "ok", "okay", "go", "accept", "confirm",
+                  "do", "sure", "yep", "yeah", "proceed", "ja")
 
 
 def _is_approval(text: str) -> bool:
@@ -194,7 +198,10 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:
             return {"kind": "write_util", "name": name, "pending_approval": True,
                     "qid": ask.get("qid")}
         if not _is_approval(ask["answer"]):
-            return {"kind": "write_util", "name": name, "declined": True}
+            # carry the verbatim answer: a decline that hides WHAT was said reads as a
+            # contradiction when the user meant to approve in other words (F161)
+            return {"kind": "write_util", "name": name, "declined": True,
+                    "answer": str(ask["answer"])[:200]}
     # Selftest gates the LIBRARY, not just the observation: on failure the write is rolled
     # back — a new util's dir removed, a revision restored to the previous working text —
     # so a broken script is never left live for concurrent `gu` callers.

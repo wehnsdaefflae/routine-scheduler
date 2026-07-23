@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.90.1] — 2026-07-23
+
+### Fixed
+- **Real approvals were recorded as DECLINED (F161)**: util-approval answers arrive as
+  free text (Discord mirrors blocking questions to the phone), and `_is_approval` only
+  accepted a narrow head-word list — the operator's *"Do it. The mail is …"* read as a
+  decline, twice, in the weight-loss coach's bootstrap. The affirmative vocabulary now
+  covers natural phrasings ("do", "sure", "yep", "yeah", "proceed", "ja"), and a declined
+  observation carries the verbatim answer so a mismatch is visible instead of reading as
+  a contradiction. (`engine/interact.py`)
+
 ## [0.90.0] — 2026-07-23
 
 Claude-subscription usage widget (D33) + an honest run-page waiting line (self-audit).

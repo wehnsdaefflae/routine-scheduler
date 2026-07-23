@@ -466,6 +466,21 @@ def test_write_util_confirmation_declined(make_routine, scripted, monkeypatch):
     assert any(e["type"] == "question" for e in events)  # approval was requested (blocking)
     wu = next(e for e in events if e["type"] == "observation" and e["payload"]["kind"] == "write_util")
     assert wu["payload"]["declined"]
+    assert wu["payload"]["answer"] == "decline"   # the verbatim answer rides along (F161)
+
+
+def test_is_approval_accepts_natural_affirmatives():
+    """F161: approval answers arrive as free text over Discord — 'Do it. The mail is …'
+    was recorded as a DECLINE because only a narrow word list counted as approval."""
+    from rsched.engine.interact import _is_approval
+
+    assert _is_approval("Do it. The mail is x@example.org")
+    assert _is_approval("ja, mach das")
+    assert _is_approval("Sure — go ahead")
+    assert _is_approval("Approve")
+    assert not _is_approval("Bin hier")          # a presence ping is NOT an approval
+    assert not _is_approval("decline")
+    assert not _is_approval("")
 
 
 def test_write_util_denied_without_grant(make_routine, scripted):
