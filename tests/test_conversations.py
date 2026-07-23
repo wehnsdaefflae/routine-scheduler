@@ -12,8 +12,9 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from conftest import make_test_server
 from rsched import conversations as conv_mod
-from rsched.config import load_routine, load_server_config
+from rsched.config import load_routine
 from rsched.paths import atomic_write_json
 from rsched.web.app import create_app
 
@@ -29,20 +30,8 @@ def server(tmp_path):
     shutil.copytree(SEED / "workflows", lib / "workflows")
     shutil.copytree(SEED / "traits", lib / "traits")
     shutil.copytree(SEED / "permissions", lib / "permissions")
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "conversations_home": str(tmp_path / "conversations"),
-        "libraries_home": str(lib),
-        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "models": {"m": {"endpoint": "dummy", "model": "m"}},
-        "system_model": "m",
-    }))
-    server, problems = load_server_config(cfg_path)
-    assert not problems
-    (tmp_path / "routines").mkdir(exist_ok=True)
-    return server
+    return make_test_server(tmp_path, conversations_home=str(tmp_path / "conversations"),
+                            libraries_home=str(lib))
 
 
 @pytest.fixture

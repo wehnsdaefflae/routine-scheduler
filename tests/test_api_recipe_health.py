@@ -5,12 +5,8 @@ the no-active-run 409 guard).
 
 import subprocess
 
+from conftest import git_in as _git
 from rsched.paths import atomic_write_json
-
-
-def _git(d, *args):
-    subprocess.run(["git", "-C", str(d), "-c", "user.name=t", "-c", "user.email=t@t",
-                    *args], capture_output=True, text=True, check=True)
 
 
 def _versioned(d):

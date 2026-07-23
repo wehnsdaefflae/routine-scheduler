@@ -508,3 +508,52 @@ def test_replay_does_not_duplicate_blocking_answers():
     msgs, _, _ = replay_messages(events)
     joined = "\n".join(m["content"] for m in msgs)
     assert joined.count("UNIQUE-ANSWER") == 1
+
+
+def _gate_loop(monkeypatch, *, usage):
+    """A minimal loop stub for compact_if_needed: 40 x 1750-char messages = 70k chars
+    against a 100k window - between the 0.6 (60k) and 0.8 (80k) thresholds."""
+    from types import SimpleNamespace
+
+    from rsched.engine import completion
+
+    calls = []
+    monkeypatch.setattr(completion, "compact_to_history",
+                        lambda msgs, *_a, **_k: (calls.append("llm") or (msgs, None)))
+    monkeypatch.setattr(completion, "maybe_compact",
+                        lambda msgs, *_a, **_k: (calls.append("digest") or (msgs, None)))
+
+    class _Reg:
+        def for_model(self, kind, models):
+            raise RuntimeError("no tool_call model in this stub")
+
+    ctx = SimpleNamespace(usage=usage, tokens_remaining=lambda: None, registry=_Reg(),
+                          routine=SimpleNamespace(models={}), run_dir=None,
+                          transcript=SimpleNamespace(event=lambda *a, **k: None),
+                          add_usage=lambda u: None)
+    loop = SimpleNamespace(ctx=ctx, turn_records=[], _hist_rel="history",
+                           _last_compact_after=0, _history_active=False,
+                           _hist_note_countdown=0,
+                           messages=[{"role": "user", "content": "x" * 1750}
+                                     for _ in range(40)])
+    return loop, calls
+
+
+def test_compaction_gate_uncached_compacts_at_60pct(monkeypatch):
+    from rsched.config import ModelRef
+    from rsched.engine.completion import compact_if_needed
+
+    loop, calls = _gate_loop(monkeypatch, usage={})
+    compact_if_needed(loop, endpoint=None, ref=ModelRef("e", "m", context_chars=100_000))
+    assert calls, "70k chars over a 100k window must compact at the uncached 0.6 gate"
+
+
+def test_compaction_gate_cached_waits_for_80pct(monkeypatch):
+    """Observed cache hits raise the gate to 0.8: compaction rewrites the prefix and
+    invalidates the whole cache, so carried context is cheaper than re-archiving."""
+    from rsched.config import ModelRef
+    from rsched.engine.completion import compact_if_needed
+
+    loop, calls = _gate_loop(monkeypatch, usage={"cached_in": 5_000})
+    compact_if_needed(loop, endpoint=None, ref=ModelRef("e", "m", context_chars=100_000))
+    assert not calls, "with cache hits, 70k over 100k sits under the 0.8 gate - no compaction"

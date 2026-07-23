@@ -1,9 +1,9 @@
 """Derived catalog, run index, cron math, catch-up, retention."""
 
-import json
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from conftest import mk_run
 from rsched import registry
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.transcript import read_events
@@ -19,15 +19,8 @@ def _server(tmp_path) -> ServerConfig:
 
 
 def _mk_run(d, ts, state, summary=""):
-    run_dir = d / "runs" / ts
-    run_dir.mkdir(parents=True)
-    atomic_write_json(run_dir / "status.json", {"run_id": f"{d.name}:{ts}", "state": state,
-                                                "pid": 999999, "turn": 3,
-                                                "usage": {"in": 5, "out": 2}})
-    if summary:
-        (run_dir / "result.md").write_text(summary)
-    (run_dir / "transcript.jsonl").write_text(json.dumps({"type": "header"}) + "\n")
-    return run_dir
+    return mk_run(d, ts, state, pid=999999, usage={"in": 5, "out": 2}, summary=summary,
+                  transcript=[{"type": "header"}])
 
 
 def test_scan_catalog(make_routine, tmp_path):

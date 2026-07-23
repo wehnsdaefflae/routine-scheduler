@@ -170,6 +170,28 @@ class ScriptedRegistry(EndpointRegistry):
 TEST_TOKEN = "test-token"
 
 
+def make_test_server(tmp_path, **overrides):
+    """Write the hermetic test config.yaml (dummy endpoint + one-model catalog as the
+    system model, bearer TEST_TOKEN) merged with `overrides`, and load it. The one server
+    builder behind api_client and every file that needs extra homes/keys on top."""
+    from rsched.config import load_server_config
+
+    cfg = {
+        "token": TEST_TOKEN,
+        "routines_home": str(tmp_path / "routines"),
+        "libraries_home": str(tmp_path / "library"),
+        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
+        "models": {"m": {"endpoint": "dummy", "model": "m"}},
+        "system_model": "m",
+        **overrides,
+    }
+    (tmp_path / "config.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    server, problems = load_server_config(tmp_path / "config.yaml")
+    assert not problems
+    (tmp_path / "routines").mkdir(exist_ok=True)
+    return server
+
+
 @pytest.fixture
 def api_client(tmp_path):
     """(TestClient, tmp_path) over a hermetic app: tmp homes, bearer auth TEST_TOKEN, a dummy
@@ -177,20 +199,9 @@ def api_client(tmp_path):
     web-API test files — each layers its own routines/monkeypatches on top."""
     from fastapi.testclient import TestClient
 
-    from rsched.config import load_server_config
     from rsched.web.app import create_app
 
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TEST_TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "libraries_home": str(tmp_path / "library"),
-        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "models": {"m": {"endpoint": "dummy", "model": "m"}},
-        "system_model": "m",
-    }))
-    server, problems = load_server_config(cfg_path)
-    assert not problems
+    server = make_test_server(tmp_path)
     app = create_app(server, with_scheduler=False)
     with TestClient(app) as c:
         c.headers["Authorization"] = f"Bearer {TEST_TOKEN}"
@@ -288,3 +299,88 @@ def wait_(n=None, all_=False, timeout_s=None, say="Waiting for children."):
     if timeout_s is not None:
         action["timeout_s"] = timeout_s
     return action
+
+
+# ---- shared daemon-runner double + on-disk builders -------------------------------------------
+# One FakeRunner for the scheduler/trigger/schedule-once/hooks tests (records fires and
+# resumes, tracks active slugs); the detached-manager suite subclasses it (status-writing
+# fire + guarded resume). One git helper and one run-dir factory replace the per-file copies.
+
+
+class FakeRunner:
+    """Runner double: records fire/resume, marks the slug active, returns the run id.
+    active_states/recover_orphans satisfy the scheduler protocol as no-ops."""
+
+    def __init__(self, *, ts: str = "20260717-120000"):
+        self.fired: list[tuple[str, str]] = []
+        self.resumed: list[tuple[str, str, str]] = []
+        self.active: dict[str, str] = {}
+        self.draining = False
+        self.ts = ts
+
+    def is_active(self, slug: str) -> bool:
+        return slug in self.active
+
+    def active_states(self):
+        return []
+
+    def recover_orphans(self, catalog):
+        return 0
+
+    async def fire(self, cfg, *, reason="schedule") -> str:
+        self.fired.append((cfg.slug, reason))
+        self.active[cfg.slug] = self.ts
+        return f"{cfg.slug}:{self.ts}"
+
+    async def resume(self, cfg, ts, *, reason="resume") -> str | None:
+        self.resumed.append((cfg.slug, ts, reason))
+        self.active[cfg.slug] = ts
+        return f"{cfg.slug}:{ts}"
+
+
+def git_in(d, *args, date: str = "", check: bool = True):
+    """Run git in `d` with a pinned test identity (and optionally pinned dates) — the one
+    subprocess-git helper for the suite. Returns the CompletedProcess (use .stdout for
+    output asserts, check=False to probe outcomes)."""
+    import subprocess
+
+    env = dict(os.environ)
+    if date:
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = date
+    return subprocess.run(["git", "-C", str(d), "-c", "user.name=t", "-c", "user.email=t@t",
+                           *args], capture_output=True, text=True, timeout=30,
+                          check=check, env=env)
+
+
+def mk_run(routine_dir: Path, ts: str, state: str, *, turn: int = 3, pid: int | None = None,
+           usage: dict | None = None, elapsed_s: float | None = None, question=None,
+           summary: str | None = None, outcome: str | None = None, model: str | None = None,
+           updated: str | None = None, transcript: list[dict] | None = None) -> Path:
+    """One run-dir factory: runs/<ts>/status.json plus optional result.md / transcript
+    lines. Callers pass only the fields their assertions need."""
+    from rsched.paths import atomic_write_json
+
+    run_dir = routine_dir / "runs" / ts
+    run_dir.mkdir(parents=True, exist_ok=True)
+    st: dict = {"run_id": f"{routine_dir.name}:{ts}", "state": state, "turn": turn}
+    if pid is not None:
+        st["pid"] = pid
+    if usage is not None:
+        st["usage"] = usage
+    if elapsed_s is not None:
+        st["elapsed_s"] = elapsed_s
+    if question is not None:
+        st["question"] = question
+    if outcome is not None:
+        st["outcome"] = outcome
+    if model is not None:
+        st["model"] = model
+    if updated is not None:
+        st["updated"] = updated
+    atomic_write_json(run_dir / "status.json", st)
+    if summary:
+        (run_dir / "result.md").write_text(summary)
+    if transcript is not None:
+        (run_dir / "transcript.jsonl").write_text(
+            "".join(json.dumps(e) + "\n" for e in transcript))
+    return run_dir

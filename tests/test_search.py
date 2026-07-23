@@ -11,14 +11,15 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from rsched.config import ServerConfig, load_server_config
+from conftest import TEST_TOKEN, make_test_server
+from rsched.config import ServerConfig
 from rsched.paths import atomic_write_json
 from rsched.search import SearchIndex
 from rsched.search.index import MARK_END, MARK_START, _escape_query
 from rsched.search.sources import extract, iter_sources
 from rsched.web.app import create_app
 
-TOKEN = "search-test-token"
+TOKEN = TEST_TOKEN
 
 
 def _write_events(path, events):
@@ -210,8 +211,12 @@ def test_fts5_syntax_still_works(index):
 
 
 def test_limit_cap(index):
+    from rsched.search.index import MAX_LIMIT
+
     assert len(index.search("the", limit=1)) == 1
-    assert isinstance(index.search("the", limit=10_000), list)   # clamped, not rejected
+    # an absurd limit is CLAMPED to the module cap, never rejected and never honored
+    assert len(index.search("the", limit=10_000)) <= MAX_LIMIT
+    assert len(index.search("the", limit=0)) == 1   # floor: at least one hit requested
 
 
 def test_sources_skip_config_and_state(server):
@@ -244,19 +249,8 @@ def test_long_file_chunks_completely(tmp_path, server, index):
 @pytest.fixture
 def client(tmp_path, make_routine):
     _build_tree(tmp_path, make_routine)
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "conversations_home": str(tmp_path / "conversations"),
-        "background_home": str(tmp_path / "background"),
-        "libraries_home": str(tmp_path / "library"),
-        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "models": {"m": {"endpoint": "dummy", "model": "m"}},
-        "system_model": "m",
-    }), encoding="utf-8")
-    server, problems = load_server_config(cfg_path)
-    assert not problems
+    server = make_test_server(tmp_path, conversations_home=str(tmp_path / "conversations"),
+                              background_home=str(tmp_path / "background"))
     app = create_app(server, with_scheduler=False)
     with TestClient(app) as c:
         c.headers["Authorization"] = f"Bearer {TOKEN}"

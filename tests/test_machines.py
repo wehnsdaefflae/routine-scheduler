@@ -288,3 +288,23 @@ def test_run_routine_unmounts_even_when_loop_raises(make_routine, scripted, monk
     with pytest.raises(RuntimeError, match="boom"):
         run_routine(d, _server_for(d), run_ts="20260708-070000")
     assert unmounted == [["S"]]         # the finally ran despite the crash
+
+
+def test_mount_success_returns_share_and_scopes_key(tmp_path, monkeypatch):
+    """The success path: sshfs exits 0 -> a MountedShare with the routine's mnt/<name>
+    mountpoint, the PEM written 0600 into a daemon-private keydir beside a pinned
+    known_hosts, and mnt/ gitignored; unmount removes the keydir again."""
+    routine, server = _share_setup(tmp_path, monkeypatch, run_rc=0)
+    got = machines.mount_routine_shares(routine, server, secrets={"K": "PEM-KEY"})
+    assert len(got) == 1
+    ms = got[0]
+    assert ms.name == "gpu"
+    assert ms.mountpoint == tmp_path / "routine" / "mnt" / "gpu"
+    key = ms.keydir / "key"
+    assert key.read_text(encoding="utf-8") == "PEM-KEY\n"
+    assert (key.stat().st_mode & 0o777) == 0o600
+    assert "ssh-ed25519 AAA" in (ms.keydir / "known_hosts").read_text(encoding="utf-8")
+    assert "mnt/" in (tmp_path / "routine" / ".gitignore").read_text(encoding="utf-8")
+
+    machines.unmount_routine_shares(got)
+    assert not ms.keydir.exists()              # the PEM never outlives the run

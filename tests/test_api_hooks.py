@@ -130,17 +130,7 @@ def test_hook_to_daemon_handoff(api_client, make_routine):
     for n in range(2):
         assert bare.post(f"/api/hooks/testr/{TOK}", content=f"evt-{n}".encode()).status_code == 202
 
-    class FakeRunner:
-        def __init__(self):
-            self.fired = []
-            self.draining = False
-
-        def is_active(self, slug):
-            return False
-
-        async def fire(self, cfg, *, reason="schedule"):
-            self.fired.append((cfg.slug, reason))
-            return f"{cfg.slug}:20260717-120000"
+    from conftest import FakeRunner
 
     server = c.app.state.server
     runner = FakeRunner()

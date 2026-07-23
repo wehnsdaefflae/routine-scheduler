@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from conftest import FakeRunner
 from rsched import registry, schedule_once
 from rsched.config import ServerConfig
 from rsched.daemon.schedule_once import OneShotManager
@@ -24,27 +25,6 @@ def _server(tmp_path) -> ServerConfig:
     s.routines_home = tmp_path / "routines"
     s.routines_home.mkdir(parents=True, exist_ok=True)
     return s
-
-
-class FakeRunner:
-    def __init__(self):
-        self.fired: list[tuple[str, str]] = []
-        self.resumed: list[tuple[str, str, str]] = []
-        self.active: dict[str, str] = {}
-        self.draining = False
-
-    def is_active(self, slug: str) -> bool:
-        return slug in self.active
-
-    async def fire(self, cfg, *, reason="schedule") -> str:
-        self.fired.append((cfg.slug, reason))
-        self.active[cfg.slug] = "20260717-120000"
-        return f"{cfg.slug}:20260717-120000"
-
-    async def resume(self, cfg, ts, *, reason="resume") -> str:
-        self.resumed.append((cfg.slug, ts, reason))
-        self.active[cfg.slug] = ts
-        return f"{cfg.slug}:{ts}"
 
 
 def _routine(server, slug="oneshot", *, enabled=True):

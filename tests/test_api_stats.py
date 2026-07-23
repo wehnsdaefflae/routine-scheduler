@@ -3,20 +3,12 @@ consumes: totals for the cards, the by_* slices for the tables, and per-run rows
 configurable charts. Aggregation math itself lives in test_stats.py; this pins the route
 wiring + serialized surface."""
 
-from rsched.paths import atomic_write_json
+from conftest import mk_run
 
 
 def _mk_run(routine_dir, ts, state, *, tin, tout, cost=None, elapsed_s=0, model=None):
-    run_dir = routine_dir / "runs" / ts
-    run_dir.mkdir(parents=True)
-    usage = {"in": tin, "out": tout}
-    if cost is not None:
-        usage["cost"] = cost
-    st = {"run_id": f"{routine_dir.name}:{ts}", "state": state, "turn": 3,
-          "usage": usage, "elapsed_s": elapsed_s}
-    if model:
-        st["model"] = model
-    atomic_write_json(run_dir / "status.json", st)
+    usage = {"in": tin, "out": tout, **({"cost": cost} if cost is not None else {})}
+    mk_run(routine_dir, ts, state, usage=usage, elapsed_s=elapsed_s, model=model or None)
 
 
 def test_stats_route_serves_the_stats_tab_shape(api_client, make_routine):

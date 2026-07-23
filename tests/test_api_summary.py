@@ -2,19 +2,13 @@
 the shape static/views/summary.js consumes. Registry read-model math is pinned in
 test_registry.py; this pins the route surface + the read-state persistence round-trip."""
 
-from rsched.paths import atomic_write_json, read_json
+from conftest import mk_run
+from rsched.paths import read_json
 
 
 def _mk_run(routine_dir, ts, state, *, summary="", outcome=None):
-    run_dir = routine_dir / "runs" / ts
-    run_dir.mkdir(parents=True)
-    st = {"run_id": f"{routine_dir.name}:{ts}", "state": state, "turn": 3,
-          "usage": {"in": 10, "out": 4}, "elapsed_s": 30, "updated": ts}
-    if outcome is not None:
-        st["outcome"] = outcome
-    atomic_write_json(run_dir / "status.json", st)
-    if summary:
-        (run_dir / "result.md").write_text(summary, encoding="utf-8")
+    mk_run(routine_dir, ts, state, usage={"in": 10, "out": 4}, elapsed_s=30, updated=ts,
+           outcome=outcome, summary=summary)
 
 
 def test_summary_lists_latest_finish_message_per_routine(api_client, make_routine):

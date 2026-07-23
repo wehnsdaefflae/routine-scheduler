@@ -35,9 +35,8 @@ def pytest_collection_modifyitems(items):
     shared-resource contention between parallel workers occasionally reds a genuinely-passing
     test on a full-suite run (F120). `flaky(reruns=2)` reruns ONLY on failure: an intermittent
     contention blip passes on retry, while a real regression still fails all attempts. Scoped to
-    this directory so the rest of the suite keeps failing fast. Inert until pytest-rerunfailures
-    is installed in the project venv (the `flaky` marker is registered in pyproject.toml so this
-    stays warning-clean under filterwarnings=error even before the plugin is present)."""
+    this directory so the rest of the suite keeps failing fast (pytest-rerunfailures provides
+    the marker; it is a project dev dependency)."""
     for item in items:
         item_path = getattr(item, "path", None)
         in_ui = bool(item_path) and (item_path == _UI_DIR or _UI_DIR in item_path.parents)
@@ -54,7 +53,6 @@ class StubRunner:
 
     def __init__(self):
         self.fired: list[tuple[str, str]] = []
-        self.resumed: list[tuple[str, str]] = []
         self.active: dict[str, object] = {}
         self.draining = False
 
@@ -63,8 +61,7 @@ class StubRunner:
         return f"{cfg.slug}:20260715-120000"
 
     async def resume_terminal(self, cfg, reason: str = "") -> str:
-        self.resumed.append((cfg.slug, reason))
-        return f"{cfg.slug}:20260715-120001"
+        return f"{cfg.slug}:20260715-120001"   # the wake itself is enough - nothing asserts on it
 
     def is_active(self, slug: str) -> bool:
         return False
@@ -117,10 +114,13 @@ class UiHarness:
         return run_dir
 
 
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+def _listening_socket() -> socket.socket:
+    """A bound ephemeral-port socket handed straight to uvicorn (run(sockets=[...])) -
+    no close-then-rebind race like the old free-port probe had under xdist."""
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(("127.0.0.1", 0))
+    return s
 
 
 @pytest.fixture
@@ -150,10 +150,11 @@ def ui(tmp_path, make_routine) -> UiHarness:
     runner = StubRunner()
     app.state.runner = runner
 
-    port = _free_port()
+    sock = _listening_socket()
+    port = sock.getsockname()[1]
     uv_server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port,
                                               log_level="warning"))
-    thread = threading.Thread(target=uv_server.run, daemon=True)
+    thread = threading.Thread(target=lambda: uv_server.run(sockets=[sock]), daemon=True)
     thread.start()
     deadline = time.monotonic() + 15
     while not uv_server.started:

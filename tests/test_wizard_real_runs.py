@@ -12,7 +12,8 @@ import json
 import yaml
 from fastapi.testclient import TestClient
 
-from rsched.config import ServerConfig, load_server_config
+from conftest import make_test_server
+from rsched.config import ServerConfig
 from rsched.web import wizard_store
 from rsched.web.app import create_app
 
@@ -70,17 +71,7 @@ def test_clarify_run_resolves_on_the_standard_run_surface(tmp_path):
     """
     server0 = _server(tmp_path)
     _template(server0)
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "libraries_home": str(tmp_path / "library"),
-        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "models": {"m": {"endpoint": "dummy", "model": "m"}},
-        "system_model": "m",
-    }), encoding="utf-8")
-    server, problems = load_server_config(cfg_path)
-    assert not problems
+    server = make_test_server(tmp_path)
     _wid, ts, _d = wizard_store.create_session(server, "Digest my newsletters every morning.")
     app = create_app(server, with_scheduler=False)
     with TestClient(app) as client:
@@ -156,17 +147,7 @@ def test_clarify_question_lists_once_and_answers_to_workspace(tmp_path):
     """
     server0 = _server(tmp_path)
     _template(server0)
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "libraries_home": str(tmp_path / "library"),
-        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "models": {"m": {"endpoint": "dummy", "model": "m"}},
-        "system_model": "m",
-    }), encoding="utf-8")
-    server, problems = load_server_config(cfg_path)
-    assert not problems
+    server = make_test_server(tmp_path)
     _wid, ts, _d = wizard_store.create_session(server, "Digest my newsletters every morning.")
     run_dir = server.routines_home / wizard_store.TEMPLATE_SLUG / "runs" / ts
     q = {"qid": "q-scope", "question": "Daily or weekly?", "mode": "blocking",
@@ -203,17 +184,7 @@ def test_inject_endpoint_reaches_the_clarify_session_workspace(tmp_path):
     """
     server0 = _server(tmp_path)
     _template(server0)
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "libraries_home": str(tmp_path / "library"),
-        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "models": {"m": {"endpoint": "dummy", "model": "m"}},
-        "system_model": "m",
-    }), encoding="utf-8")
-    server, problems = load_server_config(cfg_path)
-    assert not problems
+    server = make_test_server(tmp_path)
     _wid, ts, _d = wizard_store.create_session(server, "Digest my newsletters every morning.")
     app = create_app(server, with_scheduler=False)
     with TestClient(app) as client:

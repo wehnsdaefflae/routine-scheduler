@@ -4,8 +4,8 @@ durable usage stream + a real git recipe history.
 """
 
 import json
-import subprocess
 
+from conftest import git_in
 from rsched.config import ServerConfig
 from rsched.readmodels.run_health import (
     BALLOON_RATIO,
@@ -90,10 +90,7 @@ def test_windows_slice_last_before_and_first_after():
 
 
 def _git(d, *args, date="2026-07-01T10:00:00+00:00"):
-    import os
-    subprocess.run(["git", "-C", str(d), "-c", "user.name=t", "-c", "user.email=t@t",
-                    *args], capture_output=True, text=True, check=True,
-                   env={**os.environ, "GIT_COMMITTER_DATE": date, "GIT_AUTHOR_DATE": date})
+    git_in(d, *args, date=date)
 
 
 def _setup(tmp_path):

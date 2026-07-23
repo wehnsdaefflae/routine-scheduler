@@ -12,8 +12,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from conftest import make_test_server
 from rsched import playbooks
-from rsched.config import load_server_config
 from rsched.endpoints import EndpointRegistry as _RealRegistry  # captured before any monkeypatch
 from rsched.web.app import create_app
 
@@ -28,20 +28,8 @@ def server(tmp_path):
     lib = tmp_path / "library"
     for kind in ("workflows", "traits", "permissions", "playbooks"):
         shutil.copytree(SEED / kind, lib / kind)
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "conversations_home": str(tmp_path / "conversations"),
-        "libraries_home": str(lib),
-        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "models": {"m": {"endpoint": "dummy", "model": "m"}},
-        "system_model": "m",
-    }))
-    server, problems = load_server_config(cfg_path)
-    assert not problems
-    (tmp_path / "routines").mkdir(exist_ok=True)
-    return server
+    return make_test_server(tmp_path, conversations_home=str(tmp_path / "conversations"),
+                            libraries_home=str(lib))
 
 
 @pytest.fixture

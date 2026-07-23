@@ -4,6 +4,7 @@ tests/test_detached.py — on-disk fixtures, no subprocess, asyncio_mode=auto.""
 
 import yaml
 
+from conftest import FakeRunner
 from rsched import registry, triggers
 from rsched.config import ServerConfig, load_routine
 from rsched.daemon.triggers import TriggerManager, _event_text
@@ -16,21 +17,6 @@ def _server(tmp_path) -> ServerConfig:
     s.routines_home = tmp_path / "routines"
     s.routines_home.mkdir(parents=True, exist_ok=True)
     return s
-
-
-class FakeRunner:
-    def __init__(self):
-        self.fired: list[tuple[str, str]] = []
-        self.active: dict[str, str] = {}
-        self.draining = False
-
-    def is_active(self, slug: str) -> bool:
-        return slug in self.active
-
-    async def fire(self, cfg, *, reason="schedule") -> str:
-        self.fired.append((cfg.slug, reason))
-        self.active[cfg.slug] = "20260717-120000"
-        return f"{cfg.slug}:20260717-120000"
 
 
 WEBHOOK = {"id": "t-aaaa1111", "type": "webhook", "token": "tok-" + "a" * 28,
@@ -257,3 +243,27 @@ def test_event_text_shapes():
     assert "(application/json)" in full and full.endswith('{"a": 1}')
     empty = _event_text({"trigger": "t-1", "ts": "x", "payload": "  "})
     assert empty.endswith("(empty payload)")
+
+
+async def test_crash_replayed_event_lands_exactly_once(tmp_path):
+    """The inbox message filename is DERIVED from the spool event filename - so an event
+    replayed after a crash between inject and unlink OVERWRITES its own message instead of
+    duplicating it (exactly-once delivery across crashes)."""
+    server = _server(tmp_path)
+    d = _routine(server, trig=[dict(WEBHOOK)])
+    evt_path = triggers.write_event(server.routines_home, "webby",
+                                    trigger_id="t-aaaa1111", payload="the-one-event")
+    saved = evt_path.read_text(encoding="utf-8")
+    runner = FakeRunner()
+    mgr = TriggerManager(server, runner)
+    await mgr.tick(registry.scan(server))
+    assert len(list((d / "inbox").glob("msg-trig-*.json"))) == 1
+
+    # crash replay: the SAME spool file reappears (inject happened, unlink did not)
+    evt_path.write_text(saved, encoding="utf-8")
+    runner.active.clear()                      # the fire's run has finished by now
+    await mgr.tick(registry.scan(server))
+    msgs = list((d / "inbox").glob("msg-trig-*.json"))
+    assert len(msgs) == 1, "replay must overwrite its own message, never duplicate"
+    assert "the-one-event" in read_json(msgs[0])["text"]
+    assert runner.fired == [("webby", "trigger")] * 2   # it does fire again - delivery is the invariant

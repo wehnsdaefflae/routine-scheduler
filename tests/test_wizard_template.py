@@ -6,7 +6,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from rsched.config import ServerConfig, load_server_config
+from conftest import make_test_server
+from rsched.config import ServerConfig
 from rsched.web import wizard_store
 from rsched.web.app import create_app
 
@@ -103,17 +104,7 @@ def test_create_session_without_template_matches_old_behaviour(tmp_path):
 def client(tmp_path, make_routine):
     make_routine(slug=wizard_store.TEMPLATE_SLUG)
     make_routine(slug="plain")
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "libraries_home": str(tmp_path / "library"),
-        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "models": {"m": {"endpoint": "dummy", "model": "m"}},
-        "system_model": "m",
-    }))
-    server, problems = load_server_config(cfg_path)
-    assert not problems
+    server = make_test_server(tmp_path)
     app = create_app(server, with_scheduler=False)
     with TestClient(app) as c:
         c.headers["Authorization"] = f"Bearer {TOKEN}"

@@ -4,10 +4,10 @@ edits are snapshotted recipe-only at run start, and a revert restores exactly th
 set — config and state are never touched.
 """
 
-import subprocess
 
 import pytest
 
+from conftest import git_in
 from rsched.recipes import (
     RecipeError,
     current_recipe_commit,
@@ -17,12 +17,7 @@ from rsched.recipes import (
 
 
 def _git(d, *args, date: str = ""):
-    env = {"GIT_COMMITTER_DATE": date, "GIT_AUTHOR_DATE": date} if date else None
-    r = subprocess.run(["git", "-C", str(d), "-c", "user.name=t",
-                        "-c", "user.email=t@t", *args],
-                       capture_output=True, text=True, check=True,
-                       env={**__import__("os").environ, **(env or {})})
-    return r.stdout.strip()
+    return git_in(d, *args, date=date).stdout.strip()
 
 
 @pytest.fixture

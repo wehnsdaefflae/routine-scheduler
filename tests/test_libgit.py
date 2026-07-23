@@ -6,13 +6,13 @@ from __future__ import annotations
 
 import subprocess
 
+from conftest import git_in
 from rsched import libgit, utils_lib
 from rsched.paths import atomic_write, file_lock, repo_lock_path
 
 
 def _git(home, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(home), *args],
-                          capture_output=True, text=True, check=True).stdout
+    return git_in(home, *args).stdout
 
 
 def _head_files(home) -> list[str]:

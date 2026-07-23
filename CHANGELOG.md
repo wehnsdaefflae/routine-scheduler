@@ -19,6 +19,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.87.3] — 2026-07-23
+
+Test-suite consolidation + the findings ledger's coverage list.
+
+### Changed
+- **One test double / helper where five-to-seven copies were**: `FakeRunner` (scheduler,
+  triggers, schedule-once, hooks; the detached suite subclasses it for its status-writing
+  fire + guarded resume), `git_in` (the pinned-identity subprocess-git helper behind every
+  per-file `_git`), `mk_run` (the run-dir/status.json factory), and `make_test_server`
+  (the hermetic config.yaml builder behind `api_client` and every hand-rolled TestClient
+  block) — all in `tests/conftest.py`.
+- UI harness: the free-port probe is gone — the bound socket is handed straight to
+  uvicorn (`run(sockets=[...])`), closing the close-then-rebind race under xdist; the
+  StubRunner's unread resume recording dropped; stale "inert until installed" comment
+  fixed.
+- `test_loop` wait wall-clock margins widened to 20s (the failure mode they distinguish
+  is the 30s timeout; 10s flaked under load); the search limit-cap test now asserts the
+  clamp (it was a tautology); a `/api/audit` test subsumed by an earlier one removed.
+
+### Added
+- Coverage for the ledger's untested list: the `subruns` status action; the wait-timeout
+  branch (SubrunManager-level); the compaction gate's cached-0.8 vs uncached-0.6
+  thresholds; trigger exactly-once redelivery across a crash replay; the sshfs mount
+  success path (key 0600, pinned known_hosts, keydir removed on unmount); `/api/fs`
+  401 + truncation; `ensure_docs` skip-env short-circuit; and a new UI file covering
+  the Help and Log views plus the transcript renderer's question / answer / error /
+  compaction rows.
+
 ## [0.87.2] — 2026-07-23
 
 ### Changed

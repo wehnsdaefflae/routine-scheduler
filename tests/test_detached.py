@@ -8,6 +8,7 @@ import os
 
 import yaml
 
+from conftest import FakeRunner
 from rsched.config import ServerConfig
 from rsched.daemon.detached import DetachedManager
 from rsched.daemon.runner import Runner
@@ -26,18 +27,10 @@ def _server(tmp_path) -> ServerConfig:
     return s
 
 
-class FakeRunner:
-    """Records fire/resume; fire writes a real running status.json (no subprocess) so the
-    manager's idempotency + polling see on-disk state exactly like the real runner."""
-
-    def __init__(self):
-        self.fired: list[tuple[str, str]] = []
-        self.resumed: list[tuple[str, str, str]] = []
-        self.active: dict[str, str] = {}   # slug → ts
-        self.draining = False
-
-    def is_active(self, slug: str) -> bool:
-        return slug in self.active
+class DetachedFakeRunner(FakeRunner):
+    """The shared double, specialized for the detached manager: fire writes a REAL running
+    status.json (the manager polls disk), resume refuses while draining or already active
+    (the manager's wake path relies on that)."""
 
     async def fire(self, cfg, *, reason="schedule") -> str:
         ts = "20260715-120000"
@@ -59,7 +52,6 @@ class FakeRunner:
     # the real terminal-gated resume (it only touches registry + self.resume, so it binds
     # cleanly onto the fake) — what _wake_owner calls
     resume_terminal = Runner.resume_terminal
-
 
 def _owner(server, slug="c-1", *, last_state="finished",
            permissions=("util-authoring", "memory")) -> "os.PathLike":
@@ -122,7 +114,7 @@ def _request(server, taskid, owner_dir, *, workflow="general-task", label="scrap
 async def test_intake_materializes_and_fires(tmp_path):
     server = _server(tmp_path)
     owner = _owner(server)
-    fr = FakeRunner()
+    fr = DetachedFakeRunner()
     mgr = DetachedManager(server, fr)
     _request(server, "bg-1", owner)
     await mgr.tick()
@@ -138,7 +130,7 @@ async def test_intake_materializes_and_fires(tmp_path):
 async def test_intake_copies_and_strips_owner_capabilities(tmp_path):
     server = _server(tmp_path)
     owner = _owner(server)
-    mgr = DetachedManager(server, FakeRunner())
+    mgr = DetachedManager(server, DetachedFakeRunner())
     _request(server, "bg-1", owner)
     await mgr.tick()
     ry = yaml.safe_load((server.background_home / "bg-1" / "routine.yaml").read_text())
@@ -151,7 +143,7 @@ async def test_intake_idempotent_when_run_exists(tmp_path):
     server = _server(tmp_path)
     owner = _owner(server)
     _task(server, "bg-1", owner, state="running")   # a run already exists on disk
-    fr = FakeRunner()
+    fr = DetachedFakeRunner()
     mgr = DetachedManager(server, fr)
     _request(server, "bg-1", owner)
     await mgr.tick()
@@ -165,7 +157,7 @@ async def test_deliver_writes_message_and_artifacts(tmp_path):
     server = _server(tmp_path)
     owner = _owner(server)
     task = _task(server, "bg-1", owner, summary="found 42 rows", artifact=True)
-    mgr = DetachedManager(server, FakeRunner())
+    mgr = DetachedManager(server, DetachedFakeRunner())
     await mgr.tick()
     msgs = list((owner / "inbox").glob("msg-bg-*.json"))
     assert len(msgs) == 1
@@ -179,7 +171,7 @@ async def test_deliver_is_idempotent(tmp_path):
     server = _server(tmp_path)
     owner = _owner(server)
     _task(server, "bg-1", owner, artifact=True)
-    mgr = DetachedManager(server, FakeRunner())
+    mgr = DetachedManager(server, DetachedFakeRunner())
     await mgr.tick()
     # simulate the owner draining the delivery, then re-tick: delivered.json must prevent a redo
     for m in (owner / "inbox").glob("msg-bg-*.json"):
@@ -192,7 +184,7 @@ async def test_deliver_drops_when_owner_missing(tmp_path):
     server = _server(tmp_path)
     owner = server.conversations_home / "gone"   # never created
     task = _task(server, "bg-1", owner)
-    mgr = DetachedManager(server, FakeRunner())
+    mgr = DetachedManager(server, DetachedFakeRunner())
     await mgr.tick()
     assert read_json(task / "delivered.json")["owner"] == "missing"
 
@@ -201,7 +193,7 @@ async def test_crashed_task_delivers_failure(tmp_path):
     server = _server(tmp_path)
     owner = _owner(server)
     _task(server, "bg-1", owner, state="running", pid=999999)  # dead pid, non-terminal, not in active
-    mgr = DetachedManager(server, FakeRunner())
+    mgr = DetachedManager(server, DetachedFakeRunner())
     await mgr.tick()
     body = read_json(next((owner / "inbox").glob("msg-bg-*.json")))
     assert "failed" in body["text"]
@@ -220,12 +212,12 @@ async def test_discord_ping_gated_on_communication(tmp_path, monkeypatch):
     # owner WITHOUT communication → no ping
     owner_a = _owner(server, "c-no", permissions=("memory",))
     _task(server, "bg-a", owner_a)
-    await DetachedManager(server, FakeRunner()).tick()
+    await DetachedManager(server, DetachedFakeRunner()).tick()
     assert sent == []
     # owner WITH communication → a discord ping fires
     owner_b = _owner(server, "c-yes", permissions=("memory", "communication"))
     _task(server, "bg-b", owner_b, summary="scrape ok")
-    await DetachedManager(server, FakeRunner()).tick()
+    await DetachedManager(server, DetachedFakeRunner()).tick()
     assert sent and sent[0][0] == "discord" and sent[0][1][0] == "send"
 
 
@@ -233,7 +225,7 @@ async def test_wake_resumes_idle_owner(tmp_path):
     server = _server(tmp_path)
     owner = _owner(server, last_state="finished")
     _task(server, "bg-1", owner)
-    fr = FakeRunner()
+    fr = DetachedFakeRunner()
     await DetachedManager(server, fr).tick()
     assert fr.resumed and fr.resumed[0][0] == "c-1" and fr.resumed[0][2] == "detached"
 
@@ -242,7 +234,7 @@ async def test_wake_skips_live_owner(tmp_path):
     server = _server(tmp_path)
     owner = _owner(server, last_state="running")   # a reply is live
     _task(server, "bg-1", owner)
-    fr = FakeRunner()
+    fr = DetachedFakeRunner()
     fr.active["c-1"] = "20260715-110000"            # owner is active → resume must be skipped
     await DetachedManager(server, fr).tick()
     assert fr.resumed == []
@@ -253,7 +245,7 @@ async def test_reconcile_delivers_after_restart(tmp_path):
     server = _server(tmp_path)
     owner = _owner(server)
     _task(server, "bg-1", owner, summary="done post-restart")
-    fr = FakeRunner()
+    fr = DetachedFakeRunner()
     await DetachedManager(server, fr).reconcile()
     assert list((owner / "inbox").glob("msg-bg-*.json"))
     assert fr.resumed                                # idle owner woken
@@ -265,7 +257,7 @@ async def test_digest_lists_tasks(tmp_path):
     server = _server(tmp_path)
     owner = _owner(server)
     _task(server, "bg-1", owner)
-    await DetachedManager(server, FakeRunner()).tick()
+    await DetachedManager(server, DetachedFakeRunner()).tick()
     rows = read_json(owner / "state" / "background.json")
     assert rows and rows[0]["taskid"] == "bg-1" and rows[0]["state"] == "finished"
 
@@ -274,7 +266,7 @@ async def test_gc_removes_aged_delivered_task(tmp_path):
     server = _server(tmp_path)
     owner = _owner(server)
     task = _task(server, "bg-1", owner)
-    mgr = DetachedManager(server, FakeRunner())
+    mgr = DetachedManager(server, DetachedFakeRunner())
     await mgr.tick()                                  # delivers
     # owner drains the message, then the delivered marker ages past the grace window
     for m in (owner / "inbox").glob("msg-bg-*.json"):

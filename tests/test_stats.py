@@ -4,8 +4,8 @@ import json
 
 import yaml
 
+from conftest import mk_run
 from rsched.config import EndpointConfig, ModelConfig, ServerConfig
-from rsched.paths import atomic_write_json
 from rsched.readmodels.stats import aggregate, monthly_spend
 
 
@@ -41,17 +41,8 @@ def _mk_routine(home, slug, *, model_name="opus"):
 
 
 def _mk_run(d, ts, state, *, tin=0, tout=0, cost=None, elapsed_s=0, model=None):
-    run_dir = d / "runs" / ts
-    run_dir.mkdir(parents=True)
-    usage = {"in": tin, "out": tout}
-    if cost is not None:
-        usage["cost"] = cost
-    st = {"run_id": f"{d.name}:{ts}", "state": state, "turn": 3,
-          "usage": usage, "elapsed_s": elapsed_s}
-    if model:
-        st["model"] = model
-    atomic_write_json(run_dir / "status.json", st)
-    return run_dir
+    usage = {"in": tin, "out": tout, **({"cost": cost} if cost is not None else {})}
+    return mk_run(d, ts, state, usage=usage, elapsed_s=elapsed_s, model=model or None)
 
 
 def test_aggregate_rolls_up_every_slice(tmp_path):

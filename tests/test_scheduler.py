@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import rsched.daemon.runner as runner_mod
 import rsched.daemon.scheduler as sched_mod
+from conftest import FakeRunner
 from rsched.config import ServerConfig, load_routine
 from rsched.daemon.events import EventBus
 from rsched.daemon.runner import Runner, _notable_stderr
@@ -21,23 +22,6 @@ def _server(tmp_path, max_concurrent=2) -> ServerConfig:
     s.routines_home = tmp_path / "routines"
     s.max_concurrent_runs = max_concurrent
     return s
-
-
-class FakeRunner:
-    def __init__(self):
-        self.fired: list[tuple[str, str]] = []
-        self.active: dict = {}
-        self.draining = False
-
-    async def fire(self, cfg, *, reason="schedule"):
-        self.fired.append((cfg.slug, reason))
-        return f"{cfg.slug}:x"
-
-    def active_states(self):
-        return []
-
-    def recover_orphans(self, catalog):
-        return 0
 
 
 def test_rescan_keeps_owed_fires(make_routine, tmp_path):

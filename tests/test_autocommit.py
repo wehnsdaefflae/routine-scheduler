@@ -2,9 +2,9 @@
 end commits it with the neutral identity (routines have no shell and never run git), and a
 dir without .git (a conversation) is left untouched."""
 
-import subprocess
 
-from conftest import finish, write_file
+
+from conftest import finish, git_in, write_file
 from rsched.config import ServerConfig
 from rsched.engine.autocommit import autocommit
 from rsched.engine.runtime import run_routine
@@ -13,8 +13,7 @@ TS = "20260708-070000"
 
 
 def _git(d, *args):
-    return subprocess.run(["git", "-C", str(d), *args], capture_output=True, text=True,
-                          timeout=30, check=False)   # asserted via returncode where it matters
+    return git_in(d, *args, check=False)   # asserted via returncode where it matters
 
 
 def test_run_end_commits_the_working_dir(make_routine, scripted):

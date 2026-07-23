@@ -805,7 +805,7 @@ def test_wait_wakes_for_exit_during_completion(make_routine, scripted):
     ], slug="waker")
     elapsed = time.monotonic() - t0
     assert status == "ok"
-    assert elapsed < 10, f"wait blocked {elapsed:.1f}s despite a finished child"
+    assert elapsed < 20, f"wait blocked {elapsed:.1f}s despite a finished child"   # 30s timeout = the failure mode
     joined = json.dumps(ep.calls[-1]["messages"])
     assert "quick child result" in joined
 
@@ -827,7 +827,7 @@ def test_wait_returns_at_once_when_nothing_left_to_wait_for(make_routine, script
     ], slug="nowait")
     elapsed = time.monotonic() - t0
     assert status == "ok"
-    assert elapsed < 10, f"wait blocked {elapsed:.1f}s with no running children"
+    assert elapsed < 20, f"wait blocked {elapsed:.1f}s with no running children"   # 30s timeout = the failure mode
     # the wait observation reported no new exits rather than a timeout
     wait_obs = [e for e in events if e["type"] == "observation"
                 and e["payload"].get("kind") == "wait"]
@@ -2207,3 +2207,57 @@ def test_build_child_carries_tools_allowlist(make_routine, monkeypatch):
     sub = build_child(ctx, {"prompt": "do a thing", "label": "c1"}, mode="parallel",
                       default_label="c1", emit=lambda t, p: events.append((t, p)))
     assert sub.loop.allowed_tools == {"read_file", "ask_user", "finish"}
+
+
+def test_subruns_action_reports_children(make_routine, scripted):
+    """The `subruns` action's status table: one row per child with label, workflow, state,
+    and — once finished — the summary head (the loop wires it straight to status_table)."""
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
+        (PARENT, spawn("CHILD-S: quick job.", label="s")),
+        ("CHILD-S: quick job.", finish(summary="child summary here")),
+        (PARENT, probe()),                       # boundary announces the exit
+        (PARENT, {"say": "Checking children.", "kind": "subruns"}),
+        (PARENT, finish(summary="done")),
+    ], slug="subst")
+    assert status == "ok"
+    obs = [e for e in events if e["type"] == "observation"
+           and e["payload"].get("kind") == "subruns"]
+    assert obs, "no subruns observation recorded"
+    rows = obs[-1]["payload"]["rows"]
+    assert len(rows) == 1 and rows[0]["label"] == "s"
+    assert rows[0]["state"] == "ok"
+    assert "child summary" in rows[0]["summary_head"]
+
+
+def test_wait_timeout_reports_timed_out():
+    """The wait timeout branch, at the SubrunManager level (the loop harness serializes
+    completions on the ScriptedEndpoint lock, so a still-running child cannot be observed
+    through it): a running child -> timed_out=True + still_running; once the child exits,
+    the same wait collects it with timed_out=False."""
+    import threading
+    from types import SimpleNamespace
+
+    from rsched.engine.subruns import SubrunManager
+
+    sub = SimpleNamespace(n=1, label="t", status="", mode="parallel", summary="",
+                          done=threading.Event(), announced=False,
+                          ctx=SimpleNamespace(turn=1))
+
+    stub = SimpleNamespace(subruns={1: sub}, exit_event=threading.Event(),
+                           parent=SimpleNamespace(ctx=SimpleNamespace(depth=1)))
+    def take():
+        out = [x for x in stub.subruns.values() if x.done.is_set() and not x.announced]
+        for x in out:
+            x.announced = True
+        return out
+    stub.take_finished_unannounced = take
+    stub._finished_rows = SubrunManager._finished_rows
+
+    obs = SubrunManager.wait(stub, {"timeout_s": 0.1}, poll_s=0.01, aborted=lambda: False)
+    assert obs["timed_out"] is True and obs["still_running"] == [1]
+
+    sub.done.set()
+    sub.status = "ok"
+    obs = SubrunManager.wait(stub, {"timeout_s": 5}, poll_s=0.01, aborted=lambda: False)
+    assert obs["timed_out"] is False
+    assert [r["n"] for r in obs["finished"]] == [1] and obs["still_running"] == []

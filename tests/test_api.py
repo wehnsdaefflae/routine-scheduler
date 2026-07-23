@@ -6,6 +6,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from conftest import make_test_server, mk_run
 from rsched.config import load_server_config
 from rsched.paths import atomic_write_json, read_json
 from rsched.web.app import create_app
@@ -16,17 +17,7 @@ TOKEN = "test-token"
 @pytest.fixture
 def client(tmp_path, make_routine):
     make_routine(slug="apir")  # lives under tmp_path/routines via the shared fixture
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": TOKEN,
-        "routines_home": str(tmp_path / "routines"),
-        "libraries_home": str(tmp_path / "library"),
-        "endpoints": {"dummy": {"kind": "openai", "base_url": "http://127.0.0.1:1/v1"}},
-        "models": {"m": {"endpoint": "dummy", "model": "m"}},
-        "system_model": "m",
-    }))
-    server, problems = load_server_config(cfg_path)
-    assert not problems
+    server = make_test_server(tmp_path)
     app = create_app(server, with_scheduler=False)
     with TestClient(app) as c:
         c.headers["Authorization"] = f"Bearer {TOKEN}"
@@ -34,17 +25,11 @@ def client(tmp_path, make_routine):
 
 
 def _mk_run(routines, slug, ts, state, question=None):
-    run_dir = routines / slug / "runs" / ts
-    run_dir.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(run_dir / "status.json",
-                      {"run_id": f"{slug}:{ts}", "state": state, "pid": 4242, "turn": 2,
-                       "usage": {"in": 10, "out": 4, "cost": 0.0123}, "elapsed_s": 95,
-                       "question": question})
-    with (run_dir / "transcript.jsonl").open("w") as fh:
-        fh.write(json.dumps({"type": "header", "run_id": f"{slug}:{ts}"}) + "\n")
-        fh.write(json.dumps({"ts": "t", "type": "assistant_action", "turn": 1,
-                             "payload": {"say": "s", "kind": "util", "name": "gu-list"}}) + "\n")
-    return run_dir
+    return mk_run(routines / slug, ts, state, turn=2, pid=4242,
+                  usage={"in": 10, "out": 4, "cost": 0.0123}, elapsed_s=95, question=question,
+                  transcript=[{"type": "header", "run_id": f"{slug}:{ts}"},
+                              {"ts": "t", "type": "assistant_action", "turn": 1,
+                               "payload": {"say": "s", "kind": "util", "name": "gu-list"}}])
 
 
 def _mk_wizard(routines, ts, *, state="running", result=None):
@@ -1267,13 +1252,6 @@ def test_static_and_index_are_no_cache(client):
         r = c.get(path)
         assert r.status_code == 200
         assert r.headers.get("cache-control") == "no-cache"
-
-
-def test_audit_reports_routine_slug(client):
-    c, _ = client
-    r = c.get("/api/audit")
-    assert r.status_code == 200
-    assert r.json()["routine"] == "self-audit"
 
 
 def test_ui_trace_ingest_and_retention(client):

@@ -52,3 +52,23 @@ def test_credential_stores_are_not_browsable(api_client, monkeypatch):
     assert r.status_code == 403 and "credentials" in r.json()["detail"]
     assert client.get("/api/fs/list",
                       params={"path": str(cfg_dir / ".mounts")}).status_code == 403
+
+
+def test_fs_list_requires_bearer(api_client):
+    c, _ = api_client
+    r = c.get("/api/fs/list", headers={"Authorization": ""})
+    assert r.status_code == 401
+
+
+def test_fs_list_truncates_at_max_entries(api_client, monkeypatch):
+    from rsched.web import api_fs
+
+    c, tmp = api_client
+    base = tmp / "many"
+    base.mkdir()
+    for n in range(5):
+        (base / f"f{n}.txt").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(api_fs, "MAX_ENTRIES", 3)
+    data = c.get(f"/api/fs/list?path={base}").json()
+    assert data["truncated"] is True
+    assert len(data["entries"]) == 3

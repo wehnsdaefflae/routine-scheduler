@@ -60,3 +60,19 @@ def test_ensure_docs_never_raises(tmp_path, monkeypatch):
     monkeypatch.delenv("RSCHED_SKIP_DOCS_BUILD", raising=False)   # conftest sets it suite-wide
     monkeypatch.setattr(db, "build_docs", boom)
     ensure_docs(tmp_path / "missing")
+
+
+def test_ensure_docs_honors_skip_env(tmp_path, monkeypatch):
+    """RSCHED_SKIP_DOCS_BUILD short-circuits ensure_docs BEFORE build_docs - the knob the
+    whole test suite (and ops) relies on to keep TestClient(app) from paying a pdoc build."""
+    from rsched import docs_build
+
+    calls = []
+    monkeypatch.setattr(docs_build, "build_docs", lambda *a, **k: calls.append(a) or True)
+    monkeypatch.setenv("RSCHED_SKIP_DOCS_BUILD", "1")
+    docs_build.ensure_docs(tmp_path)
+    assert not calls, "skip env set - build_docs must not run"
+
+    monkeypatch.delenv("RSCHED_SKIP_DOCS_BUILD")
+    docs_build.ensure_docs(tmp_path)
+    assert len(calls) == 1, "without the env the boot path builds"
