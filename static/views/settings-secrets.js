@@ -20,7 +20,12 @@ export function renderSecrets(view) {
       "subscription (as CLAUDE_CODE_OAUTH_TOKEN) at run time. Values are write-only — never shown back."));
 
     const keyIn = el("input", { type: "text", placeholder: "KEY (e.g. CLAUDE_CODE_OAUTH_TOKEN)", style: "flex:1" });
-    const valIn = el("input", { type: "password", placeholder: "value", style: "flex:1" });
+    // A TEXTAREA, not <input type=password>: pasting a multi-line value (an SSH private key
+    // for the machines section's key_var) into a single-line input silently strips the
+    // newlines before the store ever sees them — the store itself round-trips PEMs fine
+    // (operator report 2026-07-23). Masked via text-security; "show" reveals.
+    const valIn = el("textarea", { placeholder: "value", rows: "1",
+      style: "flex:1;resize:vertical;-webkit-text-security:disc" });
     const delBtn = (k) => {
       const b = el("button", { class: "btn small danger" }, "delete");
       b.onclick = async () => {
@@ -76,11 +81,12 @@ export function renderSecrets(view) {
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
     // show/hide the value while typing — a JSON map is unreadable when masked
+    let valMasked = true;
     const showVal = el("button", { class: "btn small", type: "button" }, "show");
     showVal.onclick = () => {
-      const masked = valIn.type === "password";
-      valIn.type = masked ? "text" : "password";
-      showVal.textContent = masked ? "hide" : "show";
+      valMasked = !valMasked;
+      valIn.style.webkitTextSecurity = valMasked ? "disc" : "none";
+      showVal.textContent = valMasked ? "show" : "hide";
     };
     secBox.append(el("div", { class: "row mt" }, keyIn, valIn, showVal, save));
 

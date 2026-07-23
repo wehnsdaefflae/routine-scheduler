@@ -136,6 +136,17 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
     return {"building": True, "slug": body.slug, "wid": wid}
 
 
+def _models_for_build(server, body_models: dict | None) -> dict | None:
+    """The new routine's models: an explicit wizard pick wins; otherwise inherit the
+    clarification TEMPLATE's models (the operator's chosen default for meta work) instead
+    of silently landing every new routine on the system fallback model (F153, operator
+    report 2026-07-23: template said Fable, the created routine ran Opus).
+    """
+    from . import wizard_store
+
+    return body_models or wizard_store.template_defaults(server)[1] or None
+
+
 async def _run_build(app_state, wid: str, d: Path, body: FinalizeBody, result: dict) -> None:
     """Thin wrapper around _build_routine that GUARANTEES the build is deregistered from the
     scheduler's in-flight set on every exit (success, handled error, or crash), so the restart
@@ -170,7 +181,8 @@ async def _build_routine(app_state, wid: str, d: Path, body: FinalizeBody, resul
                 instruction=body.instruction.strip() or result["refined_instruction"],
                 workflow_slug=body.workflow_slug, cron=cron,
                 tz=schedule.server_tz(), params=params, stages=stages, description=description,
-                models=body.models, tags=normalize_tags(body.tags) or None,
+                models=_models_for_build(server, body.models),
+                tags=normalize_tags(body.tags) or None,
                 traits=body.traits, permissions=body.permissions, budgets=body.budgets,
                 deliberation=body.deliberation)
     except Exception as exc:   # scaffold/decompose failure — the session stays for a retry

@@ -32,3 +32,21 @@ def test_map_secret_entry_editor(ui, ui_page):
     ui_page.locator('[data-map-entry="value"]').fill('{"host": "h", "user": "u", "pass": "p"}')
     ui_page.get_by_role("button", name="add / replace entry").click()
     expect(ui_page.locator('[data-map="FTP_SOURCES"]')).to_contain_text("acme")
+
+
+def test_plain_secret_value_keeps_newlines(ui, ui_page):
+    """The plain-secret value field is a TEXTAREA: a pasted multi-line value (an SSH
+    private key destined for the machines section's key_var) must reach the store with
+    its newlines intact — the old <input type=password> silently stripped them on paste
+    (F149, operator report 2026-07-23). The store itself has round-tripped PEMs since
+    0.85.2; the input element was the corruption point."""
+    from rsched import secrets
+
+    ui_page.goto(f"{ui.url}/#/settings?section=secrets")
+    ui_page.wait_for_selector('textarea[placeholder="value"]', timeout=10_000)
+    ui_page.get_by_placeholder("KEY (e.g. CLAUDE_CODE_OAUTH_TOKEN)").fill("TEST_PEM_KEY")
+    ui_page.locator('textarea[placeholder="value"]').fill("line-one\nline-two")
+    ui_page.locator('textarea[placeholder="value"]').locator("xpath=..") \
+        .get_by_role("button", name="set", exact=True).click()
+    expect(ui_page.locator("body")).to_contain_text("TEST_PEM_KEY")   # listed after save
+    assert secrets.load_secrets()["TEST_PEM_KEY"] == "line-one\nline-two"

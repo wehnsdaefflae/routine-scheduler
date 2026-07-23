@@ -114,6 +114,7 @@ export async function createSetupPanel(host, { ts }) {
         + "your task. This usually takes a minute or two. You can leave this page; you'll be "
         + "taken to the routine when it's ready, and the banner up top brings you back.")));
     let finished = false;
+    let slowNoted = false;
     const goTo = (runId, slug) => { if (!finished) { finished = true; done(runId, slug); } };
     const failed = (msg) => {   // put the user back on the create form to retry
       if (finished) return;
@@ -135,8 +136,15 @@ export async function createSetupPanel(host, { ts }) {
       catch { goTo(null, s?.slug || ""); return; }  // 404 → session archived → the routine exists
       if (cur.stage === "done") goTo(cur.run_id, cur.slug);
       else if (cur.stage === "error") failed(`couldn't build the routine: ${cur.error || "unknown error"}`);
-      else if (Date.now() - started > 300000)
-        failed("the build is taking unusually long — it may be stuck. Try creating it again.");
+      else if (Date.now() - started > 300000 && !slowNoted) {
+        // Still "building" server-side: the decompose call CAN take >5 min. Declaring it
+        // stuck here sent the user to a retry that could only 409 ("already exists")
+        // while the first build finished fine (operator incident 2026-07-23). Keep
+        // waiting; only a real "error" stage puts the create form back.
+        slowNoted = true;
+        toast("the build is taking longer than usual — it is still running; "
+          + "you'll be taken to the routine when it's ready.", 8000);
+      }
     }, 3000);
     buildingCleanup = () => { clearInterval(poll); window.removeEventListener("rsched-bus", onBus); };
   }

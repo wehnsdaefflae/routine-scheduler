@@ -126,3 +126,23 @@ def test_template_flagged_protected_in_payloads(client):
     assert client.get("/api/routines/plain").json()["protected"] is False
     cards = {c["slug"]: c for c in client.get("/api/routines").json()}
     assert cards[wizard_store.TEMPLATE_SLUG]["protected"] is True
+
+
+# ---- finalize models inheritance (F153) ----------------------------------------------
+
+
+def test_build_models_inherit_template_when_wizard_sends_none(tmp_path):
+    """The UI sends no models pick on finalize — the new routine must inherit the
+    clarification template's models, not fall to the system model (operator report
+    2026-07-23: template said Fable, the created routine silently ran on the fallback)."""
+    from rsched.web.api_wizard import _models_for_build
+    server = _server(tmp_path)
+    _template(server, models={"main": "m", "subroutine": "m", "tool_call": "m"})
+    assert _models_for_build(server, None) == {"main": "m", "subroutine": "m",
+                                               "tool_call": "m"}
+    assert _models_for_build(server, {"main": "x"}) == {"main": "x"}  # explicit pick wins
+
+
+def test_build_models_without_template_stay_none(tmp_path):
+    from rsched.web.api_wizard import _models_for_build
+    assert _models_for_build(_server(tmp_path), None) is None

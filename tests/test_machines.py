@@ -308,3 +308,18 @@ def test_mount_success_returns_share_and_scopes_key(tmp_path, monkeypatch):
 
     machines.unmount_routine_shares(got)
     assert not ms.keydir.exists()              # the PEM never outlives the run
+
+
+def test_sweep_survives_unreadable_mounts(tmp_path, monkeypatch):
+    """An unreadable .mounts/ must be a loudly-skipped sweep, never an exception —
+    sweep_stale_mount_keys runs on run_forever's BOOT path, before the tick loop's
+    per-tick guard exists, so an escape there kills scheduling for good (F145)."""
+    base = tmp_path / ".mounts"
+    base.mkdir()
+    (base / "stale").mkdir()
+    monkeypatch.setattr(machines, "config_file", lambda: tmp_path / "config.yaml")
+    base.chmod(0o000)
+    try:
+        assert machines.sweep_stale_mount_keys() == 0
+    finally:
+        base.chmod(0o755)

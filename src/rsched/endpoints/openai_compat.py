@@ -15,6 +15,7 @@ validates every reply.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import httpx
@@ -36,6 +37,20 @@ from .base import (
 )
 
 _RF_ERROR_HINTS = ("response_format", "json_schema", "structured")
+
+_THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+
+
+def _strip_think(text: str) -> str:
+    """Hybrid-thinking models (qwen3, GLM, R1 distills) inline their scratchpad as a
+    `<think>…</think>` preamble in `content` on many providers — the reasoning knob does
+    not suppress it. The engine needs the ANSWER, so closed think blocks are dropped. An
+    UNCLOSED `<think>` (output cap hit mid-thought) leaves the text untouched: better a
+    visible schema retry than silently deleting the only content the model produced.
+    """
+    if "<think>" not in text:
+        return text
+    return _THINK_RE.sub("", text).lstrip()
 
 
 def _openai_content(content: str, media: list[dict]) -> list[dict]:
@@ -210,10 +225,13 @@ class OpenAICompatEndpoint:
         except (KeyError, IndexError, TypeError) as exc:
             raise EndpointError(
                 f"{self.name}: malformed response: {json.dumps(data)[:300]}") from exc
+        text = _strip_think(text)
         if not text.strip():
             # Reasoning models sometimes spend the whole output budget "thinking" and leave
-            # content empty; the answer (or at least the JSON) often sits in `reasoning`.
-            text = message.get("reasoning") or ""
+            # content empty; the answer (or at least the JSON) often sits in `reasoning`
+            # (OpenRouter-style) or `reasoning_content` (DeepSeek/vLLM/SGLang-style —
+            # the qwen3 / GLM thinking models NanoGPT serves).
+            text = message.get("reasoning") or message.get("reasoning_content") or ""
         usage = data.get("usage") or {}
         # Implicit prompt caching (OpenAI/OpenRouter/DeepSeek-style): cached_tokens arrives
         # as a SUBSET of prompt_tokens on this API — subtract it so "in" is fresh input

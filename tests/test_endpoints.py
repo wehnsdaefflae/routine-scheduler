@@ -217,6 +217,34 @@ def test_openai_reasoning_fallback_on_empty_content(monkeypatch):
     assert '"kind":"finish"' in c.text  # reasoning text surfaced instead of empty content
 
 
+def test_openai_reasoning_content_fallback_on_empty_content(monkeypatch):
+    """DeepSeek/vLLM/SGLang-style APIs put the scratchpad in `reasoning_content` (not
+    `reasoning`) and can leave `content` empty — the answer JSON must still surface."""
+    monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
+        "choices": [{"message": {"content": "",
+                                 "reasoning_content": 'hm {"say":"s","kind":"finish"}'}}],
+        "usage": {}}))
+    c = _oai().complete(MESSAGES, model="m")
+    assert '"kind":"finish"' in c.text
+
+
+def test_openai_think_preamble_stripped(monkeypatch):
+    """Hybrid-thinking models (qwen3/GLM via NanoGPT) inline `<think>…</think>` before the
+    answer in `content`; the adapter drops closed think blocks so the action JSON parses.
+    An UNCLOSED think block (cap hit mid-thought) stays untouched — visible, not vanished."""
+    monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
+        "choices": [{"message": {
+            "content": '<think>let me plan…\n{maybe}</think>\n{"say":"s","kind":"finish"}'}}],
+        "usage": {}}))
+    c = _oai().complete(MESSAGES, model="m")
+    assert c.text == '{"say":"s","kind":"finish"}'
+    monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
+        "choices": [{"message": {"content": "<think>ran out of budget mid-thought"}}],
+        "usage": {}}))
+    c2 = _oai().complete(MESSAGES, model="m")
+    assert "<think>" in c2.text  # unclosed block: kept as-is for the empty/retry path
+
+
 def test_ollama_native_structured_output(monkeypatch):
     ep = OpenAICompatEndpoint(EndpointConfig(
         name="ollama", kind="openai", base_url="http://x/v1", api_key="ollama",

@@ -265,7 +265,7 @@ export async function render(view, slug, _query = {}) {
                          if (ev.type === "observation" && ["read_file", "view_image", "write_file",
                              "edit_file"].includes(ev.payload?.kind)) fileActivity?.poke(); },
       onState: (s) => { setState(s.state);   // setState re-lights the state diagram
-                        showQuestion(questionBox, s.question); },
+                        questionPanel(questionBox, s.question); },
       onGone: () => setState("finished"),
     });
     cleanup.push(() => tail.stop());
@@ -435,8 +435,6 @@ export async function render(view, slug, _query = {}) {
                setLive: (live) => { stopBtn.hidden = !live; if (live) stopBtn.disabled = false; } };
     }
   }
-
-  const showQuestion = questionPanel;   // the shared panel (answerform.js) — same record shape
 
 
 }

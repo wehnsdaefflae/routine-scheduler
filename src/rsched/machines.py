@@ -274,7 +274,15 @@ def sweep_stale_mount_keys() -> int:
         return 0
     cutoff = time.time() - MOUNT_KEYDIR_MAX_AGE_S
     removed = 0
-    for d in base.iterdir():
+    try:
+        entries = list(base.iterdir())
+    except OSError as exc:
+        # This runs on run_forever's BOOT path — before the tick loop's per-tick guard
+        # exists. An unreadable .mounts/ (permission blip, sandboxed test env) must be a
+        # loudly-skipped sweep, never an exception that kills scheduling for good.
+        log.warning("machines: cannot sweep .mounts/ (%s) — skipped", exc)
+        return 0
+    for d in entries:
         try:
             if d.is_dir() and d.stat().st_mtime < cutoff:
                 shutil.rmtree(d, ignore_errors=True)

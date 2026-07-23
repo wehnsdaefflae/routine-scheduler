@@ -19,6 +19,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.88.1] — 2026-07-23
+
+Self-audit fix batch for six operator-reported defects (2026-07-23 audit notes).
+
+### Fixed
+- **A boot-time mount-key sweep can no longer kill scheduling** (`machines.py`):
+  `sweep_stale_mount_keys()` runs on `run_forever`'s boot path *before* the tick loop's
+  per-tick guard exists; an unreadable `.mounts/` (permission blip, sandboxed test env)
+  raised out of `base.iterdir()` and silently unwound the scheduler while the web UI kept
+  serving. Now a loudly-logged skip. (+ regression test)
+- **Thinking models produce usable actions** (`endpoints/openai_compat.py`): closed
+  `<think>…</think>` preambles (qwen3 / GLM hybrid-thinking via NanoGPT) are stripped from
+  `content`, and the empty-content fallback now also reads `reasoning_content`
+  (DeepSeek/vLLM/SGLang-style) beside `reasoning`. An unclosed think block is left visible
+  for the retry path. (+2 tests)
+- **New routines inherit the clarification template's models** (`web/api_wizard.py`):
+  finalize without an explicit wizard models pick scaffolded a routine with NO `models:`
+  block, silently landing it on the system fallback model (template said Fable, the created
+  routine ran Opus). `_models_for_build()` now inherits the template's mapping. (+2 tests)
+- **A slow routine build is no longer declared stuck** (`static/components/setuppanel.js`):
+  after 5 minutes of a still-`building` scaffold the UI failed the flow with "may be stuck —
+  try creating it again", inviting a retry that could only 409 ("already exists") while the
+  first build finished fine. Now a keep-waiting notice; only a real error stage returns to
+  the create form.
+- **Multi-line secrets survive the Settings form** (`static/views/settings-secrets.js`):
+  the plain-secret value field was an `<input type=password>`, which strips newlines from a
+  pasted SSH private key before the store (newline-safe since 0.85.2) ever sees it. Now a
+  masked textarea with show/hide. (+ UI round-trip test)
+- **Conversations view no longer throws before initialization**
+  (`static/views/conversations.js`): the run-state tail could invoke the `showQuestion`
+  alias during setup, before its `const` initialized (TDZ `ReferenceError` seen in the
+  2026-07-23 UI trace). The shared `questionPanel` import is used directly.
+
+### Tests
+- `test_utils.py` `_ctx` fixture gains the `machines` attribute 0.84.0 added to
+  `RunContext.routine` (the same fixture-drift class as 0.79.0's `connections`); the
+  grandchild-kill assertion treats an unreaped zombie (state `Z`, pid1 = the daemon in a
+  container, no reaping init) as dead; `test_root_has_no_parent` skips where the sandbox
+  cannot list `/`.
+
 ## [0.88.0] — 2026-07-23
 
 The routine page becomes an overview, not a wall. It used to open on a "Name" field and

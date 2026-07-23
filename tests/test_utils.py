@@ -147,7 +147,8 @@ def _ctx(home, grants=None):
     from types import SimpleNamespace
     return SimpleNamespace(server=SimpleNamespace(libraries_home=home, sandbox="off"),
                            routine=SimpleNamespace(dir=home, fs_read_roots=[],
-                                                   fs_write_roots=[], connections={}),
+                                                   fs_write_roots=[], connections={},
+                                                   machines=[]),
                            grants=grants,
                            count_util=lambda *a, **k: None)
 
@@ -386,13 +387,25 @@ time.sleep(120)
     elapsed = _time.monotonic() - start
     assert code == -1 and "timed out" in err
     assert elapsed < 30, f"run_util blocked {elapsed:.0f}s past its timeout"
-    # the grandchild (the uv-run python script) must be dead, not just the direct child
+    # the grandchild (the uv-run python script) must be dead, not just the direct child.
+    # "Dead" includes an unreaped ZOMBIE: in a containerized deployment whose pid1 is the
+    # daemon itself (no reaping init), a SIGKILLed orphan stays in /proc state Z forever
+    # and os.kill(pid, 0) still succeeds on it — kill-0 alone would false-fail (F148).
+    def _dead(pid: int) -> bool:
+        from pathlib import Path
+        try:
+            _os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+            return stat.rsplit(") ", 1)[1].split()[0] == "Z"
+        except (OSError, IndexError):
+            return True   # /proc entry vanished between the two checks
     if pidfile.exists():
         pid = int(pidfile.read_text())
         for _ in range(50):   # killpg is async — give the kernel a moment
-            try:
-                _os.kill(pid, 0)
-            except ProcessLookupError:
+            if _dead(pid):
                 break
             _time.sleep(0.1)
         else:
