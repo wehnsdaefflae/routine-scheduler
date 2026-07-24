@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.96.1] — 2026-07-24
+### Fixed
+- **Anti-batching override in the run prompt** (F180): the claude-CLI harness advertises
+  "call multiple tools in one reply", but with `--output-format json` the engine only ever
+  receives the envelope's single `structured_output` — when a model batched several actions
+  in one reply, at most one executed and the rest were SILENTLY dropped (each still ACKed
+  "success"; observed first-hand: a batched `write_file state/phase.json` never landed, and
+  routine-improver 20260723-230001 hit the "No such tool available" variant 3×). The
+  composer's harness contract now states explicitly: exactly ONE tool call per reply, the
+  platform batching hint does not apply, extras are dropped/rejected — batch reads via one
+  action's `paths` list. docs/prompt-anatomy.md updated to match; the sentence is pinned by
+  test_composer (contract) and test_prompt_anatomy (doc sync).
+
 ## [0.96.0] — 2026-07-24
 ### Added
 - **`sym diff` — scoped, symbol-addressed change review**: old side from any git ref

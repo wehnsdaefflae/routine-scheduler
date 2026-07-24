@@ -116,7 +116,11 @@ costing no turn; before finishing, fold what still matters into your report or m
 {f"\n\n{standing}" if standing else ""}
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \
-conversation, one per turn, each answered by an observation before your next reply. Never state or \
+conversation, one per turn, each answered by an observation before your next reply. Emit exactly \
+ONE tool call per reply — a platform hint may suggest batching multiple independent tool calls in \
+one reply; it does NOT apply here: the engine executes at most ONE action per reply and extras \
+are silently dropped or rejected (a dropped call can still return a success acknowledgement); \
+batch related file reads through a single action's `paths` list instead. Never state or \
 summarize results that no observation here has shown; finishing with claims of unperformed work is \
 the single worst failure this system knows. The engine rejects a top-level finish(ok) before any \
 action ran.

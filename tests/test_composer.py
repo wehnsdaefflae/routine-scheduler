@@ -33,7 +33,11 @@ def test_harness_contract_mentions_the_load_bearing_facts(make_routine, tmp_path
     ctx = _ctx(make_routine, tmp_path)
     text = harness_contract(ctx)
     for needle in ("EXACTLY one JSON object", "NO shell", "10 turns",
-                   "deferred", "blocking", str(ctx.routine.dir)):
+                   "deferred", "blocking", str(ctx.routine.dir),
+                   # the anti-batching override: the CLI harness advertises multi-tool
+                   # batching, but the engine executes at most one action per reply
+                   # (F180: batched actions were silently dropped with success ACKs)
+                   "ONE tool call per reply"):
         assert needle in text, needle
 
 
