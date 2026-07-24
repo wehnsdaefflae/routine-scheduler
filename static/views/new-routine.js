@@ -70,14 +70,17 @@ export async function render(view) {
       const line = el("div", { class: "row spread", style: "padding:4px 0" },
         el("span", { class: "muted small", style: "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" },
           `${STAGE_TEXT[w.stage] || w.stage} · ${w.draft || "(no description)"}`));
-      // a pre-D13 session has no run page — the only surface left for it is cancel
-      line.append(w.clarify_run_id
-        ? el("a", { class: "btn small primary", href: `#/run/${w.clarify_run_id}` }, "resume")
-        : el("button", { class: "btn small danger", onclick: async () => {
-            try { await api(`/api/wizard/${encodeURIComponent(w.wid)}`, { method: "DELETE" }); } catch { /* gone */ }
-            notifyChanged();
-            line.remove();
-          } }, "cancel"));
+      // F198: EVERY row gets a discard — offering only "resume" for sessions with a run page
+      // made an abandoned session (clarify run finished, result unconsumed) immortal here
+      // and in the setup banner. Resume stays first when a run page exists.
+      if (w.clarify_run_id) {
+        line.append(el("a", { class: "btn small primary", href: `#/run/${w.clarify_run_id}` }, "resume"));
+      }
+      line.append(el("button", { class: "btn small danger", onclick: async () => {
+        try { await api(`/api/wizard/${encodeURIComponent(w.wid)}`, { method: "DELETE" }); } catch { /* gone */ }
+        notifyChanged();
+        line.remove();
+      } }, "discard"));
       return line;
     };
     resumeBox.append(el("div", { class: "panel warn", style: "margin-bottom:14px" },

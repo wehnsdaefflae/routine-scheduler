@@ -1,11 +1,16 @@
 """Health-events file: append-only JSONL log of key daemon/engine events for audit consumption.
 
 Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON object:
-{"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"orphaned_run"|"run_canceled",
+{"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"orphaned_run"|"run_canceled"
+        |"wizard_build_degraded",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 run_canceled: a user-requested abort killed the engine before it could write its own
 finish (same payload shape as orphaned_run, which is reserved for genuine crashes).
+
+wizard_build_degraded: a new-routine build's stage-generation pipeline failed hard and
+the routine was scaffolded from the verbatim pattern (run_id empty — builds happen in
+the daemon, not a run; detail carries the failure cause, F197).
 
 Best-effort: I/O errors are silently swallowed so logging never blocks the daemon or engine.
 """

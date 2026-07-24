@@ -173,7 +173,15 @@ async function refreshSetupBanner() {
       ` — ${STAGE_LABEL[cur.stage] || "working"}${what}${more}. The backend is still running; pick up where you left off.`),
     // a pre-D13 session has no run page — the new-routine view offers what's left (cancel)
     el("a", { class: "btn small primary",
-      href: cur.clarify_run_id ? `#/run/${cur.clarify_run_id}` : "#/new-routine" }, "resume"));
+      href: cur.clarify_run_id ? `#/run/${cur.clarify_run_id}` : "#/new-routine" }, "resume"),
+    // F198: an abandoned session must be dismissible RIGHT HERE — "resume" alone made a
+    // session whose clarify run already finished haunt every view as an eternal banner
+    el("button", { class: "btn small", title: "archive this setup session (recoverable from .archive)",
+      onclick: async (ev) => {
+        ev.currentTarget.disabled = true;
+        try { await api(`/api/wizard/${encodeURIComponent(cur.wid)}`, { method: "DELETE" }); } catch { /* gone */ }
+        refreshSetupBanner();
+      } }, "discard"));
   banner.hidden = false;
 }
 

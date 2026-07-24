@@ -236,6 +236,28 @@ def test_scaffold_writes_and_loads_tags(tmp_path):
     assert yaml.safe_load((d / "routine.yaml").read_text())["tags"] == ["meta", "custom"]
 
 
+def test_scaffold_degrade_names_the_cause_and_logs_a_health_event(tmp_path):
+    """F197: a degraded build (here: no endpoint configured at all) must write WHY into the
+    LEDGER ⚠ block and append a wizard_build_degraded health event — the 2026-07-24 credit
+    outage was only diagnosable through the daemon journal, which audits cannot read."""
+    import json as _json
+
+    server = ServerConfig()
+    server.routines_home = tmp_path / "routines"
+    server.routines_home.mkdir()
+    server.libraries_home = SEED
+    d = scaffold(server, slug="born-degraded", name="Degraded", instruction="x",
+                 workflow_slug="general-task")
+    ledger = (d / "LEDGER.md").read_text(encoding="utf-8")
+    assert "stage generation FAILED" in ledger
+    assert "Cause: " in ledger                    # the ⚠ block names the failure
+    stream = (server.routines_home / ".control" / "health-events.jsonl")\
+        .read_text(encoding="utf-8").splitlines()
+    ev = _json.loads(stream[-1])
+    assert ev["event"] == "wizard_build_degraded"
+    assert ev["routine"] == "born-degraded" and ev["detail"]
+
+
 def test_scaffold_stamps_tools_allowlist(tmp_path):
     """A workflow META `tools:` allowlist lands in the routine's main.md frontmatter, where
     the engine reads and enforces it at run time (clarify-instruction is the shipped case)."""

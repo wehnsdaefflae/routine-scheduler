@@ -204,14 +204,22 @@ def _is_stub(body: str) -> bool:
     return len([ln for ln in body.strip().splitlines() if ln.strip()]) < 2
 
 
-def _pipeline(endpoint, ref, raw: str, instruction: str, *, params: dict, pins: list[str],
+def _pipeline(resolve, raw: str, instruction: str, *, params: dict, pins: list[str],
               trait_bodies: dict[str, str], slug: str, progress=None) -> dict:
     """Outline → main → one call per stage → adapted traits. Raises on any hard failure
     (the caller falls back to materialize); a failed trait adaptation degrades softly to
     verbatim library traits. `progress(step: str, done: int, total: int)` — best-effort
     live reporting (F192: the wizard shows WHICH step the build is on); total grows once
     the outline fixes the stage count.
+
+    `resolve() -> (endpoint, ref)` is called for the initial pick AND again after every
+    failed attempt: a hard endpoint failure (provider outage, spent credits) marks the
+    model cooling in this process, so the re-pick lands on the chain's next not-cooling
+    fallback instead of hammering the same dead endpoint for all attempts (F197 — the
+    2026-07-24 credit outage shipped a stageless routine because every retry hit the
+    same exhausted claude endpoint while the clarify RUN had failed over fine).
     """
+    endpoint, ref = resolve()
 
     def report(step: str, done: int, total: int) -> None:
         if progress is not None:
@@ -219,6 +227,7 @@ def _pipeline(endpoint, ref, raw: str, instruction: str, *, params: dict, pins: 
                 progress(step, done, total)
 
     def complete(prompt: str, schema: dict, max_tokens: int, what: str, check=None):
+        nonlocal endpoint, ref
         last: Exception | None = None
         for attempt in range(1, DECOMPOSE_ATTEMPTS + 1):
             try:
@@ -230,10 +239,15 @@ def _pipeline(endpoint, ref, raw: str, instruction: str, *, params: dict, pins: 
                     purpose=f"Decompose {what} → {slug}", kind="decompose")
                 data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
                 return check(data) if check else data
-            except Exception as exc:  # transport error OR invalid payload → same retry
+            except Exception as exc:  # transport error OR invalid payload → retry
                 last = exc
-                log.warning("decompose(%s) %s attempt %d/%d failed: %s", slug, what,
-                            attempt, DECOMPOSE_ATTEMPTS, exc)
+                log.warning("decompose(%s) %s attempt %d/%d on %s failed: %s", slug, what,
+                            attempt, DECOMPOSE_ATTEMPTS, getattr(ref, "model", "?"), exc)
+                # F197: re-pick the chain — a hard-failed model is cooling now, so the next
+                # attempt gets its first not-cooling fallback (call-time failover, like the
+                # engine's turn completion; without this every attempt hits the dead model).
+                with contextlib.suppress(Exception):
+                    endpoint, ref = resolve()
         raise last or RuntimeError(f"decompose {what} failed")
 
     param_note = ("\n\nPARAMETERS (the pattern's contract, resolved with the user):\n"
@@ -361,12 +375,13 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
     try:
         from ..endpoints import EndpointRegistry
 
-        endpoint, ref = EndpointRegistry(server).for_system()
-        return _pipeline(endpoint, ref, raw, instruction, params=params or {}, pins=pins,
+        return _pipeline(EndpointRegistry(server).for_system, raw, instruction,
+                         params=params or {}, pins=pins,
                          trait_bodies=trait_bodies, slug=slug, progress=progress)
     except Exception as exc:
         # a stageless recipe is a real quality drop — the fallback must never be silent
         log.warning("decompose(%s) pipeline failed — materializing the whole pattern as "
                     "main.md", slug, exc_info=exc)
         from .pyworkflow import render_markdown
-        return {"main": render_markdown(raw, meta), "stages": {}, "traits": {}, "degraded": True}
+        return {"main": render_markdown(raw, meta), "stages": {}, "traits": {},
+                "degraded": True, "reason": f"{type(exc).__name__}: {exc}"}

@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.101.0] — 2026-07-24
+
+### Fixed
+- **Wizard build failover (F197)**: the stage-generation pipeline re-resolves the model
+  chain after every failed attempt, so a hard endpoint failure (the 2026-07-24 claude
+  credit outage) fails over to the next model instead of retrying the dead one until the
+  build degrades. The clarify RUN already failed over; the BUILD now does too.
+- **Degraded builds name their cause (F197)**: the LEDGER's "⚠ stage generation FAILED"
+  block carries `Cause: <error>` and the daemon appends a `wizard_build_degraded` health
+  event — no more diagnosing outages through the (sandbox-unreachable) daemon journal.
+- **Abandoned wizard sessions are dismissible (F198)**: the setup banner and the
+  new-routine list both carry a `discard` button for EVERY in-flight session (before,
+  a session with a run page offered only "resume" — an abandoned one haunted every view
+  forever and its unconsumed questions kept collecting answers into a dead inbox).
+
 ## [0.100.0] — 2026-07-24
 
 ### Added

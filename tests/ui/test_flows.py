@@ -789,6 +789,24 @@ def test_new_routine_page_and_setup_banner_link_the_run_page(ui, ui_page):
         .to_have_attribute("href", f"#/run/clarification:{ts}")
 
 
+def test_setup_banner_and_list_discard_an_abandoned_session(ui, ui_page):
+    """F198: every in-flight session is dismissible from the banner AND the new-routine
+    list — offering only 'resume' made an abandoned session (clarify run finished, result
+    never consumed) an eternal banner the user could not clear (2026-07-24)."""
+    wid, _ts, d, _run_dir = _seed_clarify_session(ui)
+    ui_page.goto(f"{ui.url}/#/new-routine")
+    inflight = ui_page.locator(".panel.warn", has_text="Setup already in progress")
+    expect(inflight.locator("button.btn", has_text="discard")).to_be_visible()
+    banner = ui_page.locator("#setup-banner")
+    expect(banner).to_be_visible()
+    banner.locator("button", has_text="discard").click()
+    expect(banner).to_be_hidden()
+    # the hidden workspace moved to .archive — nothing in-flight remains
+    expect(ui_page.locator("#setup-banner")).to_be_hidden()
+    assert not d.exists()
+    assert (ui.routines / ".archive" / f"{wid.lstrip('.')}-canceled").is_dir()
+
+
 def test_new_routine_draft_is_forgotten_after_start(ui, ui_page):
     """F110: the draft textarea persists across navigation (a half-typed task survives a
     refresh — desired) but must be FORGOTTEN once a clarification starts, so it never refills

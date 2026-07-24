@@ -133,6 +133,49 @@ def test_decompose_retries_each_call_before_degrading(monkeypatch, tmp_path):
     assert result["degraded"] is False
 
 
+class _DeadEndpoint:
+    """Every call fails hard — a spent-credits / provider-outage endpoint."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, messages, **kw):
+        self.calls += 1
+        raise RuntimeError("claude-cli: You're out of usage credits")
+
+
+def test_decompose_fails_over_to_the_next_resolve_pick(monkeypatch, tmp_path):
+    """F197: a failed attempt must RE-RESOLVE the model chain, not hammer the same dead
+    endpoint — the 2026-07-24 credit outage shipped a stageless routine because all
+    retries hit the exhausted primary while the clarify RUN had failed over fine."""
+    import rsched.endpoints as endpoints_mod
+
+    dead, good = _DeadEndpoint(), _PipelineEndpoint()
+    picks: list[int] = []
+
+    def for_system(self):
+        picks.append(1)
+        # first resolve → the dead primary; every re-resolve → the healthy fallback
+        return ((dead, ModelRef(endpoint="x", model="dead")) if len(picks) == 1
+                else (good, ModelRef(endpoint="y", model="fallback")))
+
+    monkeypatch.setattr(endpoints_mod.EndpointRegistry, "for_system", for_system)
+    result = decompose(_server(tmp_path), "general-task", "some task")
+    assert dead.calls == 1                # the dead model is never hammered a second time
+    assert result["degraded"] is False
+    assert result["stages"] == {"gather": BODY.strip(), "deliver": BODY.strip()}
+
+
+def test_decompose_degrade_reason_is_reported(monkeypatch, tmp_path):
+    """F197: a degraded result carries WHY, so scaffold can put the cause in the LEDGER ⚠
+    and the health event — a cause-less warning made the outage invisible to audits."""
+    dead = _DeadEndpoint()
+    _install(monkeypatch, dead)
+    result = decompose(_server(tmp_path), "general-task", "some task")
+    assert result["degraded"] is True
+    assert "out of usage credits" in result.get("reason", "")
+
+
 class _StubStageEndpoint(_PipelineEndpoint):
     def payload(self, schema, prompt):
         if schema is STAGE_SCHEMA:

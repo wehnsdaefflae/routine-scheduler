@@ -17,6 +17,7 @@ from ..config import (
     ServerConfig,
     write_tuning,
 )
+from ..health_events import log_health_event
 from ..ids import is_slug
 
 GITIGNORE = "runs/\ninbox/\nquestions/\nmnt/\n"   # mnt/ = transient remote-machine share mounts
@@ -180,11 +181,16 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     ledger = (f"# LEDGER — {name}\n\n"
               f"### seed — scaffolded from workflow '{workflow_slug}' @ {commit}\n")
     if result.get("degraded"):
-        # never silent (F183/D41): the user must see the routine was born without its stages
+        # never silent (F183/D41): the user must see the routine was born without its stages —
+        # and WHY (F197: a cause-less warning sent the 2026-07-24 outage hunt through the
+        # daemon journal, which sandboxed audit routines cannot read)
+        why = str(result.get("reason") or "unknown failure")
         ledger += ("\n### ⚠ stage generation FAILED at creation\nmain.md is the verbatim "
                    "workflow pattern and stages/ has no generated modules — the routine still "
                    "runs, but re-creating it (or asking a run to draft the stage modules) will "
-                   "give better results.\n")
+                   f"give better results.\nCause: {why}\n")
+        log_health_event(server.routines_home, "wizard_build_degraded",
+                         routine=slug, run_id="", detail=why)
     (routine_dir / "LEDGER.md").write_text(ledger, encoding="utf-8")
     (routine_dir / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
 
