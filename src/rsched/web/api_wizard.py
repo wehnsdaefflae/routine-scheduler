@@ -175,9 +175,15 @@ async def _build_routine(app_state, wid: str, d: Path, body: FinalizeBody, resul
         description = body.description.strip() or str(result.get("description") or "").strip()
         params = body.params or (result.get("params")
                                  if isinstance(result.get("params"), dict) else {})
+        def build_progress(step: str, done: int, total: int) -> None:
+            # F192: live build progress — the wizard panel polls the snapshot, which
+            # forwards these fields verbatim while the state stays "building".
+            atomic_write_json(status_path, {"state": "building", "slug": body.slug,
+                                            "step": step, "done": done, "total": total})
+
         with process_scope(_wizard_pid(wid)):   # decompose LLM call → the create process
             routine_dir = await asyncio.to_thread(
-                scaffold, server, slug=body.slug, name=body.name,
+                scaffold, server, slug=body.slug, name=body.name, progress=build_progress,
                 instruction=body.instruction.strip() or result["refined_instruction"],
                 workflow_slug=body.workflow_slug, cron=cron,
                 tz=schedule.server_tz(), params=params, stages=stages, description=description,

@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.100.0] — 2026-07-24
+
+### Added
+- **Wizard live build progress (F192)**: the decompose pipeline reports each step (outline →
+  main.md → stage k/N by name → traits) through a `progress` callback; `_build_routine`
+  writes it into `state/finalize.json`, the wizard snapshot forwards `step`/`done`/`total`,
+  and the setup panel's building screen shows the live step line instead of a bare spinner.
+  A raising callback can never break a build.
+- **Host mounts reach the fs picker (F190, deployment layer)**: `docker-compose.yml` now
+  binds `/mnt` with `rslave` propagation — disks mounted on the host after container start
+  appear inside too. Documented in `deploy/DOCKER.md`; takes effect on the next
+  `docker compose up -d` (the daemon restart alone does NOT recreate the container).
+
 ## [0.99.0] — 2026-07-24
 
 ### Added

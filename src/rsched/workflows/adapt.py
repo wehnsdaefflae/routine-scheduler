@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from datetime import date
@@ -204,11 +205,18 @@ def _is_stub(body: str) -> bool:
 
 
 def _pipeline(endpoint, ref, raw: str, instruction: str, *, params: dict, pins: list[str],
-              trait_bodies: dict[str, str], slug: str) -> dict:
+              trait_bodies: dict[str, str], slug: str, progress=None) -> dict:
     """Outline → main → one call per stage → adapted traits. Raises on any hard failure
     (the caller falls back to materialize); a failed trait adaptation degrades softly to
-    verbatim library traits.
+    verbatim library traits. `progress(step: str, done: int, total: int)` — best-effort
+    live reporting (F192: the wizard shows WHICH step the build is on); total grows once
+    the outline fixes the stage count.
     """
+
+    def report(step: str, done: int, total: int) -> None:
+        if progress is not None:
+            with contextlib.suppress(Exception):   # reporting must never break a build
+                progress(step, done, total)
 
     def complete(prompt: str, schema: dict, max_tokens: int, what: str, check=None):
         last: Exception | None = None
@@ -253,8 +261,11 @@ def _pipeline(endpoint, ref, raw: str, instruction: str, *, params: dict, pins: 
             raise ValueError("outline produced no usable stages")
         return outline
 
+    report("planning the stage outline", 0, 3)
     outline = complete(context + _OUTLINE_TAIL + param_note + pin_note,
                        OUTLINE_SCHEMA, OUTLINE_MAX_TOKENS, "outline", check=check_outline)
+    # total = outline + main + each stage + traits (traits only when selected)
+    total = 2 + len(outline) + (1 if trait_bodies else 0)
     outline_txt = _render_outline(outline)
 
     standing = ""
@@ -274,6 +285,7 @@ def _pipeline(endpoint, ref, raw: str, instruction: str, *, params: dict, pins: 
             raise ValueError(f"main.md does not route to stage(s): {missing}")
         return main
 
+    report("writing main.md (the entry state machine)", 1, total)
     main = complete(context + "The routine's stages are already planned — the OUTLINE (each "
                     "stage is generated as its own module):\n" + outline_txt + "\n\n"
                     + _MAIN_RULES + standing + _SELF_CONTAINED + param_note + pin_note,
@@ -286,7 +298,8 @@ def _pipeline(endpoint, ref, raw: str, instruction: str, *, params: dict, pins: 
         return body
 
     stages: dict[str, str] = {}
-    for s in outline:
+    for k, s in enumerate(outline):
+        report(f"writing stage {k + 1}/{len(outline)}: {s['name']}", 2 + k, total)
         prompt = (context + "The routine's main.md (already generated):\n---\n" + main
                   + "\n---\n\nThe full stage OUTLINE (each stage is its own module):\n"
                   + outline_txt + "\n\nWrite the COMPLETE module for the stage "
@@ -303,6 +316,7 @@ def _pipeline(endpoint, ref, raw: str, instruction: str, *, params: dict, pins: 
 
     adapted: dict[str, str] = {}
     if trait_bodies:
+        report("adapting the practice modules (traits)", 2 + len(outline), total)
         try:
             docs = "\n\n".join(f"--- trait: {t} ---\n{body}"
                                for t, body in trait_bodies.items())
@@ -318,7 +332,7 @@ def _pipeline(endpoint, ref, raw: str, instruction: str, *, params: dict, pins: 
 
 
 def decompose(server, slug: str, instruction: str, *, params: dict | None = None,
-              traits: list[str] | None = None) -> dict:
+              traits: list[str] | None = None, progress=None) -> dict:
     """Generator LLM: apply a single-file workflow to `instruction` and split it into the
     routine's main.md body + stage/state modules, ADAPTING the selected traits along the way.
     Returns {'main': <body>, 'stages': {name: body}, 'traits': {slug: adapted body},
@@ -349,7 +363,7 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
 
         endpoint, ref = EndpointRegistry(server).for_system()
         return _pipeline(endpoint, ref, raw, instruction, params=params or {}, pins=pins,
-                         trait_bodies=trait_bodies, slug=slug)
+                         trait_bodies=trait_bodies, slug=slug, progress=progress)
     except Exception as exc:
         # a stageless recipe is a real quality drop — the fallback must never be silent
         log.warning("decompose(%s) pipeline failed — materializing the whole pattern as "

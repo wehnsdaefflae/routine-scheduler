@@ -1695,3 +1695,21 @@ def test_run_detail_model_falls_back_to_config(client):
     _mk_run(tmp / "routines", "apir", "20260709-090000", "queued")
     d = c.get("/api/runs/apir:20260709-090000").json()
     assert d["model"] == "Fable"
+
+
+def test_wizard_snapshot_forwards_build_progress(client):
+    """F192: while a build runs, the decompose pipeline writes step/done/total into
+    finalize.json — the wizard detail endpoint forwards them so the setup panel can show
+    WHICH step the build is on instead of a bare spinner."""
+    c, tmp = client
+    wid = ".wizard-20260724-170000"
+    d = tmp / "routines" / wid
+    _mk_wizard(tmp / "routines", "20260724-170000",
+               result={"refined_instruction": "do the thing"})
+    atomic_write_json(d / "state" / "finalize.json",
+                      {"state": "building", "slug": "newr",
+                       "step": "writing stage 2/4: gather-evidence", "done": 3, "total": 7})
+    snap = c.get(f"/api/wizard/{wid}").json()
+    assert snap["stage"] == "building"
+    assert snap["step"] == "writing stage 2/4: gather-evidence"
+    assert snap["done"] == 3 and snap["total"] == 7

@@ -108,11 +108,15 @@ export async function createSetupPanel(host, { ts }) {
   function renderBuilding(s) {
     stage = "building";
     clearBuilding();
+    // F192: live build progress — the decompose pipeline reports each step (outline, main,
+    // stage k/N by name, traits) into finalize.json; the poll below renders it here.
+    const stepLine = el("div", { class: "muted small mt" }, "starting the build…");
     host.replaceChildren(el("div", { class: "panel mt" },
       el("h2", {}, "Building the routine"),
       busy("Building the routine — the model is decomposing the workflow into stages tailored to "
         + "your task. This usually takes a minute or two. You can leave this page; you'll be "
-        + "taken to the routine when it's ready, and the banner up top brings you back.")));
+        + "taken to the routine when it's ready, and the banner up top brings you back."),
+      stepLine));
     let finished = false;
     let slowNoted = false;
     const goTo = (runId, slug) => { if (!finished) { finished = true; done(runId, slug); } };
@@ -136,6 +140,9 @@ export async function createSetupPanel(host, { ts }) {
       catch { goTo(null, s?.slug || ""); return; }  // 404 → session archived → the routine exists
       if (cur.stage === "done") goTo(cur.run_id, cur.slug);
       else if (cur.stage === "error") failed(`couldn't build the routine: ${cur.error || "unknown error"}`);
+      else if (cur.step)   // F192: show WHICH pipeline step the build is on, live
+        stepLine.textContent = Number.isFinite(cur.total) && cur.total > 0
+          ? `${cur.step} (${(cur.done ?? 0) + 1}/${cur.total})` : cur.step;
       else if (Date.now() - started > 300000 && !slowNoted) {
         // Still "building" server-side: the decompose call CAN take >5 min. Declaring it
         // stuck here sent the user to a retry that could only 409 ("already exists")

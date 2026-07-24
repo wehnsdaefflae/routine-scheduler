@@ -254,3 +254,28 @@ def test_decompose_without_pins_never_falls_back_over_them(monkeypatch, tmp_path
     assert "PINNED" not in fake.prompts[0]
     assert result["degraded"] is False
     assert result["main"].startswith("# Scheduler research")
+
+
+def test_decompose_reports_live_progress(monkeypatch, tmp_path):
+    """F192: the pipeline reports each step (outline → main → stage k/N by name → traits)
+    through the optional `progress` callback, with a total that grows once the outline
+    fixes the stage count — and a RAISING callback never breaks the build."""
+    fake = _PipelineEndpoint()
+    _install(monkeypatch, fake)
+    seen: list[tuple[str, int, int]] = []
+    result = decompose(_server(tmp_path), "general-task", "some task",
+                       traits=["web-research"],
+                       progress=lambda step, done, total: seen.append((step, done, total)))
+    assert result["degraded"] is False
+    # outline + main + 2 stages + traits = 5 steps; total settles at 5 after the outline
+    assert seen[0] == ("planning the stage outline", 0, 3)
+    assert seen[1] == ("writing main.md (the entry state machine)", 1, 5)
+    assert seen[2] == ("writing stage 1/2: gather", 2, 5)
+    assert seen[3] == ("writing stage 2/2: deliver", 3, 5)
+    assert seen[4] == ("adapting the practice modules (traits)", 4, 5)
+
+    def boom(step, done, total):
+        raise RuntimeError("reporting must never sink the build")
+
+    result = decompose(_server(tmp_path), "general-task", "some task", progress=boom)
+    assert result["degraded"] is False and result["stages"]

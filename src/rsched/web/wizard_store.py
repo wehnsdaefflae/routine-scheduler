@@ -158,6 +158,8 @@ def snapshot(app_state, d: Path) -> dict:
                 "clarify_run_id": clarify_run_id(app_state.server, d, meta.get("run_ts")),
                 "stage": fin["state"], "state": fin["state"], "has_result": True,
                 "slug": fin.get("slug"), "run_id": fin.get("run_id"), "error": fin.get("error"),
+                # F192: live build progress (written by the decompose pipeline's callback)
+                "step": fin.get("step"), "done": fin.get("done"), "total": fin.get("total"),
                 "question": None, "alive": None}
     result = read_result(d)
     has_result = isinstance(result, dict) and bool(result.get("refined_instruction"))

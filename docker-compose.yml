@@ -40,6 +40,14 @@ services:
       # /etc/timezone (the /etc/localtime symlink trick doesn't survive a bind mount).
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
+      # Host mounts (USB disks, NAS, sshfs) for the fs-roots picker (F190): without this bind
+      # the daemon's mount namespace simply has no /mnt and the picker shows nothing there.
+      # `rslave` propagation makes mounts that appear on the HOST after container start (a
+      # disk plugged in later) show up inside too. Drop the line if the host has no /mnt.
+      - type: bind
+        source: /mnt
+        target: /mnt
+        bind: { propagation: rslave }
       # One merged library repo (workflows/ + fragments/ + utils/ + gu) — see config `libraries_home`.
       - ${RSCHED_HOME:-/home/mark}/.local/share/routine-scheduler-libraries:/home/mark/.local/share/routine-scheduler-libraries
       # Playwright's browser cache: page-fetch downloads Chromium here once (user-level);

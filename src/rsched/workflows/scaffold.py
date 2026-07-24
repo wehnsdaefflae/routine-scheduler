@@ -97,7 +97,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
              fs_read_roots: list[str] | None = None,
              fs_write_roots: list[str] | None = None,
              stages: dict[str, str] | None = None, enabled: bool = True,
-             tags: list[str] | None = None, deliberation: str = "") -> Path:
+             tags: list[str] | None = None, deliberation: str = "",
+             progress=None) -> Path:
     """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
     the routine gets ADAPTED trait copies under traits/ (referenced from main.md's Standing
     practices tail — the routine's own files from then on) + stages/ modules. The clarified
@@ -148,7 +149,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # traits along the way. Self-contained: the library is never read at run time, and the
     # instruction is consumed here (not persisted). Degrades to the whole workflow as main.md +
     # verbatim trait copies if no endpoint is available.
-    result = decompose(server, workflow_slug, instruction, params=params, traits=active_traits)
+    result = decompose(server, workflow_slug, instruction, params=params,
+                       traits=active_traits, progress=progress)
     main_meta = {
         "name": name, "slug": slug,
         "materialized_from": {"slug": workflow_slug, "commit": commit,

@@ -88,6 +88,11 @@ systemctl --user disable --now routine-scheduler.service
   (freelance/gulp/xing/…) additionally need a logged-in profile — out of scope here.
 - **Dependency changes** committed by self-audit are picked up on the next restart (`uv run`
   re-syncs from the mounted `pyproject.toml`), exactly like the systemd unit.
+- **Host mounts (`/mnt`) are bind-mounted with `rslave` propagation** so the fs-roots picker
+  can offer USB disks / NAS mounts, including ones mounted on the host AFTER the container
+  started (F190: without the bind, the daemon's mount namespace has no `/mnt` at all and the
+  picker shows an explained empty state). Takes effect on the next `docker compose up -d`;
+  drop the volume line if the host has no `/mnt`.
 
 ## HTTPS via Tailscale (Web Push needs a secure context)
 
