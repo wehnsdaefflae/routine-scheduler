@@ -178,6 +178,48 @@ def test_clarify_question_lists_once_and_answers_to_workspace(tmp_path):
         assert again and again[0].get("answered") is True
 
 
+def test_list_sessions_expires_an_abandoned_ended_session(tmp_path):
+    """D44 (user, 2026-07-24): an ENDED session (result written, never consumed) untouched
+    for >12h is auto-archived at list time — recoverable under .archive/<wid>-stale — so
+    the setup banner clears itself instead of haunting every view."""
+    import os
+    import time
+    from types import SimpleNamespace
+
+    server = _server(tmp_path)
+    state = SimpleNamespace(server=server, wizards={})
+    wid, ts, d = wizard_store.create_session(server, "an old, ended, abandoned session")
+    (d / "state" / "wizard_result.json").write_text(
+        json.dumps({"refined_instruction": "do things"}), encoding="utf-8")
+    st = d / "runs" / ts / "status.json"
+    old = time.time() - (wizard_store.STALE_SESSION_S + 60)
+    os.utime(st, (old, old))
+    assert wizard_store.list_sessions(state) == []
+    assert not d.exists()
+    assert (server.routines_home / ".archive" / f"{wid.lstrip('.')}-stale").is_dir()
+
+
+def test_list_sessions_never_expires_a_live_chat_or_a_fresh_session(tmp_path):
+    """D44 guard-rails: age alone never expires a session whose clarify run is still
+    non-terminal (stage 'chat'), and an ended session younger than the threshold stays."""
+    import os
+    import time
+    from types import SimpleNamespace
+
+    server = _server(tmp_path)
+    state = SimpleNamespace(server=server, wizards={})
+    _wid, ts, d = wizard_store.create_session(server, "a live clarify chat")
+    st = d / "runs" / ts / "status.json"   # state 'starting' — non-terminal → stage 'chat'
+    old = time.time() - (wizard_store.STALE_SESSION_S + 60)
+    os.utime(st, (old, old))
+    listed = wizard_store.list_sessions(state)
+    assert [s["wid"] for s in listed] == [d.name]      # old but LIVE → stays
+    (d / "state" / "wizard_result.json").write_text(
+        json.dumps({"refined_instruction": "now it ended"}), encoding="utf-8")
+    os.utime(st, None)                                  # ended but FRESH → stays
+    assert [s["wid"] for s in wizard_store.list_sessions(state)] == [d.name]
+
+
 def test_inject_endpoint_reaches_the_clarify_session_workspace(tmp_path):
     """POST /api/runs/clarification:<ts>/inject must land the message in the .wizard-<ts>
     workspace inbox (polled by the live session), not clarification/inbox.

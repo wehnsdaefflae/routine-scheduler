@@ -5,7 +5,10 @@ No FastAPI in here; api_wizard keeps the route handlers thin on top of this.
 
 from __future__ import annotations
 
+import contextlib
 import shutil
+import time
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -189,8 +192,37 @@ def snapshot(app_state, d: Path) -> dict:
     return snap
 
 
+# D44 (user-settled 2026-07-24: "auto archive after 12h"): an ENDED session — clarify run
+# finished with its result unconsumed ('suggest'), or failed ('error') — that nobody touched
+# for this long is abandoned. Live chats and in-flight builds are never expired.
+STALE_SESSION_S = 12 * 3600
+
+
+def _session_age_s(server, d: Path, ts: str | None) -> float:
+    """Seconds since the session last moved: the clarify run's status.json mtime (the engine
+    touches it on every write) when it exists, else the session meta's created stamp.
+    0.0 on any doubt — never expire a session we cannot date.
+    """
+    try:
+        rd = clarify_run_dir(server, d, ts) if ts else None
+        if rd is not None and (rd / "status.json").exists():
+            return time.time() - (rd / "status.json").stat().st_mtime
+        created = read_meta(d).get("created")
+        if created:
+            return time.time() - datetime.fromisoformat(created).timestamp()
+    except Exception:  # dating a session is best-effort by design
+        return 0.0
+    return 0.0
+
+
 def list_sessions(app_state) -> list[dict]:
-    """Every in-flight session (newest first); completed builds ('done') are not in-flight."""
+    """Every in-flight session (newest first); completed builds ('done') are not in-flight.
+
+    Listing also expires abandoned sessions (D44): an ended session older than
+    STALE_SESSION_S is archived to .archive/<wid>-stale (same recoverable move as cancel)
+    instead of listed — the setup banner clears itself and the session's pending questions
+    stop collecting answers into a dead inbox.
+    """
     home = app_state.server.routines_home
     out: list[dict] = []
     if home.is_dir():
@@ -201,8 +233,18 @@ def list_sessions(app_state) -> list[dict]:
                 snap = snapshot(app_state, d)
             except Exception:  # noqa: S112 — a half-written dir must never break the list
                 continue
-            if snap.get("stage") != "done":
-                out.append(snap)
+            if snap.get("stage") == "done":
+                continue
+            if (snap.get("stage") in ("suggest", "error")
+                    and _session_age_s(app_state.server, d, snap.get("run_ts"))
+                    > STALE_SESSION_S):
+                with contextlib.suppress(Exception):   # expiry must never break the list
+                    archive_session(home, d, f"{d.name.lstrip('.')}-stale")
+                    sessions(app_state).pop(d.name, None)
+                    continue
+                out.append(snap)   # archive failed → keep showing it (discard still works)
+                continue
+            out.append(snap)
     return out
 
 

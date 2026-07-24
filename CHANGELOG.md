@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.102.0] — 2026-07-24
+
+### Added
+- **Abandoned wizard sessions auto-expire (D44, user-settled: 12h)**: listing sessions now
+  archives any ENDED session (clarify result waiting unconsumed, or failed) untouched for
+  12h to `.archive/<wid>-stale` — the same recoverable move as cancel. The setup banner
+  clears itself and dead inboxes stop collecting answers. Live chats and in-flight builds
+  are never expired.
+
 ## [0.101.0] — 2026-07-24
 
 ### Fixed
