@@ -244,7 +244,7 @@ class _FakeDiscord:
         if args[0] == "read":
             batch = self.replies.pop(0) if self.replies else []
             return 0, json.dumps(batch), ""
-        return 0, "", ""
+        return 0, '{"id": "1"}', ""      # send --json: the posted message's snowflake
 
     def sends(self):
         return [a for a in self.calls if a[0] == "send"]
@@ -278,7 +278,7 @@ def test_mirror_requires_the_communication_permission(make_routine, monkeypatch)
 
 def test_mirror_sends_polls_and_notifies(make_routine, monkeypatch):
     # one empty read (cursor prime), then a reply on the first poll
-    fake = _FakeDiscord(replies=[[], [{"message": "yes please"}]])
+    fake = _FakeDiscord(replies=[[], [{"id": "5", "message": "yes please"}]])
     monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
@@ -300,7 +300,7 @@ def test_mirror_sends_polls_and_notifies(make_routine, monkeypatch):
 
 def test_mirror_reply_resolves_the_blocking_ask(make_routine, scripted, monkeypatch):
 
-    fake = _FakeDiscord(replies=[[], [{"message": "approved — go"}]])
+    fake = _FakeDiscord(replies=[[], [{"id": "5", "message": "approved — go"}]])
     monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
@@ -335,7 +335,7 @@ def test_util_secret_gate_asks_once_and_persists_grant(make_routine, scripted, m
     `secret_grants`, and the next call proceeds without re-asking."""
     from rsched import secrets as secrets_mod
 
-    fake = _FakeDiscord(replies=[[], [{"message": "approve"}]])
+    fake = _FakeDiscord(replies=[[], [{"id": "5", "message": "approve"}]])
     ran = []
 
     def fake_run(home, name, args, timeout=0, policy=None, extra_secrets=None):
@@ -412,16 +412,48 @@ def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, 
     assert ran == []                                   # the util never executed
 
 
-def test_reply_texts_pins_the_discord_util_shape():
+def test_reply_items_pin_the_discord_util_shape():
     """ONE pinned shape — the discord util's `read --json` emits a list of message
-    objects whose text is the `message` field. Anything else reads as no replies."""
-    assert decisions._reply_texts(
-        '[{"message": "x", "author": "u", "time": "t"}, {"message": " y "}]') == ["x", "y"]
-    assert decisions._reply_texts("") == []
-    assert decisions._reply_texts("not json") == []
-    assert decisions._reply_texts('[{"foo": 1}]') == []
-    assert decisions._reply_texts('{"messages": [{"message": "z"}]}') == []  # not a list
-    assert decisions._reply_texts('["bare string"]') == []                   # not an object
+    objects with a snowflake `id` and text in `message`. Anything else reads as no
+    replies; an id-less message cannot be ordered against the question and is dropped."""
+    assert decisions._reply_items(
+        '[{"id": "9", "message": "x", "author": "u"}, {"id": "3", "message": " y "}]') \
+        == [(3, "y"), (9, "x")]
+    assert decisions._reply_items("") == []
+    assert decisions._reply_items("not json") == []
+    assert decisions._reply_items('[{"foo": 1}]') == []
+    assert decisions._reply_items('[{"message": "no id"}]') == []            # unorderable
+    assert decisions._reply_items('{"messages": [{"message": "z"}]}') == []  # not a list
+    assert decisions._reply_items('["bare string"]') == []                   # not an object
+
+
+def test_mirror_ignores_replies_older_than_the_question(make_routine, monkeypatch):
+    """F194: a message posted BEFORE the question (a stale or another routine's reply
+    still in the channel) must never settle it — only a strictly newer snowflake counts.
+    Observed 2026-07-24: a 2h-stale "Yes" answered train-seat-finder's fresh question."""
+
+    class _StaleThenFresh(_FakeDiscord):
+        def run_util(self, home, name, args, timeout=0, policy=None):
+            self.calls.append(list(args))
+            if args[0] == "read":
+                batch = self.replies.pop(0) if self.replies else []
+                return 0, json.dumps(batch), ""
+            return 0, '{"id": "100"}', ""          # the question's own snowflake
+
+    fake = _StaleThenFresh(replies=[[], [{"id": "50", "message": "Yes"}],
+                                    [{"id": "150", "message": "Yes"}]])
+    monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
+    ctx = _mirror_ctx(make_routine, "staleguard")
+    mirror = decisions.mirror_blocking(ctx, "q1", "Proceed?", ["yes", "no"], "", 8)
+    assert mirror is not None and mirror.question_id == 100
+    send = fake.sends()[0]                          # the send feeds the routing ledger
+    assert "--cursor" in send and "--json" in send
+    assert mirror.poll() is None                    # id 50 < 100 → stale, NOT consumed
+    assert mirror.poll() == "Yes"                   # id 150 > 100 → a real answer
+    reads = [a for a in fake.calls if a[0] == "read"]
+    assert "--mine" in reads[-1]                    # sibling-addressed replies are skipped
 
 
 def test_ambiguous_approval_reply_is_held_not_consumed(make_routine, scripted, monkeypatch):
@@ -429,7 +461,8 @@ def test_ambiguous_approval_reply_is_held_not_consumed(make_routine, scripted, m
     it is HELD as a delayed user message (drained at the next turn boundary, i.e. after
     the decision), the channel is re-prompted, and the question stays open until a clear
     approve/decline arrives."""
-    fake = _FakeDiscord(replies=[[], [{"message": "Bin hier"}], [{"message": "no thanks"}]])
+    fake = _FakeDiscord(replies=[[], [{"id": "5", "message": "Bin hier"}],
+                                 [{"id": "6", "message": "no thanks"}]])
     monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
@@ -466,3 +499,28 @@ def test_ambiguous_approval_reply_is_held_not_consumed(make_routine, scripted, m
     held_note = next(a[1] for a in fake.sends() if "neither option" in a[1])
     assert "Bin hier" in held_note
     assert not list((d / "questions" / "pending").glob("*.json"))   # decline resolved it
+
+
+def test_deferred_answer_reaches_the_live_run(make_routine, scripted):
+    """F195: an answer to a question THIS run filed as deferred is injected at the next
+    turn boundary. Before, it sat in the inbox for the NEXT run's digest while the live
+    run finished claiming the question was still open (observed 2026-07-24)."""
+    d = make_routine(slug="liveanswer")
+    scripted([
+        {"say": "q", "kind": "ask_user", "question": "Which color?", "mode": "deferred"},
+        # the user answers on the Decisions page while the run is still going — the web
+        # layer's exact answer-file shape, landing in the routine's own inbox
+        {"say": "answer arrives", "kind": "write_file",
+         "path": f"inbox/answer-q-{TS}-1.json",
+         "content": {"qid": f"q-{TS}-1", "text": "blue", "source": "web",
+                     "ts": "2026-07-08T07:01:00+00:00"}},
+        {"say": "next turn", "kind": "read_file", "path": "main.md"},
+        finish(),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    events = _events(run_dir)
+    inj = [e["payload"]["text"] for e in events if e["type"] == "user_injection"]
+    assert any("Which color?" in t and "blue" in t for t in inj), inj
+    assert not list((d / "questions" / "pending").glob("*.json"))   # record consumed
+    assert not list((d / "inbox").glob("answer-*.json"))            # answer consumed

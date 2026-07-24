@@ -131,18 +131,34 @@ def test_template_flagged_protected_in_payloads(client):
 # ---- finalize models inheritance (F153) ----------------------------------------------
 
 
-def test_build_models_inherit_template_when_wizard_sends_none(tmp_path):
-    """The UI sends no models pick on finalize — the new routine must inherit the
-    clarification template's models, not fall to the system model (operator report
-    2026-07-23: template said Fable, the created routine silently ran on the fallback)."""
+def test_build_models_stay_unset_when_wizard_sends_none(tmp_path):
+    """No explicit models pick on finalize → the routine's models stay UNSET (system
+    default). SUPERSEDES the 2026-07-23 template-inherit contract: inheriting the
+    clarify template's models silently made the clarify-session model every created
+    routine's configured model (F191); the create form now carries an explicit model
+    picker for the deliberate case, so nothing is set behind the user's back."""
     from rsched.web.api_wizard import _models_for_build
     server = _server(tmp_path)
     _template(server, models={"main": "m", "subroutine": "m", "tool_call": "m"})
-    assert _models_for_build(server, None) == {"main": "m", "subroutine": "m",
-                                               "tool_call": "m"}
+    assert _models_for_build(server, None) is None
     assert _models_for_build(server, {"main": "x"}) == {"main": "x"}  # explicit pick wins
 
 
 def test_build_models_without_template_stay_none(tmp_path):
     from rsched.web.api_wizard import _models_for_build
     assert _models_for_build(_server(tmp_path), None) is None
+
+
+def test_models_for_build_never_inherits_template_models():
+    """F191: the clarification template's models are the CLARIFY session's choice — they
+    must not silently become a created routine's configured models. Only an explicit
+    wizard pick (FinalizeBody.models) sets them; otherwise None → system-model fallback."""
+    from rsched.web.api_wizard import _models_for_build
+
+    class _Server:   # would previously have been consulted for the template's models
+        pass
+
+    assert _models_for_build(_Server(), None) is None
+    assert _models_for_build(_Server(), {}) is None
+    picked = {"main": "Fable", "subroutine": "Fable", "tool_call": "Fable"}
+    assert _models_for_build(_Server(), picked) == picked

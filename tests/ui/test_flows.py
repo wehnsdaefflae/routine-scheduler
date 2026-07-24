@@ -40,18 +40,14 @@ def test_decisions_answer_flow(ui, ui_page):
     expect(card).to_contain_text("Which color should the report use?")
     expect(card).to_contain_text("without an answer: red")
 
-    # an option button prefills the input; typing overrides; Enter submits
+    # F189: clicking an option button SUBMITS that option one-click (free-text answering
+    # stays possible — covered by the blocking-question flow below)
     card.get_by_role("button", name="1 · red").click()
-    field = card.locator('input[data-persist="answer-q-color"]')
-    expect(field).to_have_value("red")
-    field.fill("blue, and add a legend")
-    field.press("Enter")
-
     expect(_toast(ui_page)).to_contain_text("answered")
     expect(card.locator(".chip.ok")).to_contain_text("answered · queued")
     answer = json.loads(
         (ui.routine_dir("uir") / "inbox" / "answer-q-color.json").read_text(encoding="utf-8"))
-    assert answer["text"] == "blue, and add a legend"
+    assert answer["text"] == "red"
     assert answer["source"] == "web"
 
 
@@ -204,8 +200,9 @@ def test_run_rail_lists_file_activity(ui, ui_page):
 
 
 def test_run_view_question_form(ui, ui_page):
-    """The run view's blocking-question panel rides the shared answerForm: option buttons
-    prefill, the mirrored/Discord note renders, and ask-back sends an intermediate reply."""
+    """The run view's blocking-question panel rides the shared answerForm: the mirrored/
+    Discord note renders, ask-back sends an intermediate reply, and clicking an option
+    SUBMITS it one-click (F189) — no prefill-then-Enter second step."""
     ui.seed_run("uir", "20260715-100000", "waiting_user",
                 question={"qid": "q-rv", "question": "Which path?", "options": ["a", "b"],
                           "default": "a", "expires": "2026-07-15T13:00:00+00:00",
@@ -215,8 +212,6 @@ def test_run_view_question_form(ui, ui_page):
     box = ui_page.locator(".panel.warn", has_text="Which path?")
     expect(box).to_contain_text("and on Discord")
     expect(box).to_contain_text("without an answer: a")
-    box.get_by_role("button", name="a", exact=True).click()
-    expect(box.locator("textarea")).to_have_value("a")
     box.locator("textarea").fill("thinking out loud: why not both?")
     box.get_by_role("button", name="ask back").click()
     expect(_toast(ui_page)).to_contain_text("the model will reply and re-ask")
@@ -224,6 +219,8 @@ def test_run_view_question_form(ui, ui_page):
         (ui.routine_dir("uir") / "inbox" / "answer-q-rv.json").read_text(encoding="utf-8"))
     assert answer["intermediate"] is True
     assert answer["text"] == "thinking out loud: why not both?"
+    # one-click option submit on this panel is covered by
+    # test_run_page_blocking_question_shows_option_buttons (F189)
 
 
 def test_long_option_label_does_not_overflow(ui, ui_page):
@@ -871,11 +868,9 @@ def test_clarify_run_page_question_form_renders_options(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/run/clarification:{ts}")
     opts = ui_page.locator(".answer-opts .btn")
     expect(opts).to_have_count(3)
-    opts.filter(has_text="weekly").click()
-    field = ui_page.locator('textarea[data-persist="answer-q-w3"]')
-    expect(field).to_have_value("weekly")
-    field.press("Enter")
+    opts.filter(has_text="weekly").click()               # one-click decision (F189)
     expect(_toast(ui_page)).to_contain_text("answer sent")
+    _wait_until((d / "inbox" / "answer-q-w3.json").exists)
     answer = json.loads((d / "inbox" / "answer-q-w3.json").read_text(encoding="utf-8"))
     assert answer["text"] == "weekly"
 
@@ -1161,3 +1156,51 @@ def test_run_waiting_line_names_the_executing_action(ui, ui_page):
     waiting = ui_page.locator(".busy", has_text="running util")
     expect(waiting).to_be_visible()
     expect(waiting).to_contain_text("running util pytest-run…")
+
+
+# ---- F189 / F193 regression flows --------------------------------------------------------
+
+
+def test_run_page_blocking_question_shows_option_buttons(ui, ui_page):
+    """F189: the run view's blocking-question panel (the clarify-dialog surface — the
+    wizard's clarify session IS a run page) renders the question's options as buttons,
+    and clicking one submits that option one-click."""
+    ui.seed_run("uir", "20260715-091000", "waiting_user",
+                question={"qid": "q-opt", "question": "Pick a lane?",
+                          "options": ["fast", "careful"], "default": "careful",
+                          "asked": "20260715-091000"})
+    ui.seed_question("uir", "q-opt", "Pick a lane?", mode="blocking",
+                     options=["fast", "careful"], default="careful")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-091000")
+    panel = ui_page.locator(".panel.warn", has_text="Pick a lane?")
+    expect(panel.locator(".answer-opts button")).to_have_count(2)
+    panel.get_by_role("button", name="fast", exact=True).click()
+    expect(_toast(ui_page)).to_contain_text("answer sent")
+    _wait_until((ui.routine_dir("uir") / "inbox" / "answer-q-opt.json").exists)
+    answer = json.loads((ui.routine_dir("uir") / "inbox" / "answer-q-opt.json")
+                        .read_text(encoding="utf-8"))
+    assert answer["text"] == "fast"
+
+
+def test_secret_exposure_panel_refreshes_on_decision(ui, ui_page):
+    """F193: a grant decided elsewhere (Decisions-page approval → routine.yaml) must show
+    up in the routine page's secret-exposure panel WITHOUT a full reload — the panel
+    refetches when the decision's `question_answered` bus event lands."""
+    ui.seed_question("uir", "q-sec", "Expose secret FOO_TOKEN to routine 'uir'?",
+                     mode="blocking", options=["approve", "decline"])
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    expect(ui_page.locator(".panel", has_text="no secrets in the store yet")).to_be_visible()
+
+    # the grant lands in routine.yaml (as the engine's approval handler persists it) …
+    ry = ui.routine_dir("uir") / "routine.yaml"
+    cfg = yaml.safe_load(ry.read_text(encoding="utf-8"))
+    cfg["secret_grants"] = {"FOO_TOKEN": True}
+    ry.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    # … and the decision resolves — the answer's bus event reaches the open page
+    r = ui_page.request.post(f"{ui.url}/api/questions/q-sec/answer",
+                             headers={"Authorization": "Bearer ui-test-token"},
+                             data={"text": "approve"})
+    assert r.ok
+    row = ui_page.locator('[data-secret-row="FOO_TOKEN"]')
+    expect(row).to_be_visible()
+    expect(row.locator("select")).to_have_value("true")

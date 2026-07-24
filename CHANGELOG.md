@@ -19,6 +19,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.98.0] — 2026-07-24
+
+### Added
+- **Decompose pipeline (D41 redesign)**: routine generation no longer rides ONE huge JSON
+  completion. `decompose()` now runs scoped calls — stage OUTLINE (mutually exclusive
+  scopes) → main (must route every stage) → one call PER stage (anti-stub guard) → adapted
+  traits — each retried and validated; a dead traits call degrades softly to verbatim
+  copies instead of discarding a good main+stages.
+- **`util show --full` / `--range FIRST LAST` (D42-A)**: the complete source of any util
+  is now obtainable without shell — the capped default teaches both flags — so shell-less
+  routines can faithfully repair large utils.
+- **`run_canceled` health event (F188)**: a user abort is no longer logged as an
+  `orphaned_run` crash.
+- **Wizard model picker (F191)**: the create form carries an explicit model choice
+  (default: system default); the clarify template's models are no longer inherited
+  silently into created routines.
+
+### Fixed
+- **Deferred answers reach the live run (F195)**: an answer filed while the asking run is
+  still active is injected at the next turn boundary instead of waiting for the next run.
+- **Discord mirror stale/cross-routine replies (F194)**: the mirror sends with `--cursor
+  --json`, remembers the question's snowflake, and accepts only strictly-newer replies
+  read with `--mine`.
+- **Resumed runs report cumulative elapsed (F182)**: `status.json` no longer resets
+  `elapsed_s` on a post-terminal resume leg (`elapsed_base_s` carried like `usage_base`).
+- **One-click decision options (F189)**: clicking an option button SUBMITS the answer
+  everywhere the shared answer form renders; digit keys still prefill for editing.
+- **fs picker honesty (F190)**: an unreadable directory entry is marked (🔒) instead of
+  silently hidden or demoted; the empty state explains the daemon's mount view.
+- **Secret-exposure panel freshness (F193)**: the routine page refetches grants on the
+  `question_answered` bus event instead of rendering a page-load snapshot.
+
+
 ## [0.97.0] — 2026-07-24
 
 ### Fixed

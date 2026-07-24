@@ -17,7 +17,7 @@ from ..config import RoutineConfig, ServerConfig
 from ..endpoints import EndpointRegistry
 from ..ids import now_iso
 from ..ids import run_id as make_run_id
-from ..paths import atomic_write_json
+from ..paths import atomic_write_json, read_json
 from .budget import Budget, BudgetLedger
 from .transcript import Transcript
 
@@ -117,6 +117,12 @@ class RunContext:
     # Budgets deliberately ignore it — a resume gets a fresh window — but reporting must
     # not: status.json and the finish event carry usage_total() = base + this window.
     usage_base: dict = field(default_factory=dict)
+    # Active wall clock accrued by EARLIER legs of this run (seeded in __post_init__ from
+    # the prior leg's persisted status.json — the runner's queued-status rewrite carries
+    # elapsed_s forward on resume, like the counters, F140). Budgets deliberately ignore
+    # it — a resume gets a fresh wall-clock window, exactly as they ignore usage_base —
+    # but reporting must not (F182): write_status reports elapsed_total_s() = base + window.
+    elapsed_base_s: float = 0.0
     state: str = "starting"
     # The finish outcome (ok|partial|failed|aborted), stamped once at run end. status.json's
     # `state` folds a partial finish into "finished" — this field keeps a budget-exhausted
@@ -140,6 +146,20 @@ class RunContext:
     _started_mono: float = field(default_factory=time.monotonic)
     _suspended_s: float = 0.0
 
+    def __post_init__(self) -> None:
+        # F182: a resumed leg builds a FRESH RunContext, so _started_mono restarts and a
+        # resumed run's status.json used to report elapsed_s near 0. The run dir is reused
+        # across legs and its status.json still holds the prior leg's cumulative elapsed_s
+        # (the runner's queued-status rewrite preserves it); seed it as the base. A fresh
+        # run's queued status carries no elapsed_s key → base stays 0.0.
+        if self.depth == 0 and not self.elapsed_base_s:
+            prior = read_json(self.run_dir / "status.json")
+            if isinstance(prior, dict):
+                try:
+                    self.elapsed_base_s = float(prior.get("elapsed_s") or 0.0)
+                except (TypeError, ValueError):
+                    self.elapsed_base_s = 0.0
+
     @property
     def run_id(self) -> str:
         return make_run_id(self.routine.slug, self.run_ts)
@@ -153,7 +173,16 @@ class RunContext:
         return d
 
     def elapsed_s(self) -> float:
+        """THIS window's active wall clock — what budgets meter (a resume gets a fresh
+        wall-clock window, mirroring usage vs usage_base).
+        """
         return time.monotonic() - self._started_mono - self._suspended_s
+
+    def elapsed_total_s(self) -> float:
+        """Cumulative active wall clock across ALL legs of this run — what reporting
+        (write_status) shows, the elapsed counterpart of usage_total() (F182).
+        """
+        return self.elapsed_base_s + self.elapsed_s()
 
     def credit_suspended(self, seconds: float) -> None:
         self._suspended_s += seconds
@@ -264,9 +293,10 @@ class RunContext:
             "started": self.run_ts,
             "updated": now_iso(),
             "turn": self.turn,
-            # active wall-clock so far (paused/waiting time credited back) — the final
+            # active wall-clock so far across ALL legs (paused/waiting time credited
+            # back; prior legs' elapsed folded in via elapsed_base_s, F182) — the final
             # write at run end freezes it as the run's duration
-            "elapsed_s": int(self.elapsed_s()),
+            "elapsed_s": int(self.elapsed_total_s()),
             "phase": self.phase,
             "question": self.question,
             "usage": self.usage_total(),

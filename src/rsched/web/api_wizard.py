@@ -136,15 +136,15 @@ async def finalize(request: Request, wid: str, body: FinalizeBody) -> dict:
     return {"building": True, "slug": body.slug, "wid": wid}
 
 
-def _models_for_build(server, body_models: dict | None) -> dict | None:
-    """The new routine's models: an explicit wizard pick wins; otherwise inherit the
-    clarification TEMPLATE's models (the operator's chosen default for meta work) instead
-    of silently landing every new routine on the system fallback model (F153, operator
-    report 2026-07-23: template said Fable, the created routine ran Opus).
+def _models_for_build(_server, body_models: dict | None) -> dict | None:
+    """The new routine's models: ONLY an explicit wizard pick sets them (F191). The
+    clarification TEMPLATE's models are the operator's choice for the clarify chats
+    (meta work); inheriting them here (the earlier F153 behavior) silently made the
+    clarify-session model every created routine's configured model. Without an explicit
+    pick the models stay unset, so the routine visibly falls back to the system model
+    (the create form now carries an explicit model picker for the deliberate case).
     """
-    from . import wizard_store
-
-    return body_models or wizard_store.template_defaults(server)[1] or None
+    return body_models or None
 
 
 async def _run_build(app_state, wid: str, d: Path, body: FinalizeBody, result: dict) -> None:

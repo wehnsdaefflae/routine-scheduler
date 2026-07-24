@@ -154,3 +154,42 @@ def test_recipe_commit_stamped_from_git(make_routine, scripted):
     assert rec["recipe_commit"] == expected
     # the run's own autocommit changed HEAD, not the recipe version
     assert current_recipe_commit(d) == expected
+
+
+# ---- F182: a resumed leg must report cumulative elapsed, not a reset clock --------------
+
+
+def test_resumed_leg_reports_cumulative_elapsed(make_routine, tmp_path):
+    """A resume builds a FRESH RunContext (the monotonic clock restarts), so status.json
+    used to report elapsed_s near 0 on a resumed run. The prior leg's persisted elapsed_s
+    must seed elapsed_base_s at construction, and write_status must report the cumulative
+    total — while the budget meter stays window-scoped (a resume gets a fresh window,
+    mirroring usage_base)."""
+    d = make_routine(slug="elapsed")
+    cfg, _ = load_routine(d)
+    run_dir = d / "runs" / TS
+    run_dir.mkdir(parents=True)
+    # the prior leg's telemetry, as the runner's resume queued-write leaves it (F140)
+    (run_dir / "status.json").write_text(
+        json.dumps({"run_id": f"elapsed:{TS}", "state": "queued", "elapsed_s": 120}),
+        encoding="utf-8")
+    server = ServerConfig()
+    server.routines_home = tmp_path / "routines"
+    server.libraries_home = tmp_path / "empty-library"
+    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts=TS,
+                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
+                     budgets=Budgets.from_config(cfg.budgets))
+    assert ctx.elapsed_base_s == 120
+    ctx.write_status("running")
+    st = read_json(run_dir / "status.json")
+    assert st["elapsed_s"] >= 120                     # cumulative, not ~0 (the F182 bug)
+    # budgets keep a fresh wall-clock window: the base must not eat max_wall_clock_min
+    assert ctx.meter()["wall_clock"] < 1.0
+
+
+def test_fresh_run_carries_no_elapsed_base(make_routine, tmp_path):
+    """A fresh run dir (queued status without elapsed_s, or none at all) seeds base 0."""
+    ctx = _ctx(make_routine, tmp_path, slug="freshclk")
+    assert ctx.elapsed_base_s == 0.0
+    ctx.write_status("running")
+    assert read_json(ctx.run_dir / "status.json")["elapsed_s"] <= 1

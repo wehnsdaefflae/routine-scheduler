@@ -270,6 +270,13 @@ export async function createSetupPanel(host, { ts }) {
     };
     const status = await api("/api/status").catch(() => ({}));
     const sched = scheduleEditor({ frequency: "manual" }, status.server_tz);
+    // F191: the created routine's model is an EXPLICIT choice here — "system default"
+    // sends nothing, so the routine falls back to the system model. The clarify session's
+    // own model (the clarification template's) is never inherited silently.
+    const modelSel = el("select", {}, el("option", { value: "" }, "— system default —"));
+    api("/api/settings/models").then((md) => {
+      for (const m of (md.models || [])) modelSel.append(el("option", { value: m.name }, m.name));
+    }).catch(() => {});
     const runNow = el("input", { type: "checkbox", checked: true });
     const create = el("button", { class: "btn primary" }, "create routine");
     create.onclick = async () => {
@@ -292,6 +299,8 @@ export async function createSetupPanel(host, { ts }) {
           permissions: Object.entries(permBoxes).filter(([, b]) => b.checked).map(([s]) => s),
           budgets,
           deliberation: delib.value,
+          ...(modelSel.value ? { models: { main: modelSel.value, subroutine: modelSel.value,
+                                          tool_call: modelSel.value } } : {}),
         }});
         notifyChanged();                 // the top banner now shows the build in progress
         renderBuilding({ slug: r.slug });
@@ -303,6 +312,9 @@ export async function createSetupPanel(host, { ts }) {
           el("label", { class: "field" }, el("span", {}, "slug"), f.slug),
           el("label", { class: "field" }, el("span", {}, "name"), f.name)),
         el("label", { class: "field" }, el("span", {}, "schedule"), sched.node),
+        el("label", { class: "field" }, el("span", {}, "model"), modelSel,
+          el("span", { class: "muted small" },
+            "which catalog model the routine runs on — leave on system default unless this task needs a specific one")),
         el("label", { class: "field" }, el("span", {}, "tags"), f.tags),
         el("div", { class: "muted small", style: "margin-top:-2px" },
           "suggested from the existing vocabulary — reused where they fit, new ones only for a genuinely new facet"),

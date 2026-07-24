@@ -79,3 +79,30 @@ def test_fs_list_truncates_at_max_entries(api_client, monkeypatch):
     data = c.get(f"/api/fs/list?path={base}").json()
     assert data["truncated"] is True
     assert len(data["entries"]) == 3
+
+
+def test_unstatable_entry_is_marked_not_hidden(api_client, monkeypatch):
+    """F190: an entry the daemon cannot stat (dead/permission-restricted mount under e.g.
+    /mnt) must appear as a MARKED directory — never silently demoted to a file row or
+    dropped, which read as 'the directory is empty' in the picker."""
+    from pathlib import Path
+
+
+    c, tmp = api_client
+    base = tmp / "mounts"
+    (base / "ok").mkdir(parents=True)
+    (base / "cifs-share").mkdir()
+
+    real = Path.is_dir
+
+    def fake_is_dir(self):
+        if self.name == "cifs-share":
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self)
+
+    monkeypatch.setattr(Path, "is_dir", fake_is_dir)
+    data = c.get(f"/api/fs/list?path={base}").json()
+    by_name = {e["name"]: e for e in data["entries"]}
+    assert by_name["cifs-share"]["is_dir"] is True          # still descendable
+    assert by_name["cifs-share"].get("unreadable") is True  # and visibly marked
+    assert by_name["ok"]["is_dir"] is True and "unreadable" not in by_name["ok"]

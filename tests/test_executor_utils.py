@@ -91,3 +91,24 @@ def test_util_show_and_missing_answer_with_the_catalog(util_ctx):
     assert missing["missing"] is True and "echoer" in missing["available"]
     gone = dispatch({"kind": "util", "name": "unknown-util", "args": []}, util_ctx)
     assert gone["missing"] is True and set(gone["available"]) == {"crasher", "echoer"}
+
+
+def test_util_show_full_and_range_page_the_whole_source(util_ctx):
+    """D42-A: a >24k util must be COMPLETELY readable without shell — the capped default
+    teaches --full/--range, --full returns everything, --range pages by 1-based lines."""
+    body = ('"""big — test filler.\n\nusage: gu big\ntags: test\n"""\n'
+            + "\n".join(f"# line {i}" for i in range(4000)))
+    d = util_ctx.server.libraries_home / "utils" / "big"
+    d.mkdir(parents=True)
+    (d / "main.py").write_text(body, encoding="utf-8")
+    capped = dispatch({"kind": "util", "name": "show", "args": ["big"]}, util_ctx)
+    assert capped["truncated"] is True and "--full" in capped["hint"]
+    full = dispatch({"kind": "util", "name": "show", "args": ["big", "--full"]}, util_ctx)
+    assert full["truncated"] is False and full["source"] == body
+    window = dispatch({"kind": "util", "name": "show",
+                       "args": ["big", "--range", "6", "8"]}, util_ctx)
+    assert window["source"].splitlines()[0] == "[lines 6-8 of 4005]"
+    assert window["source"].splitlines()[1:] == ["# line 0", "# line 1", "# line 2"]
+    assert window["truncated"] is True
+    bad = dispatch({"kind": "util", "name": "show", "args": ["big", "--range", "x"]}, util_ctx)
+    assert "[bad --range]" in bad["source"]

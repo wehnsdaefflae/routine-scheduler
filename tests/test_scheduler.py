@@ -242,3 +242,47 @@ async def test_reap_surfaces_clean_exit_diagnostics(make_routine, tmp_path, monk
         assert await _wait_for(lambda: not runner.is_active("warner"))
     surfaced = [r.getMessage() for r in caplog.records if "finished but logged" in r.getMessage()]
     assert surfaced and "util-stats snapshot write failed" in surfaced[0]
+
+
+# --- F188: a user cancel must not masquerade as a crash in the health stream -----------
+
+
+def _health_events(server, routine):
+    path = server.routines_home / ".control" / "health-events.jsonl"
+    return [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines()
+            if json.loads(ln)["routine"] == routine]
+
+
+async def test_user_cancel_logs_run_canceled_not_orphaned(make_routine, tmp_path, monkeypatch):
+    """An abort the USER requested that kills the engine before it can write its own
+    finish must land in the health stream as run_canceled — not as an orphaned_run crash
+    (payload shape identical)."""
+    d = make_routine(slug="cancelee")
+    cfg, _ = load_routine(d)
+    _stub_engine(monkeypatch, "sleep 30")
+    monkeypatch.setattr(runner_mod, "KILL_GRACE_S", 1)
+    server = _server(tmp_path)
+    runner = Runner(server, EventBus())
+    await runner.fire(cfg)
+    assert await _wait_for(lambda: runner.active["cancelee"].proc is not None)
+    assert await runner.abort("cancelee") is True
+    assert await _wait_for(lambda: not runner.active)
+    mine = _health_events(server, "cancelee")
+    assert mine and mine[-1]["event"] == "run_canceled"
+    assert all(e["event"] != "orphaned_run" for e in mine)
+    assert "engine exited" in mine[-1]["detail"] and mine[-1]["run_id"].startswith("cancelee:")
+
+
+def test_dead_pid_recovery_still_logs_orphaned_run(make_routine, tmp_path):
+    """The default close-out path is untouched: a genuinely dead run recovered at boot
+    (no user cancel anywhere) keeps the orphaned_run event."""
+    d = make_routine(slug="orphan2")
+    run_dir = d / "runs" / "20260701-070000"
+    run_dir.mkdir(parents=True)
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": "orphan2:20260701-070000", "state": "running", "pid": 999999})
+    (run_dir / "transcript.jsonl").write_text(json.dumps({"type": "header"}) + "\n")
+    server = _server(tmp_path)
+    runner = Runner(server, EventBus())
+    assert runner.recover_orphans(scan(server)) == 1
+    assert [e["event"] for e in _health_events(server, "orphan2")] == ["orphaned_run"]

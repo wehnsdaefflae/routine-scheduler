@@ -1,8 +1,11 @@
 """Health-events file: append-only JSONL log of key daemon/engine events for audit consumption.
 
 Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON object:
-{"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"orphaned_run",
+{"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"orphaned_run"|"run_canceled",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
+
+run_canceled: a user-requested abort killed the engine before it could write its own
+finish (same payload shape as orphaned_run, which is reserved for genuine crashes).
 
 Best-effort: I/O errors are silently swallowed so logging never blocks the daemon or engine.
 """

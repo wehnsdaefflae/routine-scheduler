@@ -36,11 +36,19 @@ export function pickDirectory({ title = "Select a directory", start = "" } = {})
       pathInput.value = data.path;
       const rows = [];
       if (data.parent) rows.push(row("⤴", "..", () => load(data.parent)));
-      for (const e of data.entries)
-        rows.push(e.is_dir ? row("📁", e.name, () => load(e.path)) : row("📄", e.name, null));
+      for (const e of data.entries) {
+        // F190: an entry the daemon cannot stat stays VISIBLE and descendable — clicking
+        // it surfaces the endpoint's explicit error instead of a silent gap in the list.
+        const r = e.is_dir ? row(e.unreadable ? "🔒" : "📁", e.name, () => load(e.path))
+                           : row("📄", e.name, null);
+        if (e.unreadable) r.title = "not readable by the daemon — open it to see the exact error";
+        rows.push(r);
+      }
       listBox.replaceChildren(rows.length
         ? el("div", {}, ...rows)
-        : el("div", { class: "muted small", style: "padding:8px" }, "(empty directory)"));
+        : el("div", { class: "muted small", style: "padding:8px" },
+            "(empty directory — as the DAEMON sees it: mounts hidden from its service or "
+            + "container namespace don't appear here; type a path above to jump directly)"));
       if (data.truncated) note.textContent = "…directory truncated (too many entries to list all)";
     }
 

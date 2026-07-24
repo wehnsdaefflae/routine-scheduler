@@ -176,18 +176,29 @@ export async function render(view, runId, query = {}) {
   const switchBox = el("details", { class: "small" },
     el("summary", { style: "cursor:pointer;color:var(--muted)" }, "⚙ switch model"));
   let mSelRef = null, curModel = "";   // the switch-select mirrors the LIVE model (F166)
+  // F191: status.json reports the live model as an "endpoint/model" id while the switch
+  // select lists catalog NAMES — resolve either form to the catalog name, otherwise the
+  // assignment silently no-ops and the select shows option #1 as if it were the setting.
+  let resolveModel = (m) => m;   // replaced once the catalog arrives
+  const syncSel = () => {
+    if (!mSelRef || !curModel) return;
+    const name = resolveModel(curModel);
+    if ([...mSelRef.options].some((o) => o.value === name)) mSelRef.value = name;
+  };
   const setModel = (m) => {
     if (m) curModel = m;
     modelSpan.textContent = m ? `model ${m}` : "";
-    if (mSelRef && curModel) mSelRef.value = curModel;
+    syncSel();
   };
   api("/api/settings/models").then((d) => {
     const models = d.models || [];
     if (!models.length) return;
+    resolveModel = (m) => (models.find((x) => x.name === m
+      || (x.endpoint && x.model && `${x.endpoint}/${x.model}` === m)) || { name: m }).name;
     const mSel = el("select", { style: "width:auto;font-size:11.5px;padding:3px 6px" },
-      models.map((m) => el("option", {}, m.name)));
+      models.map((m) => el("option", { value: m.name }, m.name)));
     mSelRef = mSel;
-    if (curModel) mSel.value = curModel;   // preselect the run's actual model, not option #1
+    syncSel();   // preselect the run's actual model (name OR endpoint/model id), not option #1
     const go = el("button", { class: "btn small primary" }, "switch");
     go.onclick = async () => {
       try {

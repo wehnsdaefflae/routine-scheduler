@@ -237,6 +237,14 @@ def drain_injections(loop) -> None:
     ctx = loop.ctx
     if ctx.depth > 0:
         return
+    # F195: an answer to a DEFERRED question this run filed must reach the run while it
+    # is still alive — before this, it sat in the inbox for the NEXT run's digest while
+    # the live run finished claiming "awaits your answer" (observed 2026-07-24 with
+    # q-20260724-121507-11). Same delivery as any mid-run user message; the pending
+    # record is consumed with it.
+    for qa in inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir):
+        inject_user_message(loop, {"text": f"ANSWER to your deferred question "
+                                           f"“{qa['question']}”:\n{qa['answer']}"})
     for m in inbox.drain_messages(ctx.routine.dir, loop.consumed_dir):
         inject_user_message(loop, m)
 

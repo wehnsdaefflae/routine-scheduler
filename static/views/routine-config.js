@@ -311,8 +311,15 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
   // -- secret exposure: which store secrets this routine's util calls may receive (D39) --------
   const secBox = el("div", { class: "panel" }, skeleton(["50%"]));
   view.append(el("h2", {}, "Secret exposure"), secBox);
-  api("/api/settings/secrets").then((sec) => {
-    const grants = d.secret_grants || {};
+  // F193: a grant decided elsewhere (Decisions-page approval, Discord) lands in
+  // routine.yaml while this page is open — the panel refetches BOTH the store and the
+  // routine's CURRENT grants instead of rendering the page-load snapshot forever.
+  const loadSecrets = async () => {
+    let sec, grants;
+    try {
+      sec = await api("/api/settings/secrets");
+      grants = (await api(`/api/routines/${slug}`)).secret_grants || {};
+    } catch (err) { secBox.replaceChildren(el("div", { class: "muted" }, err.message)); return; }
     const names = [...new Set([...(sec.keys || []), ...Object.keys(grants)])].sort();
     secBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:8px" },
       "Which store secrets this routine's util calls may receive. An undecided secret is asked ",
@@ -345,7 +352,20 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
           toast("secret exposure saved"); }
         catch (err) { toast(err.message, 4000, { error: true }); }
       } }, "save secret exposure")));
-  }).catch((err) => secBox.replaceChildren(el("div", { class: "muted" }, err.message)));
+  };
+  loadSecrets();
+  // Refetch when a decision lands (the util-approval that grants exposure resolves as a
+  // question answer). The engine persists the grant to routine.yaml a moment AFTER the
+  // answer event, so refetch again shortly after; the listener unhooks itself once the
+  // panel has left the DOM (SPA remount).
+  const onSecretsBus = (e) => {
+    if (!secBox.isConnected) { window.removeEventListener("rsched-bus", onSecretsBus); return; }
+    if (e.detail?.event === "question_answered" && e.detail.routine === slug) {
+      loadSecrets();
+      setTimeout(() => { if (secBox.isConnected) loadSecrets(); }, 2500);
+    }
+  };
+  window.addEventListener("rsched-bus", onSecretsBus);
 
   // -- machines: bind the remote SSH hosts this routine may act on (Settings → Machines) --------
   const catalogM = d.machine_catalog || [];   // instance-wide machine catalog (name + summary)

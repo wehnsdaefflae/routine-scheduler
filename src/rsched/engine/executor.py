@@ -74,7 +74,7 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     return {**_connection_env(ctx), **_machine_env(ctx)}
 
 
-def do_util(action: dict, ctx: RunContext) -> dict:
+def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/show dispatch, many small exits
     name = action["name"]
     args = [str(a) for a in (action.get("args") or [])]
     home = ctx.server.libraries_home
@@ -104,9 +104,36 @@ def do_util(action: dict, ctx: RunContext) -> dict:
         if source is None:
             return {"kind": "util", "name": "show", "target": target, "missing": True,
                     "available": [u["name"] for u in utils_lib.list_utils(home)]}
+        # D42-A: repairing a big util needs the COMPLETE source — the default head+tail cap
+        # made >24k utils unfixable for shell-less routines. --full returns everything;
+        # --range FIRST LAST pages by 1-based inclusive line numbers.
+        flags = [str(a) for a in args[1:]]
+        if "--full" in flags:
+            return {"kind": "util", "name": "show", "target": target, "source": source,
+                    "truncated": False}
+        if "--range" in flags:
+            i = flags.index("--range")
+            try:
+                lo, hi = int(flags[i + 1]), int(flags[i + 2])
+            except (IndexError, ValueError):
+                return {"kind": "util", "name": "show", "target": target,
+                        "source": "[bad --range] usage: show <name> --range FIRST LAST "
+                                  "(1-based line numbers, inclusive)", "truncated": False}
+            src_lines = source.splitlines()
+            lo = max(lo, 1)
+            window = "\n".join(src_lines[lo - 1:hi])
+            return {"kind": "util", "name": "show", "target": target,
+                    "source": f"[lines {lo}-{min(hi, len(src_lines))} of {len(src_lines)}]\n"
+                              + window,
+                    "truncated": lo > 1 or hi < len(src_lines)}
         content, truncated = truncate(source, cap=24_000)
-        return {"kind": "util", "name": "show", "target": target, "source": content,
-                "truncated": truncated}
+        obs = {"kind": "util", "name": "show", "target": target, "source": content,
+               "truncated": truncated}
+        if truncated:
+            obs["hint"] = (f'the middle is elided — re-run with "args": ["{target}", "--full"] '
+                           f'for the complete source, or ["{target}", "--range", "FIRST", '
+                           f'"LAST"] for a line window')
+        return obs
     if not utils_lib.exists(home, name):
         ctx.count_util(name, "missing")
         return {"kind": "util", "name": name, "missing": True,

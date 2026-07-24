@@ -49,6 +49,18 @@ def _is_dir(p: Path) -> bool:
         return False
 
 
+def _stat_entry(p: Path) -> tuple[bool, bool]:
+    """(is_dir, unreadable) for ONE listing entry. A stat failure (permission-restricted
+    or dead network mount, broken automount) must not silently demote the entry to an
+    unclickable file row (F190): the entry stays a DIRECTORY, marked `unreadable`, so the
+    picker shows it and descending yields an explicit error instead of a silent gap.
+    """
+    try:
+        return p.is_dir(), False
+    except OSError:
+        return True, True
+
+
 @router.get("/fs/list")
 def list_dir(path: str = "") -> dict:
     """List the sub-entries of `path` (default: the daemon user's home). Directories first,
@@ -69,12 +81,13 @@ def list_dir(path: str = "") -> dict:
     if not _is_dir(target):
         raise HTTPException(400, f"not a directory: {target}")
     try:
-        children = [(c, _is_dir(c)) for c in target.iterdir()]
+        children = [(c, *_stat_entry(c)) for c in target.iterdir()]
     except PermissionError as exc:
         raise HTTPException(403, f"permission denied: {target}") from exc
     children.sort(key=lambda t: (not t[1], t[0].name.lower()))
-    entries = [{"name": c.name, "path": str(c), "is_dir": is_dir}
-               for c, is_dir in children[:MAX_ENTRIES]]
+    entries = [{"name": c.name, "path": str(c), "is_dir": is_dir,
+                **({"unreadable": True} if unreadable else {})}
+               for c, is_dir, unreadable in children[:MAX_ENTRIES]]
     parent = str(target.parent) if target.parent != target else None
     return {"path": str(target), "parent": parent, "entries": entries,
             "truncated": len(children) > MAX_ENTRIES}

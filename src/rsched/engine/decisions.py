@@ -29,6 +29,7 @@ class DiscordMirror:
         self.ctx = ctx
         self.qid = qid
         self.cursor = f"rsched-{ctx.routine.slug}"
+        self.question_id = 0     # snowflake of the posted question; poll accepts only newer
         self._next_poll = 0.0
         self._dead = False
 
@@ -37,8 +38,12 @@ class DiscordMirror:
 
     def send_question(self, question: str, options: list[str], default: str,
                       timeout_min: int) -> bool:
-        """Post the question; advance the reply cursor first so stale channel chatter is
-        never mistaken for the answer. Returns False when the channel is unusable.
+        """Post the question and remember its message id (a Discord snowflake): poll()
+        accepts only replies POSTED AFTER it — F194: a stale or another routine's message
+        must never settle a fresh question (the cursor prime alone silently failed to
+        guarantee that). Sending with --cursor also feeds the util's sent-ledger, so
+        `read --mine` can skip replies addressed to a sibling routine's messages.
+        Returns False when the channel is unusable.
         """
         self._run(["read", "--cursor", self.cursor, "--json"])   # prime: skip old messages
         lines = [f"❓ **{self.ctx.routine.name}** needs a decision:", question.strip()]
@@ -47,21 +52,31 @@ class DiscordMirror:
         if default:
             lines.append(f"Without an answer in ~{timeout_min}m I continue with: {default}")
         lines.append("Reply here, or answer on the Decisions page — whichever comes first counts.")
-        code, _ = self._run(["send", "\n".join(lines),
-                             "--title", f"{self.ctx.routine.slug}: decision {self.qid}"])
+        code, out = self._run(["send", "\n".join(lines),
+                               "--title", f"{self.ctx.routine.slug}: decision {self.qid}",
+                               "--cursor", self.cursor, "--json"])
         self._dead = code != 0
+        if not self._dead:
+            try:
+                self.question_id = int(json.loads(out.strip()).get("id") or 0)
+            except (ValueError, TypeError, AttributeError):
+                self.question_id = 0             # unknown id → guard degrades to cursor-only
         return not self._dead
 
     def poll(self) -> str | None:
-        """The newest reply since the cursor, rate-limited to DISCORD_POLL_S."""
+        """The newest reply NEWER than the posted question, rate-limited to DISCORD_POLL_S.
+        `--mine` skips replies Discord-addressed to a sibling routine's messages; the
+        snowflake guard drops anything posted before the question itself (F194 — observed:
+        a 2h-stale "Yes" settled a fresh question on another routine).
+        """
         if self._dead or time.monotonic() < self._next_poll:
             return None
         self._next_poll = time.monotonic() + DISCORD_POLL_S
-        code, out = self._run(["read", "--cursor", self.cursor, "--json"])
+        code, out = self._run(["read", "--cursor", self.cursor, "--mine", "--json"])
         if code != 0:
             return None
-        texts = _reply_texts(out)
-        return texts[-1] if texts else None
+        fresh = [text for mid, text in _reply_items(out) if mid > self.question_id]
+        return fresh[-1] if fresh else None
 
     def notify_resolved(self, answer: str, source: str) -> None:
         if self._dead:
@@ -99,11 +114,12 @@ class DiscordMirror:
         self._run(["send", note, "--title", f"{self.ctx.routine.slug}: decision {self.qid}"])
 
 
-def _reply_texts(raw: str) -> list[str]:
+def _reply_items(raw: str) -> list[tuple[int, str]]:
     """Parse `discord read --json` output — ONE pinned shape: a JSON list of message
-    objects whose text rides the `message` field (the util's _emit contract). Anything
-    else reads as no replies; if the util's shape ever changes, change it here too —
-    never re-grow tolerant multi-shape parsing.
+    objects with a snowflake `id` and text in the `message` field (the util's _emit
+    contract), returned as (id, text) ascending. A message without a parsable id is
+    dropped — the F194 newer-than-question guard cannot order it. If the util's shape
+    ever changes, change it here too — never re-grow tolerant multi-shape parsing.
     """
     try:
         data = json.loads(raw.strip() or "[]")
@@ -111,8 +127,16 @@ def _reply_texts(raw: str) -> list[str]:
         return []
     if not isinstance(data, list):
         return []
-    return [str(item["message"]).strip() for item in data
-            if isinstance(item, dict) and str(item.get("message") or "").strip()]
+    items = []
+    for item in data:
+        if not isinstance(item, dict) or not str(item.get("message") or "").strip():
+            continue
+        try:
+            mid = int(str(item.get("id")))
+        except (TypeError, ValueError):
+            continue
+        items.append((mid, str(item["message"]).strip()))
+    return sorted(items)
 
 
 def mirror_blocking(ctx, qid: str, question: str, options: list[str], default: str,

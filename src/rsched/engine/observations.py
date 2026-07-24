@@ -28,8 +28,11 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
         if obs.get("listing") is not None:
             return "OBSERVATION (util list — available global utils):\n" + obs["listing"]
         if obs.get("source") is not None:
-            return (f"OBSERVATION (util show — source of {obs['target']!r}; to revise it, "
-                    "write_util the COMPLETE corrected script):\n" + obs["source"])
+            out = (f"OBSERVATION (util show — source of {obs['target']!r}; to revise it, "
+                   "write_util the COMPLETE corrected script):\n" + obs["source"])
+            if obs.get("hint"):
+                out += "\n\n[hint] " + obs["hint"]
+            return out
         if obs.get("missing"):
             names = ", ".join(obs.get("available") or []) or "(none yet)"
             return (f"OBSERVATION (util {(obs.get('target') or obs['name'])!r} does not exist). "

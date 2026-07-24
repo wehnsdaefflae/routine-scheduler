@@ -38,7 +38,9 @@ export function answerForm(q, {
     options.length ? el("div", { class: "row mt answer-opts", style: "gap:8px" },
       options.map((o, i) => el("button", {
         class: "btn small", ...(numbered ? { title: `press ${i + 1}` } : {}),
-        onclick: () => { input.value = o; input.focus(); },
+        // one-click decision (F189): clicking an option SUBMITS it — free text stays
+        // possible via the input; digit keys still only prefill (editable before Enter).
+        onclick: () => { input.value = o; submit(false); },
       }, numbered ? `${i + 1} · ${o}` : o))) : null,
     q.default && defaultLine ? el("div", { class: "faint small mt",
       title: "what the routine does if this stays unanswered" },

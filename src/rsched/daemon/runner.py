@@ -96,6 +96,9 @@ class ActiveRun:
     sem: asyncio.Semaphore | None = None  # the pool this run draws from (cron vs interactive)
     background: bool = False  # a detached task — excluded from the self-update drain gate
     cancelled: bool = False   # aborted while still QUEUED — the supervisor spawns nothing
+    user_cancel: bool = False  # user-requested abort of a RUNNING process (F188): when the
+                               # kill leaves no engine finish, _reap logs run_canceled —
+                               # a deliberate cancel must not masquerade as orphaned_run
 
 
 class Runner:
@@ -303,7 +306,8 @@ class Runner:
             # engine died without closing out (SIGKILL, crash) — the daemon finalizes
             self._close_out(run.run_dir, run.run_id,
                             f"engine exited rc={rc} without a finish "
-                            f"({stderr.decode('utf-8', 'replace')[-400:].strip() or 'no stderr'})")
+                            f"({stderr.decode('utf-8', 'replace')[-400:].strip() or 'no stderr'})",
+                            event="run_canceled" if run.user_cancel else "orphaned_run")
             info = registry.read_run(run.run_dir, run.slug)
         else:
             # Clean finish: stdout was DEVNULL and stderr is otherwise dropped here, so a
@@ -327,8 +331,12 @@ class Runner:
         except OSError as exc:
             log.warning("retention failed for %s: %s", cfg.slug, exc)
 
-    def _close_out(self, run_dir: Path, run_id: str, message: str) -> None:
-        """Append a synthetic finish to a dead run (single writer: the engine is gone)."""
+    def _close_out(self, run_dir: Path, run_id: str, message: str, *,
+                   event: str = "orphaned_run") -> None:
+        """Append a synthetic finish to a dead run (single writer: the engine is gone).
+        `event` names the health-stream entry: orphaned_run for a crash/dead pid,
+        run_canceled when the death was a user-requested abort (F188) — same payload shape.
+        """
         try:
             with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"ts": now_iso(), "type": "finish",
@@ -341,7 +349,7 @@ class Runner:
         st.update(state="failed", updated=now_iso(), question=None)
         atomic_write_json(run_dir / "status.json", st)
         atomic_write(run_dir / "result.md", message + "\n")
-        log_health_event(self.server.routines_home, "orphaned_run",
+        log_health_event(self.server.routines_home, event,
                          routine=run_id.split(":", maxsplit=1)[0] if ":" in run_id else run_id,
                          run_id=run_id, detail=message[:500])
 
@@ -359,6 +367,9 @@ class Runner:
             st.update(state="aborted", updated=now_iso(), question=None)
             atomic_write_json(run.run_dir / "status.json", st)
             return True
+        # mark BEFORE killing: if the engine needs SIGKILL and dies without a finish,
+        # _reap must attribute the close-out to the user's cancel (F188)
+        run.user_cancel = True
         return await abort_process(run.proc.pid, run.run_dir, run.run_id)
 
     def recover_orphans(self, catalog: dict[str, registry.RoutineInfo]) -> int:
