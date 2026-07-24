@@ -278,7 +278,10 @@ connect (paramiko `RejectPolicy` — no TOFU in a headless run). Pieces:
   run the real `remote` util server-side with `base_policy`, so what Settings proves is what a run
   gets); routine-page binding via `api_routines` PATCH `machines` (catalog-validated). `STRIP_VARS`
   now also scrubs `SSH_AUTH_SOCK`/`SSH_AGENT_PID` so a forwarded agent can't bypass the binding;
-  `~/.ssh` stays sandbox-invisible (keys come from Secrets, not disk). See docs/remote-machines.md.
+  `~/.ssh` stays sandbox-invisible (keys come from Secrets, not disk). The operator helper
+  `deploy/setup-remote-agent-user.sh` provisions a hardened login on the remote host (no sudo,
+  key-only, its OWN home co-owned by an admin, root-owned authorized_keys, video/render) so the
+  util never logs in as an admin account. See docs/remote-machines.md.
 
 ## Routines on disk
 

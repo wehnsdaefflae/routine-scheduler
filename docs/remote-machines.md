@@ -45,9 +45,11 @@ sandboxed:
 
 ## Setting one up (a GPU box)
 
-1. **Prepare the host.** On the remote machine, create a dedicated unprivileged user (e.g.
-   `rsched`) and add an SSH public key to its `~/.ssh/authorized_keys`. Prefer a locked-down entry
-   (`command=…`, `restrict`) if the routine only needs specific operations.
+1. **Prepare the host.** On the remote machine, create a dedicated **unprivileged** user for the
+   util to log in as — never an admin/sudo account (a `remote exec` runs with that account's full
+   rights; the sandbox protects the daemon host, not the target). The helper
+   `deploy/setup-remote-agent-user.sh` does this the hardened way — see
+   [Creating the restricted remote user](#creating-the-restricted-remote-user) below.
 2. **Settings → Secrets**: set the PRIVATE key as a secret, e.g. `GPUBOX_SSH_KEY` (paste the whole
    unencrypted PEM).
 3. **Settings → Machines → add**: name (`gpu-box`), host, user, port, `key_var` = `GPUBOX_SSH_KEY`,
@@ -56,6 +58,35 @@ sandboxed:
    key, review it, then save. Click **test** to confirm reachability.
 4. **Bind it**: on a routine's page, *Machines* → check `gpu-box` → save. Also switch on the
    **`remote-machines`** permission (which enables the `remote` util).
+
+## Creating the restricted remote user
+
+`deploy/setup-remote-agent-user.sh` (run as root **on the remote host**) creates a locked-down
+login the util can use for anything — including GPU work — without handing it the keys to the box:
+
+- A user (`agent` by default) with **no sudo**, a **locked password**, and **key-only** login.
+- Its **own** standalone home (`/home/agent`, mode `2770`, setgid) — never nested inside an admin's
+  home, so nothing of the admin's is exposed. Pass `AGENT_COOWNER=<admin>` to add that admin to the
+  agent's group, keeping them full read/write access to everything the agent produces.
+- The pubkey stored **root-owned** at `/etc/ssh/authorized_keys/<user>`, scoped by a
+  `Match User <user>` sshd block (which also turns off password auth, X11 and agent forwarding for
+  it). Root ownership is what keeps a group-writable home valid under sshd `StrictModes`, and means
+  the agent can't append keys to escalate its own persistence. The script validates with `sshd -t`
+  before reloading and restores its backup on failure.
+- Membership in `video`/`render` for GPU access. NVIDIA device nodes are typically `0666`, so
+  CUDA / PyTorch / TensorFlow need no further grant; the account runs the full toolchain as an
+  ordinary unprivileged user. This is least-privilege via ownership/groups, deliberately **not** a
+  chroot — a chroot would make a working CUDA stack impractical.
+
+```bash
+# on the remote host, with the util's PUBLIC key in agent.pub beside the script:
+AGENT_COOWNER=<admin-user> sudo -E bash deploy/setup-remote-agent-user.sh
+```
+
+Then map it into the catalog (steps 2–4 above): store the matching **private** key on
+Settings → Secrets, and set the machine's `user`, `key_var`, and `workdir` (= the agent's home).
+The pinned **host key is per-host**, so switching the login user from an admin account to the
+restricted one needs no host-key re-scan.
 
 ## Using it (in a routine)
 
