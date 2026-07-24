@@ -154,6 +154,13 @@ def _sub_routine(routine, sub_dir, ref, *, deliberation: str = ""):
 
     r = copy.copy(routine)
     r.dir = sub_dir
+    # children share the parent's tree (the contract even tells them to keep outputs disjoint
+    # there) — but moving r.dir to sub/ silently dropped the parent dir from the allowed
+    # roots, stranding a child tasked on parent state files (F185, ards sub/1 2026-07-24:
+    # every read_file of the routine's own state/ failed 'outside the allowed roots').
+    # Extend — never replace — so configured extra roots still apply.
+    r.fs_read_roots = [*routine.fs_read_roots, routine.dir]
+    r.fs_write_roots = [*routine.fs_write_roots, routine.dir]
     r.models = dict(routine.models)   # role → catalog NAME (subroutine/tool_call inherited)
     r.models["main"] = ref.name       # resolved subroutine catalog name → the child's main
     r.permissions = []

@@ -138,6 +138,13 @@ def test_patch_routine_and_409_guard(client):
     assert c.patch("/api/routines/apir", json={"enabled": True}).status_code == 200
     assert yaml.safe_load(
         (tmp / "routines" / "apir" / "routine.yaml").read_text())["enabled"] is True
+    # D40 pin (2026-07-24): connection bindings and secret-exposure grants are exactly the
+    # saves a user makes WHILE a bootstrap run waits on them — they must never 409.
+    assert c.patch("/api/routines/apir",
+                   json={"secret_grants": {"GMAIL_APP_PASSWORD": True},
+                         "connections": {}}).status_code == 200
+    raw_mid = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
+    assert raw_mid["secret_grants"] == {"GMAIL_APP_PASSWORD": True}
     assert c.put("/api/routines/apir/file",
                  json={"path": "main.md", "content": "x"}).status_code == 409
 

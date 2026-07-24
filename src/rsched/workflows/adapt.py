@@ -57,6 +57,13 @@ def materialize(home: Path, slug: str, *, today: str | None = None) -> tuple[str
 
 log = logging.getLogger("rsched.adapt")
 
+# D41 generation budget: the decompose completion carries main + every stage + the adapted
+# traits in ONE JSON object; give it output headroom and time, and try twice before degrading
+# (observed 2026-07-24: two same-day wizard creations both shipped stageless fallbacks).
+DECOMPOSE_MAX_TOKENS = 32000
+DECOMPOSE_TIMEOUT_S = 300
+DECOMPOSE_ATTEMPTS = 2
+
 DECOMPOSE_SCHEMA = {
     "type": "object", "additionalProperties": False,
     "required": ["main", "stages"],
@@ -107,6 +114,10 @@ agent will follow one action per turn:
   concrete and specific to THIS task. The FILENAMES are the live progress diagram the user
   watches, so each must read as this task's real step (never a generic workflow or function
   name). main.md must reference every stage you create by its `stages/<name>.md` path, in order.
+  Each stage body is a COMPLETE, self-sufficient module for that step — the concrete procedure
+  (what to read, decide, do, write and verify), the exact `state/` files and output shapes it
+  touches, its edge cases, and what done looks like; typically 20-60 lines. A one-line summary
+  or placeholder stub is a FAILURE — at run time the agent has NOTHING else to act from.
 
 Turn each of the pattern's steps (the `main()` control flow and the functions it calls) into
 concrete prose for THIS task — never leave Python in the output.
@@ -139,10 +150,10 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
               traits: list[str] | None = None) -> dict:
     """Generator LLM: apply a single-file workflow to `instruction` and split it into the routine's
     main.md body + stage/state modules, ADAPTING the selected traits to the task along the way.
-    Returns {'main': <body>, 'stages': {name: body}, 'traits': {slug: adapted body}}. Degrades to
-    the whole workflow rendered as main.md (no stages, no adapted traits — the caller copies
-    library traits verbatim) on any failure, so generation without a usable endpoint still yields
-    a valid, self-contained markdown routine.
+    Returns {'main': <body>, 'stages': {name: body}, 'traits': {slug: adapted body},
+    'degraded': bool}. Tries twice (D41: the one-shot completion is big — main + stages + adapted
+    traits — and a truncated/timed-out attempt used to silently ship a stageless routine), then
+    degrades to the whole workflow rendered as main.md with `degraded` True so callers can SAY so.
     """
     from .. import library_docs
 
@@ -158,42 +169,57 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
         raw_doc = library_docs.read_doc(server.traits_home, t)
         if raw_doc:
             trait_bodies[t] = library_docs.doc_body(raw_doc).strip()
-    try:
-        from ..endpoints import EndpointRegistry
+    last_exc: Exception | None = None
+    for attempt in range(1, DECOMPOSE_ATTEMPTS + 1):
+        try:
+            from ..endpoints import EndpointRegistry
 
-        endpoint, ref = EndpointRegistry(server).for_system()
-        param_note = ("\n\nPARAMETERS (the pattern's contract, resolved with the user):\n"
-                      + "\n".join(f"- {k}: {v}" for k, v in params.items())) if params else ""
-        trait_note = ""
-        if trait_bodies:
-            docs = "\n\n".join(f"--- trait: {t} ---\n{body}" for t, body in trait_bodies.items())
-            trait_note = _TRAITS_NOTE.format(trait_docs=docs)
-        pin_note = ("\n\nPINNED DELIVERABLES — the generated main/stages MUST keep these literal "
-                    "paths, serving the same role they have in the workflow pattern:\n"
-                    + "\n".join(f"- {p}" for p in pins)) if pins else ""
-        prompt = _DECOMPOSE_PROMPT.format(workflow=raw, instruction=instruction) \
-            + param_note + trait_note + pin_note
-        comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
-                                 schema=DECOMPOSE_SCHEMA, effort=ref.effort,
-                                 temperature=ref.temperature, max_tokens=ref.max_tokens,
-                                 timeout=180,
-                                 purpose=f"Decompose workflow → {slug}", kind="decompose")
-        data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
-        stages = {m["name"]: m["body"] for m in (data.get("stages") or [])
-                  if is_slug(str(m.get("name", ""))) and str(m.get("body", "")).strip()}
-        main = str(data.get("main") or "").strip()
-        if not main:
-            raise ValueError("empty main")
-        missing = [p for p in pins
-                   if p not in main and not any(p in b for b in stages.values())]
-        if missing:
-            raise ValueError(f"decompose dropped pinned deliverable(s): {missing}")
-        adapted = {t["slug"]: str(t["body"]).strip() for t in (data.get("traits") or [])
-                   if t.get("slug") in trait_bodies and str(t.get("body", "")).strip()}
-        return {"main": main, "stages": stages, "traits": adapted}
-    except Exception:
-        # a stageless recipe is a real quality drop — the fallback must never be silent
-        log.warning("decompose(%s) failed — materializing the whole pattern as main.md",
-                    slug, exc_info=True)
-        from .pyworkflow import render_markdown
-        return {"main": render_markdown(raw, meta), "stages": {}, "traits": {}}
+            endpoint, ref = EndpointRegistry(server).for_system()
+            param_note = ("\n\nPARAMETERS (the pattern's contract, resolved with the user):\n"
+                          + "\n".join(f"- {k}: {v}" for k, v in params.items())
+                          + "\nBind each resolved VALUE inline into main and every stage that "
+                            "uses it — these parameter NAMES will not exist at run time; prose "
+                            "that defers to a parameter name instead of its concrete value is a "
+                            "failure.") if params else ""
+            trait_note = ""
+            if trait_bodies:
+                docs = "\n\n".join(f"--- trait: {t} ---\n{body}"
+                                   for t, body in trait_bodies.items())
+                trait_note = _TRAITS_NOTE.format(trait_docs=docs)
+            pin_note = ("\n\nPINNED DELIVERABLES — the generated main/stages MUST keep these "
+                        "literal paths, serving the same role they have in the workflow "
+                        "pattern:\n" + "\n".join(f"- {p}" for p in pins)) if pins else ""
+            prompt = _DECOMPOSE_PROMPT.format(workflow=raw, instruction=instruction) \
+                + param_note + trait_note + pin_note
+            # D41: the output is the whole routine in one JSON object — give it real headroom
+            # (a catalog max_tokens tuned for chat replies truncates it, which is exactly the
+            # observed stageless-scaffold failure) and a timeout that fits a long generation.
+            comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
+                                     schema=DECOMPOSE_SCHEMA, effort=ref.effort,
+                                     temperature=ref.temperature,
+                                     max_tokens=max(int(ref.max_tokens or 0),
+                                                    DECOMPOSE_MAX_TOKENS),
+                                     timeout=DECOMPOSE_TIMEOUT_S,
+                                     purpose=f"Decompose workflow → {slug}", kind="decompose")
+            data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
+            stages = {m["name"]: m["body"] for m in (data.get("stages") or [])
+                      if is_slug(str(m.get("name", ""))) and str(m.get("body", "")).strip()}
+            main = str(data.get("main") or "").strip()
+            if not main:
+                raise ValueError("empty main")
+            missing = [p for p in pins
+                       if p not in main and not any(p in b for b in stages.values())]
+            if missing:
+                raise ValueError(f"decompose dropped pinned deliverable(s): {missing}")
+            adapted = {t["slug"]: str(t["body"]).strip() for t in (data.get("traits") or [])
+                       if t.get("slug") in trait_bodies and str(t.get("body", "")).strip()}
+            return {"main": main, "stages": stages, "traits": adapted, "degraded": False}
+        except Exception as exc:  # any failure means: try again, then degrade loudly
+            last_exc = exc
+            log.warning("decompose(%s) attempt %d/%d failed: %s", slug, attempt,
+                        DECOMPOSE_ATTEMPTS, exc)
+    # a stageless recipe is a real quality drop — the fallback must never be silent
+    log.warning("decompose(%s) failed after %d attempts — materializing the whole pattern "
+                "as main.md", slug, DECOMPOSE_ATTEMPTS, exc_info=last_exc)
+    from .pyworkflow import render_markdown
+    return {"main": render_markdown(raw, meta), "stages": {}, "traits": {}, "degraded": True}

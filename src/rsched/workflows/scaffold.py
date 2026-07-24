@@ -153,7 +153,12 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         "name": name, "slug": slug,
         "materialized_from": {"slug": workflow_slug, "commit": commit,
                               "version": meta.get("version", 0)},
-        "stages": sorted(result["stages"]),
+        # EVERY stage module that will exist on disk — decomposed ones plus the wizard's
+        # extra purpose-specific files (listing only the former left a stages:[] frontmatter
+        # beside real files, and the UI graph draws from the recipe's declared stages)
+        "stages": sorted({*result["stages"],
+                          *(Path(f if f.endswith(".md") else f + ".md").stem
+                            for f in (stages or {}))}),
         # the workflow's `tools:` allowlist rides along — the engine enforces it per turn
         **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {}),
         **({"tags": list(tags)} if tags else {}),
@@ -170,9 +175,15 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # main.md last, over the now-complete stages/ — the stages are the sole source of truth
     main_body = with_practices_tail(result["main"], trait_summaries)
     (routine_dir / "main.md").write_text(dump_markdown(main_meta, main_body), encoding="utf-8")
-    (routine_dir / "LEDGER.md").write_text(
-        f"# LEDGER — {name}\n\n### seed — scaffolded from workflow '{workflow_slug}' @ {commit}\n",
-        encoding="utf-8")
+    ledger = (f"# LEDGER — {name}\n\n"
+              f"### seed — scaffolded from workflow '{workflow_slug}' @ {commit}\n")
+    if result.get("degraded"):
+        # never silent (F183/D41): the user must see the routine was born without its stages
+        ledger += ("\n### ⚠ stage generation FAILED at creation\nmain.md is the verbatim "
+                   "workflow pattern and stages/ has no generated modules — the routine still "
+                   "runs, but re-creating it (or asking a run to draft the stage modules) will "
+                   "give better results.\n")
+    (routine_dir / "LEDGER.md").write_text(ledger, encoding="utf-8")
     (routine_dir / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
 
     cfg = {

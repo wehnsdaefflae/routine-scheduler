@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.97.0] — 2026-07-24
+
+### Fixed
+- **Wizard decompose reliability (D41)**: the stage-generation LLM call now retries once,
+  gets real output headroom (`max_tokens ≥ 32000`) and a 300 s timeout — a single truncated
+  or timed-out completion used to silently ship a STAGELESS routine (both 2026-07-24 wizard
+  creations, `ards-study-steward` and `nanogeofeld-steward`, were born this way). The
+  degraded fallback is now visible: the scaffold writes a ⚠ warning into the new routine's
+  LEDGER, and `decompose()` returns an explicit `degraded` flag.
+- **Stage frontmatter truthful**: a scaffolded routine's `stages:` frontmatter now lists every
+  stage module on disk (decomposed + wizard extras) instead of only the decomposed ones —
+  a `stages: []` beside real files broke the routine page's state graph.
+- **Subruns can reach parent state (F185)**: a spawned/subtask child's allowed fs roots now
+  include the parent's dir (read + write, chained for grandchildren) — a child tasked on the
+  parent's `state/` files failed every `read_file` with "outside the allowed roots".
+
+### Changed
+- **Decompose prompt (D41)**: each stage body must be a complete, self-sufficient module
+  (typically 20-60 lines; stubs are a stated failure) and resolved parameter VALUES must be
+  bound inline — parameter names do not exist at run time.
+- **D40 pinned by test**: connection bindings and secret-exposure grants save during an
+  active run (behavior since 0.89.0 D35-A; now regression-tested so it cannot regress).
+
 ## [0.96.1] — 2026-07-24
 ### Fixed
 - **Anti-batching override in the run prompt** (F180): the claude-CLI harness advertises

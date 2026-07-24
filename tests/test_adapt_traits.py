@@ -45,6 +45,7 @@ def test_decompose_adapts_traits(monkeypatch, tmp_path):
     # …and only well-formed stages survive (kebab-case name, non-blank body)
     assert result["main"] == "entry state machine"
     assert result["stages"] == {"gather": "# Gather\n\ndo the work.\n"}
+    assert result["degraded"] is False
 
 
 def test_decompose_fallback_returns_no_adapted_traits(tmp_path):
@@ -56,6 +57,56 @@ def test_decompose_fallback_returns_no_adapted_traits(tmp_path):
     assert result["traits"] == {}
     assert result["stages"] == {}
     assert result["main"].strip()
+    assert result["degraded"] is True            # …and the caller can SAY it degraded (D41)
+
+
+class _FlakyEndpoint(_FakeEndpoint):
+    """First attempt dies (e.g. a truncated/timed-out completion); the retry succeeds."""
+
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+
+    def complete(self, messages, **kw):
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("truncated output")
+        return super().complete(messages, **kw)
+
+
+def test_decompose_retries_once_before_degrading(monkeypatch, tmp_path):
+    """D41: one flaky completion must not ship a stageless routine (observed 2026-07-24:
+    both same-day wizard creations fell back silently)."""
+    server = ServerConfig()
+    server.routines_home = tmp_path
+    server.libraries_home = SEED
+    fake = _FlakyEndpoint()
+    import rsched.endpoints as endpoints_mod
+
+    monkeypatch.setattr(endpoints_mod.EndpointRegistry, "for_system",
+                        lambda self: (fake, ModelRef(endpoint="x", model="m")))
+    result = decompose(server, "general-task", "some task")
+    assert fake.calls == 2                       # a retry, not a silent give-up
+    assert result["stages"] == {"gather": "# Gather\n\ndo the work.\n"}
+    assert result["degraded"] is False
+
+
+def test_decompose_binds_params_inline(monkeypatch, tmp_path):
+    """D41: resolved parameter VALUES are compiled into the generated files — the prompt
+    carries each value plus the inline-binding order and the anti-stub rule."""
+    server = ServerConfig()
+    server.routines_home = tmp_path
+    server.libraries_home = SEED
+    fake = _FakeEndpoint()
+    import rsched.endpoints as endpoints_mod
+
+    monkeypatch.setattr(endpoints_mod.EndpointRegistry, "for_system",
+                        lambda self: (fake, ModelRef(endpoint="x", model="m")))
+    decompose(server, "general-task", "some task", params={"SITE_URL": "https://x.example"})
+    p = fake.prompts[0]
+    assert "- SITE_URL: https://x.example" in p
+    assert "Bind each resolved VALUE inline" in p
+    assert "placeholder stub is a FAILURE" in p
 
 
 # ---- pinned deliverables (META["pin"]) ----------------------------------------------------------
