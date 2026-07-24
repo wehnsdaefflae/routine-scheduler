@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.99.0] — 2026-07-24
+
+### Added
+- **write_util EDIT MODE (D42-B)**: `write_util` now accepts `anchor`/`replacement`
+  (+ optional `all`) as the alternative to re-emitting the complete script — the engine
+  patches the util's existing source in place and runs the result through the unchanged
+  approval + selftest + rollback gate. A 3-line fix to a 50KB util no longer exceeds a
+  reply's output cap; failures teach (`util show <name> --full` for a verbatim anchor,
+  `all: true` for ambiguous anchors). Schema descriptions, observation wording and the
+  show-source hint all point at the new route.
+
+### Fixed (utils library, alongside)
+- **gmail (F186)**: non-ASCII `--query` no longer crashes — IMAP SEARCH switches to
+  `CHARSET UTF-8` with byte-encoded criteria (pwlc's verified 3-hunk patch, landed).
+- **discord (F196)**: `read --all` now fetches the NEWEST 100 messages (omits `after`)
+  instead of the oldest 100.
+
 ## [0.98.0] — 2026-07-24
 
 ### Added

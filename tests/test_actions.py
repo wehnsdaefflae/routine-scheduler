@@ -206,3 +206,16 @@ def test_write_util_name_must_be_slug():
         assert any("kebab-case" in p for p in problems), bad
     assert validate_action({"say": "s", "kind": "write_util",
                             "name": "good-name", "content": "# x"}) == []
+
+
+def test_write_util_edit_mode_validation():
+    """D42-B: write_util accepts 'anchor'/'replacement' (edit an existing util in place) as
+    the alternative to a full 'content' re-emit — one of the two is required, never both."""
+    base = {"say": "s", "kind": "write_util", "name": "big-util"}
+    assert validate_action({**base, "anchor": "old line", "replacement": "new line"}) == []
+    assert validate_action({**base, "anchor": "old line", "replacement": "", "all": True}) == []
+    assert any("content" in p for p in validate_action(base))            # neither given
+    assert any("not both" in p
+               for p in validate_action({**base, "content": "# x", "anchor": "old"}))
+    assert any("replacement" in p
+               for p in validate_action({**base, "anchor": "a", "replacement": 3}))

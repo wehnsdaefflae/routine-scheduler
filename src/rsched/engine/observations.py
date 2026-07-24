@@ -28,8 +28,9 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
         if obs.get("listing") is not None:
             return "OBSERVATION (util list — available global utils):\n" + obs["listing"]
         if obs.get("source") is not None:
-            out = (f"OBSERVATION (util show — source of {obs['target']!r}; to revise it, "
-                   "write_util the COMPLETE corrected script):\n" + obs["source"])
+            out = (f"OBSERVATION (util show — source of {obs['target']!r}; revise it with "
+                   "write_util: 'content' for a full rewrite, or 'anchor'/'replacement' "
+                   "to patch it in place):\n" + obs["source"])
             if obs.get("hint"):
                 out += "\n\n[hint] " + obs["hint"]
             return out
@@ -63,6 +64,9 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
         if obs.get("declined"):
             return (f"OBSERVATION (write_util {obs['name']!r} DECLINED by the user). "
                     "Do not retry it.")
+        if obs.get("edit_failed"):
+            return (f"OBSERVATION (write_util {obs['name']!r} edit mode: NOT applied — "
+                    f"{obs.get('reason', '')})")
         if not obs.get("selftest_ok"):
             return (f"OBSERVATION (write_util {obs['name']!r}: selftest FAILED — not committed):\n"
                     f"{obs.get('output', '')}\nFix the script and write_util again.")

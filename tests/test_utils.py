@@ -163,7 +163,8 @@ def test_util_show_returns_source(tmp_path):
     obs = do_util({"kind": "util", "name": "show", "args": ["demo"]}, _ctx(tmp_path))
     assert obs["target"] == "demo" and "X = 1" in obs["source"]
     text = format_observation(obs)
-    assert "write_util the COMPLETE corrected script" in text and "X = 1" in text
+    # the observation teaches BOTH repair routes: full rewrite and in-place anchor edit
+    assert "revise it with" in text and "'anchor'/'replacement'" in text and "X = 1" in text
     # unknown / traversal-shaped targets → a missing observation, never a file read
     for bad in ("ghost", "../secrets", ""):
         obs = do_util({"kind": "util", "name": "show", "args": [bad]}, _ctx(tmp_path))

@@ -2292,3 +2292,86 @@ def test_wait_timeout_reports_timed_out():
     obs = SubrunManager.wait(stub, {"timeout_s": 5}, poll_s=0.01, aborted=lambda: False)
     assert obs["timed_out"] is False
     assert [r["n"] for r in obs["finished"]] == [1] and obs["still_running"] == []
+
+
+def test_write_util_edit_mode_patches_in_place(make_routine, scripted, monkeypatch):
+    """D42-B/F187: an anchor/replacement write_util patches the EXISTING source engine-side
+    — no 50KB re-emit — and the synthesized script rides the same selftest+commit gate."""
+    import rsched.utils_lib as ul
+
+    source = util_src("adder") + "print('old behaviour')\n"
+    seen = {}
+    monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
+    monkeypatch.setattr(ul, "exists", lambda home, name: True)
+    monkeypatch.setattr(ul, "read_util", lambda home, name: source)
+    monkeypatch.setattr(ul, "write_util_file",
+                        lambda home, name, content: seen.update(name=name, content=content))
+    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (True, "selftest: ok"))
+    monkeypatch.setattr(ul, "git_commit",
+                        lambda home, msg, **kw: seen.update(commit=msg) or True)
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
+        {"say": "3-line fix, no re-emit.", "kind": "write_util", "name": "adder",
+         "anchor": "print('old behaviour')", "replacement": "print('new behaviour')"},
+        finish(summary="patched adder in place"),
+    ], slug="wuedit")
+    assert status == "ok"
+    assert seen["content"] == util_src("adder") + "print('new behaviour')\n"
+    assert "revise adder" in seen["commit"]
+    wu = next(e for e in events if e["type"] == "observation"
+              and e["payload"]["kind"] == "write_util")
+    assert wu["payload"]["selftest_ok"] and wu["payload"]["created"] is False
+
+
+def test_write_util_edit_mode_teaches_on_bad_anchor(make_routine, scripted, monkeypatch):
+    """A missed anchor must not write anything — the observation teaches the verbatim-copy
+    route (util show --full); an ambiguous anchor names the count and the all: escape."""
+    import rsched.utils_lib as ul
+
+    source = util_src("adder") + "x = 1\nx = 1\n"
+    wrote = []
+    monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
+    monkeypatch.setattr(ul, "exists", lambda home, name: True)
+    monkeypatch.setattr(ul, "read_util", lambda home, name: source)
+    monkeypatch.setattr(ul, "write_util_file", lambda *a: wrote.append(a))
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
+        {"say": "typo anchor", "kind": "write_util", "name": "adder",
+         "anchor": "print('never there')", "replacement": "y"},
+        {"say": "ambiguous anchor", "kind": "write_util", "name": "adder",
+         "anchor": "x = 1", "replacement": "x = 2"},
+        finish(status="partial", summary="edits refused"),
+    ], slug="wueditbad")
+    assert status == "partial" and wrote == []
+    obs = [e["payload"] for e in events if e["type"] == "observation"
+           and e["payload"]["kind"] == "write_util"]
+    assert obs[0]["edit_failed"] and "--full" in obs[0]["reason"]
+    assert obs[1]["edit_failed"] and "2×" in obs[1]["reason"] and "all" in obs[1]["reason"]
+
+
+def test_write_util_edit_mode_needs_an_existing_util(make_routine, scripted, monkeypatch):
+    """Edit mode cannot create — a missing util yields a teaching edit_failed, and the
+    ambiguous-anchor escape hatch all: true replaces every occurrence when set."""
+    import rsched.utils_lib as ul
+
+    source = util_src("adder") + "x = 1\nx = 1\n"
+    seen = {}
+    monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
+    monkeypatch.setattr(ul, "exists", lambda home, name: name == "adder")
+    monkeypatch.setattr(ul, "read_util",
+                        lambda home, name: source if name == "adder" else None)
+    monkeypatch.setattr(ul, "write_util_file",
+                        lambda home, name, content: seen.update(content=content))
+    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (True, "selftest: ok"))
+    monkeypatch.setattr(ul, "git_commit", lambda home, msg, **kw: True)
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
+        {"say": "edit a ghost", "kind": "write_util", "name": "ghost",
+         "anchor": "x = 1", "replacement": "x = 2"},
+        {"say": "replace all", "kind": "write_util", "name": "adder",
+         "anchor": "x = 1", "replacement": "x = 2", "all": True},
+        finish(summary="all-mode edit landed"),
+    ], slug="wueditall")
+    assert status == "ok"
+    obs = [e["payload"] for e in events if e["type"] == "observation"
+           and e["payload"]["kind"] == "write_util"]
+    assert obs[0]["edit_failed"] and "create a new one" in obs[0]["reason"]
+    assert obs[1]["selftest_ok"]
+    assert seen["content"] == util_src("adder") + "x = 2\nx = 2\n"

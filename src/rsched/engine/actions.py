@@ -89,17 +89,22 @@ ACTION_SCHEMA: dict = {
         "anchor": {
             "type": "string",
             "description": "edit_file: exact text to find in the file (must be unique unless "
-                           "all: true) — copy it verbatim, whitespace included",
+                           "all: true) — copy it verbatim, whitespace included · "
+                           "write_util edit mode: exact text to find in the util's current "
+                           "source (read it with util show <name> --full)",
         },
         "replacement": {
             "type": "string",
-            "description": 'edit_file: the text that replaces the anchor (omit or "" to delete '
-                           "it) — edit in place instead of rewriting whole files with write_file",
+            "description": 'edit_file/write_util edit mode: the text that replaces the anchor '
+                           '(omit or "" to delete it) — edit in place instead of re-emitting '
+                           "whole files/scripts",
         },
         "content": {"type": ["string", "object", "array"],
                     "description": "write_file: the full new content — a string, or a JSON "
                                    "object/array (written pretty-printed; no escaping needed) · "
-                                   "write_util: the complete PEP 723 script as a string · "
+                                   "write_util: the complete PEP 723 script as a string "
+                                   "(or omit content and pass anchor/replacement to patch "
+                                   "the existing script in place) · "
                                    "memory_write: the note's full markdown (one string, "
                                    "≤100 lines)"},
         # schedule_run — arm/cancel a one-shot time trigger on a routine (gated: scheduling)
@@ -149,8 +154,8 @@ ACTION_SCHEMA: dict = {
         "n": {"type": "integer", "minimum": 1, "description": "kill/wait: the sub-workflow number"},
         "all": {"type": "boolean",
                 "description": "wait: wait for ALL running sub-workflows (default: any next) · "
-                               "edit_file: replace EVERY occurrence of the anchor (default: the "
-                               "anchor must be unique)"},
+                               "edit_file/write_util edit mode: replace EVERY occurrence of "
+                               "the anchor (default: the anchor must be unique)"},
         # ask_user
         "question": {"type": "string",
                      "description": "ask_user: the question, self-contained (simple Markdown "
@@ -268,7 +273,7 @@ KIND_EXAMPLES: dict[str, dict] = {
 # kind → (required fields, allowed extra fields beyond say/kind)
 _KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s")),
-    "write_util": (("name", "content"), ()),
+    "write_util": (("name",), ("content", "anchor", "replacement", "all")),
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
@@ -369,9 +374,24 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
         if val is None or (isinstance(val, str) and not val.strip()):
             problems.append(f"kind={kind} requires a non-empty {field!r} field")
     if kind == "write_util":
-        if not isinstance(obj.get("content"), str | None):
+        has_content = obj.get("content") is not None
+        has_anchor = obj.get("anchor") is not None
+        if has_content and not isinstance(obj["content"], str):
             problems.append("kind=write_util requires 'content' to be the script text "
                             "(one string)")
+        if not has_content and not has_anchor:
+            problems.append("kind=write_util needs 'content' (the COMPLETE script) or — to "
+                            "patch an EXISTING util in place — 'anchor' + 'replacement' "
+                            "(edit mode, like edit_file; no full re-emit needed)")
+        if has_content and has_anchor:
+            problems.append("kind=write_util takes 'content' OR 'anchor'/'replacement', not "
+                            "both — a full rewrite and an in-place edit are different intents")
+        if has_anchor and not isinstance(obj["anchor"], str):
+            problems.append("kind=write_util: 'anchor' must be a string (the exact text to "
+                            "find in the util's current source)")
+        if "replacement" in obj and not isinstance(obj["replacement"], str):
+            problems.append("kind=write_util: 'replacement' must be a string "
+                            '("" deletes the anchor)')
         # The name becomes a directory under the library — a non-slug (path separators,
         # dots) would write OUTSIDE utils/; rejected here like every permission problem.
         if not is_slug(str(obj.get("name") or "")):

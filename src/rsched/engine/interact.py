@@ -263,28 +263,59 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
                       "was not run."}
 
 
-def handle_write_util(loop, action: dict, poll_s: float) -> dict:
+def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR0911 — gate ladder: every refusal is its own teaching exit
     ctx = loop.ctx
-    name, content = action["name"], action["content"]
+    name, raw_content = action["name"], action.get("content")
     if ctx.depth > 0:
         return {"kind": "write_util", "name": name, "declined": True,
                 "reason": "sub-workflows cannot create/revise utils — use existing ones"}
+    home = ctx.server.libraries_home
+    utils_lib.ensure_library(home, remote=ctx.server.libraries_remote)
+    edit_mode = raw_content is None
+    if edit_mode:
+        # Edit mode (D42-B / F187): anchor-patch the EXISTING source ENGINE-side, so a
+        # 3-line fix to a 50KB util never requires re-emitting the whole script through
+        # one reply (the re-emit exceeded the output cap and made big utils unfixable
+        # for shell-less routines, observed 2026-07-24). The synthesized result rides
+        # the exact same approval + selftest + rollback gate as a full rewrite.
+        anchor = str(action.get("anchor") or "")
+        source = utils_lib.read_util(home, name)
+        if source is None:
+            return {"kind": "write_util", "name": name, "edit_failed": True,
+                    "reason": f"no util {name!r} exists to edit — edit mode patches an "
+                              "existing script; pass 'content' (the complete script) to "
+                              "create a new one"}
+        count = source.count(anchor)
+        if count == 0:
+            return {"kind": "write_util", "name": name, "edit_failed": True,
+                    "reason": "anchor not found in the util's current source — copy it "
+                              "VERBATIM (whitespace included) from "
+                              f'{{"kind": "util", "name": "show", "args": ["{name}", '
+                              '"--full"]}'}
+        if count > 1 and not action.get("all"):
+            return {"kind": "write_util", "name": name, "edit_failed": True,
+                    "reason": f"anchor occurs {count}× in the source — extend it until "
+                              "unique, or set all: true to replace every occurrence"}
+        content = source.replace(anchor, str(action.get("replacement") or ""))
+    else:
+        content = str(raw_content)
     # Doc-standard gate BEFORE the approval ask: a util without tags or with undeclared
     # secrets never reaches the user or the library — the observation names the fix.
     problems = utils_lib.header_problems(content)
     if problems:
         return {"kind": "write_util", "name": name, "header_ok": False,
                 "problems": problems}
-    home = ctx.server.libraries_home
-    utils_lib.ensure_library(home, remote=ctx.server.libraries_remote)
     creating = not utils_lib.exists(home, name)
     # Approval policy is the routine's write_util capability level (always: every change;
     # creations: new utils only; never). No grants on the ctx = confirm everything.
     if ctx.grants is None or ctx.grants.needs_confirm(creating):
         verb = "create" if creating else "revise"
+        excerpt = (f"anchor:\n{str(action.get('anchor'))[:180]}\nreplacement:\n"
+                   f"{str(action.get('replacement') or '')[:180]}" if edit_mode
+                   else f"First lines:\n{content.strip()[:400]}")
         ask = handle_ask(loop, {
-            "question": f"Approve {verb} of global util '{name}'? First lines:\n"
-                        f"{content.strip()[:400]}",
+            "question": f"Approve {verb} of global util '{name}'? "
+                        f"{'In-place patch — ' if edit_mode else ''}{excerpt}",
             "mode": "blocking", "options": ["approve", "decline"],
             "default": "the util is NOT applied until approved"}, poll_s,
             qtype="util-approval")
