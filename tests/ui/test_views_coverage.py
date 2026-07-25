@@ -1,5 +1,5 @@
-"""Help + Log views and the transcript renderer's lifecycle events - the pages/branches
-the UI suite never exercised (findings ledger COVERAGE items).
+"""Help + the Dashboard's activity section and the transcript renderer's lifecycle events -
+the pages/branches the UI suite never exercised (findings ledger COVERAGE items).
 """
 
 import json
@@ -23,14 +23,21 @@ def test_help_view_renders_docs_state(ui, ui_page):
         expect(ui_page.locator("iframe.help-frame")).to_be_visible()
 
 
-def test_log_view_lists_runs_with_stats_strip(ui, ui_page):
+def test_dashboard_activity_section_lists_runs(ui, ui_page):
+    """The cross-routine run feed (the whole of the former Log page) is the Dashboard's
+    activity section: collapsed and inert until opened, then stats strip + feed. Expanding a
+    row tails/replays that run's transcript inline - the capability the Log page carried."""
     # a RECENT ts - the feed default window is relative to now and hides old runs
     ts = time.strftime("%Y%m%d-070000")
     ui.seed_run("uir", ts, "finished", summary="all done")
-    ui_page.goto(f"{ui.url}/#/log")
-    ui_page.wait_for_selector("h1:has-text('Log')", timeout=10_000)
-    expect(ui_page.locator(".stats .stat").first).to_be_visible(timeout=10_000)
-    expect(ui_page.locator(".feed")).to_contain_text("uir", timeout=10_000)
+    ui_page.goto(f"{ui.url}/#/")
+    ui_page.wait_for_selector("details.activity-panel", timeout=10_000)
+    ui_page.locator("details.activity-panel summary").click()
+    expect(ui_page.locator(".activity-panel .stats .stat").first).to_be_visible(timeout=10_000)
+    expect(ui_page.locator(".activity-panel .feed")).to_contain_text("uir", timeout=10_000)
+    # inline transcript: the row expands into the run's own events
+    ui_page.locator(".activity-panel .logrow .rowhead").first.click()
+    expect(ui_page.locator(".activity-panel .logrow.open .logbody")).to_be_visible(timeout=10_000)
 
 
 def test_transcript_renders_lifecycle_events(ui, ui_page):

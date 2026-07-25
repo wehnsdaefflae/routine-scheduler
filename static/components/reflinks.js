@@ -1,11 +1,12 @@
-// Audit reference tokens (F63, D14) in rendered prose become links to the card they name
-// on the Audit page (#/audit?focus=F63) — clicking one anywhere in the console lands on,
+// Item reference tokens (F63, D14, R7) in rendered prose become links to the card they name
+// on the Items page (#/items?focus=F63) — clicking one anywhere in the console lands on,
 // scrolls to, and flashes that card. linkifyRefs walks TEXT nodes only, so it composes
 // with mdInline output and never rewrites existing links, code, or form controls. Apply it
-// ONLY to prose that is the audit's own voice (the Audit page, meta-badged decisions) —
-// on arbitrary text a bare "D1" is a false positive.
+// ONLY to prose that is the maintenance record's own voice (the Items page, meta-badged
+// decisions) — on arbitrary text a bare "D1" is a false positive. `R` and not `B` for bug
+// reports: the user's own reviewer-backlog items are written B<n> and would mislink.
 
-const REF_RE = /\b([FD]\d{1,3})\b/g;
+const REF_RE = /\b([FDR]\d{1,4})\b/g;
 
 export function linkifyRefs(root) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -25,8 +26,8 @@ export function linkifyRefs(root) {
       frag.append(n.nodeValue.slice(last, m.index));
       const a = document.createElement("a");
       a.className = "ref-link";
-      a.href = `#/audit?focus=${m[1]}`;
-      a.title = `jump to ${m[1]} on the Audit page`;
+      a.href = `#/items?focus=${m[1]}`;
+      a.title = `jump to ${m[1]} on the Items page`;
       a.textContent = m[1];
       frag.append(a);
       last = m.index + m[1].length;
@@ -38,7 +39,7 @@ export function linkifyRefs(root) {
 }
 
 // The landing half of a ref link: scroll the named card (id="ref-<id>") into view and
-// flash it. Returns false when the id has no card (e.g. a finding dropped from the report).
+// flash it. Returns false when the id has no card (e.g. an item the current filter hides).
 export function focusRef(id) {
   const target = document.getElementById(`ref-${id}`);
   if (!target) return false;

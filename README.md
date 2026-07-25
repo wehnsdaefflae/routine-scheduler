@@ -46,7 +46,7 @@ path: this scheduler is the only harness.
   clearly worse — and one click rolls the recipe back (the improver never auto-reverts).
 - **As a whole**: three more bundled meta routines use the exact same building blocks —
   `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, acting
-  is lens-scoped and test-gated, with bigger decisions on the **Audit** page),
+  is lens-scoped and test-gated, with bigger decisions on the **Items** page),
   `workflow-curator` (fixes and drafts library workflows from all routines' transcripts —
   applied directly, lint-gated and committed; you can edit or delete any workflow on the
   Library tab), and `token-lab` (measures token usage and A/B-tests efficiency methods via
@@ -82,7 +82,9 @@ endpoints, the central Secrets store, GitHub, the library repo.
   (a run is waiting), deferred ones, and open self-audit decisions. Keyboard-first;
   answers flow back into the asking routine's next turn or next run.
 - **Routines** — the catalog: each routine's state, schedule, budgets, models, permissions,
-  and run history; drill into any run to watch its conversation live.
+  and run history; drill into any run to watch its conversation live. Its activity section
+  is the live cross-routine run feed — filterable, and expanding a row tails that run's
+  transcript inline.
 - **Library** — browse and edit the shared workflows, traits, permissions, playbooks, and global utils; every
   save is lint/selftest-gated.
 - **Settings** — LLM endpoints (live test call + a credential-source indicator: which of
@@ -91,11 +93,11 @@ endpoints, the central Secrets store, GitHub, the library repo.
   for unset/implausible values, ordered failover chains with provider cooldowns), the
   write-only Secrets store
   every util reads, GitHub device flow, library/source remotes, graceful server restart.
-- **Log** — a live, filterable activity feed across all routines; expand a row to tail
-  that run's transcript inline.
-- **Audit** — the self-audit routine's report on the scheduler itself: changelog,
-  findings, and decisions, with a feedback loop into its next run. Every `F63`/`D14`
-  mention in the report is a link to the card it references.
+- **Items** — the system-maintenance index: every self-audit finding (`F7`), decision
+  (`D14`) and bug report (`R3`) any run filed, with its status, purpose, origin and the
+  commits that addressed it — filterable by type, status, routine and free text, with the
+  self-audit report header, its changelog, and the feedback loop into its next run. Every
+  `F`/`D`/`R` mention anywhere in the console is a link to the item card it names.
 - **Help** — documentation generated from this very source at every boot: hand-written
   guides (`docs/*.md`, e.g. endpoint setup) plus an API reference rendered from the
   code's docstrings by pdoc.

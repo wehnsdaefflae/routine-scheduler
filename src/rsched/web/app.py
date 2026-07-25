@@ -174,6 +174,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_conversations,
         api_fs,
         api_hooks,
+        api_items,
         api_llm_tasks,
         api_playbooks,
         api_push,
@@ -194,7 +195,8 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
     for module in (api_push, api_routines, api_routine_edit, api_conversations,
                    api_conversation_playbooks,
                    api_background, api_runs,
-                   api_schedule, api_stats, api_summary, api_questions, api_audit, api_traces,
+                   api_schedule, api_stats, api_summary, api_questions, api_audit, api_items,
+                   api_traces,
                    settings,
                    api_workflows, api_playbooks, api_wizard, api_llm_tasks, api_hooks,
                    api_search, api_fs):

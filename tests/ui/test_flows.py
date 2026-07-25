@@ -934,11 +934,11 @@ def test_new_conversation_composer_offers_caps_and_budgets(ui, ui_page):
     assert tuning["deliberation"] == "deliberate"   # the untouched default rides along
 
 
-# ---- 7. Audit reference links (F63/D14 → the card they name) -------------------------------
+# ---- 7. Item reference links (F63/D14 → the card they name) --------------------------------
 
 
-def test_audit_refs_link_and_flash(ui, ui_page):
-    """D[n]/F[n] mentions in the audit report are hyperlinks to the card they reference;
+def test_item_refs_link_and_flash(ui, ui_page):
+    """D[n]/F[n] mentions in the audit report are hyperlinks to the item card they reference;
     following one lands on (and flashes) that card, and the Decisions page's meta items
     carry the same links."""
     import re
@@ -956,9 +956,9 @@ def test_audit_refs_link_and_flash(ui, ui_page):
     }
     (rdir / "audit" / "report.json").write_text(json.dumps(report), encoding="utf-8")
 
-    ui_page.goto(f"{ui.url}/#/audit")
+    ui_page.goto(f"{ui.url}/#/items")
     link = ui_page.locator(".panel.prose a.ref-link", has_text="D1")
-    expect(link).to_have_attribute("href", "#/audit?focus=D1")
+    expect(link).to_have_attribute("href", "#/items?focus=D1")
     expect(ui_page.locator("#ref-F1")).to_be_visible()      # findings AND decisions get cards
     expect(ui_page.locator("#ref-D1")).to_contain_text("Pick a path")
     link.click()                                            # follow the ref → land + flash
@@ -967,7 +967,7 @@ def test_audit_refs_link_and_flash(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/questions")                   # the same ids link from the inbox
     card = ui_page.locator(".question-item", has_text="Pick a path")
     flink = card.locator("a.ref-link", has_text="F1")
-    expect(flink).to_have_attribute("href", "#/audit?focus=F1")
+    expect(flink).to_have_attribute("href", "#/items?focus=F1")
 
 
 def test_decision_detail_renders_markdown(ui, ui_page):
@@ -1001,12 +1001,12 @@ def test_decision_detail_renders_markdown(ui, ui_page):
     assert "- keep" not in card.inner_text()
 
 
-def test_audit_detail_renders_markdown(ui, ui_page):
-    """The Audit page (#/audit) renders a report's own prose — finding/decision `detail`
-    and the top summary — as real markdown DOM, not literal textContent. Regression (F105,
-    2026-07-18): static/views/audit.js never imported md.js, so finding/decision block
-    markdown (lists, `code`, tables) showed as raw text — the same gap F104 fixed on the
-    Decisions page. Ref-links (F/D mentions) must still work through the md() output."""
+def test_item_detail_renders_markdown(ui, ui_page):
+    """The Items page (#/items) renders an item's own prose — finding/decision `detail` and
+    the report summary — as real markdown DOM, not literal textContent. Regression (F105,
+    2026-07-18): the audit view Items replaced never imported md.js, so block markdown
+    (lists, `code`, tables) showed as raw text — the same gap F104 fixed on the Decisions
+    page. Ref-links (F/D/R mentions) must still work through the md() output."""
 
     rdir = ui.routines / "self-audit"
     (rdir / "audit").mkdir(parents=True)
@@ -1027,7 +1027,7 @@ def test_audit_detail_renders_markdown(ui, ui_page):
     }
     (rdir / "audit" / "report.json").write_text(json.dumps(report), encoding="utf-8")
 
-    ui_page.goto(f"{ui.url}/#/audit")
+    ui_page.goto(f"{ui.url}/#/items")
     fcard = ui_page.locator("#ref-F2")
     # the finding's bullet list renders as real <li>, not literal "- lists become …"
     expect(fcard.locator("li", has_text="lists become real")).to_be_visible()
@@ -1037,8 +1037,9 @@ def test_audit_detail_renders_markdown(ui, ui_page):
     dcard = ui_page.locator("#ref-D2")
     expect(dcard.locator("li", has_text="apply the")).to_be_visible()
     expect(dcard.locator("code", has_text="md()")).to_be_visible()
-    expect(dcard.locator("a.ref-link", has_text="F2")).to_have_attribute(
-        "href", "#/audit?focus=F2")
+    # (scoped to .md: the card also carries a compact "refers to" index of the same ids)
+    expect(dcard.locator(".md a.ref-link", has_text="F2")).to_have_attribute(
+        "href", "#/items?focus=F2")
 
 
 # ---- 8. md.js block rendering: GFM pipe tables + blockquotes -------------------------------

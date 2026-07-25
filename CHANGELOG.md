@@ -19,6 +19,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.106.0] — 2026-07-25
+
+The **Items** page: one index of every system-maintenance item — findings, decisions and
+bug reports — with its status, purpose, origin and when it was addressed. It replaces BOTH
+the Log page and the Audit page.
+
+- **New read model `readmodels/items.py`** merges the four scattered sources into one shape
+  (spec: `docs/items.md`): the self-audit `report.json` (findings + decisions and the
+  CURRENT status — always the authority), `changelog.jsonl` (the archive of which commit
+  addressed what), `decisions-answered.json` (durable answered markers) and
+  `.control/bug-reports.jsonl` (the ungated `report_bug` stream). An item carries `id`,
+  `type`, `status`, `title`, `detail`, `origin{routine,run_id,ts,commit}`, `addressed[]`,
+  `evidence[]`, `refs[]`. Memoized behind the four files' stat fingerprint; writes nothing.
+- **Status vocabulary**: `open | in_progress | addressed | settled | dropped | unknown`,
+  with documented precedence — the report's own field first, then a durable answered marker,
+  then archive-only-with-changelog-rows, else `unknown`. Findings carry no `status` on disk
+  yet (the self-audit routine will emit one from the spec on a later run): an absent status
+  reads `unknown` and is NEVER recovered by parsing title prose.
+- **The changelog join is explicit**: a row's `items: ["F202"]` field is the only trusted
+  link. Historical rows fall back to an `F`/`D` id scan of their prose and are flagged
+  `best-effort` in the API and labelled in the UI. The file mixes pretty-printed and compact
+  JSON, so it is parsed with a streaming `raw_decode` loop — the old line-oriented reader
+  silently dropped every multi-line row.
+- **`GET /api/items`** (`web/api_items.py`) with `type` / `status` / `routine` / `search`
+  filters; `counts` always cover the UNFILTERED set. `GET /api/audit` is gone — `api_audit`
+  is now just the reviewer-feedback write channel (`POST`/`PUT`/`DELETE
+  /api/audit/feedback`), whose behaviour is preserved exactly.
+- **`report_bug` stamps a monotonic `R<n>` id** on every report (`bug_reports.py`), assigned
+  under the same advisory lock as the append so concurrent runs cannot collide, and returned
+  in the observation so the filing run can name it. `R` and not `B`: the user's own
+  reviewer-backlog items are written `B<n>` in prose and would mislink. The 20 existing
+  production rows were stamped in one atomic pass; there is no id-less form in the code.
+- **Frontend**: `static/views/items.js` + `components/itemcard.js`; `reflinks.js` now
+  linkifies `F`/`D`/`R` and lands on `#/items?focus=<id>`. `static/views/audit.js` and
+  `static/views/log.js` are DELETED. The Log page's unique capability — the live
+  cross-routine run feed with inline transcript tailing — became
+  `components/activityfeed.js`, mounted as the Dashboard's activity section (collapsed and
+  inert until opened; it no longer syncs its filters to the URL, being a section rather than
+  a page).
+- Docs swept: `docs/items.md` (new, on the Help tab), CLAUDE.md, README, `docs/architecture.md`,
+  `docs/prompt-anatomy.md` (the report_bug observation now names the id).
+
 ## [0.105.0] — 2026-07-25
 
 Context engineering pass: a run is shown only the vocabulary it has, told each thing once,

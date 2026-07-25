@@ -31,6 +31,8 @@ one you are about to touch, not all of them.
 - `docs/subtasks.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
   — the child-task and firing mechanisms
 - `docs/conversations.md`, `docs/playbooks.md` — interactive sessions and reusable briefs
+- `docs/items.md` — the maintenance-item index (findings, decisions, bug reports): the
+  item shape, the status vocabulary and its precedence, and the changelog join
 - `docs/sandboxing.md`, `docs/endpoints.md`, `docs/oauth-connections.md`,
   `docs/remote-machines.md`, `docs/notifications.md` — the outward-facing surfaces
 - `docs/search.md`, `docs/run-analytics.md`, `docs/authoring.md`, `docs/examples.md`,

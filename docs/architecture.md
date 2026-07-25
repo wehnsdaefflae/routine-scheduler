@@ -591,7 +591,8 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   database, no cache files; parsing is memoized per file behind a stat() fingerprint
   (inode+mtime+size, so atomic rewrites always miss), pruned for deleted dirs, copies returned —
   the disk stays the source of truth on every lookup. Every other derived view lives in
-  **`rsched/readmodels/`** (stats, run_health, util_stats, statemap, fileactivity, tasktree) on the
+  **`rsched/readmodels/`** (stats, run_health, util_stats, statemap, fileactivity, tasktree,
+  items — the maintenance index of findings/decisions/bug reports, docs/items.md) on the
   same discipline: `readmodels/memo` fingerprint-caches per input file, `readmodels/usage_stream`
   is the ONE parser of workflow-usage.jsonl — a read-model is a pure derivation, deletable state,
   never a writer.

@@ -18,8 +18,7 @@ installFormPersistence();
 const routes = [
   [/^#?\/?$/, () => import("/static/views/dashboard.js")],
   [/^#\/conversations(?:\/([a-z0-9-]+))?$/, () => import("/static/views/conversations.js")],
-  [/^#\/log$/, () => import("/static/views/log.js")],
-  [/^#\/audit$/, () => import("/static/views/audit.js")],
+  [/^#\/items$/, () => import("/static/views/items.js")],
   [/^#\/stats$/, () => import("/static/views/stats.js")],
   [/^#\/routine\/([a-z0-9-]+)$/, () => import("/static/views/routine.js")],
   [/^#\/run\/([a-z0-9-]+:[0-9-]+)$/, () => import("/static/views/run.js")],
@@ -79,11 +78,10 @@ async function route() {
 
 // ---- location indicators: active nav + breadcrumb -------------------------------------------
 function updateLocation(path) {
-  const key = path.startsWith("#/log") ? "log"
-    : path.startsWith("#/conversations") ? "conversations"
+  const key = path.startsWith("#/conversations") ? "conversations"
     : path.startsWith("#/summary") ? "summary"
     : path.startsWith("#/questions") ? "questions"
-    : path.startsWith("#/audit") ? "audit"
+    : path.startsWith("#/items") ? "items"
     : path.startsWith("#/stats") ? "stats"
     : path.startsWith("#/library") ? "library"
     : path.startsWith("#/settings") ? "settings"
@@ -101,10 +99,9 @@ function crumbsFor(path) {
   const top = parts[0] || "";
   switch (top) {
     case "": return [{ label: "Routines" }];
-    case "log": return [{ label: "Log" }];
     case "summary": return [{ label: "Summary" }];
     case "questions": return [{ label: "Decisions" }];
-    case "audit": return [{ label: "Audit" }];
+    case "items": return [{ label: "Items" }];
     case "stats": return [{ label: "Stats" }];
     case "settings": return [{ label: "Settings" }];
     case "help": {

@@ -10,6 +10,7 @@ its own incremental machinery; `rsched.registry` is the catalog/run-index siblin
 Members: `stats` (usage rollups), `run_health` (recipe-version regression flags),
 `util_stats` (per-util reliability), `statemap` (stage graph + per-phase instrument
 panel), `fileactivity` (per-file read/write counts), `tasktree` (the recursive child
-tree), plus the shared primitives `memo` (stat-fingerprint cache) and `usage_stream`
-(the ONE parser of workflow-usage.jsonl).
+tree), `items` (the system-maintenance index: findings, decisions, bug reports), plus
+the shared primitives `memo` (stat-fingerprint cache) and `usage_stream` (the ONE
+parser of workflow-usage.jsonl).
 """

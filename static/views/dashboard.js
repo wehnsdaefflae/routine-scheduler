@@ -4,6 +4,7 @@
 // free text filter; every stat sorts; a table view sits one toggle away.
 
 import { api } from "/static/api.js";
+import { activityFeed } from "/static/components/activityfeed.js";
 import { heartbeat } from "/static/components/heartbeat.js";
 import { weekGrid } from "/static/components/weekgrid.js";
 import { mdInline } from "/static/md.js";
@@ -14,6 +15,7 @@ const FILTER_KEY = "rsched_dash_tags";
 const VIEW_KEY = "rsched_dash_view";
 const SORT_KEY = "rsched_dash_sort";
 const WEEK_KEY = "rsched_dash_week";
+const ACTIVITY_KEY = "rsched_dash_activity";
 
 // ---- sort keys: [label, value-fn, descending?] -------------------------------------------------
 const tokensOf = (c) => (c.last_run?.usage?.in || 0) + (c.last_run?.usage?.out || 0);
@@ -85,7 +87,19 @@ export async function render(view) {
   weekPanel.addEventListener("toggle", () => storage.set(WEEK_KEY, weekPanel.open ? "open" : "closed"));
   const filterBar = el("div", { class: "filterbar" });
   const body = el("div", { class: "mt" });
-  view.append(banner, weekPanel, filterBar, body);
+  // The cross-routine activity feed (the former Log page): every run, filterable, with the
+  // transcript tailing inline. Collapsed by default and lazily started — a closed section
+  // neither fetches nor polls.
+  const feed = activityFeed();
+  const activityPanel = el("details", { class: "panel weekpanel mt activity-panel",
+    ...(storage.get(ACTIVITY_KEY) === "open" ? { open: true } : {}) },
+    el("summary", {}, "activity — every run across every routine"), feed.node);
+  activityPanel.addEventListener("toggle", () => {
+    storage.set(ACTIVITY_KEY, activityPanel.open ? "open" : "closed");
+    if (activityPanel.open) feed.start();
+  });
+  if (activityPanel.open) feed.start();
+  view.append(banner, weekPanel, filterBar, body, activityPanel);
   body.append(skeleton(), skeleton(), skeleton());
 
   let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();
@@ -315,5 +329,9 @@ export async function render(view) {
     pending = setTimeout(() => load().catch(() => {}), 600);   // debounce bursts of bus events
   };
   window.addEventListener("rsched-bus", onBus);
-  return () => { window.removeEventListener("rsched-bus", onBus); clearTimeout(pending); };
+  return () => {
+    window.removeEventListener("rsched-bus", onBus);
+    clearTimeout(pending);
+    feed.dispose();
+  };
 }

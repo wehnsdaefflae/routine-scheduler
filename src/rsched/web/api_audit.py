@@ -1,17 +1,17 @@
-"""Audit tab: read the self-audit routine's latest report + changelog, and write reviewer
-feedback (comments / decisions / free notes) into that routine's inbox as tagged messages.
+"""The reviewer-feedback channel: comments, decision answers and free notes written into the
+self-audit routine's inbox as tagged messages. The Items page (`api_items`) is the READ half
+— every finding, decision and bug report with its status; this module is the one write path
+that page has.
 
 Feedback reuses the standard inbox message channel (`msg-*.json`, drained as a user message),
 so the routine consumes it on its next/current run with no engine changes. Until a run drains
 it, a queued message stays editable and withdrawable (PUT/DELETE by its id) — the message file
 keeps the structured fields (kind/target/choice/raw) alongside the formatted text so an edit
-can re-format cleanly. The report and changelog are routine-owned artifacts under
-`<routine>/audit/` — this layer only reads them.
+can re-format cleanly.
 """
 
 from __future__ import annotations
 
-import json
 import re
 import uuid
 from pathlib import Path
@@ -19,40 +19,15 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import registry
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
+from ..readmodels.items import SELF_AUDIT_SLUG
 
 router = APIRouter(tags=["audit"])
-
-SELF_AUDIT_SLUG = "self-audit"
-_ACTIVE = ("queued", "running", "waiting_user", "paused", "starting")
 
 
 def _routine_dir(request: Request) -> Path:
     return request.app.state.server.routines_home / SELF_AUDIT_SLUG
-
-
-def _read_changelog(path: Path, limit: int = 100) -> list[dict]:
-    """Append-only JSONL of code changes the routine made, returned newest-first."""
-    if not path.exists():
-        return []
-    out: list[dict] = []
-    try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(obj, dict):
-                out.append(obj)
-    except OSError:
-        return []
-    out.reverse()
-    return out[:limit]
 
 
 # MIGRATION(expires=2026-09-01): messages written before feedback became editable carry
@@ -62,7 +37,7 @@ _LEGACY_COMMENT_RE = re.compile(r"^\[AUDIT feedback · finding ([^\]]+)\]\s*(.*)
 _LEGACY_NOTE_RE = re.compile(r"^\[AUDIT note\]\s*(.*)$", re.DOTALL)
 
 
-def _pending_feedback(routine_dir: Path) -> list[dict]:
+def pending_feedback(routine_dir: Path) -> list[dict]:
     """Web-submitted feedback still sitting in the inbox (not yet consumed by a run) — the UI
     shows these so a reviewer can see exactly what the next self-audit run will pick up, and
     edit or withdraw any of it (by `id`) until then.
@@ -87,11 +62,11 @@ def _pending_feedback(routine_dir: Path) -> list[dict]:
     return out
 
 
-def _answered_decisions(routine_dir: Path, report: object) -> list[str]:
+def answered_decisions(routine_dir: Path, report: object) -> list[str]:
     """Decision ids the user DURABLY answered at-or-after this report's `generated` — the
     exact rule the Decisions page (`_audit_decisions`) uses to keep an answered decision
-    hidden. The Audit page reads this so an answered decision reads as answered HERE too,
-    even after a run has consumed its inbox feedback message. Without it the Audit page
+    hidden. The Items page reads this so an answered decision reads as answered HERE too,
+    even after a run has consumed its inbox feedback message. Without it the page
     reconstructs answered-state from `pending_feedback` alone, so a decision re-presents as
     open the moment a run drains its message — the "not synced everywhere" bug.
     """
@@ -103,25 +78,6 @@ def _answered_decisions(routine_dir: Path, report: object) -> list[str]:
     generated = str(report.get("generated") or "")
     return [str(did) for did, marker in answered.items()
             if (m := str(marker or "")) and m >= generated]
-
-
-@router.get("/audit")
-def audit(request: Request) -> dict:
-    routine_dir = _routine_dir(request)
-    exists = routine_dir.is_dir()
-    report = read_json(routine_dir / "audit" / "report.json") if exists else None
-    if not isinstance(report, dict):
-        report = None
-    changelog = _read_changelog(routine_dir / "audit" / "changelog.jsonl") if exists else []
-    last_run = None
-    runs = registry.run_index(routine_dir, SELF_AUDIT_SLUG) if exists else []
-    if runs:
-        r = runs[0]
-        last_run = {"run_id": r.run_id, "ts": r.ts, "state": r.state, "summary": r.summary[:400]}
-    return {"exists": exists, "routine": SELF_AUDIT_SLUG, "report": report,
-            "changelog": changelog, "last_run": last_run,
-            "pending_feedback": _pending_feedback(routine_dir) if exists else [],
-            "answered_decisions": _answered_decisions(routine_dir, report) if exists else []}
 
 
 class Feedback(BaseModel):

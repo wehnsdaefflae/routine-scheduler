@@ -108,9 +108,10 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
                 f"{obs['fire_at']} — the daemon fires it once, then consumes it).")
     if kind == "report_bug":
         if obs.get("filed"):
-            return (f"OBSERVATION (report_bug filed: {obs.get('title')!r} — appended to "
-                    ".control/bug-reports.jsonl; the self-audit routine will review it. "
-                    "Continue your own task.)")
+            return (f"OBSERVATION (report_bug filed as {obs.get('id')}: {obs.get('title')!r} "
+                    "— appended to .control/bug-reports.jsonl; the self-audit routine will "
+                    "review it. Refer to it by that id if you mention it again. Continue "
+                    "your own task.)")
         return ("OBSERVATION (report_bug: could NOT write the bug-reports log (I/O error) — "
                 "the report was not filed. Continue your own task; mention the bug in your "
                 "finish summary instead.)")

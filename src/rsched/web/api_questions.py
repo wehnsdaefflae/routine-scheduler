@@ -34,13 +34,14 @@ def _audit_decisions(server) -> list[dict]:
     settled (`status: settled` — or the routine's prose convention, a detail starting
     with SETTLED).
     """
-    from .api_audit import SELF_AUDIT_SLUG, _pending_feedback
+    from ..readmodels.items import SELF_AUDIT_SLUG
+    from .api_audit import pending_feedback
 
     rdir = server.routines_home / SELF_AUDIT_SLUG
     report = read_json(rdir / "audit" / "report.json")
     if not isinstance(report, dict):
         return []
-    queued = {m.group(1).strip() for p in _pending_feedback(rdir)
+    queued = {m.group(1).strip() for p in pending_feedback(rdir)
               if (m := _DECISION_RE.match(p.get("text") or ""))}
     # Durable answered markers: a mid-run delivery consumes the inbox message instantly,
     # so `queued` alone cannot keep an answered decision out of the inbox while the report

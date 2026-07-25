@@ -549,14 +549,16 @@ def test_subrun_transcript_nested_path(client):
     assert c.get(f"{base}?sub=../evil").status_code == 400
 
 
-def test_audit_report_and_feedback(client):
+def test_items_report_and_feedback(client):
+    """The Items page's read endpoint (report header + items + changelog) and the reviewer
+    feedback channel it writes through (POST /api/audit/feedback → the routine's inbox)."""
     c, tmp = client
     routines = tmp / "routines"
     # no self-audit routine yet → friendly empty payload
-    assert c.get("/api/audit").json() == {"exists": False, "routine": "self-audit",
-                                          "report": None, "changelog": [],
-                                          "last_run": None, "pending_feedback": [],
-                                          "answered_decisions": []}
+    assert c.get("/api/items").json() == {"exists": False, "routine": "self-audit",
+                                          "items": [], "counts": {"type": {}, "status": {}},
+                                          "report": None, "last_run": None,
+                                          "pending_feedback": [], "answered_decisions": []}
 
     adir = routines / "self-audit" / "audit"
     adir.mkdir(parents=True)
@@ -569,9 +571,10 @@ def test_audit_report_and_feedback(client):
         json.dumps({"ts": "2026-07-01T09:00:00+02:00", "commit": "0000001", "summary": "old change"}) + "\n" +
         json.dumps({"ts": "2026-07-08T09:00:00+02:00", "commit": "def5678a", "summary": "recent change"}) + "\n")
 
-    a = c.get("/api/audit").json()
+    a = c.get("/api/items").json()
     assert a["exists"] is True
-    assert a["report"]["findings"][0]["id"] == "F1"
+    assert a["report"]["since"]["commit"] == "abc1234f"     # header only — the arrays are items
+    assert {i["id"] for i in a["items"]} == {"F1", "D1"}
     assert a["changelog"][0]["summary"] == "recent change"  # newest-first
 
     def inbox_texts():
@@ -589,8 +592,8 @@ def test_audit_report_and_feedback(client):
     assert "[AUDIT decision · D1] selected: a — do it" in texts
     assert "[AUDIT note] focus on speed" in texts
 
-    # unconsumed web feedback is surfaced back (the Audit tab's "waiting for the next run" list)
-    pend = c.get("/api/audit").json()["pending_feedback"]
+    # unconsumed web feedback is surfaced back (the "waiting for the next run" list)
+    pend = c.get("/api/items").json()["pending_feedback"]
     assert {p["text"] for p in pend} == set(texts) and all(p["ts"] for p in pend)
 
     # validation + missing-routine guard
@@ -608,7 +611,7 @@ def test_audit_feedback_editable_until_consumed(client):
 
     mid = c.post("/api/audit/feedback",
                  json={"kind": "comment", "target": "F1", "text": "first take"}).json()["id"]
-    p = c.get("/api/audit").json()["pending_feedback"][0]
+    p = c.get("/api/items").json()["pending_feedback"][0]
     assert (p["id"], p["kind"], p["target"], p["raw"]) == (mid, "comment", "F1", "first take")
 
     # edit in place: same file (same id), re-formatted text, original ts kept + edited stamped
@@ -616,7 +619,7 @@ def test_audit_feedback_editable_until_consumed(client):
     r = c.put(f"/api/audit/feedback/{mid}",
               json={"kind": "comment", "target": "F1", "text": "second take"})
     assert r.status_code == 200 and r.json()["id"] == mid
-    pend = c.get("/api/audit").json()["pending_feedback"]
+    pend = c.get("/api/items").json()["pending_feedback"]
     assert len(pend) == 1 and pend[0]["raw"] == "second take" and pend[0]["ts"] == ts0
     assert pend[0]["text"] == "[AUDIT feedback · finding F1] second take"
     assert read_json(inbox / f"{mid}.json")["edited"]
@@ -627,7 +630,7 @@ def test_audit_feedback_editable_until_consumed(client):
     # a pre-editability message (formatted text only) still surfaces its fields for editing
     (inbox / "msg-legacy.json").write_text(json.dumps(
         {"text": "[AUDIT note] old style", "ts": "2026-07-01T09:00:00+02:00", "via": "web-audit"}))
-    legacy = next(p for p in c.get("/api/audit").json()["pending_feedback"] if p["id"] == "msg-legacy")
+    legacy = next(p for p in c.get("/api/items").json()["pending_feedback"] if p["id"] == "msg-legacy")
     assert legacy["kind"] == "general" and legacy["raw"] == "old style"
 
     # non-web-audit inbox files are invisible to this channel — never editable or removable
@@ -1437,13 +1440,13 @@ def test_audit_decision_answer_survives_inbox_consumption(client):
     assert [q["qid"] for q in c.get("/api/questions").json() if q.get("meta")] == ["audit:D2"]
 
 
-def test_audit_page_reflects_answered_decision_after_consumption(client):
-    """The Audit page and the Decisions page must AGREE (reviewer note: responses to
+def test_items_page_reflects_answered_decision_after_consumption(client):
+    """The Items page and the Decisions page must AGREE (reviewer note: responses to
     decisions were not synced everywhere): a decision answered on the Decisions page reads
-    as answered on the Audit page too (`answered_decisions`), even after a run consumes its
-    inbox message. The Audit page previously reconstructed answered-state from
-    pending_feedback ALONE, so the decision re-presented as open the moment a run drained
-    the queued message."""
+    as answered on the Items page too (`answered_decisions`), even after a run consumes its
+    inbox message. The page previously reconstructed answered-state from pending_feedback
+    ALONE, so the decision re-presented as open the moment a run drained the queued
+    message."""
     c, tmp = client
     rdir = tmp / "routines" / "self-audit"
     adir = rdir / "audit"
@@ -1454,17 +1457,20 @@ def test_audit_page_reflects_answered_decision_after_consumption(client):
         "findings": [],
         "decisions": [{"id": "D2", "title": "Pick a path", "detail": "context",
                        "status": "open", "options": ["A", "B"]}]})
-    # not yet answered → the Audit page carries no answered marker for it
-    assert c.get("/api/audit").json()["answered_decisions"] == []
+    # not yet answered → the Items page carries no answered marker for it
+    assert c.get("/api/items").json()["answered_decisions"] == []
 
     # answer it, then a run consumes the queued feedback message (mid-run delivery)
     assert c.post("/api/questions/audit:D2/answer", json={"text": "A"}).status_code == 200
     for p in (rdir / "inbox").glob("msg-*.json"):
         p.unlink()
-    # pending_feedback is now empty, yet the Audit page still knows D2 is answered
-    audit = c.get("/api/audit").json()
-    assert audit["pending_feedback"] == []
-    assert audit["answered_decisions"] == ["D2"]
+    # pending_feedback is now empty, yet the Items page still knows D2 is answered
+    items = c.get("/api/items").json()
+    assert items["pending_feedback"] == []
+    assert items["answered_decisions"] == ["D2"]
+    # the item's own status still comes from the report (which says open) — the answered
+    # marker is what the card overlays on top, exactly as the Decisions page does
+    assert next(i for i in items["items"] if i["id"] == "D2")["status"] == "open"
 
     # a NEWER report (generated after the marker) re-opens it — answered_decisions drops D2.
     # Far-future stamp: the marker is written with REAL now(), so a near-past constant would
@@ -1474,7 +1480,7 @@ def test_audit_page_reflects_answered_decision_after_consumption(client):
         "findings": [],
         "decisions": [{"id": "D2", "title": "Pick a path (round 2)", "detail": "new",
                        "status": "open", "options": ["A", "B"]}]})
-    assert c.get("/api/audit").json()["answered_decisions"] == []
+    assert c.get("/api/items").json()["answered_decisions"] == []
 
 
 def test_post_traits_adds_and_removes_practice_modules(client):
