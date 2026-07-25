@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 
-from .. import work_orders
+from .. import reports
 from ..config import DELIBERATION_LEVELS
 from ..paths import read_json
 from ..schema_guard import validate
@@ -176,9 +176,9 @@ def inject_user_message(loop, m: dict) -> None:
         return
     ctx = loop.ctx
     ctx.transcript.event("user_injection", {"text": m["text"]})
-    # A work order already carries its own "WORK ORDER <id> from routine <slug>" heading
-    # (work_orders.message_text) — labelling it a USER MESSAGE would name the wrong sender.
-    lead = ("WORK ORDER (injected mid-run)" if m.get("work_order")
+    # A delivered report already carries its own "REPORT <id> from routine <slug>" heading
+    # (reports.message_text) — labelling it a USER MESSAGE would name the wrong sender.
+    lead = ("REPORT (injected mid-run)" if m.get("report")
             else "USER MESSAGE (injected mid-run)")
     msg: dict = {"role": "user", "content": f"{lead}:\n{m['text']}"}
     if m.get("attachments") and (media := fileops.media_from_paths(ctx, m["attachments"])):
@@ -253,7 +253,7 @@ def drain_injections(loop) -> None:
     drained = inbox.drain_messages(ctx.routine.dir, loop.consumed_dir)
     for m in drained:
         inject_user_message(loop, m)
-    work_orders.stamp_delivered(ctx.server.routines_home, drained, run_id=ctx.run_id)
+    reports.stamp_delivered(ctx.server.routines_home, drained, run_id=ctx.run_id)
 
 
 def child_finished_message(*, mode: str, n: int, label: str, workflow: str, status: str,

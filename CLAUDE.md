@@ -69,10 +69,9 @@ one you are about to touch, not all of them.
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, edit_file,
-  memory_read, memory_write, read_trait, llm, spawn, subtask, detach, schedule_run, hand_off,
-  subruns, kill, wait, ask_user, report_bug, finish` (22). `finish` and `report_bug` are ALWAYS_KINDS — available on every
-  turn regardless of the workflow's `tools:` allowlist or the capability set (report_bug is the
-  ungated bug channel feeding `.control/bug-reports.jsonl`, self-audit's evidence stream). Every action carries `say` (finding-first narration:
+  memory_read, memory_write, read_trait, llm, spawn, subtask, detach, schedule_run,
+  subruns, kill, wait, ask_user, report, finish` (21). `finish` and `report` are ALWAYS_KINDS — available on every
+  turn regardless of the workflow's `tools:` allowlist or the capability set. Every action carries `say` (finding-first narration:
   what the last observation taught you + why this action; terse for routine steps, 2-3 sentences
   at decision points; worded per the routine's `deliberation` level) + `kind`, plus an optional
   **`note`** — 1-3 SELF-CONTAINED lines worth keeping beyond the context window, engine-filed to
@@ -88,12 +87,14 @@ one you are about to touch, not all of them.
   `subtask` runs a child sub-workflow SEQUENTIALLY and blocks (the parallel `spawn`'s
   sibling — one child-task executor, `engine/childrun.py`); a `subtask` with `workflow: "generate"`
   drafts a new pattern when the `workflows: generate` capability is held (see docs/subtasks.md).
-  `hand_off` addresses a durable WORK ORDER to ANOTHER routine (gated: `work-orders`) — filed
-  under a `W<n>` id in `.control/work-orders.jsonl` and delivered into the target's `inbox/`,
-  which its NEXT SCHEDULED RUN drains; it starts no run and wakes nobody. The target closes it
-  with a `hand_off` back carrying `answers: "<W id>"`, and the Items page shows the whole
-  lifecycle (open → in_progress once drained → settled once answered). Distinct from
-  `report_bug`: that one is ungated, aims at the SCHEDULER, and is polled by self-audit.
+  **`report` is the ONE channel for work that is not the run's own task** — ungated, held by
+  every routine. What varies is whether the run can name an owner. UNADDRESSED goes to the
+  triage stream self-audit reads; ADDRESSED (`target`) is ALSO delivered into that routine's
+  `inbox/`, which its NEXT SCHEDULED RUN drains — it starts no run and wakes nobody. The target
+  closes it by reporting back with `answers: "<R id>"`. One `R<n>` namespace, one append-only
+  ledger `.control/reports.jsonl` (order rows + `delivered` event rows), one Items type; the
+  page shows open → in_progress once drained → settled once answered. Triage is therefore
+  FORWARDING, not absorbing.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out.
   `memory_*` are the ONLY way into `.memory/` (generic file actions are rejected there); the engine
   owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line note cap.

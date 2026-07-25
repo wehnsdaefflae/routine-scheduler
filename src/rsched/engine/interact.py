@@ -16,7 +16,7 @@ import difflib
 import time
 from datetime import datetime, timedelta
 
-from .. import bug_reports, sandbox, schedule_once, utils_lib, work_orders
+from .. import reports, sandbox, schedule_once, utils_lib
 from ..config.routine import record_secret_grants
 from ..ids import is_slug, question_id
 from . import decisions, detach, inbox
@@ -423,56 +423,46 @@ def handle_schedule_run(loop, action: dict) -> dict:
             "fire_at": rec["fire_at"]}
 
 
-def handle_hand_off(loop, action: dict) -> dict:
-    """Send a durable WORK ORDER to a sibling routine — the inter-routine referral channel the
-    `work-orders` capability gates. Records the order in <routines_home>/.control/
-    work-orders.jsonl under a `W<n>` id and writes the message into the TARGET's inbox, which
-    that routine's next scheduled run drains. Nothing is fired and nothing is woken.
+def handle_report(loop, action: dict) -> dict:
+    """File a REPORT — the ungated channel every routine holds for work that is not its own
+    task. Appends to <routines_home>/.control/reports.jsonl under an `R<n>` id.
 
-    The gate is not bureaucracy: a delivered work order becomes prose in another routine's
-    prompt, so an ungated version of this action would be a cross-routine injection channel.
+    UNADDRESSED (no `target`): the entry waits in the stream for self-audit's triage. Filing
+    it is best-effort like the health log — a failed write never aborts the reporting run,
+    whose real job is elsewhere; it just reports filed=False.
 
-    Self-targeting is refused — a note to yourself is `note` or `memory_write`, and letting a
-    run queue prose into its own next prompt is a loop with no reader in between.
-    """
-    ctx = loop.ctx
-    target = str(action.get("target") or "")
-    home = ctx.server.routines_home
-    target_dir = home / target
-    if target == ctx.routine.slug:
-        return {"kind": "hand_off", "target": target, "self_target": True}
-    if not (target_dir / "routine.yaml").is_file():
-        slugs = sorted(p.name for p in home.iterdir()
-                       if not p.name.startswith(".") and (p / "routine.yaml").is_file())
-        return {"kind": "hand_off", "target": target, "unknown_target": True,
-                "suggestions": difflib.get_close_matches(target, slugs, n=3, cutoff=0.5),
-                "valid_targets": slugs}
-    filed = work_orders.file_work_order(
-        home, sender=ctx.routine.slug, run_id=ctx.run_id, target=target, target_dir=target_dir,
-        title=str(action.get("title") or "").strip(),
-        detail=str(action.get("detail") or "").strip(),
-        answers=str(action.get("answers") or "").strip())
-    if filed is None:
-        return {"kind": "hand_off", "target": target, "filed": False}
-    return {"kind": "hand_off", "target": target, "filed": True, "id": filed[0],
-            "delivery": "the target reads it on its next scheduled run"}
+    ADDRESSED (`target`): the report is ALSO delivered into that routine's inbox, and its next
+    scheduled run reads it. Nothing is fired and nothing is woken — another routine's schedule
+    is its own.
 
-
-def handle_report_bug(loop, action: dict) -> dict:
-    """File a bug report against the scheduler — the ungated, default-on channel every
-    routine holds. Appends a structured entry to <routines_home>/.control/bug-reports.jsonl
-    (id, routine, run_id, ts, title, detail); self-audit's gather-evidence reads that stream
-    each run and turns unresolved entries into findings. The assigned `R<n>` id comes back
-    in the observation so the filing run can name it in its own summary (it is the item's
-    handle on the Items page). Best-effort like the health log — a failed write never aborts
-    the reporting run; it just reports filed=False. Works at any depth (subruns report too —
-    the report carries the run that saw the bug).
+    Self-targeting is refused: a note to yourself is `note` or `memory_write`, and queueing
+    prose into your own next prompt is a loop with no reader in between. Works at any depth —
+    subruns report too, and the row carries the run that saw the problem.
     """
     ctx = loop.ctx
     title = str(action.get("title") or "").strip()
     detail = str(action.get("detail") or "").strip()
-    filed = bug_reports.file_bug_report(
-        ctx.server.routines_home, routine=ctx.routine.slug, run_id=ctx.run_id,
-        title=title, detail=detail)
-    return {"kind": "report_bug", "title": title, "filed": filed is not None,
-            "id": filed[1] if filed else ""}
+    target = str(action.get("target") or "").strip()
+    home = ctx.server.routines_home
+    target_dir = None
+    if target:
+        if target == ctx.routine.slug:
+            return {"kind": "report", "target": target, "self_target": True}
+        target_dir = home / target
+        if not (target_dir / "routine.yaml").is_file():
+            # Discoverability: a routine guessing a sibling's slug should get the valid slugs
+            # and close matches back, not a bare rejection (as schedule_run does).
+            slugs = sorted(p.name for p in home.iterdir()
+                           if not p.name.startswith(".") and (p / "routine.yaml").is_file())
+            return {"kind": "report", "target": target, "unknown_target": True,
+                    "suggestions": difflib.get_close_matches(target, slugs, n=3, cutoff=0.5),
+                    "valid_targets": slugs}
+    filed = reports.file_report(home, routine=ctx.routine.slug, run_id=ctx.run_id, title=title,
+                                detail=detail, target=target, target_dir=target_dir,
+                                answers=str(action.get("answers") or "").strip())
+    out = {"kind": "report", "title": title, "filed": filed is not None,
+           "id": filed[1] if filed else ""}
+    if target:
+        out["target"] = target
+        out["delivery"] = "the target reads it on its next scheduled run"
+    return out

@@ -49,8 +49,7 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
     main_meta = {"name": cfg.name, "slug": cfg.slug,
                  "materialized_from": {"slug": cfg.workflow_slug,
                                        "commit": library.head_commit(server.libraries_home),
-                                       "version": meta.get("version", 0)},
-                 "stages": sorted(result["stages"])}
+                                       "version": meta.get("version", 0)}}
     if meta.get("tools") is not None:
         main_meta["tools"] = meta["tools"]
     from ..paths import atomic_write

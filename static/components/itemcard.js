@@ -14,8 +14,7 @@ const STATUS_TONE = {
   open: "waiting_user", in_progress: "partial", addressed: "ok",
   settled: "ok", dropped: "idle", unknown: "",
 };
-const TYPE_LABEL = { finding: "finding", decision: "decision", bug: "bug report",
-                     work_order: "work order" };
+const TYPE_LABEL = { finding: "finding", decision: "decision", report: "report" };
 const SEV = ["problem", "systemic", "redundancy", "improvement", "info"];
 
 function originLine(item) {
@@ -50,12 +49,13 @@ function addressedSection(item) {
       r.ts ? when(r.ts) : null)));
 }
 
-// A work order's routing: who sent it to whom, whether the target's run has actually drained
-// it, and which reply closed it. This line is the whole point of the ledger — a hand-off that
-// silently never arrives is worse than none.
+// An ADDRESSED report's routing: who sent it to whom, whether the target's run has actually
+// drained it, and which reply closed it. This line is the whole point of the ledger — a
+// hand-off that silently never arrives is worse than none. An unaddressed report (triage) has
+// no routing to show.
 function routingLine(item) {
-  if (item.type !== "work_order") return null;
-  const bits = [el("span", {}, `${item.origin?.routine || "?"} → ${item.to || "?"}`)];
+  if (item.type !== "report" || !item.to) return null;
+  const bits = [el("span", {}, `${item.origin?.routine || "?"} → ${item.to}`)];
   const d = item.delivered || {};
   if (d.run_id) {
     bits.push(el("a", { href: `#/run/${d.run_id}`, title: "the run that picked it up" }, "picked up ↗"));

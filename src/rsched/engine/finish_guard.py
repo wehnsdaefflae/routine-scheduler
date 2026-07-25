@@ -1,7 +1,7 @@
 """Reject an authored ok-finish that CLAIMS a high-signal action the run never took.
 
-Motivated by self-audit finding F127 (2026-07-19): a routine wrote *"Filed report_bug to
-self-audit"* in its finish summary while taking no `report_bug` action — narrated unperformed
+Motivated by self-audit finding F127 (2026-07-19): a routine wrote *"Filed report to
+self-audit"* in its finish summary while taking no `report` action — narrated unperformed
 work. The reviewer chose to REJECT such a finish (decision D31 = option B) so the run must
 either actually take the action or drop the false claim before it may finish.
 
@@ -9,16 +9,16 @@ The check is deliberately NARROW — a false reject blocks a legitimate finish o
 path, so precision beats recall:
 
   * Only the three high-signal, side-effecting action kinds whose *engine token* essentially
-    never appears in prose except as a deliberate claim: ``report_bug``, ``ask_user``,
+    never appears in prose except as a deliberate claim: ``report``, ``ask_user``,
     ``schedule_run``. We match the LITERAL underscore token, never natural-language paraphrases
     ("asked the user"), which are too ambiguous to reject on.
   * The token must be bound (within a short window) to an affirmative completion verb, with no
-    negation just before ("did not file a report_bug" is fine).
+    negation just before ("did not file a report" is fine).
   * META routines (tag ``meta``: self-audit, routine-improver, config-optimizer, token-lab,
     clarification) are EXEMPT. Their whole job is to analyse and quote *other* runs' actions,
     so their summaries legitimately contain these tokens without taking the action — a universal
     check would false-reject the auditor's own finishes (self-audit's F127 summary literally
-    quotes "Filed report_bug").
+    quotes "Filed report").
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ import re
 
 # action kind -> regex of affirmative completion verb stems that assert it was performed
 _CLAIM_ACTIONS: dict[str, str] = {
-    "report_bug": r"fil|submit|post|logg|sent|send|open|escalat|rais",
+    "report": r"fil|submit|post|logg|sent|send|open|escalat|rais",
     "ask_user": r"ask|question|escalat|surfac|prompt",
     "schedule_run": r"schedul|arm|queu",
 }

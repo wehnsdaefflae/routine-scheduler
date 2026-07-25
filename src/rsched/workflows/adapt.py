@@ -14,7 +14,6 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-from datetime import date
 from pathlib import Path
 
 import frontmatter
@@ -33,19 +32,21 @@ def dump_markdown(meta: dict, body: str) -> str:
     return frontmatter.dumps(post, sort_keys=False) + "\n"
 
 
-def _routine_frontmatter(meta: dict, slug: str, provenance: dict, adapted: str) -> dict:
+def _routine_frontmatter(meta: dict, slug: str, provenance: dict) -> dict:
+    """The keys a materialized main.md carries. Only `materialized_from` and `tools` are READ
+    back (runtime.load_workflow); `name`/`slug` stay as the human identity of a file the user
+    edits in the recipe editor. Anything else here would be a second copy of a fact whose
+    source of truth is elsewhere — the `stages/` and `traits/` directories, routine.yaml — and
+    would silently drift from it.
+    """
     fm = {"name": meta.get("name", slug), "slug": meta.get("slug", slug),
-          "materialized_from": provenance, "adapted": adapted}
-    if meta.get("includes"):
-        fm["includes"] = list(meta["includes"])
-    if meta.get("tags"):
-        fm["tags"] = list(meta["tags"])
+          "materialized_from": provenance}
     if meta.get("tools") is not None:
         fm["tools"] = meta["tools"]
     return fm
 
 
-def materialize(home: Path, slug: str, *, today: str | None = None) -> tuple[str, dict]:
+def materialize(home: Path, slug: str) -> tuple[str, dict]:
     """Single-file workflow → the routine's main.md content (whole workflow rendered to markdown).
     The Python pattern is rendered to markdown — the orchestrator acts it out.
     """
@@ -53,8 +54,7 @@ def materialize(home: Path, slug: str, *, today: str | None = None) -> tuple[str
 
     meta, raw = read_workflow(home, slug)
     provenance = {"slug": slug, "commit": head_commit(home), "version": meta.get("version", 0)}
-    adapted = today or date.today().isoformat()  # noqa: DTZ011 — a local-date stamp is the point
-    return dump_markdown(_routine_frontmatter(meta, slug, provenance, adapted),
+    return dump_markdown(_routine_frontmatter(meta, slug, provenance),
                          render_markdown(raw, meta)), provenance
 
 

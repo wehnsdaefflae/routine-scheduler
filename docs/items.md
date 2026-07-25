@@ -1,16 +1,16 @@
 # Items — the system-maintenance index
 
 An **item** is one unit of maintenance work on the scheduler itself: a self-audit
-**finding** (`F<n>`), a self-audit **decision** (`D<n>`), a **bug report** (`R<n>`) filed
-by any run through the ungated `report_bug` action, or a **work order** (`W<n>`) one routine
-handed to another through `hand_off`. The Items page (`#/items`) is the one
+**finding** (`F<n>`), a self-audit **decision** (`D<n>`), or a **report** (`R<n>`) filed by
+any run through the ungated `report` action — addressed to the routine that owns the problem,
+or left unaddressed for triage. The Items page (`#/items`) is the one
 place where every item is listed with its status, what it is for, where it came from, and
 when it was addressed. It replaced the old Log and Audit pages in 0.106.0.
 
-Items are a READ MODEL (`rsched/readmodels/items.py`): five files on disk are merged into
+Items are a READ MODEL (`rsched/readmodels/items.py`): four files on disk are merged into
 one shape on demand. Nothing in this path writes an item — the self-audit routine owns
-`report.json`, the engine owns `bug-reports.jsonl` and `work-orders.jsonl`, the web layer owns
-the answered-decision markers, and the changelog is written by self-audit's own runs.
+`report.json`, the engine owns `reports.jsonl`, the web layer owns the answered-decision
+markers, and the changelog is written by self-audit's own runs.
 
 ## Sources
 
@@ -19,8 +19,7 @@ the answered-decision markers, and the changelog is written by self-audit's own 
 | `<self-audit>/audit/report.json` | the self-audit routine | findings + decisions, and their CURRENT status |
 | `<self-audit>/audit/changelog.jsonl` | the self-audit routine | the archive: which commit addressed which item, when |
 | `<self-audit>/audit/decisions-answered.json` | the web layer (`api_audit`) | durable "the user answered this decision" markers |
-| `<routines>/.control/bug-reports.jsonl` | the engine (`rsched/bug_reports.py`) | bug reports from every routine |
-| `<routines>/.control/work-orders.jsonl` | the engine (`rsched/work_orders.py`) | work orders between routines, and how far each got |
+| `<routines>/.control/reports.jsonl` | the engine (`rsched/reports.py`) | every report a run filed, and how far an addressed one got |
 
 `report.json` carries only the CURRENT window (schema 1: `run_id`, `generated`,
 `since{commit,window}`, `summary`, `findings[]`, `decisions[]`) — a report lists the items
@@ -53,17 +52,17 @@ arbitrary payload keys). Nothing reads them.
 }
 ```
 
-- **`id`** — `F<n>` finding, `D<n>` decision, `R<n>` bug report, `W<n>` work order. The prefix
-  is the type, and the four namespaces never collide. `R` was chosen over `B` because the
-  user's own reviewer-backlog items are written `B<n>` in prose and would mislink.
-- **`type`** — `finding` | `decision` | `bug` | `work_order`.
+- **`id`** — `F<n>` finding, `D<n>` decision, `R<n>` report. The prefix is the type, and the
+  three namespaces never collide. `R` was chosen over `B` because the user's own
+  reviewer-backlog items are written `B<n>` in prose and would mislink.
+- **`type`** — `finding` | `decision` | `report`.
 - **`status`** — see below. The key is `status`, never `state`: decisions already carried
   `status` on disk and a synonym would fork the vocabulary.
 - **`title`**, **`detail`** — the item's own prose, verbatim from its source. An archive-only
   item has neither (nothing on disk holds them); the UI shows its newest `addressed` entry
   instead, labelled as coming from the changelog.
 - **`origin`** — where the item entered the system: `routine`, `run_id`, `ts`, `commit`.
-  For findings and decisions that is the report that raised them; for bug reports the run
+  For findings and decisions that is the audit report that raised them; for reports the run
   that filed it. An archive-only item takes its origin from the EARLIEST changelog row
   linked to it — that is the first trace of it, not necessarily the moment it was raised.
 - **`addressed[]`** — every changelog row linked to this item, newest first: `ts`, `commit`,
@@ -75,7 +74,8 @@ arbitrary payload keys). Nothing reads them.
 - **`archive_only`** — true when no source holds the item's own record any more and it
   survives solely through the changelog / answered markers.
 - Type extras: **`severity`** (findings), **`options[]`** + **`resolution`** (decisions),
-  **`to`** + **`delivered{ts,run_id}`** + **`answers`** + **`answered_by`** (work orders).
+  **`to`** + **`delivered{ts,run_id}`** + **`answers`** + **`answered_by`** (reports; `to` is
+  empty on an unaddressed one, which has no routing to show).
 
 ## Status vocabulary
 
@@ -106,21 +106,22 @@ Precedence, in order — the first rule that applies wins:
 A status value outside the vocabulary is a data error and reads as `unknown`; the read model
 does not translate synonyms.
 
-### Work orders
+### Reports
 
-A `W<n>` derives its status from its OWN ledger, which is the authority for it the way
-`report.json` is for an `F<n>`. In precedence order: **`settled`** when a later work order
-carries `answers: "<this id>"` — the target replied, having acted or having said why not;
-**`addressed`** when a changelog row names the id; **`in_progress`** once the target's run
-drained the message from its inbox and the engine stamped a `delivered` event onto the row;
-otherwise **`open`** — filed, and waiting for the target's next scheduled run.
+An `R<n>` derives its status from its OWN ledger, which is the authority for it the way
+`report.json` is for an `F<n>`. In precedence order: **`settled`** when a later report carries
+`answers: "<this id>"` — the target replied, having acted or having said why not;
+**`addressed`** when a changelog row names the id; **`in_progress`** once an ADDRESSED report's
+target drained the message from its inbox and the engine stamped a `delivered` event onto the
+row; otherwise **`open`**.
 
 That progression is the whole reason the ledger exists: it distinguishes a hand-off that
-carried from one that silently never arrived. The card shows the routing line
-(`sender → target`, whether it was picked up, and which reply closed it).
+carried from one that silently never arrived. An addressed report's card shows the routing line
+(`sender → target`, whether it was picked up, and which reply closed it); an unaddressed one
+has no routing and simply waits in triage.
 
-The stream is append-only. The order row is written by `hand_off`; the `delivered` event is a
-second row, folded onto the order by `work_orders.read_work_orders`.
+The stream is append-only. The report row is written by the `report` action; the `delivered`
+event is a second row, folded onto it by `reports.read_reports`.
 
 ## Joining the changelog
 
@@ -168,11 +169,10 @@ the self-audit routine's inbox, where the next run drains them. Items is a read 
 feedback endpoints are the only write path on the page, and answering a *decision* still
 happens on the Decisions page, through the same inbox.
 
-## Bug-report ids
+## Report ids
 
-`report_bug` stamps a monotonic `R<n>` on every report as it is appended
-(`rsched/bug_reports.py`), under the same advisory file lock the append takes, so two runs
-filing at once cannot collide. The id comes back in the action's observation, so the filing
-run can name it in its own summary. Every row in `bug-reports.jsonl` carries an `id` — the
-existing rows were stamped in place once, in `ts` order, when the field was introduced; there
-is no id-less form to handle.
+The `report` action stamps a monotonic `R<n>` on every report as it is appended
+(`rsched/reports.py`), under the same advisory file lock the append takes, so two runs filing
+at once cannot collide. The id comes back in the action's observation, so the filing run can
+name it in its own summary, and it is how a later report CLOSES this one (`answers`). Every
+row in `reports.jsonl` carries an `id`; there is no id-less form to handle.

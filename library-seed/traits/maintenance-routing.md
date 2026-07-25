@@ -28,15 +28,14 @@ correctly is the util's owner.
 1. **Do it yourself** if it is inside your own remit and your permissions reach it. Check what you
    actually hold before concluding you cannot — "not in my write roots" is a claim to verify, not
    an excuse.
-2. **Hand it to the owner** with the `hand_off` action: `target` (the owner's slug), `title` (one
-   line), `detail` (the work order itself). It is filed under a `W<n>` id and lands in that
-   routine's inbox, and that routine reads it at the top of its NEXT SCHEDULED RUN. Nothing is
-   started.
+2. **Report it to the owner** with the `report` action: `target` (the owner's slug), `title` (one
+   line), `detail`. It is filed under an `R<n>` id and lands in that routine's inbox, and that
+   routine reads it at the top of its NEXT SCHEDULED RUN. Nothing is started.
    Write a WORK ORDER, not a hint. The reader has none of your context: name the exact file or
    artefact, say what is wrong, give the evidence (a run id, a `path:line`, the error text), and
    state what "done" looks like.
-   Where you hold no `hand_off` capability, raise it with the operator and NAME the routine that
-   should own it, so the hand-off is recorded rather than lost.
+   When you cannot name the owner, leave `target` out. The report goes to triage and is routed
+   for you — always better than guessing a target who will bounce it back.
 3. **Route through self-audit** when the problem is the scheduler's own behaviour, or when the
    owner has already tried and been blocked by something structural.
 4. **Ask the operator** only when no routine can act — and say what you already tried, and which
@@ -44,11 +43,11 @@ correctly is the util's owner.
 
 ## Both directions, and the honest report
 
-Receiving is half of this. Work orders reach you in their own prompt section: read them as a
-first-class input, not as noise — something else in the system found a problem inside YOUR remit
-and did the diagnosis for you. Act on it or say plainly why you will not, and either way CLOSE it
-with a `hand_off` back to the sender carrying `answers: "<the W id>"`. That reply is what turns a
-hand-off from sent into settled.
+Receiving is half of this. Reports addressed to you reach you in their own prompt section: read
+them as a first-class input, not as noise — something else in the system found a problem inside
+YOUR remit and did the diagnosis for you. Act on it or say plainly why you will not, and either
+way CLOSE it by reporting back to the sender with `answers: "<the R id>"`. That reply is what
+turns a hand-off from sent into settled.
 
 Record every hand-off you make and every one you receive, so a problem that bounces between two
 routines becomes visible instead of circulating. If you catch yourself receiving the same class of

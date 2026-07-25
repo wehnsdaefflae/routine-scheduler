@@ -1,6 +1,6 @@
 """Workflow library API: list with lint badges, content + git history, lint-gated edits,
 delete. The user's levers over workflows are EDIT and DELETE — there is no accept/decline
-gate; the workflow-curator routine applies its changes directly (lint-gated, committed).
+gate; the routine-improver routine applies its changes directly (lint-gated, committed).
 """
 
 from __future__ import annotations

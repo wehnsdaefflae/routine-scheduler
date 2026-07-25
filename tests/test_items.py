@@ -1,5 +1,5 @@
 """The Items read model (`readmodels/items.py`) and its API: the merge of report.json,
-changelog.jsonl, decisions-answered.json and bug-reports.jsonl into one indexed shape
+changelog.jsonl, decisions-answered.json and reports.jsonl into one indexed shape
 (docs/items.md), and the GET /api/items filters.
 """
 
@@ -71,7 +71,7 @@ def audit_home(tmp_path):
         json.dumps({"D3": "2026-07-25T09:00:00+00:00"}), encoding="utf-8")
     control = home / ".control"
     control.mkdir(parents=True)
-    (control / "bug-reports.jsonl").write_text(
+    (control / "reports.jsonl").write_text(
         "".join(json.dumps(b) + "\n" for b in BUGS), encoding="utf-8")
     return home
 
@@ -149,7 +149,9 @@ def test_explicit_items_field_is_the_trusted_join(audit_home):
     # a bug id joins ONLY through the explicit field
     assert [a["commit"] for a in items["R2"]["addressed"]] == ["cccc3333"]
     assert items["R2"]["status"] == "addressed"
-    assert items["R1"]["status"] == "unknown" and items["R1"]["addressed"] == []
+    # a filed report with no changelog row and no delivery is OPEN, not unknown: the ledger
+    # records that it exists, which is a status, unlike a finding whose report omits one
+    assert items["R1"]["status"] == "open" and items["R1"]["addressed"] == []
 
 
 def test_prose_matches_are_flagged_best_effort_and_newest_first(audit_home):
@@ -177,7 +179,7 @@ def test_item_shape_origin_evidence_and_refs(audit_home):
     assert f1["origin"] == {"routine": "self-audit", "run_id": "self-audit:20260725-000002",
                             "ts": "2026-07-25T00:38:00+00:00", "commit": "5854843551"}
     r1 = items["R1"]
-    assert r1["type"] == "bug" and r1["origin"]["routine"] == "routine-improver"
+    assert r1["type"] == "report" and r1["origin"]["routine"] == "routine-improver"
     assert r1["origin"]["run_id"] == "routine-improver:20260719-190013"
     assert items["D1"]["options"] == ["do it", "leave it"]
     assert items["D2"]["resolution"] == "did it"
@@ -185,7 +187,7 @@ def test_item_shape_origin_evidence_and_refs(audit_home):
 
 def test_counts_cover_every_type_and_status(audit_home):
     result = items_model.build(audit_home / "self-audit", audit_home)
-    assert result["counts"]["type"] == {"finding": 3, "decision": 4, "bug": 2}
+    assert result["counts"]["type"] == {"finding": 3, "decision": 4, "report": 2}
     assert sum(result["counts"]["status"].values()) == len(result["items"])
 
 
@@ -198,7 +200,7 @@ def test_items_are_ordered_newest_origin_first(audit_home):
 def test_build_is_memoized_until_a_source_changes(audit_home):
     first = items_model.build(audit_home / "self-audit", audit_home)
     assert len(items_model.build(audit_home / "self-audit", audit_home)["items"]) == len(first["items"])
-    with (audit_home / ".control" / "bug-reports.jsonl").open("a", encoding="utf-8") as fh:
+    with (audit_home / ".control" / "reports.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps({"id": "R3", "ts": "2026-07-26T00:00:00+00:00",
                              "routine": "x", "run_id": "x:1", "title": "new", "detail": ""}) + "\n")
     assert len(items_model.build(audit_home / "self-audit", audit_home)["items"]) == len(first["items"]) + 1
@@ -214,13 +216,14 @@ def test_missing_sources_yield_an_empty_index(tmp_path):
 
 def test_filter_items_by_type_status_routine_and_search(audit_home):
     items = items_model.build(audit_home / "self-audit", audit_home)["items"]
-    assert {i["id"] for i in items_model.filter_items(items, type_="bug")} == {"R1", "R2"}
-    assert {i["id"] for i in items_model.filter_items(items, status="open")} == {"F2", "D1"}
+    assert {i["id"] for i in items_model.filter_items(items, type_="report")} == {"R1", "R2"}
+    assert {i["id"] for i in items_model.filter_items(items, status="open")} == {"F2", "D1", "R1"}
     assert {i["id"] for i in items_model.filter_items(items, routine="routine-improver")} == {"R1"}
     assert {i["id"] for i in items_model.filter_items(items, search="clobbered")} == {"R1"}
     # an archive-only item has no prose of its own — its changelog summaries are searchable
     assert "F9" in {i["id"] for i in items_model.filter_items(items, search="revisited")}
-    assert items_model.filter_items(items, type_="bug", status="open") == []
+    assert {i["id"] for i in items_model.filter_items(items, type_="report", status="open")} \
+        == {"R1"}
 
 
 # ---- the API -----------------------------------------------------------------------------
@@ -234,7 +237,7 @@ def test_api_items_merges_filters_and_carries_the_header(api_client):
     (audit / "report.json").write_text(json.dumps(REPORT), encoding="utf-8")
     (audit / "changelog.jsonl").write_text(CHANGELOG, encoding="utf-8")
     (routines / ".control").mkdir(parents=True, exist_ok=True)
-    (routines / ".control" / "bug-reports.jsonl").write_text(
+    (routines / ".control" / "reports.jsonl").write_text(
         "".join(json.dumps(b) + "\n" for b in BUGS), encoding="utf-8")
     memo.reset()
 
@@ -242,13 +245,13 @@ def test_api_items_merges_filters_and_carries_the_header(api_client):
     assert data["exists"] is True
     assert data["report"]["since"]["commit"] == "5854843551"
     assert "findings" not in data["report"]          # the arrays ARE the items now
-    assert data["counts"]["type"]["bug"] == 2
+    assert data["counts"]["type"]["report"] == 2
     assert {r["commit"] for r in data["changelog"]} >= {"dddd4444"}
 
-    bugs = c.get("/api/items?type=bug").json()
-    assert {i["id"] for i in bugs["items"]} == {"R1", "R2"}
-    assert bugs["counts"]["type"]["finding"] == 3    # counts stay UNFILTERED
-    assert c.get("/api/items?status=open").json()["total"] == 2
+    reports = c.get("/api/items?type=report").json()
+    assert {i["id"] for i in reports["items"]} == {"R1", "R2"}
+    assert reports["counts"]["type"]["finding"] == 3    # counts stay UNFILTERED
+    assert c.get("/api/items?status=open").json()["total"] == 3
     assert {i["id"] for i in c.get("/api/items?search=clobbered").json()["items"]} == {"R1"}
     assert {i["id"] for i in
             c.get("/api/items?routine=routine-improver").json()["items"]} == {"R1"}

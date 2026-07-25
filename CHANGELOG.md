@@ -19,6 +19,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.109.0] — 2026-07-26
+
+### Changed
+- **`report_bug` and `hand_off` are merged into ONE action, `report`.** Two actions that filed
+  a durable item someone else acts on were the same act under two names, with two id
+  namespaces, two streams and two Items types — the overload `hand_off` was introduced to
+  relieve, reintroduced one level down. Now there is one channel, and what varies is only
+  whether the reporting run can name an owner:
+  - **Unaddressed** — "something is wrong and I am not going to work out whose it is." The row
+    waits in `.control/reports.jsonl` for self-audit's triage. A run that hits friction mid-task
+    should never have to consult the ownership table to say so.
+  - **Addressed** (`target`) — the same row, plus delivery into that routine's `inbox/`, read on
+    its NEXT SCHEDULED RUN. It starts no run and wakes nobody.
+  `answers: "<R id>"` closes a report this routine received. Ungated and in `ALWAYS_KINDS`, so
+  every routine holds it: routing only works if the channel is present at the moment the run
+  notices the problem. That also removes the cross-routine injection concern that motivated
+  gating `hand_off` — every routine now knows what a report is, and a delivered one is labelled
+  with its sender.
+- Triage becomes FORWARDING, not absorbing (the open half of B4): self-audit's `gather-evidence`
+  answers an unaddressed report that is not a scheduler defect by filing an ADDRESSED one
+  carrying `answers`, so the hand-off is recorded instead of performed by hand.
+- One `R<n>` namespace and one append-only ledger, `.control/reports.jsonl` (report rows +
+  `delivered` event rows). The 20 live `bug-reports.jsonl` rows moved across unchanged — they are
+  all unaddressed, which is exactly what a bug report was. `W<n>` never reached production.
+- One Items type, `report`, replacing `bug` and `work_order`. Status is derived the same way:
+  `open` → `in_progress` once an addressed target drained it → `settled` once answered.
+- The `work-orders` permission and capability are gone (`hand_off` leaves `GATED_KINDS`), and the
+  four maintenance routines' grants with them. `rsched/bug_reports.py` + `rsched/work_orders.py`
+  collapse into `rsched/reports.py`; `tests/test_report_bug.py` + `tests/test_work_orders.py`
+  into `tests/test_reports.py`.
+
+### Removed
+- **Dead recipe frontmatter.** `seed_sha256` / `compiled_sha256` / `modules` were residue: their
+  reader was deleted in 0.28.0 with the seed/recompile machinery, and the one-shot migration that
+  shipped with it only renamed the `steps/` directories. `stages`, `tags`, `includes` and
+  `adapted` were still WRITTEN but never read back — second copies of facts whose sources of
+  truth are the `stages/` and `traits/` directories and `routine.yaml`, free to drift from them.
+  Writers removed from `scaffold.py`, `engine/runtime.py` and `adapt.py`; 14 live routine and 4
+  seed `main.md` files stripped. Only `materialized_from` and `tools` are read back;
+  `name`/`slug` stay as the human identity of a file the user edits in the recipe editor.
+- `routine-seed/workflow-curator/` — a retired routine still installed on every fresh install,
+  which would now contend with `routine-improver` for the shared library. Its stale references in
+  `health_events.py` and `api_workflows.py` point at the real owner.
+
+### Note
+- Because `report` is an `ALWAYS_KIND` that owns `target`/`answers`/`title`/`detail`, those four
+  fields now survive every schema projection (`kindsurface`). A restricted run pays ~4 field
+  descriptions more than before — the cost of the channel being unconditionally present.
+
 ## [0.108.1] — 2026-07-26
 
 ### Fixed

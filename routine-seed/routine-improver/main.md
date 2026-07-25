@@ -5,20 +5,6 @@ materialized_from:
   slug: hand-authored
   commit: ''
   version: 1
-stages:
-- orient
-- select-targets
-- study-target
-- apply-lenses
-- fresh-eyes
-- record
-includes:
-- ask-policy
-- global-utils
-- ledger-discipline
-tags:
-- meta
-- maintenance
 ---
 
 You improve the routines under `~/routines` — the ones that haven't opted out, yourself

@@ -34,9 +34,9 @@ def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
     the web layer for a conversation message) drive auto-attach of images/PDFs; `command`
     marks a slash command the engine EXECUTES instead of injecting as prose.
 
-    A message filed by a sibling ROUTINE (`work_orders.file_work_order`) also carries
-    `work_order` (its `W<n>` id) and `from` (the sending slug). Those two keys are what keep
-    it out of the prompt's user-message channel: a work order is not something the user said,
+    A report a sibling ROUTINE addressed here (`reports.file_report` with a target) also
+    carries `report` (its `R<n>` id) and `from` (the sending slug). Those two keys are what
+    keep it out of the prompt's user-message channel: a report is not something the user said,
     and rendering it as though it were invites the run to answer the wrong party.
     """
     inbox = routine_dir / "inbox"
@@ -59,9 +59,9 @@ def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
             out.append({"text": str(obj["text"]),
                         "attachments": [str(a) for a in (obj.get("attachments") or [])],
                         **({"command": True} if obj.get("command") else {}),
-                        **({"work_order": str(obj["work_order"]),
+                        **({"report": str(obj["report"]),
                             "from": str(obj.get("from") or "")}
-                           if obj.get("work_order") else {})})
+                           if obj.get("report") else {})})
         else:
             # every writer produces {"text": …} JSON (web layer, daemon managers) — a
             # readable file that is not that is corrupt; consume it so it can't loop

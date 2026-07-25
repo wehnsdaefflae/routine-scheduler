@@ -1,8 +1,8 @@
 """Items: the system-maintenance index — every finding (`F<n>`), decision (`D<n>`), bug
-report (`R<n>`) and work order (`W<n>`) the scheduler carries, with its status, purpose,
-origin, and the changelog rows that addressed it.
+and report (`R<n>`) the scheduler carries, with its status, purpose, origin, and the
+changelog rows that addressed it.
 
-Five files merge into one shape (docs/items.md is the spec):
+Four files merge into one shape (docs/items.md is the spec):
 
 - `<self-audit>/audit/report.json` — findings + decisions, and the CURRENT status. Always
   the authority: the changelog is an archive and never overrides it.
@@ -10,17 +10,17 @@ Five files merge into one shape (docs/items.md is the spec):
   pretty-printed and compact JSON, so it is parsed with a streaming `raw_decode` loop; a
   line-oriented parser silently drops every multi-line row.
 - `<self-audit>/audit/decisions-answered.json` — durable "the user answered it" markers.
-- `<routines>/.control/bug-reports.jsonl` — the ungated `report_bug` stream.
-- `<routines>/.control/work-orders.jsonl` — the `hand_off` stream: which routine sent work
-  to which, and whether the target has picked it up. Its own lifecycle rows are the status
-  authority for a `W<n>`, the way `report.json` is for an `F<n>`.
+- `<routines>/.control/reports.jsonl` — the ungated `report` stream: every problem a run
+  raised, addressed to an owning routine or left for triage, plus the `delivered` event rows
+  that say whether an addressed one was picked up. It is the status authority for an `R<n>`,
+  the way `report.json` is for an `F<n>`.
 
 A report holds only its own window, so most items live on solely through the changelog and
 the answered markers — those are `archive_only` and carry no prose of their own. Findings
 have no `status` field on disk yet (the self-audit routine will emit one from the spec on a
 later run); an absent status reads `unknown` and is NEVER recovered from title prose.
 
-Read-model discipline: nothing here writes, and the merge is memoized behind the five
+Read-model discipline: nothing here writes, and the merge is memoized behind the four
 files' stat fingerprint.
 """
 
@@ -32,9 +32,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from ..bug_reports import BUG_REPORTS_FILE
 from ..paths import read_json
-from ..work_orders import WORK_ORDERS_FILE, read_work_orders
+from ..reports import REPORTS_FILE, read_reports
 from . import memo
 
 SELF_AUDIT_SLUG = "self-audit"
@@ -43,12 +42,12 @@ SELF_AUDIT_SLUG = "self-audit"
 #: item is put into.
 STATUSES = ("open", "in_progress", "addressed", "settled", "dropped", "unknown")
 
-TYPE_BY_PREFIX = {"F": "finding", "D": "decision", "R": "bug", "W": "work_order"}
+TYPE_BY_PREFIX = {"F": "finding", "D": "decision", "R": "report"}
 
 #: Item ids in HISTORICAL prose — findings and decisions only (see `_row_ids`).
 ID_RE = re.compile(r"\b([FD]\d{1,4})\b")
-#: Item ids in CURRENT prose — bug and work-order ids included.
-REF_RE = re.compile(r"\b([FDRW]\d{1,4})\b")
+#: Item ids in CURRENT prose — report ids included.
+REF_RE = re.compile(r"\b([FDR]\d{1,4})\b")
 
 
 def _audit_dir(routine_dir: Path) -> Path:
@@ -56,12 +55,11 @@ def _audit_dir(routine_dir: Path) -> Path:
 
 
 def source_paths(routine_dir: Path, routines_home: Path) -> list[Path]:
-    """The five inputs, in the order the docs list them — also the memo fingerprint."""
+    """The four inputs, in the order the docs list them — also the memo fingerprint."""
     audit = _audit_dir(routine_dir)
-    control = Path(routines_home) / ".control"
     return [audit / "report.json", audit / "changelog.jsonl",
             audit / "decisions-answered.json",
-            control / BUG_REPORTS_FILE, control / WORK_ORDERS_FILE]
+            Path(routines_home) / ".control" / REPORTS_FILE]
 
 
 # ---- source readers ---------------------------------------------------------------------
@@ -88,25 +86,6 @@ def read_changelog(path: Path) -> list[dict]:
             obj, pos = decoder.raw_decode(raw, pos)
         except json.JSONDecodeError:
             break                      # a truncated tail: keep everything parsed so far
-        if isinstance(obj, dict):
-            rows.append(obj)
-    return rows
-
-
-def read_bug_reports(path: Path) -> list[dict]:
-    """The bug stream in file order. Every row carries an `id` (stamped at append time)."""
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-    rows = []
-    for line in lines:
-        if not line.strip():
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
         if isinstance(obj, dict):
             rows.append(obj)
     return rows
@@ -150,9 +129,9 @@ def _addressed_by_id(rows: list[dict]) -> dict[str, list[dict]]:
 
 
 def _refs(item_id: str, *parts: str) -> list[str]:
-    """Other item ids named in this item's own prose (`F<n>`/`D<n>`/`R<n>`/`W<n>`), so the
-    graph is navigable. Unlike the changelog fallback this scan includes `R` and `W` — the
-    prose is current, not historical.
+    """Other item ids named in this item's own prose (`F<n>`/`D<n>`/`R<n>`), so the graph is
+    navigable. Unlike the changelog fallback this scan includes `R` — the prose is current,
+    not historical.
     """
     found = set(REF_RE.findall(" ".join(parts)))
     return sorted(found - {item_id})
@@ -191,50 +170,38 @@ def _report_item(kind: str, entry: dict, report: dict,
     return item
 
 
-def _bug_item(row: dict, addressed: list[dict]) -> dict:
-    item_id = str(row.get("id") or "").strip().upper()
-    title, detail = str(row.get("title") or ""), str(row.get("detail") or "")
-    return {
-        "id": item_id, "type": "bug",
-        "status": "addressed" if addressed else "unknown",
-        "title": title, "detail": detail,
-        "origin": {"routine": str(row.get("routine") or ""),
-                   "run_id": str(row.get("run_id") or ""),
-                   "ts": str(row.get("ts") or ""), "commit": ""},
-        "addressed": addressed, "evidence": [], "refs": _refs(item_id, title, detail),
-        "archive_only": False,
-    }
+def _report_row_item(row: dict, addressed: list[dict], closed_by: dict[str, str]) -> dict:
+    """One `R<n>`: what was raised, by whom, and how far it has got.
 
-
-def _work_order_item(row: dict, addressed: list[dict], closed_by: dict[str, str]) -> dict:
-    """One `W<n>`: who sent it, to whom, and how far it has got.
-
-    The status answers the question the ledger exists for — did the hand-off actually carry?
-    `open` filed but the target has not run since; `in_progress` its run drained it, so it is
-    in that routine's prompt; `settled` the target answered it with a work order of its own
-    (acting on it, or saying why not). A changelog row naming the id addresses it outright.
+    An UNADDRESSED report waits in the stream for triage, so its status comes from the
+    changelog alone. An ADDRESSED one has a delivery lifecycle the ledger records, and that
+    progression is the reason the ledger exists — it separates a hand-off that carried from
+    one that silently never arrived. Precedence: `settled` when a later report carries
+    `answers: "<this id>"` (the target replied, having acted or said why not); `addressed`
+    when a changelog row names the id; `in_progress` once the target's run drained it;
+    otherwise `open`.
     """
     item_id = str(row.get("id") or "").strip().upper()
     title, detail = str(row.get("title") or ""), str(row.get("detail") or "")
+    delivered = row.get("delivered") if isinstance(row.get("delivered"), dict) else {}
     if item_id in closed_by:
         status = "settled"
     elif addressed:
         status = "addressed"
-    elif row.get("delivered"):
+    elif delivered:
         status = "in_progress"
     else:
         status = "open"
-    delivered = row.get("delivered") if isinstance(row.get("delivered"), dict) else {}
     return {
-        "id": item_id, "type": "work_order", "status": status,
+        "id": item_id, "type": "report", "status": status,
         "title": title, "detail": detail,
-        "origin": {"routine": str(row.get("from") or ""),
+        "origin": {"routine": str(row.get("routine") or ""),
                    "run_id": str(row.get("run_id") or ""),
                    "ts": str(row.get("ts") or ""), "commit": ""},
         "addressed": addressed, "evidence": [],
         "refs": _refs(item_id, title, detail, str(row.get("answers") or "")),
         "archive_only": False,
-        "to": str(row.get("to") or ""),
+        "to": str(row.get("target") or ""),
         "delivered": delivered,
         "answers": str(row.get("answers") or ""),
         "answered_by": closed_by.get(item_id, ""),
@@ -264,7 +231,7 @@ def _archive_item(item_id: str, addressed: list[dict], answered: dict) -> dict:
         item["severity"] = ""
     elif kind == "decision":
         item["options"], item["resolution"] = [], ""
-    elif kind == "work_order":
+    elif kind == "report":
         item["to"], item["delivered"] = "", {}
         item["answers"], item["answered_by"] = "", ""
     return item
@@ -284,7 +251,7 @@ def build(routine_dir: Path, routines_home: Path) -> dict:
 
 
 def _build(report_path: Path, changelog_path: Path,
-           answered_path: Path, bugs_path: Path, work_orders_path: Path) -> dict:
+           answered_path: Path, reports_path: Path) -> dict:
     report = read_json(report_path)
     report = report if isinstance(report, dict) else {}
     answered = read_json(answered_path)
@@ -300,19 +267,15 @@ def _build(report_path: Path, changelog_path: Path,
             if item_id:
                 items[item_id] = _report_item(kind, entry, report,
                                               addressed.get(item_id, []), answered)
-    for row in read_bug_reports(bugs_path):
+    rows = read_reports(reports_path)
+    # A report that names another in `answers` CLOSES it — the reply is the closure record,
+    # so the map is built over the whole stream before any item is shaped.
+    closed_by = {str(r.get("answers")).strip().upper(): str(r.get("id") or "")
+                 for r in rows if str(r.get("answers") or "").strip()}
+    for row in rows:
         item_id = str(row.get("id") or "").strip().upper()
         if item_id:
-            items[item_id] = _bug_item(row, addressed.get(item_id, []))
-    orders = read_work_orders(work_orders_path)
-    # A work order that names another in `answers` CLOSES it — the reply is the closure
-    # record, so the map is built over the whole stream before any item is shaped.
-    closed_by = {str(o.get("answers")).strip().upper(): str(o.get("id") or "")
-                 for o in orders if str(o.get("answers") or "").strip()}
-    for row in orders:
-        item_id = str(row.get("id") or "").strip().upper()
-        if item_id:
-            items[item_id] = _work_order_item(row, addressed.get(item_id, []), closed_by)
+            items[item_id] = _report_row_item(row, addressed.get(item_id, []), closed_by)
     for item_id in [*addressed, *answered]:
         item_id = str(item_id).strip().upper()
         if item_id and item_id not in items and item_id[:1] in TYPE_BY_PREFIX:

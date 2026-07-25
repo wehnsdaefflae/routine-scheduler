@@ -194,14 +194,6 @@ before it fires). The daemon fires the one-shot ONCE at fire_at, then CONSUMES i
 repeats — no cron to clean up). Cancel with `cancel: true` (+ `id` for one, or without to clear \
 all armed on the target). For a run to schedule its own follow-up ("re-check in 3 days") or arm \
 a milestone run on a sibling routine — gated by the scheduling permission."""),
-    (("hand_off",), """- hand_off: send a WORK ORDER to another routine — `target` (its slug), \
-`title` (one line) + \
-`detail` (the artefact, what is wrong, the evidence — a run id, a path:line, an error — and what \
-"done" looks like). It lands in that routine's inbox and it reads it on its NEXT SCHEDULED RUN, \
-with none of your context: write it to stand alone. Nothing is started and nobody is \
-interrupted. Use it for work that is real but belongs to whoever owns that artefact. Set \
-`answers` to a work order YOU received to close it — what you did about it, or why you will \
-not."""),
     (("subruns",), """- subruns: a status table of your sub-workflows (state, turns, \
 elapsed)."""),
     (("kill", "wait"), """- kill: terminate sub-workflow "n". wait: block until sub-workflow \
@@ -214,14 +206,18 @@ finish kills them."""),
 answer. Mode "blocking" pauses the run until answered; after {ask_timeout_min} minutes without \
 an answer the run CONTINUES on your stated `default` (set it on every blocking ask) and the \
 question stays open for a future run. Ask sparingly; batch what can wait until run end."""),
-    (("report_bug",), """- report_bug: file a bug report about the SCHEDULER itself (the \
-engine, a util's CLI, the web \
-UI, a workflow) — a defect or friction you hit while running. `title` (one line) + optional \
-`detail` (what you did, what happened, what you expected). It appends to a shared bug stream the \
-self-audit routine reads every run and turns into findings; it does NOT interrupt anyone or reach \
-the user. Available to EVERY routine by default (no capability needed). Use it for scheduler \
-defects you notice in passing — not for your own task's problems (those go in your finish \
-summary)."""),
+    (("report",), """- report: raise something that needs doing and is NOT your task — a \
+defect, friction, a
+missing or broken tool, a recipe or config that is wrong. `title` (one line) + `detail` (the \
+artefact, what is wrong, the evidence — a run id, a `path:line`, an error — and what "done" \
+looks like; whoever picks it up has none of your context). Available to EVERY routine, always.
+Set `target` to the routine that OWNS the problem and the report is delivered into its inbox, \
+which it reads on its NEXT SCHEDULED RUN — nothing is started and nobody is interrupted. Leave \
+`target` out when you cannot name the owner: the report goes to triage and is routed for you. \
+Omitting it is always allowed; guessing wrong sends the work to someone who will bounce it.
+A report addressed to YOU arrives in its own prompt section — act on it, or close it by \
+reporting back to the sender with `answers` set to its id. Use this for problems you notice in \
+passing, not for your own task's outcome (that belongs in your finish summary)."""),
     (("finish",), """- finish: end the run with status ok|partial|failed and a DETAILED 8-20 \
 line summary: concrete \
 outcomes (numbers, names, links), decisions taken and why, what changed on disk, open ends and \

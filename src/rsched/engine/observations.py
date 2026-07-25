@@ -106,15 +106,25 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
                     f"one-shot(s) — {which}).")
         return (f"OBSERVATION (schedule_run {target!r}: armed one-shot {obs['armed']} for "
                 f"{obs['fire_at']} — the daemon fires it once, then consumes it).")
-    if kind == "report_bug":
+    if kind == "report":
+        if obs.get("self_target"):
+            return ("OBSERVATION (report: a routine cannot address a report to itself — drop "
+                    "`target` to send it to triage, or keep the thought in a `note`.)")
+        if obs.get("unknown_target"):
+            return (f"OBSERVATION (report: no routine {obs.get('target')!r}. Close matches: "
+                    f"{obs.get('suggestions') or 'none'}; all routines: "
+                    f"{obs.get('valid_targets')}. Retry with one of those, or drop `target` "
+                    "to send it to triage.)")
         if obs.get("filed"):
-            return (f"OBSERVATION (report_bug filed as {obs.get('id')}: {obs.get('title')!r} "
-                    "— appended to .control/bug-reports.jsonl; the self-audit routine will "
-                    "review it. Refer to it by that id if you mention it again. Continue "
-                    "your own task.)")
-        return ("OBSERVATION (report_bug: could NOT write the bug-reports log (I/O error) — "
-                "the report was not filed. Continue your own task; mention the bug in your "
-                "finish summary instead.)")
+            where = (f"delivered to {obs['target']!r} — it reads this on its next scheduled "
+                     "run (no run was started)" if obs.get("target")
+                     else "unaddressed, so it goes to triage")
+            return (f"OBSERVATION (report filed as {obs.get('id')}: {obs.get('title')!r} — "
+                    f"{where}. Refer to it by that id if you mention it again. Continue your "
+                    "own task.)")
+        return ("OBSERVATION (report: could NOT write the reports log (I/O error) — the "
+                "report was not filed. Continue your own task; put it in your finish summary "
+                "instead.)")
     if kind == "read_file":
         if obs.get("files") is not None:  # batched multi-path read
             parts = []

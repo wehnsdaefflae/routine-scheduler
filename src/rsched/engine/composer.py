@@ -233,7 +233,7 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
 def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
                         digest: str, inbox_msgs: list[str],
                         allowed_kinds: set[str] | None = None,
-                        work_order_msgs: list[str] | None = None) -> str:
+                        report_msgs: list[str] | None = None) -> str:
     # CAPABILITIES lists utils at name+summary altitude only — exact usage flags stay
     # on-demand via `util name=list`, so the prompt stays lean and never serves stale flags.
     # Practice prose is NOT inlined: the routine's traits/ modules are its own files,
@@ -262,11 +262,11 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
     if inbox_msgs:
         joined = "\n\n".join(f"--- message {i + 1} ---\n{m}" for i, m in enumerate(inbox_msgs))
         sections.append("# MESSAGES FROM THE USER (consume now)\n" + joined)
-    if work_order_msgs:
-        # No standing prose here: how to receive a work order is the `work-orders` permission
-        # doc's job, and it is already in this prompt's CAPABILITIES section when held.
-        sections.append("# WORK ORDERS FROM OTHER ROUTINES (consume now)\n"
-                        + "\n\n".join(work_order_msgs))
+    if report_msgs:
+        # No standing prose here: what to do with a report addressed to you is the `report`
+        # action's own contract, already in the harness bullet above.
+        sections.append("# REPORTS ADDRESSED TO YOU (consume now)\n"
+                        + "\n\n".join(report_msgs))
     return "\n\n".join(sections)
 
 

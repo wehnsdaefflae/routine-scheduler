@@ -243,7 +243,7 @@ class EngineLoop:
                         continue
                     if action["status"] == "ok" and ctx.depth == 0:
                         # Claim guard (D31=B): a top-level ok-finish whose summary claims a
-                        # high-signal action (report_bug/ask_user/schedule_run) the run never
+                        # high-signal action (report/ask_user/schedule_run) the run never
                         # took is narrated unperformed work — reject so the run either takes
                         # the action or drops the claim. Meta routines are exempt (they quote
                         # other runs' actions); see finish_guard.py.
@@ -278,10 +278,8 @@ class EngineLoop:
                         or executor.dispatch(action, ctx)
                 elif action["kind"] == "schedule_run":
                     obs = interact.handle_schedule_run(self, action)
-                elif action["kind"] == "hand_off":
-                    obs = interact.handle_hand_off(self, action)
-                elif action["kind"] == "report_bug":
-                    obs = interact.handle_report_bug(self, action)
+                elif action["kind"] == "report":
+                    obs = interact.handle_report(self, action)
                 elif action["kind"] == "spawn":
                     obs = self.subruns.spawn(action)
                 elif action["kind"] == "subtask":

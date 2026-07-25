@@ -42,7 +42,7 @@ def test_projection_keeps_every_declared_field_of_an_allowed_kind(kind):
 
 
 def test_always_kinds_survive_every_projection():
-    """finish and report_bug are available regardless of the workflow's allowlist, so the
+    """finish and report are available regardless of the workflow's allowlist, so the
     schema must keep them emittable even when the run allows nothing else."""
     schema = schema_for_kinds({"read_file"})
     assert set(ALWAYS_KINDS) <= set(schema["properties"]["kind"]["enum"])
@@ -60,10 +60,15 @@ def test_projection_drops_other_kinds_fields_and_prose():
     schema = schema_for_kinds({"read_file", "util"})
     props = schema["properties"]
     # schedule_run / ask_user / memory_write fields have no business here
-    for gone in ("target", "fire_at", "cancel", "question", "mode", "about", "delete",
+    for gone in ("fire_at", "cancel", "question", "mode", "about", "delete",
                  "workflow", "turns", "response_schema"):
         assert gone not in props, f"{gone!r} survived a projection that excludes its kind"
-    assert props["kind"]["enum"] == ["util", "read_file", "report_bug", "finish"]
+    # `target` DOES survive: `report` is an ALWAYS_KIND and owns it, so every projection
+    # carries it — but only with report's clause, never schedule_run's
+    assert "target" in props
+    assert "schedule_run" not in props["target"]["description"]
+    assert "report" in props["target"]["description"]
+    assert props["kind"]["enum"] == ["util", "read_file", "report", "finish"]
     # the shared `name` description sheds its memory_read / read_trait clauses
     assert "memory_read" not in props["name"]["description"]
     assert "read_trait" not in props["name"]["description"]
@@ -87,6 +92,6 @@ def test_effective_kinds_intersects_allowlist_and_grants():
 
     assert effective_kinds(None, None) == list(KINDS)
     # ALWAYS_KINDS ride along even when the workflow allowlist omits them
-    assert effective_kinds({"read_file"}, None) == ["read_file", "report_bug", "finish"]
+    assert effective_kinds({"read_file"}, None) == ["read_file", "report", "finish"]
     # a capability-denied kind is dropped even when the workflow permits it
     assert "write_util" not in effective_kinds({"read_file", "write_util"}, Grants())

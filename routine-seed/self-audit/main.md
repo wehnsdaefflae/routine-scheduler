@@ -5,25 +5,6 @@ materialized_from:
   slug: hand-authored
   commit: ''
   version: 1
-stages:
-- act-apply-fixes
-- analyse-findings
-- gather-evidence
-- orient-baseline
-- record-close
-- request-restart
-- separate-decisions
-- write-report
-includes:
-- ask-policy
-- communication
-- global-utils
-- ledger-discipline
-- web-research
-tags:
-- meta
-- maintenance
-- code
 ---
 
 # Self-audit the routine-scheduler

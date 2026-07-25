@@ -100,7 +100,7 @@ def test_tags_on_library_elements():
     perms = {d["slug"]: d for d in library_docs.list_docs(SEED / "permissions")}
     assert set(perms) == {"util-authoring", "memory", "communication", "run-history",
                           "shell", "workflow-generation", "background-tasks",
-                          "scheduling", "practice-library", "work-orders",
+                          "scheduling", "practice-library",
                           "remote-machines"}   # variants collapsed: level = capability
     assert "self-modification" not in perms          # retired: a fixed engine rule now
     # a doc's frontmatter is stripped before its body is shown/inlined
@@ -133,7 +133,7 @@ def test_bootstrap_seeds_meta_routines(tmp_path):
     from rsched.bootstrap import seed_routines
     home = tmp_path / "routines"
     assert seed_routines(home) >= 1
-    for slug in ("self-audit", "workflow-curator", "routine-improver"):
+    for slug in ("self-audit", "routine-improver", "token-lab"):
         p = home / slug
         assert (p / "main.md").exists() and (p / ".git").is_dir()
         cfg = yaml.safe_load((p / "routine.yaml").read_text())
@@ -349,7 +349,6 @@ def test_dump_markdown_roundtrips_through_engine_parse():
 
     meta = {"name": "N", "slug": "s",
             "materialized_from": {"slug": "wf", "commit": "abc123", "version": 3},
-            "adapted": "2026-07-10", "stages": ["a-step", "b-step"],
             "tools": ["ask_user", "finish"]}
     body = "## Run flow\n1. x\n\n---\n\n## Completion criteria\n- done\n"
     text = dump_markdown(meta, body)

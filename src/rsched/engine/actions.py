@@ -16,14 +16,15 @@ from ..ids import is_slug
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "edit_file",
          "memory_read", "memory_write", "read_trait", "llm", "spawn", "subtask", "detach",
-         "schedule_run", "hand_off",
-         "subruns", "kill", "wait", "ask_user", "report_bug", "finish")
+         "schedule_run",
+         "subruns", "kill", "wait", "ask_user", "report", "finish")
 
 # Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist: `finish`
-# so a run can always end, and `report_bug` so any routine can always flag a scheduler
-# defect (the ungated, default-on bug channel). Neither is a GATED_KIND, so both also pass
-# the capability layer for every routine.
-ALWAYS_KINDS = ("finish", "report_bug")
+# so a run can always end, and `report` so any routine can always raise work that is not its
+# own task — unaddressed for triage, or addressed to the routine that owns it. Neither is a
+# GATED_KIND, so both also pass the capability layer for every routine. Routing only works if
+# the channel is present at the moment the run notices the problem.
+ALWAYS_KINDS = ("finish", "report")
 
 READ_PATHS_MAX = 8
 
@@ -110,15 +111,17 @@ ACTION_SCHEMA: dict = {
                                    "memory_write: the note's full markdown (one string, "
                                    "≤100 lines)"},
         # schedule_run — arm/cancel a one-shot time trigger on a routine (gated: scheduling)
-        # hand_off — address a durable work order to another routine (gated: work-orders)
         "target": {"type": "string",
                    "description": "schedule_run: the routine slug to arm/cancel a one-shot on "
                                   "(self-target always allowed) · "
-                                  "hand_off: the routine slug the work order is FOR"},
+                                  "report: OPTIONAL — the slug of the routine that OWNS this "
+                                  "problem. With it, the report is delivered to that routine "
+                                  "and read on its next scheduled run; without it, the report "
+                                  "goes to triage. Omit it rather than guess"},
         "answers": {"type": "string",
-                    "description": "hand_off: OPTIONAL — the id (W<n>) of a work order you "
-                                   "RECEIVED that this one answers: what you did about it, or "
-                                   "why you will not. That is how a hand-off gets closed"},
+                    "description": "report: OPTIONAL — the id (R<n>) of a report you RECEIVED "
+                                   "that this one answers: what you did about it, or why you "
+                                   "will not. That is how a report gets closed"},
         "fire_at": {"type": "string",
                     "description": "schedule_run: when to fire ONCE — an absolute ISO-8601 UTC "
                                    "instant, or a relative offset like '+3d' / '+2h' / '+30m'"},
@@ -193,22 +196,17 @@ ACTION_SCHEMA: dict = {
                            "run is asked for a schedule / budget / model / permission / fs-roots "
                            "change it cannot make itself.",
         },
-        # report_bug — the ungated, default-on bug channel every routine holds
-        # hand_off — shares title/detail: both file a durable item someone else acts on
+        # report — the ungated channel every routine holds
         "title": {
             "type": "string",
-            "description": "report_bug: a one-line summary of the scheduler bug or friction "
-                           "you hit · hand_off: a one-line summary of the work you are "
-                           "handing over",
+            "description": "report: a one-line summary of the problem you are raising",
         },
         "detail": {
             "type": "string",
-            "description": "report_bug: the full description — what you did, what happened, "
-                           "what you expected; enough for the self-audit routine to reproduce "
-                           "and fix it · hand_off: the WORK ORDER itself — the exact file or "
-                           "artefact, what is wrong, the evidence (a run id, a path:line, an "
-                           "error), and what 'done' looks like. The target reads this on its "
-                           "next scheduled run with none of your context",
+            "description": "report: the full description — the exact file or artefact, what "
+                           "is wrong, the evidence (a run id, a path:line, an error), and what "
+                           "'done' looks like. Whoever picks this up has none of your context, "
+                           "so write it to stand alone",
         },
         # finish
         "status": {"type": "string", "enum": ["ok", "partial", "failed"],
@@ -232,9 +230,9 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "write_file": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "read_trait": "name",
                "llm": "prompt", "spawn": "label", "subtask": "label",
-               "detach": "label", "schedule_run": "target", "hand_off": "target",
+               "detach": "label", "schedule_run": "target",
                "kill": "n", "wait": "n",
-               "ask_user": "question", "report_bug": "title", "finish": "status"}
+               "ask_user": "question", "report": "title", "finish": "status"}
 
 # kind → a minimal VALID action, shown to the model when a reply fails validation. Weak
 # models merge payload keys into the action object (file bodies, finish fields at top
@@ -248,9 +246,7 @@ KIND_EXAMPLES: dict[str, dict] = {
     "schedule_run": {"say": "<why arm a one-shot>", "kind": "schedule_run",
                      "target": "some-routine", "fire_at": "+3d",
                      "reason": "<what the fired run should pick up>"},
-    "hand_off": {"say": "<why this belongs to that routine>", "kind": "hand_off",
-                 "target": "some-routine", "title": "<one-line summary of the work>",
-                 "detail": "<the artefact, what is wrong, the evidence, what done looks like>"},
+
     "read_file": {"say": "<why this file>", "kind": "read_file", "path": "state/notes.md"},
     "view_image": {"say": "<why look at it>", "kind": "view_image",
                    "path": "attachments/shot.png",
@@ -280,9 +276,10 @@ KIND_EXAMPLES: dict[str, dict] = {
     "wait": {"say": "<why block>", "kind": "wait"},
     "ask_user": {"say": "<why ask>", "kind": "ask_user",
                  "question": "<one self-contained question>", "mode": "deferred"},
-    "report_bug": {"say": "<the scheduler defect you hit>", "kind": "report_bug",
-                   "title": "<one-line summary>",
-                   "detail": "<what you did, what happened, what you expected>"},
+    "report": {"say": "<the problem you are raising>", "kind": "report",
+               "title": "<one-line summary>",
+               "detail": "<the artefact, what is wrong, the evidence, what done looks like>",
+               "target": "<the routine that owns it, or omit for triage>"},
     "finish": {"say": "<what was achieved>", "kind": "finish", "status": "ok",
                "summary": "<detailed 8-20 line result summary>"},
 }
@@ -293,7 +290,6 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "write_util": (("name",), ("content", "anchor", "replacement", "all")),
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
-    "hand_off": (("target", "title"), ("detail", "answers")),
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
     "view_image": ((), ("path", "paths", "prompt")),
     "write_file": (("path", "content"), ("append",)),
@@ -309,7 +305,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "kill": (("n",), ()),
     "wait": ((), ("n", "all", "timeout_s")),
     "ask_user": (("question",), ("mode", "options", "default", "config_patch")),
-    "report_bug": (("title",), ("detail",)),
+    "report": (("title",), ("detail", "target", "answers")),
     "finish": (("status", "summary"), ()),
 }
 

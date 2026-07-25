@@ -1,5 +1,5 @@
 """The Items page (#/items): the system-maintenance index that absorbed the Audit page in
-0.106.0 — findings, decisions and bug reports as one filterable list, each card carrying its
+0.106.0 — findings, decisions and reports as one filterable list, each card carrying its
 status, origin and the changelog rows that addressed it, plus the reviewer-feedback composer
 whose messages land in the self-audit routine's inbox.
 """
@@ -42,7 +42,7 @@ def _seed(ui, *, report=True):
     (audit / "changelog.jsonl").write_text(CHANGELOG, encoding="utf-8")
     control = ui.routines / ".control"
     control.mkdir(parents=True, exist_ok=True)
-    (control / "bug-reports.jsonl").write_text(json.dumps(BUG) + "\n", encoding="utf-8")
+    (control / "reports.jsonl").write_text(json.dumps(BUG) + "\n", encoding="utf-8")
 
 
 def test_items_page_lists_every_type_with_status_and_history(ui, ui_page):
@@ -55,13 +55,13 @@ def test_items_page_lists_every_type_with_status_and_history(ui, ui_page):
     ui_page.wait_for_selector("h1:has-text('Items')", timeout=10_000)
 
     # the report header rides along (window + since-commit), the arrays are items now
-    expect(ui_page.locator(".sub")).to_contain_text("findings, decisions, bug reports")
+    expect(ui_page.locator(".sub")).to_contain_text("findings, decisions and reports")
     expect(ui_page.locator("#ref-F1")).to_contain_text("The thing is broken")
     expect(ui_page.locator("#ref-F1")).to_contain_text("unknown")   # no status on disk yet
     expect(ui_page.locator("#ref-D1")).to_contain_text("Pick a path")
     expect(ui_page.locator("#ref-D1")).to_contain_text("open")
     expect(ui_page.locator("#ref-R1")).to_contain_text("A util blew up")
-    expect(ui_page.locator("#ref-R1")).to_contain_text("bug report")
+    expect(ui_page.locator("#ref-R1")).to_contain_text("report")
     expect(ui_page.locator("#ref-R1")).to_contain_text("addressed")  # explicit items: link
 
     # the archive-only item (F7 lives only in the changelog) carries no prose of its own
@@ -82,11 +82,11 @@ def test_items_filters_narrow_the_list_and_counts_stay_whole(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/items")
     ui_page.wait_for_selector("#ref-F1", timeout=10_000)
 
-    ui_page.locator(".filterbar .tag", has_text="bug reports").click()
+    ui_page.locator(".filterbar .tag", has_text="reports").click()
     expect(ui_page.locator("#ref-R1")).to_be_visible()
     expect(ui_page.locator("#ref-F1")).to_have_count(0)
     expect(ui_page.locator(".filterbar .tag", has_text="findings")).to_contain_text("2")
-    expect(ui_page).to_have_url(re.compile(r"type=bug"))
+    expect(ui_page).to_have_url(re.compile(r"type=report"))
 
     ui_page.locator(".filterbar .btn", has_text="clear").click()
     expect(ui_page.locator("#ref-F1")).to_be_visible(timeout=10_000)

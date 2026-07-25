@@ -156,15 +156,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         "name": name, "slug": slug,
         "materialized_from": {"slug": workflow_slug, "commit": commit,
                               "version": meta.get("version", 0)},
-        # EVERY stage module that will exist on disk — decomposed ones plus the wizard's
-        # extra purpose-specific files (listing only the former left a stages:[] frontmatter
-        # beside real files, and the UI graph draws from the recipe's declared stages)
-        "stages": sorted({*result["stages"],
-                          *(Path(f if f.endswith(".md") else f + ".md").stem
-                            for f in (stages or {}))}),
         # the workflow's `tools:` allowlist rides along — the engine enforces it per turn
         **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {}),
-        **({"tags": list(tags)} if tags else {}),
     }
     trait_summaries = copy_traits(server.traits_home, routine_dir, active_traits,
                                   adapted=result.get("traits"))

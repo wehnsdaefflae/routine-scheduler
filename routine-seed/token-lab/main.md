@@ -5,22 +5,6 @@ materialized_from:
   slug: hand-authored
   commit: ''
   version: 1
-stages:
-- orient
-- measure
-- research
-- experiment
-- report
-- record-close
-includes:
-- ask-policy
-- global-utils
-- ledger-discipline
-- web-research
-tags:
-- meta
-- research
-- tokens
 ---
 
 # Token lab — daily R&D on token-saving methods
