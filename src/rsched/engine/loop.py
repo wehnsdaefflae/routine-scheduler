@@ -137,6 +137,12 @@ class EngineLoop:
         self._shed_schema_turns = 0
         self._sheds = 0
         self._schema_off = False
+        # The schema the TRANSPORT gets, projected once onto the kinds this run may emit
+        # (the same projection the composed prompt shows). Narrowing the grammar makes a
+        # disallowed kind ungeneratable instead of generated-then-rejected. Stable for the
+        # run: allowed_tools and grants are fixed at boot.
+        from .kindsurface import effective_kinds, schema_for_kinds
+        self.action_schema = schema_for_kinds(effective_kinds(self.allowed_tools, ctx.grants))
         # Once the conversation has been archived to on-disk history, the model is reminded
         # to consult its index — right after each compaction, then every 10th turn (NOT every
         # turn: an identical tail on every observation is pure rent on the context).

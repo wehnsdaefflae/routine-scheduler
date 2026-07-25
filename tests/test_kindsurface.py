@@ -1,0 +1,92 @@
+"""The action-schema projection: what a run is SHOWN must match what it may DO.
+
+The load-bearing property is completeness — a projected schema may never omit a field an
+allowed kind needs, or a legal action becomes unrepresentable. It is checked against
+KIND_EXAMPLES (one minimal valid action per kind) rather than a second hand-written map,
+so a new kind is covered the moment it gets an example.
+"""
+
+from __future__ import annotations
+
+import json
+
+import jsonschema
+import pytest
+
+from rsched.engine.actions import (
+    ACTION_SCHEMA,
+    ALWAYS_KINDS,
+    KIND_EXAMPLES,
+    KIND_FIELDS,
+    KINDS,
+)
+from rsched.engine.kindsurface import effective_kinds, schema_for_kinds
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_projection_still_accepts_that_kinds_own_example(kind):
+    """Narrowing to one kind keeps every field that kind uses."""
+    schema = schema_for_kinds({kind})
+    jsonschema.Draft202012Validator.check_schema(schema)
+    jsonschema.Draft202012Validator(schema).validate(KIND_EXAMPLES[kind])
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_projection_keeps_every_declared_field_of_an_allowed_kind(kind):
+    required, optional = KIND_FIELDS[kind]
+    props = schema_for_kinds({kind})["properties"]
+    missing = [f for f in (*required, *optional) if f not in props]
+    assert not missing, f"{kind}: projection dropped {missing}"
+    for universal in ("say", "note", "kind"):
+        assert universal in props
+
+
+def test_always_kinds_survive_every_projection():
+    """finish and report_bug are available regardless of the workflow's allowlist, so the
+    schema must keep them emittable even when the run allows nothing else."""
+    schema = schema_for_kinds({"read_file"})
+    assert set(ALWAYS_KINDS) <= set(schema["properties"]["kind"]["enum"])
+    jsonschema.Draft202012Validator(schema).validate(KIND_EXAMPLES["finish"])
+
+
+def test_full_and_none_return_the_schema_unchanged():
+    """A run with everything enabled must see byte-identical bytes — the prompt-caching
+    contract depends on the composed prefix being stable."""
+    assert schema_for_kinds(None) is ACTION_SCHEMA
+    assert schema_for_kinds(set(KINDS)) is ACTION_SCHEMA
+
+
+def test_projection_drops_other_kinds_fields_and_prose():
+    schema = schema_for_kinds({"read_file", "util"})
+    props = schema["properties"]
+    # schedule_run / ask_user / memory_write fields have no business here
+    for gone in ("target", "fire_at", "cancel", "question", "mode", "about", "delete",
+                 "workflow", "turns", "response_schema"):
+        assert gone not in props, f"{gone!r} survived a projection that excludes its kind"
+    assert props["kind"]["enum"] == ["util", "read_file", "report_bug", "finish"]
+    # the shared `name` description sheds its memory_read / read_trait clauses
+    assert "memory_read" not in props["name"]["description"]
+    assert "read_trait" not in props["name"]["description"]
+    assert "util" in props["name"]["description"]
+
+
+def test_projection_is_materially_smaller():
+    """The point of the exercise: a restricted workflow stops paying for 21 kinds. The
+    clarify-instruction allowlist is the real worst case in the library."""
+    full = len(json.dumps(ACTION_SCHEMA, indent=1))
+    clarify = len(json.dumps(schema_for_kinds(
+        {"ask_user", "read_file", "write_file", "finish"}), indent=1))
+    # ~46% off at the time of writing; the floor guards the mechanism, not the exact ratio.
+    assert clarify < full * 0.6, f"projection saved too little: {clarify} vs {full}"
+
+
+def test_effective_kinds_intersects_allowlist_and_grants():
+    class Grants:
+        def allows_kind(self, kind):
+            return kind != "write_util"
+
+    assert effective_kinds(None, None) == list(KINDS)
+    # ALWAYS_KINDS ride along even when the workflow allowlist omits them
+    assert effective_kinds({"read_file"}, None) == ["read_file", "report_bug", "finish"]
+    # a capability-denied kind is dropped even when the workflow permits it
+    assert "write_util" not in effective_kinds({"read_file", "write_util"}, Grants())

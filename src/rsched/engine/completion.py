@@ -62,7 +62,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
     ctx.main_model = f"{ref.endpoint}/{ref.model}"     # in status.json; updates on a switch
     compact_if_needed(loop, endpoint, ref)
     usage_sum: dict = {"in": 0, "out": 0}   # + "model"/"provider" attribution (str) on success
-    schema = None if loop._schema_off else ACTION_SCHEMA
+    schema = None if loop._schema_off else loop.action_schema
     if loop._shed_schema_turns > 0:
         loop._shed_schema_turns -= 1
         schema = None
@@ -252,7 +252,7 @@ def refer_turn_to_uncensored(loop, usage_sum: dict, base_len: int) -> dict | Non
     u_endpoint, u_ref = target
     try:
         completion = u_endpoint.complete(loop.messages, model=u_ref.model,
-                                         schema=ACTION_SCHEMA, effort=u_ref.effort,
+                                         schema=loop.action_schema, effort=u_ref.effort,
                                          temperature=u_ref.temperature,
                                          max_tokens=u_ref.max_tokens,
                                          session=str(ctx.run_dir),

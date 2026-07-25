@@ -113,7 +113,7 @@ def seed_routines(routines_home: Path) -> int:
 # DEFAULT_PERMISSIONS entries introduced AFTER routines already existed never reach them via
 # scaffold. Slugs listed here are added ONCE to every existing routine at daemon boot —
 # tracked in a marker file, so a user who later revokes one is never overridden.
-ADOPT_PERMISSIONS: list[str] = []
+ADOPT_PERMISSIONS: list[str] = ["practice-library"]
 _ADOPTED_MARKER = ".permissions-adopted.json"
 
 

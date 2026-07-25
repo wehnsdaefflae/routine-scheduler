@@ -46,8 +46,14 @@ DEFAULT_BUDGETS = {
 # routine-improver meta routine refines recipes centrally (its fs_write_roots covering
 # the homes is the one engine-recognized unlock). Defaults added here AFTER routines
 # exist reach them via bootstrap.ADOPT_PERMISSIONS (one-time, at boot).
-DEFAULT_PERMISSIONS = ["util-authoring", "memory"]
-DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write"],
+# practice-library (`read_trait`) is a default because it is the cheapest possible form of
+# context: the curated practice modules cost NOTHING in the composed prompt (the digest
+# lists names only) and are fetched just-in-time when a run meets a situation its own
+# traits/ set doesn't cover. It writes nothing — an unheld module applies for that run
+# only, so the routine's own practice set stays the user's in both directions.
+DEFAULT_PERMISSIONS = ["util-authoring", "memory", "practice-library"]
+DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write",
+                                    "read_trait"],
                         "utils": [], "confirm": "always", "runs": "none",
                         "workflows": "catalog"}
 # TRAITS a new routine gets when creation picks none explicitly (the wizard normally

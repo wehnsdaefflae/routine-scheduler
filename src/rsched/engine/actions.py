@@ -34,12 +34,14 @@ ACTION_SCHEMA: dict = {
     "additionalProperties": False,
     "required": ["say", "kind"],
     "properties": {
+        # HOW MUCH to say is the routine's deliberation level, worded ONCE in the harness
+        # contract (engine/deliberation.py, the user's knob). Restating a length here shipped
+        # a contradiction at every stop but `standard` — the model read "ONE terse clause"
+        # and "2-3 sentences" in one prompt. This description owns only the field's mechanics.
         "say": {
             "type": "string",
-            "description": "Your narration: lead with what the last observation taught you, then "
-                           "why this action. A few words suffice for routine steps; spend 2-3 "
-                           "sentences on decisions, direction changes, and surprises. "
-                           "Simple Markdown (bold, `code`, links) renders in the UI.",
+            "description": "Your narration for this action, at the length the say contract "
+                           "above sets. Simple Markdown (bold, `code`, links) renders in the UI.",
         },
         "note": {
             "type": "string",
@@ -271,7 +273,7 @@ KIND_EXAMPLES: dict[str, dict] = {
 }
 
 # kind → (required fields, allowed extra fields beyond say/kind)
-_KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s")),
     "write_util": (("name",), ("content", "anchor", "replacement", "all")),
     "remove_util": (("name",), ()),
@@ -322,7 +324,7 @@ def normalize_action(obj: dict) -> dict:
             obj = {k: v for k, v in obj.items() if k != stray}
 
     kind = obj.get("kind")
-    kind_fields = _KIND_FIELDS.get(kind) if isinstance(kind, str) else None
+    kind_fields = KIND_FIELDS.get(kind) if isinstance(kind, str) else None
     required = set(kind_fields[0]) if kind_fields else set()
     out = {}
     for key, val in obj.items():
@@ -336,8 +338,8 @@ def normalize_action(obj: dict) -> dict:
     # (e.g. a stray status:"ok" on a write_file). When every required field is present,
     # unknown fields carry no per-kind meaning — drop them instead of failing the turn.
     # When a required field is missing, keep the strays so the retry error names them.
-    if kind in _KIND_FIELDS:
-        req, opt = _KIND_FIELDS[kind]
+    if kind in KIND_FIELDS:
+        req, opt = KIND_FIELDS[kind]
         complete = all((val := out.get(f)) is not None
                        and not (isinstance(val, str) and not val.strip())
                        for f in req)
@@ -361,14 +363,14 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     """
     problems: list[str] = []
     kind = obj.get("kind")
-    if kind not in _KIND_FIELDS:
+    if kind not in KIND_FIELDS:
         return [f"unknown kind {kind!r}"]
     if allowed_kinds is not None and kind not in ALWAYS_KINDS and kind not in allowed_kinds:
         return [f"kind={kind} is not available in this workflow — it permits only "
                 f"{sorted(allowed_kinds | set(ALWAYS_KINDS))}; use one of those"]
     if grants is not None and kind not in ALWAYS_KINDS and (denial := grants.deny(obj)):
         return [denial]
-    required, optional = _KIND_FIELDS[kind]
+    required, optional = KIND_FIELDS[kind]
     for field in required:
         val = obj.get(field)
         if val is None or (isinstance(val, str) and not val.strip()):

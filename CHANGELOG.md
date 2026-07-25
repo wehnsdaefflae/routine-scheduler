@@ -19,6 +19,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.105.0] — 2026-07-25
+
+Context engineering pass: a run is shown only the vocabulary it has, told each thing once,
+and can reach the rest on demand.
+
+- **The action surface is PROJECTED onto the kinds a run may emit** (new
+  `engine/kindsurface.py`). Sections 1, 2 and 6 of the system prompt all described all 21
+  kinds regardless of the workflow's `tools:` allowlist and the routine's capabilities —
+  ~15k of a ~22k prompt spent on two parallel descriptions of channels the validator would
+  reject. `effective_kinds()` is now the ONE owner of "what may this run do"
+  (capabilities.py, the harness contract's prose bullets and the schema all read it), and
+  `schema_for_kinds()` narrows `ACTION_SCHEMA` — dropping other kinds' properties and
+  trimming each surviving description to its relevant clauses. Derived from
+  `actions.KIND_FIELDS` (promoted from `_KIND_FIELDS`), the same map `validate_action`
+  builds its allowed-field set from, so what the model is SHOWN cannot drift from what the
+  engine ACCEPTS. Measured: ~19% off the schema+prose surface for a default routine, ~12%
+  for a conversation, ~60-64% for a tools-restricted workflow.
+- The narrowed schema also goes to the TRANSPORT (`completion.next_action`, incl. the
+  uncensored referral), so a disallowed kind is ungeneratable under constrained decoding
+  instead of generated and then rejected — a saved turn, not just saved tokens. Validation
+  keeps the FULL schema: a denial must stay a precise, teaching `grants.deny` message, never
+  a schema parse error. A run with every kind enabled gets `ACTION_SCHEMA` unchanged, byte
+  for byte — the prompt-caching contract is untouched.
+- **The `say` contract is stated once.** `ACTION_SCHEMA`'s `say` description hardcoded the
+  `standard` deliberation wording while the harness contract inserted the level-scaled one —
+  so at `terse` the prompt demanded "ONE terse clause" and "2-3 sentences" in the same
+  breath, and at `deliberate`/`think-on-paper` it contradicted the level the user chose.
+  `engine/deliberation.py` is now the sole authority for HOW MUCH to say; the schema
+  describes only the field's mechanics. The `note` channel is split the same way: the
+  harness states the engine mechanics, the schema owns what belongs in one.
+- **`practice-library` is a routine default** (`DEFAULT_PERMISSIONS` + the `read_trait`
+  capability; `ADOPT_PERMISSIONS` carries it to existing routines once at boot). The curated
+  practice modules cost nothing in the composed prompt — the digest lists names only — and
+  are now fetchable just-in-time when a run meets a situation its own `traits/` set doesn't
+  cover. It writes nothing: an unheld module applies for that run only, so the routine's
+  practice set stays the user's. Dropped from `CONVERSATION_PERMISSIONS` as now redundant.
+- **CLAUDE.md right-sized, 742 → 164 lines.** The nine subsystem-narration sections moved
+  verbatim to the new `docs/architecture.md` (auto-published as a Help guide); what stays is
+  the working tier — purpose, commands, the core contracts `self-audit` defends, the module
+  standards, versioning, deploy — plus a pointer index into `docs/` and a new **Gotchas**
+  section collecting the rules that are enforced by a test or a past incident (no
+  backwards compatibility, the `MIGRATION(expires=…)` marker, the full-repo quality gates,
+  the doc-sweep rule, the caching contract, the never-writable `routine.yaml`).
+- `docs/prompt-anatomy.md` documents the projection and the single-source say/note split;
+  `tests/test_kindsurface.py` pins the load-bearing property — a projected schema may never
+  omit a field an allowed kind needs (checked against `KIND_EXAMPLES`, so a new kind is
+  covered as soon as it gets an example).
+
 ## [0.104.0] — 2026-07-25
 
 ### Changed

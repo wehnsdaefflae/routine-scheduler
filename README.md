@@ -186,8 +186,9 @@ adds live endpoint smoke tests). Quality gates are strict and enforced:
   state and a stub runner (no LLM). One-time setup: `uv run playwright install chromium`.
 
 Working conventions, the action/transcript contracts, and the module standards live in
-`CLAUDE.md`; the Help tab's API reference regenerates from docstrings at every daemon
-boot, so docstrings are user-facing here.
+`CLAUDE.md`; the subsystem-by-subsystem reference is `docs/architecture.md`. The Help
+tab's API reference regenerates from docstrings at every daemon boot, so docstrings are
+user-facing here.
 
 ## Layout
 
