@@ -16,6 +16,13 @@ dependencies = [
     "pdoc>=16.0",
     "pywebpush>=2.0",
     "python-multipart>=0.0.9",
+    # Imported DIRECTLY across config/ and web/, so they are declared directly. They arrive
+    # transitively today (pydantic via fastapi, markdown2 via pdoc, cryptography + py_vapid via
+    # pywebpush) — a bump that repins or drops one would otherwise break us silently.
+    "pydantic>=2.9",
+    "markdown2>=2.5",
+    "cryptography>=43.0",
+    "py-vapid>=1.9",
 ]
 
 [project.scripts]
@@ -37,6 +44,7 @@ dev = [
     # NOTE: only ACTIVE once the plugin is installed into the venv (uv sync by the env owner);
     # until then the `flaky` marker is registered-but-inert (see tests/ui/conftest.py).
     "pytest-rerunfailures>=14.0",
+    "vulture>=2.14",
 ]
 
 [build-system]
@@ -156,3 +164,15 @@ branch = true
 skip_covered = true
 show_missing = true
 fail_under = 87  # ratchet: current suite delivers 88% branch coverage — never drop below
+
+# ---- dead code ----
+# Ruff (select = ALL) already covers unused imports/variables/arguments. Vulture covers what it
+# cannot: symbols that are defined, exported and never referenced anywhere. Its whole cost is
+# false positives on code the FRAMEWORK calls by decorator rather than by name, so those entry
+# points are excluded — with that config it found four genuinely dead symbols on adoption.
+[tool.vulture]
+ignore_decorators = ["@*.get", "@*.post", "@*.put", "@*.delete", "@*.patch", "@*.head",
+                     "@*.websocket", "@*validator", "@app.*", "@pytest.*"]
+# model_config is pydantic's ConfigDict; pytestmark/should_exit/pytest_* are framework hooks read
+# by name; capture_output is a subprocess kwarg a monkeypatch stub must accept but need not use.
+ignore_names = ["model_config", "pytestmark", "should_exit", "pytest_*", "capture_output"]

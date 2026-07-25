@@ -82,8 +82,8 @@ def work(message):
     """Do the work in small verified steps — this is the Claude-Code-like case:
     - Attachments: a message may carry an '[attached files]' block of paths. read_file the
       text ones; SEE images/PDFs with the view_image action (shown to you directly when this
-      model is multimodal, else described by the vision util — attached images are usually
-      shown to you already); pick a fitting util for other binary formats. Never guess at an
+      model is multimodal, else described by an image-describing util — attached images are
+      usually shown to you already); pick a fitting util for other binary formats. Never guess at an
       attachment's content.
     - Project edits: work under WORKDIR (your fs read/write roots). Follow
       traits/git-checkpoint.md — a checkpoint commit BEFORE risky edits, one after coherent

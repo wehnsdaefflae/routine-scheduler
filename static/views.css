@@ -144,6 +144,8 @@ td.hb-cell { min-width: 155px; }
 .ev.subrun { background: var(--raised); color: var(--violet); border: 1px solid var(--line-2); }
 .ev.subrun summary { cursor: pointer; }
 .ev.compaction, .ev.system { background: transparent; color: var(--faint); text-align: center; border: none; }
+/* who spoke, above their markdown-rendered message body (injections, answers) */
+.evlabel { margin-bottom: 3px; opacity: 0.75; }
 /* a subrun's conversation, unfolded in place inside its parent's transcript */
 .subtranscript { margin: 10px 0 4px 12px; padding-left: 12px; border-left: 2px solid var(--line-2); }
 .subtranscript .transcript { gap: 8px; }

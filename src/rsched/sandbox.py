@@ -32,8 +32,6 @@ from . import landlock
 
 log = logging.getLogger("rsched.sandbox")
 
-MODES = ("strict", "permissive", "off")
-
 # System trees every util needs to EXECUTE at all (read+execute): interpreters, libraries,
 # /etc (DNS, SSL certs, locale), /proc + /sys (uv, headless chromium), /run (resolved DNS),
 # /var/log (the service-logs util). DAC still applies underneath — Landlock only ever

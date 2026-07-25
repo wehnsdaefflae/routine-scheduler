@@ -79,7 +79,6 @@ class RunContext:
     transcript: Transcript
     budgets: Budgets
     depth: int = 0
-    parent_run_id: str | None = None
     sub_counter: list[int] = field(default_factory=lambda: [0])  # shared across the whole tree
     # Guards sub_counter: parallel spawn threads allocate child numbers concurrently.
     # Shared tree-wide like the counter itself (childrun passes both to every child ctx).

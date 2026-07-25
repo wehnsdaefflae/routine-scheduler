@@ -19,6 +19,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.107.0] — 2026-07-25
+
+Reviewer-backlog sweep: markdown in every message body, a hard "recipes name capabilities,
+never tools" rule with a linter behind it, dead-code detection in the quality gate, and the
+maintenance-routing hierarchy made mechanical.
+
+- **Human message bodies render markdown** (`static/components/transcript.js`). The `answer`
+  and `user_injection` branches built plain template strings while say/observations/questions
+  went through the md pipeline, so a pasted list or code fence in an answer showed as literal
+  asterisks. Both now render through `md()` — a superset of the inline renderer, matching what
+  the conversation view already did. The gap affected two mounts (the run view and the
+  Dashboard's activity section); the UI test asserts both.
+- **A recipe says WHAT, never which tool** — new hard rule, no exemption for meta routines.
+  Workflow patterns, materialized recipes, traits and playbooks may not name a util or show its
+  flags; they name the capability and the run picks the tool from the live CAPABILITIES catalog,
+  persisting what worked in the ROUTINE'S own memory. `lint.named_utils` enforces it at
+  `rsched lint` (library), the library save endpoints, and — new — `rsched validate`, via
+  `lint.lint_routine`, the first linter that reaches a materialized recipe at all. Two carve-outs
+  keep the signal honest: a util name that is also a service or ordinary word (`gmail`, `shell`,
+  `ftp`) is flagged only in an invocation shape, and a path named after its tool
+  (`<repo>/.codemap/`) is a task fact. `workflows/adapt.py` states the rule in the prompt that
+  compiles a recipe, so new routines start clean. `state/` and `.memory/` stay unlinted — tool
+  knowledge belongs there. Spec: docs/authoring.md.
+- **Dead code joins the quality gate** — `test_vulture_clean` in `tests/test_quality.py`, scanning
+  `src` and `tests` together (a src symbol exercised only by a test is not dead), configured in
+  pyproject so framework entry points called by decorator are excluded. Adopting it found four
+  genuinely dead symbols, now removed: a `ServerConfig.playbooks_home` property, a duplicated
+  sandbox-mode tuple (`SANDBOX_MODES` is now derived from the pydantic Literal — one contract, one
+  source), a write-only `RunContext.parent_run_id`, and a dead wizard helper. Also declared four
+  dependencies the code imports directly but only received transitively (`pydantic`, `markdown2`,
+  `cryptography`, `py-vapid`). Ruff needed no change — `select = ALL` already covers its side.
+- **Items in the item shape** (docs/items.md): the self-audit recipe now emits a `status` on every
+  finding from the documented vocabulary, an `items: [...]` join on every changelog row it
+  appends, and cites bug reports by their `R<n>` id rather than a timestamp no reader can resolve.
+- **Maintenance routing is now mechanical.** `routine-improver`, `config-optimizer`,
+  `global-utils-review` and `self-audit` hold the `scheduling` permission and the `schedule_run`
+  action, so a problem outside a routine's remit goes to the routine that OWNS it — delivered into
+  that routine's inbox as a durable work order — instead of terminating at the operator. The
+  ownership table and escalation ladder are a new library trait, `maintenance-routing`. The shared
+  library (workflow patterns, traits, playbooks), unowned since `workflow-curator` was retired in
+  July 2026, belongs to `routine-improver`; stale references in README and docs/architecture.md
+  are corrected.
+
 ## [0.106.0] — 2026-07-25
 
 The **Items** page: one index of every system-maintenance item — findings, decisions and

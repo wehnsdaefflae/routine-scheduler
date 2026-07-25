@@ -114,6 +114,37 @@ Rules of the form:
 routine may also *generate* a pattern mid-run when it holds the `workflows: generate`
 capability — drafts land in the same library, subject to the same lint.
 
+## No named utils — a recipe says WHAT, never which tool
+
+A workflow pattern, a materialized recipe (`main.md` + `stages/`), a trait and a playbook all
+describe the WORK. None of them may name a util or show a util's flags. They name the CAPABILITY
+a step needs — "fetch the page", "run the repo's test suite", "publish the site" — and the run
+picks the tool: it is shown the whole util catalog in its CAPABILITIES prompt section (name +
+one-line summary, derived live from disk, so it can never be stale) and gets any single util's
+exact `usage:` line for one cheap turn via the `util` action with name `list`. Which util worked,
+and with which arguments, is then persisted in the ROUTINE'S OWN memory/notes — that, not the
+recipe, is where tool knowledge accumulates across runs. A tool named in a recipe goes stale the
+day it is renamed or removed, and it pre-empts the discovery that would have found a better one.
+There is no exemption for meta or maintenance routines.
+
+`lint.named_utils` enforces it at every gate: `rsched lint` for the library, `rsched validate`
+for materialized routine recipes (the only linter that reaches the documents a run actually acts
+from), and the save endpoints behind the Library editor. Two carve-outs keep it honest —
+
+- A util name that is also an ordinary word, a service or a protocol (`shell`, `gmail`, `ftp`,
+  `vision`, …) is flagged ONLY in an invocation shape, because a recipe may legitimately name the
+  service it works with. Coined names (`static-publish`, `codemap`) are flagged anywhere; a util
+  added later defaults to coined, which is the safe direction. The set lives in
+  `lint.AMBIGUOUS_UTIL_NAMES`, each entry carrying its reason.
+- A PATH named after the tool that writes it (`<repo>/.codemap/`,
+  `.control/health-events.jsonl`) is a task fact the recipe must state exactly, so a bare name
+  preceded by `.` or `/` is not a hit.
+
+`state/` and `.memory/` are deliberately NOT linted: naming the tool that worked is exactly what
+a routine's memory is for. The rule also binds recipe GENERATION — `workflows/adapt.py` states it
+in the prompt that compiles a workflow + instruction into stage modules, so new routines start
+clean rather than being swept later.
+
 ## Traits — reusable practice prose
 
 A trait (`traits/<slug>.md`) is conduct prose — *how* to work, never *what* task to do:

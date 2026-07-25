@@ -111,7 +111,7 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
                              deliberation=parent_ctx.deliberation),
         server=parent_ctx.server, registry=parent_ctx.registry, run_ts=parent_ctx.run_ts,
         run_dir=sub_dir, transcript=transcript, budgets=child_budgets,
-        depth=parent_ctx.depth + 1, parent_run_id=parent_ctx.run_id,
+        depth=parent_ctx.depth + 1,
         sub_counter=parent_ctx.sub_counter, sub_lock=parent_ctx.sub_lock,
     )
     transcript.header(run_id=f"{parent_ctx.run_id}#sub{n}", routine=parent_ctx.routine.slug,

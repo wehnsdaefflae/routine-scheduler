@@ -338,7 +338,8 @@ and the capabilities digest's catalog listing):
   on read; hidden from the inbox + badge, still in the run's digest), and a routine with >5
   unanswered deferred asks gets a `decision_backlog` flag on its dashboard card. Every finished
   (sub)run appends to
-  `~/routines/.control/workflow-usage.jsonl` — the workflow-curator routine's evidence stream
+  `~/routines/.control/workflow-usage.jsonl` — the routine-improver routine's evidence stream
+  for the shared library it owns (that ownership moved there when `workflow-curator` was retired)
   AND the durable spend series (tokens + cost + uncensored-referral count per finished run; run
   dirs fall to retention, this stream survives): `stats.monthly_spend` aggregates it per routine ×
   month — the Stats tab's "Monthly spend" table and the dashboard cards' compact month line
@@ -422,7 +423,7 @@ one-shot conversation briefs — the save/use-instruction analog), and **utils/*
 routines run code, with the `gu` dispatcher at the root). Repo seeds: `library-seed/` (workflows +
 traits + permissions + playbooks),
 `util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `routine-improver`,
-`workflow-curator`, `token-lab` — installed **disabled**; the dashboard shows a notice until
+`token-lab` — installed **disabled**; the dashboard shows a notice until
 enabled; a seed added after first boot reaches existing instances via
 `bootstrap.adopt_seed_routine` at daemon boot, which respects an archived copy). `self-audit`
 works LOOKUP-FIRST from `.codemap/` — a compact derived map of this repo (module API surface,

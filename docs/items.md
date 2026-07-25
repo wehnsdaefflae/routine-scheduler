@@ -79,9 +79,11 @@ arbitrary payload keys). Nothing reads them.
 `open` · `in_progress` · `addressed` · `settled` · `dropped` · `unknown`
 
 `unknown` is not a state an item is *put* into — it is the absence of a recorded status.
-Findings carry no `status` field on disk today: the self-audit routine will start emitting
-one, from this document, on a later run. Until then every finding reads `unknown`, and that
-is the correct rendering. Status is NEVER recovered by parsing the title or detail prose.
+The self-audit routine emits a `status` on every finding it writes, from this vocabulary
+(its `write-report` stage carries the table). A finding still reading `unknown` is one written
+before that landed, and that is the correct rendering for it — `report.json` is rewritten whole
+every run, so the statuses converge without a backfill. Status is NEVER recovered by parsing the
+title or detail prose.
 
 Precedence, in order — the first rule that applies wins:
 
@@ -103,9 +105,11 @@ does not translate synonyms.
 
 ## Joining the changelog
 
-Each changelog row SHOULD carry an explicit `items: ["F202", "R7"]` field naming the items
-it touched — that is the only join the read model trusts (`link: "explicit"`). Rows written
-before that field existed are matched by scanning their `title`/`summary`/`detail` prose for
+Each changelog row carries an explicit `items: ["F202", "R7"]` field naming the items it
+touched — that is the only join the read model trusts (`link: "explicit"`), and self-audit's
+`act-apply-fixes` stage requires it on every row it appends (`[]` when a commit genuinely
+addresses no item; never omitted). Rows written before that field existed are matched by
+scanning their `title`/`summary`/`detail` prose for
 `F<n>`/`D<n>` tokens, and those links are flagged `link: "best-effort"` in the API and shown
 as best-effort in the UI. The prose fallback never matches `R<n>`: bug ids postdate every
 historical row, so any `R` in old prose is a false positive.

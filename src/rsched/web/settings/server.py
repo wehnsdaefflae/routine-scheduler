@@ -7,15 +7,19 @@ behaviour, so the UI deliberately does not edit them.
 
 from __future__ import annotations
 
+from typing import get_args
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...config import load_server_config
+from ...config import ServerConfig, load_server_config
 from .common import server_of, update_config
 
 router = APIRouter()
 
-SANDBOX_MODES = ("strict", "permissive", "off")
+# Derived from the pydantic field, never restated: that Literal is the one authority on the
+# vocabulary, and a hand-copied tuple here is exactly how two sources of truth start drifting.
+SANDBOX_MODES = get_args(ServerConfig.model_fields["sandbox"].annotation)
 
 
 class ServerBody(BaseModel):

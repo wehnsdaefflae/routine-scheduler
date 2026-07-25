@@ -5,9 +5,9 @@ tags: [tool-use, research, web]
 
 When a step turns on a fact about the outside world you are not certain of, **look it up
 instead of recalling it**. Your training is stale and lossy; a wrong fact quietly poisons
-everything downstream of it. The web is one `util` action away — the `websearch` util
-(`util` name `websearch`, args `["<query>", "--json"]`) returns ranked title/url/snippet
-results; deeper retrieval utils exist too (`util name=list` — e.g. page fetch, scrapers).
+everything downstream of it. The web is one `util` action away: your CAPABILITIES catalog lists
+a web-search util that returns ranked title/url/snippet results, and deeper retrieval ones (page
+fetch, scrapers). Run `util name=list` for the one you want and its exact flags before calling it.
 
 **When to search (default to yes for these):**
 - Anything time-sensitive or that changes: prices, availability, versions, schedules, who

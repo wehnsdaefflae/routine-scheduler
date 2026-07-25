@@ -103,10 +103,6 @@ class ServerConfig(_Config):
         """The library repo's permissions/ subdir (engine-enforced capabilities)."""
         return self.libraries_home / "permissions"
 
-    @property
-    def playbooks_home(self) -> Path:
-        """The library repo's playbooks/ subdir (reusable conversation briefs)."""
-        return self.libraries_home / "playbooks"
 
 
 def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str]]:

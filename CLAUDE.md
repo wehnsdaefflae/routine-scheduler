@@ -61,7 +61,9 @@ one you are about to touch, not all of them.
   path), streaming events. `--model kind=catalog-name` overrides a model role (catalog names, not endpoint:model pairs); `--quiet` drops the stream.
 - `uv run rsched daemon` — scheduler + web UI in one process (what systemd runs).
 - `uv run rsched validate | lint | suggest --instruction … | scaffold <slug> --workflow … | abort <slug>[:<ts>]`
-  — see `rsched --help`. `engine-run` is internal (daemon-spawned).
+  — see `rsched --help`. `validate` checks every routine's `routine.yaml` AND lints its recipe
+  prose (`main.md`, `stages/`, `traits/`); `lint` covers the library. `engine-run` is internal
+  (daemon-spawned).
 
 ## Core contracts — extend, never repurpose
 
@@ -111,8 +113,17 @@ by a test, by the engine, or by a past incident.
 - **Documentation is swept, not patched.** On any change, revise ALL affected doc surfaces
   (CLAUDE.md, `docs/`, `static/views/help.js`, README, docstrings) — not the one you were
   asked about.
-- **Both quality gates run on the FULL repo**, not the changed files. `tests/test_quality.py`
-  runs them, and the engine bypasses pre-commit — so a red gate can otherwise sail through.
+- **The quality gates run on the FULL repo**, not the changed files. `tests/test_quality.py`
+  runs ruff, mypy AND vulture (dead code — what ruff cannot see is a symbol whose last caller
+  went away; `src` and `tests` are scanned together so a src symbol used only by a test is not
+  reported), and the engine bypasses pre-commit — so a red gate can otherwise sail through.
+- **A recipe says WHAT, never which tool.** Workflow patterns, materialized recipes, traits and
+  playbooks may not name a util or show its flags — they name the capability, the run picks the
+  tool from its live CAPABILITIES catalog, and what worked is persisted in the ROUTINE'S memory,
+  never the recipe. Enforced by `lint.named_utils` at `rsched lint` (library), `rsched validate`
+  (routine recipes) and the library save endpoints, and stated in the generation prompt
+  (`workflows/adapt.py`) so new routines start clean. See docs/authoring.md for the two
+  carve-outs (ambiguous service names; paths named after their tool).
 - **The composed prompt is a caching contract.** The message list is appended-to, never
   mutated; per-turn boilerplate is banned. Only compaction, schema-retry cleanup and the
   media fallback may rewrite it, each invalidating the provider cache by design.

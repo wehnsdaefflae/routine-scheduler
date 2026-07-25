@@ -44,13 +44,13 @@ path: this scheduler is the only harness.
   stamped with the recipe version that produced it, the routine page's Recipe-health view
   buckets outcomes by version, a deterministic heuristic flags a change whose runs got
   clearly worse — and one click rolls the recipe back (the improver never auto-reverts).
-- **As a whole**: three more bundled meta routines use the exact same building blocks —
+- **As a whole**: two more bundled meta routines use the exact same building blocks —
   `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, acting
-  is lens-scoped and test-gated, with bigger decisions on the **Items** page),
-  `workflow-curator` (fixes and drafts library workflows from all routines' transcripts —
-  applied directly, lint-gated and committed; you can edit or delete any workflow on the
-  Library tab), and `token-lab` (measures token usage and A/B-tests efficiency methods via
-  `llm` subcalls only — never integrating — and publishes a report). They ship **disabled**; the
+  is lens-scoped and test-gated, with bigger decisions on the **Items** page) and `token-lab`
+  (measures token usage and A/B-tests efficiency methods via `llm` subcalls only — never
+  integrating — and publishes a report). The shared library — workflow patterns, traits,
+  playbooks — is owned by `routine-improver`, which fixes them lint-gated and committed; you
+  can edit or delete any of them on the Library tab. They ship **disabled**; the
   dashboard says so until you enable them, because self-improvement costs tokens. The
   instance itself syncs to one GitHub repo — routines, workflows, traits, utils, sanitized
   config — via the scheduled **Library sync** job in Settings (a plain daemon job, no LLM).

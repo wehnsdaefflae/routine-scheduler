@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import playbooks
+from .. import playbooks, utils_lib
 from ..workflows import library
 from ..workflows.lint import lint_playbook_text
 
@@ -28,10 +28,11 @@ def list_playbooks(request: Request) -> dict:
     """The catalog — feeds the new-conversation playbook picker AND the Library tab."""
     home = _home(request)
     items = playbooks.list_playbooks(home)
+    utils = [u["name"] for u in utils_lib.list_utils(home)]
     for it in items:
         pb = playbooks.read_playbook(home, it["slug"])
-        it["problems"] = (lint_playbook_text(pb["content"], filename=f"{it['slug']}/MAIN.md")
-                          if pb else [])
+        it["problems"] = (lint_playbook_text(pb["content"], filename=f"{it['slug']}/MAIN.md",
+                                             util_names=utils) if pb else [])
     return {"playbooks": items, "head": library.head_commit(home)}
 
 
@@ -65,7 +66,8 @@ def put_playbook(request: Request, slug: str, body: PlaybookBody) -> dict:
     home = _home(request)
     if playbooks.read_playbook(home, slug) is None:
         raise HTTPException(404, f"no playbook {slug!r}")
-    problems = lint_playbook_text(body.content, filename=f"{slug}/MAIN.md")
+    problems = lint_playbook_text(body.content, filename=f"{slug}/MAIN.md",
+                                  util_names=[u["name"] for u in utils_lib.list_utils(home)])
     if problems:
         raise HTTPException(422, "; ".join(problems))
     playbooks.write_playbook(home, slug, main=body.content)

@@ -222,6 +222,12 @@ export function createTranscript(container, opts = {}) {
     else root.append(el("div", { class: "turn" }, obs));
   }
 
+  // Human-authored message bodies (injections, answers) are prose exactly like the model's
+  // own — a pasted list, fence or link must render, not sit there as literal asterisks. So
+  // they go through the same md() pipeline as summaries: label as its own line, body as a
+  // block (md() is a superset of mdInline(), so nothing reads worse than it did).
+  const evlabel = (text) => el("div", { class: "evlabel" }, text);
+
   const SIMPLE = {
     user_injection: (ev) => {
       if (ev.payload.source === "engine") {
@@ -230,14 +236,15 @@ export function createTranscript(container, opts = {}) {
       const { ref, body } = splitRef(ev.payload.text);
       return el("div", { class: "ev injection" },
         ref ? el("div", { class: "reply-ref", title: ref }, "↩ ", ref) : null,
-        `\u{1F4E8} user: ${body}`);
+        evlabel("\u{1F4E8} user: "), md(body));
     },
     question: questionNode,
     answer: (ev) => {
       if (!ev.payload.intermediate) closeQuestion(ev.payload.qid);   // dialog replies keep it open
-      return el("div", { class: "ev answer" }, ev.payload.intermediate
-        ? `💬 reply (${ev.payload.source}, dialog): ${ev.payload.text}`
-        : `✅ answer (${ev.payload.source}): ${ev.payload.text}`);
+      const p = ev.payload;
+      return el("div", { class: "ev answer" },
+        evlabel(p.intermediate ? `💬 reply (${p.source}, dialog): ` : `✅ answer (${p.source}): `),
+        md(p.text || ""));
     },
     error: (ev) => el("div", { class: "ev error" },
       `error (${ev.payload.where}${ev.payload.attempt ? `, attempt ${ev.payload.attempt}` : ""}): ${ev.payload.message}`),

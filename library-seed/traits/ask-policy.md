@@ -13,7 +13,7 @@ self-sufficiency is the default.
   never "the user *does* the task". Prepare everything up to the send/submit/publish/spend
   button, then ask for a one-word go. Never hand the user a step you could have done.
 - **Exhaust your own reach before deferring.** Before asking the user to *do* anything,
-  check every capability you actually hold — escape hatches included (the `shell` util,
+  check every capability you actually hold — escape hatches included (the `shell` permission,
   write access, a util you could author). A target outside your default write roots that a
   held permission (e.g. `shell`) can still reach is YOURS to change: do it and report what
   you did. "Not in my write roots" or "my own recipe is read-only to the run" is never a

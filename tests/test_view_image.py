@@ -63,7 +63,7 @@ def test_do_view_image_native(tmp_path):
 
 def test_do_view_image_vision_fallback(tmp_path, monkeypatch):
     (tmp_path / "shot.png").write_bytes(b"IMG")
-    monkeypatch.setattr(fileops, "vision_describe", lambda ctx, ab, pr: "a red square")
+    monkeypatch.setattr(fileops, "vision_describe", lambda ctx, _ab, pr: "a red square")
     obs = executor.do_view_image({"kind": "view_image", "path": "shot.png", "prompt": "?"},
                                  _ctx(tmp_path, _Endpoint(False)))
     assert "media" not in obs
@@ -172,7 +172,7 @@ def _loop(make_routine, tmp_path):
 
 
 def test_apply_media_fallback(make_routine, tmp_path, monkeypatch):
-    monkeypatch.setattr(fileops, "vision_describe", lambda ctx, ab, pr: "DESCRIBED")
+    monkeypatch.setattr(fileops, "vision_describe", lambda ctx, _ab, pr: "DESCRIBED")
     loop = _loop(make_routine, tmp_path)
     loop.messages = [{"role": "user", "content": "OBS",
                       "media": [{"path": str(tmp_path / "x.png"), "media_type": "image/png"}]}]

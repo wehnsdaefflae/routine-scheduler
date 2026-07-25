@@ -37,3 +37,17 @@ def test_ruff_clean():
 
 def test_mypy_clean():
     _gate("mypy")
+
+
+def test_vulture_clean():
+    """Dead code — symbols defined, exported and referenced by nothing. Ruff (select = ALL)
+    already owns unused imports/variables/arguments; what it cannot see is a whole function or
+    constant that no longer has a caller, because each file is locally consistent. Adopting this
+    found four: a dead ServerConfig property, a duplicated sandbox-mode tuple (two sources of
+    truth for one contract), a write-only RunContext field, and a dead wizard helper.
+
+    `src` and `tests` are scanned TOGETHER on purpose: a src symbol exercised only by a test is
+    not dead, and scanning src alone reports three such false positives. Config, including the
+    framework entry points that are called by decorator rather than by name, is in pyproject.
+    """
+    _gate("vulture", "src", "tests", "--min-confidence", "60")

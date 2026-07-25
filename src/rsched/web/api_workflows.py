@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from .. import utils_lib
 from ..paths import atomic_write
 from ..workflows import library
 from ..workflows.lint import lint_all, lint_permission_text, lint_trait_text, lint_workflow_py
@@ -120,8 +121,9 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
             raise HTTPException(422, f"invalid frontmatter: {exc}") from exc
         post.metadata["requires"] = req
         content = fm.dumps(post, sort_keys=False)
-    linter = lint_trait_text if kind == "traits" else lint_permission_text
-    problems = linter(content, filename=f"{slug}.md")
+    problems = (lint_trait_text(content, filename=f"{slug}.md",
+                                util_names=[u["name"] for u in utils_lib.list_utils(home)])
+                if kind == "traits" else lint_permission_text(content, filename=f"{slug}.md"))
     if problems:
         raise HTTPException(422, "; ".join(problems))
     library_docs.write_doc(home, slug, content.rstrip() + "\n")
@@ -223,7 +225,8 @@ def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
     home = _home(request)
     server = request.app.state.server
     traits = library_docs.slugs(server.traits_home)
-    problems = lint_workflow_py(body.content, filename=f"{slug}.py", trait_slugs=traits)
+    problems = lint_workflow_py(body.content, filename=f"{slug}.py", trait_slugs=traits,
+                                util_names=[u["name"] for u in utils_lib.list_utils(home)])
     if problems:
         raise HTTPException(422, "; ".join(problems))
     rel = f"workflows/{slug}.py"

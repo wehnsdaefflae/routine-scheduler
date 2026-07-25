@@ -54,7 +54,7 @@ def test_notify_pushes_each_new_decision_once(make_routine, tmp_path, monkeypatc
     inbox.file_question(d, "q-1", "Ship it?", ["yes", "no"], "20260712-070000")
     push.add_subscription(server, SUB_A)
     sent: list[dict] = []
-    monkeypatch.setattr(push, "_send_one", lambda srv, sub, payload: sent.append(payload) or True)
+    monkeypatch.setattr(push, "_send_one", lambda _srv, sub, payload: sent.append(payload) or True)
 
     assert push.notify_new_decisions(server) == 1
     assert sent[0]["tag"] == "rsched-q-1" and "Ship it?" in sent[0]["body"]

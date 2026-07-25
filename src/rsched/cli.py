@@ -178,7 +178,9 @@ def cmd_engine_run(args) -> int:
 
 
 def cmd_validate(args) -> int:
+    from . import utils_lib
     from .config import load_routine
+    from .workflows.lint import lint_routine
 
     server, sproblems = load_server_config()
     total = list(sproblems)
@@ -188,8 +190,12 @@ def cmd_validate(args) -> int:
                sorted(p for p in server.routines_home.iterdir()
                       if p.is_dir() and not p.name.startswith("."))
                if server.routines_home.is_dir() else [])
+    utils = [u["name"] for u in utils_lib.list_utils(server.libraries_home)]
     for d in targets:
         cfg, problems = load_routine(d)
+        # The recipe is linted beside the config: routine.yaml is the only thing `load_routine`
+        # sees, and main.md/stages/ are what the run actually acts from.
+        problems += [p for ps in lint_routine(d, utils).values() for p in ps]
         status = "ok" if cfg and not problems else "PROBLEMS"
         print(f"{d.name}: {status}")
         for pr in problems:

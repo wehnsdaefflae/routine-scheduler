@@ -129,7 +129,15 @@ SELF-CONTAINED — the running agent acts ONLY from main.md and the stage module
 above will NOT exist at run time. So INLINE every concrete detail the task needs directly into
 them: exact values, thresholds, names, formats, category lists, file paths, URLs, output shapes,
 completion criteria. Never write "as the instruction says" or otherwise defer to the instruction —
-it is the SEED you are compiling from, not a document the run can read."""
+it is the SEED you are compiling from, not a document the run can read.
+
+WHAT, NEVER WHICH TOOL — a recipe describes the WORK, never the toolbox. Never name a util, and
+never write a util's flags or invocation. Name the CAPABILITY the step needs ("fetch the page",
+"run the repo's test suite", "send the mail", "publish the site") and leave the choice of tool to
+the run: it is shown the live tool catalog in its CAPABILITIES section, and it records what worked
+in its own memory across runs. A tool named here is stale the day it is renamed or removed, and it
+stops the run from discovering a better one. This does NOT soften the inlining rule above: TASK
+facts (values, thresholds, paths, formats) belong in the recipe; TOOL choices never do."""
 
 _OUTLINE_TAIL = """\
 Plan this routine's STAGE OUTLINE — the set of stage modules a fresh agent will work through in

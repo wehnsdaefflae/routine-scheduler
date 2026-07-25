@@ -20,7 +20,7 @@ updated: 2026-07-14
 ## Instructions
 1. Restate `{{topic}}` as 3–6 concrete sub-questions. If the topic is ambiguous, ask ONE clarifying
    question before spending effort.
-2. Search the web (the `websearch` util, then fetch promising pages) to gather sources for each
+2. Search the web (your catalog's web-search util, then fetch promising pages) to gather sources for each
    sub-question. Prefer primary/authoritative sources and note each source's date.
 3. Corroborate every load-bearing claim against a SECOND independent source. Drop or explicitly flag
    any claim you cannot corroborate — never present a single-source claim as settled.
