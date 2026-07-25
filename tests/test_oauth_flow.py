@@ -144,6 +144,48 @@ def test_needed_secrets_excludes_connection_tokens(oauth_client):
     assert "connu" in entries["FTP_SOURCES"]["usage"]
 
 
+def _set_google(*, with_scopes: bool = True) -> None:
+    secrets.set_secret("GOOGLE_OAUTH_CLIENT_ID", "gid")
+    secrets.set_secret("GOOGLE_OAUTH_CLIENT_SECRET", "gsec")
+    if with_scopes:
+        secrets.set_secret(
+            "GOOGLE_OAUTH_SCOPES",
+            "openid https://www.googleapis.com/auth/calendar.readonly")
+    else:
+        secrets.delete_secret("GOOGLE_OAUTH_SCOPES")
+
+
+def test_scoped_provider_requires_scopes_secret(oauth_client):
+    """A scoped provider (Google) refuses to start consent when <PROVIDER>_OAUTH_SCOPES is unset —
+    no hardcoded fallback, an explicit error naming the secret."""
+    client, _ = oauth_client
+    _set_google(with_scopes=False)
+    r = client.post("/api/settings/oauth/google/authorize-start", json={"account": "me"})
+    assert r.status_code == 400 and "GOOGLE_OAUTH_SCOPES" in r.text
+
+
+def test_scoped_provider_uses_secret_scopes(oauth_client):
+    """The consent request's scope param is exactly the secret's value (accepting comma/space)."""
+    client, _ = oauth_client
+    _set_google()
+    body = client.post("/api/settings/oauth/google/authorize-start",
+                       json={"account": "me"}).json()
+    q = parse_qs(urlparse(body["authorize_url"]).query)
+    assert q["scope"] == ["openid https://www.googleapis.com/auth/calendar.readonly"]
+    assert q["access_type"] == ["offline"] and q["prompt"] == ["consent"]  # authorize_extra rides
+
+
+def test_status_exposes_scope_config(oauth_client):
+    client, _ = oauth_client
+    _set_google(with_scopes=False)
+    provs = {p["id"]: p for p in client.get("/api/settings/oauth").json()["providers"]}
+    assert provs["google"]["scoped"] is True
+    assert provs["google"]["scopes_key"] == "GOOGLE_OAUTH_SCOPES"
+    assert provs["google"]["scopes_set"] is False        # secret not set yet → a visible gap
+    assert provs["notion"]["scoped"] is False            # fixed-scope provider
+    assert provs["notion"]["scopes_set"] is True         # N/A, never a gap
+
+
 def test_set_public_url_validates(oauth_client):
     client, _ = oauth_client
     assert client.put("/api/settings/oauth/public-url",

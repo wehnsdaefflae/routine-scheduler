@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.104.0] — 2026-07-25
+
+### Changed
+- **OAuth consent scopes come from `<PROVIDER>_OAUTH_SCOPES`, with no hardcoded fallback**: a
+  `scoped` provider (Google, Slack) now builds its consent request from the
+  `<PROVIDER>_OAUTH_SCOPES` secret (`providers.authorize_scopes`, space/newline/comma-separated)
+  instead of a `default_scopes` list baked into `providers.py`. `authorize-start` **errors** (400,
+  naming the secret) when it is unset — so a connection can never silently consent to a narrower set
+  than intended. This closes a trap where a Google connection consented only to the hardcoded
+  `openid`+`email` and ignored the operator's `GOOGLE_OAUTH_SCOPES` entirely; that one secret is now
+  the single source of truth for both the connection consent and any Google util. `scoped=False`
+  (Notion — scopes fixed on the integration) sends no scope param and needs no secret. Widen/narrow
+  a Google connection by editing `GOOGLE_OAUTH_SCOPES` and clicking re-authorize.
+- `GET /api/settings/oauth` now reports `scoped` / `scopes_key` / `scopes_set` per provider, so the
+  Connections card can flag a scoped provider whose scopes secret is still missing.
+
 ## [0.103.0] — 2026-07-25
 
 ### Added

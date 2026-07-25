@@ -220,7 +220,11 @@ can do neither — consent needs a browser, refresh must WRITE the token store);
 short-lived access token from disk (the engine↔daemon boundary is filesystem-only). Pieces:
 `oauth/providers.py` — the provider registry (non-secret endpoints + flags; Notion implemented —
 auth-code + PKCE, long-lived token, no device flow; Google/Slack scaffolds; OAuth app creds in the
-Secrets store as `<PROVIDER>_OAUTH_CLIENT_ID`/`_OAUTH_CLIENT_SECRET`). `oauth/store.py` — the
+Secrets store as `<PROVIDER>_OAUTH_CLIENT_ID`/`_OAUTH_CLIENT_SECRET`). A `scoped` provider
+(Google/Slack) reads its consent scopes from `<PROVIDER>_OAUTH_SCOPES` (`authorize_scopes`);
+`authorize-start` ERRORS if that secret is unset — no hardcoded scope fallback, so a connection can
+never silently consent to a narrower set than configured (`scoped=False` Notion sends no scope param).
+`oauth/store.py` — the
 daemon-owned connection store (one `connections.json` beside `config.yaml`, keyed
 `<provider>:<account>`, atomic 0600, metadata-only listing, single writer + a lock;
 `tokens_for_routine` maps a routine's bindings → env vars). `web/settings/oauth.py` — the flow:

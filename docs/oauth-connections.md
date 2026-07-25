@@ -26,6 +26,13 @@ OAuth has two halves that live in different places, because a routine run is hea
   provider. Notion is implemented (auth-code + PKCE, long-lived token, no device flow); Google and
   Slack are scaffold entries. OAuth *app* credentials live in the central Secrets store as
   `<PROVIDER>_OAUTH_CLIENT_ID` / `<PROVIDER>_OAUTH_CLIENT_SECRET`.
+  **Consent scopes** are the user's config, not a code default: a `scoped=True` provider (Google,
+  Slack) reads its requested scopes from `<PROVIDER>_OAUTH_SCOPES` in the Secrets store
+  (`authorize_scopes`, space/newline/comma-separated), and `authorize-start` **errors** if that
+  secret is unset — there is no hardcoded fallback, so a connection can never silently consent to a
+  narrower set than intended. `scoped=False` (Notion) sends no scope param and needs no secret, as
+  its scopes are fixed on the integration. Widen or narrow a Google connection by editing
+  `GOOGLE_OAUTH_SCOPES` and re-authorizing; the same secret is what any Google util reads.
 - **`oauth/store.py`** — the connection store: one `connections.json` next to `config.yaml`, keyed
   `"<provider>:<account>"`, written atomically at mode 0600 (modeled on the Secrets store). Values
   are write-only over the API (`list_connections` returns metadata only, never tokens). The

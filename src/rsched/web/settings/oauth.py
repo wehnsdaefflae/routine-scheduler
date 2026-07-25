@@ -75,7 +75,9 @@ def oauth_status(request: Request) -> dict:
         provs.append({"id": pid, "name": prov.name, "expiring": prov.expiring,
                       "configured": providers.client_creds(pid) is not None,
                       "console_url": prov.console_url,
-                      "client_id_key": cid_key, "client_secret_key": secret_key})
+                      "client_id_key": cid_key, "client_secret_key": secret_key,
+                      "scoped": prov.scoped, "scopes_key": providers.scopes_secret_key(pid),
+                      "scopes_set": (not prov.scoped) or bool(providers.authorize_scopes(pid))})
     return {"public_url": public_url, "public_url_set": bool(public_url),
             "providers": provs, "connections": store.list_connections()}
 
@@ -127,8 +129,13 @@ def authorize_start(request: Request, provider: str, body: AuthorizeStart) -> di
     if prov.uses_pkce:
         params["code_challenge"] = challenge
         params["code_challenge_method"] = "S256"
-    if prov.default_scopes:
-        params["scope"] = " ".join(prov.default_scopes)
+    if prov.scoped:
+        scope = providers.authorize_scopes(provider)
+        if not scope:
+            key = providers.scopes_secret_key(provider)
+            raise HTTPException(400, f"set {key} in Settings → Secrets first — {prov.name} "
+                                     "requires explicit OAuth scopes (no default is assumed)")
+        params["scope"] = scope
     params.update(dict(prov.authorize_extra))
     return {"flow_id": flow_id, "authorize_url": f"{prov.authorize_url}?{urlencode(params)}"}
 

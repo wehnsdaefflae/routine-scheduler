@@ -13,7 +13,10 @@ from ..secrets import load_secrets
 @dataclass(frozen=True)
 class Provider:
     """One OAuth provider. `expiring` drives the refresh manager (False = long-lived token,
-    no refresh — Notion); `uses_pkce` = auth-code with an S256 code challenge.
+    no refresh — Notion); `uses_pkce` = auth-code with an S256 code challenge; `scoped` = the
+    consent's OAuth scopes are read per-request from the `<PROVIDER>_OAUTH_SCOPES` secret (set
+    False when a provider's scopes are fixed on the app itself, e.g. Notion — then no scope param
+    is sent and no secret is required).
     """
 
     id: str
@@ -21,7 +24,7 @@ class Provider:
     authorize_url: str
     token_url: str
     console_url: str = ""       # where the user creates the OAuth app (the provider's dev console)
-    default_scopes: tuple[str, ...] = ()
+    scoped: bool = True
     uses_pkce: bool = True
     expiring: bool = True
     # Provider-specific quirks of the authorize URL + token exchange:
@@ -40,7 +43,7 @@ PROVIDERS: dict[str, Provider] = {
         authorize_url="https://api.notion.com/v1/oauth/authorize",
         token_url="https://api.notion.com/v1/oauth/token",  # noqa: S106 — token ENDPOINT URL, not a secret
         console_url="https://www.notion.so/my-integrations",
-        default_scopes=(),          # Notion scopes are fixed on the integration, not per-request
+        scoped=False,               # Notion scopes are fixed on the integration — no scope param
         uses_pkce=True,
         expiring=False,             # Notion bearer tokens are long-lived; no refresh_token issued
         authorize_extra=(("owner", "user"),),   # Notion requires owner=user on the authorize URL
@@ -53,9 +56,8 @@ PROVIDERS: dict[str, Provider] = {
         authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
         token_url="https://oauth2.googleapis.com/token",  # noqa: S106 — token ENDPOINT URL, not a secret
         console_url="https://console.cloud.google.com/apis/credentials",
-        default_scopes=("openid", "email"),
         uses_pkce=True,
-        expiring=True,
+        expiring=True,              # scopes come from GOOGLE_OAUTH_SCOPES (scoped=True by default)
         # access_type=offline + prompt=consent make Google return a (stable) refresh_token.
         authorize_extra=(("access_type", "offline"), ("prompt", "consent")),
     ),
@@ -65,7 +67,6 @@ PROVIDERS: dict[str, Provider] = {
         authorize_url="https://slack.com/oauth/v2/authorize",
         token_url="https://slack.com/api/oauth.v2.access",  # noqa: S106 — token ENDPOINT URL, not a secret
         console_url="https://api.slack.com/apps",
-        default_scopes=("users:read",),
         uses_pkce=True,
         expiring=True,
     ),
@@ -103,6 +104,21 @@ def creds_secret_keys(provider_id: str) -> tuple[str, str]:
     """The two Secrets-store key names a provider's OAuth app credentials use (for the UI)."""
     prefix = provider_id.upper()
     return f"{prefix}_OAUTH_CLIENT_ID", f"{prefix}_OAUTH_CLIENT_SECRET"
+
+
+def scopes_secret_key(provider_id: str) -> str:
+    """The Secrets-store key holding a scoped provider's per-request OAuth consent scopes."""
+    return f"{provider_id.upper()}_OAUTH_SCOPES"
+
+
+def authorize_scopes(provider_id: str) -> str:
+    """The space-joined scope string for a scoped provider's consent request, read from
+    `<PROVIDER>_OAUTH_SCOPES` in the Secrets store (space / newline / comma separators all
+    accepted). Empty string when the secret is unset — a scoped provider treats that as an error.
+    There is NO hardcoded fallback: OAuth scopes are the user's config, never a code default.
+    """
+    raw = load_secrets().get(scopes_secret_key(provider_id), "")
+    return " ".join(raw.replace(",", " ").split())
 
 
 def access_token_var(provider_id: str) -> str:
