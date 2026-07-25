@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.108.1] — 2026-07-26
+
+### Fixed
+- `conversations.attachment_note` named the `vision` util in the `[attached files — …]` block
+  it prepends to every message carrying an attachment. That block is prose the model reads, and
+  the fallback describer is the ENGINE's choice, not the run's — so it now names the capability
+  ("described for you automatically"). This was the live generator behind the same string in 12
+  conversations' `instruction.md`; the 0.107.0 sweep never reached it because it only looked at
+  library files, which is exactly the argument for fixing generators over outputs.
+- The two routine instruction SEEDS that named utils (`routine-improver`'s `git-sync`,
+  `uncensored-model-radar`'s `discord` and `model-refusal-test`) are rewritten to name the
+  capability. A seed is not read at run time, but it is what a recompile compiles from, so a
+  named util there re-enters the recipe on the next materialization.
+- Repaired the existing conversation recipes: 30 stale trait copies re-synced from the library
+  and 12 `main.md` attachment lines updated to the current `converse` wording. Audit over every
+  seed and recipe in `~/routines` and `~/conversations`: 49 flagged files → 7, all seven
+  legitimate (the `jsonblob.com` service; a `util-stats` path plus the literal error string a
+  run matches on).
+
 ## [0.108.0] — 2026-07-26
 
 ### Added

@@ -100,7 +100,10 @@ def test_create_conversation_disk_shape(server):
 def test_attachment_note_and_fallback_title():
     assert conv_mod.attachment_note([]) == ""
     note = conv_mod.attachment_note(["attachments/a.png", "attachments/b.csv"])
-    assert "attachments/a.png" in note and "vision" in note
+    assert "attachments/a.png" in note and "view_image" in note
+    # the block is prose the model reads: it names the capability, never the util the engine
+    # falls back to for a non-multimodal model
+    assert "vision" not in note
     assert conv_mod.fallback_title("  \n\nHello   world\nmore") == "Hello world"
     assert len(conv_mod.fallback_title("x" * 200)) <= 61
 

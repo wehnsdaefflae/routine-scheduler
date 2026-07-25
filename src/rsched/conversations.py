@@ -93,15 +93,20 @@ def attachment_note(paths: list[str]) -> str:
     """The block appended to a message (or instruction.md) that carries file attachments.
     Paths are relative to the conversation dir; the model reads text with read_file and SEES
     images/PDFs with the view_image action (shown to it directly when the model is
-    multimodal, else described by the vision util). Images are auto-shown to a multimodal
-    model already, so view_image is mainly for when it wants another look.
+    multimodal, else described by an image-describing util the engine falls back to). Images
+    are auto-shown to a multimodal model already, so view_image is mainly for another look.
+
+    This block is prose the model reads, so it names the CAPABILITY, never the util behind it
+    — the fallback tool is the engine's choice, not the run's, and naming it here put a util
+    name into every conversation that ever carried an attachment.
     """
     if not paths:
         return ""
     lines = "\n".join(f"- {p}" for p in paths)
     return ("\n\n[attached files — read text with read_file; SEE images/PDFs with the "
             "view_image action (shown to you directly when this model is multimodal, else "
-            f"described by the vision util); spreadsheets via a fitting util]\n{lines}")
+            "described for you automatically); spreadsheets via a fitting util]\n"
+            f"{lines}")
 
 
 def _seed_instruction(pb: dict | None, first_message: str, conv_dir: Path) -> str:
