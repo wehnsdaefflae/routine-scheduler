@@ -232,7 +232,7 @@ def test_inject_endpoint_reaches_the_clarify_session_workspace(tmp_path):
     with TestClient(app) as client:
         client.headers["Authorization"] = f"Bearer {TOKEN}"
         r = client.post(f"/api/runs/{wizard_store.TEMPLATE_SLUG}:{ts}/inject",
-                        json={"text": "focus on multi-agent papers"})
+                        data={"text": "focus on multi-agent papers"})
         assert r.status_code == 200
         workspace_inbox = server.routines_home / f".wizard-{ts}" / "inbox"
         msgs = list(workspace_inbox.glob("msg-*.json"))

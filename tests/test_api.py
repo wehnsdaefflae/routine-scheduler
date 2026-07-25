@@ -280,7 +280,7 @@ def test_intervention_endpoints(client):
     c, tmp = client
     run_dir = _mk_run(tmp / "routines", "apir", "20260708-100000", "running")
     rid = "apir:20260708-100000"
-    r = c.post(f"/api/runs/{rid}/inject", json={"text": "look at the moon"})
+    r = c.post(f"/api/runs/{rid}/inject", data={"text": "look at the moon"})
     assert r.json()["delivery"] == "mid-run"
     inbox = list((tmp / "routines" / "apir" / "inbox").glob("msg-*.json"))
     assert len(inbox) == 1 and read_json(inbox[0])["text"] == "look at the moon"
@@ -290,6 +290,27 @@ def test_intervention_endpoints(client):
     # terminal runs refuse pause
     atomic_write_json(run_dir / "status.json", {"run_id": rid, "state": "finished"})
     assert c.post(f"/api/runs/{rid}/pause").status_code == 409
+
+
+def test_inject_carries_attachments(client):
+    """A run-page message can carry file attachments (F202): uploads land under the
+    routine dir's attachments/ (the run's working dir, so the recorded rels resolve for
+    read_file / view_image) and the inbox message records the rels + the attachment block
+    — the exact contract engine/inbox.py + engine/control.py already auto-attach for
+    conversations."""
+    c, tmp = client
+    _mk_run(tmp / "routines", "apir", "20260725-090000", "running")
+    rid = "apir:20260725-090000"
+    r = c.post(f"/api/runs/{rid}/inject", data={"text": "look at this"},
+               files=[("files", ("shot.png", b"\x89PNG fake", "image/png")),
+                      ("files", ("notes.txt", b"hello", "text/plain"))])
+    assert r.status_code == 200 and r.json()["delivery"] == "mid-run"
+    msg = read_json(next(iter((tmp / "routines" / "apir" / "inbox").glob("msg-*.json"))))
+    rels = msg["attachments"]
+    assert len(rels) == 2 and all(rel.startswith("attachments/") for rel in rels)
+    for rel in rels:
+        assert (tmp / "routines" / "apir" / rel).is_file()
+    assert msg["text"].startswith("look at this") and "[attached files" in msg["text"]
 
 
 def test_model_switch_endpoint(client):
@@ -1327,7 +1348,7 @@ def test_converse_endpoint(client, monkeypatch):
     c, tmp = client
     run_dir = _mk_run(tmp / "routines", "apir", "20260708-110000", "running")
     rid = "apir:20260708-110000"
-    assert c.post(f"/api/runs/{rid}/converse", json={"text": "and the stars?"}).json()["delivery"] == "mid-run"
+    assert c.post(f"/api/runs/{rid}/converse", data={"text": "and the stars?"}).json()["delivery"] == "mid-run"
     msgs = [read_json(p)["text"] for p in (tmp / "routines" / "apir" / "inbox").glob("msg-*.json")]
     assert "and the stars?" in msgs
 
@@ -1339,10 +1360,10 @@ def test_converse_endpoint(client, monkeypatch):
         return f"{cfg.slug}:{ts}"
 
     monkeypatch.setattr(c.app.state.runner, "resume", fake_resume)
-    r = c.post(f"/api/runs/{rid}/converse", json={"text": "one more thing"})
+    r = c.post(f"/api/runs/{rid}/converse", data={"text": "one more thing"})
     assert r.json()["delivery"] == "resumed"
     assert resumed == {"slug": "apir", "ts": "20260708-110000", "reason": "converse"}
-    assert c.post(f"/api/runs/{rid}/converse", json={"text": "  "}).status_code == 400
+    assert c.post(f"/api/runs/{rid}/converse", data={"text": "  "}).status_code == 400
 
 
 def test_converse_recipe_edit(client, monkeypatch):
@@ -1355,7 +1376,7 @@ def test_converse_recipe_edit(client, monkeypatch):
     rid = "apir:20260709-120000"
     # a live run refuses the unlock — and must not have delivered the message
     assert c.post(f"/api/runs/{rid}/converse",
-                  json={"text": "tighten the report stage", "recipe_edit": True}).status_code == 409
+                  data={"text": "tighten the report stage", "recipe_edit": "1"}).status_code == 409
     assert not list((tmp / "routines" / "apir" / "inbox").glob("msg-*.json"))
     atomic_write_json(run_dir / "status.json", {"run_id": rid, "state": "finished"})
     resumed = {}
@@ -1366,7 +1387,7 @@ def test_converse_recipe_edit(client, monkeypatch):
 
     monkeypatch.setattr(c.app.state.runner, "resume", fake_resume)
     r = c.post(f"/api/runs/{rid}/converse",
-               json={"text": "tighten the report stage", "recipe_edit": True})
+               data={"text": "tighten the report stage", "recipe_edit": "1"})
     assert r.status_code == 200 and r.json()["delivery"] == "resumed"
     assert resumed == {"slug": "apir", "ts": "20260709-120000", "reason": "converse"}
     # the marker unlocks recipe self-write for the resumed leg…

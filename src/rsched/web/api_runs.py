@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sse_starlette import EventSourceResponse
 
@@ -154,42 +155,60 @@ def run_tree(request: Request, run_id: str) -> dict:
     return {"tree": build_tree(run_dir)}
 
 
-class Inject(BaseModel):
-    text: str
-    # Converse only — the "editable recipe" checkbox beside the composer: resume the
-    # finished run as a NORMAL conversation whose leg may edit this routine's own recipe
-    # (main.md / stages/ / traits/ / tuning.yaml) via the run-scoped revise marker.
-    recipe_edit: bool = False
+async def _file_inbox_message(request: Request, run_dir: Path, text: str,
+                              files: list[UploadFile] | None, via: str) -> None:
+    """Deliver a run-page message. Uploads are stored under `attachments/` BESIDE the
+    polled inbox — the routine dir, or the `.wizard-<ts>` workspace for clarify runs —
+    i.e. the run's working dir, so the recorded rels resolve for read_file / view_image.
+    The message carries the conversation-style attachment block plus the `attachments`
+    rels the engine auto-attaches (engine/inbox.py → engine/control.py).
+    """
+    from ..conversations import attachment_note
+    from . import wizard_store
+    from .conversations_common import _save_attachments
+
+    inbox = wizard_store.session_inbox_dir(request.app.state.server, run_dir)
+    rels = await _save_attachments(inbox.parent, files or [])
+    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json",
+                      {"text": text.rstrip() + attachment_note(rels), "ts": now_iso(),
+                       "via": via, **({"attachments": rels} if rels else {})})
 
 
 @router.post("/runs/{run_id}/inject")
-def inject(request: Request, run_id: str, body: Inject) -> dict:
+async def inject(request: Request, run_id: str, text: Annotated[str, Form()],
+                 files: Annotated[list[UploadFile] | None, File()] = None) -> dict:
+    """Queue a user message for the run — multipart, so file attachments ride along
+    exactly like a conversation message (saved beside the polled inbox and auto-attached
+    by the engine when the main model can show them).
+    """
     _, run_dir = _run_dir(request, run_id)
-    if not body.text.strip():
+    text = text.replace("\r\n", "\n")   # multipart encodes newlines CRLF; \n is canonical
+    if not text.strip():
         raise HTTPException(400, "empty message")
-    from . import wizard_store
-
-    inbox = wizard_store.session_inbox_dir(request.app.state.server, run_dir)
     st = read_json(run_dir / "status.json")
     state = st.get("state") if isinstance(st, dict) else None
-    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json",
-                      {"text": body.text, "ts": now_iso(), "via": "web"})
+    await _file_inbox_message(request, run_dir, text, files, via="web")
     return {"ok": True,
             "delivery": "mid-run" if state not in TERMINAL_STATES else "next-run"}
 
 
 @router.post("/runs/{run_id}/converse")
-async def converse(request: Request, run_id: str, body: Inject) -> dict:
-    """Append a message to THIS run's conversation. Active run: an ordinary injection, picked
-    up at the next turn boundary. Terminal run: the message lands in the inbox and the run is
-    resumed in place (rehydrated transcript, fresh budget window) — so any run, live or
-    finished, is an open-ended conversation.
+async def converse(request: Request, run_id: str, text: Annotated[str, Form()],
+                   recipe_edit: Annotated[bool, Form()] = False,
+                   files: Annotated[list[UploadFile] | None, File()] = None) -> dict:
+    """Append a message (with optional file attachments) to THIS run's conversation.
+    Active run: an ordinary injection, picked up at the next turn boundary. Terminal run:
+    the message lands in the inbox and the run is resumed in place (rehydrated transcript,
+    fresh budget window) — so any run, live or finished, is an open-ended conversation.
+    `recipe_edit` is the "editable recipe" checkbox: resume the finished run as a NORMAL
+    conversation whose leg may edit this routine's own recipe via the run-scoped marker.
     """
     slug, run_dir = _run_dir(request, run_id)
-    if not body.text.strip():
+    text = text.replace("\r\n", "\n")   # multipart encodes newlines CRLF; \n is canonical
+    if not text.strip():
         raise HTTPException(400, "empty message")
     routine_dir = run_dir.parent.parent
-    if body.recipe_edit:
+    if recipe_edit:
         # Validate BEFORE the message is filed, so a rejected unlock delivers nothing.
         from ..paths import within
         from .routines_common import guard_template
@@ -200,11 +219,7 @@ async def converse(request: Request, run_id: str, body: Inject) -> dict:
         if (st0.get("state") if isinstance(st0, dict) else None) not in TERMINAL_STATES:
             raise HTTPException(409, "recipe editing unlocks when a FINISHED run is "
                                      "resumed — wait for the run to finish")
-    from . import wizard_store
-
-    inbox = wizard_store.session_inbox_dir(request.app.state.server, run_dir)
-    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json",
-                      {"text": body.text, "ts": now_iso(), "via": "web-converse"})
+    await _file_inbox_message(request, run_dir, text, files, via="web-converse")
     st = read_json(run_dir / "status.json")
     state = st.get("state") if isinstance(st, dict) else None
     if state not in TERMINAL_STATES:
@@ -215,12 +230,12 @@ async def converse(request: Request, run_id: str, body: Inject) -> dict:
     cfg, _ = load_routine(routine_dir)
     if cfg is None:
         raise HTTPException(404, f"routine {slug!r} not found")
-    if body.recipe_edit:
+    if recipe_edit:
         # The "editable recipe" checkbox: the SAME conversation continues, with the sole
         # difference that this leg may edit the routine's own recipe files (one-shot
         # marker, engine/revise.py — cleared when the loop reads it at init).
         from ..engine.revise import write_revise_marker
-        write_revise_marker(run_dir, body.text.strip())
+        write_revise_marker(run_dir, text.strip())
     rid = await request.app.state.runner.resume_terminal(cfg, run_dir.name, reason="converse")
     if not rid:
         raise HTTPException(409, "could not resume — another run of this routine is active, "

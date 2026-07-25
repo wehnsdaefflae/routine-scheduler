@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.103.0] — 2026-07-25
+
+### Added
+- **Run messages carry file attachments (F202, user-requested)**: the run page composer
+  gains the same 📎 attach / chips / paste-to-attach affordance as conversations, and
+  `POST /api/runs/{id}/inject` + `/converse` are now multipart — uploads are stored under
+  `attachments/` beside the run's polled inbox (the routine dir, or the `.wizard-<ts>`
+  workspace for clarify runs), recorded as `attachments` rels on the inbox message, and
+  auto-attached by the engine exactly like a conversation message. Screenshots and PDFs
+  can now ride a mid-run injection, a queued next-run note, and a continued-run reply.
+
 ## [0.102.0] — 2026-07-24
 
 ### Added

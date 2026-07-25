@@ -3,7 +3,8 @@
 // live in the URL (#/run/{id}?sub=N), so a deep link reopens the exact view.
 
 import { referChip } from "/static/components/referchip.js";
-import { api } from "/static/api.js";
+import { api, apiUpload } from "/static/api.js";
+import { filePicker } from "/static/components/filepicker.js";
 import { questionPanel } from "/static/components/answerform.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { confirmDialog } from "/static/components/dialog.js";
@@ -113,6 +114,11 @@ export async function render(view, runId, query = {}) {
     title: "where this message goes" });
   const msgInput = el("input", { type: "text", placeholder: "message…", style: "flex:1" });
   const sendBtn = el("button", { class: "btn primary" }, "send");
+  // Attachments: the same affordance as the conversation composer (file dialog, chips,
+  // paste-to-attach). Files are saved beside the run's polled inbox and auto-attached
+  // by the engine — so a run message can carry screenshots/PDFs too.
+  const { picker, files, clearFiles, wirePaste } = filePicker();
+  wirePaste(msgInput);
   // "editable recipe" checkbox (D37, revised): sits right next to the input, OFF by
   // default. Checked, the finished run resumes as the SAME conversation — the sole
   // difference is that the continued leg may edit this routine's own recipe files
@@ -149,7 +155,7 @@ export async function render(view, runId, query = {}) {
   setModes(false);
   const ref = referChip(msgInput, { className: "composer-ref mt" });
   const setRef = ref.setRef;
-  view.append(ref.node, el("div", { class: "row mt" }, modeSel, msgInput, sendBtn, recipeLbl));
+  view.append(ref.node, el("div", { class: "row mt" }, modeSel, msgInput, sendBtn, picker, recipeLbl));
 
   // Auto-scroll ("follow"): on by default; the user can toggle it, and scrolling up pauses it.
   let autoscroll = true;
@@ -354,9 +360,13 @@ export async function render(view, runId, query = {}) {
       : msgInput.value;
     sendBtn.disabled = true;
     try {
+      const fd = new FormData();
+      fd.append("text", text);
+      for (const f of files()) fd.append("files", f);
       if (mode === "converse") {
-        await api(`/api/runs/${runId}/converse`,
-          { method: "POST", body: { text, recipe_edit: recipeChk.checked } });
+        if (recipeChk.checked) fd.append("recipe_edit", "1");
+        await apiUpload(`/api/runs/${runId}/converse`, fd);
+        clearFiles();
         forgetField(msgInput);   // delivered — must not refill after the reload below
         toast(recipeChk.checked
           ? "message delivered — the conversation continues with an editable recipe…"
@@ -364,9 +374,10 @@ export async function render(view, runId, query = {}) {
         setTimeout(remount, 800);   // reattach the tail to the now-live run
         return;                  // keep the button disabled until the remount lands
       }
-      const r = await api(`/api/runs/${runId}/inject`, { method: "POST", body: { text } });
+      const r = await apiUpload(`/api/runs/${runId}/inject`, fd);
       toast(r.delivery === "mid-run" ? "injected — picked up at the next turn" : "queued for the next run");
       msgInput.value = "";
+      clearFiles();
       setRef(null);
       forgetField(msgInput);   // sent — the draft must not refill on reload
     } catch (err) { toast(err.message, 4000, { error: true }); }

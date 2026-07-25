@@ -254,11 +254,21 @@ def test_run_view_message_modes(ui, ui_page):
     expect(mode).to_have_value("inject")
     expect(mode).to_be_disabled()
     ui_page.locator('input[placeholder="inject a message into the run…"]').fill("mid-run note")
+    # attachments ride a run message too (F202): picking a file shows a chip; the send
+    # stores it under the routine's attachments/ and the inbox message records the rel
+    ui_page.locator('input[type="file"]').set_input_files(
+        {"name": "shot.png", "mimeType": "image/png", "buffer": b"\x89PNG fake"})
+    expect(ui_page.locator(".attach-chip")).to_contain_text("shot.png")
     ui_page.get_by_role("button", name="send", exact=True).click()
     expect(_toast(ui_page)).to_be_visible()
     inbox = ui.routine_dir("uir") / "inbox"
     assert any("mid-run note" in m.read_text(encoding="utf-8")
                for m in inbox.glob("msg-*.json"))
+    msg = next(json.loads(m.read_text(encoding="utf-8")) for m in inbox.glob("msg-*.json")
+               if "mid-run note" in m.read_text(encoding="utf-8"))
+    assert msg["attachments"] and msg["attachments"][0].startswith("attachments/")
+    assert (ui.routine_dir("uir") / msg["attachments"][0]).is_file()
+    expect(ui_page.locator(".attach-chip")).to_have_count(0)   # chips clear after send
 
     ui.seed_run("uir", "20260715-120000", "finished", summary="done")
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-120000")
