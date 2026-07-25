@@ -377,6 +377,54 @@ def test_util_secret_gate_asks_once_and_persists_grant(make_routine, scripted, m
     assert persisted["secret_grants"] == {"FOO_KEY": True}
 
 
+def test_util_secret_gate_grant_survives_into_a_later_run(make_routine, scripted, monkeypatch):
+    """D39: an approved exposure is durable ACROSS runs — the sibling test proves one approval
+    covers repeated calls within a run; this pins the cross-run half. A second, separate run
+    (fresh config load) must run the util with NO question at all: once the user has said yes,
+    the routine never re-asks."""
+    from rsched import secrets as secrets_mod
+
+    # ONE approve reply for the whole test: a second ask would find no answer and time out.
+    fake = _FakeDiscord(replies=[[], [{"id": "5", "message": "approve"}]])
+    ran: list[tuple[str, list]] = []
+
+    def fake_run(home, name, args, timeout=0, policy=None, extra_secrets=None):
+        if name == "discord":
+            return fake.run_util(home, name, args, timeout=timeout, policy=policy)
+        ran.append((name, list(args)))
+        return 0, "ran", ""
+
+    monkeypatch.setattr(notify.utils_lib, "run_util", fake_run)
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(notify.utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False))
+    monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
+    monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
+    d = make_routine(slug="secgate2", budgets={"ask_timeout_min": 1})
+    server = _server(d)
+    server.permissions_home.mkdir(parents=True, exist_ok=True)
+    (server.permissions_home / "communication.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
+        "# permission: communication — discord\nbody\n", encoding="utf-8")
+    import yaml as _yaml
+    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
+    cfg["permissions"] = ["communication"]
+    cfg["capabilities"] = {"utils": ["discord"]}
+    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+
+    scripted([{"say": "call", "kind": "util", "name": "frob", "args": []}, finish()])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "ok"
+    assert len([e for e in _events(run_dir) if e["type"] == "question"]) == 1
+    assert _yaml.safe_load((d / "routine.yaml").read_text())["secret_grants"] == {"FOO_KEY": True}
+
+    ran.clear()
+    scripted([{"say": "call", "kind": "util", "name": "frob", "args": []}, finish()])
+    status2, run_dir2 = run_routine(d, server, run_ts="20260101-120000")
+    assert status2 == "ok"
+    assert [e for e in _events(run_dir2) if e["type"] == "question"] == []   # never re-asked
+    assert ran == [("frob", [])]                                            # ran unprompted
+
+
 def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, scripted,
                                                                   monkeypatch):
     """D39: a routine whose `secret_grants` maps the secret to false gets a refusing
