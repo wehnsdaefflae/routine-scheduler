@@ -69,8 +69,8 @@ one you are about to touch, not all of them.
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, edit_file,
-  memory_read, memory_write, read_trait, llm, spawn, subtask, detach, schedule_run, subruns, kill, wait,
-  ask_user, report_bug, finish` (21). `finish` and `report_bug` are ALWAYS_KINDS — available on every
+  memory_read, memory_write, read_trait, llm, spawn, subtask, detach, schedule_run, hand_off,
+  subruns, kill, wait, ask_user, report_bug, finish` (22). `finish` and `report_bug` are ALWAYS_KINDS — available on every
   turn regardless of the workflow's `tools:` allowlist or the capability set (report_bug is the
   ungated bug channel feeding `.control/bug-reports.jsonl`, self-audit's evidence stream). Every action carries `say` (finding-first narration:
   what the last observation taught you + why this action; terse for routine steps, 2-3 sentences
@@ -88,6 +88,12 @@ one you are about to touch, not all of them.
   `subtask` runs a child sub-workflow SEQUENTIALLY and blocks (the parallel `spawn`'s
   sibling — one child-task executor, `engine/childrun.py`); a `subtask` with `workflow: "generate"`
   drafts a new pattern when the `workflows: generate` capability is held (see docs/subtasks.md).
+  `hand_off` addresses a durable WORK ORDER to ANOTHER routine (gated: `work-orders`) — filed
+  under a `W<n>` id in `.control/work-orders.jsonl` and delivered into the target's `inbox/`,
+  which its NEXT SCHEDULED RUN drains; it starts no run and wakes nobody. The target closes it
+  with a `hand_off` back carrying `answers: "<W id>"`, and the Items page shows the whole
+  lifecycle (open → in_progress once drained → settled once answered). Distinct from
+  `report_bug`: that one is ungated, aims at the SCHEDULER, and is polled by self-audit.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out.
   `memory_*` are the ONLY way into `.memory/` (generic file actions are rejected there); the engine
   owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line note cap.
@@ -120,10 +126,16 @@ by a test, by the engine, or by a past incident.
 - **A recipe says WHAT, never which tool.** Workflow patterns, materialized recipes, traits and
   playbooks may not name a util or show its flags — they name the capability, the run picks the
   tool from its live CAPABILITIES catalog, and what worked is persisted in the ROUTINE'S memory,
-  never the recipe. Enforced by `lint.named_utils` at `rsched lint` (library), `rsched validate`
-  (routine recipes) and the library save endpoints, and stated in the generation prompt
-  (`workflows/adapt.py`) so new routines start clean. See docs/authoring.md for the two
-  carve-outs (ambiguous service names; paths named after their tool).
+  never the recipe. Enforced AT GENERATION — `workflows/adapt.py` (materialization) and
+  `workflows/generate.py` (pattern drafting) spell out the forbidden forms in the prompt — not
+  by a linter over the finished file: these documents are LLM-written, so the generator is the
+  cause and a name-matching check over a DYNAMIC util catalog turns unrelated files red the day
+  a util is named after an ordinary word. See docs/authoring.md for the two things a recipe may
+  legitimately name (services/protocols; paths named after their tool).
+- **Fix the cause, not the symptom.** The corollary, and a standing instruction: when an
+  artefact comes out wrong, correct whatever produced it. For anything LLM-written that is the
+  generation prompt — make it correct, unambiguous and strict, then repair the existing files
+  once by hand. Add a machine check only for what no prompt can guarantee.
 - **The composed prompt is a caching contract.** The message list is appended-to, never
   mutated; per-turn boilerplate is banned. Only compaction, schema-retry cleanup and the
   media fallback may rewrite it, each invalidating the provider cache by design.

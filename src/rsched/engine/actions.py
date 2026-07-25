@@ -16,7 +16,7 @@ from ..ids import is_slug
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "edit_file",
          "memory_read", "memory_write", "read_trait", "llm", "spawn", "subtask", "detach",
-         "schedule_run",
+         "schedule_run", "hand_off",
          "subruns", "kill", "wait", "ask_user", "report_bug", "finish")
 
 # Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist: `finish`
@@ -110,9 +110,15 @@ ACTION_SCHEMA: dict = {
                                    "memory_write: the note's full markdown (one string, "
                                    "≤100 lines)"},
         # schedule_run — arm/cancel a one-shot time trigger on a routine (gated: scheduling)
+        # hand_off — address a durable work order to another routine (gated: work-orders)
         "target": {"type": "string",
                    "description": "schedule_run: the routine slug to arm/cancel a one-shot on "
-                                  "(self-target always allowed)"},
+                                  "(self-target always allowed) · "
+                                  "hand_off: the routine slug the work order is FOR"},
+        "answers": {"type": "string",
+                    "description": "hand_off: OPTIONAL — the id (W<n>) of a work order you "
+                                   "RECEIVED that this one answers: what you did about it, or "
+                                   "why you will not. That is how a hand-off gets closed"},
         "fire_at": {"type": "string",
                     "description": "schedule_run: when to fire ONCE — an absolute ISO-8601 UTC "
                                    "instant, or a relative offset like '+3d' / '+2h' / '+30m'"},
@@ -188,16 +194,21 @@ ACTION_SCHEMA: dict = {
                            "change it cannot make itself.",
         },
         # report_bug — the ungated, default-on bug channel every routine holds
+        # hand_off — shares title/detail: both file a durable item someone else acts on
         "title": {
             "type": "string",
             "description": "report_bug: a one-line summary of the scheduler bug or friction "
-                           "you hit",
+                           "you hit · hand_off: a one-line summary of the work you are "
+                           "handing over",
         },
         "detail": {
             "type": "string",
             "description": "report_bug: the full description — what you did, what happened, "
                            "what you expected; enough for the self-audit routine to reproduce "
-                           "and fix it",
+                           "and fix it · hand_off: the WORK ORDER itself — the exact file or "
+                           "artefact, what is wrong, the evidence (a run id, a path:line, an "
+                           "error), and what 'done' looks like. The target reads this on its "
+                           "next scheduled run with none of your context",
         },
         # finish
         "status": {"type": "string", "enum": ["ok", "partial", "failed"],
@@ -221,7 +232,8 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "write_file": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "read_trait": "name",
                "llm": "prompt", "spawn": "label", "subtask": "label",
-               "detach": "label", "schedule_run": "target", "kill": "n", "wait": "n",
+               "detach": "label", "schedule_run": "target", "hand_off": "target",
+               "kill": "n", "wait": "n",
                "ask_user": "question", "report_bug": "title", "finish": "status"}
 
 # kind → a minimal VALID action, shown to the model when a reply fails validation. Weak
@@ -236,6 +248,9 @@ KIND_EXAMPLES: dict[str, dict] = {
     "schedule_run": {"say": "<why arm a one-shot>", "kind": "schedule_run",
                      "target": "some-routine", "fire_at": "+3d",
                      "reason": "<what the fired run should pick up>"},
+    "hand_off": {"say": "<why this belongs to that routine>", "kind": "hand_off",
+                 "target": "some-routine", "title": "<one-line summary of the work>",
+                 "detail": "<the artefact, what is wrong, the evidence, what done looks like>"},
     "read_file": {"say": "<why this file>", "kind": "read_file", "path": "state/notes.md"},
     "view_image": {"say": "<why look at it>", "kind": "view_image",
                    "path": "attachments/shot.png",
@@ -278,6 +293,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "write_util": (("name",), ("content", "anchor", "replacement", "all")),
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
+    "hand_off": (("target", "title"), ("detail", "answers")),
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
     "view_image": ((), ("path", "paths", "prompt")),
     "write_file": (("path", "content"), ("append",)),

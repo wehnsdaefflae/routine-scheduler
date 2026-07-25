@@ -194,6 +194,14 @@ before it fires). The daemon fires the one-shot ONCE at fire_at, then CONSUMES i
 repeats — no cron to clean up). Cancel with `cancel: true` (+ `id` for one, or without to clear \
 all armed on the target). For a run to schedule its own follow-up ("re-check in 3 days") or arm \
 a milestone run on a sibling routine — gated by the scheduling permission."""),
+    (("hand_off",), """- hand_off: send a WORK ORDER to another routine — `target` (its slug), \
+`title` (one line) + \
+`detail` (the artefact, what is wrong, the evidence — a run id, a path:line, an error — and what \
+"done" looks like). It lands in that routine's inbox and it reads it on its NEXT SCHEDULED RUN, \
+with none of your context: write it to stand alone. Nothing is started and nobody is \
+interrupted. Use it for work that is real but belongs to whoever owns that artefact. Set \
+`answers` to a work order YOU received to close it — what you did about it, or why you will \
+not."""),
     (("subruns",), """- subruns: a status table of your sub-workflows (state, turns, \
 elapsed)."""),
     (("kill", "wait"), """- kill: terminate sub-workflow "n". wait: block until sub-workflow \

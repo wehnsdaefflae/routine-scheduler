@@ -336,7 +336,11 @@ and the capabilities digest's catalog listing):
   the engine unblocks on the stated default, the record stays open; stale markers are swept at
   boot), a non-blocking one **snoozed** (`snoozed_until` on the record → `snoozed: true` derived
   on read; hidden from the inbox + badge, still in the run's digest), and a routine with >5
-  unanswered deferred asks gets a `decision_backlog` flag on its dashboard card. Every finished
+  unanswered deferred asks gets a `decision_backlog` flag on its dashboard card.
+  `~/routines/.control/work-orders.jsonl` is the append-only WORK ORDER ledger (`W<n>` id, from,
+  to, title, detail, plus a `delivered` event row stamped when the target's run drains the
+  message): the Items page reads it, so a hand-off that carried is distinguishable from one that
+  silently never arrived (docs/items.md). Every finished
   (sub)run appends to
   `~/routines/.control/workflow-usage.jsonl` — the routine-improver routine's evidence stream
   for the shared library it owns (that ownership moved there when `workflow-curator` was retired)
@@ -519,7 +523,12 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   practice module for the CURRENT run when the work needs a discipline the recipe lacks; read-only,
   so the routine's own traits/ set stays the user's; default-ON for conversations), `scheduling`
   (requires the `schedule_run` action — arm/cancel one-shot fires on any routine, self-target
-  always allowed incl. conversations), and `remote-machines` (requires the reserved `remote`
+  always allowed incl. conversations), `work-orders` (requires the `hand_off` action — address a
+  durable WORK ORDER to another routine, filed as a `W<n>` and delivered into that routine's
+  inbox for its NEXT SCHEDULED RUN to read; it starts no run and wakes nobody, and the target
+  closes it with a `hand_off` back carrying `answers`. Held by the maintenance routines, which
+  use it to route a problem to whoever owns the artefact rather than escalating to the user —
+  see the `maintenance-routing` trait), and `remote-machines` (requires the reserved `remote`
   util — see Remote machines above). Reservable utils =
   the union of all docs' `requires.utils` (library-defined); gateable kinds = GATED_KINDS
   (engine-defined); `runs`/`workflows` are level capabilities. Permission bodies are SHORT (≤14 lines reach the prompt's CAPABILITIES section

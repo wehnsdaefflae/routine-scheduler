@@ -14,7 +14,8 @@ const STATUS_TONE = {
   open: "waiting_user", in_progress: "partial", addressed: "ok",
   settled: "ok", dropped: "idle", unknown: "",
 };
-const TYPE_LABEL = { finding: "finding", decision: "decision", bug: "bug report" };
+const TYPE_LABEL = { finding: "finding", decision: "decision", bug: "bug report",
+                     work_order: "work order" };
 const SEV = ["problem", "systemic", "redundancy", "improvement", "info"];
 
 function originLine(item) {
@@ -47,6 +48,27 @@ function addressedSection(item) {
       el("span", { class: "p-text" }, mdInline(r.summary || r.title || "(change)")),
       r.commit ? el("span", { class: "faint small" }, String(r.commit).slice(0, 8)) : null,
       r.ts ? when(r.ts) : null)));
+}
+
+// A work order's routing: who sent it to whom, whether the target's run has actually drained
+// it, and which reply closed it. This line is the whole point of the ledger — a hand-off that
+// silently never arrives is worse than none.
+function routingLine(item) {
+  if (item.type !== "work_order") return null;
+  const bits = [el("span", {}, `${item.origin?.routine || "?"} → ${item.to || "?"}`)];
+  const d = item.delivered || {};
+  if (d.run_id) {
+    bits.push(el("a", { href: `#/run/${d.run_id}`, title: "the run that picked it up" }, "picked up ↗"));
+    if (d.ts) bits.push(when(d.ts));
+  } else {
+    bits.push(el("span", { class: "faint" }, "not picked up yet — waits for the target's next run"));
+  }
+  if (item.answers) bits.push(el("span", {}, `answers ${item.answers}`));
+  if (item.answered_by) bits.push(el("span", {}, `answered by ${item.answered_by}`));
+  const row = el("div", { class: "faint small mt", style: "display:flex;gap:8px;flex-wrap:wrap" },
+    el("span", {}, "routing"));
+  for (const b of bits) row.append(b);
+  return row;
 }
 
 function refsLine(item) {
@@ -113,6 +135,7 @@ export function itemCard(item, { queued, onSave, onWithdraw, answered } = {}) {
       ? el("div", { class: "faint small mt" }, `options: ${item.options.map(String).join("  ·  ")}`)
       : null,
     item.resolution ? el("div", { class: "muted small mt" }, `resolution: ${item.resolution}`) : null,
+    routingLine(item),
     refsLine(item),
     originLine(item),
     addressedSection(item),

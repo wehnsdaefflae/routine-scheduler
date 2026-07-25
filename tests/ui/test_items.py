@@ -55,7 +55,7 @@ def test_items_page_lists_every_type_with_status_and_history(ui, ui_page):
     ui_page.wait_for_selector("h1:has-text('Items')", timeout=10_000)
 
     # the report header rides along (window + since-commit), the arrays are items now
-    expect(ui_page.locator(".sub")).to_contain_text("findings, decisions and bug reports")
+    expect(ui_page.locator(".sub")).to_contain_text("findings, decisions, bug reports")
     expect(ui_page.locator("#ref-F1")).to_contain_text("The thing is broken")
     expect(ui_page.locator("#ref-F1")).to_contain_text("unknown")   # no status on disk yet
     expect(ui_page.locator("#ref-D1")).to_contain_text("Pick a path")

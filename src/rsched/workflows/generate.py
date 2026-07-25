@@ -64,11 +64,8 @@ def generate(server: ServerConfig, instruction: str, hint: str = "",
     `on_usage(usage)` is called with each completion's usage — the seam that lets an IN-RUN
     generation (a subtask drafting a pattern) fold its system-model spend into the run's budget.
     """
-    from .. import utils_lib
-
     home = server.libraries_home
     traits = list_traits(home)
-    util_names = [u["name"] for u in utils_lib.list_utils(home)]
     _, example_raw = read_workflow(home, "general-task")   # a good Python workflow to imitate
     prompt = (
         "Draft ONE new workflow file for the workflow library, for recurring instructions "
@@ -81,6 +78,10 @@ def generate(server: ServerConfig, instruction: str, hint: str = "",
         "NEVER name a util or show its flags — name the CAPABILITY a step needs ('fetch the "
         "page', 'publish the site') and leave the tool to the run, which is shown the live util "
         "catalog at run time. A named tool goes stale and pre-empts that discovery. "
+        "Write INSTRUCTIONS, NEVER HISTORY: the agent that reads this pattern has never seen an "
+        "earlier draft of it, so state the current design in the present tense and stop. No "
+        "'no longer', 'used to', 'previously', 'was retired/replaced', 'never reintroduce', "
+        "'the old <thing>', and no dates or counts that were true once. "
         "Reply with ONLY the complete .py file content."
     )
     endpoint, ref = EndpointRegistry(server).for_system()
@@ -98,8 +99,7 @@ def generate(server: ServerConfig, instruction: str, hint: str = "",
     problems: list[str] = []
     for attempt in range(2):
         slug = _slug_of(draft) or slugify(instruction[:40])
-        problems = lint_workflow_py(draft, filename=f"{slug}.py", trait_slugs=traits,
-                                    util_names=util_names)
+        problems = lint_workflow_py(draft, filename=f"{slug}.py", trait_slugs=traits)
         if not problems:
             path = workflows_dir(home) / f"{slug}.py"
             base_slug, n = slug, 2

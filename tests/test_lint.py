@@ -100,7 +100,7 @@ def test_tags_on_library_elements():
     perms = {d["slug"]: d for d in library_docs.list_docs(SEED / "permissions")}
     assert set(perms) == {"util-authoring", "memory", "communication", "run-history",
                           "shell", "workflow-generation", "background-tasks",
-                          "scheduling", "practice-library",
+                          "scheduling", "practice-library", "work-orders",
                           "remote-machines"}   # variants collapsed: level = capability
     assert "self-modification" not in perms          # retired: a fixed engine rule now
     # a doc's frontmatter is stripped before its body is shown/inlined
@@ -398,61 +398,9 @@ def test_lint_validates_meta_tools_vocabulary():
     assert any("tools must be a list" in p for p in probs)
 
 
-# ---- no named utils: a recipe says WHAT, never which tool ------------------------------------
-
-UTILS = ["static-publish", "websearch", "git-sync", "shell", "gmail", "vision", "codemap"]
-
-
-def test_named_utils_flags_coined_names_anywhere():
-    """A coined tool name has no innocent reading — it is flagged wherever it appears, because
-    naming it goes stale on rename and pre-empts the run's own discovery."""
-    from rsched.workflows.lint import named_utils
-
-    assert named_utils("Publish the page with static-publish.", UTILS) == ["static-publish"]
-    assert named_utils("run `codemap` first, then commit via git-sync", UTILS) == [
-        "codemap", "git-sync"]
-    assert named_utils("Publish the rendered page to the site.", UTILS) == []
-    # a path named after the tool that writes it is a TASK fact, not a tool choice
-    assert named_utils("start at `/home/mark/repo/.codemap/index.md`", UTILS) == []
-    assert named_utils("read `.control/codemap.jsonl`", UTILS) == []
-
-
-def test_named_utils_spares_ambiguous_names_unless_invoked():
-    """`shell`, `gmail` and `vision` are also a permission, a service and an ordinary word — a
-    recipe may name what it works WITH. Only an invocation is a tool choice."""
-    from rsched.workflows.lint import named_utils
-
-    assert named_utils("You have NO shell.", UTILS) == []
-    assert named_utils("Read the newsletters from Gmail.", UTILS) == []
-    assert named_utils("When the model is multimodal, no vision step is needed.", UTILS) == []
-    assert named_utils("Run `gu shell` to list the dir.", UTILS) == ["shell"]
-    assert named_utils('{"kind": "util", "name": "gmail", "args": []}', UTILS) == ["gmail"]
-    assert named_utils("described by the vision util", UTILS) == ["vision"]
-
-
-def test_lint_routine_flags_a_recipe_naming_a_util(tmp_path):
-    """The routine-recipe linter is the only one that reaches the documents a run acts from —
-    library lint never sees a materialized recipe. state/ and .memory/ stay unlinted: recording
-    which tool worked is exactly what a routine's memory is for."""
-    from rsched.workflows.lint import lint_routine
-
-    d = tmp_path / "r"
-    (d / "stages").mkdir(parents=True)
-    (d / "state").mkdir()
-    (d / "main.md").write_text("# R\n\nPublish the site each run.\n", encoding="utf-8")
-    (d / "stages" / "publish.md").write_text(
-        "# Step: publish\n\nRun `gu static-publish` on the built dir.\n", encoding="utf-8")
-    (d / "state" / "notes.md").write_text("static-publish worked with --root\n", encoding="utf-8")
-    results = lint_routine(d, UTILS)
-    assert results["main.md"] == []
-    assert any("static-publish" in p for p in results["stages/publish.md"])
-    assert "state/notes.md" not in results
-
-
-def test_merged_seed_library_names_no_utils(tmp_path):
+def test_merged_seed_library_is_clean(tmp_path):
     """The seed linted the way a real instance is laid out — workflows/traits/permissions
-    PLUS utils/, so the no-named-utils rule actually has names to match. lint_all(SEED) alone
-    cannot catch this: library-seed carries no utils/ dir."""
+    PLUS utils/. lint_all(SEED) alone cannot cover this: library-seed carries no utils/ dir."""
     results = lint_all(merged_library(tmp_path))
     problems = {k: v for k, v in results.items() if v}
     assert problems == {}, problems

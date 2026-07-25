@@ -29,10 +29,15 @@ def _consume(path: Path, consumed_dir: Path) -> None:
 
 
 def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
-    """Injected user messages, oldest first; answer-* files are left alone. Each item is
+    """Injected messages, oldest first; answer-* files are left alone. Each item is
     {"text": str, "attachments": [rel, ...], "command": bool} — attachments (recorded by
     the web layer for a conversation message) drive auto-attach of images/PDFs; `command`
     marks a slash command the engine EXECUTES instead of injecting as prose.
+
+    A message filed by a sibling ROUTINE (`work_orders.file_work_order`) also carries
+    `work_order` (its `W<n>` id) and `from` (the sending slug). Those two keys are what keep
+    it out of the prompt's user-message channel: a work order is not something the user said,
+    and rendering it as though it were invites the run to answer the wrong party.
     """
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
@@ -53,7 +58,10 @@ def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
         if isinstance(obj, dict) and obj.get("text"):
             out.append({"text": str(obj["text"]),
                         "attachments": [str(a) for a in (obj.get("attachments") or [])],
-                        **({"command": True} if obj.get("command") else {})})
+                        **({"command": True} if obj.get("command") else {}),
+                        **({"work_order": str(obj["work_order"]),
+                            "from": str(obj.get("from") or "")}
+                           if obj.get("work_order") else {})})
         else:
             # every writer produces {"text": …} JSON (web layer, daemon managers) — a
             # readable file that is not that is corrupt; consume it so it can't loop

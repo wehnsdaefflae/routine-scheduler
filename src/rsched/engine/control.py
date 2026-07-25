@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 
+from .. import work_orders
 from ..config import DELIBERATION_LEVELS
 from ..paths import read_json
 from ..schema_guard import validate
@@ -175,7 +176,11 @@ def inject_user_message(loop, m: dict) -> None:
         return
     ctx = loop.ctx
     ctx.transcript.event("user_injection", {"text": m["text"]})
-    msg: dict = {"role": "user", "content": f"USER MESSAGE (injected mid-run):\n{m['text']}"}
+    # A work order already carries its own "WORK ORDER <id> from routine <slug>" heading
+    # (work_orders.message_text) — labelling it a USER MESSAGE would name the wrong sender.
+    lead = ("WORK ORDER (injected mid-run)" if m.get("work_order")
+            else "USER MESSAGE (injected mid-run)")
+    msg: dict = {"role": "user", "content": f"{lead}:\n{m['text']}"}
     if m.get("attachments") and (media := fileops.media_from_paths(ctx, m["attachments"])):
         msg["media"] = media
     loop.messages.append(msg)
@@ -245,8 +250,10 @@ def drain_injections(loop) -> None:
     for qa in inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir):
         inject_user_message(loop, {"text": f"ANSWER to your deferred question "
                                            f"“{qa['question']}”:\n{qa['answer']}"})
-    for m in inbox.drain_messages(ctx.routine.dir, loop.consumed_dir):
+    drained = inbox.drain_messages(ctx.routine.dir, loop.consumed_dir)
+    for m in drained:
         inject_user_message(loop, m)
+    work_orders.stamp_delivered(ctx.server.routines_home, drained, run_id=ctx.run_id)
 
 
 def child_finished_message(*, mode: str, n: int, label: str, workflow: str, status: str,

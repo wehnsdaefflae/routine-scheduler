@@ -16,7 +16,7 @@ import difflib
 import time
 from datetime import datetime, timedelta
 
-from .. import bug_reports, sandbox, schedule_once, utils_lib
+from .. import bug_reports, sandbox, schedule_once, utils_lib, work_orders
 from ..config.routine import record_secret_grants
 from ..ids import is_slug, question_id
 from . import decisions, detach, inbox
@@ -421,6 +421,41 @@ def handle_schedule_run(loop, action: dict) -> dict:
                             requested_by=ctx.run_id)
     return {"kind": "schedule_run", "target": target, "armed": rec["id"],
             "fire_at": rec["fire_at"]}
+
+
+def handle_hand_off(loop, action: dict) -> dict:
+    """Send a durable WORK ORDER to a sibling routine — the inter-routine referral channel the
+    `work-orders` capability gates. Records the order in <routines_home>/.control/
+    work-orders.jsonl under a `W<n>` id and writes the message into the TARGET's inbox, which
+    that routine's next scheduled run drains. Nothing is fired and nothing is woken.
+
+    The gate is not bureaucracy: a delivered work order becomes prose in another routine's
+    prompt, so an ungated version of this action would be a cross-routine injection channel.
+
+    Self-targeting is refused — a note to yourself is `note` or `memory_write`, and letting a
+    run queue prose into its own next prompt is a loop with no reader in between.
+    """
+    ctx = loop.ctx
+    target = str(action.get("target") or "")
+    home = ctx.server.routines_home
+    target_dir = home / target
+    if target == ctx.routine.slug:
+        return {"kind": "hand_off", "target": target, "self_target": True}
+    if not (target_dir / "routine.yaml").is_file():
+        slugs = sorted(p.name for p in home.iterdir()
+                       if not p.name.startswith(".") and (p / "routine.yaml").is_file())
+        return {"kind": "hand_off", "target": target, "unknown_target": True,
+                "suggestions": difflib.get_close_matches(target, slugs, n=3, cutoff=0.5),
+                "valid_targets": slugs}
+    filed = work_orders.file_work_order(
+        home, sender=ctx.routine.slug, run_id=ctx.run_id, target=target, target_dir=target_dir,
+        title=str(action.get("title") or "").strip(),
+        detail=str(action.get("detail") or "").strip(),
+        answers=str(action.get("answers") or "").strip())
+    if filed is None:
+        return {"kind": "hand_off", "target": target, "filed": False}
+    return {"kind": "hand_off", "target": target, "filed": True, "id": filed[0],
+            "delivery": "the target reads it on its next scheduled run"}
 
 
 def handle_report_bug(loop, action: dict) -> dict:

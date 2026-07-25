@@ -1,7 +1,8 @@
-// Items: the system-maintenance index — every self-audit finding (F), decision (D) and bug
-// report (R) filed by any run, with its status, purpose, origin and when it was addressed.
+// Items: the system-maintenance index — every self-audit finding (F), decision (D), bug
+// report (R) filed by any run, and work order (W) one routine handed to another, with its
+// status, purpose, origin and when it was addressed.
 // It absorbed the Audit page in 0.106.0: the report header, the reviewer-feedback composer
-// and the changelog all live here now, and every F/D/R reference anywhere in the console
+// and the changelog all live here now, and every F/D/R/W reference anywhere in the console
 // lands on a card built by itemcard.js.
 //
 // The feedback loop is explicit and unchanged: everything submitted lands in the self-audit
@@ -17,7 +18,8 @@ import { focusRef, linkifyRefs } from "/static/components/reflinks.js";
 import { chip, el, emptyState, skeleton, tagChip, toast, when } from "/static/util.js";
 import { forgetField } from "/static/formpersist.js";
 
-const TYPES = [["finding", "findings"], ["decision", "decisions"], ["bug", "bug reports"]];
+const TYPES = [["finding", "findings"], ["decision", "decisions"], ["bug", "bug reports"],
+               ["work_order", "work orders"]];
 const STATUSES = ["open", "in_progress", "addressed", "settled", "dropped", "unknown"];
 
 export async function render(view, query = {}) {
@@ -31,7 +33,7 @@ export async function render(view, query = {}) {
       el("div", { class: "kicker" }, "console / maintenance"),
       el("h1", {}, "Items"),
       el("div", { class: "sub" },
-        "findings, decisions and bug reports — what it is, where it came from, when it was addressed")),
+        "findings, decisions, bug reports and inter-routine work orders — what it is, where it came from, when it was addressed")),
     el("div", { class: "row" },
       el("button", { class: "btn small", onclick: () => load() }, "↻ refresh"))));
 
@@ -229,7 +231,7 @@ export async function render(view, query = {}) {
     } else {
       header.append(data.last_run
         ? emptyState("▢", "No report from the last run",
-            `The last run (${data.last_run.state}) produced no report. Items known from the changelog and the bug stream are still listed below.`)
+            `The last run (${data.last_run.state}) produced no report. Items known from the changelog, the bug stream and the work-order ledger are still listed below.`)
         : emptyState("◌", "Never ran",
             "The self-audit routine runs on its schedule (or hit ▶ run now on its page). Leave a prompt below for its first run."));
     }

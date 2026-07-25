@@ -19,6 +19,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.108.0] — 2026-07-26
+
+### Added
+- **`hand_off` — the inter-routine referral channel.** A routine addresses a durable WORK
+  ORDER to another routine: `target` (its slug), `title`, `detail`, and optional `answers`
+  (the `W<n>` id of an order this one closes). It is filed in the append-only ledger
+  `~/routines/.control/work-orders.jsonl` and delivered as a message into the target's
+  `inbox/`, which that routine's NEXT SCHEDULED RUN drains. It starts no run and wakes
+  nobody — that is the whole point, and `tests/test_work_orders.py` pins it by asserting the
+  delivery writes exactly one file and creates no spool, run dir or status.
+  `scheduling`/`schedule_run` was briefly granted to the maintenance routines for this and
+  reverted: it arms a one-shot that FIRES a run, which seizes the target's schedule.
+- Gated by a new `work-orders` permission (+ `hand_off` in `GATED_KINDS`), granted to
+  `self-audit`, `routine-improver`, `config-optimizer` and `global-utils-review`. The gate is
+  not bureaucracy: a delivered work order becomes prose in another routine's prompt, so an
+  ungated version would be a cross-routine injection channel. Self-targeting is refused.
+- Work orders reach the prompt in their OWN section, `# WORK ORDERS FROM OTHER ROUTINES`,
+  split out of `# MESSAGES FROM THE USER` — a work order is not something the user said, and
+  rendering it as one has the run answer the wrong party. Mid-run they inject as
+  `WORK ORDER (injected mid-run)`. The section carries no standing prose; how to receive one
+  is the permission doc's job, already in CAPABILITIES when held.
+- `W<n>` joins `F`/`D`/`R` as an item type on the Items page, with the lifecycle the ledger
+  exists to expose: `open` (filed) → `in_progress` (the target's run drained it; the engine
+  stamps a `delivered` event row) → `settled` (the target answered with a `hand_off` back).
+  The card shows the routing line, so a hand-off that carried is distinguishable from one
+  that silently never arrived.
+- `routine-improver` gets `stages/library-pass.md`, making its ownership of the shared
+  library real rather than asserted. Once per sweep it reads
+  `~/routines/.control/workflow-usage.jsonl` (written every run since 0.7.0 and, until now,
+  read by no agent), tallies each per-target fix under the pattern slug that target was
+  materialized from in `state/library-watch.json`, and carries a confirmed PATTERN defect
+  upstream — lint-gated, `META["version"]`-bumped, committed with its blast radius. It keeps
+  the two checks the archived `workflow-curator` earned: a defect must show across routines
+  built from the same pattern, and a library file must actually back the slug.
+- `maintenance-routing` is now a SEEDED library trait (a fresh install lacked it), with its
+  ladder step 2 filled in: hand it to the owner with `hand_off`, and close what you receive.
+
+### Changed
+- **The no-named-utils rule moves from a linter to the generation prompts.** `lint.named_utils`,
+  `lint.lint_recipe_text`, `lint.lint_routine` and their gate in `rsched validate` are removed
+  (net −156 lines). Nearly every recipe, trait, pattern and playbook is LLM-written, so a check
+  over the output leaves the generator producing the same defect forever; and because the util
+  catalog is dynamic (`global-utils-review` creates and removes utils autonomously), any
+  name-matching check turns unrelated files red the day a util is named after an ordinary word
+  — `report`, `notes`, `digest` — and blocks library saves with a 422 until someone edits a
+  frozenset. `workflows/adapt.py` and `workflows/generate.py` now state the rule strictly,
+  enumerating the forbidden forms. The existing recipes were swept once by hand: 63 flagged
+  files down to 5, all five legitimate (the `jsonblob.com` service, a path, a literal error
+  string). The general rule — correct the cause, never add a check for the symptom — is now a
+  CLAUDE.md gotcha.
+- `self-audit` loses the shared library from its `fs_write_roots` (it keeps READ). One owner,
+  enforced by config rather than by prose; it hands library work over with `hand_off`.
+- `inbox.drain_messages` carries `work_order`/`from` through from the message file, so the
+  boot drain and the mid-run injection can route and label a sibling routine's message.
+
 ## [0.107.0] — 2026-07-25
 
 Reviewer-backlog sweep: markdown in every message body, a hard "recipes name capabilities,

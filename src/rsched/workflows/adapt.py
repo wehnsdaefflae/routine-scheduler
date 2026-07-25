@@ -137,7 +137,18 @@ never write a util's flags or invocation. Name the CAPABILITY the step needs ("f
 the run: it is shown the live tool catalog in its CAPABILITIES section, and it records what worked
 in its own memory across runs. A tool named here is stale the day it is renamed or removed, and it
 stops the run from discovering a better one. This does NOT soften the inlining rule above: TASK
-facts (values, thresholds, paths, formats) belong in the recipe; TOOL choices never do."""
+facts (values, thresholds, paths, formats) belong in the recipe; TOOL choices never do.
+
+INSTRUCTIONS, NEVER HISTORY — write only what the run must DO. The agent reading this recipe has
+never seen an earlier draft of it, so a sentence contrasting the current design with a previous
+one is invisible to it: it costs tokens every turn and teaches nothing, and "X was retired" or
+"the old approach did Y" read as facts about the world it should act on. Forbidden in every line
+you write: "no longer", "used to", "previously", "as of the last change", "was retired/replaced/
+renamed", "nothing replaced it", "never reintroduce", "don't revert to", "the old/former/previous
+<thing>", and dates or counts that were true once. State the current design in the present tense
+and stop. Where a rule exists for a reason that matters, express the reason as a consequence of
+following it now ("commit before the multi-file edit so you have an undo point"), never as the
+history of the decision."""
 
 _OUTLINE_TAIL = """\
 Plan this routine's STAGE OUTLINE — the set of stage modules a fresh agent will work through in

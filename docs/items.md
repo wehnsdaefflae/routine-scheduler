@@ -1,15 +1,16 @@
 # Items — the system-maintenance index
 
 An **item** is one unit of maintenance work on the scheduler itself: a self-audit
-**finding** (`F<n>`), a self-audit **decision** (`D<n>`), or a **bug report** (`R<n>`) filed
-by any run through the ungated `report_bug` action. The Items page (`#/items`) is the one
+**finding** (`F<n>`), a self-audit **decision** (`D<n>`), a **bug report** (`R<n>`) filed
+by any run through the ungated `report_bug` action, or a **work order** (`W<n>`) one routine
+handed to another through `hand_off`. The Items page (`#/items`) is the one
 place where every item is listed with its status, what it is for, where it came from, and
 when it was addressed. It replaced the old Log and Audit pages in 0.106.0.
 
-Items are a READ MODEL (`rsched/readmodels/items.py`): four files on disk are merged into
+Items are a READ MODEL (`rsched/readmodels/items.py`): five files on disk are merged into
 one shape on demand. Nothing in this path writes an item — the self-audit routine owns
-`report.json`, the engine owns `bug-reports.jsonl`, the web layer owns the answered-decision
-markers, and the changelog is written by self-audit's own runs.
+`report.json`, the engine owns `bug-reports.jsonl` and `work-orders.jsonl`, the web layer owns
+the answered-decision markers, and the changelog is written by self-audit's own runs.
 
 ## Sources
 
@@ -19,6 +20,7 @@ markers, and the changelog is written by self-audit's own runs.
 | `<self-audit>/audit/changelog.jsonl` | the self-audit routine | the archive: which commit addressed which item, when |
 | `<self-audit>/audit/decisions-answered.json` | the web layer (`api_audit`) | durable "the user answered this decision" markers |
 | `<routines>/.control/bug-reports.jsonl` | the engine (`rsched/bug_reports.py`) | bug reports from every routine |
+| `<routines>/.control/work-orders.jsonl` | the engine (`rsched/work_orders.py`) | work orders between routines, and how far each got |
 
 `report.json` carries only the CURRENT window (schema 1: `run_id`, `generated`,
 `since{commit,window}`, `summary`, `findings[]`, `decisions[]`) — a report lists the items
@@ -51,10 +53,10 @@ arbitrary payload keys). Nothing reads them.
 }
 ```
 
-- **`id`** — `F<n>` finding, `D<n>` decision, `R<n>` bug report. The prefix is the type, and
-  the three namespaces never collide. `R` was chosen over `B` because the user's own
-  reviewer-backlog items are written `B<n>` in prose and would mislink.
-- **`type`** — `finding` | `decision` | `bug`.
+- **`id`** — `F<n>` finding, `D<n>` decision, `R<n>` bug report, `W<n>` work order. The prefix
+  is the type, and the four namespaces never collide. `R` was chosen over `B` because the
+  user's own reviewer-backlog items are written `B<n>` in prose and would mislink.
+- **`type`** — `finding` | `decision` | `bug` | `work_order`.
 - **`status`** — see below. The key is `status`, never `state`: decisions already carried
   `status` on disk and a synonym would fork the vocabulary.
 - **`title`**, **`detail`** — the item's own prose, verbatim from its source. An archive-only
@@ -72,7 +74,8 @@ arbitrary payload keys). Nothing reads them.
   current rather than historical.
 - **`archive_only`** — true when no source holds the item's own record any more and it
   survives solely through the changelog / answered markers.
-- Type extras: **`severity`** (findings), **`options[]`** + **`resolution`** (decisions).
+- Type extras: **`severity`** (findings), **`options[]`** + **`resolution`** (decisions),
+  **`to`** + **`delivered{ts,run_id}`** + **`answers`** + **`answered_by`** (work orders).
 
 ## Status vocabulary
 
@@ -102,6 +105,22 @@ Precedence, in order — the first rule that applies wins:
 
 A status value outside the vocabulary is a data error and reads as `unknown`; the read model
 does not translate synonyms.
+
+### Work orders
+
+A `W<n>` derives its status from its OWN ledger, which is the authority for it the way
+`report.json` is for an `F<n>`. In precedence order: **`settled`** when a later work order
+carries `answers: "<this id>"` — the target replied, having acted or having said why not;
+**`addressed`** when a changelog row names the id; **`in_progress`** once the target's run
+drained the message from its inbox and the engine stamped a `delivered` event onto the row;
+otherwise **`open`** — filed, and waiting for the target's next scheduled run.
+
+That progression is the whole reason the ledger exists: it distinguishes a hand-off that
+carried from one that silently never arrived. The card shows the routing line
+(`sender → target`, whether it was picked up, and which reply closed it).
+
+The stream is append-only. The order row is written by `hand_off`; the `delivered` event is a
+second row, folded onto the order by `work_orders.read_work_orders`.
 
 ## Joining the changelog
 

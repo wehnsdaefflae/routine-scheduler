@@ -6,6 +6,7 @@ composed in composer.py.
 
 from __future__ import annotations
 
+from .. import work_orders
 from ..paths import read_json, resolve_rel
 from . import fileops, inbox
 from .composer import build_system_prompt, kickoff_message, state_digest
@@ -30,17 +31,20 @@ def boot(loop) -> None:
         deferred_qa = inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir)
         open_qs = inbox.open_questions(ctx.routine.dir)
         msgs = inbox.drain_messages(ctx.routine.dir, loop.consumed_dir)
+        work_orders.stamp_delivered(ctx.server.routines_home, msgs, run_id=ctx.run_id)
         digest = state_digest(ctx.routine.dir, deferred_qa, open_qs)
     else:
         msgs = []
         digest = "(subrun — no routine state digest; everything you need is in the instruction)"
     resuming = loop.resume and ctx.depth == 0
     # slash commands queued while no run was live EXECUTE at boot (below) — only prose
-    # messages become the prompt's MESSAGES section
+    # messages become the prompt's MESSAGES sections, and a sibling routine's work order
+    # gets its own section rather than being read as something the user said
+    prose = [] if resuming else [m for m in msgs if not m.get("command")]
     system = build_system_prompt(ctx, loop.workflow_body, loop.instruction, digest,
-                                 [] if resuming
-                                 else [m["text"] for m in msgs if not m.get("command")],
-                                 allowed_kinds=loop.allowed_tools)
+                                 [m["text"] for m in prose if not m.get("work_order")],
+                                 allowed_kinds=loop.allowed_tools,
+                                 work_order_msgs=[m["text"] for m in prose if m.get("work_order")])
     if resuming:
         from .transcript import read_events
         events, _ = read_events(ctx.run_dir / "transcript.jsonl", 0)

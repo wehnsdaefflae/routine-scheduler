@@ -278,6 +278,8 @@ class EngineLoop:
                         or executor.dispatch(action, ctx)
                 elif action["kind"] == "schedule_run":
                     obs = interact.handle_schedule_run(self, action)
+                elif action["kind"] == "hand_off":
+                    obs = interact.handle_hand_off(self, action)
                 elif action["kind"] == "report_bug":
                     obs = interact.handle_report_bug(self, action)
                 elif action["kind"] == "spawn":

@@ -94,7 +94,8 @@ endpoints, the central Secrets store, GitHub, the library repo.
   write-only Secrets store
   every util reads, GitHub device flow, library/source remotes, graceful server restart.
 - **Items** — the system-maintenance index: every self-audit finding (`F7`), decision
-  (`D14`) and bug report (`R3`) any run filed, with its status, purpose, origin and the
+  (`D14`), bug report (`R3`) any run filed, and work order (`W2`) one routine handed to
+  another, with its status, purpose, origin and the
   commits that addressed it — filterable by type, status, routine and free text, with the
   self-audit report header, its changelog, and the feedback loop into its next run. Every
   `F`/`D`/`R` mention anywhere in the console is a link to the item card it names.
