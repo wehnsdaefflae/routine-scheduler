@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.112.0] — 2026-07-26
+
+### Added
+- **The util sandbox now exposes operator-staged shared read-only asset dirs to every run.**
+  `sandbox.policy_for_run` adds any existing dir in `_SHARED_RO_UNDER_ROUTINES` (currently the
+  unpacked **NopeCHA browser extension** under the routines home's `.control/nopecha-extension/`)
+  to the run's read roots, derived from `server.routines_home` and **existence-guarded** so a
+  deploy that has not staged it is unaffected. This lets `launch-captcha-browser` load the
+  extension with `--load-extension=<dir>` from inside the Landlock jail (a CDP Chrome subprocess
+  otherwise can't read a path outside the routine's own roots). Read-only: a util may LOAD the
+  extension, never write it. The NopeCHA free tier solves < ~100 CAPTCHAs/day with no key, so no
+  secret is required for that volume. Wiring of `launch-captcha-browser` itself belongs to
+  global-utils-review (R28). Operator request R21. Test:
+  `tests/test_sandbox.py::test_policy_for_run_includes_staged_shared_read_roots`.
+
 ## [0.111.0] — 2026-07-26
 
 ### Changed

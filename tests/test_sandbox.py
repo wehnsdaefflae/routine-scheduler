@@ -92,6 +92,31 @@ def test_policy_for_run_derives_from_routine(tmp_path):
     assert base.mode == "strict" and base.read_roots == () and base.write_roots == ()
 
 
+def test_policy_for_run_includes_staged_shared_read_roots(tmp_path):
+    """A run's util sandbox also sees operator-staged shared read-only asset dirs (the
+    NopeCHA browser extension launch-captcha-browser loads) — existence-guarded, derived
+    from server.routines_home, never the routine's own roots. (R21/R28)"""
+    rhome = tmp_path / "rhome"
+    ext = rhome / ".control" / "nopecha-extension"
+    ext.mkdir(parents=True)
+    server = SimpleNamespace(sandbox="permissive", routines_home=rhome)
+    routine = SimpleNamespace(dir=tmp_path / "r", fs_read_roots=[Path("/data")],
+                              fs_write_roots=[])
+    policy = sandbox.policy_for_run(server, routine)
+    assert ext in policy.read_roots and Path("/data") in policy.read_roots
+
+    # Not staged → contributes nothing (a fresh deploy is unaffected).
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    policy2 = sandbox.policy_for_run(SimpleNamespace(sandbox="permissive", routines_home=empty),
+                                     routine)
+    assert all("nopecha-extension" not in str(p) for p in policy2.read_roots)
+
+    # A server double without routines_home degrades cleanly (no shared roots).
+    policy3 = sandbox.policy_for_run(SimpleNamespace(sandbox="off"), routine)
+    assert policy3.read_roots == (Path("/data"),)
+
+
 @pytest.mark.skipif(__import__("shutil").which("uv") is None,
                     reason="uv required (run_util checks it before the sandbox)")
 def test_strict_refusal_reaches_util_observation(tmp_path, monkeypatch):

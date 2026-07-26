@@ -67,10 +67,29 @@ class SandboxPolicy:
     write_roots: tuple[Path, ...] = ()
 
 
+# Read-only asset dirs the util sandbox may see on EVERY run regardless of the calling
+# routine — operator-staged host resources that no single routine owns. Currently the
+# unpacked NopeCHA browser extension `launch-captcha-browser` loads with --load-extension
+# (staged under the routines home's .control/; the free tier solves < ~100 CAPTCHAs/day with
+# no key). Existence-guarded, so a deploy that has not staged it is unaffected. Read-only:
+# a util may LOAD the extension, never write it.
+_SHARED_RO_UNDER_ROUTINES = (".control/nopecha-extension",)
+
+
+def _shared_read_roots(server) -> tuple[Path, ...]:
+    home = getattr(server, "routines_home", None)
+    if home is None:
+        return ()
+    return tuple(p for rel in _SHARED_RO_UNDER_ROUTINES
+                 if (p := Path(home) / rel).exists())
+
+
 def policy_for_run(server, routine) -> SandboxPolicy:
-    """The sandbox view of one run: its routine dir writable, its fs roots visible."""
+    """The sandbox view of one run: its routine dir writable, its fs roots visible, plus any
+    operator-staged shared read-only asset dirs (e.g. the captcha-solver browser extension).
+    """
     return SandboxPolicy(mode=server.sandbox,
-                         read_roots=tuple(routine.fs_read_roots),
+                         read_roots=(*routine.fs_read_roots, *_shared_read_roots(server)),
                          write_roots=(routine.dir, *routine.fs_write_roots))
 
 
