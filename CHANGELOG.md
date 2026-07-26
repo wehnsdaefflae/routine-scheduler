@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.111.0] — 2026-07-26
+
+### Changed
+- **`read_file` now END-truncates an over-cap read on whole-line boundaries instead of the
+  head+tail elision.** A large read kept the head AND tail with the middle elided — fine for
+  opaque output (a util's stderr, where the traceback END must survive), but wrong for an ordered
+  file read: the reader lost the middle and had no clean way to continue. `engine/fileops._read_one`
+  now keeps whole HEAD lines up to the observation cap, drops the tail, sets `end_line` to the last
+  line actually shown, and appends a marker naming the exact `start_line=N` to re-read — so a
+  follow-up read continues IN SEQUENCE. The shared `truncate()` (util stderr, vision output) is
+  unchanged. Operator AUDIT note. Test: `tests/test_view_image.py`
+  `test_read_file_end_truncates_and_resumes_in_sequence`. (F204)
+
 ## [0.110.0] — 2026-07-26
 
 ### Fixed

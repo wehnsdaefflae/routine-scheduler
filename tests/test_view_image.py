@@ -208,3 +208,30 @@ def test_view_image_native_end_to_end(make_routine, scripted, tmp_path):
                 and e["payload"].get("kind") == "view_image"]
     assert view_obs and view_obs[0]["payload"]["media"][0]["media_type"] == "image/png"
     assert ep.calls[-1]["messages"][-1].get("media")   # media rode the finish turn's prompt
+
+
+def test_read_file_end_truncates_and_resumes_in_sequence(tmp_path):
+    """A file read past the observation cap keeps whole HEAD lines and drops the tail (not the
+    head+tail elision opaque output gets), reporting the next start_line so a follow-up read
+    continues in order. Operator AUDIT note / F204."""
+    from types import SimpleNamespace
+
+    from rsched.engine import fileops
+    from rsched.engine.observations import OBS_CAP_CHARS
+
+    big = tmp_path / "big.txt"
+    big.write_text("\n".join(f"line-{i:05d}-{'x' * 24}" for i in range(4000)))
+    ctx = SimpleNamespace(routine=SimpleNamespace(dir=tmp_path, fs_read_roots=[]),
+                          grants=None, seen_paths=set())
+
+    obs = fileops._read_one("big.txt", {"max_lines": 500}, ctx)
+    assert obs["truncated"] is True
+    assert "line-00000-" in obs["content"]                  # head preserved
+    assert "line-00499-" not in obs["content"]              # tail dropped, not head+tail
+    assert obs["end_line"] < 500                            # fewer lines than the window
+    assert len(obs["content"]) <= OBS_CAP_CHARS + 300       # bounded (content + marker)
+    assert f"start_line={obs['end_line'] + 1}" in obs["content"]
+
+    nxt = fileops._read_one("big.txt", {"start_line": obs["end_line"] + 1, "max_lines": 500}, ctx)
+    assert nxt["start_line"] == obs["end_line"] + 1         # resumes in sequence
+    assert f"line-{obs['end_line']:05d}-" in nxt["content"]  # the next line is now shown

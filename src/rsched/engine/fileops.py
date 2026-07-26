@@ -12,7 +12,7 @@ from .. import sandbox, utils_lib
 from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, guess_media_type
 from ..paths import atomic_write, resolve_rel
 from ..readmodels.statemap import STAGES_DIR
-from .observations import truncate
+from .observations import OBS_CAP_CHARS, truncate
 from .run_context import RunContext
 
 READ_DEFAULT_MAX_LINES = 200
@@ -71,9 +71,32 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     start = max(1, int(action.get("start_line") or 1))
     max_lines = min(int(action.get("max_lines") or READ_DEFAULT_MAX_LINES), 500)
     window = lines[start - 1 : start - 1 + max_lines]
-    content, truncated = truncate("\n".join(window))
+    end_line = min(start - 1 + max_lines, len(lines))
+    content = "\n".join(window)
+    truncated = False
+    if len(content) > OBS_CAP_CHARS:
+        # END-truncate a file read: keep whole lines from the HEAD, drop the tail, and report
+        # the exact next start_line — so a follow-up read continues IN SEQUENCE. (Opaque output
+        # rides truncate()'s head+tail elision, where the tail's tail — a traceback end — must
+        # survive; a file read is ordered, so dropping the tail and resuming is the right shape.
+        # Operator AUDIT note, F204.)
+        kept: list[str] = []
+        used = 0
+        for ln in window:
+            if kept and used + len(ln) + 1 > OBS_CAP_CHARS:
+                break
+            kept.append(ln)
+            used += len(ln) + 1
+        end_line = start + len(kept) - 1
+        core = "\n".join(kept)
+        if len(core) > OBS_CAP_CHARS:          # a single line longer than the cap
+            core = core[:OBS_CAP_CHARS]
+        content = (core + f"\n[... {len(kept)} of {len(window)} window lines shown (through line "
+                   f"{end_line} of {len(lines)}); truncated at {OBS_CAP_CHARS} chars — re-read "
+                   f"with start_line={end_line + 1} to continue in sequence ...]")
+        truncated = True
     return {"path": rel_path, "start_line": start,
-            "end_line": min(start - 1 + max_lines, len(lines)), "total_lines": len(lines),
+            "end_line": end_line, "total_lines": len(lines),
             "content": content, "truncated": truncated}
 
 
