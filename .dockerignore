@@ -3,3 +3,5 @@
 !pyproject.toml
 !uv.lock
 !deploy/docker-entrypoint.sh
+# The tor service's config (deploy/Dockerfile.tor COPYs it) — same shared build context.
+!deploy/torrc

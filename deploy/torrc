@@ -1,0 +1,22 @@
+# Tor client config for the rsched `tor` service — SOCKS only, no relay, no exit.
+
+# Listen on the container's network interface, not just loopback: the CLIENT is a different
+# container (rsched), so 127.0.0.1 would be unreachable. This is safe only because the compose
+# service publishes NO ports — the socket is reachable only from the compose network. Never add
+# a `ports:` mapping for 9050; that would expose an open proxy to the LAN.
+SocksPort 0.0.0.0:9050
+
+# Belt to the no-published-ports brace: accept the RFC1918 ranges Docker assigns, refuse the rest.
+SocksPolicy accept 10.0.0.0/8
+SocksPolicy accept 172.16.0.0/12
+SocksPolicy accept 192.168.0.0/16
+SocksPolicy reject *
+
+# Never carry traffic for anyone else.
+ClientOnly 1
+ExitRelay 0
+
+DataDirectory /var/lib/tor
+# stdout so `docker compose logs tor` shows bootstrap progress; notice level keeps it quiet
+# once running. Tor logs no client request paths at this level.
+Log notice stdout

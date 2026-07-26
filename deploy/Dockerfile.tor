@@ -1,0 +1,19 @@
+# Tor SOCKS proxy — the egress path for the `darknet` util (docs/darknet.md).
+#
+# Built from Debian's own `tor` package rather than a third-party proxy image on purpose: this
+# is the component that decides whether hidden-service traffic is actually anonymised, so it
+# comes from the same distribution the main image already trusts, and nothing else runs here.
+# Client only — this is never a relay or an exit.
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends tor \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY deploy/torrc /etc/tor/torrc
+
+# The package creates /var/lib/tor owned by debian-tor; the compose named volume inherits that
+# ownership from the image, so the daemon runs unprivileged with no entrypoint chown dance.
+USER debian-tor
+EXPOSE 9050
+
+CMD ["tor", "-f", "/etc/tor/torrc"]

@@ -55,7 +55,11 @@ The docstring header (the util's only machine-read surface) declares network nee
 `net: outbound` (TCP unrestricted) or `net: none` (ALL TCP bind+connect denied, Landlock
 ABI ≥ 4). **Undeclared = none — fail closed**; `header_problems` rejects a new util
 without the line. Landlock cannot restrict UDP/ICMP today: the network boundary is
-TCP-only — honest, not oversold. Sibling calls resolve transitively: `util_needs` walks
+TCP-only — honest, not oversold. It also cannot restrict a *destination*: the rules are
+per-port, and the spec carries `net` as a bool, so `outbound` means the whole internet. A
+capability that must egress a particular way — `darknet`, which has to reach Tor and nothing
+else — gets that property from the util's own code, not the kernel (see
+[darknet](darknet.md)). Sibling calls resolve transitively: `util_needs` walks
 the `calls:` graph, so a util calling a `net: outbound` sibling gets (and needs) the open
 network, and inherits the sibling's declared secrets.
 

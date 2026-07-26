@@ -101,7 +101,7 @@ def test_tags_on_library_elements():
     assert set(perms) == {"util-authoring", "memory", "communication", "run-history",
                           "shell", "workflow-generation", "background-tasks",
                           "scheduling", "practice-library",
-                          "remote-machines"}   # variants collapsed: level = capability
+                          "remote-machines", "darknet"}  # variants collapsed: level = capability
     assert "self-modification" not in perms          # retired: a fixed engine rule now
     # a doc's frontmatter is stripped before its body is shown/inlined
     raw = (SEED / "traits" / "web-research.md").read_text()

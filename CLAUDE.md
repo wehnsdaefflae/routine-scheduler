@@ -34,7 +34,8 @@ one you are about to touch, not all of them.
 - `docs/items.md` — the maintenance-item index (findings, decisions, bug reports): the
   item shape, the status vocabulary and its precedence, and the changelog join
 - `docs/sandboxing.md`, `docs/endpoints.md`, `docs/oauth-connections.md`,
-  `docs/remote-machines.md`, `docs/notifications.md` — the outward-facing surfaces
+  `docs/remote-machines.md`, `docs/darknet.md`, `docs/notifications.md` — the outward-facing
+  surfaces
 - `docs/search.md`, `docs/run-analytics.md`, `docs/authoring.md`, `docs/examples.md`,
   `docs/getting-started.md` — read models, authoring, onboarding
 - `.codemap/` — the derived module/route/contract map `self-audit` works from

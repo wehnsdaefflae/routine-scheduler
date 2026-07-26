@@ -19,6 +19,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.113.0] — 2026-07-26
+
+### Added
+- **Darknet access as an opt-in capability: one util, one permission, one container — and no
+  engine code.** A routine holding the new `darknet` permission can search Tor hidden services
+  and read a `.onion` page. The gate needed no source change: which utils are *reserved* is the
+  union of every library permission doc's `requires.utils` (`grants.read_library_requires`), so
+  `library-seed/permissions/darknet.md` declaring `requires: {utils: [darknet]}` **is** the
+  enforcement. It is not a default and is deliberately absent from `ADOPT_PERMISSIONS`.
+  - New `tor` compose service (`deploy/Dockerfile.tor`, `deploy/torrc`) — SOCKS5 on `tor:9050`,
+    built from Debian's own `tor` package rather than a third-party proxy image, since this is the
+    component that decides whether traffic is actually anonymised. **No `ports:` mapping** (that
+    would be an open proxy on the LAN), with `SocksPolicy` RFC1918-accept + `reject *` behind it.
+    State is the named volume `tor-data` — the one deliberate exception to
+    every-data-home-is-a-bind, because Tor's guard state is regenerable and worthless on another
+    host, and a named volume still survives container recreation.
+  - The library `darknet` util: `search` (via the index's onion mirror, so the util stays
+    `.onion`-only), `fetch` (text or HTML), and `check` (health probe; exits non-zero on a dead
+    circuit in *both* output modes). `search` is a two-step exchange: the index serves a rotating
+    anti-bot token as a hidden form field and 302s to nothing without it, so the form page is
+    fetched first and the token sent with the query. No browser is needed — the token is plain
+    HTML and the result rows are server-rendered; verified on the instance that plain HTTP and
+    headless Chromium return identical result sets, despite the index's "no non-JavaScript
+    version" banner (which concerns its own UI, not its search). `socks5h://` always — a `socks5://` override is upgraded,
+    since `.onion` has no DNS and local resolution both leaks and cannot work. Clearnet is refused
+    before the proxy is contacted, redirects are followed **manually** so a `Location:` header
+    cannot walk the request off `.onion`, and there is **no direct-connection fallback**: if the
+    proxy is down the call fails naming it, because fetching over clearnet instead is a
+    deanonymisation bug rather than a degradation.
+  - Documented honestly in the new `docs/darknet.md`: the boundary is the util's own code, not the
+    kernel — `net:` is a bool and Landlock ABI 4 restricts bind/connect by *port*, not
+    destination, so `outbound` means the whole internet. `docs/sandboxing.md` now says so at the
+    point where it describes the network declaration.
+
 ## [0.112.0] — 2026-07-26
 
 ### Added

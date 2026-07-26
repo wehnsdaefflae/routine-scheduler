@@ -166,6 +166,14 @@ polled), `push`/`pull` over SFTP. Host keys are pinned (a mismatch refuses to co
 key comes from the Secrets store (never `~/.ssh`) and reaches only the `remote` util of a routine
 that binds the machine. See `docs/remote-machines.md` (also on the Help tab).
 
+## Darknet access
+
+A routine holding the opt-in `darknet` permission can search Tor hidden services and read a
+`.onion` page, through a `tor` SOCKS proxy that runs as its own compose service. The capability is
+read-only and `.onion`-only: clearnet URLs are refused, redirects off `.onion` are refused, and
+there is no fallback to a direct connection if the proxy is down — failing is correct, because
+fetching over clearnet instead would deanonymise the request. See `docs/darknet.md`.
+
 ## CLI
 
 `uv run rsched --help` — `daemon` (what the service/container runs: scheduler + web in one

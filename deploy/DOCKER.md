@@ -5,6 +5,11 @@ Everything mutable (the source tree, `config.yaml`, `~/.credentials`, `~/routine
 library repo) is **bind-mounted**, so the whole system moves as a tarball of those directories and
 the container itself stays disposable.
 
+Compose defines a **second service, `tor`** (`deploy/Dockerfile.tor`) — the SOCKS proxy the
+`darknet` util egresses through, reachable only from the compose network. Its state is the one
+named volume (`tor-data`, regenerable guard state, so it is deliberately not part of the tarball);
+`docker compose build` builds both images. See `docs/darknet.md`.
+
 Container paths are always `/home/mark/...` (routines and config bake absolute paths, so they must
 not change). Host paths are `${RSCHED_HOME}`-relative (default `/home/mark`).
 

@@ -65,3 +65,27 @@ services:
       - SYS_ADMIN
     security_opt:
       - apparmor:unconfined
+    depends_on:
+      - tor
+
+  # Tor SOCKS proxy — egress for the `darknet` util (docs/darknet.md). Its own service, so the
+  # engine image stays engine-only and the daemon does not supervise a second process. Reached
+  # at socks5h://tor:9050 over the compose network; deliberately NO `ports:` mapping, or it
+  # would be an open proxy on the LAN.
+  tor:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.tor
+    image: rsched-tor:latest
+    container_name: rsched-tor
+    restart: unless-stopped
+    volumes:
+      # A NAMED VOLUME, deliberately not a bind. Every *data* home here is a bind so the
+      # instance migrates as a tarball — but this is Tor's guard/consensus state: regenerable,
+      # not user data, and worth nothing on a new host. A named volume still survives container
+      # recreation (the failure the bind rule exists to prevent), and inherits the image's
+      # debian-tor ownership so the daemon needs no privileged setup.
+      - tor-data:/var/lib/tor
+
+volumes:
+  tor-data:
