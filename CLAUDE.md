@@ -30,7 +30,10 @@ one you are about to touch, not all of them.
   each curated practice module's provenance
 - `docs/subtasks.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
   — the child-task and firing mechanisms
-- `docs/conversations.md`, `docs/playbooks.md` — interactive sessions and reusable briefs
+- `docs/conversations.md`, `docs/playbooks.md` — interactive sessions and reusable briefs. A
+  conversation's spine is EMERGENT: it writes its own `state/plan.md` (inlined at the top of every
+  reply by `state_digest`) where a routine gets `stages/` + `phase.json` compiled at creation —
+  don't "fix" a conversation by giving it a compiled workflow
 - `docs/items.md` — the maintenance-item index (findings, decisions, bug reports): the
   item shape, the status vocabulary and its precedence, and the changelog join
 - `docs/sandboxing.md`, `docs/endpoints.md`, `docs/oauth-connections.md`,
@@ -72,7 +75,12 @@ one you are about to touch, not all of them.
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, edit_file,
   memory_read, memory_write, read_trait, llm, spawn, subtask, detach, schedule_run,
   subruns, kill, wait, ask_user, report, finish` (21). `finish` and `report` are ALWAYS_KINDS — available on every
-  turn regardless of the workflow's `tools:` allowlist or the capability set. Every action carries `say` (finding-first narration:
+  turn regardless of the workflow's `tools:` allowlist or the capability set. **The engine never ends a run
+  the model could have ended itself**: the FIRST budget violation spends a one-time RESERVED FINISH TURN
+  (schema narrowed to `finish`, one turn granted, `OBSERVATION (budget spent)` telling it so), and only a
+  second violation force-finishes — so a run overruns a budget by at most one turn and the summary is
+  always authored. Budgets are a runaway BACKSTOP, never a pace; do not reintroduce prose that has a run
+  ration its work against the turn counter. Every action carries `say` (finding-first narration:
   what the last observation taught you + why this action; terse for routine steps, 2-3 sentences
   at decision points; worded per the routine's `deliberation` level) + `kind`, plus an optional
   **`note`** — 1-3 SELF-CONTAINED lines worth keeping beyond the context window, engine-filed to

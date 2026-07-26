@@ -38,7 +38,7 @@ Eight sections, in this order:
 | 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow **and the task**: a top-level routine's recipe is self-contained — goal, deliverable, constraints and completion criteria are compiled into `main.md` + `stages/*.md` (stage detail read on demand), practice detail in `traits/*.md`. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
 | 5 | `# INSTRUCTION (your assigned task)` | the parent's spawn `prompt` (subruns), or `instruction.md` (conversations) | **Subruns AND conversations.** A top-level scheduled ROUTINE has NO instruction section and no `instruction.md` on disk: its task is entirely its self-contained recipe (`main.md` + `stages/`) — the clarified instruction was only a transient compile **SEED**, consumed at creation and never persisted. A **subrun** has no decomposed stages, so its self-contained brief (the parent's `prompt`) rides here. A **conversation** runs at depth 0 but its task is its first message (`instruction.md`), so it carries the section too (discriminated by HOME — its dir sits directly under `conversations_home`); without it the agent would see only the converse HOW-to pattern and never its actual task. |
 | 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ capabilities — switched-off gated kinds like `memory_*`/`write_util` simply don't appear), the enabled capabilities + the held conduct permissions, each held permission's short capability note (the library doc's body, capped), any **bound remote machines** (name + description + tags — the SSH hosts this routine can act on via the `remote` util, named here so the model knows its hardware without a discovery turn), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary, reserved utils flagged). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
-| 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the `state/` file list, `stages/` module names, the `traits/` practice-module names, the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), open deferred questions, answers that arrived since the last run. |
+| 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the **WORKING PLAN** (`state/plan.md`, inlined in full up to 60 lines — the run's own living decomposition; see below), the `state/` file list, `stages/` module names, **`artifacts/` delivered so far** (name + size), the `traits/` practice-module names, the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), open deferred questions, answers that arrived since the last run. |
 
 **The projection: a run is shown only the vocabulary it has.** Sections (1), (2) and (6)
 describe action kinds, and all three are filtered through the same
@@ -200,7 +200,7 @@ Observations are truncated head+tail at 8k chars.
 ### 3b · Tails appended to the observation (in order, each only when applicable)
 
 1. **Repeat warning** (3–4 identical actions): `[ENGINE WARNING: this exact action has now run N times in a row — 5 identical actions fail the run. Change course. …]`
-2. **Budget warning**: `[BUDGET: … — wind down DELIBERATELY now: record what matters (LEDGER, state files), then finish with an authored summary. …]`
+2. **Budget warning** (from 85% of the first budget to trip): `[BUDGET: … — converge DELIBERATELY now: reach a point worth handing over, record what matters (LEDGER, state files), then finish with an authored summary. Once the budget is spent you get exactly ONE turn, and it can only be a finish.]`
 3. **History note** (right after a compaction, then every 10th turn — NOT every turn): `[history: earlier turns are archived under runs/<ts>/history/INDEX.md — read_file the index and the relevant files before relying on memory.]`
 
 The **util reminder** — `[tools: the CAPABILITIES catalog lists the global utils; run `util name=list args=["<name>"]` for one util's exact usage; if none fits, …]` (the tail varies with the write_util capability) — is ONE-SHOT: appended to the kickoff (or the resume ENGINE NOTE), never to observations. An identical tail on every turn was rent re-read for the rest of the run; a failed util call carries its own `[hint]` repair route anyway.
@@ -276,9 +276,21 @@ last-outcome — and the *next* run's system prompt quotes it in the STATE DIGES
 handoff. That is why the schema demands a DETAILED 8-20 line summary: it is the only part
 of the conversation that survives.
 
-Ends the model does not author: budget exhaustion (engine finishes `partial`), 5 identical
-actions (`failed`), 3 failed schema attempts (`failed`), abort (`aborted`), endpoint
-failure (`failed`) — these write the transcript `finish` event directly.
+**The reserved finish turn.** A budget violation does NOT end the run behind the model's
+back. The first violation spends a one-time reserve: the action schema narrows to `finish`
+and one more turn is granted, carrying
+
+```
+OBSERVATION (budget spent): <violation>. This is your LAST turn — the engine executes nothing else. Reply with `finish`, status `partial` if work is unfinished, and put everything that matters into the summary: what you established, what changed on disk, and precisely where to pick up. That summary is all that survives.
+```
+
+so the summary is always the model's own. A run can therefore overrun a budget by exactly
+one turn. Only a *second* violation (the reserve already spent — the model used it on a
+`report`, which `ALWAYS_KINDS` keeps reachable) force-finishes.
+
+Ends the model does not author: a second budget violation (engine finishes `partial`), 5
+identical actions (`failed`), 3 failed schema attempts (`failed`), abort (`aborted`),
+endpoint failure (`failed`) — these write the transcript `finish` event directly.
 
 ---
 
@@ -314,7 +326,7 @@ Ownership of prose: your recipe is self-contained — the WORKFLOW below (its ma
 > reads "Your own recipe (main.md, stages/, traits/, tuning.yaml) IS WRITABLE to you this
 > run…" — the prompt always states what the engine actually enforces.
 
-Budgets for this run: 60 turns, 45 minutes, unlimited total tokens, at most 8 subruns (depth ≤ 2). Spend them on the workflow's priorities and `finish` DELIBERATELY before they expire — a finish you wrote beats a forced one.
+Budgets for this run: 60 turns, 45 minutes, unlimited total tokens, at most 8 subruns (depth ≤ 2). Spend them on the workflow's priorities. These are a CEILING, not a pace: work until the job (or a step of it worth handing over) is actually done, then `finish` deliberately. When the budget runs out you get exactly ONE reserved turn and it can only be a finish — so a summary you wrote at a point you chose always beats one written against that wall.
 
 Action kinds:
 - util: run a global util — name + optional args (append "--json" for structured output).
@@ -651,7 +663,7 @@ OBSERVATION (util websearch, exit 0):
 
 ```
 OBSERVATION (write_file): wrote 1832 bytes to state/shortlist.md
-[BUDGET: 6 of 60 turns left — wind down DELIBERATELY now: record what matters (LEDGER, state files), then finish with an authored summary. An engine-forced stop loses your conclusions.]
+[BUDGET: ~6 turns left — converge DELIBERATELY now: reach a point worth handing over, record what matters (LEDGER, state files), then finish with an authored summary. Once the budget is spent you get exactly ONE turn, and it can only be a finish.]
 [history: earlier turns are archived under runs/20260712-070000/history/INDEX.md — read_file the index and the relevant files before relying on memory.]
 ```
 

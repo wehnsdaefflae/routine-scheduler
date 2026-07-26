@@ -84,6 +84,43 @@ def test_state_digest_contents(make_routine, tmp_path):
         assert needle in digest, needle
 
 
+def test_state_digest_inlines_the_working_plan(make_routine):
+    """state/plan.md is the run's OWN decomposition — a conversation's emergent counterpart
+    to a routine's compiled stages/. It rides the digest in full so every later reply opens
+    on where the job stands instead of re-deriving it from the chat scrollback.
+    """
+    from rsched.engine.composer import PLAN_MAX_LINES
+
+    d = make_routine(slug="plandig")
+    assert "WORKING PLAN" not in state_digest(d, [], [])       # no file → no section
+    (d / "state" / "plan.md").write_text(
+        "# goal: port the reader\n- [x] inventory call sites\n- [>] port readmodels/\n"
+        "- [ ] delete the shim\n", encoding="utf-8")
+    digest = state_digest(d, [], [])
+    assert "WORKING PLAN" in digest and "port readmodels/" in digest
+    assert "Delete the file once the job is finished" in digest
+    # the plan is a skeleton, not a document: an overgrown one is trimmed and told so
+    (d / "state" / "plan.md").write_text(
+        "\n".join(f"- step {i}" for i in range(PLAN_MAX_LINES + 20)), encoding="utf-8")
+    long_digest = state_digest(d, [], [])
+    assert f"step {PLAN_MAX_LINES - 1}" in long_digest
+    assert f"step {PLAN_MAX_LINES + 1}" not in long_digest
+    assert "belongs in stages/<name>.md" in long_digest
+
+
+def test_state_digest_lists_delivered_artifacts(make_routine):
+    """A conversation accumulates artifacts/ across replies and the UI renders them; without
+    this the run had no idea what it had already delivered and rebuilt or duplicated it.
+    """
+    d = make_routine(slug="artdig")
+    assert "artifacts/" not in state_digest(d, [], [])          # no dir → no section
+    (d / "artifacts").mkdir()
+    (d / "artifacts" / "report.md").write_text("# findings", encoding="utf-8")
+    digest = state_digest(d, [], [])
+    assert "artifacts/ delivered so far" in digest and "report.md" in digest
+    assert "UPDATES that artifact in place" in digest
+
+
 def test_state_digest_inlines_background_tasks(make_routine):
     d = make_routine(slug="bgdig")
     assert "Background tasks you launched" not in state_digest(d, [], [])   # no file → no section

@@ -602,14 +602,18 @@ def test_three_invalid_attempts_fail_run(make_routine, scripted):
 
 
 def test_turn_budget_forces_partial_finish(make_routine, scripted):
+    """A run that will not finish itself still ends `partial` on the engine's own string —
+    but only after the reserved finish turn was offered and squandered (here on a third
+    probe), so there is exactly ONE completion past the cap and never a second.
+    """
     _d, ep, status, run_dir, events = _run(
         make_routine, scripted,
-        [probe(say=f"s{i}") for i in range(3)],
+        [probe(say=f"s{i}") for i in range(4)],
         budgets={"max_turns": 2})
     assert status == "partial"
     fin = events[-1]["payload"]
     assert "turn budget exhausted" in fin["summary"] and fin["authored"] is False
-    assert len(ep.calls) == 2  # no third completion happened
+    assert len(ep.calls) == 3  # the 2 budgeted turns + the reserved one, then no more
     st = read_json(run_dir / "status.json")
     # `state` folds partial into finished — the outcome field keeps it distinguishable
     # (the dashboard heartbeat strip renders it amber, not green)
@@ -1715,15 +1719,50 @@ def test_usage_accounting_cache_keys_and_resume_base():
 
 
 def test_budget_warning_appended_near_exhaustion(make_routine, scripted):
-    """Past 85% of the turn budget, observations carry the wind-down nudge."""
+    """Past 85% of the turn budget, observations carry the converge nudge."""
     _d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
         *[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(9)],
         finish(),                                    # turn 9 crosses 85% of 10
     ], budgets={"max_turns": 10})
     assert status == "ok"
     warned = [m for c in ep.calls for m in c["messages"]
-              if m["role"] == "user" and "wind down DELIBERATELY" in m["content"]]
+              if m["role"] == "user" and "converge DELIBERATELY" in m["content"]]
     assert warned                                    # nudge reached the model before the cap
+
+
+def test_budget_violation_spends_a_reserved_finish_turn(make_routine, scripted):
+    """A spent budget does NOT end the run behind the model's back: it gets ONE more turn,
+    told so explicitly, and the summary the user reads is the model's own. Before the
+    reserve, turn 11 of a 10-turn window returned the engine's "Run stopped by the engine"
+    string — which in a conversation is what the user read as the reply.
+    """
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
+        *[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(10)],
+        finish("partial", "Got through 10 of 14 files; resume at state/p10.txt."),
+    ], budgets={"max_turns": 10})
+    assert status == "partial"
+    told = [m for c in ep.calls for m in c["messages"]
+            if m["role"] == "user" and "OBSERVATION (budget spent)" in m["content"]]
+    assert told and "This is your LAST turn" in told[-1]["content"]
+    fin = [e for e in events if e["type"] == "finish"][-1]
+    assert fin["payload"]["authored"] is True            # the model wrote the ending
+    assert "resume at state/p10.txt" in fin["payload"]["summary"]
+
+
+def test_reserve_is_spent_once_then_the_engine_stops_the_run(make_routine, scripted):
+    """The reserve is bounded: a run that burns it on something other than a finish hits the
+    next violation with no reserve left and gets the engine's own partial. One turn of
+    overrun, never two.
+    """
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
+        *[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(12)],
+    ], budgets={"max_turns": 10})
+    assert status == "partial"
+    fin = [e for e in events if e["type"] == "finish"][-1]
+    assert fin["payload"]["authored"] is False
+    assert "Run stopped by the engine" in fin["payload"]["summary"]
+    # exactly one turn past the cap — the reserved turn ran, a second one did not
+    assert fin["turns"] == 11
 
 
 def test_health_event_on_budget_exhaustion(make_routine, scripted, tmp_path):

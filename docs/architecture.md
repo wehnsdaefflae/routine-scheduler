@@ -372,8 +372,12 @@ message IS `instruction.md` (or, when a **playbook** is picked at creation, the 
 seeds it and the first message specializes it — see Libraries & seeds → Playbooks); the `converse`
 library workflow is materialized in verbatim at creation (no LLM in the path — `conversations.py`;
 title + editable tags arrive off-path via the system model). **Finish-per-reply**: every reply ends in an authored finish whose summary IS the
-chat message; the next user message resumes the SAME run in place (fresh budget window —
-`max_turns: 10` per reply; the engine's 85% warning cues a wrap-up-and-offer-continue).
+chat message; the next user message resumes the SAME run in place (fresh budget window — turns,
+wall clock, tokens and subruns all reset). The per-reply budget is a runaway BACKSTOP, not a pace:
+what ends a reply is the work reaching a handover point (a finished plan step, a verified
+deliverable, a decision for the user, a blocker). A conversation's spine is its own **working plan**
+(`state/plan.md`, written and revised by the run, inlined at the top of every later reply by
+`state_digest`) — the emergent counterpart to a routine's compiled `stages/` + `phase.json`.
 - Runner: conversation replies draw from a **reserved interactive slot pool** (`INTERACTIVE_SLOTS`,
   3) — cron can't queue a chat reply and vice versa; `engine_cmd` targets `cfg.dir` (a path),
   which `_routine_dir` accepts. Run resolution in `api_runs`/`api_questions` is home-aware.

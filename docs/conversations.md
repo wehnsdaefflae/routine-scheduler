@@ -17,7 +17,8 @@ and revise a document, clean a dataset, research something — rather than tend 
 | Lifetime | One continuous session, resumed in place each reply | One run per fire, state carried in files |
 | Instruction | Your first message (optionally seeded by a playbook) | A workflow, decomposed from your instruction at creation |
 | Versioned? | **No** — the directory is not a git repo; delete means gone | Yes — the engine commits each run |
-| Budget | Per **reply** (≈10 turns), fresh each message | Per **run** |
+| Budget | Per **reply**, fresh each message | Per **run** |
+| Spine | A **working plan** the agent writes and revises as it goes | A workflow compiled at creation |
 | Where | Conversations tab (`~/conversations/<slug>`) | Dashboard (`~/routines/<slug>`) |
 
 Everything else — the tool set, permissions, artifacts, the readable transcript — is shared.
@@ -52,14 +53,41 @@ A conversation is **one continuous run**, and every reply is a self-contained le
 - If you message while the agent is still working, it's delivered as an injection and **picked up at
   the next turn** rather than starting a new leg.
 
-Each reply gets roughly **10 turns** of budget. When the agent nears that ceiling it gets an 85%
-warning and wraps up: it records where it is and replies with honest progress, ending with an offer
-to continue. Say **continue** and it picks up right where it left off, in the same conversation, with
-a fresh window. Tokens are unlimited by default — the turn cap is what bounds a reply, so long jobs
-proceed a chunk at a time with you in the loop.
+**A reply ends when you have something, not after N steps.** The agent works until it reaches a
+point worth handing you: a finished piece of the job, a verified deliverable, a decision only you
+can make, or a genuine blocker. A single message can run for many turns when the job needs it — it
+is not trying to answer quickly, it is trying to answer.
+
+The per-reply budget is a **backstop** against a runaway, not a pace. When the agent nears the
+ceiling it gets a warning and converges to the nearest clean handover: it brings the working plan
+and LEDGER up to date and replies with honest progress, ending with an offer to continue. Say
+**continue** and it picks up right where it left off, in the same conversation, with a fresh window.
+And if the budget does run out mid-work, the agent still gets a reserved final turn to write the
+reply itself — you never get an engine error where an answer should be.
 
 Because chat replies draw from a **reserved interactive pool**, a busy schedule never makes you wait
 in line behind cron runs, and vice versa.
+
+## The working plan
+
+A scheduled routine gets its structure from a workflow compiled when you create it. A conversation
+gets it the other way round: as soon as a request needs more than a handful of steps, or will span
+more than one reply, the agent writes a **working plan** into `state/plan.md` — the goal in a line,
+the ordered steps with their status, the decisions still open, and what it's waiting on from you.
+
+The plan is put in front of the agent at the top of **every** later reply, so it — not the chat
+scrollback — is what keeps a long job coherent. The agent revises it as the work teaches it: ticking
+off what's done, re-ordering, adding what it discovered, dropping what turned out unnecessary. When
+one step needs more detail than a few lines can hold, that step gets its own file under `stages/`,
+read only when the step comes up. When the job is finished, the plan is deleted.
+
+Two things follow from this that are worth knowing:
+
+- **Redirect it freely.** The plan serves the conversation, never the other way round. Tell the
+  agent the third step is wrong and it revises the plan and says so.
+- **Big steps get decomposed.** A plan step that is large and self-contained is the agent's cue to
+  run it as a child task with its own fresh context and budget, rather than spend this reply's
+  context on it — so a long job doesn't degrade as it goes.
 
 ## The three panes
 
@@ -143,7 +171,9 @@ composer** (open it before you hit *start* — the first reply fires on create, 
 budget, or deliberation level that must govern reply #1 has to be set there) and at the top of a
 running conversation, where changes apply from the next reply:
 
-- **Budgets** are **per reply**: turns, minutes, and tokens for each message, not the whole session.
+- **Budgets** are **per reply**: turns, minutes, tokens and child tasks for each message, not the
+  whole session. They are a runaway backstop — raise them for a conversation doing heavy work,
+  lower them if you want short exchanges.
 - **Permissions** work exactly as they do for routines (see the *Traits & permissions* guide). A
   conversation starts with the default set; **shell** is a one-click grant. Previous-run depth is
   greyed out — a conversation is one continuous run, so it doesn't apply.

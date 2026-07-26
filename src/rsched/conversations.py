@@ -42,12 +42,15 @@ CONVERSATION_TRAITS = ["ask-policy", "global-utils", "web-research", "ledger-dis
 # (the finished task reports back into the chat). Shell stays a one-click opt-in.
 # practice-library is no longer listed here — it is a DEFAULT_PERMISSIONS entry now.
 CONVERSATION_PERMISSIONS = [*DEFAULT_PERMISSIONS, "background-tasks"]
-# ~10 turns per REPLY: each user message resumes the run with a fresh budget window, so
-# these are per-reply ceilings, not per-conversation ones. The engine's 85% warning cues
-# the model to wrap up with progress and offer to continue. Tokens ride the default
-# (-1 = unlimited) — the tight turn cap is what bounds a reply.
-CONVERSATION_BUDGETS = {**DEFAULT_BUDGETS, "max_turns": 10, "max_wall_clock_min": 30,
-                        "max_subruns": 4}
+# Per-REPLY ceilings (each user message resumes the run with a fresh window — turns, wall
+# clock, tokens and subruns all reset), and deliberately a BACKSTOP rather than a pace. The
+# old 10-turn cap was the pace: the model read it at turn 1 and never attempted anything
+# that would not fit, so replies came out short by PLANNING, not by truncation — and turn 11
+# force-finished with an engine string the user read as the reply. What bounds a reply now
+# is the work reaching a point worth handing over (see the converse pattern's checkpoint
+# rule); this only stops a runaway. Tokens ride the default (-1 = unlimited); max_subruns
+# rides the default too — decomposing a heavy step is a normal move, not a rationed one.
+CONVERSATION_BUDGETS = {**DEFAULT_BUDGETS, "max_turns": 40, "max_wall_clock_min": 60}
 # Permissions that only make sense for scheduled routines — the UI greys them out.
 ROUTINE_ONLY_PERMISSIONS = ["run-history"]
 
@@ -196,7 +199,8 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
         "description": title,
         "enabled": True,
         "schedule": {"cron": "", "tz": server_tz(), "catchup": "skip"},
-        "workflow": {"library_slug": CONVERSE_WORKFLOW, "library_commit": commit},
+        "workflow": {"library_slug": CONVERSE_WORKFLOW, "library_commit": commit,
+                     "version": meta.get("version", 0)},
         **({"playbook": {"slug": playbook_slug, "commit": commit}} if pb else {}),
         **({"models": models} if models else {}),
         "permissions": active_perms,
@@ -214,6 +218,105 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
     # header-panel slider; a pre-start pick governs reply #1 already)
     write_tuning(conv_dir, {"deliberation": deliberation or CONVERSATION_DELIBERATION})
     return conv_dir
+
+
+# MIGRATION(expires=2026-08-31): the 0.114.0 conversation overhaul reaches existing
+# conversations no other way. `main.md` is materialized VERBATIM at creation, so a
+# conversation made before this carries converse v≤2 — the pattern that hardcodes "roughly
+# 10 turns per reply" and has no working-plan step — for the rest of its life; and
+# `sync_seed_library_docs` never overwrites, so the live library's own copy of the pattern
+# is stale too. Idempotent: re-runs at every daemon boot until the production instance
+# converges, then this and its call in cli.py are deleted.
+_RETIRED_BUDGETS = {"max_turns": 10, "max_wall_clock_min": 30, "max_subruns": 4}
+
+
+def _seed_converse_into_library(libraries_home: Path) -> bool:
+    """Install the seed `converse` pattern over the library's copy when the seed's META
+    version is newer. Returns True if it was replaced.
+    """
+    from .bootstrap import repo_root
+    from .workflows.library import read_workflow
+
+    seed_home = repo_root() / "library-seed"
+    seed = seed_home / "workflows" / f"{CONVERSE_WORKFLOW}.py"
+    live = libraries_home / "workflows" / f"{CONVERSE_WORKFLOW}.py"
+    if not seed.is_file() or not live.is_file():
+        return False
+    seed_meta, _ = read_workflow(seed_home, CONVERSE_WORKFLOW)
+    live_meta, _ = read_workflow(libraries_home, CONVERSE_WORKFLOW)
+    if int(seed_meta.get("version", 0)) <= int(live_meta.get("version", 0)):
+        return False
+    live.write_text(seed.read_text(encoding="utf-8"), encoding="utf-8")
+    from . import libgit
+
+    libgit.commit(libraries_home, f"converse pattern → v{seed_meta.get('version')}",
+                  paths=[f"workflows/{CONVERSE_WORKFLOW}.py"])
+    return True
+
+
+def migrate_conversations(server: ServerConfig) -> int:
+    """See the MIGRATION marker above. Re-renders each conversation's `main.md` from the
+    current `converse` pattern and lifts per-reply budgets off the retired values. A
+    conversation's OWN traits/ are never touched — only their summaries are re-read, to
+    rebuild the practices tail. Returns how many conversations changed.
+    """
+    from . import library_docs
+    from .workflows.adapt import dump_markdown
+    from .workflows.library import head_commit, read_workflow
+    from .workflows.pyworkflow import render_markdown
+    from .workflows.scaffold import with_practices_tail
+
+    _seed_converse_into_library(server.libraries_home)
+    home = server.conversations_home
+    if not home.is_dir():
+        return 0
+    try:
+        meta, raw = read_workflow(server.libraries_home, CONVERSE_WORKFLOW)
+    except (OSError, ValueError, KeyError):
+        return 0
+    commit = head_commit(server.libraries_home)
+    touched = 0
+    for conv_dir in sorted(p for p in home.iterdir() if p.is_dir()):
+        cfg_path = conv_dir / "routine.yaml"
+        main_path = conv_dir / "main.md"
+        if not cfg_path.is_file() or not main_path.is_file():
+            continue
+        try:
+            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        if cfg.get("kind") != "conversation":
+            continue
+        changed = False
+        materialized = cfg.get("workflow") or {}
+        if int(materialized.get("version") or 0) < int(meta.get("version", 0)):
+            summaries: dict[str, str] = {}
+            for trait in sorted((conv_dir / "traits").glob("*.md")):
+                body = trait.read_text(encoding="utf-8")
+                m = library_docs.DOC_RE.search(body)
+                summaries[trait.stem] = m.group("summary").strip() if m else ""
+            main_meta = {"name": cfg.get("name") or conv_dir.name, "slug": conv_dir.name,
+                         "materialized_from": {"slug": CONVERSE_WORKFLOW, "commit": commit,
+                                               "version": meta.get("version", 0)},
+                         **({"tools": list(meta["tools"])}
+                            if meta.get("tools") is not None else {})}
+            body = with_practices_tail(render_markdown(raw, meta), summaries)
+            atomic_write(main_path, dump_markdown(main_meta, body))
+            cfg["workflow"] = {"library_slug": CONVERSE_WORKFLOW, "library_commit": commit,
+                               "version": meta.get("version", 0)}
+            changed = True
+        budgets = cfg.get("budgets") or {}
+        for key, retired in _RETIRED_BUDGETS.items():
+            if budgets.get(key) == retired:
+                budgets[key] = CONVERSATION_BUDGETS[key]
+                changed = True
+        if changed:
+            cfg["budgets"] = {**CONVERSATION_BUDGETS, **budgets}
+            atomic_write(cfg_path, yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
+            touched += 1
+    if touched:
+        log.warning("migrated %d conversation(s) to converse v%s", touched, meta.get("version"))
+    return touched
 
 
 _LABEL_SCHEMA = {

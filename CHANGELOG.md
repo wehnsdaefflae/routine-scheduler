@@ -19,6 +19,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.114.0] — 2026-07-26
+
+### Changed
+- **Conversations get a spine and permission to be long.** Replies came out pathologically
+  short, and the cause was three things stacked — none of them fixable by raising a number.
+  - **The engine no longer steals the reply.** A budget violation used to return an
+    engine-authored `partial` ("Run stopped by the engine: turn budget exhausted (10)") with
+    the model never told. In a conversation that string *is* what the user reads as the reply.
+    The first violation now spends a one-time **reserved finish turn**: the action schema
+    narrows to `finish`, one more turn is granted carrying `OBSERVATION (budget spent): …
+    This is your LAST turn`, and the ending is always in the run's own words. A run can
+    overrun a budget by exactly one turn; only a second violation force-finishes. This is
+    universal — a scheduled routine's forced stop cost the next run its handover the same way.
+  - **The per-reply budget is a backstop, not a pace.** `CONVERSATION_BUDGETS` goes 10 → 40
+    turns and 30 → 60 minutes, and `max_subruns` drops to the default 8 (decomposing a heavy
+    step is a normal move, not a rationed one). The old cap was read by the model at turn 1,
+    so replies were short by *planning*, not truncation — the harness budget prose now says
+    outright that budgets are a ceiling and the work ends when it reaches a handover point.
+    The budget warning wording follows (`wind down` → `converge`, naming the reserved turn).
+  - **A conversation writes its own workflow.** `state/plan.md` — the goal, the ordered steps
+    with status, open decisions, what's owed by the user — authored and revised by the run
+    itself, inlined in full at the top of the STATE DIGEST (capped at 60 lines; a plan that
+    outgrows that belongs in `stages/`). It is the emergent counterpart to a routine's
+    compiled `stages/` + `phase.json`: a scheduled run re-orients against its recipe every
+    run, while a conversation had only chat scrollback and finished at the shortest possible
+    bar. The `converse` pattern (version 3) gains `working_plan()`, drops the hardcoded
+    "roughly 10 turns per reply", and replaces turn-counting with the checkpoint rule — reply
+    when the user has something real, not at the first natural pause.
+- **The state digest names delivered artifacts.** `artifacts/` was created for every
+  conversation, rendered by the UI, and invisible to the run — which rebuilt or duplicated
+  what it had already handed over. Now listed with sizes, plus the update-in-place contract.
+
+### Migration
+- `conversations.migrate_conversations` (`MIGRATION(expires=2026-08-31)`, run at daemon boot):
+  existing conversations reach the new pattern no other way — `main.md` is materialized
+  verbatim at creation and `sync_seed_library_docs` never overwrites, so both the live
+  library's `converse.py` and every conversation's own copy were frozen at their creation-time
+  version. Re-renders `main.md` from the seed pattern and lifts per-reply budgets off the
+  retired values; each conversation's OWN `traits/` are untouched. `routine.yaml`'s
+  `workflow:` block now records the pattern `version`, which is what makes it idempotent.
+
 ## [0.113.0] — 2026-07-26
 
 ### Added

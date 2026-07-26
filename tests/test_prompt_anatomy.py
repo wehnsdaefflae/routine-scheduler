@@ -55,7 +55,8 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # schema-retry contract line (schema_guard.retry_message)
         retry_message(["x"]).splitlines()[-1],
         # loop.py tails + control.py feeds + history.py pointer
-        "wind down DELIBERATELY",
+        "converge DELIBERATELY",
+        "OBSERVATION (budget spent)",   # the reserved finish turn (loop._reserve_finish)
         "read_file the index and the relevant files before relying on memory",
         "USER MESSAGE (injected mid-run)",
         "SUB-WORKFLOW FINISHED",

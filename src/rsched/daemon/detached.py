@@ -40,9 +40,9 @@ from ..schedule import server_tz
 from .runner import Runner, _pid_alive
 
 log = logging.getLogger("rsched.detached")
-# A detached task gets a background-sized budget, NOT the owner conversation's per-reply window
-# (max_turns 10) which would starve a 20-minute job. Everything else (perms/models/fs-roots) is
-# copied from the owner; budgets are deliberately its own.
+# A detached task gets a background-sized budget, NOT the owner conversation's per-reply window,
+# which is sized for an interactive handover and would starve a 20-minute job. Everything else
+# (perms/models/fs-roots) is copied from the owner; budgets are deliberately its own.
 BACKGROUND_BUDGETS = {**DEFAULT_BUDGETS, "max_wall_clock_min": 60}
 # A fire-and-forget task authoring library utils, writing throwaway .memory notes, or nesting
 # another detach is pure waste (and write_util triggers a blocking approval ask no one answers),

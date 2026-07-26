@@ -77,13 +77,42 @@ def test_converse_seed_lints_clean():
 
 # ---- disk scaffolding ---------------------------------------------------------------------------
 
+def test_migrate_conversations_relifts_pattern_and_budgets(server):
+    """MIGRATION(expires=2026-08-31) coverage. A conversation created before 0.114.0 keeps
+    its creation-time main.md and per-reply budgets forever — nothing else rewrites either.
+    The boot migration re-renders main.md from the current pattern, lifts budgets off the
+    retired values, leaves the conversation's OWN traits alone, and is idempotent.
+    """
+    d = conv_mod.create_conversation(server, slug="c-old", first_message="do a thing")
+    # roll it back to the pre-0.114.0 shape
+    raw = yaml.safe_load((d / "routine.yaml").read_text())
+    raw["workflow"].pop("version")
+    raw["budgets"] = {**raw["budgets"], "max_turns": 10, "max_wall_clock_min": 30,
+                      "max_subruns": 4}
+    (d / "routine.yaml").write_text(yaml.safe_dump(raw, sort_keys=False))
+    (d / "main.md").write_text("---\nname: old\n---\n# stale pattern\n", encoding="utf-8")
+    (d / "traits" / "ask-policy.md").write_text("# trait: my own refined copy\n",
+                                                encoding="utf-8")
+
+    assert conv_mod.migrate_conversations(server) == 1
+    after = yaml.safe_load((d / "routine.yaml").read_text())
+    assert after["budgets"]["max_turns"] == 40 and after["budgets"]["max_wall_clock_min"] == 60
+    assert after["budgets"]["max_subruns"] == 8
+    assert after["workflow"]["version"] == 3
+    main = (d / "main.md").read_text()
+    assert "working_plan" in main and "roughly 10 turns per reply" not in main
+    # the conversation's own trait copies are never re-seeded from the library
+    assert (d / "traits" / "ask-policy.md").read_text() == "# trait: my own refined copy\n"
+    assert conv_mod.migrate_conversations(server) == 0        # idempotent
+
+
 def test_create_conversation_disk_shape(server):
     d = conv_mod.create_conversation(server, slug="c-test", first_message="Fix the flaky test\nin repo X",
                                      workdir=str(server.routines_home))
     assert not (d / ".git").exists()            # unversioned by design — delete means gone
     cfg, problems = load_routine(d)
     assert cfg is not None and not problems
-    assert cfg.cron == "" and cfg.budgets["max_turns"] == 10
+    assert cfg.cron == "" and cfg.budgets["max_turns"] == 40
     assert cfg.fs_write_roots and cfg.fs_read_roots
     raw = yaml.safe_load((d / "routine.yaml").read_text())
     assert raw["kind"] == "conversation"
@@ -128,7 +157,7 @@ def test_create_list_detail_message_delete(client):
     assert items[0]["state"] == "running"
 
     detail = c.get(f"/api/conversations/{slug}").json()
-    assert detail["title"] and detail["budgets"]["max_turns"] == 10
+    assert detail["title"] and detail["budgets"]["max_turns"] == 40
     perm = {p["slug"]: p for p in detail["permissions"]}
     assert perm["shell"]["active"] is False                  # off by default, one-click grant
     assert perm["run-history"]["routine_only"] is True       # greyed in the panel
@@ -192,7 +221,7 @@ def test_create_conversation_accepts_prestart_budgets(client):
     # blank fields keep the conversation defaults; a non-numeric budget is a 400
     slug2 = c.post("/api/conversations", data={"text": "plain"}).json()["slug"]
     raw2 = yaml.safe_load((server.conversations_home / slug2 / "routine.yaml").read_text())
-    assert raw2["budgets"]["max_turns"] == 10 and raw2["budgets"]["max_total_turns"] == -1
+    assert raw2["budgets"]["max_turns"] == 40 and raw2["budgets"]["max_total_turns"] == -1
     assert c.post("/api/conversations", data={"text": "x", "max_turns": "lots"}).status_code == 400
 
 
@@ -206,7 +235,7 @@ def test_conversation_defaults_endpoint(client):
     assert perm["background-tasks"]["active"] is True        # a conversation default
     assert perm["shell"]["active"] is False                  # off by default, one-click grant
     assert perm["run-history"]["routine_only"] is True       # greyed in the composer too
-    assert d["budgets"]["max_turns"] == 10
+    assert d["budgets"]["max_turns"] == 40
     assert d["deliberation"] == "deliberate"
     assert "actions" in d["capabilities"]["active"]
 

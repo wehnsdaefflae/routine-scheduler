@@ -227,6 +227,9 @@ def cmd_daemon(_args) -> int:
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap
     sync_seed_library_docs(server.libraries_home)  # workflows/traits/permissions added since, too
     migrate_util_headers(server.libraries_home)  # MIGRATION(expires=2026-08-17): sandbox rollout
+    from .conversations import migrate_conversations
+
+    migrate_conversations(server)  # MIGRATION(expires=2026-08-31): converse v3 + budgets
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

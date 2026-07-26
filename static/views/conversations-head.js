@@ -70,14 +70,15 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
   const b = detail.budgets || {};
   const numIn = (v, min = "1") => el("input", { type: "number", min, value: v,
     style: "width:90px;font-size:11.5px;padding:3px 6px" });
-  const turnsIn = numIn(b.max_turns ?? 10);
-  const minsIn = numIn(b.max_wall_clock_min ?? 30, "-1");    // -1 = unlimited time
+  // fallbacks mirror CONVERSATION_BUDGETS (conversations.py) — a runaway backstop, not a pace
+  const turnsIn = numIn(b.max_turns ?? 40);
+  const minsIn = numIn(b.max_wall_clock_min ?? 60, "-1");    // -1 = unlimited time
   const tokIn = numIn(b.max_total_tokens ?? 400000, "-1");   // -1 = unlimited tokens
   const saveBudgets = el("button", { class: "btn small" }, "save budgets");
   saveBudgets.onclick = async () => {
     try {
       await api(`/api/conversations/${slug}`, { method: "PATCH", body: { budgets: {
-        max_turns: +turnsIn.value || 10, max_wall_clock_min: +minsIn.value || 30,
+        max_turns: +turnsIn.value || 40, max_wall_clock_min: +minsIn.value || 60,
         max_total_tokens: +tokIn.value || 400000 } } });
       toast("budgets saved — they cap EACH reply, from the next one");
     } catch (err) { toast(err.message, 4000, { error: true }); }

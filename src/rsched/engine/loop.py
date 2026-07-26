@@ -148,6 +148,11 @@ class EngineLoop:
         # turn: an identical tail on every observation is pure rent on the context).
         self._history_active = False
         self._hist_note_countdown = 0
+        # The RESERVED FINISH turn: a budget violation no longer ends the run behind the
+        # model's back. The first violation spends this reserve — one last turn, schema
+        # narrowed to finish — so the summary is ALWAYS authored. Only a second violation
+        # (the reserve already spent) force-finishes. See _reserve_finish.
+        self._finish_reserved = False
         self._last_compact_after = 0   # post-compaction size; gates re-compaction (anti-thrash)
         try:
             hist_rel = str((ctx.run_dir / "history").relative_to(ctx.routine.dir))
@@ -176,6 +181,29 @@ class EngineLoop:
                 f"name=list args=[\"<name>\"]` for one util's exact usage; "
                 f"if none fits, {create}.]")
 
+    def _reserve_finish(self, violation: str) -> None:
+        """Spend the reserved finish turn: one more turn, schema narrowed to `finish`, so the
+        run ends in ITS OWN words instead of an engine string. Before this, a budget violation
+        returned an engine-authored `partial` and the model was never told — for a scheduled
+        routine that costs the next run its handover; in a CONVERSATION the reply IS the
+        product, so the user read "Run stopped by the engine: turn budget exhausted (10)".
+        The reserve is spent at most once per run (the caller force-finishes on a second
+        violation), so it can overrun a budget by exactly one turn.
+        """
+        from .kindsurface import schema_for_kinds
+
+        self._finish_reserved = True
+        # ALWAYS_KINDS keeps `report` reachable here; using the reserve on one costs the run
+        # its authored summary (the next violation force-finishes), which is the model's call.
+        self.action_schema = schema_for_kinds({"finish"})
+        self._schema_off = False   # the narrowed grammar is the point — re-arm it if shed
+        self.messages.append({"role": "user", "content":
+            f"OBSERVATION (budget spent): {violation}. This is your LAST turn — the engine "
+            "executes nothing else. Reply with `finish`, status `partial` if work is "
+            "unfinished, and put everything that matters into the summary: what you "
+            "established, what changed on disk, and precisely where to pick up. That summary "
+            "is all that survives."})
+
     def _aborted(self) -> bool:
         return _ABORT["flag"] or self.abort_event.is_set()
 
@@ -194,9 +222,11 @@ class EngineLoop:
                 if self._aborted():
                     raise RunAborted
                 if violation := ctx.budget_violation():
-                    return self._finish_run(
-                        "partial", f"Run stopped by the engine: {violation}. "
-                                   "Progress so far is in the transcript and LEDGER.")
+                    if self._finish_reserved:
+                        return self._finish_run(
+                            "partial", f"Run stopped by the engine: {violation}. "
+                                       "Progress so far is in the transcript and LEDGER.")
+                    self._reserve_finish(violation)
                 pause_gate(self, poll_s=POLL_S)
                 apply_model_switch(self)
                 apply_deliberation_switch(self)
@@ -313,9 +343,10 @@ class EngineLoop:
                              "constraint is lifted for your next reply: emit ONE JSON object "
                              "and include every field the action needs (args, content, …).]")
                 if warning := ctx.budget_warning():
-                    text += (f"\n[BUDGET: {warning} — wind down DELIBERATELY now: record what "
-                             "matters (LEDGER, state files), then finish with an authored "
-                             "summary. An engine-forced stop loses your conclusions.]")
+                    text += (f"\n[BUDGET: {warning} — converge DELIBERATELY now: reach a point "
+                             "worth handing over, record what matters (LEDGER, state files), "
+                             "then finish with an authored summary. Once the budget is spent "
+                             "you get exactly ONE turn, and it can only be a finish.]")
                 if self._history_active:
                     self._hist_note_countdown -= 1
                     if self._hist_note_countdown <= 0:
