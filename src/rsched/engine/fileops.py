@@ -94,7 +94,8 @@ def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
         return "error: the `vision` util is not installed, so this file cannot be described"
     args = [abspath, "--prompt", prompt or VIEW_DEFAULT_PROMPT, "--json"]
     code, out, err = utils_lib.run_util(home, VISION_UTIL, args, timeout=UTIL_DEFAULT_TIMEOUT_S,
-                                        policy=sandbox.policy_for_run(ctx.server, ctx.routine))
+                                        policy=sandbox.policy_for_run(ctx.server, ctx.routine),
+                                        cwd=ctx.routine.dir)
     if code != 0:
         return f"error: vision util failed (exit {code}): {(err or out or '').strip()[:800]}"
     try:

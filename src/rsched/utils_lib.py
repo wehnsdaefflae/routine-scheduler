@@ -417,12 +417,16 @@ def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = Non
 
 def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
              policy: sandbox.SandboxPolicy,
-             extra_secrets: dict[str, str] | None = None) -> tuple[int, str, str]:
+             extra_secrets: dict[str, str] | None = None,
+             cwd: Path | None = None) -> tuple[int, str, str]:
     """Controlled runner: only a named util from THIS library, uv-run, scoped env (declared
     secrets only, plus any `extra_secrets` the engine resolved for this run — same declared-only
     rule), library root on PATH (so the util can call siblings via `gu`), inside the Landlock jail
     `policy` + the util's own `net:` declaration describe (sandbox.wrap; the server `sandbox:` mode
-    decides strict/permissive/off). Returns (exit, out, err).
+    decides strict/permissive/off). Runs with working directory `cwd` — a routine's own dir for
+    run-scoped calls, so relative paths a routine passes to a util resolve against ITS dir like
+    read_file/write_file do — or the library `home` when unset (CLI, selftest, notify, settings).
+    Returns (exit, out, err).
     """
     if not is_slug(name):
         return 2, "", f"invalid util name {name!r}"
@@ -450,7 +454,7 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as out_f, \
             tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as err_f:
         proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, stdin=subprocess.DEVNULL,
-                                text=True, env=env, cwd=str(home), start_new_session=True)
+                                text=True, env=env, cwd=str(cwd or home), start_new_session=True)
         timed_out = False
         try:
             proc.wait(timeout=timeout)

@@ -423,3 +423,35 @@ def test_header_problems_flags_undeclared_gu_calls():
     problems = utils_lib.header_problems(base.format(calls_line=""))
     assert any("adder" in p and "calls:" in p for p in problems)
     assert not utils_lib.header_problems(base.format(calls_line="calls: adder\n"))
+
+
+PWD_UTIL = '''# /// script
+# dependencies = []
+# ///
+"""pwd-util — print the current working directory. usage: gu pwd-util [--selftest]
+tags: test
+net: none
+"""
+import os, sys
+if "--selftest" in sys.argv:
+    print("selftest: ok", file=sys.stderr); sys.exit(0)
+print(os.getcwd())
+'''
+
+
+def test_run_util_cwd_routes_to_given_dir(tmp_path):
+    """A run-scoped util launches with cwd=<routine dir> so relative paths a routine passes
+    resolve against ITS dir like read_file/write_file do (F206 / bug R19); with no cwd it
+    defaults to the library home (CLI, selftest, notify, settings)."""
+    from pathlib import Path
+    home = tmp_path / "utils-home"
+    utils_lib.ensure_library(home)
+    utils_lib.write_util_file(home, "pwd-util", PWD_UTIL)
+    routine_dir = tmp_path / "a-routine"
+    routine_dir.mkdir()
+
+    code, out, _ = utils_lib.run_util(home, "pwd-util", [], policy=OFF)
+    assert code == 0 and Path(out.strip()) == home.resolve()
+
+    code, out, _ = utils_lib.run_util(home, "pwd-util", [], policy=OFF, cwd=routine_dir)
+    assert code == 0 and Path(out.strip()) == routine_dir.resolve()

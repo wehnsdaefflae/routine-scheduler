@@ -118,7 +118,7 @@ def test_vision_describe_parses_and_errors(tmp_path, monkeypatch):
                                                   fs_write_roots=[]))
     monkeypatch.setattr(utils_lib, "exists", lambda home, n: True)
     monkeypatch.setattr(utils_lib, "run_util",
-                        lambda home, n, args, timeout=300, policy=None:
+                        lambda home, n, args, timeout=300, policy=None, **_kw:
                         (0, json.dumps({"text": "hi"}), ""))
     assert fileops.vision_describe(ctx, "/x.png", "?") == "hi"
     monkeypatch.setattr(utils_lib, "run_util", lambda *a, **k: (1, "", "boom"))

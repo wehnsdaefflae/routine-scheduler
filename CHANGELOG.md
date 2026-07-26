@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.110.0] — 2026-07-26
+
+### Fixed
+- **Utils now run with the calling routine's own directory as their working directory (CWD).**
+  `utils_lib.run_util` launched every util with `cwd=<global-utils library home>`, but a routine's
+  agent process runs in its routine dir (and its `read_file`/`write_file` resolve relative paths
+  there) — so any relative path a routine passed to a util resolved against the library dir and hit
+  ENOENT (seen across the bina-grants-analysis util calls; operator AUDIT note + bug R19). `run_util`
+  gains an optional `cwd` (default: the library home, unchanged for the CLI, selftests, notify and
+  settings), and the two run-scoped call sites — the routine util action (`engine/executor.py`) and
+  the `vision` fallback (`engine/fileops.py`) — pass `ctx.routine.dir`. The util sandbox already
+  grants the routine dir (`sandbox.policy_for_run` write_roots), so relative paths now resolve where
+  a routine expects them to, matching read_file/write_file. Test: `tests/test_utils.py`
+  `test_run_util_cwd_routes_to_given_dir`. (F206)
+
 ## [0.109.0] — 2026-07-26
 
 ### Changed

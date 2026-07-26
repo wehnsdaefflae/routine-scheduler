@@ -338,7 +338,7 @@ def test_util_secret_gate_asks_once_and_persists_grant(make_routine, scripted, m
     fake = _FakeDiscord(replies=[[], [{"id": "5", "message": "approve"}]])
     ran = []
 
-    def fake_run(home, name, args, timeout=0, policy=None, extra_secrets=None):
+    def fake_run(home, name, args, timeout=0, policy=None, extra_secrets=None, **_kw):
         if name == "discord":
             return fake.run_util(home, name, args, timeout=timeout, policy=policy)
         ran.append((name, list(args)))
@@ -388,7 +388,7 @@ def test_util_secret_gate_grant_survives_into_a_later_run(make_routine, scripted
     fake = _FakeDiscord(replies=[[], [{"id": "5", "message": "approve"}]])
     ran: list[tuple[str, list]] = []
 
-    def fake_run(home, name, args, timeout=0, policy=None, extra_secrets=None):
+    def fake_run(home, name, args, timeout=0, policy=None, extra_secrets=None, **_kw):
         if name == "discord":
             return fake.run_util(home, name, args, timeout=timeout, policy=policy)
         ran.append((name, list(args)))
@@ -434,7 +434,7 @@ def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, 
 
     ran = []
     monkeypatch.setattr(notify.utils_lib, "run_util",
-                        lambda home, name, args, timeout=0, policy=None, extra_secrets=None:
+                        lambda home, name, args, timeout=0, policy=None, extra_secrets=None, **_kw:
                         (ran.append((name, list(args))) or (0, "ran", "")))
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(notify.utils_lib, "util_needs",
