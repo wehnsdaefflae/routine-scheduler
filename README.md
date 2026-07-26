@@ -174,6 +174,17 @@ read-only and `.onion`-only: clearnet URLs are refused, redirects off `.onion` a
 there is no fallback to a direct connection if the proxy is down — failing is correct, because
 fetching over clearnet instead would deanonymise the request. See `docs/darknet.md`.
 
+## Usenet access
+
+A routine holding the opt-in `usenet` permission can list and search newsgroups, read articles,
+post, and retrieve binary posts from an NZB — through two reserved utils and whichever NNTP
+provider the Secrets store names (`NNTP_SERVER` and friends; there is no provider baked in).
+Searching is client-side over a bounded overview range, because NNTP has no search command.
+Posting is dry-run unless explicitly confirmed: an article propagates in minutes and cannot be
+withdrawn. Binary retrieval verifies every segment's CRC and the length implied by its yEnc part
+header, repairs from par2, and reports an unrepairable download as incomplete rather than
+leaving a half-written file behind. See `docs/usenet.md`.
+
 ## CLI
 
 `uv run rsched --help` — `daemon` (what the service/container runs: scheduler + web in one

@@ -704,13 +704,25 @@ def test_ask_user_blocking_deferred_by_user(make_routine, scripted):
     the run continues on its stated default, the record stays open as deferred, and the
     marker is consumed (never mistaken for an answer later)."""
     import threading
+    import time as _t
 
     qid = f"q-{TS}-1"
     d = make_routine(slug="deferrer")
-    # the marker lands MID-WAIT (as the Decisions page writes it) — a marker present at
-    # boot would rightly be swept as stale, since its run is over by definition
-    timer = threading.Timer(0.3, lambda: atomic_write_json(
-        d / "inbox" / f"answer-{qid}.json", {"qid": qid, "defer": True, "source": "web"}))
+
+    # The marker must land MID-WAIT, as the Decisions page writes it — a marker present at
+    # boot is rightly swept as stale, since its run is over by definition. So wait for the
+    # pending record (written when the question is asked, before the blocking wait) rather
+    # than guessing a delay: a fixed timer races the run's boot and, whenever boot loses,
+    # the marker is swept and the test fails on the 1m timeout path instead.
+    def defer_once_asked():
+        for _ in range(600):
+            if list((d / "questions" / "pending").glob("*.json")):
+                atomic_write_json(d / "inbox" / f"answer-{qid}.json",
+                                  {"qid": qid, "defer": True, "source": "web"})
+                return
+            _t.sleep(0.05)
+
+    timer = threading.Thread(target=defer_once_asked)
     timer.start()
     ep = scripted([{"say": "q", "kind": "ask_user", "question": "Replace the old copy?",
                     "mode": "blocking", "default": "keep the old copy"}, finish()])
@@ -1184,8 +1196,11 @@ def test_pause_gate(make_routine, scripted):
 
     def act_and_pause():
         rd = d / "runs" / TS
-        run_dir_holder["rd"] = rd
+        # Pause FIRST, publish the dir second. The other order is a lost update that hangs
+        # the suite: the clearer can see `rd`, write pause:False, and have this write land
+        # on top of it — and `pause_gate` polls forever by design, so nothing ever releases.
         atomic_write_json(rd / "control.json", {"pause": True})
+        run_dir_holder["rd"] = rd
         return probe()
 
     import threading

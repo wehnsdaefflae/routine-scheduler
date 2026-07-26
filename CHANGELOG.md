@@ -19,6 +19,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.115.0] — 2026-07-26
+
+### Added
+- **Usenet as an opt-in capability.** A routine holding the new `usenet` permission can list
+  and search newsgroups, read articles, post, and retrieve binary posts from an NZB. Same
+  shape as `darknet` in 0.113.0 and for the same reason: **no engine code changed.** Which
+  utils are reserved is the union of every library permission doc's `requires.utils`
+  (`grants.read_library_requires`), so `library-seed/permissions/usenet.md` declaring
+  `requires: {utils: [usenet, usenet-nzb]}` IS the enforcement — there is no list in the
+  source to extend. The permission is not a default and is deliberately absent from
+  `ADOPT_PERMISSIONS`: it reaches a routine only when the user grants it.
+  - **Two utils, not one** (library, not `util-seed` — same as `darknet`). `usenet` is the
+    text half: `groups` (wildmat search, or `--new-since` for newly created ones), `headers`
+    (a group's overview, filtered), `article` (by `<message-id>` or group + number), `post`,
+    and `check`. `usenet-nzb` is the binary half — a different job, so a different util:
+    `inspect` parses an NZB offline, `fetch` runs parallel connections, decodes yEnc,
+    reassembles the parts and repairs from par2. Both are **server-agnostic**: `NNTP_SERVER`
+    / `NNTP_PORT` / `NNTP_USER` / `NNTP_PASS` / `NNTP_FROM` come from the Secrets store under
+    the declared-var rule, implicit TLS on 563 and STARTTLS elsewhere. Free text servers
+    carry no binary retention at all; that is a provider choice, not a bug.
+  - **Posting is dry-run by default and needs the user's word.** Without `--go`, `post`
+    prints the exact article and stops — and that dry run needs no server, so showing a human
+    what is about to go out is the cheap path rather than the expensive one. The permission
+    prose makes the `ask_user` confirmation explicit: an article propagates to thousands of
+    servers in minutes and there is no unsend.
+  - **Searching is client-side, because NNTP has no search command.** `headers` pulls one
+    overview range and sifts it with `--subject` / `--from` regexes and `--since`. Overview
+    subjects arrive RFC 2047-encoded and are decoded *before* filtering — otherwise every
+    regex would match the encoding rather than the words — and the range carries a cap so a
+    mistyped `--range` fails fast instead of pulling a provider's whole retention.
+  - **Binaries are verified, not hoped for.** Per-segment CRC32 *and* the part length implied
+    by `=ypart begin/end` (which the spec makes authoritative over the size in `=yend`).
+    Parts are written at their own offsets into a sparse file, so parallel arrival order does
+    not matter. Filenames come from the yEnc `=ybegin` header rather than the routinely
+    obfuscated NZB subject, and both are reduced to a basename inside the output directory
+    before anything is written. An unrepairable download is reported incomplete, its partial
+    files removed unless `--keep-broken`, and the exit status says so in both output modes.
+    par2 arrives as a wheel-packaged binary so a sandboxed run needs no system package, and
+    repair runs over what actually landed on disk rather than the names the NZB claimed.
+  - `--connections` defaults to 8 and caps at 30: providers cap concurrent connections per
+    account and answer `502` past it. One connection per thread is a constraint, not a tuning
+    choice — the NNTP client holds unlocked buffered reader state on a single socket.
+
+### Fixed
+- **Two timing races in `tests/test_loop.py` that made the suite flaky under load**, both
+  found by a run that hung for 13 minutes instead of the usual three.
+  - `test_pause_gate` published the run dir to its clearer thread BEFORE writing
+    `control.json {"pause": true}`. The clearer could see the dir, write `pause: false`, and
+    have the pause write land on top of it — and `pause_gate` polls forever by design (a
+    paused run stays paused), so nothing ever released it and the whole suite hung rather
+    than failing. The pause is now durable before the dir is published.
+  - `test_ask_user_blocking_deferred_by_user` wrote its defer marker on a fixed 0.3s timer,
+    racing the run's boot. When boot lost, the marker was present at boot and correctly swept
+    as stale, so the test failed on the 1m blocking-timeout path. It now waits for the
+    pending-question record — written when the question is asked, before the wait — so the
+    marker always lands mid-wait, which is what the test is about.
+
+### Documentation
+- `docs/usenet.md` (new, on the Help tab via `GUIDE_ORDER`), plus the sweep: `README.md`,
+  `CLAUDE.md`, and `docs/traits-permissions.md` (the shipped-permission table and the
+  reserved-util list).
+
 ## [0.114.0] — 2026-07-26
 
 ### Changed

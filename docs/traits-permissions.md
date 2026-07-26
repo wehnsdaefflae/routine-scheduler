@@ -10,7 +10,8 @@ ownership:
   runs, and refined by the routine itself as it learns. There is no toggle afterwards —
   changing a practice means editing the routine's files, like any other part of its recipe.
 - **Capabilities** — the atomic, engine-enforced surface: gated action kinds
-  (`write_util`, `memory_read`, `memory_write`), reserved utils (`discord`, `shell`, `remote`, `darknet`), the
+  (`write_util`, `memory_read`, `memory_write`), reserved utils (`discord`, `shell`, `remote`,
+  `darknet`, `usenet` / `usenet-nzb`), the
   write_util approval level, and the previous-run read depth. Held via `routine.yaml`'s
   `capabilities:` mapping, changed **only by you** (the routine page's panel; the web
   layer blocks edits while a run is active), and enforced when every single action is
@@ -189,6 +190,7 @@ The shipped set:
 | `shell` | the reserved `shell` util — arbitrary host commands | opt-in |
 | `remote-machines` | the reserved `remote` util — act on bound SSH hosts (see [remote-machines](remote-machines.md)) | opt-in |
 | `darknet` | the reserved `darknet` util — read Tor hidden services (see [darknet](darknet.md)) | opt-in |
+| `usenet` | the reserved `usenet` + `usenet-nzb` utils — read, search and post over NNTP (see [usenet](usenet.md)) | opt-in |
 | `workflow-generation` | `workflows: generate` — a subtask may DRAFT a new pattern when none fits | opt-in |
 | `background-tasks` | the `detach` action — launch a long job that outlives a reply and reports back | ✅ conversations; opt-in for routines |
 
