@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import deliberation, notes
+from . import deliberation, notes, outputs
 from .actions import example_action
 from .capabilities import capabilities_digest
 from .kindsurface import effective_kinds, kind_bullets, schema_for_kinds
@@ -263,6 +263,11 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         if names:
             parts.append(".memory/ notes (INDEX.md is MISSING — re-save each with "
                          "memory_write to rebuild it): " + ", ".join(names))
+    # Cross-run reuse of expensive output: the pointer for THIS run's own truncated calls
+    # rides each observation, but an output an EARLIER run paid for has no other route into
+    # the prompt. Absent (not an empty heading) until something has actually spilled.
+    if spilled := outputs.digest(routine_dir):
+        parts.append(spilled)
     if open_qs:
         qlines = "\n".join(f"- [{q['qid']}] {q['question']} (asked {q.get('asked', '?')})"
                            for q in open_qs)

@@ -19,6 +19,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.116.0] — 2026-07-26
+
+### Added
+- **Util output too large for its observation is saved, not destroyed** (`engine/outputs.py`). A
+  util's stdout is captured up to 1 MB (`utils_lib.OUTPUT_CAP`) and then head+tail truncated to 8k
+  for the observation — and the transcript records the TRUNCATED payload, so everything between
+  those two caps was produced and immediately lost. The only recovery was re-running the util,
+  which does not return the same data for anything non-deterministic, paid, or time-bound (a page
+  fetch, an LLM subcall, a mailbox read, a quote). The full text now goes to
+  `.util_outputs/<run-ts>/t<turn>-<util>.out` (`.err` for a truncated stderr).
+  - **Only what was truncated is kept.** An output the observation carried whole is already in the
+    transcript verbatim; a second copy would duplicate a file the system has. The store is the
+    recovery of a loss, not a mirror of util traffic.
+  - **The pointer rides the observation that lost the middle**, naming the exact path — the moment
+    of need, so the store needs no index, a run never guesses a filename, and an untruncated call
+    carries nothing extra. Reads are ordinary `read_file`, which pages by line window: a large
+    output is cheaper to consult on disk than it ever was in context, where it existed only as a
+    head+tail guess. The state digest lists the newest spills so a run can read what an EARLIER
+    run already fetched instead of fetching it again (the only route into the prompt for those —
+    this run's own pointers ride its observations).
+  - **Engine-owned and read-only for the run**, like `runs/`: a run does not rewrite the record of
+    what a util returned. **Gitignored on first use** — the run-end autocommit is `git add -A` and
+    util output can carry tokens, so without this every spill would enter the routine's repo
+    permanently and ride `git-sync` to a remote (self-healing for existing routines and
+    conversations, mirroring `machines._ensure_mnt_gitignored`; new dirs get it from
+    `scaffold.GITIGNORE`). Never search-indexed (the index already excludes tool observations for
+    the same reason). Pruned to the last `KEEP_RUNS` (5) run dirs — a backstop against unbounded
+    growth, never a promise about how long an output lives. A child run's key carries its `sub`
+    path, so a subrun's restarted turn numbering cannot overwrite its parent's spill.
+
 ## [0.115.0] — 2026-07-26
 
 ### Added

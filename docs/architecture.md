@@ -261,6 +261,17 @@ and the capabilities digest's catalog listing):
   the stages at creation and NOT persisted (a routine carries no `instruction.md`); the stages are the
   sole source of truth. `traits/*.md` — the routine's OWN practice modules, ADAPTED from library traits
   at creation (self-refined afterwards; no post-creation toggle).
+- `.util_outputs/<run-ts>/t<turn>-<util>.out|.err` (`engine/outputs.py`) — util output too large for
+  the observation that carried it, saved in full instead of destroyed. A util's stdout is captured up
+  to 1 MB (`utils_lib.OUTPUT_CAP`) and then head+tail truncated to 8k for the observation, and the
+  transcript records the TRUNCATED payload — so that band had no survivor, and re-running is not the
+  same data for a fetch, a paid call, or a mailbox read. ONLY truncated output is kept: an output the
+  observation carried whole is already in the transcript verbatim. The pointer rides the observation
+  that lost the middle (so the store needs no index), earlier runs' spills reach the next run through
+  the state digest, and reads are ordinary `read_file` — which pages by line window, making a big
+  output cheaper on disk than it ever was in context. Engine-owned and read-only for the run (like
+  `runs/`), gitignored on first use (the run-end autocommit is `git add -A` and util output can carry
+  tokens), never search-indexed, pruned to the last `KEEP_RUNS` runs.
 - `state/`, `LEDGER.md`, `inbox/` (daemon/web drop messages + answers here), `questions/pending/`
   (the ONE decision-record shape: {mode, type, default, expires} — asks and util approvals alike),
   `runs/<ts>/` (transcripts + status.json incl. usage/turns/elapsed_s + the finish `outcome` —
@@ -628,8 +639,8 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   `components/searchbox.js`, focused by `/` or Ctrl-K): SQLite FTS5 over both homes' PROSE —
   transcript say/note/finish/questions/answers/user messages (gz + subrun trees included),
   result.md, history/ archives, LEDGER.md, `.memory/`, pending decision records, recipe
-  files; NEVER config, state/, inbox, artifacts, or tool observations (bulk, and where a
-  leaked secret would live). The db (`<routines_home>/.control/search.sqlite3`) is a PURE
+  files; NEVER config, state/, inbox, artifacts, `.util_outputs/`, or tool observations
+  (bulk, and where a leaked secret would live). The db (`<routines_home>/.control/search.sqlite3`) is a PURE
   CACHE of the filesystem — delete it and it rebuilds; per-file stat fingerprints drive
   incremental refresh (newest runs first, budget-bounded with a per-pass progress
   guarantee) and prune rows for files retention removed. ONE writer: the daemon/web

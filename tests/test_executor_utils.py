@@ -21,6 +21,14 @@ import sys
 print("echo:", " ".join(sys.argv[1:]))
 '''
 
+FLOODER = '''"""flooder — prints more than one observation's worth of stdout.
+
+usage: gu flooder
+tags: test
+"""
+print("F" * 20_000)
+'''
+
 CRASHER = '''"""crasher — always exits 3 with a diagnostic.
 
 usage: gu crasher --right-flag
@@ -46,7 +54,7 @@ def util_ctx(make_routine, tmp_path, monkeypatch):
             pytest.skip("uv not available — run_util requires it")
         monkeypatch.setenv("PATH", f"{local_bin}:{os.environ.get('PATH', '')}")
     home = tmp_path / "libraries"
-    for name, body in (("echoer", ECHOER), ("crasher", CRASHER)):
+    for name, body in (("echoer", ECHOER), ("crasher", CRASHER), ("flooder", FLOODER)):
         d = home / "utils" / name          # utils live in the library's utils/ subtree
         d.mkdir(parents=True)
         (d / "main.py").write_text(body, encoding="utf-8")
@@ -84,13 +92,33 @@ def test_failed_util_without_authoring_escalates_instead(util_ctx):
     assert "ask_user" in obs["hint"]
 
 
+def test_output_too_large_for_the_observation_is_spilled_not_lost(util_ctx):
+    """The transcript records the TRUNCATED observation, so without the spill store the
+    band between the capture cap (1 MB) and the observation cap has no survivor — and
+    re-running is not the same data for a fetch, a paid call, or a mailbox read."""
+    from rsched.engine.observations import OBS_CAP_CHARS
+
+    util_ctx.turn = 4
+    obs = dispatch({"kind": "util", "name": "flooder", "args": []}, util_ctx)
+    assert obs["truncated"] is True
+    assert len(obs["stdout"]) <= OBS_CAP_CHARS + 200        # the observation stays capped…
+    rel = obs["full_output"]["stdout"]
+    assert "t4-flooder.out" in rel                          # stamped with the turn that got it
+    saved = (util_ctx.routine.dir / rel).read_text(encoding="utf-8")
+    assert saved.count("F") == 20_000                       # …the whole output is on disk
+    # an ordinary-sized output is already in the transcript verbatim — nothing is copied
+    small = dispatch({"kind": "util", "name": "echoer", "args": ["hi"]}, util_ctx)
+    assert "full_output" not in small
+
+
 def test_util_show_and_missing_answer_with_the_catalog(util_ctx):
     obs = dispatch({"kind": "util", "name": "show", "args": ["echoer"]}, util_ctx)
     assert "prints its arguments back" in obs["source"]
     missing = dispatch({"kind": "util", "name": "show", "args": ["nope"]}, util_ctx)
     assert missing["missing"] is True and "echoer" in missing["available"]
     gone = dispatch({"kind": "util", "name": "unknown-util", "args": []}, util_ctx)
-    assert gone["missing"] is True and set(gone["available"]) == {"crasher", "echoer"}
+    assert gone["missing"] is True
+    assert set(gone["available"]) == {"crasher", "echoer", "flooder"}
 
 
 def test_util_show_full_and_range_page_the_whole_source(util_ctx):

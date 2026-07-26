@@ -38,7 +38,7 @@ Eight sections, in this order:
 | 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow **and the task**: a top-level routine's recipe is self-contained — goal, deliverable, constraints and completion criteria are compiled into `main.md` + `stages/*.md` (stage detail read on demand), practice detail in `traits/*.md`. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
 | 5 | `# INSTRUCTION (your assigned task)` | the parent's spawn `prompt` (subruns), or `instruction.md` (conversations) | **Subruns AND conversations.** A top-level scheduled ROUTINE has NO instruction section and no `instruction.md` on disk: its task is entirely its self-contained recipe (`main.md` + `stages/`) — the clarified instruction was only a transient compile **SEED**, consumed at creation and never persisted. A **subrun** has no decomposed stages, so its self-contained brief (the parent's `prompt`) rides here. A **conversation** runs at depth 0 but its task is its first message (`instruction.md`), so it carries the section too (discriminated by HOME — its dir sits directly under `conversations_home`); without it the agent would see only the converse HOW-to pattern and never its actual task. |
 | 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ capabilities — switched-off gated kinds like `memory_*`/`write_util` simply don't appear), the enabled capabilities + the held conduct permissions, each held permission's short capability note (the library doc's body, capped), any **bound remote machines** (name + description + tags — the SSH hosts this routine can act on via the `remote` util, named here so the model knows its hardware without a discovery turn), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary, reserved utils flagged). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
-| 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the **WORKING PLAN** (`state/plan.md`, inlined in full up to 60 lines — the run's own living decomposition; see below), the `state/` file list, `stages/` module names, **`artifacts/` delivered so far** (name + size), the `traits/` practice-module names, the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), open deferred questions, answers that arrived since the last run. |
+| 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the **WORKING PLAN** (`state/plan.md`, inlined in full up to 60 lines — the run's own living decomposition; see below), the `state/` file list, `stages/` module names, **`artifacts/` delivered so far** (name + size), the `traits/` practice-module names, the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), the newest **`.util_outputs/`** spills (path + size, only once something has spilled — `read_file one when you need what an earlier call already fetched, rather than re-running the util`), open deferred questions, answers that arrived since the last run. |
 
 **The projection: a run is shown only the vocabulary it has.** Sections (1), (2) and (6)
 describe action kinds, and all three are filtered through the same
@@ -195,7 +195,16 @@ back — `format_observation(obs)`, always starting `OBSERVATION (<kind>…)`:
 - `OBSERVATION (wait):\nSUB-WORKFLOW 1 'child' FINISHED (status ok, 12 turns):\n<summary>`
 - `OBSERVATION (finish REJECTED): you have not executed a single action this run…` — the fabrication guard, if a fresh TOP-LEVEL run's very first action is a `finish(ok)` (children may validly answer from their instruction alone) (a resume seeds the guard from the replayed observations, so a continued conversation may re-finish immediately)
 
-Observations are truncated head+tail at 8k chars.
+Observations are truncated head+tail at 8k chars. A **util** observation that lost its middle
+gains a pointer to the full text, which the engine saved rather than destroyed:
+
+```
+[full output] The complete 43912-char stdout at `.util_outputs/20260726-070000/t7-page-fetch.out` — read_file it (start_line/max_lines page it) for the elided middle instead of re-running the util.
+```
+
+The pointer rides the observation that lost the middle — the moment of need — so the store
+needs no index and an untruncated call carries nothing extra (`engine/outputs.py`; see
+docs/architecture.md).
 
 ### 3b · Tails appended to the observation (in order, each only when applicable)
 

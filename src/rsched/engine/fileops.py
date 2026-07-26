@@ -13,6 +13,7 @@ from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, guess_media_type
 from ..paths import atomic_write, resolve_rel
 from ..readmodels.statemap import STAGES_DIR
 from .observations import OBS_CAP_CHARS, truncate
+from .outputs import OUTPUTS_DIR
 from .run_context import RunContext
 
 READ_DEFAULT_MAX_LINES = 200
@@ -217,6 +218,10 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
         return None
     if resolved.is_relative_to(ctx.routine.dir / "runs"):
         return "runs/ is engine-owned and read-only for the run"
+    if resolved.is_relative_to(ctx.routine.dir / OUTPUTS_DIR):
+        return (f"{OUTPUTS_DIR}/ is engine-owned and read-only for the run — it is the saved "
+                "full text of util output too large for its observation (read_file it); a run "
+                "does not rewrite the record of what a util returned")
     # routine.yaml is config — never writable by ANY run (even the improver, even when the
     # recipe is unlocked): config is the user's, changed via the UI or a deferred ask_user.
     # Machine-tunable behavior knobs (deliberation) live in tuning.yaml, which is RECIPE.

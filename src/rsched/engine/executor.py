@@ -17,6 +17,7 @@ from ..endpoints.base import EndpointError
 from ..ids import is_slug
 from ..oauth import store as oauth_store
 from ..utils_lib import USAGE_ERROR_EXIT
+from . import outputs
 from .fileops import (
     UTIL_DEFAULT_TIMEOUT_S,
     do_edit_file,
@@ -151,6 +152,12 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
     stderr, trunc_err = truncate(err, cap=8000 if code != 0 else 2000)
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
            "stdout": stdout, "stderr": stderr, "truncated": trunc_out or trunc_err}
+    # What the observation could not carry is spilled to .util_outputs/ rather than lost:
+    # the transcript records THIS (truncated) payload, so the band between the capture cap
+    # and the observation cap has no other survivor. Only truncated output is kept.
+    if spilled := outputs.spill(ctx, name, out, err,
+                                out_truncated=trunc_out, err_truncated=trunc_err):
+        obs["full_output"] = spilled
     if code != 0:
         # A failed call teaches the correct one — and the repair path. Without this nudge
         # the model's rational move is a silent workaround, and the next routine hits the

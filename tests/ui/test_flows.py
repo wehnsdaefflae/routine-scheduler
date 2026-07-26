@@ -332,7 +332,10 @@ def test_run_transcript_story_and_refer(ui, ui_page):
                      "say": "Catalog fits — scanning portals.",
                      "note": "portal 1 needs the site: filter — plain queries return noise"}},
         {"type": "observation", "turn": 1,
-         "payload": {"kind": "util", "name": "websearch", "exit": 0, "stdout": "3 hits"}},
+         "payload": {"kind": "util", "name": "websearch", "exit": 0, "stdout": "3 hits",
+                     "truncated": True,
+                     "full_output": {"stdout": ".util_outputs/20260715-150000/t1-websearch.out",
+                                     "stdout_chars": 41234}}},
         {"ts": "2026-07-15T10:01:30+00:00", "type": "assistant_action", "phase": "report",
          "turn": 2, "usage": {"in": 10, "out": 5},
          "payload": {"kind": "write_file", "path": "artifacts/r.md",
@@ -351,6 +354,12 @@ def test_run_transcript_story_and_refer(ui, ui_page):
     expect(dividers.nth(1)).to_have_text("report")
     # a captured note renders as its own 📌 line inside the turn box
     expect(ui_page.locator(".turn .note")).to_contain_text("portal 1 needs the site: filter")
+    # a truncated util observation says where the full output was saved (util.fullOutput),
+    # so a reader of the run knows the elided middle still exists on disk
+    obs = ui_page.locator(".obs-collapse").first
+    obs.locator("summary").click()
+    expect(obs).to_contain_text(".util_outputs/20260715-150000/t1-websearch.out")
+    expect(obs).to_contain_text("41234 chars")
     # the injected message renders its reference line as a chip, body clean
     injection = ui_page.locator(".ev.injection")
     expect(injection.locator(".reply-ref")).to_contain_text("turn 1 (util websearch)")

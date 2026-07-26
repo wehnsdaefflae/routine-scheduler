@@ -14,7 +14,7 @@
 
 import { md, mdInline } from "/static/md.js";
 import { answerForm } from "/static/components/answerform.js";
-import { el, fmtTime, fmtTokens } from "/static/util.js";
+import { el, fmtTime, fmtTokens, fullOutput } from "/static/util.js";
 
 const BRIEF_FIELD = { util: "name", write_util: "name", read_file: "path", write_file: "path",
                       edit_file: "path", memory_read: "name", memory_write: "name",
@@ -170,6 +170,7 @@ export function createTranscript(container, opts = {}) {
         : o.listing != null ? `util catalog\n${o.listing}`
         : o.source != null ? `source of "${o.target}"\n${o.source}`
         : `${o.name} → exit ${o.exit}\n${o.stdout || ""}${o.stderr ? `\n[stderr] ${o.stderr}` : ""}`
+          + fullOutput(o.full_output)
           + (o.usage ? `\n[usage] ${o.usage}` : "") + (o.hint ? `\n[hint] ${o.hint}` : "");
     } else if (o.kind === "write_util") {
       text = o.pending_approval ? `write_util "${o.name}": awaiting user approval`

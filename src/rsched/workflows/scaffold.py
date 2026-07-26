@@ -20,7 +20,9 @@ from ..config import (
 from ..health_events import log_health_event
 from ..ids import is_slug
 
-GITIGNORE = "runs/\ninbox/\nquestions/\nmnt/\n"   # mnt/ = transient remote-machine share mounts
+# mnt/ = transient remote-machine share mounts; .util_outputs/ = spilled util output
+# (engine-owned and pruned, and it can carry whatever a util printed — never committed)
+GITIGNORE = "runs/\ninbox/\nquestions/\nmnt/\n.util_outputs/\n"
 
 PRACTICES_HEADING = "## Standing practices"
 TAIL_LEAD = ("These practice modules are this routine's own standards — read each with "

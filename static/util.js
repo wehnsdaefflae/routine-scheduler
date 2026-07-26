@@ -144,6 +144,15 @@ export function requiresSummary(r) {
   return caps.length ? `needs ${caps.join(" · ")}` : "";
 }
 
+// A util observation's `full_output` pointer as one line: output too large for the
+// observation was saved in full under .util_outputs/, so the reader (like the run) knows
+// the elided middle still exists on disk. Empty when nothing was truncated.
+export function fullOutput(p) {
+  const saved = ["stdout", "stderr"].filter((k) => p?.[k])
+    .map((k) => `${k} → ${p[k]} (${p[`${k}_chars`]} chars)`);
+  return saved.length ? `\n[full output saved] ${saved.join(", ")}` : "";
+}
+
 export function tagChip(text, { onClick, onRemove, active } = {}) {
   const cls = ["tag", onClick ? "click" : "", active ? "on" : ""]
     .filter(Boolean).join(" ");

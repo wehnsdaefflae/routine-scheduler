@@ -107,6 +107,13 @@ one you are about to touch, not all of them.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out.
   `memory_*` are the ONLY way into `.memory/` (generic file actions are rejected there); the engine
   owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line note cap.
+  **Util output too large for its observation is SAVED, not lost** — `engine/outputs.py` spills the
+  full captured text to `.util_outputs/<run-ts>/t<turn>-<util>.out` and the observation that lost the
+  middle carries the path (so the store needs no index). ONLY truncated output is kept: an
+  untruncated one is already in the transcript verbatim, and a copy would duplicate a file the system
+  has. Engine-owned and read-only for the run like `runs/`, gitignored on first use (autocommit is
+  `git add -A`, and util output can carry tokens), never search-indexed, pruned to the last
+  `KEEP_RUNS` runs — retention is a backstop, never a promise.
 - **The prompt surface is documented** in `docs/prompt-anatomy.md` (rendered on the Help tab). Revise
   it with ANY change to composer/loop/actions/schema_guard wording — `tests/test_prompt_anatomy.py`
   pins the load-bearing strings and fails on drift.

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 
+from . import outputs
+
 OBS_CAP_CHARS = 8_000
 
 
@@ -52,6 +54,10 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
         body = obs.get("stdout") or "(no stdout)"
         if obs.get("stderr"):
             body += f"\n[stderr]\n{obs['stderr']}"
+        if full := obs.get("full_output"):
+            # The pointer rides the observation that lost the middle — the moment of need,
+            # so the store needs no index and costs nothing on an untruncated call.
+            body += "\n[full output] " + outputs.pointer_line(full)
         if obs.get("usage"):
             body += f"\n[usage] {obs['usage']}"
         if obs.get("hint"):

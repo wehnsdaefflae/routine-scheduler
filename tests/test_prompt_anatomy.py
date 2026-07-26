@@ -76,6 +76,10 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # told tables/quotes are worth emitting
         "pipe tables and > blockquotes",
         "pipe tables, > quotes",
+        # the util-output spill pointer (outputs.pointer_line) + its digest section
+        # (outputs.digest) — the only route to output the observation could not carry
+        "instead of re-running the util",
+        "rather than re-running the util",
         # the anti-batching override (composer harness paragraph, F180): the CLI harness
         # advertises multi-tool batching; the engine executes at most one action per reply
         "ONE tool call per reply",

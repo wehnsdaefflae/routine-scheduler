@@ -8,7 +8,8 @@ say/note/finish prose, questions + answers, user messages), result.md, compactio
 history/ archives, LEDGER.md, .memory/ notes, durable decision records
 (questions/pending), and recipe files (main.md / stages / traits / instruction.md).
 NOT indexed: config (routine.yaml, tuning.yaml, server config), state/, inbox/
-(transient), artifacts/attachments (deliverables, often binary), and secrets — the
+(transient), artifacts/attachments (deliverables, often binary), `.util_outputs/`
+(spilled util output — bulk, and where a leaked secret would live), and secrets — the
 index never sees them, so it can never leak them.
 """
 
