@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.117.0] — 2026-07-29
+
+### Fixed
+- **`engine/outputs.py` — `spill()` no longer crashes the turn on a malformed context** (F211).
+  0.116.0's spill store computed `base`/`rel_dir` (which call `_run_key(ctx)` → `ctx.run_dir`)
+  OUTSIDE the function's try block, so a context without `run_dir` raised `AttributeError` and
+  broke the whole util turn — directly violating spill's own documented "Never raises: a failed
+  spill must not fail the turn" contract. The regression shipped RED (`test_utils.py::
+  test_failed_util_teaches_repair_and_keeps_trace_tail`) because `test_utils.py` is
+  `skipif(uv is None)` and the commit environment lacked `uv`. The setup lines are now inside the
+  try and `AttributeError` is caught alongside `OSError`/`ValueError`. Full suite back to green.
+
+### Changed
+- **New-routine scaffolding: a stage-generation outage reads as degraded, not "FAILED"** (F212a,
+  operator AUDIT note). When the stage-generator model is unreachable at creation (a transient
+  quota/rate-limit outage — the routine is still scaffolded from the verbatim workflow pattern and
+  runs fine), the routine's LEDGER said **"⚠ stage generation FAILED at creation"**, which reads as
+  a broken routine. It now says **"⚠ scaffolded without generated stages"** and states plainly that
+  the routine is fully functional and how to get tailored stages later. The never-silent cause line
+  and the `wizard_build_degraded` health event (F183/D41/F197) are unchanged.
+
 ## [0.116.0] — 2026-07-26
 
 ### Added

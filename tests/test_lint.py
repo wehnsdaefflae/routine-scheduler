@@ -250,8 +250,9 @@ def test_scaffold_degrade_names_the_cause_and_logs_a_health_event(tmp_path):
     d = scaffold(server, slug="born-degraded", name="Degraded", instruction="x",
                  workflow_slug="general-task")
     ledger = (d / "LEDGER.md").read_text(encoding="utf-8")
-    assert "stage generation FAILED" in ledger
-    assert "Cause: " in ledger                    # the ⚠ block names the failure
+    assert "scaffolded without generated stages" in ledger
+    assert "fully functional" in ledger           # a degraded build still runs — not a hard fail
+    assert "Cause: " in ledger                    # the ⚠ block still names the failure
     stream = (server.routines_home / ".control" / "health-events.jsonl")\
         .read_text(encoding="utf-8").splitlines()
     ev = _json.loads(stream[-1])

@@ -180,10 +180,12 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         # and WHY (F197: a cause-less warning sent the 2026-07-24 outage hunt through the
         # daemon journal, which sandboxed audit routines cannot read)
         why = str(result.get("reason") or "unknown failure")
-        ledger += ("\n### ⚠ stage generation FAILED at creation\nmain.md is the verbatim "
-                   "workflow pattern and stages/ has no generated modules — the routine still "
-                   "runs, but re-creating it (or asking a run to draft the stage modules) will "
-                   f"give better results.\nCause: {why}\n")
+        ledger += ("\n### ⚠ scaffolded without generated stages\nThe stage-generator was "
+                   "unreachable at creation (usually a transient model outage — quota/rate "
+                   "limit), so main.md is the verbatim workflow pattern and stages/ is empty. "
+                   "The routine is fully functional and runs on the pattern as-is; for tailored "
+                   "stages, re-create it when models are available (or ask a run to draft the "
+                   f"stage modules).\nCause: {why}\n")
         log_health_event(server.routines_home, "wizard_build_degraded",
                          routine=slug, run_id="", detail=why)
     (routine_dir / "LEDGER.md").write_text(ledger, encoding="utf-8")

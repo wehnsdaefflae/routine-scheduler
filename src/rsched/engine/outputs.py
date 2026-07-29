@@ -84,10 +84,10 @@ def spill(ctx: RunContext, name: str, out: str, err: str, *,
     """
     if not (out_truncated or err_truncated):
         return None
-    base = ctx.routine.dir / OUTPUTS_DIR
-    rel_dir = f"{OUTPUTS_DIR}/{_run_key(ctx)}"
     pointer: dict = {}
     try:
+        base = ctx.routine.dir / OUTPUTS_DIR
+        rel_dir = f"{OUTPUTS_DIR}/{_run_key(ctx)}"
         _ensure_ignored(ctx.routine.dir)
         (ctx.routine.dir / rel_dir).mkdir(parents=True, exist_ok=True)
         for stream, text, truncated in (("out", out, out_truncated),
@@ -100,7 +100,7 @@ def spill(ctx: RunContext, name: str, out: str, err: str, *,
             pointer[key] = rel
             pointer[f"{key}_chars"] = len(text)
         _prune(base)
-    except (OSError, ValueError):
+    except (OSError, ValueError, AttributeError):
         # best-effort, like the note channel: a degenerate path raises before the OS is
         # even reached, and either way the turn must survive it
         return pointer or None
