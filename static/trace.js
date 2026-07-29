@@ -48,4 +48,34 @@ export function installTracing() {
   window.addEventListener("unhandledrejection",
     (e) => trace("error", "promise", String(e.reason).slice(0, 200)));
   window.addEventListener("pagehide", () => flush(true));
+  installFreezeObserver();
+}
+
+// F218: main-thread FREEZE telemetry. A UI freeze IS a long task — the browser's Long Tasks
+// API fires for any task that blocks the main thread ≥50ms (a jank the user feels as a stall).
+// We record the WORST block per throttle window as a `freeze` trace (view + blocked-ms), so the
+// next audit can measure freezes and correlate them with reconnect bursts instead of guessing
+// whether they happen. Throttled to one report per FREEZE_WINDOW_MS and floored at a higher
+// threshold so routine sub-50ms jank is not logged — only real stalls are evidence.
+const FREEZE_MIN_MS = 200;
+const FREEZE_WINDOW_MS = 10000;
+function installFreezeObserver() {
+  if (typeof PerformanceObserver === "undefined") return;   // unsupported browser → skip
+  let worst = 0, lastReport = 0, pending = null;
+  try {
+    const obs = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.duration < FREEZE_MIN_MS) continue;
+        worst = Math.max(worst, Math.round(entry.duration));
+        if (pending) continue;
+        const wait = Math.max(0, FREEZE_WINDOW_MS - (Date.now() - lastReport));
+        pending = setTimeout(() => {
+          pending = null; lastReport = Date.now();
+          const ms = worst; worst = 0;
+          trace("freeze", "main-thread", `blocked ${ms}ms`);
+        }, wait);
+      }
+    });
+    obs.observe({ entryTypes: ["longtask"] });
+  } catch { /* longtask entry type unsupported — nothing to observe */ }
 }

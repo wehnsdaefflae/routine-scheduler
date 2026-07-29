@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 log = logging.getLogger("rsched.traces")
 router = APIRouter(tags=["traces"])
 
-KINDS = ("nav", "click", "submit", "error", "reconnect")
+KINDS = ("nav", "click", "submit", "error", "reconnect", "freeze")
 MAX_BATCH = 100
 MAX_FIELD = 200
 KEEP_DAYS = 14

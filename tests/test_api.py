@@ -1312,6 +1312,22 @@ def test_ui_trace_ingest_and_retention(client):
     assert c.post("/api/ui-trace", json={"events": []}).json()["recorded"] == 0
 
 
+def test_ui_trace_accepts_freeze_events(client):
+    """F218: main-thread freeze telemetry (a `freeze` trace, the browser Long-Task signal) is an
+    accepted ui-trace kind, so the next audit can measure UI stalls; an unknown kind is still
+    dropped by the ingest allowlist."""
+    c, tmp = client
+    r = c.post("/api/ui-trace", json={"events": [
+        {"kind": "freeze", "view": "run", "target": "main-thread", "detail": "blocked 640ms"},
+        {"kind": "wobble", "view": "run"},
+    ]})
+    assert r.status_code == 200 and r.json()["recorded"] == 1     # freeze in, wobble dropped
+    tdir = tmp / "routines" / ".ui-traces"
+    lines = [json.loads(x) for p in tdir.glob("*.jsonl") for x in p.read_text().splitlines()]
+    freeze = [e for e in lines if e["kind"] == "freeze"]
+    assert len(freeze) == 1 and freeze[0]["detail"] == "blocked 640ms"
+
+
 def test_audit_decisions_merge_into_questions(client):
     c, tmp = client
     adir = tmp / "routines" / "self-audit" / "audit"

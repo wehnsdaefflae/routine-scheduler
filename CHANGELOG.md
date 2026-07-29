@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.123.0] — 2026-07-29
+
+### Added
+- **Main-thread FREEZE telemetry** (`static/trace.js` + `web/api_traces.py`, F218 — instrumentation
+  for the "UI freezes during active runs" report, N12). The console now observes the browser's
+  Long Tasks API and records a `freeze` ui-trace (view + worst blocked-ms) when the main thread
+  stalls ≥200ms, throttled to one report per 10s. `freeze` was added to the ui-trace ingest
+  allowlist so the events persist. This gives the next audit a DIRECT freeze signal — independent
+  of SSE reconnect traces, which a prior audit wrongly eyed as freeze evidence but are actually a
+  network artifact of the operator's tailscale access — so a genuine stall can finally be measured
+  rather than guessed at.
+
 ## [0.122.0] — 2026-07-29
 
 ### Changed
