@@ -279,6 +279,7 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
     callers decide whether that is a retry or a silent fallback.
     """
     from .interact import recreate_denial  # function-level: interact pulls in the ask stack
+    from .requests import request_denial
 
     candidate = (completion.parsed if completion.parsed is not None
                  else extract_json(completion.text))
@@ -286,7 +287,8 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
     problems = (validate(candidate, ACTION_SCHEMA)
                 or validate_action(candidate, allowed_kinds=loop.allowed_tools,
                                    grants=loop.grants)
-                or recreate_denial(loop, candidate))
+                or recreate_denial(loop, candidate)
+                or request_denial(loop, candidate))
     if problems and isinstance(candidate, dict):
         # per-util telemetry: a denied/malformed util call never reaches the executor —
         # this validation seam is the only place it can be counted (util_stats)

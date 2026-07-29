@@ -84,13 +84,17 @@ def _shared_read_roots(server) -> tuple[Path, ...]:
                  if (p := Path(home) / rel).exists())
 
 
-def policy_for_run(server, routine) -> SandboxPolicy:
-    """The sandbox view of one run: its routine dir writable, its fs roots visible, plus any
-    operator-staged shared read-only asset dirs (e.g. the captcha-solver browser extension).
+def policy_for_ctx(ctx) -> SandboxPolicy:
+    """The sandbox view of one LIVE run: its routine dir writable, its EFFECTIVE fs roots
+    visible (config roots plus the run's one-time fs grants — RunContext.read_roots /
+    write_roots, the same set the engine's own file actions honor), plus any
+    operator-staged shared read-only asset dirs (e.g. the captcha-solver browser
+    extension). One policy source, two enforcers: these roots and the engine path gates
+    are compiled from the same grants.
     """
-    return SandboxPolicy(mode=server.sandbox,
-                         read_roots=(*routine.fs_read_roots, *_shared_read_roots(server)),
-                         write_roots=(routine.dir, *routine.fs_write_roots))
+    return SandboxPolicy(mode=ctx.server.sandbox,
+                         read_roots=(*ctx.read_roots(), *_shared_read_roots(ctx.server)),
+                         write_roots=(ctx.routine.dir, *ctx.write_roots()))
 
 
 def base_policy(server) -> SandboxPolicy:

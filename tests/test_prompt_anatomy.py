@@ -83,6 +83,17 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # the anti-batching override (composer harness paragraph, F180): the CLI harness
         # advertises multi-tool batching; the engine executes at most one action per reply
         "ONE tool call per reply",
+        # access requests (the four-state grant model): the request field's schema
+        # description, the denial routing + tombstone wording (grants.request_route),
+        # the decided observation, the once-grant CAPABILITIES line, and the declined
+        # catalog badge — change any of them and the doc must follow
+        "a typed ACCESS REQUEST, one grant-entity id",
+        "The user decides: allow/deny, once or forever.",
+        "PERMANENTLY declined",
+        "do not re-request it now",
+        "OBSERVATION (ask_user — access request decided)",
+        "Granted for THIS RUN only",
+        "[reserved — declined by the user]",
     ]
     for needle in needles:
         assert needle in DOC, f"engine string {needle!r} missing from docs/prompt-anatomy.md"

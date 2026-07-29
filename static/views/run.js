@@ -424,8 +424,8 @@ export async function render(view, runId, query = {}) {
   mainBox.replaceChildren();
   const transcript = createTranscript(mainBox, {
     // deferred questions become answerable right in the conversation…
-    answer: async (qid, text) =>
-      api(`/api/questions/${qid}/answer`, { method: "POST", body: { text } }),
+    answer: async (qid, text, decision) =>
+      api(`/api/questions/${qid}/answer`, { method: "POST", body: decision ? { decision } : { text } }),
     // …and subrun lines unfold into the child's own conversation, in place.
     loadSub: (n, o) => api(`/api/runs/${runId}/transcript?sub=${n}&offset=${o}`),
     isLive: () => !TERMINAL.has(curState),

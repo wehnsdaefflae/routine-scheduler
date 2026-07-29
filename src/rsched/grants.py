@@ -263,6 +263,14 @@ class GrantPolicy:
     confirm: str = "always"                    # write_util approval policy
     run_history: str = "none"                  # previous-runs read access: none | last | all
     workflows: str = "catalog"                 # child-pattern sourcing: catalog | generate
+    # The four-state grant model's persistent NO: entity ids (entities.py) the user has
+    # denied FOREVER (routine.yaml `grants:` false rows). deny() stops routing these to a
+    # request — the answer is already given.
+    denied: frozenset = frozenset()
+    # Run-scoped overlay (with_overlay): one-time user decisions for THIS run only —
+    # in-memory on the RunContext, folded in here so every consumer reads ONE policy.
+    granted_now: frozenset = frozenset()
+    denied_now: frozenset = frozenset()
     # own recipe/config writable? True only when a user fs_write_root covers the routine
     # dir (the routine-improver's case) — computed at policy load, never a capability.
     # The recipe set includes tuning.yaml (machine-tunable behavior parameters, e.g.
@@ -276,6 +284,63 @@ class GrantPolicy:
 
     def allows_kind(self, kind: str) -> bool:
         return kind not in GATED_KINDS or kind in self.actions
+
+    def with_overlay(self, granted_now: set[str], denied_now: set[str]) -> GrantPolicy:
+        """This policy plus the run's one-time decisions: capability-class granted
+        entities are folded into the enforced sets (so validate_action, the schema
+        projection and the prompt all see them), resource-class ones ride in
+        `granted_now` for their own consumers (env injection, fs roots, the secrets
+        gate). Always applied over the CONFIG-derived base policy, never stacked.
+        """
+        from dataclasses import replace
+
+        actions, utils = set(self.actions), set(self.utils)
+        run_history, workflows = self.run_history, self.workflows
+        for eid in granted_now:
+            cls, _, name = eid.partition(":")
+            if cls == "action":
+                actions.add(name)
+            elif cls == "util":
+                utils.add(name)
+            elif cls == "runs" and _RUNS_RANK.get(name, 0) > _RUNS_RANK.get(run_history, 0):
+                run_history = name
+            elif cls == "workflows":
+                workflows = name
+        return replace(self, actions=frozenset(actions), utils=frozenset(utils),
+                       run_history=run_history, workflows=workflows,
+                       granted_now=frozenset(granted_now), denied_now=frozenset(denied_now))
+
+    def entity_state(self, eid: str) -> str:
+        """The four-state verdict for one entity id: 'denied_forever' | 'denied_now' |
+        'granted_now' | 'undecided'. (Allowed-forever lives in the native config keys,
+        already folded into this policy's sets — callers check those first.)
+        """
+        if eid in self.denied:
+            return "denied_forever"
+        if eid in self.denied_now:
+            return "denied_now"
+        if eid in self.granted_now:
+            return "granted_now"
+        return "undecided"
+
+    def request_route(self, eid: str, *, blocking_hint: bool = True) -> str:
+        """The way out of a denial, per the entity's decision state: an access request
+        for an undecided entity, or a firm 'do not re-request' for a declined one. The
+        ONE wording source every denial ends with (docs/prompt-anatomy.md pins it).
+        """
+        state = self.entity_state(eid)
+        if state == "denied_forever":
+            return (f"The user has PERMANENTLY declined {eid} for this routine — do not "
+                    f"request it again; work without it and note the limitation in your "
+                    f"summary if it matters.")
+        if state == "denied_now":
+            return (f"The user declined {eid} for THIS RUN — do not re-request it now; "
+                    f"work without it.")
+        hint = (' with mode "blocking" if you cannot proceed without it (deferred '
+                "otherwise)" if blocking_hint else "")
+        return (f'If it is essential, request it: ask_user with request: "{eid}" and a '
+                f"question saying what you need it for{hint}. The user decides: allow/deny, "
+                f"once or forever.")
 
     def may_generate_workflow(self) -> bool:
         """May a subtask DRAFT a new library pattern when none fits (vs pick from the catalog)?
@@ -298,16 +363,14 @@ class GrantPolicy:
                              or [_DEFAULT_KIND_SOURCE.get(kind, "util-authoring")])
             return (f"kind={kind} is switched OFF in this routine's capabilities — only the "
                     f"user can switch it on (the {srcs} permission covers its conduct). Work "
-                    f"with what you have; if this capability is essential, file a deferred "
-                    f"ask_user naming exactly what you need.")
+                    f"with what you have. {self.request_route(f'action:{kind}')}")
         if kind == "util":
             name = str(action.get("name") or "")
             if name in self.gated_utils and name not in self.utils:
                 perms = ", ".join(self.gated_utils[name])
                 return (f"util {name!r} is a reserved capability switched OFF for this "
                         f"routine — this channel is off limits (the {perms} permission "
-                        f"covers its conduct). Continue without it; if it seems essential, "
-                        f"file a deferred ask_user so the user can switch it on.")
+                        f"covers its conduct). {self.request_route(f'util:{name}')}")
         if kind in ("read_file", "view_image", "write_file", "edit_file"):
             writes = kind in ("write_file", "edit_file")
             paths = [str(action.get("path") or "")]
@@ -327,8 +390,8 @@ class GrantPolicy:
                         return (f"reading previous runs under runs/ is switched OFF in this "
                                 f"routine's capabilities (the user can raise the depth to the "
                                 f"last run or all; the {srcs} permission covers the conduct). "
-                                f"The state digest already carries the last run's result; if "
-                                f"you need more, file a deferred ask_user.")
+                                f"The state digest already carries the last run's result. "
+                                f"{self.request_route('runs:last')}")
                 if writes and _norm_rel(path).split("/")[-1] == CONFIG_FILE:
                     return (f"writing {_norm_rel(path)!r} would change routine config "
                             f"(routine.yaml — permissions, capabilities, budgets, roots). Config "
@@ -345,11 +408,14 @@ class GrantPolicy:
 
 def load_policy(permissions_home: Path, active: list[str] | None,
                 capabilities: dict | None = None, current_run_ts: str = "",
-                recipe_unlocked: bool = False) -> GrantPolicy:
+                recipe_unlocked: bool = False,
+                grants_map: dict | None = None) -> GrantPolicy:
     """Build the run policy from the routine's OWN capabilities mapping; the library's
     `requires:` declarations contribute only the reserved-util vocabulary and the
     capability→doc index that lets denials name the covering permission. `active` (the
     held conduct docs) is carried for the composer's prose — it unlocks nothing here.
+    `grants_map` (routine.yaml `grants:`) contributes the deny-forever tombstones; its
+    true rows (secret exposure) are read by the secrets gate, not here.
     """
     lib = read_library_requires(permissions_home)
     gated_utils: dict[str, list[str]] = {}
@@ -373,6 +439,8 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                        confirm=caps.get("confirm") or "always",
                        run_history=caps.get("runs") or "none",
                        workflows=caps.get("workflows") or "catalog",
+                       denied=frozenset(k for k, v in (grants_map or {}).items()
+                                        if v is False),
                        recipe_unlocked=recipe_unlocked,
                        runs_sources=tuple(runs_sources) or _DEFAULT_RUNS_SOURCE,
                        current_run_ts=current_run_ts)

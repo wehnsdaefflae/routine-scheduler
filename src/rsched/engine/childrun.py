@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from .. import entities
 from .run_context import RunContext
 from .transcript import Transcript
 
@@ -113,6 +114,12 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
         run_dir=sub_dir, transcript=transcript, budgets=child_budgets,
         depth=parent_ctx.depth + 1,
         sub_counter=parent_ctx.sub_counter, sub_lock=parent_ctx.sub_lock,
+        # Children inherit their parent's RESOURCES, one-time grants included (fs roots,
+        # secrets, connections, machines) — but never its capability-class grants: sub-
+        # workflows run with capabilities off, and entities.is_resource is that line.
+        granted_now={e for e in parent_ctx.granted_now if entities.is_resource(e)},
+        grant_args={e: v for e, v in parent_ctx.grant_args.items()
+                    if entities.is_resource(e)},
     )
     transcript.header(run_id=f"{parent_ctx.run_id}#sub{n}", routine=parent_ctx.routine.slug,
                       workflow={"slug": recipe_slug, "commit": "", "version": 0},

@@ -51,7 +51,11 @@ OAuth has two halves that live in different places, because a routine run is hea
   `{<PROVIDER>_ACCESS_TOKEN: token}` and passes them to `utils_lib.run_util` as `extra_secrets`.
   `_child_env` injects each **only if the util declares the var** in its `secrets:` line — the same
   declared-only rule store secrets obey, extended to these engine-provided tokens. So the token
-  reaches a util iff (routine binds the connection) AND (the util declares the var).
+  reaches a util iff (routine binds the connection) AND (the util declares the var). A run may
+  also request a binding it lacks (`ask_user` with `request: "connection:<provider>"`,
+  docs/traits-permissions.md): allow-forever binds the provider's single connected account in
+  routine.yaml; allow-now injects that account's token for the asking run only. With zero or
+  several connected accounts the request is corrected in-cycle — the account choice stays yours.
 
 ## Setting it up (Notion)
 

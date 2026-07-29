@@ -19,6 +19,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.124.0] — 2026-07-29
+
+### Added
+- **Unified access grants — the four-state model** (`entities.py`, `engine/requests.py`,
+  `web/grants_apply.py`; docs/traits-permissions.md): every grantable thing gets ONE
+  namespaced entity id (`action:` gated kinds · `util:` reserved utils · `secret:` ·
+  `connection:` · `machine:` · `fs-read:`/`fs-write:` · `runs:` · `workflows:` ·
+  `recreate:` deleted-util unlocks), and every denial now routes to a typed ACCESS
+  REQUEST: `ask_user` gains an optional `request: "<entity-id>"` field, the record
+  renders on the Decisions page as four buttons — **allow now · allow forever · deny now
+  · never** — and the decision applies mechanically. Allow-forever lands in the entity's
+  NATIVE routine.yaml key (capabilities via the same raise-then-floor cascade as the
+  permissions editor, bindings, fs roots; `secret:` rows in the new `grants:` mapping);
+  **never** writes a `grants:` deny tombstone (the run stops asking — denials switch to
+  "permanently declined", the catalog badges the util, the routine page's new *Declined
+  access* panel un-declines); now-decisions live in-memory on the run (a resumed leg
+  re-asks) and reach all three enforcers — `validate_action`, the util sandbox's
+  filesystem roots (`sandbox.policy_for_ctx`), and the declared-only env injection
+  (once-granted connections/machines/secrets flow like bound ones, for that run). A
+  mid-run allow re-projects the transport schema at the turn boundary, so a granted kind
+  is generatable on the very next turn; a decision made between runs is consumed at the
+  next boot, before the prompt is composed. Requests are validated inside the
+  schema-retry cycle (`requests.request_denial` — bad ids, already-enabled entities,
+  unknown providers/machines/secrets, credential-store fs paths, sub-workflow requests
+  are corrected at zero turn cost).
+
+### Changed
+- **Config-writer ownership tightened**: forever-decisions are persisted by the WEB
+  layer at click time — the engine now writes NO routine.yaml at all (the D39
+  `record_secret_grants` engine writer is gone). Secret exposure rides the generic
+  request flow: `secret_grants:` is replaced by `grants:` rows (`secret:<NAME>`), with a
+  one-shot boot migration (`bootstrap.migrate_secret_grants`,
+  MIGRATION expires 2026-08-29); the routine detail/PATCH API and the routine page's
+  secret-exposure panel speak the new shape.
+- **Never-recreate-deleted-utils** is now the `recreate:<slug>` entity — an allow-now
+  decision this run unblocks the recreate; deliberately NO allow-forever, so a fresh
+  deletion always outranks an old grant. The fuzzy answered-ask name-scan (and
+  `RunContext.user_answers`) is gone.
+- `sandbox.policy_for_run(server, routine)` → `policy_for_ctx(ctx)`: the util jail now
+  compiles from the run's EFFECTIVE roots (config + one-time fs grants) — one policy
+  source, two enforcers.
+
+### Fixed
+- **Schema projection mutated the global ACTION_SCHEMA**: `kindsurface.schema_for_kinds`
+  filtered the ORIGINAL property specs into its deepcopy shell, so the
+  description-trimming loop permanently trimmed the shared schema on every projection —
+  cross-run contamination in the daemon process (a restricted run's projection thinned
+  the descriptions every LATER run was shown). Now filters the copy; regression-pinned.
+
 ## [0.123.0] — 2026-07-29
 
 ### Added

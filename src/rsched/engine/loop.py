@@ -113,11 +113,17 @@ class EngineLoop:
             clear_revise_marker(ctx.run_dir)
             if self.allowed_tools is not None:
                 self.allowed_tools |= set(REVISE_KINDS)
-        self.grants = ctx.grants = load_policy(ctx.server.permissions_home,
-                                               ctx.routine.permissions,
-                                               ctx.routine.capabilities,
-                                               current_run_ts=ctx.run_ts,
-                                               recipe_unlocked=unlocked or revising)
+        # base_grants is the CONFIG-derived policy; the live self.grants folds the run's
+        # one-time grant overlay over it (requests.rebuild_policy) — always base+overlay,
+        # never stacked, so a decision can also be reasoned about from the base.
+        self.base_grants = load_policy(ctx.server.permissions_home,
+                                       ctx.routine.permissions,
+                                       ctx.routine.capabilities,
+                                       current_run_ts=ctx.run_ts,
+                                       recipe_unlocked=unlocked or revising,
+                                       grants_map=ctx.routine.grants)
+        self.grants = ctx.grants = self.base_grants.with_overlay(ctx.granted_now,
+                                                                 ctx.denied_now)
         self.util_reminder = self._build_util_reminder()
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
         self._last_deliberation_ts = ""   # edge-trigger for mid-run deliberation switches
@@ -137,10 +143,11 @@ class EngineLoop:
         self._shed_schema_turns = 0
         self._sheds = 0
         self._schema_off = False
-        # The schema the TRANSPORT gets, projected once onto the kinds this run may emit
+        # The schema the TRANSPORT gets, projected onto the kinds this run may emit
         # (the same projection the composed prompt shows). Narrowing the grammar makes a
-        # disallowed kind ungeneratable instead of generated-then-rejected. Stable for the
-        # run: allowed_tools and grants are fixed at boot.
+        # disallowed kind ungeneratable instead of generated-then-rejected. allowed_tools
+        # is fixed at boot; a mid-run GRANT decision (requests.apply_decision) re-projects
+        # this, so an allowed-now kind becomes generatable on the very next turn.
         from .kindsurface import effective_kinds, schema_for_kinds
         self.action_schema = schema_for_kinds(effective_kinds(self.allowed_tools, ctx.grants))
         # Once the conversation has been archived to on-disk history, the model is reminded

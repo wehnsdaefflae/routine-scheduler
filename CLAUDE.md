@@ -26,8 +26,9 @@ one you are about to touch, not all of them.
 - `docs/prompt-anatomy.md` — every string the orchestrator sees, and why. Revise it with ANY
   change to composer / loop / actions / schema_guard wording; `tests/test_prompt_anatomy.py`
   fails on drift
-- `docs/traits-permissions.md`, `docs/curated-traits.md` — the two-layer permission set and
-  each curated practice module's provenance
+- `docs/traits-permissions.md`, `docs/curated-traits.md` — the two-layer permission set,
+  the four-state ACCESS-REQUEST grant model (entities.py ids; allow/deny × now/forever),
+  and each curated practice module's provenance
 - `docs/subtasks.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
   — the child-task and firing mechanisms
 - `docs/conversations.md`, `docs/playbooks.md` — interactive sessions and reusable briefs. A
@@ -104,7 +105,12 @@ one you are about to touch, not all of them.
   ledger `.control/reports.jsonl` (order rows + `delivered` event rows), one Items type; the
   page shows open → in_progress once drained → settled once answered. Triage is therefore
   FORWARDING, not absorbing.
-  `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out.
+  `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out —
+  and an optional `request` ("<class>:<name>" entity id, entities.py): a typed ACCESS REQUEST the
+  Decisions page settles with one of four decisions (allow/deny × now/forever). Forever-decisions
+  are written to routine.yaml by the WEB at click time (`grants:` rows = deny tombstones + secret
+  exposure; the engine NEVER writes config); now-decisions live in-memory on the run and reach all
+  three enforcers (validate_action, the util sandbox's roots, declared-only env injection).
   `memory_*` are the ONLY way into `.memory/` (generic file actions are rejected there); the engine
   owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line note cap.
   **Util output too large for its observation is SAVED, not lost** — `engine/outputs.py` spills the

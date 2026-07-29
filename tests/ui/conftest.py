@@ -86,12 +86,16 @@ class UiHarness:
 
     def seed_question(self, slug: str, qid: str, question: str, *, mode: str = "deferred",
                       options: list[str] | None = None, default: str = "",
-                      expires: str = "", asked: str = "20260714-070000") -> Path:
+                      expires: str = "", asked: str = "20260714-070000",
+                      request: list[str] | None = None) -> Path:
         """Drop a durable decision record the way the engine files one."""
         pending = self.routines / slug / "questions" / "pending"
         pending.mkdir(parents=True, exist_ok=True)
-        record = {"qid": qid, "question": question, "mode": mode, "type": "text",
+        record = {"qid": qid, "question": question, "mode": mode,
+                  "type": "request" if request else "text",
                   "options": options or [], "default": default, "asked": asked}
+        if request:
+            record["request"] = list(request)
         if expires:
             record["expires"] = expires
         path = pending / f"{qid}.json"

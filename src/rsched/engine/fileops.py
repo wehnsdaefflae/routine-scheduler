@@ -54,7 +54,7 @@ def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
 
 def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     try:
-        path = resolve_rel(ctx.routine.dir, rel_path, ctx.routine.fs_read_roots)
+        path = resolve_rel(ctx.routine.dir, rel_path, ctx.read_roots())
         if err := _runs_read_gate(ctx, path):
             return {"path": rel_path, "error": err}
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -118,7 +118,7 @@ def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
         return "error: the `vision` util is not installed, so this file cannot be described"
     args = [abspath, "--prompt", prompt or VIEW_DEFAULT_PROMPT, "--json"]
     code, out, err = utils_lib.run_util(home, VISION_UTIL, args, timeout=UTIL_DEFAULT_TIMEOUT_S,
-                                        policy=sandbox.policy_for_run(ctx.server, ctx.routine),
+                                        policy=sandbox.policy_for_ctx(ctx),
                                         cwd=ctx.routine.dir)
     if code != 0:
         return f"error: vision util failed (exit {code}): {(err or out or '').strip()[:800]}"
@@ -142,7 +142,7 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal:
     else the vision util.
     """
     try:
-        path = resolve_rel(ctx.routine.dir, rel_path, ctx.routine.fs_read_roots)
+        path = resolve_rel(ctx.routine.dir, rel_path, ctx.read_roots())
         if err := _runs_read_gate(ctx, path):
             return {"path": rel_path, "error": err}
         if not path.is_file():
@@ -178,7 +178,7 @@ def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
     out: list[dict] = []
     for rel in rels:
         try:
-            path = resolve_rel(ctx.routine.dir, str(rel), ctx.routine.fs_read_roots)
+            path = resolve_rel(ctx.routine.dir, str(rel), ctx.read_roots())
         except (OSError, PermissionError):
             continue
         mime = guess_media_type(path)
@@ -245,8 +245,7 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
 
 def do_write_file(action: dict, ctx: RunContext) -> dict:
     try:
-        roots = ctx.routine.fs_write_roots
-        path = resolve_rel(ctx.routine.dir, action["path"], roots)
+        path = resolve_rel(ctx.routine.dir, action["path"], ctx.write_roots())
         if err := _write_gate(ctx, path):
             return {"kind": "write_file", "path": action["path"], "error": err}
         # Grounding gate: write_file REPLACES a file wholesale. Overwriting one OUTSIDE
@@ -293,7 +292,7 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
     write_file counterpart for touching a few lines of a large file).
     """
     try:
-        path = resolve_rel(ctx.routine.dir, action["path"], ctx.routine.fs_write_roots)
+        path = resolve_rel(ctx.routine.dir, action["path"], ctx.write_roots())
         if err := _write_gate(ctx, path):
             return {"kind": "edit_file", "path": action["path"], "error": err}
         if not path.is_file():

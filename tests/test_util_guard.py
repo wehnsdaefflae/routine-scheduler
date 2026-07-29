@@ -43,10 +43,9 @@ def _seed_deleted_util(home, name="doomed"):
     utils_lib.git_commit(home, f"delete util {name} via web")
 
 
-def _loop(home, *, depth=0, user_answers=()):
-    ctx = SimpleNamespace(server=SimpleNamespace(libraries_home=home), depth=depth,
-                          user_answers=list(user_answers))
-    return SimpleNamespace(ctx=ctx, allowed_tools=None, grants=None)
+def _loop(home, *, depth=0, grants=None):
+    ctx = SimpleNamespace(server=SimpleNamespace(libraries_home=home), depth=depth)
+    return SimpleNamespace(ctx=ctx, allowed_tools=None, grants=grants)
 
 
 def _wu(name):
@@ -54,6 +53,8 @@ def _wu(name):
 
 
 def test_recreate_denial_matrix(tmp_path):
+    from rsched.grants import GrantPolicy
+
     _seed_deleted_util(tmp_path)
     utils_lib.write_util_file(tmp_path, "alive", UTIL_BODY)
 
@@ -62,15 +63,16 @@ def test_recreate_denial_matrix(tmp_path):
     assert recreate_denial(_loop(tmp_path), _wu("brand-new")) == []      # never existed
     assert recreate_denial(_loop(tmp_path, depth=1), _wu("doomed")) == []  # subruns: own decline
     denial = recreate_denial(_loop(tmp_path), _wu("doomed"))
-    assert denial and "DELETED" in denial[0] and "ask_user" in denial[0] and "doomed" in denial[0]
-    # an explicit user yes THIS run — an answered ask naming the util — unblocks it
-    yes = {"qid": "q1", "question": "Recreate the deleted util 'doomed'?", "answer": "Yes, go."}
-    assert recreate_denial(_loop(tmp_path, user_answers=[yes]), _wu("doomed")) == []
-    # …but an answer to an unrelated question, or a no, does not
-    other = {"qid": "q2", "question": "Ship the release?", "answer": "yes"}
-    no = {"qid": "q3", "question": "Recreate the deleted util 'doomed'?", "answer": "no, skip it"}
-    assert recreate_denial(_loop(tmp_path, user_answers=[other]), _wu("doomed"))
-    assert recreate_denial(_loop(tmp_path, user_answers=[no]), _wu("doomed"))
+    assert denial and "DELETED" in denial[0] and "doomed" in denial[0]
+    assert 'request: "recreate:doomed"' in denial[0]   # the correction routes to a request
+    # an allow-now decision THIS run — the recreate:<slug> grant entity — unblocks it
+    granted = GrantPolicy().with_overlay({"recreate:doomed"}, set())
+    assert recreate_denial(_loop(tmp_path, grants=granted), _wu("doomed")) == []
+    # …a this-run decline or a forever tombstone keeps it shut, WITHOUT re-routing to a request
+    denied_now = GrantPolicy().with_overlay(set(), {"recreate:doomed"})
+    assert "THIS RUN" in recreate_denial(_loop(tmp_path, grants=denied_now), _wu("doomed"))[0]
+    tomb = GrantPolicy(denied=frozenset({"recreate:doomed"}))
+    assert "PERMANENTLY" in recreate_denial(_loop(tmp_path, grants=tomb), _wu("doomed"))[0]
 
 
 def test_denial_rides_the_schema_retry_cycle(tmp_path):
@@ -88,8 +90,9 @@ def test_denial_rides_the_schema_retry_cycle(tmp_path):
 @pytest.mark.skipif(shutil.which("uv") is None, reason="uv required to run utils")
 def test_ask_then_recreate_flow(make_routine, scripted):
     """End-to-end: write_util on a deleted slug is corrected in-cycle (no turn), the model
-    asks, the user says yes, the retry goes through — and the approval is visible in the
-    transcript as a normal answered blocking decision."""
+    files a blocking access request for recreate:<slug>, the user allows it for this run,
+    the retry goes through — and the decision is visible in the transcript as a normal
+    answered blocking record."""
     from test_loop import _server
 
     d = make_routine(slug="guardian", budgets={"ask_timeout_min": 1})
@@ -103,8 +106,10 @@ def test_ask_then_recreate_flow(make_routine, scripted):
             if recs:
                 from rsched.paths import read_json
                 rec = read_json(recs[0])
+                assert rec["type"] == "request" and rec["request"] == ["recreate:doomed"]
                 atomic_write_json(d / "inbox" / f"answer-{rec['qid']}.json",
-                                  {"qid": rec["qid"], "text": "yes", "source": "web"})
+                                  {"qid": rec["qid"], "decision": "allow_now",
+                                   "text": "allow now", "source": "web"})
                 return
             time.sleep(0.02)
 
@@ -113,6 +118,7 @@ def test_ask_then_recreate_flow(make_routine, scripted):
     scripted([
         _wu("doomed"),                                     # rejected in-cycle: deleted slug
         {"say": "asking first", "kind": "ask_user", "mode": "blocking",
+         "request": "recreate:doomed",
          "question": "Recreate the deleted util 'doomed'? The workflow needs it.",
          "default": "skip the util"},
         _wu("doomed"),                                     # unblocked by the answered yes

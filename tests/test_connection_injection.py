@@ -60,7 +60,9 @@ def test_undeclared_extra_scrubbed_even_if_inherited(tmp_path, monkeypatch):
 def test_connection_env_resolves_bindings(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "connections_path", lambda: tmp_path / "connections.json")
     store.set_connection(Connection(provider="notion", account="acme", access_token="AT"))
-    bound = SimpleNamespace(routine=SimpleNamespace(connections={"notion": "acme"}))
+    bound = SimpleNamespace(routine=SimpleNamespace(connections={"notion": "acme"}),
+                            granted_now=set(), grant_args={})
     assert _connection_env(bound) == {"NOTION_ACCESS_TOKEN": "AT"}
-    unbound = SimpleNamespace(routine=SimpleNamespace(connections={}))
+    unbound = SimpleNamespace(routine=SimpleNamespace(connections={}),
+                              granted_now=set(), grant_args={})
     assert _connection_env(unbound) == {}

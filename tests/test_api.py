@@ -138,13 +138,13 @@ def test_patch_routine_and_409_guard(client):
     assert c.patch("/api/routines/apir", json={"enabled": True}).status_code == 200
     assert yaml.safe_load(
         (tmp / "routines" / "apir" / "routine.yaml").read_text())["enabled"] is True
-    # D40 pin (2026-07-24): connection bindings and secret-exposure grants are exactly the
+    # D40 pin (2026-07-24): connection bindings and grant-decision rows are exactly the
     # saves a user makes WHILE a bootstrap run waits on them — they must never 409.
     assert c.patch("/api/routines/apir",
-                   json={"secret_grants": {"GMAIL_APP_PASSWORD": True},
+                   json={"grants": {"secret:GMAIL_APP_PASSWORD": True},
                          "connections": {}}).status_code == 200
     raw_mid = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
-    assert raw_mid["secret_grants"] == {"GMAIL_APP_PASSWORD": True}
+    assert raw_mid["grants"] == {"secret:GMAIL_APP_PASSWORD": True}
     assert c.put("/api/routines/apir/file",
                  json={"path": "main.md", "content": "x"}).status_code == 409
 
@@ -508,6 +508,82 @@ def test_answered_question_shows_settled_not_open(client):
     assert c.post("/api/questions/q-a1/answer", json={"text": "blue"}).status_code == 200
     q = next(x for x in c.get("/api/questions").json() if x["qid"] == "q-a1")
     assert q["answered"] is True and q["answer"] == "blue"
+
+
+def test_access_request_decisions_apply_at_click_time(client):
+    """The four-state decision endpoint: a forever-decision is persisted to routine.yaml
+    the moment the user clicks (the web is the ONE config writer — the engine only
+    bridges a live run), the answer file carries the typed decision for the engine, and
+    a now-decision persists nothing."""
+    c, tmp = client
+    routines = tmp / "routines"
+    pending = routines / "apir" / "questions" / "pending"
+    pending.mkdir(parents=True, exist_ok=True)
+
+    def seed(qid, request):
+        atomic_write_json(pending / f"{qid}.json",
+                          {"qid": qid, "question": "May I?", "options": [],
+                           "asked": "20260729", "mode": "deferred", "type": "request",
+                           "request": request})
+
+    def raw():
+        return yaml.safe_load((routines / "apir" / "routine.yaml").read_text())
+
+    # allow_forever on a secret entity → grants row written, answer carries the decision
+    seed("q-r1", ["secret:FOO_KEY"])
+    r = c.post("/api/questions/q-r1/answer", json={"decision": "allow_forever"})
+    assert r.status_code == 200
+    assert raw()["grants"] == {"secret:FOO_KEY": True}
+    ans = read_json(routines / "apir" / "inbox" / "answer-q-r1.json")
+    assert ans["decision"] == "allow_forever" and "allowed permanently" in ans["text"]
+
+    # deny_forever on any entity → a tombstone row; nothing else changes
+    seed("q-r2", ["util:discord"])
+    assert c.post("/api/questions/q-r2/answer",
+                  json={"decision": "deny_forever"}).status_code == 200
+    assert raw()["grants"] == {"secret:FOO_KEY": True, "util:discord": False}
+    assert not (raw().get("capabilities") or {}).get("utils")
+
+    # allow_now persists NOTHING — the answer file alone carries the one-run grant
+    seed("q-r3", ["secret:BAR_KEY"])
+    assert c.post("/api/questions/q-r3/answer",
+                  json={"decision": "allow_now"}).status_code == 200
+    assert "secret:BAR_KEY" not in (raw().get("grants") or {})
+    assert read_json(routines / "apir" / "inbox" / "answer-q-r3.json")["decision"] == "allow_now"
+
+    # a decision on a NON-request record is rejected; so is an unknown decision value
+    atomic_write_json(pending / "q-plain.json",
+                      {"qid": "q-plain", "question": "Pick?", "options": [],
+                       "asked": "20260729", "mode": "deferred"})
+    assert c.post("/api/questions/q-plain/answer",
+                  json={"decision": "allow_now"}).status_code == 400
+    seed("q-r4", ["secret:X_KEY"])
+    assert c.post("/api/questions/q-r4/answer",
+                  json={"decision": "maybe"}).status_code == 400
+
+
+def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
+    """allow_forever for a reserved util activates its covering conduct doc AND the
+    capability through the same raise-then-floor the permissions editor uses — the saved
+    mapping can never contradict the held permissions."""
+    c, tmp = client
+    routines = tmp / "routines"
+    perms = tmp / "library" / "permissions"
+    perms.mkdir(parents=True, exist_ok=True)
+    (perms / "communication.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
+        "# permission: communication — discord\nbody\n", encoding="utf-8")
+    pending = routines / "apir" / "questions" / "pending"
+    pending.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(pending / "q-cap.json",
+                      {"qid": "q-cap", "question": "May I?", "options": [],
+                       "asked": "20260729", "mode": "deferred", "type": "request",
+                       "request": ["util:discord"]})
+    assert c.post("/api/questions/q-cap/answer",
+                  json={"decision": "allow_forever"}).status_code == 200
+    raw = yaml.safe_load((routines / "apir" / "routine.yaml").read_text())
+    assert "communication" in raw["permissions"]
+    assert "discord" in raw["capabilities"]["utils"]
 
 
 def test_wizard_questions_join_the_decisions_inbox(client):

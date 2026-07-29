@@ -308,9 +308,15 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
       } }, "save connections")));
   }).catch((err) => connBox.replaceChildren(el("div", { class: "muted" }, err.message)));
 
-  // -- secret exposure: which store secrets this routine's util calls may receive (D39) --------
+  // -- grant decisions: secret exposure (D39) + declined-access tombstones ---------------------
+  // Both live in routine.yaml `grants:` (entity ids, entities.py): `secret:<NAME>` rows are
+  // the exposure map; a FALSE row of any other class is a deny-forever tombstone an access
+  // request left behind (the run stops asking). Saving REPLACES the whole mapping, so the
+  // two editors below always write their rows together.
   const secBox = el("div", { class: "panel" }, skeleton(["50%"]));
   view.append(el("h2", {}, "Secret exposure"), secBox);
+  const declinedBox = el("div", { class: "panel" }, skeleton(["50%"]));
+  view.append(el("h2", {}, "Declined access"), declinedBox);
   // F193: a grant decided elsewhere (Decisions-page approval, Discord) lands in
   // routine.yaml while this page is open — the panel refetches BOTH the store and the
   // routine's CURRENT grants instead of rendering the page-load snapshot forever.
@@ -318,17 +324,25 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
     let sec, grants;
     try {
       sec = await api("/api/settings/secrets");
-      grants = (await api(`/api/routines/${slug}`)).secret_grants || {};
+      grants = (await api(`/api/routines/${slug}`)).grants || {};
     } catch (err) { secBox.replaceChildren(el("div", { class: "muted" }, err.message)); return; }
-    const names = [...new Set([...(sec.keys || []), ...Object.keys(grants)])].sort();
+    const secretRows = Object.fromEntries(Object.entries(grants)
+      .filter(([k]) => k.startsWith("secret:")).map(([k, v]) => [k.slice("secret:".length), v]));
+    const otherRows = Object.fromEntries(Object.entries(grants)
+      .filter(([k]) => !k.startsWith("secret:")));
+    const saveGrants = async (updated, note) => {
+      try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { grants: updated } });
+        toast(note); loadSecrets(); }
+      catch (err) { toast(err.message, 4000, { error: true }); }
+    };
+    const names = [...new Set([...(sec.keys || []), ...Object.keys(secretRows)])].sort();
     secBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:8px" },
       "Which store secrets this routine's util calls may receive. An undecided secret is asked ",
-      "about the FIRST time a util call declares it (a blocking question, remembered here). ",
-      "Manage the secrets themselves in ",
+      "about the FIRST time a util call declares it (a blocking access request, remembered ",
+      "here). Manage the secrets themselves in ",
       el("a", { href: "#/settings?section=secrets" }, "Settings → Secrets"), "."));
     if (!names.length) {
       secBox.append(el("div", { class: "muted small" }, "no secrets in the store yet"));
-      return;
     }
     const secSelects = {};
     for (const name of names) {
@@ -336,34 +350,49 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
         el("option", { value: "" }, "ask on first use"),
         el("option", { value: "true" }, "expose"),
         el("option", { value: "false" }, "withhold")]);
-      sel.value = name in grants ? String(!!grants[name]) : "";
+      sel.value = name in secretRows ? String(!!secretRows[name]) : "";
       secSelects[name] = sel;
       secBox.append(el("div", { class: "row", style: "margin:5px 0", "data-secret-row": name },
         el("code", { class: "small", style: "min-width:240px" }, name), sel,
         (sec.keys || []).includes(name) ? null
           : el("span", { class: "muted small" }, "not in the store (stale entry)")));
     }
-    secBox.append(el("div", { class: "row mt" }, el("button", { class: "btn primary",
-      onclick: async () => {
-        const secret_grants = {};
-        for (const [name, sel] of Object.entries(secSelects))
-          if (sel.value) secret_grants[name] = sel.value === "true";
-        try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { secret_grants } });
-          toast("secret exposure saved"); }
-        catch (err) { toast(err.message, 4000, { error: true }); }
-      } }, "save secret exposure")));
+    if (names.length) {
+      secBox.append(el("div", { class: "row mt" }, el("button", { class: "btn primary",
+        onclick: () => {
+          const updated = { ...otherRows };
+          for (const [name, sel] of Object.entries(secSelects))
+            if (sel.value) updated[`secret:${name}`] = sel.value === "true";
+          saveGrants(updated, "secret exposure saved");
+        } }, "save secret exposure")));
+    }
+    declinedBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:8px" },
+      "Access this routine's requests were declined FOREVER — it no longer asks for these. ",
+      "Removing a row returns the entity to undecided (requestable again)."));
+    const declined = Object.keys(otherRows).filter((k) => otherRows[k] === false).sort();
+    if (!declined.length) {
+      declinedBox.append(el("div", { class: "muted small" }, "nothing declined"));
+    }
+    for (const eid of declined) {
+      declinedBox.append(el("div", { class: "row", style: "margin:5px 0", "data-declined-row": eid },
+        el("code", { class: "small", style: "min-width:240px" }, eid),
+        el("button", { class: "btn small", title: "make it requestable again",
+          onclick: () => {
+            const updated = { ...otherRows };
+            delete updated[eid];
+            for (const [name, v] of Object.entries(secretRows)) updated[`secret:${name}`] = v;
+            saveGrants(updated, "declined entry removed — requestable again");
+          } }, "remove")));
+    }
   };
   loadSecrets();
-  // Refetch when a decision lands (the util-approval that grants exposure resolves as a
-  // question answer). The engine persists the grant to routine.yaml a moment AFTER the
-  // answer event, so refetch again shortly after; the listener unhooks itself once the
-  // panel has left the DOM (SPA remount).
+  // Refetch when a decision lands (an access request resolves as a question answer). The
+  // web layer persists a forever-decision BEFORE publishing the answer event, so one
+  // refetch suffices; the listener unhooks itself once the panel has left the DOM (SPA
+  // remount). F193 heritage: never render the page-load snapshot forever.
   const onSecretsBus = (e) => {
     if (!secBox.isConnected) { window.removeEventListener("rsched-bus", onSecretsBus); return; }
-    if (e.detail?.event === "question_answered" && e.detail.routine === slug) {
-      loadSecrets();
-      setTimeout(() => { if (secBox.isConnected) loadSecrets(); }, 2500);
-    }
+    if (e.detail?.event === "question_answered" && e.detail.routine === slug) loadSecrets();
   };
   window.addEventListener("rsched-bus", onSecretsBus);
 

@@ -345,107 +345,87 @@ def test_mirror_reply_resolves_the_blocking_ask(make_routine, scripted, monkeypa
     assert any("got it" in a[1] for a in fake.sends())   # the channel was told it counted
 
 
-def test_util_secret_gate_asks_once_and_persists_grant(make_routine, scripted, monkeypatch):
-    """D39: the FIRST util call declaring a store secret files ONE blocking approval; a
-    clear approve runs the util, persists {secret: true} into routine.yaml's
-    `secret_grants`, and the next call proceeds without re-asking."""
+def test_util_secret_gate_files_one_request_covering_the_run(make_routine, scripted,
+                                                             monkeypatch):
+    """D39 through the four-state grant model: the FIRST util call declaring a store
+    secret files ONE blocking ACCESS REQUEST (`secret:<NAME>` entities, record type
+    `request`); an allow-now decision runs the util and covers every later call THIS run
+    — no re-ask, and NOTHING persisted (a forever decision is the WEB layer's write, at
+    click time; the engine never touches routine.yaml)."""
     from rsched import secrets as secrets_mod
 
-    fake = _FakeDiscord(replies=[[], [{"id": "5", "message": "approve"}]])
     ran = []
-
-    def fake_run(home, name, args, timeout=0, policy=None, extra_secrets=None, **_kw):
-        if name == "discord":
-            return fake.run_util(home, name, args, timeout=timeout, policy=policy)
-        ran.append((name, list(args)))
-        return 0, "ran", ""
-
-    monkeypatch.setattr(notify.utils_lib, "run_util", fake_run)
+    monkeypatch.setattr(notify.utils_lib, "run_util",
+                        lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
+                        **_kw: (ran.append((name, list(args))) or (0, "ran", "")))
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(notify.utils_lib, "util_needs",
                         lambda home, name: ({"FOO_KEY"}, False))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
-    monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
-    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # D48: machinery retained behind a flag
     d = make_routine(slug="secgate", budgets={"ask_timeout_min": 1})
-    server = _server(d)
-    server.permissions_home.mkdir(parents=True, exist_ok=True)
-    (server.permissions_home / "communication.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
-        "# permission: communication — discord\nbody\n", encoding="utf-8")
-    import yaml as _yaml
-    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
-    cfg["permissions"] = ["communication"]
-    cfg["capabilities"] = {"utils": ["discord"]}
-    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+
+    def answer_soon():
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            recs = list((d / "questions" / "pending").glob("*.json"))
+            if recs:
+                rec = read_json(recs[0])
+                assert rec["type"] == "request" and rec["request"] == ["secret:FOO_KEY"]
+                atomic_write_json(d / "inbox" / f"answer-{rec['qid']}.json",
+                                  {"qid": rec["qid"], "decision": "allow_now",
+                                   "text": "allow now", "source": "web"})
+                return
+            time.sleep(0.02)
+
+    th = threading.Thread(target=answer_soon)
+    th.start()
     scripted([
         {"say": "call it", "kind": "util", "name": "frob", "args": []},
         {"say": "call it again", "kind": "util", "name": "frob", "args": []},
         finish(),
     ])
-    status, run_dir = run_routine(d, server, run_ts=TS)
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    th.join()
     assert status == "ok"
     events = _events(run_dir)
     questions = [e for e in events if e["type"] == "question"]
-    assert len(questions) == 1 and "FOO_KEY" in questions[0]["payload"]["question"]
-    assert next(e for e in events if e["type"] == "answer")["payload"]["text"] == "approve"
-    assert ran == [("frob", []), ("frob", [])]        # both calls ran, ONE approval
+    assert len(questions) == 1 and questions[0]["payload"]["request"] == ["secret:FOO_KEY"]
+    assert next(e for e in events if e["type"] == "answer")["payload"]["decision"] == "allow_now"
+    assert ran == [("frob", []), ("frob", [])]        # both calls ran, ONE decision
+    import yaml as _yaml
     persisted = _yaml.safe_load((d / "routine.yaml").read_text())
-    assert persisted["secret_grants"] == {"FOO_KEY": True}
+    assert not persisted.get("grants")                # allow_now persists NOTHING
 
 
-def test_util_secret_gate_grant_survives_into_a_later_run(make_routine, scripted, monkeypatch):
-    """D39: an approved exposure is durable ACROSS runs — the sibling test proves one approval
-    covers repeated calls within a run; this pins the cross-run half. A second, separate run
-    (fresh config load) must run the util with NO question at all: once the user has said yes,
-    the routine never re-asks."""
+def test_secret_grant_row_covers_runs_without_asking(make_routine, scripted, monkeypatch):
+    """A persisted `grants: {secret:<NAME>: true}` row — written by the WEB when the user
+    clicked allow-forever (or set on the routine page) — runs the util with NO question
+    at all: once the user has said yes durably, the routine never re-asks."""
     from rsched import secrets as secrets_mod
 
-    # ONE approve reply for the whole test: a second ask would find no answer and time out.
-    fake = _FakeDiscord(replies=[[], [{"id": "5", "message": "approve"}]])
     ran: list[tuple[str, list]] = []
-
-    def fake_run(home, name, args, timeout=0, policy=None, extra_secrets=None, **_kw):
-        if name == "discord":
-            return fake.run_util(home, name, args, timeout=timeout, policy=policy)
-        ran.append((name, list(args)))
-        return 0, "ran", ""
-
-    monkeypatch.setattr(notify.utils_lib, "run_util", fake_run)
+    monkeypatch.setattr(notify.utils_lib, "run_util",
+                        lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
+                        **_kw: (ran.append((name, list(args))) or (0, "ran", "")))
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(notify.utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
-    monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
-    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # D48: machinery retained behind a flag
     d = make_routine(slug="secgate2", budgets={"ask_timeout_min": 1})
-    server = _server(d)
-    server.permissions_home.mkdir(parents=True, exist_ok=True)
-    (server.permissions_home / "communication.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
-        "# permission: communication — discord\nbody\n", encoding="utf-8")
     import yaml as _yaml
     cfg = _yaml.safe_load((d / "routine.yaml").read_text())
-    cfg["permissions"] = ["communication"]
-    cfg["capabilities"] = {"utils": ["discord"]}
+    cfg["grants"] = {"secret:FOO_KEY": True}
     (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
 
     scripted([{"say": "call", "kind": "util", "name": "frob", "args": []}, finish()])
-    status, run_dir = run_routine(d, server, run_ts=TS)
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
     assert status == "ok"
-    assert len([e for e in _events(run_dir) if e["type"] == "question"]) == 1
-    assert _yaml.safe_load((d / "routine.yaml").read_text())["secret_grants"] == {"FOO_KEY": True}
-
-    ran.clear()
-    scripted([{"say": "call", "kind": "util", "name": "frob", "args": []}, finish()])
-    status2, run_dir2 = run_routine(d, server, run_ts="20260101-120000")
-    assert status2 == "ok"
-    assert [e for e in _events(run_dir2) if e["type"] == "question"] == []   # never re-asked
+    assert [e for e in _events(run_dir) if e["type"] == "question"] == []   # never asked
     assert ran == [("frob", [])]                                            # ran unprompted
 
 
 def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, scripted,
                                                                   monkeypatch):
-    """D39: a routine whose `secret_grants` maps the secret to false gets a refusing
+    """D39: a routine whose `grants:` maps `secret:<NAME>` to false gets a refusing
     observation — the util never runs and NO question is filed (the mapping is the
     routine page's to change)."""
     from rsched import secrets as secrets_mod
@@ -461,7 +441,7 @@ def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, 
     d = make_routine(slug="secdeny")
     import yaml as _yaml
     cfg = _yaml.safe_load((d / "routine.yaml").read_text())
-    cfg["secret_grants"] = {"FOO_KEY": False}
+    cfg["grants"] = {"secret:FOO_KEY": False}
     (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
     scripted([
         {"say": "call it", "kind": "util", "name": "frob", "args": []},

@@ -270,6 +270,10 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
             parts.append("nothing new finished")
         return "OBSERVATION (wait):\n" + "\n\n".join(parts)
     if kind == "ask_user":
+        if obs.get("decision"):
+            # an access request settled by one of the four typed decisions — the result
+            # line already teaches scope (this run vs forever) and the way forward
+            return f"OBSERVATION (ask_user — access request decided): {obs['result']}"
         if obs.get("answered"):
             via = f" (via {obs['source']})" if obs.get("source", "web") != "web" else ""
             return f"OBSERVATION (ask_user): the user answered{via}:\n{obs['answer']}"

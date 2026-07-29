@@ -196,6 +196,14 @@ ACTION_SCHEMA: dict = {
                            "run is asked for a schedule / budget / model / permission / fs-roots "
                            "change it cannot make itself.",
         },
+        "request": {
+            "type": "string",
+            "description": "ask_user: OPTIONAL — a typed ACCESS REQUEST, one grant-entity id "
+                           '"<class>:<name>" (e.g. "util:discord", "fs-write:~/project", '
+                           '"secret:FOO_KEY"). The user decides allow/deny, once (this run) or '
+                           "forever; the engine applies the decision — your question just says "
+                           "WHY. Use it when a denial names a requestable entity.",
+        },
         # report — the ungated channel every routine holds
         "title": {
             "type": "string",
@@ -304,7 +312,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "subruns": ((), ()),
     "kill": (("n",), ()),
     "wait": ((), ("n", "all", "timeout_s")),
-    "ask_user": (("question",), ("mode", "options", "default", "config_patch")),
+    "ask_user": (("question",), ("mode", "options", "default", "config_patch", "request")),
     "report": (("title",), ("detail", "target", "answers")),
     "finish": (("status", "summary"), ()),
 }
@@ -363,7 +371,7 @@ def normalize_action(obj: dict) -> dict:
 
 # One flat per-kind checker on purpose: this function IS the action contract's single home;
 # splitting it per kind would scatter what a turn may do across files.
-def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C901, PLR0912
+def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C901, PLR0912, PLR0915 — the action contract's single home, one flat checker per kind
                     grants=None) -> list[str]:
     """Semantic per-kind checks on an object that already passed the JSON Schema.
     `allowed_kinds` narrows the vocabulary to a workflow's `tools:` allowlist; `grants`
@@ -436,6 +444,9 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             problems.append(f"kind={kind}: at most {READ_PATHS_MAX} paths per action")
     if kind == "edit_file" and "replacement" in obj and not isinstance(obj["replacement"], str):
         problems.append("kind=edit_file: 'replacement' must be a string (\"\" deletes the anchor)")
+    if kind == "ask_user" and "request" in obj and not isinstance(obj["request"], str):
+        problems.append('kind=ask_user: \'request\' must be ONE entity id string, "<class>:'
+                        '<name>" (e.g. "util:discord") — file one request per ask')
     # .memory/ is reachable ONLY through the memory actions — the engine owns INDEX.md and
     # enforces the note cap there; generic file access would silently bypass both.
     if kind in ("read_file", "view_image", "write_file", "edit_file"):

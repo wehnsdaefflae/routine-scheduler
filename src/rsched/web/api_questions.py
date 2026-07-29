@@ -231,13 +231,17 @@ def list_questions(request: Request) -> list[dict]:
 
 
 class Answer(BaseModel):
-    text: str
+    text: str = ""
     intermediate: bool = False   # dialog reply to a BLOCKING question — it stays open
+    # Access requests only: one of the four typed decisions (allow/deny × now/forever).
+    # A forever-decision is APPLIED to routine.yaml right here, at click time — the
+    # engine only bridges it into a live run's overlay and never writes config.
+    decision: str | None = None
 
 
 @router.post("/questions/{qid}/answer")
 async def answer(request: Request, qid: str, body: Answer) -> dict:
-    if not body.text.strip():
+    if not body.text.strip() and not body.decision:
         raise HTTPException(400, "empty answer")
     if qid.startswith("audit:"):
         from .api_audit import Feedback, write_feedback
@@ -262,10 +266,12 @@ async def answer(request: Request, qid: str, body: Answer) -> dict:
     if match is None:
         raise HTTPException(404, f"no open question {qid!r}")
     routine_dir = _record_dir(server, match)
-    atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json",
-                      {"qid": qid, "text": body.text, "source": "web",
-                       "intermediate": body.intermediate and match["mode"] == "blocking",
-                       "ts": now_iso()})
+    payload: dict = {"qid": qid, "text": body.text, "source": "web",
+                     "intermediate": body.intermediate and match["mode"] == "blocking",
+                     "ts": now_iso()}
+    if body.decision:
+        payload.update(_decide_request(request, match, routine_dir, body.decision))
+    atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json", payload)
     _announce_answer(request, qid, match["routine"])
     # A conversation is a one-shot run with no scheduled "next run": an answer filed on a
     # FINISHED conversation would sit in the inbox forever (F39). Resume it in place — as
@@ -284,6 +290,45 @@ def _announce_answer(request: Request, qid: str, routine: str) -> None:
     bus = getattr(request.app.state, "bus", None)
     if bus is not None:
         bus.publish({"event": "question_answered", "qid": qid, "routine": routine})
+
+
+def _decide_request(request: Request, match: dict, routine_dir,
+                    decision: str) -> dict:
+    """Settle an ACCESS REQUEST with one of the four typed decisions: validate it against
+    the record, persist a forever-decision to routine.yaml NOW (this is the user's click —
+    the one sanctioned config write; a live run only bridges it), resolve a connection
+    grant's account, and return the answer-file fields. The `text` becomes the shared
+    decision phrase so every surface (digest, Discord note, settled card) reads one
+    vocabulary.
+    """
+    from ..engine.requests import DECISION_PHRASES, DECISIONS
+    from . import grants_apply
+    from .routines_common import _git_commit
+
+    if decision not in DECISIONS:
+        raise HTTPException(400, f"unknown decision {decision!r} — expected one of "
+                                 f"{', '.join(DECISIONS)}")
+    req_ids = [str(r) for r in match.get("request") or []]
+    if not req_ids:
+        raise HTTPException(400, "this question is not an access request — answer it "
+                                 "with text")
+    out: dict = {"decision": decision, "text": DECISION_PHRASES[decision],
+                 "intermediate": False}
+    if decision.endswith("_forever"):
+        out.update(grants_apply.apply_forever(request.app.state.server, routine_dir,
+                                              req_ids, decision))
+        _git_commit(routine_dir, f"grant decision via web ({decision}: "
+                                 f"{', '.join(req_ids)})")
+        try:
+            request.app.state.scheduler.rescan()
+        except AttributeError:
+            pass   # test apps without a scheduler — config on disk is already right
+    elif decision == "allow_now":
+        # a one-run connection grant still needs its account resolved at decision time
+        for eid in req_ids:
+            if eid.startswith("connection:"):
+                out["account"] = grants_apply.resolve_account(eid.partition(":")[2])
+    return out
 
 
 async def _resume_terminal_conversation(request: Request, match: dict, routine_dir) -> bool:

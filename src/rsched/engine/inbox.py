@@ -117,7 +117,10 @@ def take_answer(routine_dir: Path, qid: str, consumed_dir: Path) -> dict | None:
 
 def collect_deferred_answers(routine_dir: Path, consumed_dir: Path) -> list[dict]:
     """At run start: match stray answer files against questions/pending/, consume both,
-    and return [{question, answer}] for the state digest.
+    and return [{question, answer}] for the state digest. An access-request pair also
+    carries `request` (the record's entity ids) + `decision` (+ `account`), so the boot
+    can seed the run overlay (requests.apply_boot_decisions) — an "allow now" decided
+    between runs grants exactly the run that consumes it.
     """
     inbox = routine_dir / "inbox"
     pending = routine_dir / "questions" / "pending"
@@ -141,7 +144,13 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path) -> list[dict
             # No matching pending question — the answer belongs to someone else (e.g. a
             # blocking ask later in this very run). Leave it alone.
             continue
-        pairs.append({"qid": qid, "question": q.get("question", "?"), "answer": str(obj["text"])})
+        pair = {"qid": qid, "question": q.get("question", "?"), "answer": str(obj["text"])}
+        if q.get("request") and obj.get("decision"):
+            pair["request"] = [str(r) for r in q["request"]]
+            pair["decision"] = str(obj["decision"])
+            if obj.get("account"):
+                pair["account"] = str(obj["account"])
+        pairs.append(pair)
         _consume(path, consumed_dir)
         try:
             qfile.unlink()
@@ -150,15 +159,19 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path) -> list[dict
     return pairs
 
 
-def file_question(routine_dir: Path, qid: str, question: str, options: list[str],
+def file_question(routine_dir: Path, qid: str, question: str, options: list[str],  # noqa: PLR0913 — the ONE record shape: every field is a documented key of it, keyword-only
                   asked_ts: str, *, mode: str = "deferred", qtype: str = "question",
-                  default: str = "", expires: str = "", config_patch: dict | None = None) -> Path:
+                  default: str = "", expires: str = "", config_patch: dict | None = None,
+                  request: list[str] | None = None) -> Path:
     """The ONE decision record every kind of required user feedback funnels into —
-    plain asks and util approvals, deferred and blocking alike. Blocking records carry
-    `expires` (when the run continues without an answer) and are rewritten as deferred
-    on timeout/abort; `config_patch` (a proposed routine.yaml change a revise run can't make
-    itself) rides along for the Decisions page's one-click apply. Every surface (Decisions
-    page, run view, Discord mirror) renders from this shape.
+    plain asks, util approvals and access requests, deferred and blocking alike. Blocking
+    records carry `expires` (when the run continues without an answer) and are rewritten
+    as deferred on timeout/abort; `config_patch` (a proposed routine.yaml change a revise
+    run can't make itself) rides along for the Decisions page's one-click apply; `request`
+    (grant-entity ids, entities.py) makes the record an ACCESS REQUEST — the Decisions
+    page renders the four allow/deny × now/forever buttons and the answer carries a
+    `decision`. Every surface (Decisions page, run view, Discord mirror) renders from
+    this shape.
     """
     from ..paths import atomic_write_json
 
@@ -171,6 +184,8 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
         record["expires"] = expires
     if config_patch:
         record["config_patch"] = config_patch
+    if request:
+        record["request"] = list(request)
     atomic_write_json(path, record)
     return path
 

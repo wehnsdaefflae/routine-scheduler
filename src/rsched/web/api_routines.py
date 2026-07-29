@@ -160,10 +160,11 @@ def routine_detail(request: Request, slug: str) -> dict:
         # OAuth connection bindings {provider: account}; the picker's options come from
         # GET /api/settings/oauth (the connected accounts).
         "connections": dict(info.cfg.connections),
-        # Per-routine secret exposure map (D39): SECRET_NAME → expose (true) / withhold
-        # (false); a store secret absent here is asked about on first use. The store names
-        # for the editor come from GET /api/settings/secrets.
-        "secret_grants": dict(info.cfg.secret_grants),
+        # Grant-decision rows (entities.py ids → bool): secret exposure (`secret:<NAME>`,
+        # true/false — absent is asked on first use, D39) plus the deny-forever tombstones
+        # for every other entity class. The store names for the secret editor come from
+        # GET /api/settings/secrets.
+        "grants": dict(info.cfg.grants),
         # Remote-machine bindings (catalog machine names) + the catalog for the picker; details
         # come from GET /api/settings/machines. A binding to a machine no longer in the catalog
         # is kept as-is (resolves to nothing at run time) — the UI flags it.

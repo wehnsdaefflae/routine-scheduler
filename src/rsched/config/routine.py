@@ -69,12 +69,13 @@ class RoutineConfig(_Config):
     # reserved `remote` util receives the bound machines' connection details + private keys.
     # Never set by a run. See docs/remote-machines.md.
     machines: list[str] = Field(default_factory=list)
-    # Per-routine secret exposure (D39): store secret NAME → True (expose to this routine's
-    # util calls) / False (withhold). A name ABSENT here is undecided — the engine asks the
-    # user the FIRST time a util call declares that secret, records the answer here
-    # (record_secret_grants — the one sanctioned engine writer), and the routine page edits
-    # the mapping. User authority like connections/machines — never set by a run itself.
-    secret_grants: dict[str, bool] = Field(default_factory=dict)
+    # Grant-decision rows (entities.py ids): the deny-forever tombstones for ANY entity
+    # (`util:discord: false` — asks are suppressed) plus secret exposure, the one class
+    # with no native switch (`secret:FOO_KEY: true/false`; absent = undecided, asked on
+    # first use — D39). Written ONLY by the web layer recording an explicit user decision
+    # (the Decisions page's allow/deny buttons, the routine page's editors) — no run and
+    # no engine code writes this file, ever.
+    grants: dict[str, bool] = Field(default_factory=dict)
     budgets: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_BUDGETS))
     # The two permission layers (user-changeable only; explicit values win, otherwise a
     # new routine holds the defaults). `permissions` names the held CONDUCT docs (library
@@ -205,20 +206,20 @@ def write_tuning(routine_dir: Path, updates: dict) -> None:
     atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
 
 
-def record_secret_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
-    """Persist the user's secret-exposure answers (D39) into routine.yaml's `secret_grants`
-    mapping. The ONE sanctioned engine writer for this file: it records an explicit user
-    decision (a blocking approval answer), exactly like the decisions-page config apply —
-    a run never calls this on its own authority.
+def record_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
+    """Persist grant-decision rows (entity id → bool) into routine.yaml's `grants:`
+    mapping. Called ONLY by the web layer recording an explicit user decision (a
+    Decisions-page allow/deny click, the routine page's editors) — the ENGINE writes no
+    routine.yaml at all: a run's one-time grants live in memory on its RunContext.
     """
     path = routine_dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
         raise TypeError(f"{path}: expected a mapping at top level")
-    grants = raw.get("secret_grants")
+    grants = raw.get("grants")
     grants = dict(grants) if isinstance(grants, dict) else {}
     grants.update({str(k): bool(v) for k, v in updates.items()})
-    raw["secret_grants"] = grants
+    raw["grants"] = grants
     atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
 
 
@@ -283,6 +284,10 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
 
     cfg.capabilities, cap_problems = normalize_capabilities(cfg.capabilities)
     problems += cap_problems
+    from ..entities import normalize_grants  # function-level: entities imports grants
+
+    cfg.grants, grant_problems = normalize_grants(cfg.grants)
+    problems += grant_problems
     from ..triggers import validate_triggers
 
     cfg.triggers, trigger_problems = validate_triggers(cfg.triggers)

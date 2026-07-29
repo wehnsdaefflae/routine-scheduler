@@ -227,6 +227,11 @@ def cmd_daemon(_args) -> int:
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap
     sync_seed_library_docs(server.libraries_home)  # workflows/traits/permissions added since, too
     migrate_util_headers(server.libraries_home)  # MIGRATION(expires=2026-08-17): sandbox rollout
+    from .bootstrap import migrate_secret_grants
+
+    # MIGRATION(expires=2026-08-29): unified grants — secret_grants: → grants: rows
+    migrate_secret_grants(server.routines_home, server.conversations_home,
+                          server.background_home)
     from .conversations import migrate_conversations
 
     migrate_conversations(server)  # MIGRATION(expires=2026-08-31): converse v3 + budgets

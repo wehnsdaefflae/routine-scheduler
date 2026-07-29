@@ -22,7 +22,7 @@ turn's prefix from cache (~0.1x price). The adapters exploit it (anthropic sets
 `cache_control` breakpoints; claude-cli keeps a per-run CLI session; OpenAI-style
 providers cache implicitly) and report cache traffic as usage `cached_in` / `cache_write`
 — visible in status.json. Only compaction rewrites the prefix, which is why its threshold
-rises once cache hits are observed (§3e).
+rises once cache hits are observed (§3f).
 
 ---
 
@@ -37,7 +37,7 @@ Eight sections, in this order:
 | 3 | `# EXAMPLE of a valid reply` | `example_action()` | One few-shot example (`read_file stages/scan.md`) that models on-demand stage reading and a finding-first `say` — deliberately NOT `util name=list`: the catalog already sits in CAPABILITIES, so opening a run by re-listing it just re-buys known information. |
 | 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow **and the task**: a top-level routine's recipe is self-contained — goal, deliverable, constraints and completion criteria are compiled into `main.md` + `stages/*.md` (stage detail read on demand), practice detail in `traits/*.md`. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
 | 5 | `# INSTRUCTION (your assigned task)` | the parent's spawn `prompt` (subruns), or `instruction.md` (conversations) | **Subruns AND conversations.** A top-level scheduled ROUTINE has NO instruction section and no `instruction.md` on disk: its task is entirely its self-contained recipe (`main.md` + `stages/`) — the clarified instruction was only a transient compile **SEED**, consumed at creation and never persisted. A **subrun** has no decomposed stages, so its self-contained brief (the parent's `prompt`) rides here. A **conversation** runs at depth 0 but its task is its first message (`instruction.md`), so it carries the section too (discriminated by HOME — its dir sits directly under `conversations_home`); without it the agent would see only the converse HOW-to pattern and never its actual task. |
-| 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ capabilities — switched-off gated kinds like `memory_*`/`write_util` simply don't appear), the enabled capabilities + the held conduct permissions, each held permission's short capability note (the library doc's body, capped), any **bound remote machines** (name + description + tags — the SSH hosts this routine can act on via the `remote` util, named here so the model knows its hardware without a discovery turn), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary, reserved utils flagged). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
+| 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ capabilities — switched-off gated kinds like `memory_*`/`write_util` simply don't appear), the enabled capabilities + the held conduct permissions, each held permission's short capability note (the library doc's body, capped), any one-time grants (`Granted for THIS RUN only (one-time user approvals — they do not persist beyond this run): <entity ids>` — present only when a request was allowed now, at boot via a consumed deferred decision or already this run), any **bound remote machines** (name + description + tags — the SSH hosts this routine can act on via the `remote` util, named here so the model knows its hardware without a discovery turn), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary; a reserved util is flagged `[reserved — not granted to this routine]`, or `[reserved — declined by the user]` when a deny-forever tombstone covers it — the settled decision reads differently from the requestable one). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
 | 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the **WORKING PLAN** (`state/plan.md`, inlined in full up to 60 lines — the run's own living decomposition; see below), the `state/` file list, `stages/` module names, **`artifacts/` delivered so far** (name + size), the `traits/` practice-module names, the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), the newest **`.util_outputs/`** spills (path + size, only once something has spilled — `read_file one when you need what an earlier call already fetched, rather than re-running the util`), open deferred questions, answers that arrived since the last run. |
 
 **The projection: a run is shown only the vocabulary it has.** Sections (1), (2) and (6)
@@ -186,7 +186,8 @@ back — `format_observation(obs)`, always starting `OBSERVATION (<kind>…)`:
 - `OBSERVATION (memory_write): note portal-quirks.md revised (14 lines); INDEX.md updated from 'about'.`
 - `OBSERVATION (llm reply):\n<the tool-call model's reply>`
 - `OBSERVATION (ask_user): question filed as deferred (q-…). … Continue.` / `…the user answered (via discord):\n<text>` / `…no answer within 8h — question stays open as deferred (q-…). Proceed on your stated default: …` / `…the user DEFERRED this question to a future run — it stays open as deferred (q-…). Proceed on your stated default: …` (the Decisions page's defer-to-next-run action — the timeout path, chosen by the user)
-- `OBSERVATION (write_util 'x': selftest passed, created and committed).` / `…approval requested from the user (q-…)…` / header problems (the doc standard: a `tags:` line, every credential env var declared on `secrets:`, a `net: outbound|none` line, siblings on `calls:`) are rejected before the approval ask, naming the fix. A write_util for a slug the user DELETED from the library is rejected inside the schema-retry cycle (never a turn): the correction tells the model to ask_user first — an explicit yes this run unblocks the recreate (interact.recreate_denial).
+- `OBSERVATION (ask_user — access request decided): <ids>: allowed for THIS RUN only — usable now; the grant does not survive this run.` — an ask carrying `request:` settles ONLY on one of the four typed decisions (allow_now / allow_forever / deny_now / deny_forever; the Decisions page's buttons); free text on a request is HELD as a delayed user message like any non-settling approval reply (D38). The engine seeds the run's one-time overlay and re-projects the action schema at the decision, so an allowed-now kind is generatable on the very next turn; forever-decisions are persisted by the WEB at click time — the engine never writes routine.yaml.
+- `OBSERVATION (write_util 'x': selftest passed, created and committed).` / `…approval requested from the user (q-…)…` / header problems (the doc standard: a `tags:` line, every credential env var declared on `secrets:`, a `net: outbound|none` line, siblings on `calls:`) are rejected before the approval ask, naming the fix. A write_util for a slug the user DELETED from the library is rejected inside the schema-retry cycle (never a turn): the correction routes to an access request for the entity `recreate:<slug>` — an allow-now decision this run unblocks the recreate (interact.recreate_denial; `recreate:` has no allow-forever on purpose, so a fresh deletion always outranks an old grant).
 - `OBSERVATION (remove_util 'x': removed from the library and committed — recoverable from git history).` / `…REFUSED): still called by <utils>. Remove or update those callers first.` (the `gu remove` no-callers guard, applied to the action) / `…no such util…` / approval requested / DECLINED. `remove_util` is the curation counterpart to `write_util`, gated by the same **util-authoring** capability; a sub-workflow cannot curate the library (interact.handle_remove_util).
 - `OBSERVATION (schedule_run 'some-routine': armed one-shot so-XXXX for <fire_at> — the daemon fires it once, then consumes it).` / `…cancelled N one-shot(s)…` / `no routine 'x'…` / `REJECTED): <bad fire_at>`. `schedule_run` arms a ONE-SHOT future run of a routine (self-target always; another routine via the **scheduling** capability); the engine writes the `.control/schedule-once/<slug>/` request spool un-sandboxed and the daemon's OneShotManager fires-then-consumes it (interact.handle_schedule_run).
 - `OBSERVATION (report filed as R7: 'schedule_run ate my args' — unaddressed, so it goes to triage. Refer to it by that id if you mention it again. Continue your own task.)`, or `…delivered to 'routine-improver' — it reads this on its next scheduled run (no run was started)…` when `target` is set. `R7` is the id stamped on it at append time (`rsched/reports.py`) and the item's handle on the console's Items page (docs/items.md). Other branches: `…no routine 'x'…` (with `suggestions` + `valid_targets`, like schedule_run) / `…cannot address a report to itself…` / the I/O failure, which says the report was NOT filed and to put it in the finish summary instead. `interact.handle_report` writes the `R<n>` ledger row un-sandboxed, plus the target's inbox message when addressed; the target's own drain stamps delivery back onto the row.
@@ -236,13 +237,34 @@ Reply again with ONLY one JSON object matching the action schema — no prose ou
 Up to 3 attempts; the last drops the provider-side schema constraint. Disallowed kinds and
 switched-off capabilities (`write_util`, `memory_*`, reserved utils, previous-run reads) and
 own-recipe/config writes (never permitted — the routine-improver's beat) are corrected the
-same way — the error names the way out.
+same way — the error names the way out. For a switched-off capability the way out is a
+typed ACCESS REQUEST (grants.request_route): `If it is essential, request it: ask_user
+with request: "<entity-id>" and a question saying what you need it for` (with mode
+"blocking" if the run cannot proceed without it, deferred otherwise), closing with
+`The user decides: allow/deny, once or forever.` A tombstoned entity gets the settled wording instead — `The
+user has PERMANENTLY declined <entity> for this routine — do not request it again` (deny
+forever) or `The user declined <entity> for THIS RUN — do not re-request it now` (deny
+now) — and a malformed/redundant request is itself corrected in-cycle
+(engine/requests.request_denial: bad id grammar, already-enabled entity, unknown
+provider/machine/secret, a credential-store fs path, a sub-workflow requesting anything).
 
 Once a retry SUCCEEDS, the failed-attempt/correction pairs are dropped from the live
 message list — they earned their keep eliciting the valid reply and would otherwise be
 re-read on every remaining turn. The transcript's `error` events keep the full record.
 
-### 3e · Compaction (the middle gets replaced)
+### 3e · Access requests — the ask_user `request` field
+
+`ask_user` carries an optional `request` field — the schema describes it as
+"a typed ACCESS REQUEST, one grant-entity id" `"<class>:<name>"`, e.g. `util:discord`,
+`fs-write:~/project`, `secret:FOO_KEY` (the full class list: action · util · secret ·
+connection · machine · fs-read · fs-write · runs · workflows · recreate). The question stays the model's
+prose (WHY it needs the entity); the entity id is what the engine validates and the
+Decisions page renders as the four allow/deny × now/forever buttons. One decision model,
+four states: allowed forever lives in the entity's native routine.yaml key, denied forever
+is a `grants:` tombstone row, allowed/denied now live in-memory on the run (a resumed leg
+re-asks). See docs/traits-permissions.md for the model; `entities.py` for the vocabulary.
+
+### 3f · Compaction (the middle gets replaced)
 
 Past ~60% of the context window — ~80% once the endpoint demonstrably serves prompt-cache
 hits (usage `cached_in` > 0), since cached re-reads are ~10x cheaper while each compaction

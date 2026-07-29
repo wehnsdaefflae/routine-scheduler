@@ -172,6 +172,7 @@ export async function render(view, query = {}) {
         el("div", { class: "q-meta" },
           q.wizard ? chip("wizard", "meta") : q.meta ? chip("meta", "meta") : null,
           q.type === "util-approval" ? chip("util approval", "partial") : null,
+          q.type === "request" ? chip("access request", "partial") : null,
           chip(`answered${q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : ""} · queued`, "ok"),
           sourceLink(q),
           q.asked ? el("span", {}, "asked ", when(q.asked)) : null),
@@ -243,8 +244,8 @@ export async function render(view, query = {}) {
       numbered: true,
       defaultLine: false,          // the panel body renders the default line below
       onArrow: (d) => focusAt(index + d),
-      submitText: (text) => api(`/api/questions/${q.qid}/answer`,
-        { method: "POST", body: { text } }),
+      submitText: (text, _intermediate, decision) => api(`/api/questions/${q.qid}/answer`,
+        { method: "POST", body: decision ? { decision } : { text } }),
       toastText: () => (q.mode === "blocking" ? "answered — the run resumes"
         : q.meta ? "recorded — the next self-audit run acts on it"
         : "answered — the next run picks it up"),
@@ -295,6 +296,7 @@ export async function render(view, query = {}) {
         expiringSoon(q) ? chip("expiring", "failed") : null,
         q.wizard ? chip("wizard", "meta") : q.meta ? chip("meta", "meta") : null,
         q.type === "util-approval" ? chip("util approval", "partial") : null,
+        q.type === "request" ? chip("access request", "partial") : null,
         chip(q.mode, q.mode),
         q.snoozed ? chip("snoozed", "meta") : null,
         sourceLink(q),

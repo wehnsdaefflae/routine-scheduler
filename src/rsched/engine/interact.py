@@ -17,9 +17,8 @@ import time
 from datetime import datetime, timedelta
 
 from .. import reports, sandbox, schedule_once, utils_lib
-from ..config.routine import record_secret_grants
 from ..ids import is_slug, question_id
-from . import decisions, detach, inbox
+from . import decisions, detach, inbox, requests
 from .control import RunAborted
 
 # Natural affirmatives count: approval answers arrive as free text (Discord mirrors the
@@ -50,6 +49,21 @@ def _settles_approval(text: str) -> bool:
     return head in _APPROVE_WORDS or head in _DECLINE_WORDS
 
 
+def _held_not_settled(qtype: str, answer: dict) -> bool:
+    """D38 across record types: does this reply fail to SETTLE the question? A
+    util-approval settles only on a clear approve/decline, an access request only on one
+    of the four typed decisions; defer markers and dialog replies pass through to their
+    own paths. A held reply becomes a delayed user message and the wait continues.
+    """
+    if not answer.get("text") or answer.get("defer") or answer.get("intermediate"):
+        return False
+    if qtype == "util-approval":
+        return not _settles_approval(str(answer["text"]))
+    if qtype == "request":
+        return answer.get("decision") not in requests.DECISIONS
+    return False
+
+
 def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> dict:
     ctx = loop.ctx
     if qtype == "question" and loop.dialog_qid:
@@ -65,15 +79,25 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # config bridge: a proposed routine.yaml change the run can't make itself — rides the
     # decision record for the Decisions page's one-click apply (see engine/revise.py).
     cpatch = action.get("config_patch") if isinstance(action.get("config_patch"), dict) else None
+    # A typed access request (entities.py) rides the same record; the Decisions page
+    # renders the four allow/deny × now/forever buttons for it, and the answer's
+    # `decision` is what settles it (free text is held, D38). Validation already ran in
+    # the schema-retry cycle (requests.request_denial), so the ids here are requestable.
+    req_ids = requests.request_ids(action)
+    if req_ids:
+        qtype = "request"
     question = action["question"]
     extra = {"type": qtype, **({"default": default} if default else {})}
     ctx.transcript.event("question", {"qid": qid, "mode": mode, "question": question,
-                                      "options": options, **extra})
+                                      "options": options, **extra,
+                                      **({"request": req_ids} if req_ids else {})})
     if mode == "deferred":
         inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                            qtype=qtype, default=default, config_patch=cpatch)
+                            qtype=qtype, default=default, config_patch=cpatch,
+                            request=req_ids)
         ctx.asks_deferred += 1   # churn telemetry: a decision thrown over the wall
-        return {"kind": "ask_user", "qid": qid, "mode": mode}
+        return {"kind": "ask_user", "qid": qid, "mode": mode,
+                **({"request": req_ids} if req_ids else {})}
 
     timeout_min = ctx.budgets.ask_timeout_min
     expires = ((datetime.now().astimezone() + timedelta(minutes=timeout_min))
@@ -82,12 +106,13 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # live status.json to show one, and an aborted run leaves it behind as deferred
     inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                         mode="blocking", qtype=qtype, default=default, expires=expires,
-                        config_patch=cpatch)
+                        config_patch=cpatch, request=req_ids)
     mirror = decisions.mirror_blocking(ctx, qid, question, options, default, timeout_min)
     ctx.write_status("waiting_user",
                      question={"qid": qid, "question": question, "options": options,
                                "asked": ctx.run_ts, "expires": expires,
-                               "mirrored": mirror is not None, **extra})
+                               "mirrored": mirror is not None, **extra,
+                               **({"request": req_ids} if req_ids else {})})
     deadline = time.monotonic() + timeout_min * 60
     started = time.monotonic()
     answer = None
@@ -98,14 +123,13 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
             answer = inbox.take_answer(ctx.routine.dir, qid, loop.consumed_dir)
             if not answer and mirror and (reply := mirror.poll()):
                 answer = {"text": reply, "source": "discord"}
-            if answer and qtype == "util-approval" and answer.get("text") \
-                    and not answer.get("defer") and not answer.get("intermediate") \
-                    and not _settles_approval(str(answer["text"])):
-                # D38: an approval is settled ONLY by a clear approve/decline. Any other
-                # reply ("Bin hier", an unrelated instruction) is user INPUT that arrived
-                # while the question blocks — hold it as a normal delayed message (drained
-                # at the next turn boundary, i.e. after this decision) and keep waiting;
-                # the channel is told the question is still open.
+            # D38: an approval is settled ONLY by a clear approve/decline, and an access
+            # REQUEST only by one of the four typed decisions (the web's buttons). Any
+            # other reply ("Bin hier", an unrelated instruction) is user INPUT that
+            # arrived while the question blocks — hold it as a normal delayed message
+            # (drained at the next turn boundary, i.e. after this decision) and keep
+            # waiting; the channel is told the question is still open.
+            if answer is not None and _held_not_settled(qtype, answer):
                 src = str(answer.get("source", "web"))
                 ctx.transcript.event("answer", {"qid": qid, "text": str(answer["text"]),
                                                 "source": src, "held": True})
@@ -120,7 +144,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     except RunAborted:
         # the run dies but the decision survives — as a deferred question for the next run
         inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                            qtype=qtype, default=default, config_patch=cpatch)
+                            qtype=qtype, default=default, config_patch=cpatch,
+                            request=req_ids)
         ctx.asks_deferred += 1
         raise
     finally:
@@ -130,7 +155,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         # The user parked the decision from the Decisions page — continue exactly like a
         # timeout: on the stated default, the record staying open as deferred.
         inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                            qtype=qtype, default=default, config_patch=cpatch)
+                            qtype=qtype, default=default, config_patch=cpatch,
+                            request=req_ids)
         ctx.asks_deferred += 1
         if mirror:
             mirror.notify_deferred(default)
@@ -139,7 +165,9 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     if answer:
         source = answer.get("source", "web")
         ctx.transcript.event("answer", {"qid": qid, "text": answer["text"], "source": source,
-                                        "intermediate": bool(answer.get("intermediate"))})
+                                        "intermediate": bool(answer.get("intermediate")),
+                                        **({"decision": answer["decision"]}
+                                           if answer.get("decision") else {})})
         if answer.get("intermediate"):
             # A dialog reply, not the answer: the user needs some back-and-forth before they
             # can decide. The decision record STAYS OPEN (deferred — the run is no longer
@@ -147,7 +175,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
             # leaves it live for the next run instead of silently dropping it. Discord gets
             # no "resolved" note — the follow-up question is the reply.
             inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                                qtype=qtype, default=default, config_patch=cpatch)
+                                qtype=qtype, default=default, config_patch=cpatch,
+                                request=req_ids)
             loop.dialog_qid = qid
             return {"kind": "ask_user", "qid": qid, "mode": mode, "dialog": True,
                     "user_message": answer["text"],
@@ -155,17 +184,25 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                             "more back-and-forth first. Address their message, then ask again "
                             "with ask_user (the original question, or a sharper version)."}
         inbox.resolve_question(ctx.routine.dir, qid)
-        # The run's record of decided asks: guards an explicit user yes unblocks consult it
-        # (recreate_denial). In-memory on purpose — a resumed leg starts empty and re-asks.
-        ctx.user_answers.append({"qid": qid, "question": question, "answer": answer["text"]})
         if mirror:
             mirror.notify_resolved(answer["text"], source)
+        if req_ids:
+            # One of the four typed decisions (guaranteed by the settle rule above):
+            # seed the run overlay, rebuild the live policy + transport schema, and
+            # teach the outcome. Forever-decisions were persisted by the web layer at
+            # click time — the engine bridges them into this run and writes no config.
+            decision = str(answer["decision"])
+            requests.apply_decision(loop, req_ids, decision,
+                                    account=str(answer.get("account") or ""))
+            return {"kind": "ask_user", "qid": qid, "mode": mode, "answered": True,
+                    "request": req_ids, "decision": decision,
+                    "result": requests.observation_text(req_ids, decision)}
         return {"kind": "ask_user", "qid": qid, "mode": mode, "answered": True,
                 "answer": answer["text"], "source": source}
     # timeout: continue WITHOUT the decision — on the stated default when there is one.
     # The record stays open (now deferred) so a late answer still reaches a future run.
     inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                        qtype=qtype, default=default, config_patch=cpatch)
+                        qtype=qtype, default=default, config_patch=cpatch, request=req_ids)
     ctx.asks_deferred += 1
     if mirror:
         mirror.notify_timeout(default)
@@ -177,9 +214,11 @@ def recreate_denial(loop, action: dict) -> list[str]:
     """The never-recreate rule, checked INSIDE the schema-retry cycle (a denied call is
     corrected and never becomes a turn, like every permission gate): a write_util for a
     slug that once existed and was deleted from the util library — the user's deliberate
-    act, per the library's git history — must not proceed silently. An explicit user yes
-    THIS run (an answered blocking ask naming the util) unblocks it; the routine's normal
-    write_util approval level still applies afterwards.
+    act, per the library's git history — must not proceed silently. The unlock is the
+    grant entity `recreate:<slug>` (entities.py): an allow-now decision THIS run opens
+    it (the routine's normal write_util approval level still applies afterwards), and a
+    never-decision tombstones it. `recreate:` has no allow-forever on purpose — a fresh
+    deletion must always outrank an old grant.
     """
     if action.get("kind") != "write_util":
         return []
@@ -190,24 +229,30 @@ def recreate_denial(loop, action: dict) -> list[str]:
     home = ctx.server.libraries_home
     if utils_lib.exists(home, name) or not utils_lib.was_deleted(home, name):
         return []   # a revision, or a slug that never existed — no recreation involved
-    if any(name.lower() in str(a.get("question") or "").lower()
-           and _is_approval(str(a.get("answer") or "")) for a in ctx.user_answers):
-        return []   # the user explicitly said yes to this recreate, this run
+    eid = f"recreate:{name}"
+    g = loop.grants
+    state = g.entity_state(eid) if g is not None else "undecided"
+    if state == "granted_now":
+        return []   # the user explicitly allowed this recreate, this run
+    if state in ("denied_forever", "denied_now"):
+        return [f"util {name!r} was DELETED from the util library by the user, and "
+                f"{g.request_route(eid)}"]
     return [f"util {name!r} existed before and was DELETED from the util library by the "
             f"user — a user-deleted util is never recreated without asking. First ask_user "
-            f'with mode "blocking", naming util {name!r} and why it is needed (e.g. '
-            f"'Recreate the deleted util {name!r}? <reason>'); recreate only after an "
-            f"explicit yes this run. On a no or a timeout, work without it and note the "
-            f"gap in your finish summary."]
+            f'with request: "{eid}", mode "blocking", and a question saying why it is '
+            f"needed; recreate only after the user allows it (the grant covers this run). "
+            f"On a deny or a timeout, work without it and note the gap in your finish "
+            f"summary."]
 
 
 def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
-    """D39: per-routine secret exposure, decided at CALL time. A util call whose transitive
-    `secrets:` declarations name secrets PRESENT in the store runs only once the user has
-    granted this routine those secrets: an undecided name files ONE blocking approval
-    (mirrored to Discord; the D38 hold semantics apply), and the answer is persisted to
-    routine.yaml's `secret_grants` — editable later on the routine page. Returns None to
-    let the call proceed, or the refusing/pending observation.
+    """D39: per-routine secret exposure, decided at CALL time through the FOUR-STATE grant
+    model. A util call whose transitive `secrets:` declarations name secrets PRESENT in
+    the store runs only once this routine may see them: `grants:` rows (`secret:<NAME>`
+    true/false) are the forever states, the run overlay the once states, and an undecided
+    name files ONE blocking access request covering every undecided secret (the D38 hold
+    semantics apply; the web persists a forever-decision, an allow-now covers this run).
+    Returns None to let the call proceed, or the refusing/pending observation.
     """
     ctx = loop.ctx
     name = str(action.get("name") or "")
@@ -219,15 +264,24 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
     present = sorted(needed & set(load_secrets())) if needed else []
     if not present:
         return None   # nothing exposable — a declared-but-unset secret fails visibly inside
-    grants = dict(getattr(ctx.routine, "secret_grants", None) or {})
-    denied = [s for s in present if grants.get(s) is False]
+    grants = dict(ctx.routine.grants or {})
+
+    def _state(secret: str) -> str:
+        eid = f"secret:{secret}"
+        if eid in ctx.granted_now:
+            return "granted"
+        if eid in ctx.denied_now or grants.get(eid) is False:
+            return "denied"
+        return "granted" if grants.get(eid) is True else "undecided"
+
+    denied = [s for s in present if _state(s) == "denied"]
     if denied:
         return {"kind": "util", "name": name, "declined_secrets": denied,
                 "reason": f"the user has declined exposing {', '.join(denied)} to this "
                           "routine — the util was not run. The mapping is editable on the "
                           "routine page (secret exposure); work without this util, or file "
                           "a deferred ask_user explaining why it is needed."}
-    undecided = [s for s in present if s not in grants]
+    undecided = [s for s in present if _state(s) == "undecided"]
     if not undecided:
         return None
     if ctx.depth > 0:
@@ -238,29 +292,22 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
     ask = handle_ask(loop, {
         "question": f"Expose secret{'s' if len(undecided) > 1 else ''} "
                     f"{', '.join(undecided)} to routine '{ctx.routine.slug}'? Its util "
-                    f"call '{name}' declares them. The answer is remembered in the "
-                    "routine's config and editable on the routine page.",
-        "mode": "blocking", "options": ["approve", "decline"],
-        "default": "the util is NOT run and the secrets stay unexposed until approved"},
-        poll_s, qtype="util-approval")
+                    f"call '{name}' declares them.",
+        "mode": "blocking",
+        "request": [f"secret:{s}" for s in undecided],
+        "default": "the util is NOT run and the secrets stay unexposed until allowed"},
+        poll_s)
     if not ask.get("answered"):
         return {"kind": "util", "name": name, "pending_secrets": undecided,
                 "pending_approval": True, "qid": ask.get("qid"),
-                "reason": "the secret-exposure approval is still open — do other work and "
+                "reason": "the secret-exposure request is still open — do other work and "
                           "retry the util once it is settled."}
-    approved = _is_approval(str(ask["answer"]))
-    verdict = dict.fromkeys(undecided, approved)
-    record_secret_grants(ctx.routine.dir, verdict)
-    try:
-        ctx.routine.secret_grants.update(verdict)
-    except (AttributeError, TypeError):
-        pass   # stale/foreign cfg object — the persisted mapping still governs next runs
-    if approved:
+    if str(ask.get("decision") or "").startswith("allow"):
         return None
     return {"kind": "util", "name": name, "declined_secrets": undecided,
-            "answer": str(ask["answer"])[:200],
+            "decision": ask.get("decision"),
             "reason": "the user declined exposing these secrets to this routine — the util "
-                      "was not run."}
+                      "was not run. " + str(ask.get("result") or "")}
 
 
 def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR0911 — gate ladder: every refusal is its own teaching exit

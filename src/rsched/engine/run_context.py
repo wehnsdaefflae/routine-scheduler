@@ -107,10 +107,15 @@ class RunContext:
     # overwriting an existing file OUTSIDE the routine's own dir requires the run to have
     # seen it (rebuilt from the transcript on resume, so grounding survives legs).
     seen_paths: set[str] = field(default_factory=set)
-    # Blocking asks ANSWERED this run ({qid, question, answer}) — consulted by guards an
-    # explicit user yes unblocks (interact.recreate_denial's never-recreate rule).
-    # In-memory only: a resumed leg starts empty and the model re-asks.
-    user_answers: list[dict] = field(default_factory=list)
+    # The run's ONE-TIME grant overlay (the "now" half of the four-state model,
+    # entities.py): entity ids the user allowed / declined for THIS run — seeded by a
+    # blocking request's answer or a deferred decision consumed at boot, folded over the
+    # config-derived GrantPolicy by requests.rebuild_policy. In-memory only, on purpose:
+    # a resumed leg starts empty and the model re-asks. grant_args carries a decision's
+    # extra datum (a connection grant's account label).
+    granted_now: set[str] = field(default_factory=set)
+    denied_now: set[str] = field(default_factory=set)
+    grant_args: dict = field(default_factory=dict)
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
     # Spend recorded by EARLIER legs of this run (set on resume from the transcript).
     # Budgets deliberately ignore it — a resume gets a fresh window — but reporting must
@@ -162,6 +167,23 @@ class RunContext:
     @property
     def run_id(self) -> str:
         return make_run_id(self.routine.slug, self.run_ts)
+
+    def _granted_paths(self, cls: str) -> list[Path]:
+        prefix = f"{cls}:"
+        return [Path(e[len(prefix):]) for e in sorted(self.granted_now)
+                if e.startswith(prefix)]
+
+    def read_roots(self) -> list[Path]:
+        """The run's EFFECTIVE readable roots: config fs_read_roots plus one-time
+        fs-read grants. Every consumer (file actions, the util sandbox, the vision
+        fallback) resolves against this, so a granted root behaves exactly like a
+        configured one — for this run.
+        """
+        return [*self.routine.fs_read_roots, *self._granted_paths("fs-read")]
+
+    def write_roots(self) -> list[Path]:
+        """The effective writable roots — write_roots' counterpart of read_roots()."""
+        return [*self.routine.fs_write_roots, *self._granted_paths("fs-write")]
 
     @property
     def root_run_dir(self) -> Path:

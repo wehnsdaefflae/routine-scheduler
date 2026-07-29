@@ -43,12 +43,14 @@ class _Endpoint:
 
 
 def _ctx(tmp_path, endpoint):
-    routine = SimpleNamespace(dir=tmp_path, fs_read_roots=[], models={})
+    routine = SimpleNamespace(dir=tmp_path, fs_read_roots=[], fs_write_roots=[], models={})
     # for_model returns (endpoint, resolved ModelRef): the model's multimodal flag is what the
     # executor passes into supports_media (one endpoint serves many models).
     ref = SimpleNamespace(multimodal=endpoint.multimodal, context_chars=200_000) if endpoint else None
     registry = SimpleNamespace(for_model=lambda k, m: (endpoint, ref)) if endpoint else None
     return SimpleNamespace(routine=routine, grants=None, root_run_dir=tmp_path / "runs" / "x",
+                           read_roots=lambda: list(routine.fs_read_roots),
+                           write_roots=lambda: list(routine.fs_write_roots),
                            server=SimpleNamespace(libraries_home=tmp_path / "utils"), registry=registry,
                            seen_paths=set())
 
@@ -113,9 +115,9 @@ def test_do_view_image_batched_mixed(tmp_path):
 
 def test_vision_describe_parses_and_errors(tmp_path, monkeypatch):
     from rsched import utils_lib
+    routine = SimpleNamespace(dir=tmp_path, fs_read_roots=[], fs_write_roots=[])
     ctx = SimpleNamespace(server=SimpleNamespace(libraries_home=tmp_path, sandbox="off"),
-                          routine=SimpleNamespace(dir=tmp_path, fs_read_roots=[],
-                                                  fs_write_roots=[]))
+                          routine=routine, read_roots=list, write_roots=list)
     monkeypatch.setattr(utils_lib, "exists", lambda home, n: True)
     monkeypatch.setattr(utils_lib, "run_util",
                         lambda home, n, args, timeout=300, policy=None, **_kw:
@@ -222,7 +224,7 @@ def test_read_file_end_truncates_and_resumes_in_sequence(tmp_path):
     big = tmp_path / "big.txt"
     big.write_text("\n".join(f"line-{i:05d}-{'x' * 24}" for i in range(4000)))
     ctx = SimpleNamespace(routine=SimpleNamespace(dir=tmp_path, fs_read_roots=[]),
-                          grants=None, seen_paths=set())
+                          grants=None, seen_paths=set(), read_roots=list)
 
     obs = fileops._read_one("big.txt", {"max_lines": 500}, ctx)
     assert obs["truncated"] is True

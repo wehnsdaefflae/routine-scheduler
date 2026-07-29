@@ -1256,6 +1256,27 @@ def test_run_page_blocking_question_shows_option_buttons(ui, ui_page):
     assert answer["text"] == "fast"
 
 
+def test_decisions_page_access_request_offers_the_four_decisions(ui, ui_page):
+    """An access-request record renders the typed decision buttons (allow/deny ×
+    now/forever) instead of free-form options; 'allow forever' persists the grant into
+    routine.yaml AT CLICK TIME (the web is the one config writer) and files a
+    decision-shaped answer the engine can consume."""
+    ui.seed_question("uir", "q-req", "May I read the FOO_TOKEN secret?",
+                     request=["secret:FOO_TOKEN"])
+    ui_page.goto(f"{ui.url}/#/questions")
+    panel = ui_page.locator(".question-item", has_text="May I read the FOO_TOKEN")
+    expect(panel.locator("code", has_text="secret:FOO_TOKEN")).to_be_visible()
+    for label in ("allow now", "allow forever", "deny now", "never"):
+        expect(panel.get_by_role("button", name=label, exact=True)).to_be_visible()
+    panel.get_by_role("button", name="allow forever", exact=True).click()
+    _wait_until((ui.routine_dir("uir") / "inbox" / "answer-q-req.json").exists)
+    answer = json.loads((ui.routine_dir("uir") / "inbox" / "answer-q-req.json")
+                        .read_text(encoding="utf-8"))
+    assert answer["decision"] == "allow_forever"
+    cfg = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
+    assert cfg["grants"] == {"secret:FOO_TOKEN": True}
+
+
 def test_secret_exposure_panel_refreshes_on_decision(ui, ui_page):
     """F193: a grant decided elsewhere (Decisions-page approval → routine.yaml) must show
     up in the routine page's secret-exposure panel WITHOUT a full reload — the panel
@@ -1265,10 +1286,10 @@ def test_secret_exposure_panel_refreshes_on_decision(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
     expect(ui_page.locator(".panel", has_text="no secrets in the store yet")).to_be_visible()
 
-    # the grant lands in routine.yaml (as the engine's approval handler persists it) …
+    # the grant lands in routine.yaml (as the web decision handler persists it) …
     ry = ui.routine_dir("uir") / "routine.yaml"
     cfg = yaml.safe_load(ry.read_text(encoding="utf-8"))
-    cfg["secret_grants"] = {"FOO_TOKEN": True}
+    cfg["grants"] = {"secret:FOO_TOKEN": True}
     ry.write_text(yaml.safe_dump(cfg), encoding="utf-8")
     # … and the decision resolves — the answer's bus event reaches the open page
     r = ui_page.request.post(f"{ui.url}/api/questions/q-sec/answer",

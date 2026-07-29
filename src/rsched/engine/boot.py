@@ -29,6 +29,10 @@ def boot(loop) -> None:
     ctx.write_status("starting")
     if ctx.depth == 0:
         deferred_qa = inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir)
+        # Access-request decisions made between runs seed THIS run's grant overlay —
+        # before the prompt is composed, so CAPABILITIES already reflects them.
+        from .requests import apply_boot_decisions
+        apply_boot_decisions(loop, deferred_qa)
         open_qs = inbox.open_questions(ctx.routine.dir)
         msgs = inbox.drain_messages(ctx.routine.dir, loop.consumed_dir)
         reports.stamp_delivered(ctx.server.routines_home, msgs, run_id=ctx.run_id)

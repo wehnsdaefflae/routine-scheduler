@@ -219,7 +219,7 @@ export async function render(view, slug, _query = {}) {
     cleanup.push(() => { clearInterval(bgTimer); artifacts.destroy(); taskTree?.stop(); });
 
     const chat = createChat(chatBox, {
-      answer: (qid, text) => api(`/api/questions/${qid}/answer`, { method: "POST", body: { text } }),
+      answer: (qid, text, decision) => api(`/api/questions/${qid}/answer`, { method: "POST", body: decision ? { decision } : { text } }),
       loadSub: (n, o) => api(`/api/runs/${detail.run_id}/transcript?sub=${n}&offset=${o}`),
       isLive: () => !TERMINAL.has(curState),
       onArtifact: () => artifacts.refresh(),

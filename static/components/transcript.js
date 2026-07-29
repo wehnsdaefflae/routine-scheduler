@@ -65,7 +65,7 @@ export function createTranscript(container, opts = {}) {
     const form = answerForm(p, {
       placeholder: "answer here — or on the Decisions page… (Shift+Enter for a new line)",
       defaultLine: false,   // the head already states the default inline
-      submitText: (text) => opts.answer(p.qid, text),
+      submitText: (text, _intermediate, decision) => opts.answer(p.qid, text, decision),
       onSuccess: (text) => closeQuestion(p.qid, `✅ answered: ${text} (queued for the next run)`),
     });
     qforms.set(p.qid, { controls: form.node, created: Date.now() });

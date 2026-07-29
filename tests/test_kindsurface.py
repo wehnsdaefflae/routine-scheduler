@@ -85,6 +85,18 @@ def test_projection_is_materially_smaller():
     assert clarify < full * 0.6, f"projection saved too little: {clarify} vs {full}"
 
 
+def test_projection_never_mutates_the_global_schema():
+    """Regression: schema_for_kinds filtered the ORIGINAL schema's property specs into
+    its deepcopy shell, so the description-trimming loop mutated the shared global —
+    every projection permanently trimmed ACTION_SCHEMA for the whole process (cross-run
+    contamination in the daemon). The full schema must be byte-identical after any
+    projection."""
+    before = json.dumps(ACTION_SCHEMA, sort_keys=True)
+    schema_for_kinds({"finish"})
+    schema_for_kinds({"ask_user", "read_file", "write_file", "finish"})
+    assert json.dumps(ACTION_SCHEMA, sort_keys=True) == before
+
+
 def test_effective_kinds_intersects_allowlist_and_grants():
     class Grants:
         def allows_kind(self, kind):

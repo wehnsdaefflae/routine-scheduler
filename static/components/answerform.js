@@ -18,12 +18,23 @@ export function answerForm(q, {
   defaultLine = true,          // "↪ without an answer: …" under the options (if q.default)
   askBack = false,             // the intermediate-reply button (submit(true))
   onArrow = null,              // (±1) => — ArrowUp/Down focus moves (Decisions page)
-  submitText,                  // REQUIRED: async (text, intermediate) — the API call
+  submitText,                  // REQUIRED: async (text, intermediate, decision) — the API call
+  //                              (decision set = an access-request button; text is null then)
   toastText = null,            // (intermediate) => string | null — success toast
   onSuccess = null,            // (text, intermediate) => — host's post-send behavior
   extraControls = null,        // node(s) beside the send button (lifecycle etc.)
 } = {}) {
   const options = q.options || [];
+  // An ACCESS REQUEST (the record carries grant-entity ids): the four typed decisions
+  // replace free-form options. `recreate:` entities never offer "allow forever" — a
+  // fresh deletion must always outrank an old grant, so that class is per-run only.
+  const request = Array.isArray(q.request) ? q.request : [];
+  const DECISIONS = [
+    ["allow_now", "allow now", "grant it for the asking run only — nothing persists"],
+    ["allow_forever", "allow forever", "record the grant in the routine's config"],
+    ["deny_now", "deny now", "decline for this run — the routine works without it"],
+    ["deny_forever", "never", "decline forever — the routine stops asking for this"],
+  ].filter(([key]) => key !== "allow_forever" || !request.every((e) => e.startsWith("recreate:")));
   const input = control === "input"
     ? el("input", { type: "text", placeholder,
         "data-persist": `answer-${q.qid}`, style: "flex:1" })
@@ -34,8 +45,37 @@ export function answerForm(q, {
     title: "send as a follow-up question / thought — the model replies and the question stays open" },
     "ask back") : null;
   const row = el("div", { class: "row mt" }, input, send, discuss, extraControls);
+  const decide = async (decision, btnRow) => {
+    for (const b of btnRow.querySelectorAll("button")) b.disabled = true;
+    try {
+      await submitText(null, false, decision);
+      forgetField(input);
+      const phrase = DECISIONS.find(([key]) => key === decision)?.[1] || decision;
+      const note = toastText?.(false);
+      if (note) toast(note);
+      onSuccess?.(phrase, false);
+    } catch (err) {
+      toast(err.message, 4000, { error: true });
+      for (const b of btnRow.querySelectorAll("button")) b.disabled = false;
+    }
+  };
+  const decisionRow = request.length ? (() => {
+    const btnRow = el("div", { class: "row mt answer-opts", style: "gap:8px" });
+    for (const [key, label, help] of DECISIONS) {
+      btnRow.append(el("button", {
+        class: `btn small${key === "allow_forever" ? " primary" : ""}`, title: help,
+        onclick: () => decide(key, btnRow),
+      }, label));
+    }
+    return el("div", {},
+      el("div", { class: "row mt", style: "gap:6px;flex-wrap:wrap" },
+        el("span", { class: "faint small" }, "requests access to:"),
+        request.map((e) => el("code", { class: "small" }, e))),
+      btnRow);
+  })() : null;
   const node = el("div", {},
-    options.length ? el("div", { class: "row mt answer-opts", style: "gap:8px" },
+    decisionRow,
+    !request.length && options.length ? el("div", { class: "row mt answer-opts", style: "gap:8px" },
       options.map((o, i) => el("button", {
         class: "btn small", ...(numbered ? { title: `press ${i + 1}` } : {}),
         // one-click decision (F189): clicking an option SUBMITS it — free text stays
@@ -91,15 +131,16 @@ export function questionPanel(box, q, { onAnswered } = {}) {
   box.replaceChildren();
   if (!q) return;
   const form = answerForm(q, {
-    submitText: (text, intermediate) => api(`/api/questions/${q.qid}/answer`,
-      { method: "POST", body: { text, intermediate } }),
+    submitText: (text, intermediate, decision) => api(`/api/questions/${q.qid}/answer`,
+      { method: "POST", body: decision ? { decision } : { text, intermediate } }),
     askBack: true,
     toastText: (i) => (i ? "sent — the model will reply and re-ask" : "answer sent"),
     onSuccess: () => { box.replaceChildren(); onAnswered?.(); },
   });
   box.append(el("div", { class: "panel warn mt" },
     el("div", { class: "prose" },
-      "❓ ", q.type === "util-approval" ? el("strong", {}, "[util approval] ") : null,
+      "❓ ", q.type === "util-approval" ? el("strong", {}, "[util approval] ")
+        : q.type === "request" ? el("strong", {}, "[access request] ") : null,
       mdInline(q.question || "")),
     q.expires ? el("div", { class: "faint small" },
       "the run continues without you ", when(q.expires, { mode: "rel" }),

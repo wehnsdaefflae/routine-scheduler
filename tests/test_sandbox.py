@@ -80,11 +80,19 @@ def test_net_denial_needs_abi4(tmp_path, monkeypatch):
     assert json.loads(cmd[2])["net"] is True
 
 
-def test_policy_for_run_derives_from_routine(tmp_path):
+def _ctx(server, routine, extra_read=(), extra_write=()):
+    """A live-run stand-in: the ctx surface policy_for_ctx consumes — the EFFECTIVE roots
+    (config + one-time fs grants), exactly what RunContext.read_roots/write_roots return."""
+    return SimpleNamespace(server=server, routine=routine,
+                           read_roots=lambda: [*routine.fs_read_roots, *extra_read],
+                           write_roots=lambda: [*routine.fs_write_roots, *extra_write])
+
+
+def test_policy_for_ctx_derives_from_the_run(tmp_path):
     server = SimpleNamespace(sandbox="strict")
     routine = SimpleNamespace(dir=tmp_path / "r", fs_read_roots=[Path("/data")],
                               fs_write_roots=[Path("/proj")])
-    policy = sandbox.policy_for_run(server, routine)
+    policy = sandbox.policy_for_ctx(_ctx(server, routine))
     assert policy.mode == "strict"
     assert policy.read_roots == (Path("/data"),)
     assert policy.write_roots == (tmp_path / "r", Path("/proj"))   # own dir always writable
@@ -92,7 +100,19 @@ def test_policy_for_run_derives_from_routine(tmp_path):
     assert base.mode == "strict" and base.read_roots == () and base.write_roots == ()
 
 
-def test_policy_for_run_includes_staged_shared_read_roots(tmp_path):
+def test_policy_for_ctx_carries_one_time_fs_grants(tmp_path):
+    """A once-granted fs root reaches the util sandbox exactly like a configured one —
+    one policy source, two enforcers (the engine path gates read the same ctx roots)."""
+    server = SimpleNamespace(sandbox="strict")
+    routine = SimpleNamespace(dir=tmp_path / "r", fs_read_roots=[], fs_write_roots=[])
+    policy = sandbox.policy_for_ctx(_ctx(server, routine,
+                                         extra_read=[Path("/granted-read")],
+                                         extra_write=[Path("/granted-write")]))
+    assert Path("/granted-read") in policy.read_roots
+    assert Path("/granted-write") in policy.write_roots
+
+
+def test_policy_for_ctx_includes_staged_shared_read_roots(tmp_path):
     """A run's util sandbox also sees operator-staged shared read-only asset dirs (the
     NopeCHA browser extension launch-captcha-browser loads) — existence-guarded, derived
     from server.routines_home, never the routine's own roots. (R21/R28)"""
@@ -102,18 +122,18 @@ def test_policy_for_run_includes_staged_shared_read_roots(tmp_path):
     server = SimpleNamespace(sandbox="permissive", routines_home=rhome)
     routine = SimpleNamespace(dir=tmp_path / "r", fs_read_roots=[Path("/data")],
                               fs_write_roots=[])
-    policy = sandbox.policy_for_run(server, routine)
+    policy = sandbox.policy_for_ctx(_ctx(server, routine))
     assert ext in policy.read_roots and Path("/data") in policy.read_roots
 
     # Not staged → contributes nothing (a fresh deploy is unaffected).
     empty = tmp_path / "empty"
     empty.mkdir()
-    policy2 = sandbox.policy_for_run(SimpleNamespace(sandbox="permissive", routines_home=empty),
-                                     routine)
+    policy2 = sandbox.policy_for_ctx(_ctx(
+        SimpleNamespace(sandbox="permissive", routines_home=empty), routine))
     assert all("nopecha-extension" not in str(p) for p in policy2.read_roots)
 
     # A server double without routines_home degrades cleanly (no shared roots).
-    policy3 = sandbox.policy_for_run(SimpleNamespace(sandbox="off"), routine)
+    policy3 = sandbox.policy_for_ctx(_ctx(SimpleNamespace(sandbox="off"), routine))
     assert policy3.read_roots == (Path("/data"),)
 
 

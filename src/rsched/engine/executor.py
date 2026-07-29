@@ -40,25 +40,37 @@ READ_DEFAULT_MAX_LINES = 200
 
 
 def _connection_env(ctx: RunContext) -> dict[str, str]:
-    """The routine's bound OAuth connections resolved to {<PROVIDER>_ACCESS_TOKEN: token}, passed
-    to run_util as extra_secrets. A util only sees a token it declares AND the routine binds; a
-    missing / needs-reauth binding is simply absent (the util then fails for want of a token).
+    """The routine's EFFECTIVE OAuth connections resolved to {<PROVIDER>_ACCESS_TOKEN: token},
+    passed to run_util as extra_secrets: the config bindings plus this run's one-time
+    connection grants (the decision recorded the account in ctx.grant_args). A util only
+    sees a token it declares AND the run holds; a missing / needs-reauth binding is simply
+    absent (the util then fails for want of a token).
     """
-    if not ctx.routine.connections:
+    bound = dict(ctx.routine.connections or {})
+    for eid in sorted(ctx.granted_now):
+        if eid.startswith("connection:"):
+            provider = eid.partition(":")[2]
+            bound.setdefault(provider, str(ctx.grant_args.get(eid) or ""))
+    if not bound:
         return {}
-    env, warnings = oauth_store.tokens_for_routine(ctx.routine.connections)
+    env, warnings = oauth_store.tokens_for_routine(bound)
     for w in warnings:                       # a broken binding must not fail SILENTLY
         log.warning("connections: %s", w)
     return env
 
 
 def _machine_env(ctx: RunContext) -> dict[str, str]:
-    """The routine's bound remote machines resolved to RSCHED_MACHINES (connection metadata) +
-    RSCHED_MACHINE_KEYS (private-key PEMs from the Secrets store), passed to run_util as
-    extra_secrets. Only the reserved `remote` util declares these, so only it receives them; an
-    unresolvable binding (missing catalog entry / unset key) is simply absent from the maps.
+    """The routine's EFFECTIVE remote machines (config bindings + one-time machine grants)
+    resolved to RSCHED_MACHINES (connection metadata) + RSCHED_MACHINE_KEYS (private-key
+    PEMs from the Secrets store), passed to run_util as extra_secrets. Only the reserved
+    `remote` util declares these, so only it receives them; an unresolvable binding
+    (missing catalog entry / unset key) is simply absent from the maps. A one-time grant
+    covers EXEC only — the sshfs share is mounted by the daemon at binding time, so
+    mounts come with forever-bindings.
     """
-    bound = ctx.routine.machines
+    bound = list(ctx.routine.machines or [])
+    bound += [eid.partition(":")[2] for eid in sorted(ctx.granted_now)
+              if eid.startswith("machine:") and eid.partition(":")[2] not in bound]
     if not bound:
         return {}
     env, warnings = machines.machines_for_routine(bound, ctx.server.machines)
@@ -141,7 +153,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
                 "available": [u["name"] for u in utils_lib.list_utils(home)]}
     code, out, err = utils_lib.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
-        policy=sandbox.policy_for_run(ctx.server, ctx.routine),
+        policy=sandbox.policy_for_ctx(ctx),
         extra_secrets=_extra_secrets(ctx), cwd=ctx.routine.dir)
     # Per-util reliability telemetry (util_stats → the Stats tab).
     ctx.count_util(name, "ok" if code == 0

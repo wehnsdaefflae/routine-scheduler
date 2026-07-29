@@ -84,8 +84,13 @@ def schema_for_kinds(kinds: list[str] | set[str] | None) -> dict:
         fields.update(required)
         fields.update(optional)
     out = copy.deepcopy(ACTION_SCHEMA)
+    # filter the DEEPCOPY's specs, never the original's: taking them from ACTION_SCHEMA
+    # here handed the description-trimming loop below references into the shared global,
+    # so every projection permanently trimmed the full schema for the whole process
+    # (cross-run contamination in the daemon; surfaced by test_projection_is_materially_
+    # smaller going order-dependent).
     out["properties"] = {
-        name: spec for name, spec in ACTION_SCHEMA["properties"].items() if name in fields
+        name: spec for name, spec in out["properties"].items() if name in fields
     }
     for name, spec in out["properties"].items():
         if name not in _UNIVERSAL_FIELDS and isinstance(spec.get("description"), str):

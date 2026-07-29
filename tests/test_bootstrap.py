@@ -145,3 +145,37 @@ def test_adopt_seed_routine_installs_once_and_respects_archive(tmp_path):
 
     # unknown seed slug → no-op
     assert adopt_seed_routine(routines, "no-such-seed") is False
+
+
+def test_migrate_secret_grants(tmp_path):
+    """MIGRATION(expires=2026-08-29) coverage: `secret_grants:` rows become `grants:`
+    rows under the secret: prefix (merged over existing grants), the retired key
+    disappears, files without it are untouched, archived dirs convert too, and the pass
+    is idempotent."""
+    import yaml
+
+    from rsched.bootstrap import migrate_secret_grants
+
+    home = tmp_path / "routines"
+    a = home / "a"
+    a.mkdir(parents=True)
+    (a / "routine.yaml").write_text(yaml.safe_dump(
+        {"slug": "a", "secret_grants": {"FOO": True, "BAR": False},
+         "grants": {"util:discord": False}}), encoding="utf-8")
+    b = home / "b"
+    b.mkdir()
+    (b / "routine.yaml").write_text(yaml.safe_dump({"slug": "b"}), encoding="utf-8")
+    arch = home / ".archive" / "c-20260101-000000"
+    arch.mkdir(parents=True)
+    (arch / "routine.yaml").write_text(yaml.safe_dump(
+        {"slug": "c", "secret_grants": {"K": True}}), encoding="utf-8")
+
+    assert migrate_secret_grants(home) == 2
+    raw = yaml.safe_load((a / "routine.yaml").read_text(encoding="utf-8"))
+    assert "secret_grants" not in raw
+    assert raw["grants"] == {"util:discord": False, "secret:FOO": True, "secret:BAR": False}
+    assert "grants" not in yaml.safe_load((b / "routine.yaml").read_text(encoding="utf-8"))
+    assert yaml.safe_load((arch / "routine.yaml").read_text(encoding="utf-8"))["grants"] \
+        == {"secret:K": True}
+    assert migrate_secret_grants(home) == 0                     # idempotent
+    assert migrate_secret_grants(tmp_path / "missing") == 0     # absent home degrades

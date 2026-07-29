@@ -201,8 +201,9 @@ A run's allowed action kinds are **workflow `tools:` ∩ (base ∪ enabled capab
 util, a `read_file` into `runs/` beyond the enabled depth, and any `write_file` into the run's
 OWN recipe — `main.md` / `stages/` / `traits/` (a fixed rule, not a capability — unlocked only
 when a user-granted fs_write_root covers the routine dir, the routine-improver's case) — are
-rejected inside the schema-retry cycle by `validate_action`, with an error naming the way out
-(the covering permission the user could activate, or a deferred `ask_user`). A run NEVER writes
+rejected inside the schema-retry cycle by `validate_action`, with an error naming the way out:
+a typed ACCESS REQUEST for the denied entity (see the four-state model below), or the settled
+do-not-re-request wording when the user already declined it. A run NEVER writes
 its own `routine.yaml` at all: config (budgets, models, permissions, capabilities, fs-roots) is
 the user's, so even the routine-improver proposes a config change with a deferred `ask_user`
 rather than editing the file. A rejected call never becomes a turn. The current run's own
@@ -224,6 +225,49 @@ reserved utils, no recipe writes, no traits of their own.
 
 Budgets, `fs_read_roots` / `fs_write_roots` and schedules are resources, not capabilities —
 they stay plain `routine.yaml` config.
+
+## Access requests — the four-state grant model
+
+Every grantable thing has ONE id in the entity vocabulary (`entities.py`):
+`action:<gated-kind>`, `util:<reserved-name>`, `secret:<STORE_NAME>`,
+`connection:<provider>`, `machine:<name>`, `fs-read:<path>` / `fs-write:<path>`,
+`runs:last|all`, `workflows:generate`, `recreate:<deleted-util-slug>`. A run that hits a
+gate files an `ask_user` carrying `request: "<entity-id>"` (the question stays its prose —
+WHY it needs the entity); the Decisions page renders four buttons, and each entity is
+always in exactly one of four states:
+
+- **allowed forever** — the entity's NATIVE routine.yaml key: a capability switched on
+  through the permission cascade (allow-forever activates a covering conduct doc and
+  runs the same raise-then-floor the permissions editor uses), a connection/machine
+  binding, an fs root. `secret:` is the one class with no native switch — its
+  allow-forever is a `grants:` true row.
+- **denied forever** — a `grants: {<entity-id>: false}` tombstone. The run stops asking:
+  denials switch to "the user has PERMANENTLY declined … do not request it again", the
+  request itself is corrected in-cycle, and the catalog badges a tombstoned reserved
+  util `[reserved — declined by the user]`. The routine page's *Declined access* panel
+  removes a row (back to undecided).
+- **allowed now / denied now** — this run only, in-memory on the RunContext (a resumed
+  leg starts empty and re-asks). An allow-now folds into the live policy at the turn
+  boundary — the transport schema is re-projected, so a granted kind becomes generatable
+  on the very next turn — and reaches every enforcer: `validate_action`, the util
+  sandbox's filesystem roots, and the declared-only env injection (a once-granted
+  connection/machine/secret flows exactly like a bound one, for this run). Decided
+  between runs (a deferred request answered on the Decisions page), the consuming run's
+  boot seeds the overlay before the prompt is composed.
+
+Ownership is strict: FOREVER decisions are persisted by the WEB layer at click time —
+the engine never writes routine.yaml, not even to record an approval (the old
+`secret_grants` engine writer is gone). Sub-workflows cannot request; they inherit the
+parent's RESOURCE grants (fs/secret/connection/machine) and none of its capability
+grants. `recreate:<slug>` deliberately has no allow-forever: a fresh user deletion must
+always outrank an old grant. Secret exposure (D39) rides this same flow: the first util
+call declaring an undecided store secret files one blocking request covering every
+undecided name.
+
+What is deliberately NOT an entity — structurally impossible stays impossible, never a
+deniable row: `routine.yaml` writes, `runs/` writes, `.memory/` via file actions,
+own-recipe writes, base action kinds, traits (the grantable thing is
+`action:read_trait`), conduct docs (they ride the cascade; they grant nothing).
 
 ## Working with them
 

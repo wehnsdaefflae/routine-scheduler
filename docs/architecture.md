@@ -273,7 +273,9 @@ and the capabilities digest's catalog listing):
   `runs/`), gitignored on first use (the run-end autocommit is `git add -A` and util output can carry
   tokens), never search-indexed, pruned to the last `KEEP_RUNS` runs.
 - `state/`, `LEDGER.md`, `inbox/` (daemon/web drop messages + answers here), `questions/pending/`
-  (the ONE decision-record shape: {mode, type, default, expires} — asks and util approvals alike),
+  (the ONE decision-record shape: {mode, type, default, expires, request?} — asks, util approvals
+  and access requests alike; `routine.yaml` additionally carries the `grants:` decision rows:
+  deny-forever tombstones for any entity + secret exposure, written only by the web),
   `runs/<ts>/` (transcripts + status.json incl. usage/turns/elapsed_s + the finish `outcome` —
   `state` folds a partial finish into "finished", the outcome field keeps it distinguishable —
   the dashboard's sortable per-routine stats AND its run-history **heartbeat strip**
@@ -337,8 +339,13 @@ and the capabilities digest's catalog listing):
   docs/background-tasks.md.
 - **ask_user** is `blocking` (poll `inbox/answer-<qid>.json` up to `ask_timeout_min`, then the run
   CONTINUES on the action's stated `default` and the record stays open as deferred) or `deferred`
-  (filed to `questions/pending/`, surfaced in a later run's state digest). Blocking asks are durable
-  records too, and — when the routine holds the `communication` permission — are mirrored to Discord by
+  (filed to `questions/pending/`, surfaced in a later run's state digest). An ask may carry
+  `request: "<entity-id>"` — a typed ACCESS REQUEST (entities.py; docs/traits-permissions.md's
+  four-state model): the record then settles ONLY on one of the four allow/deny × now/forever
+  decisions (the Decisions page's buttons; free text is held, D38), forever-decisions are applied
+  to routine.yaml by the WEB at click time (`web/grants_apply.py` — the engine never writes
+  config), and now-decisions seed the run's in-memory overlay (`engine/requests.py`). Blocking
+  asks are durable records too, and — when the routine holds the `communication` permission — are mirrored to Discord by
   the ENGINE (`engine/decisions.py`): a reply on either surface resolves everywhere and the other side
   is notified. All implicit outbound sends (the mirror + the detached-delivery ping) go through
   the ONE notification seam `rsched/notify.py` — see docs/notifications.md. The web layer posts
@@ -578,8 +585,9 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   line or a credential env var the code reads but `secrets:` doesn't declare (the Settings page can
   only prompt for declared secrets), then the selftest; approval rides the routine's write_util
   `confirm:` capability level. A slug with a DELETION in the library's git history is a user
-  decision: `write_util` on it is rejected inside the schema-retry cycle until an answered blocking
-  ask this run says yes (`interact.recreate_denial` / `utils_lib.was_deleted`), and the boot
+  decision: `write_util` on it is rejected inside the schema-retry cycle until the user allows the
+  `recreate:<slug>` access request this run (`interact.recreate_denial` / `utils_lib.was_deleted`;
+  no allow-forever — a fresh deletion outranks any old grant), and the boot
   seed-sync never resurrects a deleted seed util. Discover with the `util` action `name: list`.
 - **Every util subprocess is SANDBOXED** (docs/sandboxing.md): `utils_lib.run_util` takes a
   `SandboxPolicy` and wraps the command in a Landlock jail (`rsched/sandbox.py` policy +

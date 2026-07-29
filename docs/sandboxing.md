@@ -73,7 +73,10 @@ the per-routine machine binding) never pass, declared or not. The engine also in
 per-run secrets through this SAME gate — a routine's OAuth connection tokens
 (`<PROVIDER>_ACCESS_TOKEN`) and its bound remote machines (`RSCHED_MACHINES` /
 `RSCHED_MACHINE_KEYS`) — each reaching a util only if the util declares the var. This layer
-needs no kernel support and applies even with `sandbox: off`. Blast radius after both layers:
+needs no kernel support and applies even with `sandbox: off`. WHICH store secrets a
+routine's calls may receive at all is the user's per-routine decision (the four-state
+grant rows `secret:<NAME>` in routine.yaml `grants:` — an undecided name files a blocking
+access request on first use; docs/traits-permissions.md). Blast radius after both layers:
 a prompt-injected util can leak at most its own declared secrets, not the store.
 
 ## The mode — config.yaml `sandbox:`
@@ -96,9 +99,10 @@ profile (kernel 6.8) — no compose changes needed.
 A related trust rule with the same shape (the user's deliberate act outranks a run's
 convenience): `write_util` for a slug whose `utils/<name>/main.py` has a **deletion in
 the library's git history** is rejected inside the schema-retry cycle (never costs a
-turn). The correction tells the model to `ask_user` (blocking) naming the util; an
-explicit yes in the same run unblocks the recreate (`interact.recreate_denial`, probe:
-`utils_lib.was_deleted`). Any prior deletion counts — the web UI is the only deliberate
+turn). The correction routes to a blocking ACCESS REQUEST for the entity
+`recreate:<slug>` (docs/traits-permissions.md); an allow-now decision in the same run
+unblocks the recreate (`interact.recreate_denial`, probe: `utils_lib.was_deleted`) —
+deliberately with no allow-forever, so a fresh deletion always outranks an old grant. Any prior deletion counts — the web UI is the only deliberate
 delete path, so every deletion is user intent. The boot seed-sync obeys the same rule:
 a user-deleted seed util is never resurrected (`bootstrap.sync_seed_utils`).
 

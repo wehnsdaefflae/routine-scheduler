@@ -85,6 +85,10 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                      + ("; ".join(cap_bits) if cap_bits else "(none beyond the base kinds)")
                      + ". Held permissions (conduct notes below): "
                      + (", ".join(g.active) if g.active else "(none)") + ".")
+        if g.granted_now:
+            parts.append("Granted for THIS RUN only (one-time user approvals — they do "
+                         "not persist beyond this run): "
+                         + ", ".join(sorted(g.granted_now)) + ".")
         notes = _permission_notes(ctx, g)
         if notes:
             parts.append(notes)
@@ -141,9 +145,14 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             head = u["summary"] or u["name"]
             if not head.startswith(u["name"]):
                 head = f"{u['name']} — {head}"
-            note = ("  [reserved — not granted to this routine]"
-                    if g is not None and u["name"] in g.gated_utils
-                    and u["name"] not in g.utils else "")
+            note = ""
+            if g is not None and u["name"] in g.gated_utils and u["name"] not in g.utils:
+                # a deny-forever tombstone reads differently from merely-not-granted:
+                # the first is a settled decision (never re-request), the second is
+                # requestable (grants.request_route names the way).
+                note = ("  [reserved — declined by the user]"
+                        if f"util:{u['name']}" in g.denied
+                        else "  [reserved — not granted to this routine]")
             lines.append(f"- {head}{note}")
         header = (f'Global utils ({len(utils)}; run `util name=list args=["<name>"]` for '
                   "one's exact usage before calling it):" if "util" in kinds else
