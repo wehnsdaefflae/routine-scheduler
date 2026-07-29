@@ -112,7 +112,12 @@ export async function render(view, runId, query = {}) {
   };
   const modeSel = el("select", { class: "small", "data-nopersist": true,
     title: "where this message goes" });
-  const msgInput = el("input", { type: "text", placeholder: "message…", style: "flex:1" });
+  // A STABLE persist key (F215): the placeholder mutates with mode/recipe state, and
+  // formpersist falls back to the placeholder as its key — so without an explicit
+  // data-persist a typed draft saved under one placeholder never restores once the
+  // placeholder changes. Keying it to "run-msg" makes the draft survive a refresh.
+  const msgInput = el("input", { type: "text", placeholder: "message…",
+    "data-persist": "run-msg", style: "flex:1" });
   const sendBtn = el("button", { class: "btn primary" }, "send");
   // Attachments: the same affordance as the conversation composer (file dialog, chips,
   // paste-to-attach). Files are saved beside the run's polled inbox and auto-attached
@@ -366,6 +371,7 @@ export async function render(view, runId, query = {}) {
       if (mode === "converse") {
         if (recipeChk.checked) fd.append("recipe_edit", "1");
         await apiUpload(`/api/runs/${runId}/converse`, fd);
+        msgInput.value = "";     // clear on submit (F215) — don't leave sent text on screen
         clearFiles();
         forgetField(msgInput);   // delivered — must not refill after the reload below
         toast(recipeChk.checked

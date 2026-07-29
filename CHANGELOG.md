@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.120.0] — 2026-07-29
+
+### Fixed
+- **Run composer: a typed draft now survives a refresh and the input clears on send**
+  (`static/views/run.js`, F215). The message input had no stable persist key, so `formpersist`
+  fell back to its placeholder — which mutates with mode/recipe state — and a draft saved under
+  one placeholder never restored. It now carries `data-persist="run-msg"`. The `converse` branch
+  also never emptied the visible input on submit (only the `inject` branch did), leaving the sent
+  text on screen; it now clears immediately.
+- **Dashboard table: clicking the active column header reverses the sort** (`static/views/dashboard.js`,
+  F208). Re-clicking the sorted column was a no-op — the only way to see the other direction was
+  to sort by another column and come back. A per-column direction (`sortDir`, persisted) now
+  toggles on re-click, and the header arrow shows the current direction (▾ desc / ▴ asc).
+
 ## [0.119.0] — 2026-07-29
 
 ### Added

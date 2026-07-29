@@ -283,6 +283,27 @@ def test_run_view_message_modes(ui, ui_page):
                for m in inbox.glob("msg-*.json"))
 
 
+def test_run_view_composer_draft_persists_and_clears_on_send(ui, ui_page):
+    """F215: the run composer input has a STABLE persist key, so a typed draft survives a
+    page refresh (formpersist), and it CLEARS on send instead of leaving the sent text
+    behind."""
+    ui.seed_run("uir", "20260729-140000", "running")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260729-140000")
+    composer = ui_page.locator('input[data-persist="run-msg"]')
+    expect(composer).to_be_visible()
+    composer.fill("a draft I am still writing")
+    # refresh — the draft must come back (was broken: placeholder-keyed draft lost when the
+    # placeholder changed)
+    ui_page.reload()
+    composer = ui_page.locator('input[data-persist="run-msg"]')
+    expect(composer).to_have_value("a draft I am still writing")
+    # sending clears the input
+    composer.fill("mid-run note to send")
+    ui_page.get_by_role("button", name="send", exact=True).click()
+    expect(_toast(ui_page)).to_be_visible()
+    expect(composer).to_have_value("")
+
+
 def test_run_view_recipe_edit_checkbox(ui, ui_page):
     """D37 (revised): a terminal routine run shows the "editable recipe" CHECKBOX right
     next to the composer input — OFF by default; checking it flips the placeholder to say
@@ -1123,6 +1144,21 @@ def test_dashboard_heartbeat_strip(ui, ui_page):
     ui_page.get_by_role("button", name="☰ list view").click()
     row = ui_page.locator("table.list tbody tr", has_text="Test uir")
     expect(row.locator("svg.heartbeat")).to_be_visible()
+
+
+def test_dashboard_table_sort_reverses_on_reclick(ui, ui_page):
+    """F208: clicking a sortable column header sorts by it; re-clicking the ACTIVE column
+    reverses the direction (was a no-op) — the header arrow shows ▴ asc / ▾ desc."""
+    ui.seed_run("uir", "20260729-070000", "finished", summary="ok")
+    ui_page.goto(ui.url)
+    ui_page.get_by_role("button", name="☰ list view").click()
+    routine_th = ui_page.locator("table.list th", has_text="routine")
+    routine_th.click()                                   # name column, natural ascending
+    expect(routine_th).to_contain_text("▴")
+    routine_th.click()                                   # re-click → reverse to descending
+    expect(routine_th).to_contain_text("▾")
+    routine_th.click()                                   # and back to ascending
+    expect(routine_th).to_contain_text("▴")
 
 
 def test_routine_page_trait_picker_adds_a_practice_module(ui, ui_page):

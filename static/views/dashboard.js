@@ -14,6 +14,7 @@ import { WORKING as RUNNING } from "/static/states.js";
 const FILTER_KEY = "rsched_dash_tags";
 const VIEW_KEY = "rsched_dash_view";
 const SORT_KEY = "rsched_dash_sort";
+const DIR_KEY = "rsched_dash_dir";
 const WEEK_KEY = "rsched_dash_week";
 const ACTIVITY_KEY = "rsched_dash_activity";
 
@@ -107,6 +108,9 @@ export async function render(view) {
   const states = new Set();
   let viewMode = storage.get(VIEW_KEY) || "cards";
   let sortKey = storage.get(SORT_KEY) || "activity";
+  // F208: an explicit sort DIRECTION, so re-clicking the active column reverses it instead
+  // of being a no-op. "" = the column's natural direction (from SORTS); "asc"/"desc" override.
+  let sortDir = storage.get(DIR_KEY) || "";
   let search = "";
 
   function visible(c) {
@@ -122,10 +126,12 @@ export async function render(view) {
 
   function ordered(list) {
     const [, valueOf, desc] = SORTS[sortKey] || SORTS.activity;
+    // sortDir (F208) overrides the column's natural direction when the user toggled it.
+    const descending = sortDir ? sortDir === "desc" : desc;
     return [...list].sort((a, b) => {
       const va = valueOf(a), vb = valueOf(b);
       const cmp = typeof va === "string" ? va.localeCompare(vb) : va - vb;
-      return desc ? -cmp : cmp;
+      return descending ? -cmp : cmp;
     });
   }
 
@@ -290,10 +296,22 @@ export async function render(view) {
   ];
   function table(shown) {
     const head = el("tr", {}, COLS.map(([label, key]) => el("th",
-      key ? { style: "cursor:pointer", title: "sort by this column",
-              onclick: () => { sortKey = key; storage.set(SORT_KEY, key); renderFilterBar(); renderBody(); } }
+      key ? { style: "cursor:pointer", title: "sort by this column (click again to reverse)",
+              onclick: () => {
+                if (key === sortKey) {
+                  // re-click the active column → flip direction (F208)
+                  const cur = sortDir || (SORTS[key]?.[2] ? "desc" : "asc");
+                  sortDir = cur === "desc" ? "asc" : "desc";
+                } else {
+                  sortKey = key; sortDir = "";     // new column → its natural direction
+                }
+                storage.set(SORT_KEY, sortKey); storage.set(DIR_KEY, sortDir);
+                renderFilterBar(); renderBody();
+              } }
           : {},
-      label + (key === sortKey ? " ▾" : ""))));
+      label + (key === sortKey
+        ? ((sortDir || (SORTS[key]?.[2] ? "desc" : "asc")) === "desc" ? " ▾" : " ▴")
+        : ""))));
     const rows = shown.map((c) => {
       const last = c.last_run;
       const tok = tokensOf(c);
