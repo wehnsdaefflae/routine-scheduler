@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.124.1] — 2026-07-29
+
+### Removed
+- **`bootstrap.migrate_secret_grants` deleted after convergence** (one-shot
+  `secret_grants:` → `grants:` rename from 0.124.0): the pass ran on the production
+  instance on 2026-07-29 (19 routine.yaml files rewritten, no legacy keys remain across
+  the three data homes), so per policy the function, its daemon-boot call and its test
+  are gone.
+
 ## [0.124.0] — 2026-07-29
 
 ### Added

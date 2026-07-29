@@ -256,10 +256,10 @@ always in exactly one of four states:
   boot seeds the overlay before the prompt is composed.
 
 Ownership is strict: FOREVER decisions are persisted by the WEB layer at click time —
-the engine never writes routine.yaml, not even to record an approval (the old
-`secret_grants` engine writer is gone). Sub-workflows cannot request; they inherit the
-parent's RESOURCE grants (fs/secret/connection/machine) and none of its capability
-grants. `recreate:<slug>` deliberately has no allow-forever: a fresh user deletion must
+the engine never writes routine.yaml, not even to record an approval. Sub-workflows
+cannot request; they inherit the parent's RESOURCE grants (fs/secret/connection/machine)
+and none of its capability grants. `recreate:<slug>` deliberately has no allow-forever: a
+fresh user deletion must
 always outrank an old grant. Secret exposure (D39) rides this same flow: the first util
 call declaring an undecided store secret files one blocking request covering every
 undecided name.

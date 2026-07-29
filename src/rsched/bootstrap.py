@@ -375,37 +375,3 @@ def migrate_util_headers(libraries_home: Path) -> int:
                       "migrate util headers: declare net/calls/secrets (sandbox rollout)",
                       paths=[f"utils/{n}" for n in touched])
     return len(touched)
-
-
-# MIGRATION(expires=2026-08-29): one-shot rename for the unified-grants rollout.
-# `secret_grants:` ({SECRET: bool}) becomes rows of the general `grants:` mapping
-# (entities.py ids — {"secret:<NAME>": bool}), which also carries the deny-forever
-# tombstones for every other entity class. Sweeps every routine.yaml under the three
-# data homes (+ archived dirs, so a restore never resurrects the retired key).
-# Idempotent: a file without `secret_grants:` is untouched.
-def migrate_secret_grants(*homes: Path) -> int:
-    """See the MIGRATION marker above. Returns how many routine.yaml files changed."""
-    changed = 0
-    for home in homes:
-        if not home or not Path(home).is_dir():
-            continue
-        for path in sorted(Path(home).glob("**/routine.yaml")):
-            try:
-                raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            except (OSError, yaml.YAMLError):
-                continue
-            if not isinstance(raw, dict) or "secret_grants" not in raw:
-                continue
-            old = raw.pop("secret_grants")
-            grants = raw.get("grants")
-            grants = dict(grants) if isinstance(grants, dict) else {}
-            if isinstance(old, dict):
-                grants.update({f"secret:{k}": bool(v) for k, v in old.items()})
-            if grants:
-                raw["grants"] = grants
-            atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
-            changed += 1
-    if changed:
-        log.warning("unified-grants rollout: migrated secret_grants -> grants in %d file(s)",
-                    changed)
-    return changed
