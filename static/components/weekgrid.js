@@ -48,12 +48,17 @@ function text(x, y, str, cls, anchor = "start") {
   return n;
 }
 
-// Mean wall-clock over the routine's recent runs (the heartbeat window the card already carries),
-// counting only runs that recorded a real elapsed_s. null when none have — the bar is then a nub.
+// A 5-run MOVING AVERAGE of wall-clock runtime (F210): mean elapsed_s over the routine's most
+// recent runs that recorded a real elapsed_s, capped to MOVING_AVG_RUNS — so the bar tracks
+// RECENT runtime and isn't dragged by stale runs still in the heartbeat window. recent_runs is
+// NEWEST-FIRST (api_routines: info.runs[:HEARTBEAT_RUNS_N]), so the most recent are the HEAD.
+// null when none recorded a real elapsed_s — the bar is then a nub.
+const MOVING_AVG_RUNS = 5;
 function avgRuntime(card) {
   const durs = (card.recent_runs || [])
     .map((r) => r.elapsed_s)
-    .filter((v) => typeof v === "number" && v >= 0);
+    .filter((v) => typeof v === "number" && v >= 0)
+    .slice(0, MOVING_AVG_RUNS);
   if (!durs.length) return null;
   return { secs: durs.reduce((a, b) => a + b, 0) / durs.length, n: durs.length };
 }

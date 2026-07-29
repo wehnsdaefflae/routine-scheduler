@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.122.0] — 2026-07-29
+
+### Changed
+- **Dashboard "this week" strip: bar width is now a 5-run moving average of runtime**
+  (`static/components/weekgrid.js`, F210 — operator request). Each fire bar's width tracks a
+  routine's runtime; it was the mean over the whole heartbeat window (up to 15 runs), so a stale
+  long run kept dragging the bar for many runs. It now averages only the most recent 5 runs that
+  recorded a real `elapsed_s` (`recent_runs` is newest-first, so the head), and the legend tooltip
+  says "over N runs". More responsive to how a routine is behaving lately.
+
 ## [0.121.0] — 2026-07-29
 
 ### Changed

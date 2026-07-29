@@ -2,6 +2,8 @@
 the pre-seeded token works, and no uncaught JS error fires on the dashboard.
 """
 
+import re
+
 from playwright.sync_api import expect
 
 
@@ -27,6 +29,23 @@ def test_week_panel_shows_avg_runtime(ui, ui_page):
     expect(bar).to_be_visible(timeout=10_000)
     assert bar.get_attribute("width") == "3"   # 30 min to scale against a 24h day column
     expect(ui_page.locator(".weekpanel .wg-legend")).to_contain_text("Test uir", timeout=10_000)
+
+
+def test_week_panel_avg_is_5_run_moving_average(ui, ui_page):
+    """F210: the week-strip bar is a 5-run MOVING average, so a stale long run outside the last
+    five no longer drags the bar. Oldest run = 12h (43200s); the most recent five = 1800s each.
+    A whole-window mean would be huge; the 5-run window keeps it at 30m → 3px wide."""
+    ui.seed_run("uir", "20260709-070000", "finished", elapsed_s=43200)   # stale, must be excluded
+    for day in ("10", "11", "12", "13", "14"):
+        ui.seed_run("uir", f"202607{day}-070000", "finished", elapsed_s=1800)
+    ui_page.goto(ui.url)
+    expect(ui_page.locator(".weekpanel svg.wg")).to_be_visible(timeout=10_000)
+    bar = ui_page.locator(".weekpanel .wg-bar").first
+    expect(bar).to_be_visible(timeout=10_000)
+    assert bar.get_attribute("width") == "3"   # last 5 avg = 30m; the 12h run is outside the window
+    # the "over N runs" note lives in the legend link's hover title (not visible text)
+    leg = ui_page.locator(".weekpanel .wg-leg").first
+    expect(leg).to_have_attribute("title", re.compile(r"over 5 runs"), timeout=10_000)
 
 
 def test_pause_scheduling_toggle(ui, ui_page):
