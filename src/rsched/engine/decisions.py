@@ -18,6 +18,18 @@ from .. import notify
 
 DISCORD_POLL_S = 20      # how often the wait loop asks the channel for replies
 
+# D48 (2026-07-29, operator): blocking/permission questions are NO LONGER mirrored to
+# Discord. A Discord-side answer to a permission ask was observed NOT reaching the run
+# (the user answered on Discord, the run kept waiting, they re-answered on the web
+# console — personal-weight-loss-coach webauth ask; finding F193). Until the Discord
+# answer-ingestion path (poll -> question_answered) is proven reliable, mirroring a
+# question there is worse than not: the user believes they answered while the run stalls.
+# Outbound FYI (rsched.notify direct sends: oauth-refresh, detached-task results) is
+# UNAFFECTED — only the two-way question mirror is gated off. The whole DiscordMirror
+# machinery is retained behind this flag so it can be re-enabled once two-way delivery is
+# verified end-to-end; flip to True to restore mirroring.
+MIRROR_BLOCKING_QUESTIONS = False
+
 
 class DiscordMirror:
     """One blocking question's presence on Discord. Created by `mirror_blocking` (None
@@ -143,7 +155,13 @@ def mirror_blocking(ctx, qid: str, question: str, options: list[str], default: s
                     timeout_min: int):
     """A live DiscordMirror for this question, or None when the routine is not set up
     for it (no communication permission / no discord util) or the channel is down.
+
+    D48: returns None unconditionally while MIRROR_BLOCKING_QUESTIONS is off — blocking
+    questions are answered on the web console / Decisions page only, never mirrored to
+    Discord, until two-way Discord delivery is verified reliable (F193).
     """
+    if not MIRROR_BLOCKING_QUESTIONS:
+        return None
     g = ctx.grants
     if g is None or not notify.discord_enabled(ctx.server, granted_utils=g.utils):
         return None

@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.118.0] — 2026-07-29
+
+### Changed
+- **Blocking / permission questions are no longer mirrored to Discord** (`engine/decisions.py`,
+  D48 — operator decision). A Discord-side answer to a permission ask was observed NOT reaching the
+  run: the user answered on Discord, the run kept waiting, and they had to re-answer on the web
+  console (personal-weight-loss-coach webauth ask; finding F193). Until Discord's answer-ingestion
+  path (poll → `question_answered`) is proven reliable end-to-end, mirroring a question there is
+  worse than not — the user believes they answered while the run stalls. `mirror_blocking()` now
+  returns `None` while the new module flag `MIRROR_BLOCKING_QUESTIONS` is off (its default), so
+  blocking asks are answered on the web console / Decisions page only. **Outbound FYI is
+  unaffected** (oauth-refresh notices, detached-task results still send via `rsched.notify`). The
+  whole `DiscordMirror` machinery is retained behind the flag and can be re-enabled once two-way
+  delivery is verified.
+
+### Docs
+- **`deploy/DOCKER.md`** (D49): extra host-directory bind mounts are opt-in — add them in a local
+  `docker-compose.override.yml` (gitignored, auto-merged), not the tracked `docker-compose.yml`,
+  and grant the path as an fs-root per routine. Keeps the shipped compose minimal (cf. R35).
+- **`docs/subtasks.md`** (D50): new "Aborting or pausing a child" section — `kill n=N` aborts a
+  running subtask/subrun, `wait` gathers it, a parent's `finish` reaps all children; there is
+  deliberately no pause/resume (kill + re-issue covers the observed cases).
+
 ## [0.117.0] — 2026-07-29
 
 ### Fixed

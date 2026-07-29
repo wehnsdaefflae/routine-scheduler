@@ -98,6 +98,15 @@ systemctl --user disable --now routine-scheduler.service
   started (F190: without the bind, the daemon's mount namespace has no `/mnt` at all and the
   picker shows an explained empty state). Takes effect on the next `docker compose up -d`;
   drop the volume line if the host has no `/mnt`.
+- **Extra host directories are opt-in, not shipped defaults.** The committed `docker-compose.yml`
+  bind-mounts only what every deployment needs (the state dirs above + `/mnt`). If a specific task
+  needs another host path visible in the container (e.g. `/tmp`, a project share, a document
+  vault — cf. R35, where a clarify run could not read `/tmp` or `/mnt/sshd_volume1/...`), add that
+  bind mount **in your local compose** (a `docker-compose.override.yml`, which Compose merges
+  automatically and which is gitignored) rather than editing the tracked `docker-compose.yml` —
+  so an update never clobbers it and the shipped file stays minimal. The path must ALSO be granted
+  to the routine as an fs-root (Settings → the routine's Filesystem roots) before a run may read it;
+  a bind mount alone makes it visible to the container, not to the sandboxed run.
 
 ## HTTPS via Tailscale (Web Push needs a secure context)
 

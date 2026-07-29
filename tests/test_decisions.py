@@ -271,9 +271,23 @@ def test_mirror_requires_the_communication_permission(make_routine, monkeypatch)
     fake = _FakeDiscord()
     monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # test the permission gate, not the D48 flag
     ctx = _mirror_ctx(make_routine, "nomirror", granted=False)
     assert decisions.mirror_blocking(ctx, "q1", "Go?", [], "", 8) is None
     assert fake.calls == []                       # never touches the channel ungranted
+
+
+def test_blocking_questions_are_not_mirrored_by_default(make_routine, monkeypatch):
+    """D48: even fully Discord-enabled, a blocking question is NOT mirrored to Discord
+    while MIRROR_BLOCKING_QUESTIONS is off (its default) — the two-way mirror is disabled
+    until Discord answer-ingestion is proven reliable (F193). Outbound FYI is unaffected."""
+    fake = _FakeDiscord()
+    monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
+    # NOTE: MIRROR_BLOCKING_QUESTIONS left at its default (False) on purpose
+    ctx = _mirror_ctx(make_routine, "nomirrordefault", granted=True)
+    assert decisions.mirror_blocking(ctx, "q1", "Go?", ["yes", "no"], "", 8) is None
+    assert fake.calls == []                       # the channel is never touched
 
 
 def test_mirror_sends_polls_and_notifies(make_routine, monkeypatch):
@@ -282,6 +296,7 @@ def test_mirror_sends_polls_and_notifies(make_routine, monkeypatch):
     monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
+    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # D48: machinery retained behind a flag
     ctx = _mirror_ctx(make_routine, "mirrored")
     mirror = decisions.mirror_blocking(ctx, "q1", "Ship v2 today?", ["yes", "no"],
                                        "wait for Monday", 8)
@@ -304,6 +319,7 @@ def test_mirror_reply_resolves_the_blocking_ask(make_routine, scripted, monkeypa
     monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
+    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # D48: machinery retained behind a flag
     # the routine has the discord capability switched on (the doc covers the conduct)
     d = make_routine(slug="viaphone", budgets={"ask_timeout_min": 1})
     server = _server(d)
@@ -350,6 +366,7 @@ def test_util_secret_gate_asks_once_and_persists_grant(make_routine, scripted, m
                         lambda home, name: ({"FOO_KEY"}, False))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
+    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # D48: machinery retained behind a flag
     d = make_routine(slug="secgate", budgets={"ask_timeout_min": 1})
     server = _server(d)
     server.permissions_home.mkdir(parents=True, exist_ok=True)
@@ -399,6 +416,7 @@ def test_util_secret_gate_grant_survives_into_a_later_run(make_routine, scripted
     monkeypatch.setattr(notify.utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
+    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # D48: machinery retained behind a flag
     d = make_routine(slug="secgate2", budgets={"ask_timeout_min": 1})
     server = _server(d)
     server.permissions_home.mkdir(parents=True, exist_ok=True)
@@ -493,6 +511,7 @@ def test_mirror_ignores_replies_older_than_the_question(make_routine, monkeypatc
     monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
+    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # D48: machinery retained behind a flag
     ctx = _mirror_ctx(make_routine, "staleguard")
     mirror = decisions.mirror_blocking(ctx, "q1", "Proceed?", ["yes", "no"], "", 8)
     assert mirror is not None and mirror.question_id == 100
@@ -514,6 +533,7 @@ def test_ambiguous_approval_reply_is_held_not_consumed(make_routine, scripted, m
     monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
+    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # D48: machinery retained behind a flag
     d = make_routine(slug="heldreply", budgets={"ask_timeout_min": 1})
     server = _server(d)
     server.permissions_home.mkdir(parents=True, exist_ok=True)

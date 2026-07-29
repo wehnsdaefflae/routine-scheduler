@@ -93,6 +93,25 @@ outlive a reply (a long, fire-and-forget scrape) is a different capability, the 
 (a detached background task that runs as its own daemon process and reports back to the conversation
 on completion). See [background-tasks.md](background-tasks.md).
 
+## Aborting or pausing a child
+
+A parent controls its running children with two actions and one invariant:
+
+- **Abort** — `kill n=N` terminates sub-workflow *N* immediately (its partial state is marked in
+  the transcript). This is how a parent stops a subtask or subruns it no longer needs; there is
+  nothing else to add for "abort".
+- **Gather** — `wait n=N` / `wait all=true` blocks until a child (or all) finishes; a finished
+  child is also announced at the next turn boundary whether or not you are waiting.
+- **Reap on finish** — a parent's `finish` kills every child still running. Children never outlive
+  the parent (the in-process-thread invariant above), so a parent can always stop the whole subtree
+  by finishing.
+
+There is **no pause/resume** of a running child, by design: a subtask is usually a handful of turns,
+so the coordination cost of holding one mid-flight and resuming it later exceeds just letting it run
+(or `kill`-ing and re-issuing it with a refined brief). If a genuine need to hold a child mid-flight
+ever appears, it is a new engine surface to weigh then — `kill` + re-issue covers the cases seen so
+far.
+
 ## Process model — why children are threads (decision record, 2026-07)
 
 We evaluated moving `spawn`/`subtask` children onto the daemon-subprocess pattern the detached
