@@ -88,6 +88,21 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         notes = _permission_notes(ctx, g)
         if notes:
             parts.append(notes)
+    # D46: surface the NAMES of the secrets provisioned in the central store — no consent, values
+    # NEVER shown to a run — so a run knows up front which credentials exist (and which do not)
+    # instead of probing with a util. A util still only RECEIVES a secret it declares on its
+    # `secrets:` header; naming them here is informational and cannot leak a value.
+    try:
+        from ..secrets import secret_keys
+
+        provisioned = secret_keys()
+    except Exception:
+        provisioned = []
+    if provisioned:
+        parts.append(
+            "Secrets provisioned in the central store (NAMES only — a run never sees a secret's "
+            "VALUE; a util receives one only if it DECLARES the var on its `secrets:` header): "
+            + ", ".join(provisioned) + ".")
     bound = getattr(ctx.routine, "machines", None)
     if bound:
         # Bound remote machines are a resource the run can act on (via the `remote` util);

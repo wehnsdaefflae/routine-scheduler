@@ -7,6 +7,7 @@ write-only: the API returns key NAMES, never the values.
 from __future__ import annotations
 
 import json
+import os
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -24,6 +25,12 @@ def list_secrets(request: Request) -> dict:
     from ...oauth.providers import connection_token_vars
     store_vals = secret_store.load_secrets()
     have = set(store_vals)
+    # F209: a declared secret can be provisioned via the DAEMON ENVIRONMENT (os.environ) rather
+    # than the store file — utils_lib._child_env starts from os.environ, so such a secret DOES
+    # reach a util that declares it. Presence must reflect that, else a working secret reads
+    # "not set" (the Webauthsources symptom). The store is still the only writable surface;
+    # os.environ is read-only presence.
+    provisioned = have | {k for k, v in os.environ.items() if v}
     # A secret whose value is a JSON object is a MULTI-ENTRY secret (e.g. FTP_SOURCES) — expose its
     # entry NAMES (never the values) so the UI can add/replace/delete one entry at a time without
     # re-typing the write-only blob.
@@ -51,7 +58,7 @@ def list_secrets(request: Request) -> dict:
     needed = []
     for k, us in sorted(declared.items()):
         primary = by_name.get(us[0], {})
-        needed.append({"key": k, "utils": us, "set": k in have,
+        needed.append({"key": k, "utils": us, "set": k in provisioned,
                        "usage": primary.get("usage", ""), "doc": primary.get("doc", "")})
     return {"keys": sorted(have), "needed": needed, "maps": maps,
             "path": str(secret_store.secrets_path())}

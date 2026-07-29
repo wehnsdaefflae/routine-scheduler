@@ -256,6 +256,26 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     assert "spawn" not in kinds2 and "ask_user" in kinds2
 
 
+def test_capabilities_digest_surfaces_provisioned_secret_names_never_values(make_routine, tmp_path):
+    """D46: the CAPABILITIES section names the secrets provisioned in the central store so a run
+    knows which credentials exist up front — NAMES only, never a value, no consent prompt."""
+    from rsched import secrets as secret_store
+    from rsched.engine.capabilities import capabilities_digest
+    from rsched.grants import GrantPolicy
+
+    ctx = _ctx(make_routine, tmp_path, slug="secdig")
+    ctx.grants = GrantPolicy()
+    # empty store → no secrets section at all
+    assert "Secrets provisioned" not in capabilities_digest(ctx)
+    secret_store.set_secret("DEEPGRAM_API_KEY", "super-secret-value-123")
+    secret_store.set_secret("NOTION_TOKEN", "another-secret")
+    text = capabilities_digest(ctx)
+    assert "Secrets provisioned in the central store" in text
+    assert "DEEPGRAM_API_KEY" in text and "NOTION_TOKEN" in text
+    # the VALUE must never appear
+    assert "super-secret-value-123" not in text and "another-secret" not in text
+
+
 def test_truncate_head_tail():
     text, truncated = truncate("x" * 100, cap=100)
     assert not truncated and text == "x" * 100

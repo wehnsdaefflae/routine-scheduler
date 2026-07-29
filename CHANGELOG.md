@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.119.0] — 2026-07-29
+
+### Added
+- **Provisioned secret NAMES are surfaced to every run** (`engine/capabilities.py`, D46 — operator
+  decision, option A). The CAPABILITIES prompt section now lists the NAMES of the secrets in the
+  central store (never a VALUE, no consent prompt), so a run knows up front which credentials
+  exist and which are missing instead of probing with the `secret-check` util or discovering the
+  gap as a mid-task "key not set" error. A util still only RECEIVES a secret it declares on its
+  `secrets:` header — naming a secret here is informational and cannot leak a value.
+
+### Fixed
+- **A secret provisioned via the daemon environment now reads as SET in Settings → Secrets**
+  (`web/settings/secrets.py`, F209). Presence was computed from the store file (`secrets.env`)
+  ONLY, so a declared secret provisioned through `os.environ` — which `utils_lib._child_env`
+  DOES inject into a declaring util — showed as "not set" though it works (the Webauthsources
+  symptom). Presence is now the union of the store and `os.environ`; the store remains the only
+  writable surface (os.environ is read-only presence).
+
 ## [0.118.0] — 2026-07-29
 
 ### Changed

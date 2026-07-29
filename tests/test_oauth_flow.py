@@ -144,6 +144,31 @@ def test_needed_secrets_excludes_connection_tokens(oauth_client):
     assert "connu" in entries["FTP_SOURCES"]["usage"]
 
 
+def test_needed_secret_set_from_environment(oauth_client, monkeypatch):
+    """F209: a declared secret provisioned via the daemon ENVIRONMENT (os.environ) — not the
+    store file — reads as SET, because utils_lib._child_env injects it into a declaring util.
+    Presence is the union of the store and os.environ; the store stays the only writable side.
+    """
+    client, tmp_path = oauth_client
+    util = tmp_path / "library" / "utils" / "envu" / "main.py"
+    util.parent.mkdir(parents=True, exist_ok=True)
+    util.write_text(
+        "# /// script\n# dependencies = []\n# ///\n"
+        '"""envu — util needing an env secret.\n\n'
+        "usage: gu envu\ncalls: (none)\n"
+        "secrets: WEBAUTHSOURCES\ntags: test\nnet: outbound\n"
+        '"""\n', encoding="utf-8")
+    # not in the store → reads unset
+    entries = {n["key"]: n for n in client.get("/api/settings/secrets").json()["needed"]}
+    assert entries["WEBAUTHSOURCES"]["set"] is False
+    # provisioned via the environment → now reads set (the Webauthsources symptom, fixed)
+    monkeypatch.setenv("WEBAUTHSOURCES", "provisioned-in-env")
+    entries2 = {n["key"]: n for n in client.get("/api/settings/secrets").json()["needed"]}
+    assert entries2["WEBAUTHSOURCES"]["set"] is True
+    # never the value
+    assert "provisioned-in-env" not in client.get("/api/settings/secrets").text
+
+
 def _set_google(*, with_scopes: bool = True) -> None:
     secrets.set_secret("GOOGLE_OAUTH_CLIENT_ID", "gid")
     secrets.set_secret("GOOGLE_OAUTH_CLIENT_SECRET", "gsec")
