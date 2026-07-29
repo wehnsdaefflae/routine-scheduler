@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.121.0] — 2026-07-29
+
+### Changed
+- **A 429's `Retry-After` hint is now honored before failover** (`endpoints/base.py`, F220).
+  Retryable 429/5xx errors already got a 3-try exponential backoff, but it ignored the server's
+  explicit `Retry-After` and used a fixed 1s/2s schedule — so a provider asking for a longer pause
+  (the recurring nano-gpt 429 overloads) exhausted its retries and failed over / cooled down
+  prematurely. `raise_for_status` now parses a numeric `Retry-After` onto `EndpointError.retry_after`,
+  and `with_retries` waits exactly that (capped at `RETRY_AFTER_CAP_S` = 30s so a hostile or absurd
+  hint can't hang a run) instead of the generic exponential. No hint → the exponential schedule is
+  unchanged; the test clock (`base_delay==0`) short-circuits the hint so retry-logic tests never sleep.
+
 ## [0.120.0] — 2026-07-29
 
 ### Fixed

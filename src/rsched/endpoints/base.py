@@ -24,6 +24,10 @@ Message = dict
 
 DEFAULT_TIMEOUT = 600
 
+# F220: the longest a server-sent Retry-After hint is honored before with_retries falls back
+# to its own schedule — bounds how long a single rate-limited attempt can pause a run.
+RETRY_AFTER_CAP_S = 30.0
+
 # Native media the orchestrator can hand an endpoint. Base64 inflates ~33%, so the raw-byte
 # ceiling keeps most providers' ~10 MB request limit; a larger file (or an unlisted type)
 # routes to the `vision` util instead.
@@ -61,10 +65,15 @@ class EndpointError(Exception):
     UI say "check the key" instead of a bare error.
     """
 
-    def __init__(self, message: str, *, retryable: bool = False, auth: bool = False):
+    def __init__(self, message: str, *, retryable: bool = False, auth: bool = False,
+                 retry_after: float | None = None):
         super().__init__(message)
         self.retryable = retryable
         self.auth = auth
+        # F220: the server's explicit Retry-After hint (seconds), when it sent one on a 429.
+        # with_retries honors it (capped) instead of its generic exponential schedule, so a
+        # provider asking for a longer pause is waited out rather than failed over prematurely.
+        self.retry_after = retry_after
 
 
 @dataclass
@@ -225,8 +234,24 @@ def raise_for_status(resp: httpx.Response, name: str) -> None:
     if resp.status_code in (401, 403):
         raise EndpointError(msg, auth=True)
     if resp.status_code == 429 or resp.status_code >= 500:
-        raise EndpointError(msg, retryable=True)
+        raise EndpointError(msg, retryable=True, retry_after=_retry_after_seconds(resp))
     raise EndpointError(msg)
+
+
+def _retry_after_seconds(resp: httpx.Response) -> float | None:
+    """The server's Retry-After hint in SECONDS, or None. Honors the numeric-seconds form
+    (what OpenAI-compatible providers send on a 429, e.g. `Retry-After: 20`); an HTTP-date
+    form is ignored (rare here, and clock-skew makes it unreliable) so the generic backoff
+    applies instead. A non-positive or unparseable value → None.
+    """
+    raw = resp.headers.get("retry-after")
+    if not raw:
+        return None
+    try:
+        secs = float(raw.strip())
+    except (TypeError, ValueError):
+        return None
+    return secs if secs > 0 else None
 
 
 def anthropic_usage(raw: dict) -> dict:
@@ -268,9 +293,22 @@ def with_retries(fn, *, tries: int = 3, base_delay: float | None = None):
         import os
 
         base_delay = float(os.environ.get("RSCHED_RETRY_BASE_DELAY", "1.0"))
+    exp = wait_exponential(multiplier=base_delay)
+
+    def wait(state):
+        # F220: when the provider sent a Retry-After on a 429, wait exactly that (capped),
+        # so a rate limit asking for a longer pause is honored instead of exhausting the
+        # generic 1s/2s schedule and failing over. base_delay==0 (the test clock) short-
+        # circuits the hint too, so retry-LOGIC tests never sleep on a real header.
+        exc = state.outcome.exception() if state.outcome else None
+        hint = getattr(exc, "retry_after", None)
+        if hint and base_delay:
+            return min(float(hint), RETRY_AFTER_CAP_S)
+        return exp(state)
+
     return Retrying(
         retry=retry_if_exception(lambda e: isinstance(e, EndpointError) and e.retryable),
         stop=stop_after_attempt(tries),
-        wait=wait_exponential(multiplier=base_delay),
+        wait=wait,
         reraise=True,
     )(fn)

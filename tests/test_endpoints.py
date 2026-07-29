@@ -33,10 +33,11 @@ MESSAGES = [
 
 
 class FakeResponse:
-    def __init__(self, status_code=200, payload=None, text=""):
+    def __init__(self, status_code=200, payload=None, text="", headers=None):
         self.status_code = status_code
         self._payload = payload
         self.text = text or (json.dumps(payload) if payload else "")
+        self.headers = headers or {}
 
     def json(self):
         return self._payload
@@ -72,6 +73,48 @@ def test_with_retries_backoff(monkeypatch):
     with pytest.raises(EndpointError):
         with_retries(lambda: (_ for _ in ()).throw(EndpointError("fatal")))
     assert sleeps == [1, 2]                               # non-retryable: no extra attempts
+
+
+def test_retry_after_hint_honored_and_capped(monkeypatch):
+    """F220: a 429 carrying a Retry-After header makes with_retries wait exactly that many
+    seconds (capped) rather than its generic 1s/2s exponential, so a rate limit asking for a
+    longer pause is honored instead of exhausting retries and failing over prematurely."""
+    from rsched.endpoints.base import RETRY_AFTER_CAP_S, raise_for_status
+
+    monkeypatch.delenv("RSCHED_RETRY_BASE_DELAY", raising=False)  # production delays
+    # raise_for_status parses the header onto the error
+    with pytest.raises(EndpointError) as ei:
+        raise_for_status(FakeResponse(429, text="slow down", headers={"retry-after": "12"}), "prov")
+    assert ei.value.retryable and ei.value.retry_after == 12.0
+
+    # with_retries waits the hint, capped
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise EndpointError("429", retryable=True,
+                                retry_after=100.0 if len(calls) == 1 else 8.0)
+        return "ok"
+
+    assert with_retries(flaky) == "ok" and len(calls) == 3
+    # first wait capped to the ceiling, second honored verbatim
+    assert sleeps == [RETRY_AFTER_CAP_S, 8.0]
+
+    # no hint → the generic exponential still applies
+    sleeps.clear()
+    calls.clear()
+
+    def flaky_nohint():
+        calls.append(1)
+        if len(calls) < 3:
+            raise EndpointError("boom", retryable=True)
+        return "ok"
+
+    assert with_retries(flaky_nohint) == "ok"
+    assert sleeps == [1, 2]
 
 
 # --- openai-compat ---------------------------------------------------------------
