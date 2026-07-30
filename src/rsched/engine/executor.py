@@ -158,9 +158,12 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
     # Per-util reliability telemetry (util_stats → the Stats tab).
     ctx.count_util(name, "ok" if code == 0
                    else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
-    stdout, trunc_out = truncate(out)
+    # STDOUT is ordered and spilled in full to .util_outputs/, so tail-truncate (keep the
+    # head, drop the tail): the reader continues IN SEQUENCE from the spill file at the char
+    # the preview stopped, instead of losing the middle (operator AUDIT note R45).
+    stdout, trunc_out = truncate(out, keep="head")
     # On failure, stderr is the repair material — keep the whole trace where possible
-    # (truncate preserves head+tail, so the exception at the traceback's end survives).
+    # (head+tail preserves the exception at the traceback's END, the part that teaches).
     stderr, trunc_err = truncate(err, cap=8000 if code != 0 else 2000)
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
            "stdout": stdout, "stderr": stderr, "truncated": trunc_out or trunc_err}

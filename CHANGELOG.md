@@ -19,6 +19,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.125.0] — 2026-07-30
+
+### Fixed
+- **Red baseline repaired (F221)**: `tests/test_utils.py::_ctx` test double lacked the
+  `read_roots`/`write_roots`/`granted_now`/`grant_args` surface that 0.124.0's grants
+  work added to `sandbox.policy_for_ctx` + `executor._extra_secrets`, crashing
+  `test_failed_util_teaches_repair_and_keeps_trace_tail` with `AttributeError`. It shipped
+  red because `test_utils.py` is `skipif(uv is None)` and the commit env lacks `uv` — the
+  same blind spot that hid the 0.116.0 regression.
+- **`write_util` selftest can install `net: none` deps (F223, R40)**: a util's `net:`
+  declaration governs its RUNTIME, not the one-time build-time PEP 723 dependency install.
+  `utils_lib.run_util` now prewarms deps in a network-open, still-filesystem-jailed
+  `uv sync --script` before the net-policed run, so a `net: none` util can fetch its deps
+  yet stay TCP-denied at execution — authors no longer must mis-declare `net: outbound`.
+
+### Changed
+- **Util STDOUT truncates tail-only, not mid (F224, R45)**: oversized util-observation
+  STDOUT — which is spilled in full to `.util_outputs/` — now keeps the head and drops the
+  tail (`truncate(keep="head")`), with a marker naming the resume offset, so the reader
+  continues IN SEQUENCE from the spill file. Failure STDERR keeps head+tail (the
+  traceback's END is the repair material).
+- **Sub-workflow capability denials name the child scope (F225a, R46)**: a spawned/subtask
+  child runs with capabilities off by design; a gated-kind denial (e.g. `write_util`) now
+  says it is unavailable to the child sub-workflow and routes the work to the PARENT,
+  instead of falsely claiming the routine lacks the capability.
+- **Transcript turn timestamp stacks under the turn count (F222)**: the run/transcript
+  view puts the message timestamp beneath the turn number (`.turnmeta` column) rather than
+  beside it, reclaiming horizontal space for the say text (operator AUDIT note).
+
 ## [0.124.1] — 2026-07-29
 
 ### Removed

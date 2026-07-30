@@ -80,6 +80,29 @@ def test_net_denial_needs_abi4(tmp_path, monkeypatch):
     assert json.loads(cmd[2])["net"] is True
 
 
+def test_prewarm_opens_network_for_build_time_dep_install(tmp_path, monkeypatch):
+    """R40: a util's net: declaration governs its RUNTIME, not the one-time build-time
+    dependency install. _prewarm_script_deps must resolve deps with the network OPEN
+    (net=True) regardless — otherwise a net: none util can never install a third-party dep
+    (its selftest fetch is denied) and authors are pushed to mis-declare net: outbound."""
+    from rsched import utils_lib
+    _force_abi(monkeypatch, 4)
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return SimpleNamespace(returncode=1, stdout="", stderr="offline")  # install fails
+
+    monkeypatch.setattr(utils_lib.subprocess, "run", fake_run)
+    policy = sandbox.SandboxPolicy(mode="permissive")
+    # A prewarm failure must NOT raise — the real run reports the genuine error.
+    utils_lib._prewarm_script_deps("/x/utils/demo/main.py", policy, tmp_path)
+    wrapped = captured["cmd"]
+    assert wrapped[-4:] == ["uv", "sync", "--script", "/x/utils/demo/main.py"]
+    assert json.loads(wrapped[2])["net"] is True     # network open for the install phase
+    assert str(tmp_path) in json.loads(wrapped[2])["ro"]   # filesystem still jailed
+
+
 def _ctx(server, routine, extra_read=(), extra_write=()):
     """A live-run stand-in: the ctx surface policy_for_ctx consumes — the EFFECTIVE roots
     (config + one-time fs grants), exactly what RunContext.read_roots/write_roots return."""

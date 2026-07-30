@@ -10,7 +10,7 @@ from rsched.config import ServerConfig, load_routine
 from rsched.engine import outputs
 from rsched.engine.composer import state_digest
 from rsched.engine.executor import dispatch
-from rsched.engine.observations import OBS_CAP_CHARS, format_observation
+from rsched.engine.observations import OBS_CAP_CHARS, format_observation, truncate
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
 from rsched.grants import GrantPolicy
@@ -139,4 +139,27 @@ def test_spill_never_raises(tmp_path):
     ctx = SimpleNamespace(routine=SimpleNamespace(dir=blocked), run_ts="t", turn=1,
                           run_dir=blocked, root_run_dir=blocked)
     outputs.spill(ctx, "echoer", BIG, "", out_truncated=True, err_truncated=False)
+
+
+def test_truncate_head_mode_keeps_head_and_resumes_in_sequence():
+    """R45: ordered STDOUT (spilled in full) must tail-truncate — keep the head, drop the
+    tail — so the reader continues IN SEQUENCE from the spill file, not lose the middle."""
+    text = "A" * OBS_CAP_CHARS + "TAIL-MARKER"       # > OBS_CAP_CHARS, unique tail token
+    out, trunc = truncate(text, keep="head")
+    assert trunc
+    head = out.split("\n[... output truncated")[0]
+    assert head == text[:OBS_CAP_CHARS]              # the HEAD is kept verbatim
+    assert "TAIL-MARKER" not in out                  # the TAIL is dropped, not shown
+    assert f"read the spill file from char {OBS_CAP_CHARS}" in out  # resume offset named
+    assert "head+tail" not in out
+
+
+def test_truncate_default_keeps_both_ends():
+    """Failure stderr must keep head+tail — the traceback's END is the repair material."""
+    text = "HEAD" + "x" * 10000 + "TRACEBACK-END"
+    out, trunc = truncate(text)
+    assert trunc
+    assert out.startswith("HEAD")
+    assert out.endswith("TRACEBACK-END")
+    assert "(head+tail)" in out
 

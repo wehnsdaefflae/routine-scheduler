@@ -112,9 +112,10 @@ td.hb-cell { min-width: 155px; }
 /* ---------- transcript / conversation ---------- */
 .transcript { display: flex; flex-direction: column; gap: 11px; }
 .turn { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
-.turn .say { padding: 11px 14px; display: flex; gap: 9px; align-items: baseline; flex-wrap: wrap; }
+.turn .say { padding: 11px 14px; display: flex; gap: 9px; align-items: flex-start; flex-wrap: wrap; }
+.turn .say .turnmeta { display: flex; flex-direction: column; gap: 1px; flex: none; }
 .turn .say .n { color: var(--amber); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; white-space: nowrap; }
-.turn .say .ts { color: var(--faint); font-size: 10.5px; }
+.turn .say .ts { color: var(--faint); font-size: 10.5px; white-space: nowrap; }
 .turn .say .saytext { flex: 1; min-width: 200px; font-family: var(--sans); font-size: 13px; }
 /* a captured note (the turn-free `note` field, engine-filed to state/notes.md) */
 .turn .note {

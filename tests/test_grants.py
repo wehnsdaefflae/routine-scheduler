@@ -276,6 +276,22 @@ def test_deny_names_the_covering_permission(tmp_path):
     assert policy.deny({"kind": "read_file", "path": "LEDGER.md"}) is None
 
 
+def test_subrun_denial_names_the_child_scope_not_the_routine(tmp_path):
+    """R46: a spawned/subtask child runs with capabilities OFF by design, so a gated-kind
+    denial must attribute the limit to the child sub-workflow (and route to the parent),
+    never claim the routine lacks the capability — which misled a parent that DOES hold it."""
+    home = _lib(tmp_path, {"util-authoring": AUTHORING})
+    from dataclasses import replace
+    base = load_policy(home, [], {})
+    child = replace(base, is_subrun=True)
+    d_child = child.deny({"kind": "write_util", "name": "x", "content": "y"})
+    assert d_child and "child sub-workflow" in d_child and "PARENT" in d_child
+    assert "this routine's capabilities" not in d_child
+    # a normal (non-subrun) policy keeps the routine-scoped wording + the ask_user route
+    d_routine = base.deny({"kind": "write_util", "name": "x", "content": "y"})
+    assert d_routine and "this routine's capabilities" in d_routine and "ask_user" in d_routine
+
+
 def test_deny_gates_previous_runs_but_not_the_live_run():
     none = GrantPolicy(current_run_ts="20260712-090000")
     denial = none.deny({"kind": "read_file", "path": "runs/20260101-000000/result.md"})

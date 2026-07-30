@@ -131,8 +131,11 @@ export function createTranscript(container, opts = {}) {
       : String(a[BRIEF_FIELD[a.kind]] ?? "").slice(0, 200);
     const turn = el("div", { class: "turn" },
       el("div", { class: "say" },
-        el("span", { class: "n" }, `turn ${ev.turn ?? "?"}`),
-        ev.ts ? el("span", { class: "ts", title: ev.ts }, fmtTime(ev.ts)) : null,
+        // turn count + timestamp stack vertically (.turnmeta) so the timestamp sits UNDER
+        // the turn count rather than beside it — reclaims horizontal space for the say text.
+        el("div", { class: "turnmeta" },
+          el("span", { class: "n" }, `turn ${ev.turn ?? "?"}`),
+          ev.ts ? el("span", { class: "ts", title: ev.ts }, fmtTime(ev.ts)) : null),
         el("span", { class: "saytext" }, mdInline(a.say || ""))),
       a.note ? el("div", { class: "note", title: "captured to state/notes.md" },
         "📌 ", mdInline(a.note)) : null,

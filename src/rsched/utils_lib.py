@@ -415,6 +415,25 @@ def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = Non
     return env
 
 
+def _prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path) -> None:
+    """Resolve + install a PEP 723 script's dependencies with the network OPEN, so a util
+    whose runtime net policy is `none`/undeclared can still fetch its build-time deps (R40).
+    Filesystem stays jailed (same policy); only this install phase gets TCP. Best-effort:
+    any failure is swallowed — the caller's real run reports the genuine error. No-op under
+    sandbox mode 'off' would still be a harmless local `uv sync`.
+    """
+    try:
+        cmd = sandbox.wrap(["uv", "sync", "--script", script],
+                           policy=policy, libraries_home=home, net=True)
+    except sandbox.SandboxRefusal:
+        return
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, timeout=180,
+                       stdin=subprocess.DEVNULL, cwd=str(home), check=False)
+    except (OSError, subprocess.SubprocessError):
+        return
+
+
 def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
              policy: sandbox.SandboxPolicy,
              extra_secrets: dict[str, str] | None = None,
@@ -440,9 +459,21 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     # shells out to `gu <sibling>` always resolves siblings here.
     env["GLOBAL_UTILS_HOME"] = str(home)
     _, net = util_needs(home, name)
+    script = str(util_dir(home, name) / "main.py")
+    # Build-time dependency install is a SEPARATE phase from the util's own execution: a
+    # `net: none` util still needs PyPI to fetch its (non-cached) PEP 723 deps the first
+    # time it runs — most visibly at write_util selftest. `uv run` would do resolve+install
+    # under the util's OWN net policy and a net:none util could never install a third-party
+    # dep at all (R40). So prewarm the deps in a network-OPEN, still-filesystem-jailed
+    # `uv sync --script` (env lands in ~/.cache/uv, already a jail-RW toolchain root; it
+    # writes nothing beside the script), THEN run offline-capable under the real policy.
+    # Best-effort: a prewarm failure (offline host, no deps, older uv) is non-fatal — the
+    # real run still surfaces the true error.
+    if net != "outbound":
+        _prewarm_script_deps(script, policy, home)
     try:
-        cmd = sandbox.wrap(["uv", "run", "--script", str(util_dir(home, name) / "main.py"),
-                            *args], policy=policy, libraries_home=home, net=net)
+        cmd = sandbox.wrap(["uv", "run", "--script", script, *args],
+                           policy=policy, libraries_home=home, net=net)
     except sandbox.SandboxRefusal as exc:
         return 2, "", str(exc)
     # File-backed capture + own process GROUP: `uv run` re-execs the script as a grandchild,

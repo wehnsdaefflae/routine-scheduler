@@ -13,9 +13,22 @@ from . import outputs
 OBS_CAP_CHARS = 8_000
 
 
-def truncate(text: str, cap: int = OBS_CAP_CHARS) -> tuple[str, bool]:
+def truncate(text: str, cap: int = OBS_CAP_CHARS, keep: str = "head+tail") -> tuple[str, bool]:
+    """Cap a large output for its observation. `keep`:
+    - "head+tail" (default): keep both ends, elide the MIDDLE — for failure stderr, where
+      the traceback's END is the repair material and must survive (test_utils
+      keeps_trace_tail pins it).
+    - "head": keep the HEAD only, drop the TAIL — for ordered STDOUT that is spilled in
+      full to `.util_outputs/`, so a reader continues IN SEQUENCE from the spill file at
+      the char the preview stopped (operator AUDIT note R45: mid-truncation breaks
+      sequential paging). The marker names that resume offset.
+    """
     if len(text) <= cap:
         return text, False
+    if keep == "head":
+        marker = (f"\n[... output truncated: showing first {cap} of {len(text)} chars — "
+                  f"read the spill file from char {cap} for the rest ...]\n")
+        return (text[:cap] + marker), True
     head = int(cap * 0.6)
     tail = cap - head
     marker = f"\n[... output truncated: showing {cap} of {len(text)} chars (head+tail) ...]\n"

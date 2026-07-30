@@ -150,6 +150,8 @@ def _ctx(home, grants=None):
                                                    fs_write_roots=[], connections={},
                                                    machines=[]),
                            grants=grants,
+                           read_roots=list, write_roots=list,
+                           granted_now=frozenset(), grant_args={},
                            count_util=lambda *a, **k: None)
 
 

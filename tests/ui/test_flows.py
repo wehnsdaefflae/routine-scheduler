@@ -142,6 +142,11 @@ def test_state_graph_shows_phase_instrumentation(ui, ui_page):
     node = ui_page.locator(".sg-node", has_text="only")
     expect(node.locator(".sg-stats")).to_contain_text("2 turns")
     expect(node.locator(".sg-stats")).to_contain_text("1.6k tok")
+    # AUDIT note: the turn count and timestamp stack VERTICALLY (.turnmeta) — the timestamp
+    # sits under the turn count, not beside it, reclaiming horizontal space for the say text.
+    meta = ui_page.locator(".turn .say .turnmeta").first
+    expect(meta.locator(".n")).to_contain_text("turn 1")
+    expect(meta.locator(".ts")).to_be_visible()
 
 
 def test_state_graph_marks_skipped_phases(ui, ui_page):

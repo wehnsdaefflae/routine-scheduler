@@ -281,6 +281,11 @@ class GrantPolicy:
     # archived history) and stay readable regardless of run_history — the engine itself
     # points the model there after compaction.
     current_run_ts: str = ""
+    # True for a spawned/subtask child run: sub-workflows run with capabilities OFF by
+    # design (childrun._sub_routine), independent of what the PARENT routine holds. It
+    # only reshapes denial WORDING — a child's gated-kind denial must name the child
+    # workflow as the scope that lacks the kind, not claim the routine lacks it (R46).
+    is_subrun: bool = False
 
     def allows_kind(self, kind: str) -> bool:
         return kind not in GATED_KINDS or kind in self.actions
@@ -361,6 +366,15 @@ class GrantPolicy:
         if kind in GATED_KINDS and kind not in self.actions:
             srcs = ", ".join(self.kind_sources.get(kind)
                              or [_DEFAULT_KIND_SOURCE.get(kind, "util-authoring")])
+            if self.is_subrun:
+                # A spawned/subtask child runs with capabilities OFF by design, regardless
+                # of what the parent routine holds — so the limit is the CHILD's scope, not
+                # the routine's. Route the work back to the parent, which may hold the kind.
+                return (f"kind={kind} is not available to this child sub-workflow — spawned "
+                        f"and subtask children run with capabilities switched off (the "
+                        f"{srcs} permission is enforced on the parent run, not inherited). "
+                        f"Do the work that needs {kind} in the PARENT run, or return the "
+                        f"material it needs in your finish summary so the parent can.")
             return (f"kind={kind} is switched OFF in this routine's capabilities — only the "
                     f"user can switch it on (the {srcs} permission covers its conduct). Work "
                     f"with what you have. {self.request_route(f'action:{kind}')}")

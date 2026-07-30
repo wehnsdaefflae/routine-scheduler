@@ -122,6 +122,11 @@ class EngineLoop:
                                        current_run_ts=ctx.run_ts,
                                        recipe_unlocked=unlocked or revising,
                                        grants_map=ctx.routine.grants)
+        if ctx.depth > 0:
+            # A spawned/subtask child: capabilities are off by design (childrun), so a
+            # gated-kind denial must name the child scope, not claim the routine lacks it.
+            from dataclasses import replace
+            self.base_grants = replace(self.base_grants, is_subrun=True)
         self.grants = ctx.grants = self.base_grants.with_overlay(ctx.granted_now,
                                                                  ctx.denied_now)
         self.util_reminder = self._build_util_reminder()
