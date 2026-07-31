@@ -310,9 +310,27 @@ def test_run_view_message_modes(ui, ui_page):
     # mode <select> is gone entirely — the composer is just the input + send. (F233 had
     # already removed the "queue for next run" option, leaving a dead disabled dropdown.)
     assert ui_page.locator('select[title="where this message goes"]').count() == 0
-    # F238: the composer row carries its own class so the mobile stylesheet can break the
-    # message input onto its own full-width line instead of squishing it beside the buttons.
-    assert ui_page.locator("div.composer input[data-persist='run-msg']").count() == 1
+    # F238: on a narrow screen the message input takes its OWN full-width line and the
+    # send button wraps BENEATH it — not squished inline beside the controls. This asserts
+    # the real layout (not just the class): the earlier count-only check passed even while an
+    # inline flex:1 on the input silently beat the ≤860px stylesheet rule and kept it inline.
+    composer_input = ui_page.locator("div.composer input[data-persist='run-msg']")
+    assert composer_input.count() == 1
+    ui_page.set_viewport_size({"width": 400, "height": 900})
+    row = ui_page.locator("div.composer")
+    send = ui_page.locator("div.composer").get_by_role("button", name="send", exact=True)
+    rbox = row.bounding_box()
+    ibox = composer_input.bounding_box()
+    sbox = send.bounding_box()
+    # the input spans (near) the full composer width — its own line, not sharing it
+    assert ibox["width"] >= rbox["width"] * 0.9, (
+        f"composer input not full-width on narrow screen: input {ibox['width']}px "
+        f"of row {rbox['width']}px")
+    # …and the send button sits on a line BELOW the input (wrapped), not beside it
+    assert sbox["y"] >= ibox["y"] + ibox["height"] - 1, (
+        f"send button did not wrap below the input: input bottom {ibox['y'] + ibox['height']}, "
+        f"button top {sbox['y']}")
+    ui_page.set_viewport_size({"width": 1280, "height": 900})   # restore for the rest
     ui_page.locator('input[placeholder^="message…"]').fill("continue please")
     ui_page.get_by_role("button", name="send", exact=True).click()
     expect(_toast(ui_page)).to_contain_text("continue the conversation")

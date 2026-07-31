@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.132.1] — 2026-07-31
+
+### Fixed
+- **Run/conversation composer input still shared the control row on narrow screens (F238
+  regression)**: the run-view message input was created with an inline `style="flex:1"`, and an
+  inline style always beats a stylesheet selector — so the `@media (max-width:860px)` rule that
+  was supposed to break the input onto its own full-width line (`.composer > input[type=text]
+  { flex: 1 1 100% }`, added for F238 in 0.130.0) never took effect, and the input stayed
+  squished inline beside the send/attach buttons and the "editable recipe" checkbox (the
+  composer is shown on conversation runs viewed through the run page too). Fix: removed the
+  inline flex from the input and moved it into `base.css` (`.composer > input[type=text]
+  { flex: 1 1 auto }` on wide screens; the existing `flex: 1 1 100%` under 860px now wins), so
+  the stylesheet governs the width and the media rule can override it. The F238 UI test was
+  strengthened from a class-existence check to a real narrow-viewport layout assertion (input
+  spans the full row width; send button wraps beneath it) that fails on the inline-flex bug."
+
 ## [0.132.0] — 2026-07-31
 
 ### Added

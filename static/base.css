@@ -294,6 +294,10 @@ pre.doc {
 
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .spread { justify-content: space-between; }
+/* the run/end-of-run composer input fills the row on wide screens (was an inline flex:1 on
+   the element, which beat the ≤860px full-width media rule below and re-squished it inline —
+   F238 regression); the flex now lives in the stylesheet so the media rule can override it. */
+.composer > input[type="text"] { flex: 1 1 auto; }
 .mt { margin-top: 14px; }
 textarea, input[type=text], input[type=password], input[type=number], input[type=time], select {
   background: var(--ink-2); color: var(--text); border: 1px solid var(--line-2);
