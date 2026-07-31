@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.134.0] — 2026-07-31
+
+### Added
+- **Routine groups — store + CRUD API (D53 Phase A).** A group is a named, ORDERED list of
+  routine slugs plus a mid-chain-failure policy (`stop` = abort the rest of the chain, or
+  `continue`), with an instance-wide default and an optional per-group override. New
+  `rsched.groups` module persists the whole store atomically in one daemon-owned document,
+  `<routines_home>/.control/groups.json` (the same dot-dir ownership model as triggers and
+  schedule-once — instance operator state the web layer writes and a future daemon reads, so
+  it cannot live in any routine.yaml). New `web.api_groups` CRUD surface: `GET /api/groups`
+  (default + vocab + groups + the routine picker), `POST /api/groups`, `PATCH /api/groups/{id}`
+  (rename / reorder members / set the on_failure override), `DELETE /api/groups/{id}`, and
+  `PUT /api/groups/default`. Every member slug is validated against the live registry, so a
+  group can never name a routine that does not exist. This is the store + API only —
+  **sequential-fire is Phase B** (a later increment that reads this store on the daemon tick);
+  nothing fires yet, and no routines are grouped by default.
+
 ## [0.133.2] — 2026-07-31
 
 ### Fixed
