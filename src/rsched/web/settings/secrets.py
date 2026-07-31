@@ -48,17 +48,25 @@ def list_secrets(request: Request) -> dict:
     utils = utils_lib.list_utils(server_of(request).libraries_home)
     by_name = {u["name"]: u for u in utils}
     declared: dict[str, list[str]] = {}
+    # A secret is OPTIONAL (D51) only when EVERY util that declares it marks it optional (`NAME?`);
+    # if any declaring util requires it, it stays required. Start every seen key as optional and
+    # flip it to required the first time a util declares it non-optionally.
+    optional: dict[str, bool] = {}
     for u in utils:
+        opt = {o.upper() for o in u.get("optional_secrets", [])}
         for var in u.get("secrets", []):
             if var.upper() in injected:
                 continue
             declared.setdefault(var, []).append(u["name"])
+            is_opt = var.upper() in opt
+            optional[var] = optional.get(var, True) and is_opt
     # Carry the declaring util's usage + docstring so the UI can show the expected FORMAT of a
     # structured secret (e.g. FTP_SOURCES is a JSON map) right where the user sets it.
     needed = []
     for k, us in sorted(declared.items()):
         primary = by_name.get(us[0], {})
         needed.append({"key": k, "utils": us, "set": k in provisioned,
+                       "optional": optional.get(k, False),
                        "usage": primary.get("usage", ""), "doc": primary.get("doc", "")})
     return {"keys": sorted(have), "needed": needed, "maps": maps,
             "path": str(secret_store.secrets_path())}

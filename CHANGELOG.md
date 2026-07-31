@@ -19,6 +19,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.126.0] — 2026-07-31
+
+### Added
+- **Optional-secret marker `secrets: NAME?` (D51)**: a util may mark a declared secret
+  optional with a trailing `?` (e.g. `secrets: FOO_KEY, BAR_TOKEN?`). It is injected when
+  the store has it (same declared-only rule) but the Settings → Secrets page no longer
+  prompts for it — an unset optional secret reads a calm muted "optional" instead of the
+  amber "unset" nag. `parse_header` strips the marker into `secrets` (so injection and the
+  undeclared-read gate are unchanged) and collects the marked names in `optional_secrets`;
+  `/settings/secrets` flags a needed key `optional` only when EVERY declaring util marks it
+  so. Answers the operator's D51 decision (inject-if-present, no prompt when unused).
+
+### Changed
+- **Bare URLs autolink in model/user prose (F228)**: the markdown renderer already turned
+  `[text](url)` into new-tab anchors; now a BARE `https://…`/`http://…` URL in a summary,
+  answer, injection or LLM reply is also linked (`target="_blank" rel="noopener noreferrer"`),
+  so a pasted link is clickable. Existing anchors and code spans are protected; trailing
+  sentence punctuation stays outside the link.
+- **Week-schedule "now" cursor advances on its own (F230)**: the dashboard "this week"
+  strip's green now-line (and the past/future bar dimming) re-positions itself every 30s
+  between data refreshes, so an idle dashboard tracks real time instead of freezing at
+  load-time. The interval re-renders from the last data (only `Date.now()` moves) and
+  self-clears when the grid unmounts.
+
+### Fixed
+- **`edit_file` near-miss hint on an ambiguous character (F232)**: when an anchor almost
+  matches but differs on an invisible/ambiguous character — a non-ASCII dash (— vs -),
+  NBSP, tab-vs-spaces, trailing whitespace — the "anchor not found" error now names the
+  closest ACTUAL line via `repr()`, so the caller sees the exact bytes to copy instead of
+  guessing across turns (a real case cost ~6 turns this run: `read_file` renders such
+  characters escaped, so copying the displayed anchor silently differed from the file bytes).
+
+### Removed
+- **Dead duplicate `playbooks.doc_body` (F231)**: byte-identical to the canonical
+  `library_docs.doc_body`; all 8 call sites use the latter and nothing referenced the
+  playbooks copy. Deleted under the repo's no-back-compat rule (deep hygiene sweep finding).
+
 ## [0.125.0] — 2026-07-30
 
 ### Fixed

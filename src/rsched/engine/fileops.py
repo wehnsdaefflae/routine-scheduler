@@ -6,6 +6,7 @@ dispatch, the util runner, and the llm subcall (and routes the file kinds here).
 
 from __future__ import annotations
 
+import difflib
 import json
 
 from .. import sandbox, utils_lib
@@ -287,6 +288,28 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
             "append": bool(action.get("append")), "size": size}
 
 
+def _nearest_anchor_hint(text: str, anchor: str) -> str:
+    """When an anchor doesn't match, find the closest ACTUAL line and show it via repr() — so a
+    near-miss on an invisible or ambiguous character (a non-ASCII dash like — vs -, a NBSP, a
+    tab-vs-spaces, trailing whitespace) is diagnosable at a glance instead of by trial and error.
+    read_file renders such characters escaped, so copying the displayed anchor can silently differ
+    from the file's real bytes; repr() of the true line shows exactly what to copy. Empty string
+    when nothing is close enough (a genuinely absent anchor gets no misleading hint).
+    """
+    first = anchor.splitlines()[0].strip() if anchor.strip() else ""
+    if not first:
+        return ""
+    lines = text.splitlines()
+    match = difflib.get_close_matches(first, [ln.strip() for ln in lines], n=1, cutoff=0.7)
+    if not match:
+        return ""
+    # the raw line whose stripped form matched — show it verbatim via repr()
+    actual = next((ln for ln in lines if ln.strip() == match[0]), match[0])
+    return (f". Closest line in the file is {actual!r} — note any character that differs from "
+            "your anchor (a non-ASCII dash, NBSP, tab vs spaces, or trailing whitespace); "
+            "repr() shows the true bytes to copy.")
+
+
 def do_edit_file(action: dict, ctx: RunContext) -> dict:
     """Anchor-replace in place — revisions cost the diff, not the whole document (the
     write_file counterpart for touching a few lines of a large file).
@@ -305,7 +328,8 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
         if count == 0:
             return {"kind": "edit_file", "path": action["path"],
                     "error": "anchor not found in the file — copy it VERBATIM from a "
-                             "read_file observation (whitespace and line breaks included)"}
+                             "read_file observation (whitespace and line breaks included)"
+                             + _nearest_anchor_hint(text, anchor)}
         if count > 1 and not action.get("all"):
             return {"kind": "edit_file", "path": action["path"],
                     "error": f"anchor appears {count} times — extend it until it is unique, "

@@ -51,9 +51,13 @@ export function renderSecrets(view) {
                 el("pre", { style: "white-space:pre-wrap;font-size:11px;margin:4px 0;padding:6px 8px;background:var(--ink);border:1px solid var(--line);border-radius:6px" },
                   [n.usage, n.doc].filter(Boolean).join("\n\n")))
             : null;
+          // An OPTIONAL secret (D51: every declaring util marked it `NAME?`) that is unset is not
+          // a missing credential — show a calm muted "optional", not an amber "unset" nag.
+          const statusColor = n.set ? "var(--ok)" : (n.optional ? "var(--muted)" : "var(--warn)");
+          const statusText = n.set ? "✓ set" : (n.optional ? "optional" : "unset");
           return el("tr", {},
             el("td", {}, el("div", { class: "mono" }, n.key), fmt),
-            el("td", { class: "small", style: `color:${n.set ? "var(--ok)" : "var(--warn)"}` }, n.set ? "✓ set" : "unset"),
+            el("td", { class: "small", style: `color:${statusColor}`, "data-secret-status": n.key }, statusText),
             el("td", { class: "muted small" }, n.utils.join(", ")),
             el("td", {}, n.set ? delBtn(n.key) : setBtn));
         })))));

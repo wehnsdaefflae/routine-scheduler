@@ -187,6 +187,12 @@ def parse_header(src: str) -> dict:
     declared secrets, declared sibling `calls:` (drives transitive secret/net resolution,
     see util_needs), and the `net:` declaration ("outbound" | "none"; "" = undeclared,
     which the sandbox treats as none — fail closed).
+
+    A `secrets:` entry may carry a trailing `?` (e.g. `secrets: FOO_KEY, BAR_TOKEN?`) to mark
+    an OPTIONAL secret (D51): injected when the store has it, but the Settings page does not
+    prompt for it and its absence is not a "missing credential". The stripped name still
+    appears in `secrets` (so injection and the undeclared-read gate are unchanged); the marked
+    names are also collected in `optional_secrets`.
     """
     m = _SUMMARY_RE.search(src)
     doc = m.group(1).strip() if m else ""
@@ -197,8 +203,14 @@ def parse_header(src: str) -> dict:
     tags = ([t.strip() for t in tags_line[len("tags:"):].split(",") if t.strip()]
             if tags_line else [])
     sec_line = next((ln for ln in lines if ln.lower().startswith("secrets:")), "")
-    secrets = [s.strip() for s in sec_line[len("secrets:"):].split(",")
+    sec_raw = [s.strip() for s in sec_line[len("secrets:"):].split(",")
                if s.strip() and s.strip().lower() != "(none)"] if sec_line else []
+    # A trailing '?' marks an OPTIONAL secret (D51): the sandbox injects it when the store has it
+    # but the Settings page never prompts for it and its absence is not a missing credential. The
+    # name (marker stripped) still appears in `secrets`, so injection and the undeclared-read gate
+    # are unchanged — optionality is purely about consent/prompting, not access.
+    secrets = [s[:-1].strip() if s.endswith("?") else s for s in sec_raw]
+    optional_secrets = [s[:-1].strip() for s in sec_raw if s.endswith("?")]
     calls_line = next((ln for ln in lines if ln.lower().startswith("calls:")), "")
     calls = [c.strip() for c in calls_line[len("calls:"):].split(",")
              if c.strip() and c.strip().lower() not in ("(none)", "none")
@@ -206,7 +218,7 @@ def parse_header(src: str) -> dict:
     net_line = next((ln for ln in lines if ln.lower().startswith("net:")), "")
     net = net_line[len("net:"):].strip().lower() if net_line else ""
     return {"summary": summary, "usage": usage, "tags": tags, "secrets": secrets,
-            "calls": calls, "net": net, "doc": doc}
+            "optional_secrets": optional_secrets, "calls": calls, "net": net, "doc": doc}
 
 
 # env-var names that smell like credentials — used by header_problems to catch a util that

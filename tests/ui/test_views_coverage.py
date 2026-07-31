@@ -25,7 +25,7 @@ def test_help_view_renders_docs_state(ui, ui_page):
 
 # A human message carrying every markdown construct the answer/injection bodies used to
 # render literally: bold, a code span, and a list. Seeded into both transcript mounts.
-MD_ANSWER = "take **B** \u2014 see `run.py`\n\n- first\n- second"
+MD_ANSWER = "take **B** \u2014 see `run.py` at https://example.com/docs\n\n- first\n- second"
 MD_INJECTION = "look **deeper** at `engine/loop.py`"
 
 
@@ -58,6 +58,11 @@ def _expect_message_markdown(scope):
     expect(answer.locator(".md strong")).to_have_text("B")
     expect(answer.locator(".md code")).to_have_text("run.py")
     expect(answer.locator(".md ul li")).to_have_count(2)
+    # F228: a BARE http(s) URL in model/user prose autolinks to a new-tab anchor (not literal text)
+    link = answer.locator('.md a[href="https://example.com/docs"]')
+    expect(link).to_have_count(1)
+    expect(link).to_have_attribute("target", "_blank")
+    expect(link).to_have_attribute("rel", "noopener noreferrer")
     injection = scope.locator(".ev.injection")
     expect(injection).to_contain_text("user: look deeper at")
     expect(injection.locator(".md strong")).to_have_text("deeper")

@@ -63,13 +63,21 @@ function avgRuntime(card) {
   return { secs: durs.reduce((a, b) => a + b, 0) / durs.length, n: durs.length };
 }
 
+// How often the live "now" cursor (and the past/future bar dimming) re-positions itself between
+// data refreshes, so the green line tracks real time on an idle dashboard (F230). Cheap: it
+// re-runs the last update() with the SAME data — only Date.now() moves. The interval self-clears
+// once the grid leaves the DOM (the transcript.js live-poll pattern), so it never leaks.
+const NOW_REFRESH_MS = 30_000;
+
 export function weekGrid() {
   const node = el("div", { class: "weekgrid" });
+  let lastArgs = null;
 
   // cards: the dashboard's currently visible routines; firesBySlug: Map slug → [ms, …] of
   // recurring cron fires; oneShotsBySlug: Map slug → [ms, …] of armed one-shot fires (rendered
   // as distinct hollow bars). A row shows if it has either kind in view.
   function update(cards, firesBySlug, oneShotsBySlug = new Map()) {
+    lastArgs = [cards, firesBySlug, oneShotsBySlug];
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const t0 = start.getTime(), span = DAYS * DAY_MS;
@@ -144,6 +152,12 @@ export function weekGrid() {
 
     node.append(svg, legend);
   }
+
+  // Advance the live "now" cursor between data refreshes; self-clears when the grid unmounts.
+  const tick = setInterval(() => {
+    if (!document.body.contains(node)) return void clearInterval(tick);
+    if (lastArgs) update(...lastArgs);
+  }, NOW_REFRESH_MS);
 
   return { node, update };
 }

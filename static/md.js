@@ -22,6 +22,27 @@ function inline(s) {
     .replace(/\*([^*\s][^*\n]*?)\*/g, "<em>$1</em>")
     .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+|mailto:[^)\s]+)\)/g,
              '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  // Autolink BARE http(s) URLs (not written as [text](url)) so a plain pasted link is clickable
+  // and opens in a new tab. Existing <a> anchors are pulled out first so their hrefs/text are not
+  // re-linked; code spans are still \x00N\x00 placeholders here, so they are protected too. The
+  // text is already HTML-escaped, so a URL query's `&` is `&amp;` — correct inside the href. A
+  // trailing sentence punctuation (or an unbalanced closing paren) is left outside the link.
+  const anchors = [];
+  s = s.replace(/<a\b[^>]*>.*?<\/a>/g, (a) => `\x01${anchors.push(a) - 1}\x01`);
+  s = s.replace(/(^|[\s(])(https?:\/\/[^\s<]+)/g, (whole, pre, url) => {
+    let trail = "";
+    const mp = /[.,;:!?)]+$/.exec(url);
+    if (mp) {
+      const cut = mp[0];
+      // keep a closing paren only if the URL has a matching opening one (Wikipedia-style)
+      const keepParen = cut.endsWith(")")
+        && (url.match(/\(/g) || []).length >= (url.match(/\)/g) || []).length;
+      const strip = keepParen ? cut.replace(/\)+$/, "") : cut;
+      if (strip) { trail = strip; url = url.slice(0, url.length - strip.length); }
+    }
+    return `${pre}<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>${trail}`;
+  });
+  s = s.replace(/\x01(\d+)\x01/g, (_, i) => anchors[+i]);
   return s.replace(/\x00(\d+)\x00/g, (_, i) => `<code>${codes[+i]}</code>`);
 }
 

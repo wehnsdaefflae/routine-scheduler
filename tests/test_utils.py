@@ -270,6 +270,17 @@ def test_parse_header_net_and_calls():
     bare = '"""x — y.\n\nusage: gu x\n"""\n'
     h = utils_lib.parse_header(bare)
     assert h["net"] == "" and h["calls"] == [] and h["secrets"] == []
+    assert h["optional_secrets"] == []
+    # D51: a trailing '?' marks a secret OPTIONAL — the name (marker stripped) still appears in
+    # `secrets` (injection + undeclared-read gate unchanged) and is ALSO listed in optional_secrets.
+    opt = GOOD_UTIL.replace("secrets: DEMO_API_KEY\n", "secrets: DEMO_API_KEY, EXTRA_TOKEN?\n")
+    ho = utils_lib.parse_header(opt)
+    assert ho["secrets"] == ["DEMO_API_KEY", "EXTRA_TOKEN"]
+    assert ho["optional_secrets"] == ["EXTRA_TOKEN"]
+    # an optional-marked secret is still caught if the code reads it but the header omits it,
+    # and is still injected — both proven by the child_env/header_problems suites; here we only
+    # assert the parse split.
+    assert utils_lib.parse_header(GOOD_UTIL)["optional_secrets"] == []
 
 
 def _write_header_util(home, name, *, secrets="(none)", net="none", calls="(none)"):
@@ -314,6 +325,22 @@ def test_child_env_scopes_secrets(tmp_path, monkeypatch):
     assert "OTHER_KEY" not in env
     assert "ANTHROPIC_API_KEY" not in env
     assert env["UNRELATED"] == "stays"
+
+
+def test_optional_secret_injected_when_present_absent_otherwise(tmp_path, monkeypatch):
+    """D51: an optional secret (`NAME?`) obeys the same declared-only injection rule — it is
+    injected when the store has it and simply absent (no error) when it does not."""
+    utils_lib.ensure_library(tmp_path)
+    _write_header_util(tmp_path, "optu", secrets="REQ_KEY, OPT_KEY?")
+    # store has both → both injected
+    monkeypatch.setattr("rsched.secrets.load_secrets",
+                        lambda: {"REQ_KEY": "r-1", "OPT_KEY": "o-1"})
+    env = utils_lib._child_env(tmp_path, "optu")
+    assert env["REQ_KEY"] == "r-1" and env["OPT_KEY"] == "o-1"
+    # store lacks the optional one → it is absent, the required one still injected, no error
+    monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {"REQ_KEY": "r-2"})
+    env = utils_lib._child_env(tmp_path, "optu")
+    assert env["REQ_KEY"] == "r-2" and "OPT_KEY" not in env
 
 
 def test_was_deleted_reads_git_history(tmp_path):

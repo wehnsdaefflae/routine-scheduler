@@ -23,6 +23,24 @@ def test_needed_secret_shows_format(ui, ui_page):
     expect(fmt).to_contain_text("host, user, pass")     # the format hint from the util docstring
 
 
+def test_optional_secret_shows_optional_not_unset(ui, ui_page):
+    """D51: a secret every declaring util marks `NAME?` is OPTIONAL — when unset it reads a
+    calm "optional", never the amber "unset" nag that a required-but-missing secret shows."""
+    util = ui.tmp / "library" / "utils" / "optdemo" / "main.py"
+    util.parent.mkdir(parents=True, exist_ok=True)
+    util.write_text(
+        "# /// script\n# dependencies = []\n# ///\n"
+        '"""optdemo — demo util.\n\n'
+        "usage: gu optdemo\ncalls: (none)\n"
+        "secrets: OPT_DEMO_KEY?\ntags: test\nnet: none\n"
+        '"""\n', encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}/#/settings?section=secrets")
+    status = ui_page.locator('[data-secret-status="OPT_DEMO_KEY"]')
+    status.wait_for(timeout=10_000)
+    expect(status).to_have_text("optional")
+
+
 def test_map_secret_entry_editor(ui, ui_page):
     """Add an entry to a JSON-map secret via the UI — it appears as a chip, values never shown."""
     ui_page.goto(f"{ui.url}/#/settings?section=secrets")

@@ -55,6 +55,26 @@ def _ctx(tmp_path, endpoint):
                            seen_paths=set())
 
 
+def test_edit_file_near_miss_hint_shows_true_line(tmp_path):
+    """F232: when an anchor almost matches but differs on an invisible/ambiguous character (here a
+    non-ASCII em-dash — vs a hyphen -), the 'anchor not found' error names the closest ACTUAL line
+    via repr(), so the caller sees the true bytes to copy instead of guessing across turns."""
+    (tmp_path / "note.md").write_text("take B — see run.py\nnext line\n", encoding="utf-8")
+    obs = fileops.do_edit_file(
+        {"kind": "edit_file", "path": "note.md",
+         "anchor": "take B - see run.py", "replacement": "x"},   # hyphen, not em-dash
+        _ctx(tmp_path, None))
+    assert "anchor not found" in obs["error"]
+    assert "Closest line" in obs["error"]
+    assert "\\u2014" in obs["error"] or "—" in obs["error"]   # repr() reveals the em-dash
+    # a genuinely absent anchor gets no misleading hint
+    obs2 = fileops.do_edit_file(
+        {"kind": "edit_file", "path": "note.md",
+         "anchor": "completely unrelated content xyzzy", "replacement": "x"},
+        _ctx(tmp_path, None))
+    assert "Closest line" not in obs2["error"]
+
+
 def test_do_view_image_native(tmp_path):
     (tmp_path / "shot.png").write_bytes(b"IMG")
     obs = executor.do_view_image({"kind": "view_image", "path": "shot.png"},

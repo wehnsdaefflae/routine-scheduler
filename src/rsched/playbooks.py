@@ -39,11 +39,6 @@ def _parse(text: str) -> tuple[dict, str]:
     return parse_lenient(text)
 
 
-def doc_body(text: str) -> str:
-    """MAIN.md without its front matter — the reusable brief that seeds a conversation."""
-    return _parse(text)[1]
-
-
 def _safe_detail_name(name: str) -> str:
     """A traversal-proof `<kebab>.md` detail filename."""
     stem = re.sub(r"[^a-z0-9-]+", "-", str(name).lower().removesuffix(".md")).strip("-") or "detail"
