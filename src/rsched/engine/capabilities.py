@@ -115,7 +115,8 @@ def _util_catalog_block(utils: list[dict], kinds: list[str], g) -> str:
     group_blocks = [f"### {label} ({len(buckets[label])})\n" + "\n".join(sorted(buckets[label]))
                     for label in order if buckets.get(label)]
     header = (f'Global utils ({len(utils)}, grouped by domain; run '
-              '`util name=list args=["<name>"]` for one\'s exact usage before calling it):'
+              '`util name=list args=["<name>"]` for one\'s exact usage before calling it, '
+              'or `util name=search args=["<keywords>"]` to find one by need):'
               if "util" in kinds else
               f"Global utils ({len(utils)}, grouped by domain — this workflow cannot CALL "
               "utils; the list tells you what a routine can be built to do):")

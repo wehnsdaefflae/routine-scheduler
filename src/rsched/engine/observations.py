@@ -40,6 +40,10 @@ def truncate(text: str, cap: int = OBS_CAP_CHARS, keep: str = "head+tail") -> tu
 def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR0915
     kind = obs.get("kind")
     if kind == "util":
+        if obs.get("name") == "search":
+            return (f"OBSERVATION (util search {obs.get('query')!r} — closest utils "
+                    "by keyword; the full catalog is always in CAPABILITIES):\n"
+                    + obs["listing"])
         if obs.get("listing") is not None:
             return "OBSERVATION (util list — available global utils):\n" + obs["listing"]
         if obs.get("source") is not None:

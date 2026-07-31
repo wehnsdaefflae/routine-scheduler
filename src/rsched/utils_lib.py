@@ -332,6 +332,65 @@ def catalog_text(home: Path) -> str:
     return "\n".join(lines)
 
 
+def search_utils(home: Path, query: str, limit: int = 12) -> list[dict]:
+    """Keyword-rank the live util catalog against a free-text query — the two-phase
+    discovery path (D52 Phase 3): a run names what it needs, gets the handful of most
+    relevant utils + summaries, then `util name=list args=["<name>"]` for exact usage.
+    PURE in-process ranking over the live catalog (name/tags/summary/usage) — NOT the
+    prose FTS5 index (search/index.py), which is daemon-owned and engine subprocesses
+    never import. Scoring: each query term matched case-insensitively; a hit in the NAME
+    weighs most, then tags, then summary, then usage. Zero-match utils drop; ties break
+    on name. Returns the top `limit` catalog entries.
+    """
+    terms = [t for t in re.split(r"[^a-z0-9]+", query.lower()) if t]
+    if not terms:
+        return []
+    scored: list[tuple[int, str, dict]] = []
+    for u in list_utils(home):
+        name = u["name"].lower()
+        tags = " ".join(u.get("tags") or []).lower()
+        summary = (u.get("summary") or "").lower()
+        usage = (u.get("usage") or "").lower()
+        score = 0
+        for t in terms:
+            if t in name:
+                score += 8
+            if t in tags:
+                score += 4
+            if t in summary:
+                score += 2
+            if t in usage:
+                score += 1
+        if score:
+            scored.append((score, u["name"], u))
+    scored.sort(key=lambda s: (-s[0], s[1]))
+    return [u for _score, _name, u in scored[:limit]]
+
+
+def search_listing(home: Path, query: str, limit: int = 12) -> str:
+    """Render search_utils() as the same summary+usage lines catalog_text uses, always
+    naming the always-on category floor so a retrieval miss never fully hides a tool
+    (the dominant failure mode of any tool-search layer).
+    """
+    hits = search_utils(home, query, limit=limit)
+    floor = ('The FULL catalog is always in your CAPABILITIES section (grouped by domain), '
+             'so nothing is hidden — scan it directly if nothing above fits, or write a new '
+             'util with write_util. Run `util name=list args=["<name>"]` for a util\'s '
+             'exact flags.')
+    if not hits:
+        return f"No util name/tags/summary/usage matched {query!r}. " + floor
+    lines = []
+    for u in hits:
+        head = u["summary"] or u["name"]
+        if not head.startswith(u["name"]):
+            head = f"{u['name']} — {head}"
+        lines.append(f"- {head}")
+        if u.get("usage"):
+            lines.append(f"    {u['usage']}")
+    lines.append("\nClosest matches only. " + floor)
+    return "\n".join(lines)
+
+
 def read_util(home: Path, name: str) -> str | None:
     p = util_dir(home, name) / "main.py"
     return p.read_text(encoding="utf-8") if p.is_file() else None

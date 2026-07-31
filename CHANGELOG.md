@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.133.0] — 2026-07-31
+
+### Added
+- **`util name=search args=["<keywords>"]` — keyword tool discovery (D52 Phase 3).** A run can
+  now name what it needs and get the handful of most-relevant utils (name + summary), then fetch
+  exact flags with `util name=list args=["<name>"]` — the two-phase discovery pattern
+  (Anthropic Tool Search / BM25 two-phase) sized for this catalog. The ranker
+  (`utils_lib.search_utils`) is a PURE in-process keyword scorer over the live catalog
+  (name▸tags▸summary▸usage, weighted), deliberately NOT the daemon-owned prose FTS5 index
+  (`search/index.py`) — engine subprocesses never import that, so a `util` verb must not depend
+  on it. Every result (including a zero-match query) names the always-on CAPABILITIES catalog as
+  a floor, so a retrieval miss never fully hides a tool — the dominant failure mode of any
+  tool-search layer. The always-on catalog header now advertises the verb, and the search
+  observation renders under its own query-labelled header. Completes the D52 discovery arc after
+  Phase 1 (grouped catalog, 0.127.0); Phase 2 (library consolidation) remains with
+  global-utils-review.
+
 ## [0.132.1] — 2026-07-31
 
 ### Fixed

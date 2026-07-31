@@ -121,6 +121,32 @@ def test_util_show_and_missing_answer_with_the_catalog(util_ctx):
     assert set(gone["available"]) == {"crasher", "echoer", "flooder"}
 
 
+def test_util_search_ranks_by_keyword_and_keeps_the_catalog_floor(util_ctx):
+    """D52 Phase 3: `util name=search` is a discovery verb — keyword-rank the live catalog,
+    return only close matches, and ALWAYS name the always-on floor so a miss hides nothing."""
+    from rsched.engine.observations import format_observation
+
+    obs = dispatch({"kind": "util", "name": "search", "args": ["arguments"]}, util_ctx)
+    assert obs["name"] == "search" and obs["query"] == "arguments"
+    # echoer's summary is "prints its arguments back" — it must rank into the hits…
+    assert "echoer" in obs["listing"]
+    # …and the retrieval-miss floor is always present
+    assert "CAPABILITIES" in obs["listing"]
+    # the discovery result is a NON-executing call: no util run, so no reliability counter
+    assert "exit" not in obs
+    # the observation renders under its own query-labelled header, not "util list"
+    rendered = format_observation(obs)
+    assert "util search 'arguments'" in rendered
+
+    # a query nothing matches still returns the floor, not a dead end
+    miss = dispatch({"kind": "util", "name": "search", "args": ["zzzznomatch"]}, util_ctx)
+    assert "No util" in miss["listing"] and "CAPABILITIES" in miss["listing"]
+
+    # an empty query teaches the shape instead of dumping everything
+    empty = dispatch({"kind": "util", "name": "search", "args": []}, util_ctx)
+    assert empty["query"] == "" and "needs keywords" in empty["listing"]
+
+
 def test_util_show_full_and_range_page_the_whole_source(util_ctx):
     """D42-A: a >24k util must be COMPLETELY readable without shell — the capped default
     teaches --full/--range, --full returns everything, --range pages by 1-based lines."""

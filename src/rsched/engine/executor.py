@@ -147,6 +147,15 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
                            f'for the complete source, or ["{target}", "--range", "FIRST", '
                            f'"LAST"] for a line window')
         return obs
+    if name == "search":  # D52 Phase 3: keyword discovery over the live catalog
+        query = " ".join(args).strip()
+        if not query:
+            return {"kind": "util", "name": "search", "query": "",
+                    "listing": 'search needs keywords — e.g. {"kind": "util", "name": '
+                               '"search", "args": ["send", "email"]}. The full catalog is '
+                               "always in your CAPABILITIES section."}
+        return {"kind": "util", "name": "search", "query": query,
+                "listing": utils_lib.search_listing(home, query)}
     if not utils_lib.exists(home, name):
         ctx.count_util(name, "missing")
         return {"kind": "util", "name": name, "missing": True,
