@@ -1,8 +1,9 @@
-// Groups: named, ordered collections of routines with a mid-chain-failure policy (D53 Phase A).
+// Groups: named, ordered collections of routines with a mid-chain-failure policy (D53).
 // This page is the CRUD surface over /api/groups (the .control/groups.json store) — create,
 // name, ORDER members, choose stop-vs-continue on a mid-chain failure (per-group, or inherit the
-// instance default), and delete. Phase A does not FIRE anything (sequential-fire is Phase B); the
-// page says so, and no routines are grouped by default.
+// instance default), and delete. Phase B (live): "Run now" arms a sequential fire
+// (POST /api/groups/{id}/run) that the daemon advances one member per tick; the page shows an
+// in-flight chain's progress from the /api/groups `in_flight` map.
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
@@ -21,9 +22,9 @@ export async function render(view) {
     box.append(el("h2", {}, "Routine groups"));
     box.append(el("div", { class: "muted small", style: "margin-bottom:10px" },
       "A group runs its routines in order, one after another. Choose what happens if a member ",
-      "fails partway through — stop the rest of the chain, or carry on. ",
-      el("strong", {}, "Sequential firing is not live yet"),
-      " (this is the setup surface); nothing is grouped until you add a group below."));
+      "fails partway through — stop the rest of the chain, or carry on. Press ",
+      el("strong", {}, "Run now"),
+      " on a group to fire its members sequentially; each starts once the previous one finishes."));
 
     // Instance default on-failure.
     const defSel = el("select", { "data-groups-default": "" },
@@ -121,10 +122,26 @@ export async function render(view) {
       catch (err) { toast(err.message, 4000, { error: true }); }
     };
 
+    // Run now — arm a sequential fire; disabled (with a progress line) while a chain is in flight.
+    const flight = (d.in_flight || {})[g.id];
+    const runBtn = el("button", { class: "btn small primary", "data-group-run": "",
+      ...(flight || !g.members.length ? { disabled: "" } : {}) }, "Run now");
+    runBtn.onclick = async () => {
+      try { await api(`/api/groups/${g.id}/run`, { method: "POST" });
+        toast(`group “${g.name}” firing`); load(); }
+      catch (err) { toast(err.message, 4000, { error: true }); load(); }
+    };
+    const progress = flight
+      ? el("div", { class: "muted small mt", "data-group-progress": "" },
+          `running ${Math.min((flight.cursor || 0) + 1, flight.members.length)}/${flight.members.length}`,
+          flight.members[flight.cursor] ? ` · ${flight.members[flight.cursor]}` : " · finishing…")
+      : null;
+
     card.append(
       el("div", { class: "row", style: "justify-content:space-between;align-items:center" },
-        nameLabel, del),
+        nameLabel, el("div", { class: "row", style: "gap:6px" }, runBtn, del)),
       el("div", { class: "muted small mt", "data-group-effective": "" }, `on failure: ${effective}`),
+      ...(progress ? [progress] : []),
       el("div", { class: "mt" }, rows),
       el("div", { class: "row mt", style: "gap:8px;align-items:center" },
         el("span", { class: "small" }, "on failure:"), ofSel));

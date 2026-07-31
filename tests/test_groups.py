@@ -150,3 +150,34 @@ def test_api_group_lifecycle(api_client):
     assert client.delete(f"/api/groups/{gid}").status_code == 200
     assert client.delete(f"/api/groups/{gid}").status_code == 404
     assert client.get("/api/groups").json()["groups"] == []
+
+
+def test_api_run_group_arms_a_chain(api_client):
+    client, tmp_path = api_client
+    _mk(tmp_path, "alpha")
+    _mk(tmp_path, "beta")
+
+    # arming an unknown group 404s
+    assert client.post("/api/groups/grp-nope/run").status_code == 404
+
+    gid = client.post("/api/groups",
+                      json={"name": "Chain", "members": ["alpha", "beta"]}).json()["group"]["id"]
+
+    # a memberless group cannot be fired
+    empty = client.post("/api/groups", json={"name": "Empty"}).json()["group"]["id"]
+    assert client.post(f"/api/groups/{empty}/run").status_code == 400
+
+    # arm: the chain lands, snapshotting members + the resolved policy (default 'stop')
+    r = client.post(f"/api/groups/{gid}/run")
+    assert r.status_code == 200, r.text
+    run = r.json()["run"]
+    assert run["members"] == ["alpha", "beta"] and run["on_failure"] == "stop"
+    assert run["cursor"] == 0 and run["status"] == "pending"
+
+    # GET /groups now surfaces the in-flight chain
+    body = client.get("/api/groups").json()
+    assert gid in body["in_flight"]
+    assert body["in_flight"][gid]["members"] == ["alpha", "beta"]
+
+    # a second arm of the same group is a 409 (one chain at a time)
+    assert client.post(f"/api/groups/{gid}/run").status_code == 409

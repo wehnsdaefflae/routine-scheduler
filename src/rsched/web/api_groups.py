@@ -15,7 +15,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from .. import groups
+from .. import group_runs, groups
 from .routines_common import _catalog, _state
 
 router = APIRouter(tags=["groups"])
@@ -66,9 +66,15 @@ def list_groups(request: Request) -> dict:
     home = _routines_home(request)
     catalog = _catalog(request)
     known = [{"slug": s, "name": info.cfg.name or s} for s, info in sorted(catalog.items())]
+    # in-flight sequential fires (Phase B), keyed by group id, so the UI can show a running
+    # chain's progress and refuse a duplicate "Run now"
+    in_flight = {str(r["group_id"]): {"cursor": r.get("cursor", 0), "status": r.get("status"),
+                                      "members": r.get("members", []), "log": r.get("log", [])}
+                 for r in group_runs.in_flight(home)}
     return {"default_on_failure": groups.default_on_failure(home),
             "on_failure_vocab": list(groups.ON_FAILURE),
             "groups": groups.list_groups(home),
+            "in_flight": in_flight,
             "known_routines": known}
 
 
@@ -111,3 +117,24 @@ def delete_group(request: Request, gid: str) -> dict:
     if not groups.delete(_routines_home(request), gid):
         raise HTTPException(404, f"no group {gid!r}")
     return {"ok": True}
+
+
+@router.post("/groups/{gid}/run")
+def run_group(request: Request, gid: str) -> dict:
+    """Arm a sequential fire of group `gid` (D53 Phase B): the daemon's GroupRunManager picks
+    it up on the next tick and fires the members in order. The on_failure policy is resolved
+    NOW (the group's override, else the instance default) and the member list is snapshotted,
+    so later edits to the group never change this run. 404 if the group is unknown; 409 if a
+    chain for it is already in flight (a group fires as ONE chain at a time).
+    """
+    home = _routines_home(request)
+    group = groups.get(home, gid)
+    if group is None:
+        raise HTTPException(404, f"no group {gid!r}")
+    if not group.get("members"):
+        raise HTTPException(400, "group has no members to fire")
+    rec = group_runs.arm(home, group, default_on_failure=groups.default_on_failure(home),
+                         armed_by="ui")
+    if rec is None:
+        raise HTTPException(409, f"group {gid!r} is already running")
+    return {"ok": True, "run": rec}

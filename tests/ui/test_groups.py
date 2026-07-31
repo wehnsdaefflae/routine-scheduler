@@ -6,15 +6,15 @@ import json
 
 from playwright.sync_api import expect
 
-from rsched import groups
+from rsched import group_runs, groups
 
 
 def test_groups_page_crud(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/groups")
     ui_page.wait_for_selector("[data-groups-default]", timeout=10_000)
 
-    # the page states Phase A is setup-only (nothing fires yet)
-    expect(ui_page.locator(".panel")).to_contain_text("not live yet")
+    # Phase B is live: the page invites firing a group with Run now
+    expect(ui_page.locator(".panel")).to_contain_text("Run now")
 
     # the member picker offers the fixture routine 'uir'
     picker = ui_page.locator("[data-group-members]")
@@ -40,6 +40,15 @@ def test_groups_page_crud(ui, ui_page):
     assert data["groups"][0]["name"] == "Morning"
     assert data["groups"][0]["members"] == ["uir"]
     assert data["groups"][0]["on_failure"] is None      # inherited by default
+
+    # Run now → arms a sequential fire (Phase B): an in-flight chain lands on disk, snapshotting
+    # the member list, and the card shows a running-progress line
+    card.get_by_role("button", name="Run now").click()
+    expect(card.locator("[data-group-progress]")).to_contain_text("running 1/1", timeout=10_000)
+    flight = group_runs.read(ui.routines, gid)
+    assert flight is not None and flight["members"] == ["uir"] and flight["cursor"] == 0
+    # clear the armed chain so the delete-and-empty-store assertions below stay clean
+    group_runs.remove(ui.routines, gid)
 
     # change the instance default → persists
     ui_page.locator("[data-groups-default]").select_option("continue")

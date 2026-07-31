@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.137.0] — 2026-07-31
+
+### Added
+- **Routine groups — "Run now" arming surface (D53 Phase B, complete).** Groups can now be
+  fired from the UI: a **Run now** button on each group card (Groups page, `#/groups`) POSTs the
+  new `POST /api/groups/{id}/run` endpoint, which arms a sequential fire via `group_runs.arm`
+  (resolving the `on_failure` policy and snapshotting the member list at arm time). The endpoint
+  404s an unknown group, 400s a memberless group, and 409s a group that already has a chain in
+  flight (one chain at a time). `GET /api/groups` now returns an `in_flight` map so the page
+  shows a running chain's progress (`running N/M · <member>`) and disables Run now while a chain
+  is live. With the 0.136.0 engine this closes D53 Phase B: create/order a group, press Run now,
+  and the daemon runs its members back-to-back honouring the stop/continue policy. Tests:
+  `test_api_run_group_arms_a_chain` + the Groups UI flow now drives Run now end-to-end.
+
 ## [0.136.0] — 2026-07-31
 
 ### Added
