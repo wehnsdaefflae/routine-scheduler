@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.136.0] — 2026-07-31
+
+### Added
+- **Routine groups — sequential-fire engine (D53 Phase B, daemon half).** A group can now be
+  fired as an ordered chain: its members run **back-to-back**, each starting only once the
+  previous member reaches a terminal state. New in-flight store `rsched.group_runs` keeps a
+  chain's cross-tick progress in `<routines_home>/.control/group-runs/<group_id>.json`
+  (≤ one in-flight run per group; the member list + resolved `on_failure` are **snapshotted at
+  arm time**, so editing or deleting the group definition mid-chain never changes a run already
+  in flight). New daemon manager `daemon/group_runs.GroupRunManager`, ticked from the Scheduler
+  beside the trigger/one-shot managers (and paused with them under the global scheduling pause),
+  advances each armed chain **one transition per tick**: fire the member at the cursor, wait for
+  it to terminate, record its result, then apply the `on_failure` policy — `stop` halts the chain
+  on any non-`ok` outcome (a budget-exhausted `partial` counts as a failure), `continue` fires the
+  remaining members regardless. A member that is missing, disabled, or crashed without finishing
+  is recorded as a failure so a broken member never hangs the chain. Run spawning still honours
+  one-run-per-routine, `max_concurrent_runs` and the restart drain, exactly as for cron fires.
+  The **arming surface** (a "run group now" API endpoint + a UI trigger on the Groups page) is
+  the next increment; this commit is the engine that executes an armed chain.
+
 ## [0.135.0] — 2026-07-31
 
 ### Added

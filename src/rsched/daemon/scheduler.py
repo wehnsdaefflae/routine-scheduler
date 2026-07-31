@@ -21,6 +21,7 @@ from ..ids import now_iso
 from . import pause, restart
 from .detached import DetachedManager
 from .events import EventBus
+from .group_runs import GroupRunManager
 from .oauth_refresh import OAuthRefreshManager
 from .runner import Runner
 from .schedule_once import OneShotManager
@@ -59,6 +60,10 @@ class Scheduler:
         # One-shot time triggers: a request spool the web layer / the schedule_run action arm;
         # this manager fires each due request ONCE then consumes it (see daemon/schedule_once.py).
         self.oneshots = OneShotManager(server, runner)
+        # Sequential group fires (D53 Phase B): the web layer arms an ordered group's chain
+        # durably; this manager advances it one member per tick — fire, wait for terminal,
+        # apply the on_failure policy, fire the next (see daemon/group_runs.py).
+        self.group_runs = GroupRunManager(server, runner)
         # OAuth token upkeep: refresh expiring connections before they lapse so a run always
         # reads a live token (a no-op for non-expiring providers). See daemon/oauth_refresh.py.
         self.oauth = OAuthRefreshManager(server)
@@ -154,6 +159,8 @@ class Scheduler:
                     # one-shot time triggers: due requests → a single fire, then consumed
                     # (paused: intake deferred, so nothing is consumed unfired)
                     await self.oneshots.tick(self.catalog)
+                    # sequential group fires: advance each armed chain one member per tick
+                    await self.group_runs.tick(self.catalog)
                 # OAuth token upkeep: refresh expiring connections nearing their deadline
                 await self.oauth.tick()
             except _TickSkip:
