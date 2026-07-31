@@ -3,13 +3,23 @@ data refreshes (F230), so an idle dashboard's now-line tracks real time rather t
 the position it had when the page last loaded.
 """
 
+from datetime import datetime
+
+
 def test_now_cursor_advances_on_its_own(ui, ui_page):
     """With no data refresh, the wg-now cursor re-positions itself on the component's internal
     timer. Driven by Playwright's fake clock so it is deterministic (no 30s real wait): capture
     the cursor's x, fast-forward two hours, and assert it moved to the right."""
-    # Install the fake clock BEFORE any script runs (freezes at the real current time, which the
-    # server's fire computation also uses — so the browser's day columns and now-cursor align).
-    ui_page.clock.install()
+    # Install the fake clock BEFORE any script runs, frozen at 08:00 TODAY (real date, fixed
+    # morning hour). Keeping the real DATE means the browser's day columns and now-cursor still
+    # align with the server's fire computation (fires land in the 7-day window from today's
+    # midnight, day-0 is still TODAY); pinning the HOUR to the morning means the +2h fast-forward
+    # below can never cross local midnight. The old `install()` froze at the real wall-clock time,
+    # so any run started ~22:00–00:00 local wrapped past midnight — the week strip re-anchors day-0
+    # to the new day and the now-cursor jumps to the left edge, reding this "moves right" assertion
+    # (F241: self-audit's own 01:00 nightly gate hit it deterministically).
+    morning = datetime.now().astimezone().replace(hour=8, minute=0, second=0, microsecond=0)
+    ui_page.clock.install(time=morning)
     ui_page.goto(f"{ui.url}/#/")
 
     # the week panel is open by default; its now-cursor renders once a scheduled routine is in view.
