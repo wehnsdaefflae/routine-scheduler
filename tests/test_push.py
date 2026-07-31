@@ -113,3 +113,12 @@ def test_push_api_routes(client):
     sw = c.get("/sw.js")
     assert sw.status_code == 200 and "javascript" in sw.headers["content-type"]
     assert "notificationclick" in sw.text
+    # the web app manifest is served from the root (PWA scope = whole console) with the
+    # correct media type and display:standalone — the prerequisite for Web Push on iOS.
+    mani = c.get("/manifest.webmanifest")
+    assert mani.status_code == 200 and "manifest+json" in mani.headers["content-type"]
+    assert mani.json()["display"] == "standalone"
+    # the served console links the manifest + apple install tags, and its icon resolves
+    home = c.get("/").text
+    assert "/manifest.webmanifest" in home and "apple-mobile-web-app-capable" in home
+    assert c.get("/static/icon.svg").status_code == 200

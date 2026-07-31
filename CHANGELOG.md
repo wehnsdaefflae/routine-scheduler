@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.129.0] — 2026-07-31
+
+### Added
+- **Installable PWA so decision notifications reach a phone (operator request)**: the console
+  now ships a web app manifest (`static/manifest.webmanifest`, `display: standalone`) served
+  at `/manifest.webmanifest`, linked from `index.html` alongside the apple-mobile-web-app meta
+  tags and an apple-touch-icon (`static/icon.svg` + a maskable `static/icon-maskable.svg`).
+  The full Web Push decision-notification pipeline already existed (VAPID keys, per-browser
+  subscription store, `push.notify_new_decisions` driven off the daemon event bus, Settings →
+  Notifications opt-in) — but **iOS Safari delivers Web Push only to a site installed to the
+  Home Screen as a PWA**, which needs a linked manifest; without it, "notifications on my
+  phone" was impossible on iPhone/iPad and installability was degraded on Android too. The
+  Notifications settings panel now also shows an "Add to Home Screen" hint on iOS when the
+  console is not yet installed. No change to the push protocol or the decision source of truth.
+
 ## [0.128.0] — 2026-07-31
 
 ### Changed

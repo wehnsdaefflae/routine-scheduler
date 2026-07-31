@@ -46,6 +46,15 @@ export function renderNotifications() {
     const st = await notify.pushStatus();
     if (!st.supported) {
       pushRow.append(el("div", { class: "muted small" }, "this browser does not support Web Push"));
+      // On iPhone/iPad, Web Push only works once the console is installed to the Home Screen
+      // (Safari exposes PushManager only inside an installed PWA). Guide the operator there.
+      const installed = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+      if (!installed && /iP(hone|ad|od)/.test(navigator.userAgent)) {
+        pushRow.append(el("div", { class: "muted small mt" },
+          "On iPhone/iPad: open this console in Safari, tap Share → “Add to Home Screen”, ",
+          "then open it from the home-screen icon and enable Web Push here — iOS only delivers ",
+          "push to an installed console."));
+      }
       return;
     }
     const info = await api("/api/push").catch(() => null);

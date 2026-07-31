@@ -304,6 +304,14 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         # served from the root (not /static/) so the worker's scope covers the whole console
         return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript")
 
+    @app.get("/manifest.webmanifest", include_in_schema=False)
+    def web_manifest():
+        # served from the root so an installed PWA's scope covers the whole console — the
+        # manifest (display:standalone) is what lets the console be added to a phone's home
+        # screen, which iOS Safari requires before it will deliver Web Push notifications.
+        return FileResponse(STATIC_DIR / "manifest.webmanifest",
+                            media_type="application/manifest+json")
+
     @app.middleware("http")
     async def fresh_ui(request, call_next):
         # The daemon self-updates and restarts; without this, browsers heuristically cache the
