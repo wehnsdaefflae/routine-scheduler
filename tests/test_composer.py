@@ -234,16 +234,29 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     from rsched.grants import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="caps")
-    for name, summary in (("frob", "flips widgets"), ("discord", "phone channel")):
+    for name, summary, tags in (("frob", "flips widgets", "code, dev"),
+                                ("discord", "phone channel", "communication, chat")):
         d = ctx.server.libraries_home / "utils" / name
         d.mkdir(parents=True)
-        (d / "main.py").write_text(f'"""{name} — {summary}.\n\nusage: gu {name} X\n"""\n',
-                                   encoding="utf-8")
+        (d / "main.py").write_text(
+            f'"""{name} — {summary}.\n\nusage: gu {name} X\ntags: {tags}\n"""\n',
+            encoding="utf-8")
     ctx.grants = GrantPolicy(active=("run-history",),
                              gated_utils={"discord": ("communication",)})
     text = capabilities_digest(ctx)
     assert "frob — flips widgets." in text
     assert "discord — phone channel.  [reserved — not granted to this routine]" in text
+    # D52 Phase 1: the catalog is grouped by a controlled category vocabulary, not a flat list.
+    assert "grouped by domain" in text
+    assert "### Code & development (1)" in text          # frob (tags: code, dev)
+    assert "### Email & messaging (1)" in text            # discord (tags: communication, chat)
+    from rsched.engine.capabilities import _util_category
+    assert _util_category(["code", "dev"]) == "Code & development"
+    assert _util_category(["communication"]) == "Email & messaging"
+    assert _util_category([]) == "Other"                  # no tags → Other, still listed
+    # order-based collision resolution: a util tagged both health AND logs files under the
+    # meta/logs group (listed first), NOT under Health & fitness.
+    assert _util_category(["health", "logs"]) == "Scheduler, runs, logs & audit"
     kinds_line = next(line for line in text.splitlines() if line.startswith("Action kinds"))
     assert "util" in kinds_line and "write_util" not in kinds_line   # authoring not granted
     assert "Capabilities enabled (user-set, engine-enforced):" in text

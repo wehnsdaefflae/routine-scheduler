@@ -19,7 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
-## [0.126.0] — 2026-07-31
+## [0.127.0] — 2026-07-31
+
+### Changed
+- **Grouped util catalog in the CAPABILITIES prompt (D52 Phase 1)**: the always-on util
+  list is no longer a flat, alphabetical 90+-line dump — it is grouped under ~14 labelled
+  domain categories (Jobs & freelance, Email & messaging, Documents & PDF, Code & development,
+  …), each with a `### <Category> (N)` heading and per-group count. Every util's one-line
+  summary stays visible under its group; nothing is hidden. Each util is filed under the
+  FIRST category whose keyword set intersects its `tags:` (a controlled vocabulary defined
+  in `engine/capabilities.py`, order-based collision resolution — e.g. `google-api`,
+  `health-events` and `service-logs` do not mis-file under "Health & fitness"). This targets
+  the measured real cost of catalog growth — *discovery difficulty*, not the small (~2k token)
+  always-on size — improving tool-selection accuracy without a new dependency. First phase of
+  the operator-approved util-proliferation plan; later phases (consolidation, `util name=search`
+  over FTS5, a soft dedup hint at util creation) follow.
 
 ### Added
 - **Optional-secret marker `secrets: NAME?` (D51)**: a util may mark a declared secret

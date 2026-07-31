@@ -34,6 +34,94 @@ def _permission_notes(ctx: RunContext, g) -> str:
     return "\n\n".join(chunks)
 
 
+# The always-on util catalog is grouped by a controlled category vocabulary (D52 Phase 1):
+# a flat, alphabetical 90+-line list is scanned poorly, so each util is filed under the FIRST
+# category whose keyword set intersects the util's freeform `tags:`. Order matters — it resolves
+# collisions: Connectors and the meta/logs/audit group sit above Health so e.g. `google-api`
+# (tags include health/fitness) and `health-events`/`service-logs` (daemon "health"/logs) do NOT
+# land under "Health & fitness". Nothing is hidden: every util's one-line summary stays visible
+# under its group. This is a first-cut vocabulary, tunable as tags are normalized.
+_UTIL_CATEGORIES: tuple[tuple[str, frozenset[str]], ...] = (
+    ("Jobs & freelance", frozenset({"jobs", "freelance", "procurement", "clera"})),
+    ("Newsletter & digest", frozenset({"newsletter", "digest", "voting", "feedback"})),
+    ("Connectors & accounts",
+     frozenset({"oauth", "oauth2", "connector", "notion", "calendar", "proemion", "mcp"})),
+    ("Scheduler, runs, logs & audit",
+     frozenset({"meta", "audit", "runs", "transcript", "triage", "stats", "self-management",
+                "tokens", "measurement", "lint", "rsched", "daemon", "discovery", "scheduling",
+                "logs", "monitoring", "ops", "diagnostics", "sandbox"})),
+    ("Health, fitness & body",
+     frozenset({"health", "fitness", "weight", "weight-loss", "body-composition", "food",
+                "gps", "coaching", "sleep", "google-fit"})),
+    ("Vision, media & photos",
+     frozenset({"vision", "multimodal", "photos", "audio", "transcription", "immich",
+                "calories", "image"})),
+    ("Email & messaging",
+     frozenset({"email", "inbox", "communication", "chat", "notification", "imap", "smtp",
+                "usenet", "nntp"})),
+    ("Documents & PDF", frozenset({"pdf", "documents", "latex", "spreadsheet"})),
+    ("Files & transfer",
+     frozenset({"files", "file-transfer", "editing", "listing", "ftp", "download", "backup"})),
+    ("Code & development",
+     frozenset({"code", "git", "dev", "ast", "refactor", "syntax", "grep", "repo", "map"})),
+    ("Web, browser & scraping",
+     frozenset({"web", "browser", "scraping", "captcha", "http", "links", "stealth", "tor",
+                "darknet", "publish", "storage"})),
+    ("AI models & text",
+     frozenset({"llm", "ai", "models", "ai-models", "uncensored", "inference", "nanogpt",
+                "featherless", "detection", "text"})),
+    ("Data & formats", frozenset({"json", "schema", "validation", "data", "html", "static-site"})),
+    ("System, remote & seedbox",
+     frozenset({"shell", "system", "escape-hatch", "ssh", "remote", "machines", "gpu",
+                "seedbox", "rtorrent", "rutorrent", "xmlrpc"})),
+)
+_UTIL_CATEGORY_OTHER = "Other"
+
+
+def _util_category(tags) -> str:
+    """The catalog category a util belongs to — the FIRST vocabulary entry whose keyword set
+    intersects the util's tags, else "Other". Order in `_UTIL_CATEGORIES` is the tie-breaker.
+    """
+    tagset = {str(t).strip().lower() for t in (tags or [])}
+    for label, keys in _UTIL_CATEGORIES:
+        if tagset & keys:
+            return label
+    return _UTIL_CATEGORY_OTHER
+
+
+def _util_catalog_block(utils: list[dict], kinds: list[str], g) -> str:
+    """The always-on util catalog, grouped by the controlled category vocabulary (D52 Phase 1):
+    a run scans ~14 labelled groups instead of a flat 90+-line alphabetical list. Every util's
+    one-line summary stays visible under its group; groups are emitted in `_UTIL_CATEGORIES`
+    order, "Other" last. Reserved-but-ungranted utils keep their annotation.
+    """
+    if not utils:
+        return "Global utils: (none in the library yet)."
+    buckets: dict[str, list[str]] = {}
+    for u in utils:
+        head = u["summary"] or u["name"]
+        if not head.startswith(u["name"]):
+            head = f"{u['name']} — {head}"
+        note = ""
+        if g is not None and u["name"] in g.gated_utils and u["name"] not in g.utils:
+            # a deny-forever tombstone reads differently from merely-not-granted:
+            # the first is a settled decision (never re-request), the second is
+            # requestable (grants.request_route names the way).
+            note = ("  [reserved — declined by the user]"
+                    if f"util:{u['name']}" in g.denied
+                    else "  [reserved — not granted to this routine]")
+        buckets.setdefault(_util_category(u.get("tags")), []).append(f"- {head}{note}")
+    order = [label for label, _ in _UTIL_CATEGORIES] + [_UTIL_CATEGORY_OTHER]
+    group_blocks = [f"### {label} ({len(buckets[label])})\n" + "\n".join(sorted(buckets[label]))
+                    for label in order if buckets.get(label)]
+    header = (f'Global utils ({len(utils)}, grouped by domain; run '
+              '`util name=list args=["<name>"]` for one\'s exact usage before calling it):'
+              if "util" in kinds else
+              f"Global utils ({len(utils)}, grouped by domain — this workflow cannot CALL "
+              "utils; the list tells you what a routine can be built to do):")
+    return header + "\n" + "\n\n".join(group_blocks)
+
+
 def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) -> str:
     """What this run can ACTUALLY do, stated up front: model + context window, the action
     kinds usable this run (workflow tools ∩ grants), the held permissions with their
@@ -138,27 +226,5 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             parts.append("Sub-workflow patterns for spawn/subtask/detach — pick the one "
                          "matching the CHILD's purpose, never reflexively the default:\n"
                          + "\n".join(f"- {w['slug']} — {w['description']}" for w in patterns))
-    utils = utils_lib.list_utils(ctx.server.libraries_home)
-    if utils:
-        lines = []
-        for u in utils:
-            head = u["summary"] or u["name"]
-            if not head.startswith(u["name"]):
-                head = f"{u['name']} — {head}"
-            note = ""
-            if g is not None and u["name"] in g.gated_utils and u["name"] not in g.utils:
-                # a deny-forever tombstone reads differently from merely-not-granted:
-                # the first is a settled decision (never re-request), the second is
-                # requestable (grants.request_route names the way).
-                note = ("  [reserved — declined by the user]"
-                        if f"util:{u['name']}" in g.denied
-                        else "  [reserved — not granted to this routine]")
-            lines.append(f"- {head}{note}")
-        header = (f'Global utils ({len(utils)}; run `util name=list args=["<name>"]` for '
-                  "one's exact usage before calling it):" if "util" in kinds else
-                  f"Global utils ({len(utils)} — this workflow cannot CALL utils; the list "
-                  "tells you what a routine can be built to do):")
-        parts.append(header + "\n" + "\n".join(lines))
-    else:
-        parts.append("Global utils: (none in the library yet).")
+    parts.append(_util_catalog_block(utils_lib.list_utils(ctx.server.libraries_home), kinds, g))
     return "\n\n".join(parts)
