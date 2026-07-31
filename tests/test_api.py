@@ -292,6 +292,23 @@ def test_intervention_endpoints(client):
     assert c.post(f"/api/runs/{rid}/pause").status_code == 409
 
 
+def test_queue_message_for_next_run(client):
+    """F233: POST /routines/{slug}/message queues a free-text note in the routine's inbox
+    for its NEXT run (scheduled or manual) — the routine-details home for the affordance the
+    run page's end-of-run input no longer carries. Empty text is rejected."""
+    c, tmp = client
+    r = c.post("/api/routines/apir/message", json={"text": "check the new dashboard sort"})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    msgs = list((tmp / "routines" / "apir" / "inbox").glob("msg-*.json"))
+    assert len(msgs) == 1
+    rec = read_json(msgs[0])
+    assert rec["text"] == "check the new dashboard sort" and rec["source"] == "web-routine-queue"
+    # empty / whitespace-only text is rejected, nothing queued
+    assert c.post("/api/routines/apir/message", json={"text": "   "}).status_code == 400
+    assert len(list((tmp / "routines" / "apir" / "inbox").glob("msg-*.json"))) == 1
+    assert c.post("/api/routines/nope/message", json={"text": "x"}).status_code == 404
+
+
 def test_inject_carries_attachments(client):
     """A run-page message can carry file attachments (F202): uploads land under the
     routine dir's attachments/ (the run's working dir, so the recorded rels resolve for

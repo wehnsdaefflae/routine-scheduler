@@ -252,7 +252,8 @@ def test_long_option_label_does_not_overflow(ui, ui_page):
 
 def test_run_view_message_modes(ui, ui_page):
     """ONE input with an explicit mode: a live run fixes it to inject; a terminal run
-    offers continue-this-run vs queue-for-next-run."""
+    ALWAYS continues THIS run (F233 removed the queue-for-next-run mode — that moved to the
+    routine details page)."""
     ui.seed_run("uir", "20260715-110000", "running")
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-110000")
     mode = ui_page.locator('select[title="where this message goes"]')
@@ -278,13 +279,15 @@ def test_run_view_message_modes(ui, ui_page):
     ui.seed_run("uir", "20260715-120000", "finished", summary="done")
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-120000")
     mode = ui_page.locator('select[title="where this message goes"]')
-    expect(mode).to_be_enabled()
-    expect(mode).to_have_value("converse")          # continuing this run is the default
-    mode.select_option("queue")
-    ui_page.locator('input[placeholder^="message…"]').fill("for next time")
+    # F233: a terminal run's input ALWAYS continues this run — the only mode is converse,
+    # the selector is disabled (single option), and there is NO "queue for next run" option.
+    expect(mode).to_have_value("converse")
+    expect(mode).to_be_disabled()
+    assert mode.locator("option[value='queue']").count() == 0
+    ui_page.locator('input[placeholder^="message…"]').fill("continue please")
     ui_page.get_by_role("button", name="send", exact=True).click()
-    expect(_toast(ui_page)).to_contain_text("queued for the next run")
-    assert any("for next time" in m.read_text(encoding="utf-8")
+    expect(_toast(ui_page)).to_contain_text("continue the conversation")
+    assert any("continue please" in m.read_text(encoding="utf-8")
                for m in inbox.glob("msg-*.json"))
 
 
@@ -396,11 +399,11 @@ def test_run_transcript_story_and_refer(ui, ui_page):
     ref = ui_page.locator(".composer-ref")
     expect(ref).to_be_visible()
     expect(ref).to_contain_text("turn 1 (util websearch): Catalog fits — scanning portals.")
-    # …and the queued message leads with the quoted reference line
-    ui_page.locator('select[title="where this message goes"]').select_option("queue")
+    # …and the continued-run message leads with the quoted reference line (F233: a terminal
+    # run's input always continues THIS run — there is no queue mode to select).
     ui_page.locator('input[placeholder^="message…"]').fill("dig into that result")
     ui_page.get_by_role("button", name="send", exact=True).click()
-    expect(_toast(ui_page)).to_contain_text("queued for the next run")
+    expect(_toast(ui_page)).to_contain_text("continue the conversation")
     expect(ref).to_be_hidden()                      # sent — the chip clears
     sent = [json.loads(m.read_text(encoding="utf-8"))
             for m in (ui.routine_dir("uir") / "inbox").glob("msg-*.json")]

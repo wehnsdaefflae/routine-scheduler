@@ -19,7 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
-## [0.127.0] — 2026-07-31
+## [0.128.0] — 2026-07-31
+
+### Changed
+- **End-of-run input always continues THIS run; the next-run message queue moved to the
+  routine page (F233)**: the run page's end-of-run composer no longer offers a
+  "→ queue for next run" mode — a terminal run's input is solely for continuing that run in
+  place (the mode selector is now single-option and disabled). The "message the next run"
+  affordance now lives on the **routine details page** as a "Message the next run" composer,
+  bound to the routine rather than a specific run: it queues a free-text note in the routine's
+  inbox (`POST /api/routines/{slug}/message`) that the routine's NEXT run — scheduled or
+  fired with ▶ run now — drains at boot. Hidden for the protected clarification template.
+
+### Added
+- **`POST /api/routines/{slug}/message`**: queue a free-text message for a routine's next
+  run (files into `<routine>/inbox/` via the engine's `file_message`). Guards the protected
+  template and rejects empty text.
 
 ### Changed
 - **Grouped util catalog in the CAPABILITIES prompt (D52 Phase 1)**: the always-on util

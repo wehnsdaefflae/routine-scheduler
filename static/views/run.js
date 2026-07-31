@@ -103,12 +103,12 @@ export async function render(view, runId, query = {}) {
 
   // ONE input, ONE send — where the message goes is an EXPLICIT, visible mode, never
   // guessed from button placement: a live run injects (picked up at the next turn
-  // boundary); a terminal run either continues THIS run in place (rehydrated, as often
-  // as you like) or queues the message for the routine's next run.
+  // boundary); a terminal run continues THIS run in place (rehydrated, as often as you
+  // like). Queuing a message for the routine's NEXT run moved to the routine details page
+  // (F233) — the end-of-run input is only ever for continuing the run you are looking at.
   const MODES = {
     inject: "→ live run",
     converse: "→ continue this run",
-    queue: "→ queue for next run",
   };
   const modeSel = el("select", { class: "small", "data-nopersist": true,
     title: "where this message goes" });
@@ -148,7 +148,9 @@ export async function render(view, runId, query = {}) {
     // recipe editing targets this routine's OWN files (routine runs only; never the
     // protected clarification template) and unlocks on resuming a FINISHED run.
     const recipeOk = terminal && slug !== "clarification";
-    const keys = terminal ? ["converse", "queue"] : ["inject"];
+    // F233: a terminal run's input ALWAYS continues this run — the next-run message queue
+    // moved to the routine details page (POST /routines/{slug}/message), so no "queue" mode.
+    const keys = terminal ? ["converse"] : ["inject"];
     if (![...modeSel.options].some((o) => keys.includes(o.value)) || modeSel.options.length !== keys.length) {
       modeSel.replaceChildren(...keys.map((k) => el("option", { value: k }, MODES[k])));
     }

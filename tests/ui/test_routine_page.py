@@ -1,7 +1,29 @@
 """Routine detail page: the sections side-TOC (like Settings) and the filesystem-root
 directory picker (browse the server FS, pick a real path — no more free-text textarea)."""
 
+import json
+
 from playwright.sync_api import expect
+
+
+def test_message_the_next_run(ui, ui_page):
+    """F233: the routine page carries a "Message the next run" composer — the routine-bound
+    home for a note the next run reads at boot (the run page's end-of-run input now only
+    continues THAT run). Sending it lands a msg-* file in the routine's inbox."""
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    ui_page.wait_for_selector("h2:has-text('Message the next run')", timeout=10_000)
+    box = ui_page.locator('textarea[data-persist="nextrun-msg-uir"]')
+    expect(box).to_be_visible()
+    box.fill("re-check the freelance portals after the login fix")
+    ui_page.get_by_role("button", name="send to the next run").click()
+    expect(_toast(ui_page)).to_contain_text("next run reads it")
+    inbox = ui.routine_dir("uir") / "inbox"
+    sent = [json.loads(m.read_text(encoding="utf-8")) for m in inbox.glob("msg-*.json")]
+    assert any("re-check the freelance portals" in d["text"] for d in sent)
+
+
+def _toast(page):
+    return page.locator("#toast:not([hidden])")
 
 
 def test_sections_side_toc(ui, ui_page):
