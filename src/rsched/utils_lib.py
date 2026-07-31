@@ -576,15 +576,30 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
             return text
 
         if timed_out:
-            return -1, "", (f"util {name!r} timed out after {timeout}s "
-                            "(process group killed)")
+            # F226: keep the stdout/stderr captured BEFORE the kill — a util that hung
+            # AFTER printing diagnostics (the common case) would otherwise lose exactly
+            # the material that explains why it hung. The timeout note rides on stderr.
+            note = f"util {name!r} timed out after {timeout}s (process group killed)"
+            partial_err = _read_capped(err_f)
+            return -1, _read_capped(out_f), f"{partial_err}\n[{note}]" if partial_err else note
         return proc.returncode, _read_capped(out_f), _read_capped(err_f)
 
 
 def selftest(home: Path, name: str, *, timeout: int = 120,
              policy: sandbox.SandboxPolicy) -> tuple[bool, str]:
     code, out, err = run_util(home, name, ["--selftest"], timeout=timeout, policy=policy)
-    return code == 0, (err or out).strip()
+    if code == 0:
+        return True, (err or out).strip()
+    # F226: a FAILED selftest must surface ALL the diagnostics — the exit code plus BOTH
+    # streams. The old `(err or out)` dropped the exit code and hid stdout whenever stderr
+    # was non-empty, so a script printing its failure detail to stdout and a bare traceback
+    # to stderr lost the detail. Label each stream; omit an empty one.
+    parts = [f"exit {code}"]
+    if out.strip():
+        parts.append(f"stdout:\n{out.strip()}")
+    if err.strip():
+        parts.append(f"stderr:\n{err.strip()}")
+    return False, "\n".join(parts)
 
 
 def was_deleted(home: Path, name: str) -> bool:

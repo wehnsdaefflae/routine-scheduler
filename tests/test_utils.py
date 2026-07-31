@@ -99,6 +99,32 @@ def test_write_run_selftest_and_catalog(tmp_path):
     assert "adder — add two integers." in catalog
 
 
+def test_failed_selftest_surfaces_exit_and_both_streams(tmp_path):
+    """F226: a FAILED write_util selftest must carry ALL the diagnostics — the exit code
+    plus BOTH stdout and stderr. The old `(err or out)` dropped the exit code and hid
+    stdout whenever stderr was non-empty, losing detail a script printed to stdout."""
+    home = tmp_path / "utils-home"
+    utils_lib.ensure_library(home)
+    body = '''# /// script
+# dependencies = []
+# ///
+"""failer — fails its selftest on both streams. usage: gu failer
+tags: test"""
+import sys
+if "--selftest" in sys.argv:
+    print("stdout-detail: the assertion that failed")
+    print("stderr-traceback: AssertionError", file=sys.stderr)
+    sys.exit(4)
+print("ok")
+'''
+    utils_lib.write_util_file(home, "failer", body)
+    ok, out = utils_lib.selftest(home, "failer", policy=OFF)
+    assert ok is False
+    assert "exit 4" in out                       # the exit code is surfaced…
+    assert "stdout-detail: the assertion that failed" in out   # …stdout is NOT hidden…
+    assert "stderr-traceback: AssertionError" in out           # …and stderr is present
+
+
 def test_util_composition(tmp_path):
     home = tmp_path / "utils-home"
     utils_lib.ensure_library(home)
@@ -408,6 +434,7 @@ def test_run_util_timeout_kills_grandchildren(tmp_path):
 import pathlib, sys, time
 if "--selftest" in sys.argv:
     print("selftest: ok"); sys.exit(0)
+print("diagnostic-before-hang", flush=True)   # F226: must survive the timeout kill
 pathlib.Path({str(pidfile)!r}).write_text(str(__import__("os").getpid()))
 time.sleep(120)
 '''
@@ -416,6 +443,9 @@ time.sleep(120)
     code, _out, err = utils_lib.run_util(home, "sleeper", [], timeout=3, policy=OFF)
     elapsed = _time.monotonic() - start
     assert code == -1 and "timed out" in err
+    # F226: stdout captured BEFORE the process-group kill is kept, not discarded — it is
+    # the material that explains why a util hung.
+    assert "diagnostic-before-hang" in _out
     assert elapsed < 30, f"run_util blocked {elapsed:.0f}s past its timeout"
     # the grandchild (the uv-run python script) must be dead, not just the direct child.
     # "Dead" includes an unreaped ZOMBIE: in a containerized deployment whose pid1 is the

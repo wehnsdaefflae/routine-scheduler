@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.133.1] — 2026-07-31
+
+### Fixed
+- **`write_util` selftest failure diagnostics were incomplete (F226, R47/R60).** Two gaps
+  made a failing util selftest harder to fix than it should be: (1) on a **selftest timeout**,
+  `utils_lib.run_util` discarded the stdout/stderr captured *before* the process-group kill
+  and returned only a bare "timed out" note — losing exactly the diagnostic output that
+  explains why the script hung; it now returns the partial stdout plus stderr with the
+  timeout note appended. (2) `utils_lib.selftest` collapsed a failure to `(err or out)`,
+  which **dropped the exit code** and **hid stdout whenever stderr was non-empty** — so a
+  script that printed its failure detail to stdout and a bare traceback to stderr lost the
+  detail. A failed selftest now surfaces the **exit code plus both labelled streams**. No
+  change to the passing path or the rollback behaviour.
+
 ## [0.133.0] — 2026-07-31
 
 ### Added
