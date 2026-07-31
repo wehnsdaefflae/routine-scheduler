@@ -190,6 +190,33 @@ def test_create_list_detail_message_delete(client):
     assert r.status_code == 200 and not conv_dir.exists()
 
 
+def test_conversation_connections_binding(client):
+    """D55 (closes R70): a conversation can bind an OAuth connection just like a routine —
+    PATCH /conversations/{slug} accepts `connections`, the binding lands in routine.yaml (so the
+    engine injects the token), the detail response echoes it, and an unknown provider is
+    rejected. Before this a Google connection could be bound only on routine pages, so a
+    conversation could not call connector utils (google-api)."""
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "read my google contacts"}).json()["slug"]
+    # detail exposes the (empty) connections map so the card can render current bindings
+    assert c.get(f"/api/conversations/{slug}").json()["connections"] == {}
+    # bind a Google connection (existence of the account is NOT required — bind ahead of connecting)
+    r = c.patch(f"/api/conversations/{slug}", json={"connections": {"google": "me@example.com"}})
+    assert r.status_code == 200 and "connections" in r.json()["updated"]
+    # it landed in routine.yaml (where the engine's _connection_env reads it)
+    import yaml
+    raw = yaml.safe_load((server.conversations_home / slug / "routine.yaml").read_text())
+    assert raw["connections"] == {"google": "me@example.com"}
+    # and the detail response echoes it back for the card
+    assert c.get(f"/api/conversations/{slug}").json()["connections"] == {"google": "me@example.com"}
+    # unknown provider is rejected, same as a routine
+    assert c.patch(f"/api/conversations/{slug}",
+                   json={"connections": {"nope": "x"}}).status_code == 400
+    # an empty account label is rejected
+    assert c.patch(f"/api/conversations/{slug}",
+                   json={"connections": {"google": ""}}).status_code == 400
+
+
 def test_artifacts_list_and_serving(client):
     c, server = client
     slug = c.post("/api/conversations", data={"text": "make a report"}).json()["slug"]

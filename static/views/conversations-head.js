@@ -3,6 +3,7 @@
 // from conversations.js. onListChanged refreshes the sidebar after title/tag edits.
 
 import { api } from "/static/api.js";
+import { connectionsCard } from "/static/components/connections.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { permissionsPanel } from "/static/components/permissions.js";
@@ -118,6 +119,15 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
       } catch (err) { toast(err.message, 4000, { error: true }); }
     },
   }).node);
+  // Connections: bind an OAuth account per provider so connector utils (google-api, notion…)
+  // get a live access token — the same card routines use. D55 closes R70: a conversation could
+  // not bind a Google connection because this surface existed only on routine pages.
+  capBody.append(el("div", { class: "faint small mt" }, "connections — bind an OAuth account so "
+    + "connector utils get a live token (google-api, notion…)"),
+    connectionsCard(detail.connections || {}, {
+      onSave: (connections) => api(`/api/conversations/${slug}`,
+        { method: "PATCH", body: { connections } }),
+    }));
   // Practice modules: a conversation shifts topic mid-thread, so an addition is pushed to
   // the reply in flight as well as saved for every reply after it (the server does both).
   const traitHost = el("div", { class: "mt" });

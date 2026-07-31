@@ -244,6 +244,11 @@ def detail(request: Request, slug: str) -> dict:
         "models": {k: (info.cfg.models.get(k) or None) for k in MODEL_KINDS},
         "system_model": server.system_model or None,
         "catalog": list(server.models.keys()),
+        # OAuth connection bindings {provider: account} — a conversation binds connections
+        # exactly like a routine (it is routine-shaped; the engine injects the token from
+        # routine.yaml `connections:` either way). The picker's options come from
+        # GET /api/settings/oauth. D55: closes R70 (a conversation could not bind Google).
+        "connections": dict(info.cfg.connections),
         "permissions": permissions,
         "capabilities": capabilities,
         "traits": traits,
@@ -261,6 +266,7 @@ class ConversationPatch(BaseModel):
     workdir: str | None = None
     budgets: dict | None = None
     models: dict | None = None
+    connections: dict | None = None   # {provider: account} — bound OAuth connections (D55)
     deliberation: str | None = None   # DELIBERATION_LEVELS — applies at the next reply
 
 
@@ -292,6 +298,18 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
             if not isinstance(name, str) or name not in server.models:
                 raise HTTPException(400, f"models.{kind}: must be a catalog model name")
         raw["models"] = updates["models"]
+    if "connections" in updates:
+        # Same validation as a routine (api_routine_edit): known provider, non-empty account
+        # label; REPLACE wholesale (blanking a provider clears it). Existence of the connected
+        # account is NOT required — a conversation may bind ahead of connecting; the engine
+        # injects nothing until the account is connected. D55: closes R70.
+        from ..oauth.providers import PROVIDERS
+        for prov, account in (updates["connections"] or {}).items():
+            if prov not in PROVIDERS:
+                raise HTTPException(400, f"unknown connection provider {prov!r}")
+            if not isinstance(account, str) or not account:
+                raise HTTPException(400, f"connections.{prov}: must be an account label")
+        raw["connections"] = updates["connections"]
     if "deliberation" in updates:   # tuning, not config — lands in tuning.yaml
         if updates["deliberation"] not in DELIBERATION_LEVELS:
             raise HTTPException(400, f"deliberation: unknown level "

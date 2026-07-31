@@ -6,6 +6,7 @@
 
 import { BUDGET_FIELDS, UNLIMITED_BUDGETS } from "/static/components/budgetfields.js";
 import { api } from "/static/api.js";
+import { connectionsCard } from "/static/components/connections.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { el, skeleton, toast, when } from "/static/util.js";
 import { permissionsPanel } from "/static/components/permissions.js";
@@ -277,36 +278,12 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
         } }, "save models"))));
 
   // -- connections: bind an OAuth account per provider (Settings → Connections) --------
-  const connSelects = {};
-  const connBox = el("div", { class: "panel" }, skeleton(["50%"]));
-  view.append(el("h2", {}, "Connections"), connBox);
-  api("/api/settings/oauth").then((oauth) => {
-    connBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:8px" },
-      "Bind an OAuth account per provider — its access token is injected into utils that declare it ",
-      "(e.g. NOTION_ACCESS_TOKEN). Connect accounts in ",
-      el("a", { href: "#/settings?section=connections" }, "Settings → Connections"), "."));
-    const byProvider = {};
-    for (const c of (oauth.connections || [])) (byProvider[c.provider] ||= []).push(c.account);
-    const bound = d.connections || {};
-    for (const p of (oauth.providers || [])) {
-      const accounts = byProvider[p.id] || [];
-      const sel = el("select", {}, [el("option", { value: "" }, "— none —"),
-        ...accounts.map((a) => el("option", { value: a }, a))]);
-      sel.value = bound[p.id] || "";
-      connSelects[p.id] = sel;
-      connBox.append(el("div", { class: "row", style: "margin:5px 0", "data-conn-row": p.id },
-        el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, p.name),
-        accounts.length ? sel
-          : el("span", { class: "muted small" }, "no connected accounts — connect one in Settings")));
-    }
-    connBox.append(el("div", { class: "row mt" }, el("button", { class: "btn primary",
-      onclick: async () => {
-        const connections = {};
-        for (const [pid, sel] of Object.entries(connSelects)) if (sel.value) connections[pid] = sel.value;
-        try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { connections } }); toast("connections saved"); }
-        catch (err) { toast(err.message, 4000, { error: true }); }
-      } }, "save connections")));
-  }).catch((err) => connBox.replaceChildren(el("div", { class: "muted" }, err.message)));
+  // Shared card (components/connections.js) — the conversation header uses the same one.
+  view.append(el("h2", {}, "Connections"),
+    connectionsCard(d.connections || {}, {
+      onSave: (connections) => api(`/api/routines/${slug}`,
+        { method: "PATCH", body: { connections } }),
+    }));
 
   // -- grant decisions: secret exposure (D39) + declined-access tombstones ---------------------
   // Both live in routine.yaml `grants:` (entity ids, entities.py): `secret:<NAME>` rows are

@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.132.0] — 2026-07-31
+
+### Added
+- **Conversations can bind OAuth connections (D55, closes R70)**: the Connections card — bind a
+  Google/Notion/… account per provider so its access token is injected into connector utils
+  (`google-api`, `notion`) — is now on the conversation header, not only routine pages. A user
+  hit this exact wall (R70): they asked a conversation to read their Google Contacts and
+  `google-api` failed for want of `GOOGLE_ACCESS_TOKEN`, but there was no Connections card to
+  bind one. A conversation is routine-shaped, so the engine already injects the token from
+  `routine.yaml connections:` — the only gap was the config surface. `PATCH /api/conversations/{slug}`
+  now accepts `connections` (same validation as routines), the detail response returns it, and
+  the card is a new **shared component** `static/components/connections.js` extracted from the
+  routine config page (one implementation, both surfaces).
+
 ## [0.131.0] — 2026-07-31
 
 ### Added
