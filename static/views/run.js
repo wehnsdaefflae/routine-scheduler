@@ -12,6 +12,7 @@ import { setQuery, remount } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
+import { createPlanStrip } from "/static/components/planstrip.js";
 import { createSetupPanel } from "/static/components/setuppanel.js";
 import { createStateGraph } from "/static/components/stategraph.js";
 import { createTaskTree } from "/static/components/tasktree.js";
@@ -45,6 +46,13 @@ export async function render(view, runId, query = {}) {
       el("h1", {}, titleLink, ` · run ${fmtTs(ts)}`)),
     controls));
   view.append(el("div", { class: "runbar" }, stateChip, stream.node, usageSpan, durSpan, modelSpan));
+
+  // The WORKING PLAN strip (D54): the run's own living decomposition (state/plan.md), shown
+  // at the top so "where is this run in its own plan" is answerable at a glance. Home-agnostic
+  // (keyed by run id); hides itself when the run keeps no plan. Refreshed on phase transitions.
+  const planBox = el("div", {});
+  view.append(planBox);
+  const planStrip = createPlanStrip(planBox, { url: `/api/runs/${runId}/plan` });
 
   // Elapsed wall clock: start ts → last status update while live (ticking), frozen at the
   // final update once terminal.
@@ -493,6 +501,7 @@ export async function render(view, runId, query = {}) {
       if (s.updated) lastUpdated = s.updated;
       setState(s.state);
       stateGraph?.setPhase(s.phase);
+      planStrip.refresh();   // the plan is a living doc — track the run's edits as it advances
       if (s.usage) usageSpan.textContent = fmtTokens(s.usage);
       if (s.model) setModel(s.model);
       showQuestion(s.question);
@@ -512,6 +521,7 @@ export async function render(view, runId, query = {}) {
 
   return () => { if (tail) tail.stop(); stopSubPoll(); clearInterval(durTimer);
                  artifacts?.destroy();
+                 planStrip.destroy();
                  setup?.destroy();
                  stopFollow();
                  window.removeEventListener("rsched-bus", onBus); };

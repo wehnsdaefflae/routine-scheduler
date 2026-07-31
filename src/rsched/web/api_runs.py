@@ -155,6 +155,21 @@ def run_tree(request: Request, run_id: str) -> dict:
     return {"tree": build_tree(run_dir)}
 
 
+@router.get("/runs/{run_id}/plan")
+def run_plan(request: Request, run_id: str) -> dict:
+    """The run's WORKING PLAN (state/plan.md) — the living decomposition a run maintains,
+    surfaced as an always-visible strip on the run view. This is the SAME store the engine
+    inlines into the prompt (engine/composer.py); the strip reuses it rather than adding a
+    contract. Read fresh each call so the strip tracks the run's edits. Empty when the run
+    keeps no plan — a scheduled routine whose spine is its compiled recipe, or a plan the
+    run deleted at finish. The owning routine/conversation dir is run_dir.parent.parent.
+    """
+    _, run_dir = _run_dir(request, run_id)
+    plan = run_dir.parent.parent / "state" / "plan.md"
+    text = plan.read_text(encoding="utf-8").strip() if plan.is_file() else ""
+    return {"plan": text}
+
+
 async def _file_inbox_message(request: Request, run_dir: Path, text: str,
                               files: list[UploadFile] | None, via: str) -> None:
     """Deliver a run-page message. Uploads are stored under `attachments/` BESIDE the

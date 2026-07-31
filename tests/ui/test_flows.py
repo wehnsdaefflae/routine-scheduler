@@ -204,6 +204,34 @@ def test_run_rail_lists_file_activity(ui, ui_page):
     expect(rows.nth(2).locator(".file-ops")).to_have_text("✕1")
 
 
+def test_run_view_plan_strip(ui, ui_page):
+    """D54: the run view shows the run's WORKING PLAN (state/plan.md) as an always-visible
+    strip, rendered as markdown — so 'where is this run in its own plan' is answerable at a
+    glance. The strip reuses the same store the engine inlines into the prompt."""
+    ui.seed_run("uir", "20260731-090000", "running")
+    (ui.routine_dir("uir") / "state").mkdir(parents=True, exist_ok=True)
+    (ui.routine_dir("uir") / "state" / "plan.md").write_text(
+        "1. [x] gather evidence\n2. [ ] **build the plan strip** — HERE\n3. [ ] write report\n",
+        encoding="utf-8")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260731-090000")
+    strip = ui_page.locator(".plan-strip")
+    expect(strip).to_be_visible()
+    expect(strip.locator("summary")).to_contain_text("working plan")
+    expect(strip.locator(".plan-body")).to_contain_text("build the plan strip")
+    # rendered AS markdown (the sanctioned md() path), not raw text
+    expect(strip.locator(".plan-body strong")).to_contain_text("build the plan strip")
+
+
+def test_run_view_plan_strip_hidden_without_plan(ui, ui_page):
+    """A run that keeps no plan (a scheduled routine whose spine is its recipe) shows no
+    strip — it takes no space rather than rendering an empty box."""
+    ui.seed_run("uir", "20260731-093000", "running")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260731-093000")
+    # the transcript rendering means the view has booted; the strip stays hidden
+    expect(ui_page.locator(".runbar")).to_be_visible()
+    expect(ui_page.locator(".plan-strip")).to_be_hidden()
+
+
 def test_run_view_question_form(ui, ui_page):
     """The run view's blocking-question panel rides the shared answerForm: the mirrored/
     Discord note renders, ask-back sends an intermediate reply, and clicking an option

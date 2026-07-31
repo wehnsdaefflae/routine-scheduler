@@ -276,6 +276,23 @@ def test_run_files_endpoint(client):
     assert c.get("/api/runs/apir:20990101-000000/files").status_code == 404
 
 
+def test_run_plan_endpoint(client):
+    """D54: /runs/{id}/plan serves the run's WORKING PLAN (state/plan.md) — the same store the
+    engine inlines into the prompt — for the run view's plan strip. Empty when there is no plan;
+    404 for a ghost run."""
+    c, tmp = client
+    run_dir = _mk_run(tmp / "routines", "apir", "20260707-090000", "running")
+    # no plan yet → empty string, not an error
+    assert c.get("/api/runs/apir:20260707-090000/plan").json() == {"plan": ""}
+    # the plan lives at the OWNING routine dir (run_dir.parent.parent), not in the run dir
+    state = run_dir.parent.parent / "state"
+    state.mkdir(exist_ok=True)
+    (state / "plan.md").write_text("1. [x] gather\n2. [ ] act — HERE\n", encoding="utf-8")
+    assert c.get("/api/runs/apir:20260707-090000/plan").json() == {
+        "plan": "1. [x] gather\n2. [ ] act — HERE"}
+    assert c.get("/api/runs/apir:20990101-000000/plan").status_code == 404
+
+
 def test_intervention_endpoints(client):
     c, tmp = client
     run_dir = _mk_run(tmp / "routines", "apir", "20260708-100000", "running")

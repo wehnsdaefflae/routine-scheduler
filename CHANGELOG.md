@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.131.0] — 2026-07-31
+
+### Added
+- **Working-plan strip on the run view (D54)**: a run's living decomposition (`state/plan.md`)
+  — the same store the engine already inlines into the prompt (`engine/composer.py`) — is now
+  surfaced as an always-visible collapsible strip at the top of every run view, rendered as
+  markdown. So "where is this run in its own plan" is answerable at a glance, not only from the
+  transcript. Home-agnostic: it works for a scheduled routine run, a conversation, or a
+  detached task alike (keyed by run id). It refreshes on phase transitions to track the run's
+  edits, and hides itself entirely when the run keeps no plan (a scheduled routine whose spine
+  is its compiled recipe, or a plan deleted at finish) — no empty box. New read endpoint
+  `GET /api/runs/{run_id}/plan` and component `static/components/planstrip.js`; no schema or
+  event-contract change (it reuses the existing plan store).
+
 ## [0.130.0] — 2026-07-31
 
 ### Fixed

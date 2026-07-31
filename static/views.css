@@ -525,6 +525,16 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
    (.run-rail = right margin, .run-rail.left = left margin) */
 .run-rail { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
 .run-rail > summary { cursor: pointer; color: var(--muted); }
+/* the WORKING PLAN strip (D54): the run's living decomposition (state/plan.md), at the top of
+   the run view. Same card idiom as the rail, plus a left accent so it reads as the run's own
+   spine; the body reuses the shared .md prose typography. */
+.plan-strip { border: 1px solid var(--line); border-left: 3px solid var(--amber);
+              border-radius: 10px; padding: 8px 12px; margin-top: 12px; background: var(--surface); }
+.plan-strip > summary { cursor: pointer; color: var(--muted); }
+.plan-strip .plan-body { margin-top: 6px; }
+.plan-strip .plan-body .md { font-size: 12.5px; }
+.plan-strip .plan-body .md :first-child { margin-top: 0; }
+.plan-strip .plan-body .md :last-child { margin-bottom: 0; }
 .run-rail .rail-cap:first-of-type { margin-top: 6px; }
 @media (min-width: 1560px) {
   .run-rail {
