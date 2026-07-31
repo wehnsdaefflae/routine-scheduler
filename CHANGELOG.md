@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.130.0] — 2026-07-31
+
+### Fixed
+- **Run-page composer: dropped the dead mode dropdown and gave the input its own line on
+  narrow screens (F237, F238)**: the end-of-run composer had a vestigial single-option,
+  disabled `<select>` ("→ continue this run") left behind when 0.128.0 (F233) removed the
+  "queue for next run" mode — the message destination is fully implied by run state (a live
+  run injects, a terminal run continues the run), so the `<select>` is gone entirely and the
+  send path derives the mode from state (F237). On narrow viewports the message input no
+  longer stays squished inline beside the send/attach buttons and the "editable recipe"
+  checkbox: the composer row carries its own `composer` class and, below the 860px mobile
+  breakpoint, the input takes its own full-width line (`flex: 1 1 100%`) with the controls
+  wrapping beneath it (F238). UI-gated in `tests/ui/test_flows.py`.
+
 ## [0.129.0] — 2026-07-31
 
 ### Added

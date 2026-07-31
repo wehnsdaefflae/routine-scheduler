@@ -106,12 +106,11 @@ export async function render(view, runId, query = {}) {
   // boundary); a terminal run continues THIS run in place (rehydrated, as often as you
   // like). Queuing a message for the routine's NEXT run moved to the routine details page
   // (F233) — the end-of-run input is only ever for continuing the run you are looking at.
-  const MODES = {
-    inject: "→ live run",
-    converse: "→ continue this run",
-  };
-  const modeSel = el("select", { class: "small", "data-nopersist": true,
-    title: "where this message goes" });
+  // The message destination is implied by run state, not chosen: a terminal run's input
+  // ALWAYS continues THIS run (converse), a live run's input injects into it (inject).
+  // The old mode <select> was single-option and disabled once F233 removed the next-run
+  // queue mode — a dead affordance — so it is gone (F237); the placeholder says where the
+  // message goes.
   // A STABLE persist key (F215): the placeholder mutates with mode/recipe state, and
   // formpersist falls back to the placeholder as its key — so without an explicit
   // data-persist a typed draft saved under one placeholder never restores once the
@@ -138,23 +137,15 @@ export async function render(view, runId, query = {}) {
   const syncPlaceholder = () => {
     msgInput.placeholder = recipeChk.checked
       ? "message… (this continuation may edit the routine's recipe files)"
-      : isTerminal ? "message… (the mode selector says where it goes)"
+      : isTerminal ? "message… (continues this run)"
       : "inject a message into the run…";
   };
-  modeSel.onchange = syncPlaceholder;
   recipeChk.onchange = syncPlaceholder;
   function setModes(terminal) {
     isTerminal = terminal;
     // recipe editing targets this routine's OWN files (routine runs only; never the
     // protected clarification template) and unlocks on resuming a FINISHED run.
     const recipeOk = terminal && slug !== "clarification";
-    // F233: a terminal run's input ALWAYS continues this run — the next-run message queue
-    // moved to the routine details page (POST /routines/{slug}/message), so no "queue" mode.
-    const keys = terminal ? ["converse"] : ["inject"];
-    if (![...modeSel.options].some((o) => keys.includes(o.value)) || modeSel.options.length !== keys.length) {
-      modeSel.replaceChildren(...keys.map((k) => el("option", { value: k }, MODES[k])));
-    }
-    modeSel.disabled = keys.length === 1;
     recipeLbl.hidden = !recipeOk;
     if (!recipeOk) recipeChk.checked = false;
     syncPlaceholder();
@@ -162,7 +153,9 @@ export async function render(view, runId, query = {}) {
   setModes(false);
   const ref = referChip(msgInput, { className: "composer-ref mt" });
   const setRef = ref.setRef;
-  view.append(ref.node, el("div", { class: "row mt" }, modeSel, msgInput, sendBtn, picker, recipeLbl));
+  // Own class (composer) so the mobile stylesheet can break the text input onto its own
+  // full-width line (F238) instead of squishing it inline with the buttons.
+  view.append(ref.node, el("div", { class: "row mt composer" }, msgInput, sendBtn, picker, recipeLbl));
 
   // Auto-scroll ("follow"): on by default; the user can toggle it, and scrolling up pauses it.
   let autoscroll = true;
@@ -361,7 +354,7 @@ export async function render(view, runId, query = {}) {
   };
   const doSend = async () => {
     if (!msgInput.value.trim()) return;
-    const mode = modeSel.value;
+    const mode = isTerminal ? "converse" : "inject";
     const text = ref.pending
       ? `> re ${ref.pending.label}: ${ref.pending.snippet}\n\n${msgInput.value}`
       : msgInput.value;

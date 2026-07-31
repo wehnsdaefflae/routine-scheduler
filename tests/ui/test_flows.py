@@ -256,9 +256,9 @@ def test_run_view_message_modes(ui, ui_page):
     routine details page)."""
     ui.seed_run("uir", "20260715-110000", "running")
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-110000")
-    mode = ui_page.locator('select[title="where this message goes"]')
-    expect(mode).to_have_value("inject")
-    expect(mode).to_be_disabled()
+    # F237: no mode <select> — a live run's input injects (shown by its placeholder), a
+    # terminal run's input continues the run; the destination is implied by run state.
+    assert ui_page.locator('select[title="where this message goes"]').count() == 0
     ui_page.locator('input[placeholder="inject a message into the run…"]').fill("mid-run note")
     # attachments ride a run message too (F202): picking a file shows a chip; the send
     # stores it under the routine's attachments/ and the inbox message records the rel
@@ -278,12 +278,13 @@ def test_run_view_message_modes(ui, ui_page):
 
     ui.seed_run("uir", "20260715-120000", "finished", summary="done")
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-120000")
-    mode = ui_page.locator('select[title="where this message goes"]')
-    # F233: a terminal run's input ALWAYS continues this run — the only mode is converse,
-    # the selector is disabled (single option), and there is NO "queue for next run" option.
-    expect(mode).to_have_value("converse")
-    expect(mode).to_be_disabled()
-    assert mode.locator("option[value='queue']").count() == 0
+    # F237: a terminal run's input ALWAYS continues this run, so the vestigial single-option
+    # mode <select> is gone entirely — the composer is just the input + send. (F233 had
+    # already removed the "queue for next run" option, leaving a dead disabled dropdown.)
+    assert ui_page.locator('select[title="where this message goes"]').count() == 0
+    # F238: the composer row carries its own class so the mobile stylesheet can break the
+    # message input onto its own full-width line instead of squishing it beside the buttons.
+    assert ui_page.locator("div.composer input[data-persist='run-msg']").count() == 1
     ui_page.locator('input[placeholder^="message…"]').fill("continue please")
     ui_page.get_by_role("button", name="send", exact=True).click()
     expect(_toast(ui_page)).to_contain_text("continue the conversation")
@@ -318,7 +319,7 @@ def test_run_view_recipe_edit_checkbox(ui, ui_page):
     the continuation may edit the recipe files. A live run hides it."""
     ui.seed_run("uir", "20260723-090000", "running")
     ui_page.goto(f"{ui.url}/#/run/uir:20260723-090000")
-    expect(ui_page.locator('select[title="where this message goes"]')).to_have_value("inject")
+    assert ui_page.locator('select[title="where this message goes"]').count() == 0  # F237
     expect(ui_page.get_by_label("editable recipe")).to_be_hidden()
 
     ui.seed_run("uir", "20260723-100000", "finished", summary="done")
@@ -330,7 +331,7 @@ def test_run_view_recipe_edit_checkbox(ui, ui_page):
     expect(ui_page.locator('input[placeholder*="may edit the routine"]')).to_be_visible()
     chk.uncheck()
     expect(ui_page.locator(
-        'input[placeholder="message… (the mode selector says where it goes)"]')).to_be_visible()
+        'input[placeholder="message… (continues this run)"]')).to_be_visible()
 
 
 def test_run_view_deliberation_relevel(ui, ui_page):

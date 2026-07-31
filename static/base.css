@@ -416,6 +416,10 @@ input[type=time], input[type=number] { width: auto; }
   textarea.code { min-height: 140px; }
   /* control rows that pair an input with buttons stack cleanly */
   .row > input[type="text"], .row > input[type="search"] { flex: 1 1 180px; }
+  /* the run/end-of-run composer: the message input takes its OWN full-width line, and the
+     send/attach buttons + "editable recipe" toggle wrap onto the line beneath it (F238) —
+     instead of the input shrinking inline next to them on a narrow screen. */
+  .composer > input[type="text"] { flex: 1 1 100%; }
 }
 
 @media (max-width: 480px) {
