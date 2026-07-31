@@ -1216,6 +1216,27 @@ def test_dashboard_table_sort_reverses_on_reclick(ui, ui_page):
     expect(routine_th).to_contain_text("▴")
 
 
+def test_dashboard_live_refresh_preserves_search_focus(ui, ui_page):
+    """F229: while ≥1 routine runs, live bus events refresh the dashboard ~every 600ms. The
+    refresh must NOT tear down the filter bar (the search input + sort control) — doing so
+    destroyed a user's focus and half-typed search text, the 'UI non-responsive with >1
+    routine running' symptom. Typing survives a live refresh; the filter bar rebuilds only
+    when the available tag set changes."""
+    ui.seed_run("uir", "20260729-070000", "finished", summary="ok")
+    ui_page.goto(ui.url)
+    search = ui_page.locator(".filterbar input[type=search]")
+    expect(search).to_be_visible()
+    search.click()
+    search.type("uir")
+    # a live bus event (as app.js dispatches from /api/events) with the tag set UNCHANGED
+    ui_page.evaluate(
+        "window.dispatchEvent(new CustomEvent('rsched-bus', {detail: {event: 'run_started'}}))")
+    ui_page.wait_for_timeout(900)   # past the 600ms dashboard debounce
+    # the SAME input node still holds focus and the typed text — not a fresh replaced node
+    expect(search).to_be_focused()
+    expect(search).to_have_value("uir")
+
+
 def test_routine_page_trait_picker_adds_a_practice_module(ui, ui_page):
     """The post-creation practice picker: ticking a library module and applying copies it
     into the routine's own traits/ VERBATIM and rebuilds main.md's derived Standing-practices

@@ -19,7 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
-## [0.133.1] — 2026-07-31
+## [0.133.2] — 2026-07-31
+
+### Fixed
+- **Dashboard search/sort controls were destroyed by live refreshes while routines ran
+  (F229 — "UI non-responsive with >1 routine running").** Every live bus event refreshes the
+  Routines dashboard (debounced to ~600ms), and each refresh called `renderFilterBar()`, which
+  `replaceChildren()`s the filter bar — tearing down and recreating the search `<input>` and
+  the sort `<select>`. With one or more routines active the bus streams events continuously, so
+  a user's focus and half-typed search text were wiped roughly twice a second, making the view
+  feel unresponsive. The filter bar now rebuilds ONLY when the available tag set actually
+  changes (tracked by a signature); the card/table body still re-renders on every refresh. New
+  UI test `test_dashboard_live_refresh_preserves_search_focus` types into the search box,
+  dispatches a live `rsched-bus` event, and asserts the same input keeps focus and its value
+  across the refresh.
 
 ### Fixed
 - **`write_util` selftest failure diagnostics were incomplete (F226, R47/R60).** Two gaps

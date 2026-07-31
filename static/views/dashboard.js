@@ -104,6 +104,7 @@ export async function render(view) {
   body.append(skeleton(), skeleton(), skeleton());
 
   let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();
+  let lastTagSig = null;   // F229: only rebuild the filter bar when the tag set changes
   const active = new Set(JSON.parse(storage.get(FILTER_KEY) || "[]"));
   const states = new Set();
   let viewMode = storage.get(VIEW_KEY) || "cards";
@@ -227,7 +228,16 @@ export async function render(view) {
         try { await api("/api/settings/pause", { method: "DELETE" }); toast("scheduling resumed"); await load(); }
         catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
       } }, "▶ resume scheduling")));
-    renderFilterBar();
+    // F229: rebuild the filter bar ONLY when the available tags actually change. It calls
+    // filterBar.replaceChildren(), which tears down and recreates the search <input> and the
+    // sort <select>; doing that on every live bus refresh (~every 600ms while ≥1 routine
+    // runs) destroyed a user's focus and half-typed search text — the "UI non-responsive
+    // with >1 routine running" symptom. The body still re-renders every refresh.
+    const tagSig = JSON.stringify([...new Set(cards.flatMap((c) => c.tags || []))].sort());
+    if (tagSig !== lastTagSig) {
+      lastTagSig = tagSig;
+      renderFilterBar();
+    }
     renderBody();
   }
 
