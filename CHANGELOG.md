@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.135.0] — 2026-07-31
+
+### Added
+- **Routine groups — CRUD page + nav (D53 Phase A, UI half).** A new **Groups** page
+  (`#/groups`, in the top nav beside Routines) over the `api_groups` surface: set the
+  instance-wide mid-chain-failure default, create a group with a routine-member picker, reorder
+  a group's members with ↑/↓ (the order sequential-fire will use), set a per-group `on_failure`
+  override or inherit the default, and delete a group. The page states plainly that
+  **sequential firing is not live yet** (Phase B) — it is the setup surface, and nothing is
+  grouped until the operator adds a group. Covered by a real-browser flow test
+  (`tests/ui/test_groups.py`): render → add with a member → persist to `.control/groups.json` →
+  change the default → delete.
+
 ## [0.134.0] — 2026-07-31
 
 ### Added

@@ -20,6 +20,7 @@ const routes = [
   [/^#\/conversations(?:\/([a-z0-9-]+))?$/, () => import("/static/views/conversations.js")],
   [/^#\/items$/, () => import("/static/views/items.js")],
   [/^#\/stats$/, () => import("/static/views/stats.js")],
+  [/^#\/groups$/, () => import("/static/views/groups.js")],
   [/^#\/routine\/([a-z0-9-]+)$/, () => import("/static/views/routine.js")],
   [/^#\/run\/([a-z0-9-]+:[0-9-]+)$/, () => import("/static/views/run.js")],
   [/^#\/questions$/, () => import("/static/views/questions.js")],
@@ -83,6 +84,7 @@ function updateLocation(path) {
     : path.startsWith("#/questions") ? "questions"
     : path.startsWith("#/items") ? "items"
     : path.startsWith("#/stats") ? "stats"
+    : path.startsWith("#/groups") ? "groups"
     : path.startsWith("#/library") ? "library"
     : path.startsWith("#/settings") ? "settings"
     : path.startsWith("#/help") ? "help"
@@ -103,6 +105,7 @@ function crumbsFor(path) {
     case "questions": return [{ label: "Decisions" }];
     case "items": return [{ label: "Items" }];
     case "stats": return [{ label: "Stats" }];
+    case "groups": return [{ label: "Groups" }];
     case "settings": return [{ label: "Settings" }];
     case "help": {
       const c = [{ label: "Help", href: parts.length > 1 ? "#/help" : null }];
