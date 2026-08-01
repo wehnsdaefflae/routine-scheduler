@@ -96,6 +96,15 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
                        "READ-ONLY to you — the routine-improver meta routine refines recipes")
     # The say contract scales with the routine's deliberation level (the user's knob over
     # how much thinking lands on paper); think-on-paper adds a standing notes-file paragraph.
+    # D62: an admin conversation leg — tell the model its capability gating is lifted (so it
+    # does not route reachable work to a needless ask_user) AND that every action is audited.
+    admin_banner = ("\n\n**ADMIN CONVERSATION** — the operator authenticated this leg with the "
+                    "admin token, so capability gating is LIFTED: every gated action kind and "
+                    "reserved util is available to you this leg. Structural limits still hold "
+                    "(routine.yaml config and runs/ stay read-only, recipe stays sealed, and "
+                    "conversation-only kinds stay conversation-only). Every action you take is "
+                    "logged to the admin audit trail. Wield this deliberately.") \
+        if g is not None and g.admin else ""
     level = ctx.deliberation or r.deliberation
     standing = deliberation.standing_note(level)
     # Only the kinds this run may emit get a bullet — the same projection the ACTION SCHEMA
@@ -109,7 +118,7 @@ with EXACTLY one JSON object matching the action schema below — no prose outsi
 it to state/notes.md with a turn stamp at NO turn cost, and the next run's digest carries it \
 forward; before finishing, fold what still matters into your report or memory. (What belongs in a \
 note: the schema's `note` description below.)\
-{f"\n\n{standing}" if standing else ""}
+{f"\n\n{standing}" if standing else ""}{admin_banner}
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \
 conversation, one per turn, each answered by an observation before your next reply. Emit exactly \

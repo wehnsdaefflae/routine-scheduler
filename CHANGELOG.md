@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.145.0] — 2026-08-01
+
+### Added
+- **Admin conversation — a token-gated bypass of the capability layer (operator request, D62).**
+  A conversation leg resumed with a valid `RSCHED_ADMIN_TOKEN` (a new instance secret, sent in the
+  `x-admin-token` header ALONGSIDE the normal bearer, compared constant-time and fail-closed in the
+  web layer only) runs with capability gating LIFTED: every gated action kind and reserved util is
+  available to that leg. The token NEVER reaches the engine — the web layer validates it and drops a
+  one-shot marker (`engine/admin.py`, modeled on the `revise.py` recipe-unlock), read once at loop
+  init and cleared, so the unlock covers exactly that leg, is never persisted to `routine.yaml`, and
+  is never inherited by a sub-workflow. **Structural / ownership gates still hold under admin** —
+  `runs/` stays engine-owned and read-only, `routine.yaml` config stays the user's, the routine's own
+  recipe stays sealed, and the conversation-only kinds (create_routine/manage_group/detach) stay
+  conversation-only. Every action taken under admin appends one line to
+  `<routines_home>/.control/admin-audit.jsonl` (run_id, kind, brief), and the system prompt carries an
+  unmistakable **ADMIN CONVERSATION** banner so the run knows its gating is lifted. Admin is available
+  only to a root conversation. `+engine/admin.py`, `tests/test_admin.py` (4 tests) +
+  `test_grants.py::test_admin_lifts_capability_gating_only`; wiring in `grants.py` (GrantPolicy `admin`
+  field + `allows_kind`/`deny` short-circuits over the capability gates only), `engine/loop.py`
+  (marker read + audit hook), `engine/composer.py` (banner), `web/api_runs.py` (token check + marker).
+  Open follow-ups for the operator: a UI affordance/banner on the Conversations page, and whether the
+  admin token should rotate/expire.
+
 ## [0.144.0] — 2026-08-01
 
 ### Added

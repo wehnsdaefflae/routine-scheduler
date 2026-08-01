@@ -395,3 +395,34 @@ def test_memory_kinds_are_gated_and_denials_name_the_permission():
     granted = GrantPolicy(actions=frozenset({"memory_read", "memory_write"}))
     assert granted.deny({"kind": "memory_write", "name": "x"}) is None
     assert granted.deny({"kind": "memory_read", "name": "x"}) is None
+
+
+def test_admin_lifts_capability_gating_only(tmp_path):
+    """D62: an admin conversation leg lifts CAPABILITY gating (gated kinds, reserved utils,
+    previous-run read depth) but leaves every STRUCTURAL / ownership gate in force."""
+    # A stock (no-capability) policy denies gated kinds + reserved utils; its admin twin allows.
+    lib = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION,
+                          "run-history": RUN_HISTORY})
+    base = load_policy(lib, [], None, current_run_ts="20260712-090000")
+    admin = load_policy(lib, [], None, current_run_ts="20260712-090000", admin=True)
+
+    # capability gates: OFF for base, LIFTED for admin
+    assert not base.allows_kind("write_util") and admin.allows_kind("write_util")
+    assert base.deny({"kind": "write_util", "name": "x", "content": "y"})
+    assert admin.deny({"kind": "write_util", "name": "x", "content": "y"}) is None
+    assert base.deny({"kind": "util", "name": "discord", "args": ["send", "hi"]})
+    assert admin.deny({"kind": "util", "name": "discord", "args": ["send", "hi"]}) is None
+    # previous-run READ depth: gated for base, lifted for admin
+    assert base.deny({"kind": "read_file", "path": "runs/20260101-000000/result.md"})
+    assert admin.deny({"kind": "read_file", "path": "runs/20260101-000000/result.md"}) is None
+
+    # STRUCTURAL gates STILL apply under admin — these are NOT capabilities:
+    #  - runs/ stays engine-owned / write-protected
+    w = admin.deny({"kind": "write_file", "path": "runs/20260101-000000/x.md", "content": "x"})
+    assert w and "read-only" in w
+    #  - the routine's own recipe stays sealed (admin ≠ recipe_unlocked)
+    r = admin.deny({"kind": "write_file", "path": "main.md", "content": "x"})
+    assert r and "routine-improver" in r
+    #  - routine.yaml config is the user's, denied for everyone including admin
+    c = admin.deny({"kind": "write_file", "path": "routine.yaml", "content": "x"})
+    assert c is not None

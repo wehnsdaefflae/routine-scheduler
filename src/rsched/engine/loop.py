@@ -113,6 +113,14 @@ class EngineLoop:
             clear_revise_marker(ctx.run_dir)
             if self.allowed_tools is not None:
                 self.allowed_tools |= set(REVISE_KINDS)
+        # D62: an ADMIN conversation leg — the web layer validated RSCHED_ADMIN_TOKEN and dropped
+        # a one-shot marker, read once and cleared here. admin lifts CAPABILITY gating for this
+        # leg only (gated kinds, reserved utils, previous-run read depth); structural/ownership
+        # gates still apply. Root conversations only — a scheduled routine never gets an operator
+        # at the keyboard, and a subrun builds its own capabilities-off policy (engine/admin.py).
+        from .admin import admin_marker, clear_admin_marker
+        self.admin_leg = admin_marker(ctx.run_dir) and detach._is_root_conversation(ctx)
+        clear_admin_marker(ctx.run_dir)
         # D58: routine creation is initiated from a conversation ONLY. Surface create_routine
         # to a ROOT conversation (the handler rejects every non-conversation as a backstop), so
         # a scheduled routine never sees the kind in its schema or CAPABILITIES. A None allowed
@@ -127,6 +135,7 @@ class EngineLoop:
                                        ctx.routine.capabilities,
                                        current_run_ts=ctx.run_ts,
                                        recipe_unlocked=unlocked or revising,
+                                       admin=self.admin_leg,
                                        grants_map=ctx.routine.grants)
         if ctx.depth > 0:
             # A spawned/subtask child: capabilities are off by design (childrun), so a
@@ -348,6 +357,12 @@ class EngineLoop:
                     obs = executor.dispatch(action, ctx)
                 ctx.transcript.event("observation", obs, turn=ctx.turn)
                 self.executed_actions += 1
+                if self.admin_leg:
+                    # D62: the capability bypass is never silent — one audit line per action.
+                    from .admin import log_admin_action
+                    brief = str(action.get(BRIEF_FIELD.get(action["kind"], ""), ""))[:200]
+                    log_admin_action(ctx.server.routines_home, run_id=ctx.run_id,
+                                     kind=action["kind"], brief=brief)
                 text = format_observation(obs)
                 if REPEAT_WARN <= repeat_streak < REPEAT_FAIL:
                     self._shed_schema_turns = 1   # re-arms on every further repeat

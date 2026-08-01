@@ -276,6 +276,12 @@ class GrantPolicy:
     # The recipe set includes tuning.yaml (machine-tunable behavior parameters, e.g.
     # deliberation) — the file boundary IS the permission boundary, no key-level gates.
     recipe_unlocked: bool = False
+    # D62 admin conversation: the operator authenticated this leg with RSCHED_ADMIN_TOKEN,
+    # so CAPABILITY gating is lifted (gated kinds, reserved utils, previous-run read depth).
+    # STRUCTURAL / ownership gates STILL apply — runs/ write, routine.yaml config, the recipe
+    # seal, and the root-conversation-only handler gates. Never persisted, never inherited by
+    # a subrun (see engine/admin.py). Enforced in allows_kind() and deny() below.
+    admin: bool = False
     runs_sources: tuple = _DEFAULT_RUNS_SOURCE            # docs covering runs access
     # The live run's ts: paths under runs/<current_run_ts>/ are the run's OWN tree (status,
     # archived history) and stay readable regardless of run_history — the engine itself
@@ -288,7 +294,7 @@ class GrantPolicy:
     is_subrun: bool = False
 
     def allows_kind(self, kind: str) -> bool:
-        return kind not in GATED_KINDS or kind in self.actions
+        return self.admin or kind not in GATED_KINDS or kind in self.actions
 
     def with_overlay(self, granted_now: set[str], denied_now: set[str]) -> GrantPolicy:
         """This policy plus the run's one-time decisions: capability-class granted
@@ -363,7 +369,7 @@ class GrantPolicy:
         (on the routine's Permissions panel), so route to ask_user.
         """
         kind = action.get("kind")
-        if kind in GATED_KINDS and kind not in self.actions:
+        if kind in GATED_KINDS and kind not in self.actions and not self.admin:
             srcs = ", ".join(self.kind_sources.get(kind)
                              or [_DEFAULT_KIND_SOURCE.get(kind, "util-authoring")])
             if self.is_subrun:
@@ -380,7 +386,7 @@ class GrantPolicy:
                     f"with what you have. {self.request_route(f'action:{kind}')}")
         if kind == "util":
             name = str(action.get("name") or "")
-            if name in self.gated_utils and name not in self.utils:
+            if name in self.gated_utils and name not in self.utils and not self.admin:
                 perms = ", ".join(self.gated_utils[name])
                 return (f"util {name!r} is a reserved capability switched OFF for this "
                         f"routine — this channel is off limits (the {perms} permission "
@@ -399,7 +405,7 @@ class GrantPolicy:
                     if writes:
                         return ("runs/ is engine-owned and read-only — transcripts and results "
                                 "are written by the engine, never by the run.")
-                    if self.run_history == "none":
+                    if self.run_history == "none" and not self.admin:
                         srcs = ", ".join(self.runs_sources)
                         return (f"reading previous runs under runs/ is switched OFF in this "
                                 f"routine's capabilities (the user can raise the depth to the "
@@ -422,7 +428,7 @@ class GrantPolicy:
 
 def load_policy(permissions_home: Path, active: list[str] | None,
                 capabilities: dict | None = None, current_run_ts: str = "",
-                recipe_unlocked: bool = False,
+                recipe_unlocked: bool = False, admin: bool = False,
                 grants_map: dict | None = None) -> GrantPolicy:
     """Build the run policy from the routine's OWN capabilities mapping; the library's
     `requires:` declarations contribute only the reserved-util vocabulary and the
@@ -456,5 +462,6 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                        denied=frozenset(k for k, v in (grants_map or {}).items()
                                         if v is False),
                        recipe_unlocked=recipe_unlocked,
+                       admin=admin,
                        runs_sources=tuple(runs_sources) or _DEFAULT_RUNS_SOURCE,
                        current_run_ts=current_run_ts)

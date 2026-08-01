@@ -263,6 +263,12 @@ async def converse(request: Request, run_id: str, text: Annotated[str, Form()],
         # marker, engine/revise.py — cleared when the loop reads it at init).
         from ..engine.revise import write_revise_marker
         write_revise_marker(run_dir, text.strip())
+    # D62: an ADMIN resume — the operator drives this conversation leg with the full toolset.
+    # The admin token is compared HERE (constant-time, fail-closed) and NEVER reaches the
+    # engine; on a match a one-shot marker unlocks capability gating for the resumed leg only.
+    from ..engine.admin import ADMIN_HEADER, admin_token_valid, write_admin_marker
+    if admin_token_valid(request.headers.get(ADMIN_HEADER)):
+        write_admin_marker(run_dir)
     rid = await request.app.state.runner.resume_terminal(cfg, run_dir.name, reason="converse")
     if not rid:
         raise HTTPException(409, "could not resume — another run of this routine is active, "
