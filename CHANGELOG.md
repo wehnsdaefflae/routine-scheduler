@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.140.0] — 2026-08-01
+
+### Changed
+- **Every routine-config section now reads and looks the same as the conversation composer's
+  settings (D57 phase 2).** `static/views/routine-config.js` hand-built each of its ~17 sections
+  (Name, Description, Tags, Schedule, Triggers, Schedule once, Permissions & capabilities,
+  Practice modules, Budgets, Retention, Filesystem roots, Models, Connections, Secret exposure,
+  Declined access, Machines, Origin) as an ad-hoc `<h2>` + `.panel` + description block; they
+  now all go through the shared `settingsSection(title, description, …body)` primitive — the
+  same one the new-conversation composer adopted in phase 1 — so a setting is presented
+  identically wherever it appears. Sections that previously had no explanatory copy (Triggers,
+  Schedule once, Connections, Schedule) gained a one-line per-control description. The `<h2>`
+  headings the side table-of-contents rides are unchanged, so the "On this page" rail and
+  deep-links keep working; no config endpoint or contract was touched.
+
 ## [0.139.1] — 2026-08-01
 
 ### Fixed

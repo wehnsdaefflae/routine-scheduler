@@ -13,6 +13,7 @@ import { permissionsPanel } from "/static/components/permissions.js";
 import { rootsEditor } from "/static/components/fsroots.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { scheduleOnceCard } from "/static/components/schedule-once.js";
+import { settingsSection } from "/static/components/settings-section.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { traitPicker } from "/static/components/traitpicker.js";
 import { triggersCard } from "/static/components/triggers.js";
@@ -21,10 +22,8 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
   // -- name (rename; the header + dashboard show it — slug stays the identity) ------
   const nameInput = el("input", { type: "text", value: d.name || slug, placeholder: "routine name",
     style: "width:100%;max-width:420px" });
-  view.append(el("h2", {}, "Name"),
-    el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:8px" },
-        "the display name (the folder ", el("span", { class: "ref-tag" }, slug), " stays the identity)"),
+  view.append(...settingsSection("Name",
+    ["the display name (the folder ", el("span", { class: "ref-tag" }, slug), " stays the identity)"],
       el("div", { class: "row" }, nameInput,
         el("button", { class: "btn primary", onclick: async () => {
           const v = nameInput.value.trim();
@@ -38,10 +37,8 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
   // -- description (always present; shown here + on the dashboard) ----------------
   const descInput = el("input", { type: "text", value: d.description || "", placeholder: "one-line description",
     style: "width:100%;max-width:640px" });
-  view.append(el("h2", {}, "Description"),
-    el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:8px" },
-        "a one-line summary of what this routine does — shown on the dashboard and here"),
+  view.append(...settingsSection("Description",
+    "a one-line summary of what this routine does — shown on the dashboard and here",
       descInput,
       el("div", { class: "row mt" }, el("button", { class: "btn primary",
         onclick: async () => {
@@ -52,11 +49,9 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
         } }, "save description"))));
 
   // -- tags (shared editor — every add/remove saves immediately) --------------------
-  view.append(el("h2", {}, "Tags"),
-    el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:8px" },
-        "freeform labels for filtering on the dashboard (e.g. meta tucks a routine away by ",
-        "default) — each change saves immediately"),
+  view.append(...settingsSection("Tags",
+    ["freeform labels for filtering on the dashboard (e.g. meta tucks a routine away by ",
+     "default) — each change saves immediately"],
       tagsEditor(d.tags, async (next) => {
         await api(`/api/routines/${slug}`, { method: "PATCH", body: { tags: next } });
         toast("tags saved");
@@ -77,8 +72,10 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
     { catchup: d.catchup || "skip" });
   const enabledBox = el("input", { type: "checkbox", checked: d.enabled || null });
   const improveBox = el("input", { type: "checkbox", checked: d.improve !== false || null });
-  view.append(el("h2", {}, "Schedule"),
-    el("div", { class: "panel" }, sched.node,
+  view.append(...settingsSection("Schedule",
+    "when this routine runs on its own — a cron-like cadence in the server's timezone, plus the "
+    + "master enable switch and whether the improver visits it.",
+      sched.node,
       el("label", { class: "row mt", style: "gap:8px" }, enabledBox, "enabled"),
       el("label", { class: "row mt", style: "gap:8px" }, improveBox,
         el("span", {}, "include in improvement — the routine-improver meta routine visits this routine (on by default)")),
@@ -96,12 +93,16 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
       nextFireLine));
 
   // -- triggers: event-driven fires alongside cron (webhook URLs, coalescing) -------
-  view.append(el("h2", {}, "Triggers"),
-    triggersCard(slug, d.triggers || [], { protected: !!d.protected }));
+  view.append(...settingsSection("Triggers",
+    "event-driven fires that run this routine alongside its cron schedule — each webhook trigger "
+    + "gives a URL that starts a run when called (with coalescing so a burst fires once).",
+    triggersCard(slug, d.triggers || [], { protected: !!d.protected })));
 
   // -- schedule once: a one-shot future run that fires once then auto-removes --------
-  view.append(el("h2", {}, "Schedule once"),
-    scheduleOnceCard(slug, { protected: !!d.protected }));
+  view.append(...settingsSection("Schedule once",
+    "arm a single future run at a specific time — it fires exactly once, then removes itself "
+    + "(the recurring schedule above is unaffected).",
+    scheduleOnceCard(slug, { protected: !!d.protected })));
 
   // -- permissions: conduct docs + machine-enforced capabilities (user-only) --------
   // The server re-applies the activation cascade on save, so the panel re-renders from a
@@ -118,11 +119,9 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
     },
   }).node;
   permHost.append(buildPermPanel(d.permissions, d.capabilities));
-  view.append(el("h2", {}, "Permissions & capabilities"),
-    el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:10px" },
-        "what this routine is ALLOWED to do — enforced by the engine on every action. Only you can ",
-        "change either column; the routine can never grant itself anything. Takes effect at the next run."),
+  view.append(...settingsSection("Permissions & capabilities",
+    ["what this routine is ALLOWED to do — enforced by the engine on every action. Only you can ",
+     "change either column; the routine can never grant itself anything. Takes effect at the next run."],
       permHost));
 
   // -- practice modules (traits the routine holds; the traits/ dir IS the state) -----
@@ -139,13 +138,11 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
     }).node;
   };
   buildTraitPanel(d).then((n) => traitHost.replaceChildren(n));
-  view.append(el("h2", {}, "Practice modules"),
-    el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:10px" },
-        "the standing practices this routine reads before the situations they govern. Added ",
-        "modules are copied in verbatim and become the routine's own files; an addition reaches ",
-        "a run already in flight, a removal takes effect at the next run. The routine can ",
-        "CONSULT an unheld module for one run (read_trait) but never change this set."),
+  view.append(...settingsSection("Practice modules",
+    ["the standing practices this routine reads before the situations they govern. Added ",
+     "modules are copied in verbatim and become the routine's own files; an addition reaches ",
+     "a run already in flight, a removal takes effect at the next run. The routine can ",
+     "CONSULT an unheld module for one run (read_trait) but never change this set."],
       traitHost));
 
   // -- budgets (per-run ceilings — every invisible limit, surfaced) -----------------
@@ -159,11 +156,9 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
       el("span", { style: "min-width:220px" }, label),
       el("span", { class: "muted small" }, help));
   });
-  view.append(el("h2", {}, "Budgets"),
-    el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:8px" },
-        "hard per-run ceilings, checked at every turn — the run is told at 85% so it can wind down ",
-        "deliberately. Resources, not permissions."),
+  view.append(...settingsSection("Budgets",
+    ["hard per-run ceilings, checked at every turn — the run is told at 85% so it can wind down ",
+     "deliberately. Resources, not permissions."],
       ...budgetRows,
       el("div", { class: "row mt" }, el("button", { class: "btn primary",
         onclick: async () => {
@@ -184,11 +179,9 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
 
   // -- retention: how many finished run dirs to keep ------------------------------
   const keepRunsIn = el("input", { type: "number", min: "1", value: String(d.keep_runs ?? 30), style: "width:110px" });
-  view.append(el("h2", {}, "Retention"),
-    el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:8px" },
-        "how many finished run directories to keep — older ones are pruned (transcripts gzip first). ",
-        "The durable usage stream (spend, health) survives pruning."),
+  view.append(...settingsSection("Retention",
+    ["how many finished run directories to keep — older ones are pruned (transcripts gzip first). ",
+     "The durable usage stream (spend, health) survives pruning."],
       el("div", { class: "row" }, keepRunsIn, el("span", {}, "runs kept"),
         el("button", { class: "btn primary", onclick: async () => {
           const n = parseInt(keepRunsIn.value, 10);
@@ -203,13 +196,11 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
   // dirpicker.js) rather than typed blind; value() yields the path list the PATCH expects.
   const readRoots = rootsEditor(d.fs_read_roots, { pickTitle: "add a read root" });
   const writeRoots = rootsEditor(d.fs_write_roots, { pickTitle: "add a write root" });
-  view.append(el("h2", {}, "Filesystem roots"),
-    el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:10px" },
-        "extra directories this routine may access beyond its own dir — browse to each. ",
-        el("strong", {}, "Write roots are powerful"), ": a write root that covers this routine's own ",
-        "directory unlocks editing its OWN recipe (main.md / stages / traits / tuning.yaml) — the same ",
-        "lever the routine-improver holds. routine.yaml stays sealed regardless. Takes effect next run."),
+  view.append(...settingsSection("Filesystem roots",
+    ["extra directories this routine may access beyond its own dir — browse to each. ",
+     el("strong", {}, "Write roots are powerful"), ": a write root that covers this routine's own ",
+     "directory unlocks editing its OWN recipe (main.md / stages / traits / tuning.yaml) — the same ",
+     "lever the routine-improver holds. routine.yaml stays sealed regardless. Takes effect next run."],
       el("div", { class: "field" }, el("span", {}, "read roots"), readRoots.node),
       el("div", { class: "field mt" }, el("span", {}, "write roots"), writeRoots.node),
       el("div", { class: "row mt" }, el("button", { class: "btn primary", onclick: async () => {
@@ -250,12 +241,10 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
       catch (err) { toast(err.message, 4000, { error: true }); }
     },
   });
-  view.append(el("h2", {}, "Models"),
-    el("div", { class: "panel" },
-      el("div", { class: "muted small", style: "margin-bottom:8px" },
-        catalog.length
-          ? "which catalog model this routine uses for each role — leave on system default to fall back to the system model"
-          : "add a model in Settings first"),
+  view.append(...settingsSection("Models",
+    catalog.length
+      ? "which catalog model this routine uses for each role — leave on system default to fall back to the system model"
+      : "add a model in Settings first",
       ...modelRows,
       el("div", { class: "row mt", style: "align-items:flex-start" },
         el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, "deliberation"),
@@ -279,21 +268,23 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
 
   // -- connections: bind an OAuth account per provider (Settings → Connections) --------
   // Shared card (components/connections.js) — the conversation header uses the same one.
-  view.append(el("h2", {}, "Connections"),
+  view.append(...settingsSection("Connections",
+    "bind an OAuth account per provider so this routine's util calls act as that account — "
+    + "manage the accounts themselves in Settings → Connections.",
     connectionsCard(d.connections || {}, {
       onSave: (connections) => api(`/api/routines/${slug}`,
         { method: "PATCH", body: { connections } }),
-    }));
+    })));
 
   // -- grant decisions: secret exposure (D39) + declined-access tombstones ---------------------
   // Both live in routine.yaml `grants:` (entity ids, entities.py): `secret:<NAME>` rows are
   // the exposure map; a FALSE row of any other class is a deny-forever tombstone an access
   // request left behind (the run stops asking). Saving REPLACES the whole mapping, so the
   // two editors below always write their rows together.
-  const secBox = el("div", { class: "panel" }, skeleton(["50%"]));
-  view.append(el("h2", {}, "Secret exposure"), secBox);
-  const declinedBox = el("div", { class: "panel" }, skeleton(["50%"]));
-  view.append(el("h2", {}, "Declined access"), declinedBox);
+  const secBox = el("div", {}, skeleton(["50%"]));
+  view.append(...settingsSection("Secret exposure", "", secBox));
+  const declinedBox = el("div", {}, skeleton(["50%"]));
+  view.append(...settingsSection("Declined access", "", declinedBox));
   // F193: a grant decided elsewhere (Decisions-page approval, Discord) lands in
   // routine.yaml while this page is open — the panel refetches BOTH the store and the
   // routine's CURRENT grants instead of rendering the page-load snapshot forever.
@@ -377,8 +368,7 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
   const catalogM = d.machine_catalog || [];   // instance-wide machine catalog (name + summary)
   const boundM = new Set(d.machines || []);    // names this routine currently binds
   const machChecks = {};
-  view.append(el("h2", {}, "Machines"));
-  const machPanel = el("div", { class: "panel" },
+  const machPanel = el("div", {},
     el("div", { class: "muted small", style: "margin-bottom:8px" },
       "Remote machines this routine may act on over SSH (needs the ",
       el("code", {}, "remote-machines"), " permission + the ", el("code", {}, "remote"),
@@ -412,12 +402,11 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
         catch (err) { toast(err.message, 4000, { error: true }); }
       } }, "save machines")));
   }
-  view.append(machPanel);
+  view.append(...settingsSection("Machines", "", machPanel));
 
   // -- origin: the library pattern this routine was generated from (provenance only) ----------
   const wf = d.workflow_ref || {};
-  view.append(el("h2", {}, "Origin"),
-    el("div", { class: "panel" },
+  view.append(...settingsSection("Origin", "",
       el("span", { class: "ref-tag" }, wf.slug || "hand-authored"),
       el("span", { class: "muted small", style: "margin-left:10px" },
         wf.slug

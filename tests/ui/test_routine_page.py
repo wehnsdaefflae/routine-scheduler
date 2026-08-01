@@ -38,6 +38,16 @@ def test_sections_side_toc(ui, ui_page):
     expect(toc).to_contain_text("Filesystem roots")
     expect(toc).to_contain_text("Budgets")
 
+    # D57 phase 2: every config section is now built from the shared settingsSection primitive
+    # (heading + .panel + a per-control description) — the SAME primitive the conversation
+    # composer uses, so a setting reads and looks identical wherever it appears. The <h2>s the
+    # TOC rides are still emitted (asserted above); confirm the primitive's presentation is in
+    # use: the sections render inside panels, and the per-control copy renders as a description.
+    expect(ui_page.locator(".panel").first).to_be_visible()
+    budgets = ui_page.locator("h2:has-text('Budgets')").locator(
+        "xpath=following-sibling::div[contains(@class,'panel')][1]")
+    expect(budgets.locator(".muted.small").first).to_contain_text("per-run ceilings")
+
 
 def test_fs_root_directory_picker(ui, ui_page):
     """The fs-roots editor is a real directory picker: the old textarea is gone, and browsing
