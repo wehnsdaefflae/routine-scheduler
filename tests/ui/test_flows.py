@@ -1201,6 +1201,20 @@ def test_dashboard_heartbeat_strip(ui, ui_page):
     expect(row.locator("svg.heartbeat")).to_be_visible()
 
 
+def test_dashboard_running_marker_in_both_views(ui, ui_page):
+    """A routine with a run in flight is visually marked as running in BOTH the card view
+    (.card.live — the mint left-edge) AND the list view (tr.live). The list view used to
+    omit the marker entirely: its row only ever got the `attention` class (waiting on a
+    question), never `live`, so a running routine looked idle in the table."""
+    ui.seed_run("uir", "20260714-070000", "running")
+
+    ui_page.goto(ui.url)
+    expect(ui_page.locator(".card.live", has_text="Test uir")).to_be_visible()
+
+    ui_page.get_by_role("button", name="☰ list view").click()
+    expect(ui_page.locator("table.list tbody tr.live", has_text="Test uir")).to_be_visible()
+
+
 def test_dashboard_table_sort_reverses_on_reclick(ui, ui_page):
     """F208: clicking a sortable column header sorts by it; re-clicking the ACTIVE column
     reverses the direction (was a no-op) — the header arrow shows ▴ asc / ▾ desc."""

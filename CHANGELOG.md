@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.137.1] — 2026-08-01
+
+### Fixed
+- **Dashboard list view now marks a running routine, like the card view does (F247).** In the
+  card grid a routine with a run in flight gets a mint left-edge accent (`.card.live`); the
+  sortable list/table view omitted any running marker — its row only ever showed the amber
+  "waiting on a question" treatment, so a routine that was actively running looked idle in the
+  table. The row now carries the same `live` class and shows a matching mint left-edge accent
+  and tint (a static accent rather than the card's pulse, to keep a full column of running rows
+  calm).
+
 ## [0.137.0] — 2026-07-31
 
 ### Added

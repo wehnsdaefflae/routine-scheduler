@@ -325,7 +325,9 @@ export async function render(view) {
     const rows = shown.map((c) => {
       const last = c.last_run;
       const tok = tokensOf(c);
-      return el("tr", { class: c.active_state === "waiting_user" ? "attention" : "" },
+      const rowCls = [RUNNING.has(c.active_state) ? "live" : "",
+        c.active_state === "waiting_user" ? "attention" : ""].filter(Boolean).join(" ");
+      return el("tr", { class: rowCls },
         el("td", {}, el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
           c.description ? el("div", { class: "faint small", style: "max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, c.description) : null),
         el("td", {}, c.active_state ? chip(c.active_state, c.active_state)

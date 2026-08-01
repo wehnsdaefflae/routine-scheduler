@@ -268,6 +268,10 @@ table.list th {
 table.list tr:hover td { background: rgba(255, 255, 255, 0.02); }
 table.list td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 table.list tr.attention td { background: rgba(255, 180, 84, 0.05); }
+/* live: a running routine's row echoes the card's mint left-edge (a static accent, not the
+   card's pulse — a whole column of pulsing rows would be noisy). */
+table.list tr.live td { background: rgba(69, 224, 176, 0.05); }
+table.list tr.live td:first-child { box-shadow: inset 2px 0 0 0 var(--live); }
 pre.doc {
   background: var(--ink-2); border: 1px solid var(--line); border-radius: 8px; padding: 13px;
   white-space: pre-wrap; max-height: 440px; overflow: auto; font-size: 12px; line-height: 1.55;
