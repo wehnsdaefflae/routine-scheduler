@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.138.0] — 2026-08-01
+
+### Changed
+- **New-conversation setup now shows its settings as clearly-titled sections (D57 phase 1, F244).**
+  The pre-start settings on the New conversation screen — Model, Project directory, Budgets,
+  Deliberation, and Permissions & capabilities — were previously collapsed behind a single
+  `⚙ capabilities & budgets` disclosure with terse copy. They are now laid out as titled
+  sections, each with a one-line description of what it does, using the same section vocabulary
+  the routine detail page uses (new shared `static/components/settings-section.js` primitive —
+  an `<h2>` + panel + description block both surfaces compose from). No change to what a
+  conversation submits at creation; this is the presentation foundation the routine-page
+  restructure and the remaining conversation settings (practice modules, filesystem roots,
+  connections at create time) build on next.
+
 ## [0.137.1] — 2026-08-01
 
 ### Fixed

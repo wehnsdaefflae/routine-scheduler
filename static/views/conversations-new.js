@@ -1,11 +1,18 @@
 // The new-conversation composer (the #/conversations no-slug mount): first message,
-// playbook picker, pre-start model/budgets/permissions - split from conversations.js.
-// PREFILL_KEY carries the last user text of a forked ([new-topic]) conversation over.
+// playbook picker, and the pre-start settings — model, budgets, deliberation, project
+// directory and permissions — split from conversations.js. PREFILL_KEY carries the last
+// user text of a forked ([new-topic]) conversation over.
+//
+// D57: the pre-start settings are laid out with the SAME titled-section vocabulary the
+// routine config page uses (components/settings-section.js), so a setting reads and looks
+// the same on both surfaces. Only the fields a conversation actually submits are shown here;
+// a conversation has no schedule, triggers or retention, so those routine sections are absent.
 
 import { api, apiUpload } from "/static/api.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { filePicker } from "/static/components/filepicker.js";
 import { permissionsPanel } from "/static/components/permissions.js";
+import { settingsSection } from "/static/components/settings-section.js";
 import { forgetField } from "/static/formpersist.js";
 import { navigate } from "/static/router.js";
 import { el, toast } from "/static/util.js";
@@ -34,7 +41,8 @@ export function mountComposerOnly(main) {
       ? "Optional — anything specific for this run? The playbook is the brief…"
       : "What should the agent do? The first message becomes the conversation's task…";
   };
-  const workdir = el("input", { type: "text", placeholder: "~/path/to/project (optional)" });
+  const workdir = el("input", { type: "text", placeholder: "~/path/to/project (optional)",
+    style: "width:100%;max-width:420px" });
   // Pre-start budgets: per-REPLY ceilings + a cumulative cap over the WHOLE conversation
   // (all optional — blank keeps the default; -1 = unlimited).
   const turnsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "10",
@@ -53,19 +61,11 @@ export function mountComposerOnly(main) {
     if (r.system_model) modelSel.options[0].textContent = `default · ${r.system_model}`;
     (r.models || []).forEach((m) => modelSel.append(el("option", { value: m.name }, m.name)));
   }).catch(() => { /* settings unreachable — the default option still works */ });
-  // ⚙ capabilities & budgets — the SAME surface the conversation header offers, but
-  // BEFORE create: the first reply fires on create, so a permission, budget, or
-  // deliberation level that must govern reply #1 has to be set here (afterwards the
-  // header panel takes over). Fed by /api/conversations/defaults; the collected
-  // permission payload rides the create request.
+  // Permissions + deliberation govern reply #1, which fires on create — so they must be set
+  // here (afterwards the conversation header panel takes over). Fed by /api/conversations/defaults.
   const delib = deliberationControl("deliberate");
-  let permPanel = null;   // {node, value} once the defaults load
-  const capsBody = el("div", { class: "conv-opts" },
-    el("label", {}, "project directory — the agent may read & edit it", workdir),
-    el("div", { class: "row mt", style: "gap:10px;align-items:flex-start" },
-      el("span", { class: "faint small", style: "min-width:150px;padding-top:4px" },
-        "deliberation — thinking on paper"),
-      delib.node));
+  const permsHost = el("div", {});   // the permissions panel appends here once defaults load
+  let permPanel = null;
   api("/api/conversations/defaults").then((d) => {
     if (d.deliberation) delib.set(d.deliberation);
     const b = d.budgets || {};
@@ -74,11 +74,11 @@ export function mountComposerOnly(main) {
     if (b.max_total_tokens != null) tokIn.placeholder = String(b.max_total_tokens);
     permPanel = permissionsPanel(d.permissions, d.capabilities, {
       disableRuns: "a conversation is one continuous run — previous-run depth is routine-only" });
-    capsBody.append(el("div", { class: "mt" }), permPanel.node);
+    permsHost.replaceChildren(permPanel.node);
   }).catch(() => {
-    capsBody.append(el("div", { class: "muted small mt" },
+    permsHost.replaceChildren(el("div", { class: "muted small" },
       "permission defaults unavailable — the conversation starts with the standard set; ",
-      "tune it in the header panel afterwards"));
+      "tune it in the header panel after it is created"));
   });
   const { picker, files, clearFiles, wirePaste } = filePicker();
   wirePaste(text);
@@ -105,33 +105,49 @@ export function mountComposerOnly(main) {
       navigate(`#/conversations/${r.slug}`);
     } catch (err) { toast(err.message, 5000, { error: true }); send.disabled = false; }
   };
+
+  const budgetRow = el("div", { class: "row", style: "gap:12px;align-items:center;flex-wrap:wrap" },
+    el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
+      "turns / reply", turnsIn),
+    el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
+      "minutes / reply", minsIn),
+    el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
+      "tokens / reply", tokIn),
+    el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
+      "whole conversation (turns)", totalTurnsIn));
+
   main.replaceChildren(
     el("div", { class: "page-head" }, el("div", {},
       el("div", { class: "kicker" }, "conversations"),
       el("h1", {}, "New conversation"))),
+    // the primary action: the first message, an optional playbook, and start
     el("div", { class: "panel conv-new" },
       text,
       el("div", { class: "row mt", style: "gap:8px;align-items:center;flex-wrap:wrap" },
         el("span", { class: "faint small" }, "playbook"), pbSel),
       pbHint,
-      el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, send),
-      el("div", { class: "row mt", style: "gap:8px;align-items:center" },
-        el("span", { class: "faint small" }, "model"), modelSel),
-      el("div", { class: "row mt", style: "gap:12px;align-items:center;flex-wrap:wrap" },
-        el("span", { class: "faint small" }, "budget"),
-        el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
-          "turns / reply", turnsIn),
-        el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
-          "minutes / reply", minsIn),
-        el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
-          "tokens / reply", tokIn),
-        el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
-          "whole conversation (turns)", totalTurnsIn)),
-      el("details", { class: "mt small" },
-        el("summary", { style: "cursor:pointer;color:var(--muted)" },
-          "⚙ capabilities & budgets · project dir, permissions, deliberation"),
-        capsBody),
-      el("div", { class: "faint small mt" },
-        "pick a model above or start on the system default — switch it any time at the top of the conversation")));
+      el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, send)),
+    // the pre-start settings — the same titled-section vocabulary the routine page uses
+    ...settingsSection("Model",
+      "Which model answers this conversation — pick one from the catalog or start on the "
+      + "system default. You can switch it any time from the top of the conversation.",
+      modelSel),
+    ...settingsSection("Project directory",
+      "A folder on the server the agent may read and edit for this conversation. Leave empty "
+      + "to keep it sandboxed to the conversation's own directory.",
+      workdir),
+    ...settingsSection("Budgets",
+      "Optional ceilings. The per-reply limits bound one turn of the agent's work; the "
+      + "whole-conversation cap bounds the entire thread. Blank keeps the default; -1 means unlimited.",
+      budgetRow),
+    ...settingsSection("Deliberation",
+      "How much of the model's reasoning is written down as it works — more paper is easier to "
+      + "follow but costs tokens.",
+      delib.node),
+    ...settingsSection("Permissions & capabilities",
+      "What this conversation is allowed to do — enforced by the engine on every action. These "
+      + "govern the first reply, which fires as soon as you start, so set them here; you can "
+      + "adjust them afterward from the conversation header.",
+      permsHost));
   text.focus();
 }

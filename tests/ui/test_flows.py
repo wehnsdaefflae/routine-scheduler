@@ -463,6 +463,11 @@ def test_run_transcript_story_and_refer(ui, ui_page):
 
 def test_conversation_composer(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/conversations")
+    # D57/F244: the pre-start settings are exposed as titled sections (the same section
+    # vocabulary the routine page uses), not buried in one opaque "capabilities & budgets"
+    # disclosure. Each must be a visible <h2> on the composer before the conversation starts.
+    for section in ("Model", "Budgets", "Deliberation", "Permissions & capabilities"):
+        expect(ui_page.get_by_role("heading", name=section, exact=True)).to_be_visible()
     ui_page.locator(".conv-new textarea").fill(
         "Plan my week: gather the calendar, draft a schedule.")
     ui_page.get_by_role("button", name="start conversation").click()
@@ -992,21 +997,20 @@ def test_clarify_run_page_question_form_renders_options(ui, ui_page):
 
 
 def test_new_conversation_composer_offers_caps_and_budgets(ui, ui_page):
-    """The composer carries the SAME ⚙ capabilities & budgets surface as the conversation
-    header — a permission granted there (e.g. shell) and a budget set there govern reply #1,
-    which fires on create and would miss any post-hoc toggle."""
+    """The composer exposes the SAME permission + budget controls as the conversation
+    header — a permission granted here (e.g. shell) and a budget set here govern reply #1,
+    which fires on create and would miss any post-hoc toggle. D57: they are titled sections
+    (Permissions & capabilities, Budgets), no longer buried in one ⚙ disclosure."""
     import re
 
     ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new summary", has_text="capabilities & budgets").click()
-    panel = ui_page.locator(".conv-new")
-    expect(panel).to_contain_text("deliberation — thinking on paper")
-    expect(panel).to_contain_text("conduct permissions")
-    shell_row = panel.locator(".toggle-row").filter(
+    expect(ui_page.get_by_role("heading", name="Permissions & capabilities",
+                               exact=True)).to_be_visible()
+    shell_row = ui_page.locator(".toggle-row").filter(
         has=ui_page.get_by_text("shell", exact=True))
     shell_row.locator('input[type="checkbox"]').check()
-    panel.locator('input[title="max tokens per reply (-1 = unlimited)"]').fill("55000")
-    panel.locator("textarea").first.fill("Need a shell for this.")
+    ui_page.locator('input[title="max tokens per reply (-1 = unlimited)"]').fill("55000")
+    ui_page.locator(".conv-new textarea").fill("Need a shell for this.")
     ui_page.get_by_role("button", name="start conversation").click()
     expect(ui_page).to_have_url(re.compile(r"#/conversations/"))
     convs = [p for p in ui.conversations.iterdir() if (p / "routine.yaml").exists()]
