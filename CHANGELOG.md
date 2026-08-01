@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.140.2] — 2026-08-01
+
+### Fixed
+- **Dropped a dead pre-0.49 backwards-compat branch in the search indexer (F254).**
+  `search/sources.py` walked `("stages", "steps", "traits")` for recipe files, where `steps/`
+  was the stage-directory name before 0.49. No code path has created a `steps/` directory
+  since (`scaffold`/`adapt` only ever write `stages/`, and `RECIPE_PREFIXES` is
+  `main.md`/`stages/`/`traits/`/`tuning.yaml`), so the literal was a fallback for a layout that
+  no longer exists — removed per the repo's no-backwards-compatibility rule.
+- **Removed a duplicated `_routine_dir` helper in the web layer (F255).** `web/api_items.py`
+  carried a byte-identical copy of `web/api_audit.py`'s `_routine_dir(request)`; since
+  `api_items` already imports from `api_audit`, it now imports the single definition instead.
+
+### Documentation
+- **Corrected stale `docs/traits-permissions.md` (F256).** The doc predated `practice-library`
+  becoming a routine-default permission and `read_trait` a default capability, and predated the
+  `scheduling` permission: the `read_trait` note no longer calls practice-library routine-opt-in,
+  the capabilities example + default line include `read_trait`, and the shipped-permissions
+  table gains the `practice-library` and `scheduling` rows.
+
 ## [0.140.1] — 2026-08-01
 
 ### Fixed

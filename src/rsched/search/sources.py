@@ -84,7 +84,7 @@ def _routine_sources(home_kind: str, d: Path) -> Iterator[SourceFile]:
                        ("main.md", "recipe")):
         if (d / name).is_file():
             yield SourceFile(d / name, home_kind, slug, kind=kind)
-    for subdir in ("stages", "steps", "traits"):   # steps/ is the pre-0.49 stage dir name
+    for subdir in ("stages", "traits"):
         for p in _md_files(d / subdir):
             yield SourceFile(p, home_kind, slug, kind="recipe")
     for p in _md_files(d / ".memory"):

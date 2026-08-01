@@ -18,13 +18,9 @@ from .. import registry
 from ..paths import read_json
 from ..readmodels import items as items_model
 from ..readmodels.items import SELF_AUDIT_SLUG
-from .api_audit import answered_decisions, pending_feedback
+from .api_audit import _routine_dir, answered_decisions, pending_feedback
 
 router = APIRouter(tags=["items"])
-
-
-def _routine_dir(request: Request) -> Path:
-    return request.app.state.server.routines_home / SELF_AUDIT_SLUG
 
 
 def _report_header(routine_dir: Path) -> dict | None:

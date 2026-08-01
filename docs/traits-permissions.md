@@ -126,7 +126,7 @@ A **run** never changes its own set. With the `practice-library` permission it m
 `read_trait` — consult one module from the library for the current run only (`name: "list"`
 for the catalog, entries flagged when already held). Nothing is written, so the recipe stays
 the user's; a module that keeps proving necessary belongs in the run's finish summary or a
-deferred `ask_user`. Default-on for conversations, opt-in for routines.
+deferred `ask_user`. Held by new routines by default (and by conversations).
 
 At creation the wizard **preselects** traits from the refined instruction + chosen
 workflow (editable before creating), and the generator LLM **adapts** each selected trait
@@ -147,15 +147,15 @@ refines every recipe centrally (conversations included).
 
 ```yaml
 capabilities:
-  actions: [write_util, memory_read, memory_write]  # gated action kinds switched on
+  actions: [write_util, memory_read, memory_write, read_trait]  # gated action kinds switched on
   utils: [discord]              # reserved utils switched on
   confirm: always               # write_util approval: always | creations | never
   runs: none                    # previous-run read depth: none | last | all
   workflows: catalog            # subtask pattern sourcing: catalog | generate
 ```
 
-A new routine's default: `write_util` (confirm `always`) + the memory pair, no reserved
-utils, no run history — matching the default permission set below.
+A new routine's default: `write_util` (confirm `always`) + the memory pair + `read_trait`,
+no reserved utils, no run history — matching the default permission set below.
 
 ## Permissions (conduct docs)
 
@@ -193,6 +193,8 @@ The shipped set:
 | `usenet` | the reserved `usenet` + `usenet-nzb` utils — read, search and post over NNTP (see [usenet](usenet.md)) | opt-in |
 | `workflow-generation` | `workflows: generate` — a subtask may DRAFT a new pattern when none fits | opt-in |
 | `background-tasks` | the `detach` action — launch a long job that outlives a reply and reports back | ✅ conversations; opt-in for routines |
+| `practice-library` | the `read_trait` action — consult a library practice module for the current run | ✅ |
+| `scheduling` | the `schedule_run` action — arm/cancel a one-shot future run of a routine | opt-in |
 
 ### What enforcement looks like
 
