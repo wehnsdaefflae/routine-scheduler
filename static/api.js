@@ -100,9 +100,9 @@ export async function api(path, { method = "GET", body } = {}) {
 
 // Multipart upload (message attachments): same token/gate handling as api(), but the body
 // is a FormData — the browser sets the multipart boundary, so no Content-Type of ours.
-export async function apiUpload(path, formData) {
+export async function apiUpload(path, formData, extraHeaders = {}) {
   return authedJson(path, (token) => ({
-    method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData }));
+    method: "POST", headers: { Authorization: `Bearer ${token}`, ...extraHeaders }, body: formData }));
 }
 
 // Authenticated binary fetch → object URL, for content that renders via src attributes

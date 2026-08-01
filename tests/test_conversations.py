@@ -226,6 +226,40 @@ def test_message_to_terminal_conversation_refused_while_draining(client):
     assert len(list((conv_dir / "inbox").glob("msg-*.json"))) == before + 1
 
 
+def test_message_admin_token_drops_marker_only_when_valid(client, monkeypatch):
+    """D63-1A: the Conversations composer's Admin toggle sends x-admin-token with the message;
+    a resume of a terminal conversation carrying a VALID token drops the one-shot admin marker
+    on the resumed run's dir (which the loop reads to lift capability gating), and a wrong /
+    absent token leaves no marker. Mirrors the /runs/{id}/converse admin path (D62) at the
+    conversation-composer endpoint. Also the first endpoint-level coverage of the admin flow."""
+    from rsched.engine.admin import ADMIN_MARKER, ADMIN_TOKEN_ENV
+    monkeypatch.setenv(ADMIN_TOKEN_ENV, "s3cret-admin-token")
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "Plan the week"}).json()["slug"]
+    conv_dir = server.conversations_home / slug
+    ts = c.get(f"/api/conversations/{slug}").json()["run_id"].split(":")[1]
+    run_dir = conv_dir / "runs" / ts
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": f"{slug}:{ts}", "state": "finished", "turn": 3})
+
+    # no admin header → resume, but NO admin marker
+    r = c.post(f"/api/conversations/{slug}/message", data={"text": "continue"})
+    assert r.status_code == 200 and r.json()["delivery"] == "resumed"
+    assert not (run_dir / ADMIN_MARKER).exists()
+
+    # a WRONG token → resume, still NO marker (fail-closed)
+    r = c.post(f"/api/conversations/{slug}/message", data={"text": "again"},
+               headers={"x-admin-token": "wrong"})
+    assert r.status_code == 200
+    assert not (run_dir / ADMIN_MARKER).exists()
+
+    # a VALID token → the one-shot admin marker is dropped on the resumed run dir
+    r = c.post(f"/api/conversations/{slug}/message", data={"text": "now with admin"},
+               headers={"x-admin-token": "s3cret-admin-token"})
+    assert r.status_code == 200 and r.json()["delivery"] == "resumed"
+    assert (run_dir / ADMIN_MARKER).exists()
+
+
 def test_conversation_connections_binding(client):
     """D55 (closes R70): a conversation can bind an OAuth connection just like a routine —
     PATCH /conversations/{slug} accepts `connections`, the binding lands in routine.yaml (so the

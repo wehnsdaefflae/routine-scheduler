@@ -359,6 +359,43 @@ def test_run_view_composer_draft_persists_and_clears_on_send(ui, ui_page):
     expect(composer).to_have_value("")
 
 
+def test_conversation_admin_toggle_sends_token(ui, ui_page):
+    """D63-1A: the Conversations composer has an Admin toggle. Off by default; clicking it
+    prompts for the admin token (themed dialog), stores it for THIS browser session, and reads
+    'admin: on'. Every message it then sends carries the x-admin-token header (the server
+    re-checks it and drops the one-shot admin marker). Toggling off forgets the token and the
+    next message carries no admin header."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill("plan the week with the full toolset")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+
+    admin = ui_page.get_by_role("button", name="admin", exact=True)
+    admin.wait_for(timeout=10_000)                      # the composer mounts after an async fetch
+    expect(admin).to_be_visible()                       # off by default: label is plain "admin"
+    admin.click()
+    # the themed prompt collects the token (no native prompt) — fill it and confirm
+    dlg = ui_page.locator(".modal-overlay")
+    expect(dlg).to_be_visible()
+    dlg.locator("input").fill("s3cret-admin-token")
+    dlg.get_by_role("button", name="ok").click()
+    expect(ui_page.get_by_role("button", name="admin: on")).to_be_visible()
+
+    # sending now carries the admin header
+    with ui_page.expect_request("**/api/conversations/**/message") as req:
+        ui_page.locator(".conv-composer textarea").fill("do the thing")
+        ui_page.get_by_role("button", name="send", exact=True).click()
+    assert req.value.headers.get("x-admin-token") == "s3cret-admin-token"
+
+    # toggle off → the label reverts and the next send carries NO admin header
+    ui_page.get_by_role("button", name="admin: on").click()
+    expect(ui_page.get_by_role("button", name="admin", exact=True)).to_be_visible()
+    with ui_page.expect_request("**/api/conversations/**/message") as req2:
+        ui_page.locator(".conv-composer textarea").fill("and again")
+        ui_page.get_by_role("button", name="send", exact=True).click()
+    assert req2.value.headers.get("x-admin-token") is None
+
+
 def test_run_view_recipe_edit_checkbox(ui, ui_page):
     """D37 (revised): a terminal routine run shows the "editable recipe" CHECKBOX right
     next to the composer input — OFF by default; checking it flips the placeholder to say

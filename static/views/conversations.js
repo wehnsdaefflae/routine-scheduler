@@ -21,6 +21,7 @@ import { createArtifacts } from "/static/components/artifacts.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createStateGraph } from "/static/components/stategraph.js";
 import { createTaskTree } from "/static/components/tasktree.js";
+import { promptDialog } from "/static/components/dialog.js";
 import { busy, chip, el, emptyState, relTime, toast } from "/static/util.js";
 import { followScroll } from "/static/follow.js";
 import { enabled as notifyEnabled } from "/static/notify.js";
@@ -389,9 +390,38 @@ export async function render(view, slug, _query = {}) {
         try { await api(`/api/runs/${detail.run_id}/abort`, { method: "POST" }); toast("stopping the reply…"); }
         catch (err) { toast(err.message, 4000, { error: true }); stopBtn.disabled = false; }
       };
+      // D63: the Admin toggle — hold the admin token for THIS browser session and send it with
+      // each message, so a resumed conversation leg runs with capability gating lifted. The
+      // server re-validates the token on every request and never stores it; turning admin off
+      // forgets it. The button reads as danger while armed — the one unmistakable signal that
+      // this conversation can reach the full toolset.
+      const ADMIN_KEY = "rsched_admin_token";
+      let adminToken = sessionStorage.getItem(ADMIN_KEY) || "";
+      const adminBtn = el("button", { class: "btn small ghost",
+        title: "run this conversation with the full toolset — sends the admin token with each message" },
+        "admin");
+      const paintAdmin = () => {
+        adminBtn.classList.toggle("danger", Boolean(adminToken));
+        adminBtn.classList.toggle("ghost", !adminToken);
+        adminBtn.textContent = adminToken ? "admin: on" : "admin";
+      };
+      adminBtn.onclick = async () => {
+        if (adminToken) {
+          adminToken = ""; sessionStorage.removeItem(ADMIN_KEY); paintAdmin();
+          toast("admin off — messages send normally"); return;
+        }
+        const t = await promptDialog(
+          "Admin token — lifts capability gating for this conversation. Stored for this browser "
+          + "session only; the server re-checks it on every message.",
+          { placeholder: "paste the admin token" });
+        if (!t) return;
+        adminToken = t; sessionStorage.setItem(ADMIN_KEY, t); paintAdmin();
+        toast("admin on — this conversation runs with the full toolset");
+      };
+      paintAdmin();
       const node = el("div", { class: "conv-composer" }, helpPanel, refBar,
         el("div", { class: "cmd-anchor" }, suggests, input),
-        el("div", { class: "row", style: "gap:8px" }, picker, helpBtn, send, stopBtn), pbRow);
+        el("div", { class: "row", style: "gap:8px" }, picker, helpBtn, adminBtn, send, stopBtn), pbRow);
       const submit = async () => {
         if (!input.value.trim()) return;
         send.disabled = true;
@@ -408,7 +438,8 @@ export async function render(view, slug, _query = {}) {
             : input.value);
           if (isCommand) fd.append("command", "1");
           for (const f of files()) fd.append("files", f);
-          const r = await apiUpload(`/api/conversations/${slug}/message`, fd);
+          const r = await apiUpload(`/api/conversations/${slug}/message`, fd,
+            adminToken ? { "x-admin-token": adminToken } : {});
           input.value = "";
           setRef(null);
           forgetField(input);   // sent — the draft must not refill on reload

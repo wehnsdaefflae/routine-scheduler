@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.146.0] — 2026-08-01
+
+### Added
+- **Admin conversation — the UI affordance + rotation runbook (operator-selected D63: 1A + 2A).**
+  The D62 admin backend shipped without a web control (an operator had to send the `x-admin-token`
+  header by hand). D63-1A adds an **Admin toggle** to every conversation composer: click it, paste
+  the admin token (stored in the browser **session** only, never on the server), and it reads
+  **admin: on** in red while armed and sends the token with each message. The server re-checks the
+  token on every request and, on a match, drops the one-shot per-leg admin marker — so a resumed
+  conversation runs with capability gating lifted. The conversation `POST /message` endpoint now
+  honours `x-admin-token` (the same web-layer-only check as `/runs/{id}/converse`); a stale marker
+  is cleared if the wake fails, so it can never grant admin to a later tokenless resume. `apiUpload`
+  gained an optional extra-headers argument. D63-2A adds `docs/admin.md` — a full admin guide with a
+  **manual token-rotation runbook** (rotate the `RSCHED_ADMIN_TOKEN` secret + restart; clear it to
+  revoke instance-wide). Tests: an endpoint-level admin-resume test (the first endpoint coverage of
+  the admin flow, closing a D62 gap) + a browser UI flow test driving the toggle end to end.
+
 ## [0.145.0] — 2026-08-01
 
 ### Added

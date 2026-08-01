@@ -224,11 +224,29 @@ async def message(request: Request, slug: str, text: Annotated[str, Form()],
         return {"ok": True, "delivery": "mid-run", "run_id": last.run_id,
                 "command": is_command}
     runner = request.app.state.runner
+    # D62/D63: an ADMIN resume from the Conversations composer — the SAME web-layer-only token
+    # check as /runs/{id}/converse. On a valid token, unlock capability gating for THIS resumed
+    # leg via the one-shot marker (never persisted, never inherited by a sub-workflow). Scoped to
+    # a resume of an existing terminal conversation — a fresh fire has no run dir to mark yet, and
+    # the mid-run branch already returned above. The marker is cleared again if the wake fails, so
+    # a stale marker can never grant admin to a LATER, tokenless resume of the same run.
+    from ..engine.admin import (
+        ADMIN_HEADER,
+        admin_token_valid,
+        clear_admin_marker,
+        write_admin_marker,
+    )
+    admin_run_dir = None
+    if last and admin_token_valid(request.headers.get(ADMIN_HEADER)):
+        admin_run_dir = conv_dir / "runs" / last.run_id.split(":", 1)[1]
+        write_admin_marker(admin_run_dir)
     # A command wakes the engine to EXECUTE it and return to idle without a reply (the loop's
     # command-only gate) — same resume, but the model never takes a turn.
     rid = (await runner.resume_terminal(info.cfg, reason="converse") if last
            else await runner.fire(info.cfg, reason="conversation"))
     if not rid:
+        if admin_run_dir is not None:
+            clear_admin_marker(admin_run_dir)
         raise HTTPException(
             409, "could not wake the conversation (draining, or a reply just started)")
     return {"ok": True, "delivery": "command" if is_command else "resumed",
