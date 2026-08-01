@@ -790,7 +790,12 @@ def test_settings_endpoints_crud(ui, ui_page):
     card.locator("summary", has_text="edit fields").click()
     card.locator('input[placeholder="https://host/v1"]').fill("http://10.0.0.6:8000/v1")
     card.get_by_role("button", name="save changes").click()
-    expect(_toast(ui_page)).to_be_visible()
+    # Wait for the list to RE-RENDER with the persisted value before reading config.yaml.
+    # The save handler runs `await api(PUT); toast(...); await load()`, so the card header only
+    # shows the new base_url once load() has re-fetched post-write. Asserting on a lingering
+    # toast instead (the CREATE toast may still be on screen) races the config write and flakes
+    # under xdist — the DOM re-render is the reliable "the save round-tripped" signal.
+    expect(card).to_contain_text("http://10.0.0.6:8000/v1")
     assert _server_yaml(ui)["endpoints"]["vllm"]["base_url"] == "http://10.0.0.6:8000/v1"
 
     # CREATE a catalog model bound to it
