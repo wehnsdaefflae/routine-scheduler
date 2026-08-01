@@ -1288,6 +1288,40 @@ def test_dashboard_live_refresh_preserves_search_focus(ui, ui_page):
     expect(search).to_have_value("uir")
 
 
+def test_global_stream_remints_ticket_on_reconnect(ui, ui_page):
+    """F253: the global /api/events stream drives every view's live refresh (dashboard
+    routine states, decision badges, run toasts). SSE tickets have a 60s TTL and are purged
+    whenever the daemon restarts, but EventSource's native auto-reconnect reuses the SAME
+    ?ticket= URL — so after any drop the reconnect 401s forever, the bus goes silent, and
+    the console freezes with stale routine states (the daemon lamp stuck off). globalStream
+    must own the reconnect: mint a FRESH ticket and reopen under backoff. Here the stream is
+    routed so a reused ticket is rejected (as an expired/purged one would be) and the first
+    connection is dropped; only re-minting recovers the daemon lamp."""
+    from urllib.parse import parse_qs, urlparse
+
+    seen: set[str] = set()
+
+    def handle(route):
+        ticket = parse_qs(urlparse(route.request.url).query).get("ticket", [""])[0]
+        if ticket in seen:
+            route.abort()          # a reused (expired/purged) ticket is rejected
+        else:
+            seen.add(ticket)
+            route.abort()          # accept the ticket once, then drop it — forces a reconnect
+    ui_page.route("**/api/events*", handle)
+
+    ui.seed_run("uir", "20260729-070000", "finished", summary="ok")
+    ui_page.goto(ui.url)
+    # Every ticket is dropped, so the lamp never stays on in EITHER version — the
+    # discriminator is whether the client RE-MINTS. The unfixed client lets EventSource
+    # retry the SAME dead ticket, so `seen` never grows past 1; the fix mints a fresh ticket
+    # on each reconnect under backoff (first retry at ~1s), so distinct tickets accumulate.
+    # Wait past the first backoff, then require ≥2 DISTINCT tickets.
+    ui_page.wait_for_timeout(3000)
+    assert len(seen) >= 2, (
+        f"client did not re-mint a fresh ticket after the stream dropped (saw {len(seen)})")
+
+
 def test_routine_page_trait_picker_adds_a_practice_module(ui, ui_page):
     """The post-creation practice picker: ticking a library module and applying copies it
     into the routine's own traits/ VERBATIM and rebuilds main.md's derived Standing-practices

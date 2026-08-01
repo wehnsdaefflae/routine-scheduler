@@ -268,8 +268,18 @@ function scheduleBadgeRefresh() {
 }
 
 function globalStream() {
-  sse("/api/events", {
+  // The global event stream drives every view's live refresh (dashboard routine states,
+  // decision badges, run toasts). EventSource's OWN auto-reconnect reuses the same
+  // ?ticket= URL, but SSE tickets have a 60s TTL and are purged whenever the daemon
+  // restarts — so a naive reconnect 401s forever, the bus goes silent, and the console
+  // freezes with stale routine states (the daemon lamp stuck off). So we own the
+  // reconnect the way stream.js/liveTail does: on error, close the dead source and reopen
+  // via a fresh sse() (which mints a NEW ticket) under capped exponential backoff.
+  let source = null, timer = null, retry = 0;
+  const dot = () => document.getElementById("daemon-dot");
+  const handlers = {
     bus: (ev) => {
+      retry = 0;   // a delivered event proves the stream is healthy — reset the backoff
       if (ev.event === "run_started") toast(`run started: ${ev.run_id}`);
       if (ev.event === "run_finished") toast(`run ${ev.state}: ${ev.run_id}`);
       if (ev.event === "routine_created") { toast(`routine ${ev.slug} is ready`, 5000); refreshSetupBanner(); }
@@ -278,9 +288,25 @@ function globalStream() {
       if (ev.event !== "llm_task") scheduleBadgeRefresh();
       window.dispatchEvent(new CustomEvent("rsched-bus", { detail: ev }));
     },
-    onopen: () => document.getElementById("daemon-dot").classList.add("on"),
-    onerror: () => document.getElementById("daemon-dot").classList.remove("on"),
-  });
+    onopen: () => {
+      retry = 0;
+      dot()?.classList.add("on");
+      // A reconnect may have missed run start/state/finish events while the stream was down;
+      // fire one synthetic bus tick so every view re-fetches from REST and catches up (on the
+      // first open the views have just loaded, so this is a cheap no-op refresh).
+      window.dispatchEvent(new CustomEvent("rsched-bus", { detail: { event: "reconnect" } }));
+    },
+    onerror: () => {
+      dot()?.classList.remove("on");
+      if (source) { source.close(); source = null; }   // stop EventSource retrying the dead ticket
+      clearTimeout(timer);
+      const delay = Math.min(15000, 1000 * 2 ** retry);   // capped exponential backoff
+      retry += 1;
+      timer = setTimeout(connect, delay);
+    },
+  };
+  function connect() { source = sse("/api/events", handlers); }
+  connect();
 }
 
 // ---- topbar clock ----------------------------------------------------------------------------

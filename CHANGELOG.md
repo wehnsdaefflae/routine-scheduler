@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.140.1] — 2026-08-01
+
+### Fixed
+- **The routine overview (and every view's live refresh) no longer freezes with stale state
+  after the event stream drops (F253).** The global `/api/events` stream drives the dashboard's
+  live routine-state chips, the decision badges and the run toasts via the `rsched-bus` window
+  event. SSE tickets have a 60s TTL and are purged whenever the daemon restarts, but
+  `static/app.js`'s `globalStream()` relied on `EventSource`'s built-in auto-reconnect, which
+  reuses the SAME `?ticket=` URL — so after any drop (a self-update restart, a 60s idle timeout,
+  a tab wake) the reconnect authenticated with a dead ticket and 401'd forever: the bus went
+  silent, the daemon lamp stuck off, and the dashboard kept showing whatever routine states it
+  last saw with no polling fallback. `globalStream()` now owns its reconnect the way
+  `stream.js`/`liveTail` already does — on error it closes the dead `EventSource` and reopens
+  through a fresh `sse()` call (minting a NEW ticket) under capped exponential backoff, and on
+  reopen it fires one synthetic bus tick so every view re-fetches and catches up on transitions
+  missed during the outage. Covered by `tests/ui/test_flows.py::test_global_stream_remints_ticket_on_reconnect`.
+
 ## [0.140.0] — 2026-08-01
 
 ### Changed
