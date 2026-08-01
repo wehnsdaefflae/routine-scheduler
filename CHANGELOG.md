@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.147.0] — 2026-08-01
+
+### Changed
+- **Settings sections now share the `settingsSection` primitive (operator-selected D64 / A',
+  the next D57 interface-quality increment).** The Settings page hand-rolled each section header
+  (`<h2 id="sec-…">` + `<p class="set-desc">`) while routine config and the new-conversation
+  composer built theirs through the shared `settingsSection` primitive — three surfaces, two ways.
+  `settingsSection` now accepts an optional section id (`settingsSection({ title, id }, desc, …)`)
+  that stamps the heading as `<h2 id="sec-{id}">` — the anchor the Settings side-nav, deep links
+  (`#/settings?section=<id>`) and TOC jump to — and gained a **header mode** (no body rows → just
+  the heading + one `p.set-desc` description line) for the Settings sub-views, which append their
+  own panels. The Settings page now builds every section header through the primitive, so all three
+  surfaces construct a section the one canonical way. Also fixes the Source section's contradictory
+  description (it said the code is "pulled" there, but the section sets the **push** target for the
+  self-audit routine's autonomous commits). DOM-preserving: the `.set-desc`/`#sec-id`/deep-link
+  contract the UI flow tests assert is unchanged.
+
 ## [0.146.0] — 2026-08-01
 
 ### Added

@@ -8,11 +8,28 @@
 // Returns the [<h2>, <div.panel>] pair so a caller spreads it into a parent:
 //   view.append(...settingsSection("Budgets", "hard per-run ceilings…", ...rows));
 // Passing an empty/undefined description omits the description line entirely.
+//
+// The title may be a plain string, OR an object { title, id } — passing an id stamps the
+// heading as <h2 id="sec-{id}">, the anchor the Settings page's side-nav / deep links
+// (#/settings?section=<id>) and TOC jump to. That is how the Settings sub-views adopt this
+// same primitive (D64/A'): all three surfaces — routine config, the composer, and Settings —
+// now build a section the one way, with a single description that lives inside the panel.
 import { el } from "/static/util.js";
 
 export function settingsSection(title, description, ...body) {
+  const id = (title && typeof title === "object") ? title.id : null;
+  const heading = (title && typeof title === "object") ? title.title : title;
+  const h2 = el("h2", id ? { id: `sec-${id}` } : {}, heading);
+  // Header mode — no body rows: the caller (a Settings sub-view) appends its own panel(s)
+  // after this pair, so emit just the heading + one standalone description line (the
+  // `p.set-desc` the Settings page's side-nav, TOC and deep-link tests expect).
+  if (body.length === 0) {
+    return description ? [h2, el("p", { class: "set-desc muted small" }, description)] : [h2];
+  }
+  // Panel mode — heading + one panel wrapping the description and the body rows (the routine
+  // config page and the new-conversation composer).
   return [
-    el("h2", {}, title),
+    h2,
     el("div", { class: "panel" },
       description
         ? el("div", { class: "muted small", style: "margin-bottom:10px" }, description)

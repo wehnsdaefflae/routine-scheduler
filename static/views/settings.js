@@ -7,6 +7,7 @@
 
 import { api } from "/static/api.js";
 import { setQuery } from "/static/router.js";
+import { settingsSection } from "/static/components/settings-section.js";
 import { el, toast } from "/static/util.js";
 import { renderConnections } from "/static/views/settings-connections.js";
 import { renderEndpoints } from "/static/views/settings-endpoints.js";
@@ -55,7 +56,7 @@ export async function render(view, query = {}) {
       blurb: "The Git repositories that define the scheduler itself and its shared workflow library.",
       sections: [
         { id: "source", nav: "Source", title: "Source repository",
-          desc: "The scheduler's own code — where the running version is pulled from.",
+          desc: "The scheduler's own code — the fork the self-audit routine commits and pushes its changes to.",
           fill: (v) => renderSource(v) },
         { id: "libraries", nav: "Library", title: "Library repository",
           desc: "The shared workflow patterns, practice modules and permissions every routine draws on.",
@@ -123,8 +124,7 @@ export async function render(view, query = {}) {
       el("div", { class: "kicker" }, g.label),
       el("div", { class: "set-groupblurb muted small" }, g.blurb)));
     for (const s of g.sections) {
-      view.append(el("h2", { id: `sec-${s.id}` }, s.title));
-      view.append(el("p", { class: "set-desc muted small" }, s.desc));
+      view.append(...settingsSection({ title: s.title, id: s.id }, s.desc));
       const p = s.fill(view);
       if (p) fills.push(p);
     }
