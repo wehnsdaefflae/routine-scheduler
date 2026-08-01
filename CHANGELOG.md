@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.148.0] — 2026-08-01
+
+### Fixed
+- **Answering an already-resolved question settles gently instead of erroring (F259).** A
+  question answered on one surface (or expired, or overtaken as its run moved on) left stale
+  answer cards on other open surfaces still showing an actionable button. Clicking it hit the
+  backend's correct `404 no open question`, which the shared `answerForm` surfaced as a **red
+  error toast** (and logged a UI-friction trace event) while **re-enabling the buttons** — inviting
+  a second doomed click. Both answer paths (the access-request decision buttons and the
+  text/option submit) now treat a 404 as the benign "already answered elsewhere" end-state: a
+  plain notice + settling the card via the host's `onSuccess`, no error toast, no re-enabled
+  action. Fixed once in the one shared component, so every answer surface (Decisions page, run
+  view, conversation, transcript inline) benefits. Evidence: `.ui-traces/20260801.jsonl`
+  20:53:44Z `no open question 'q-20260801-202218-5'`. Guarded by
+  `tests/ui/test_flows.py::test_answering_an_already_resolved_question_settles_gently`.
+
 ## [0.147.1] — 2026-08-01
 
 ### Changed

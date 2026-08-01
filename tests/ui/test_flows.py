@@ -256,6 +256,36 @@ def test_run_view_question_form(ui, ui_page):
     # test_run_page_blocking_question_shows_option_buttons (F189)
 
 
+def test_answering_an_already_resolved_question_settles_gently(ui, ui_page):
+    """F259: a question answered on one surface (or expired) leaves stale answer cards on
+    other open surfaces still showing an actionable button. Clicking it hits the backend's
+    404 `no open question` — the benign 'already resolved elsewhere' end-state. The shared
+    answerForm must settle the card with a plain notice, NOT a red error toast (which also
+    logs a UI-friction trace event) plus re-enabled buttons inviting a doomed retry. Here the
+    answer POST is routed to that 404 and we require the toast is the benign notice, not `.err`."""
+    import re
+
+    ui.seed_run("uir", "20260716-100000", "waiting_user",
+                question={"qid": "q-stale", "question": "Which path?", "options": ["a", "b"],
+                          "default": "a", "asked": "20260716-100000"})
+    ui.seed_question("uir", "q-stale", "Which path?", mode="blocking", default="a")
+
+    def handle(route):
+        route.fulfill(status=404, content_type="application/json",
+                      body=json.dumps({"detail": "no open question 'q-stale'"}))
+    ui_page.route("**/api/questions/q-stale/answer", handle)
+
+    ui_page.goto(f"{ui.url}/#/run/uir:20260716-100000")
+    box = ui_page.locator(".panel.warn", has_text="Which path?")
+    box.get_by_role("button", name="a", exact=True).click()   # one-click option submit
+    # the benign notice appears and it is NOT an error toast
+    toast = _toast(ui_page)
+    expect(toast).to_contain_text("already answered elsewhere")
+    expect(toast).not_to_have_class(re.compile(r"\berr\b"))
+    # the card settled (the host cleared it) — the actionable option button is gone
+    expect(box.get_by_role("button", name="a", exact=True)).to_have_count(0)
+
+
 def test_long_option_label_does_not_overflow(ui, ui_page):
     """A decision option can be a full sentence. The option button must wrap and stay
     within the question card width instead of overflowing right on a narrow viewport

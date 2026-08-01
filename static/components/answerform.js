@@ -55,6 +55,15 @@ export function answerForm(q, {
       if (note) toast(note);
       onSuccess?.(phrase, false);
     } catch (err) {
+      if (err.status === 404) {   // already resolved elsewhere (answered on another surface,
+        // expired, or the run moved on) — a benign end-state. Settle the card instead of a red
+        // error toast (which also logs a UI-friction trace event) + re-enabled buttons that
+        // only invite a doomed retry (F259).
+        toast("already answered elsewhere");
+        const phrase = DECISIONS.find(([key]) => key === decision)?.[1] || decision;
+        onSuccess?.(phrase, false);
+        return;
+      }
       toast(err.message, 4000, { error: true });
       for (const b of btnRow.querySelectorAll("button")) b.disabled = false;
     }
@@ -99,6 +108,12 @@ export function answerForm(q, {
       if (note) toast(note);
       onSuccess?.(text, intermediate);
     } catch (err) {
+      if (err.status === 404) {   // already resolved elsewhere — benign end-state, not an error (F259)
+        toast("already answered elsewhere");
+        forgetField(input);
+        onSuccess?.(text, intermediate);
+        return;
+      }
       toast(err.message, 4000, { error: true });
       send.disabled = false;
       if (discuss) discuss.disabled = false;
