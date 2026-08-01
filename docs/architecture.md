@@ -487,17 +487,17 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   turns a Python pattern into that markdown at scaffold; `materialize` renders it whole (sub-routines/fallback).
   A `tools:` list restricts action kinds (`finish` always allowed) — how `clarify-instruction` is held to
   ask/read/write/finish. `workflows/lint.py` gates every change; `suggest`/`generate` rank/draft via the
-  `system_model`. The **new-routine wizard** runs `clarify-instruction`, which now SUGGESTS a pattern (or
-  asks to generate one) and MARRIES the task to it — asking questions that overlay the task on the pattern's
-  control flow + parameters (candidates written to the session's `state/candidates.md`). A session is a
-  REAL run of the protected `clarification` template routine (`clarification/runs/<ts>`, executing in the
-  hidden `.wizard-<ts>` workspace) and its ONLY UI surface is the **standard run page** —
-  `#/run/clarification:<ts>` mounts `components/setuppanel.js` (chat frame while live; suggest → create →
-  build panels once finished); `#/new-routine` (`views/new-routine.js`) owns just the draft form. There is
-  NO bespoke wizard view (D11) — decision answers/defers, inject and converse for a clarify run all route
-  to the polled workspace inbox (`wizard_store.session_inbox_dir` / `api_questions._record_dir`).
+  `system_model`. Routine creation is initiated from a CONVERSATION ONLY (D58/D59) — there is no standalone new-routine
+  wizard page. The conversation agent clarifies the task WITH the user in normal chat (`clarify-instruction`
+  SUGGESTS a pattern, or asks to generate one, and MARRIES the task to it), then emits the **`create_routine`**
+  action (`engine/create_routine.py`) — valid ONLY from a root conversation — which materializes the routine
+  SYNCHRONOUSLY through the SAME `workflows.scaffold` path the wizard build once called (decompose the chosen
+  workflow into main.md + stages/, adapt its traits, write routine.yaml, init the auto-push git repo; the
+  daemon's `registry_rescan_s` timer picks the new dir up). The protected `clarification` template routine
+  still backs the clarify flow and its questions/decisions surface through `/api/questions`; `wizard_store.py`
+  now retains only the on-disk helpers for that template.
 - **Traits** (`library-seed/traits/`, `# trait:` heading, NO requires — lint-enforced): reusable practice
-  prose. Selected at creation (the wizard preselects via `suggest_traits_permissions` — which also
+  prose. Selected at creation (scaffold preselects via `suggest_traits_permissions` — which also
   suggests the routine's `deliberation` level — from the refined
   instruction + chosen pattern), ADAPTED to the task by `adapt.decompose` (schema carries a `traits`
   array), written to `<routine>/traits/`, referenced from main.md's Standing practices tail
@@ -513,7 +513,7 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   module for the current run (`read_trait`, gated by the `practice-library` permission,
   default-ON for conversations; writes nothing).
   The routine defaults (`DEFAULT_TRAITS`): `ask-policy / global-utils / web-research / ledger-discipline`;
-  plus `git-checkpoint` (external-repo undo points — a conversations default, wizard-preselected for
+  plus `git-checkpoint` (external-repo undo points — a conversations default, scaffold-preselected for
   repo-editing routines, NOT a routine default). Beside them the **curated practice set** —
   `evidence-discipline / decision-commitment / error-recovery / change-restraint /
   independent-verification / review-recall / teaching-insights / interface-design /

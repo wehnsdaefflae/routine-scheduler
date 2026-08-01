@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.144.0] — 2026-08-01
+
+### Added
+- **`manage_group` action — routine GROUP management from a conversation (operator request, D61).**
+  A new action kind whose `verb` (list/create/update/delete/set-default/run) drives every
+  operation over the same `rsched.groups` store the `/groups` web page uses (one source of truth),
+  with member slugs validated against the live registry. Like `create_routine` it is valid ONLY
+  from a root conversation (surfaced by the engine, backstopped by the handler) — a scheduled
+  routine or a within-reply child cannot manage groups that fire other routines. The `/groups`
+  subpage stays; this is the same surface reachable from chat.
+
+### Fixed
+- **Docs drift after the wizard removal (self-audit F258).** `docs/architecture.md` still described
+  the standalone new-routine wizard (`components/setuppanel.js`, `views/new-routine.js`, the
+  `#/new-routine` view) that D59 deleted; rewritten to describe conversation-only creation via the
+  `create_routine` action reusing `workflows.scaffold`. Clears the codemap `doc_stale` flag (2 → 0).
+
 ## [0.143.0] — 2026-08-01
 
 ### Changed

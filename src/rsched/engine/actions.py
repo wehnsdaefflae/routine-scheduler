@@ -16,7 +16,7 @@ from ..ids import is_slug
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "edit_file",
          "memory_read", "memory_write", "read_trait", "llm", "spawn", "subtask", "detach",
-         "schedule_run", "create_routine",
+         "schedule_run", "create_routine", "manage_group",
          "subruns", "kill", "wait", "ask_user", "report", "finish")
 
 # Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist: `finish`
@@ -116,6 +116,7 @@ ACTION_SCHEMA: dict = {
                    "description": "schedule_run: the routine slug to arm/cancel a one-shot on "
                                   "(self-target always allowed) · "
                                   "create_routine: the NEW routine's kebab-case slug · "
+                                  "manage_group: the group id (grp-XXXX) to update/delete/run · "
                                   "report: OPTIONAL — the slug of the routine that OWNS this "
                                   "problem. With it, the report is delivered to that routine "
                                   "and read on its next scheduled run; without it, the report "
@@ -135,6 +136,22 @@ ACTION_SCHEMA: dict = {
                                   "arming (with id: cancel that one; without: cancel all)"},
         "id": {"type": "string",
                "description": "schedule_run: the one-shot id (so-XXXX) to cancel"},
+        # manage_group — CRUD/fire routine groups from a conversation (D61); root-conversation only
+        "verb": {"type": "string",
+                 "enum": ["list", "create", "update", "delete", "set-default", "run"],
+                 "description": "manage_group: the operation — list (the whole store) · create "
+                                "(needs name) · update (needs target) · delete (needs target) · "
+                                "set-default (needs on_failure) · run (needs target; arms a "
+                                "sequential fire of the group)"},
+        "members": {"type": "array", "items": {"type": "string"},
+                    "description": "manage_group create/update: the ORDERED routine slugs in the "
+                                   "group (deduped; each must name a real routine) — the fire "
+                                   "order a group run uses"},
+        "on_failure": {"type": "string", "enum": ["stop", "continue"],
+                       "description": "manage_group: mid-chain-failure policy — 'stop' aborts the "
+                                      "rest of the chain, 'continue' fires the remaining members. "
+                                      "Required for set-default; optional on create/update (omit "
+                                      "to inherit the instance default)"},
         "append": {"type": "boolean",
                    "description": "write_file: append instead of overwrite (default false)"},
         # memory_write (memory_read needs only `name`)
@@ -244,6 +261,7 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "memory_write": "name", "read_trait": "name",
                "llm": "prompt", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",
+               "manage_group": "verb",
                "kill": "n", "wait": "n",
                "ask_user": "question", "report": "title", "finish": "status"}
 
@@ -263,6 +281,9 @@ KIND_EXAMPLES: dict[str, dict] = {
                        "target": "arxiv-reading-list", "name": "Arxiv reading list",
                        "prompt": "<the clarified task, decomposed into the routine's stages>",
                        "workflow": "general-task"},
+    "manage_group": {"say": "<why this group change now>", "kind": "manage_group",
+                     "verb": "create", "name": "Morning jobs",
+                     "members": ["weight-coach", "news-digest"]},
 
     "read_file": {"say": "<why this file>", "kind": "read_file", "path": "state/notes.md"},
     "view_image": {"say": "<why look at it>", "kind": "view_image",
@@ -308,6 +329,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
     "create_routine": (("target", "name", "prompt"), ("workflow",)),
+    "manage_group": (("verb",), ("target", "name", "members", "on_failure")),
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
     "view_image": ((), ("path", "paths", "prompt")),
     "write_file": (("path", "content"), ("append",)),
@@ -443,6 +465,18 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     if kind == "create_routine" and not is_slug(str(obj.get("target") or "")):
         problems.append("kind=create_routine requires 'target' to be a kebab-case slug for the "
                         "new routine")
+    if kind == "manage_group":
+        verb = str(obj.get("verb") or "").strip()
+        verbs = ("list", "create", "update", "delete", "set-default", "run")
+        if verb not in verbs:
+            problems.append(f"kind=manage_group requires 'verb' to be one of {list(verbs)}")
+        elif verb == "create" and not str(obj.get("name") or "").strip():
+            problems.append("kind=manage_group verb=create requires 'name' (the group's name)")
+        elif verb in ("update", "delete", "run") and not str(obj.get("target") or "").strip():
+            problems.append(f"kind=manage_group verb={verb} requires 'target' (the group id)")
+        elif verb == "set-default" and not str(obj.get("on_failure") or "").strip():
+            problems.append("kind=manage_group verb=set-default requires 'on_failure' "
+                            "('stop' or 'continue')")
     if kind in ("read_file", "view_image"):
         paths = obj.get("paths")
         if paths is not None and (not isinstance(paths, list)

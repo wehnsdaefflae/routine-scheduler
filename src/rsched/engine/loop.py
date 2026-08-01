@@ -20,7 +20,7 @@ from collections import deque
 from ..endpoints.base import EndpointError
 from ..grants import load_policy
 from ..health_events import log_health_event
-from . import create_routine, detach, executor, interact, notes
+from . import create_routine, detach, executor, interact, manage_group, notes
 from .actions import BRIEF_FIELD
 from .autocommit import autocommit as _autocommit
 from .boot import boot
@@ -118,7 +118,7 @@ class EngineLoop:
         # a scheduled routine never sees the kind in its schema or CAPABILITIES. A None allowed
         # set means "unrestricted" and already carries every kind; the handler gate covers it.
         if self.allowed_tools is not None and detach._is_root_conversation(ctx):
-            self.allowed_tools |= {"create_routine"}
+            self.allowed_tools |= {"create_routine", "manage_group"}
         # base_grants is the CONFIG-derived policy; the live self.grants folds the run's
         # one-time grant overlay over it (requests.rebuild_policy) — always base+overlay,
         # never stacked, so a decision can also be reasoned about from the base.
@@ -336,6 +336,8 @@ class EngineLoop:
                     obs = detach.handle_detach(ctx, action)
                 elif action["kind"] == "create_routine":
                     obs = create_routine.handle_create_routine(ctx, action)
+                elif action["kind"] == "manage_group":
+                    obs = manage_group.handle_manage_group(ctx, action)
                 elif action["kind"] == "subruns":
                     obs = self.subruns.status_table()
                 elif action["kind"] == "kill":

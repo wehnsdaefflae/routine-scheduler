@@ -143,6 +143,28 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
                 f"{obs.get('workflow')!r} — the daemon's registry rescan will pick it up "
                 "shortly and it appears on the dashboard. Tell the user it exists and what to "
                 "set next, e.g. its schedule.)")
+    if kind == "manage_group":
+        if obs.get("rejected"):
+            return f"OBSERVATION (manage_group REJECTED): {obs['reason']}"
+        verb = obs.get("verb")
+        if verb == "list":
+            gs = obs.get("groups") or []
+            names = ", ".join(f"{g.get('name')!r} ({g.get('id')}, {len(g.get('members') or [])} "
+                              f"member(s))" for g in gs) or "none"
+            return (f"OBSERVATION (manage_group list: default_on_failure="
+                    f"{obs.get('default_on_failure')!r}; groups: {names}).")
+        if verb == "set-default":
+            return (f"OBSERVATION (manage_group: instance default_on_failure set to "
+                    f"{obs.get('default_on_failure')!r}).")
+        if verb == "delete":
+            return f"OBSERVATION (manage_group: deleted group {obs.get('deleted')!r})."
+        if verb == "run":
+            return (f"OBSERVATION (manage_group: armed a sequential fire of group "
+                    f"{obs.get('group_id')!r} ({len(obs.get('members') or [])} member(s)) — "
+                    "the daemon fires the members in order on its next tick).")
+        g = obs.get("group") or {}
+        return (f"OBSERVATION (manage_group {verb}: group {g.get('name')!r} ({g.get('id')}) now "
+                f"has members {g.get('members')} and on_failure={g.get('on_failure')!r}).")
     if kind == "report":
         if obs.get("self_target"):
             return ("OBSERVATION (report: a routine cannot address a report to itself — drop "

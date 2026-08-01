@@ -52,6 +52,8 @@ def test_schema_compiles_and_example_passes():
          "reason": "re-check the thing"},
         {"say": "s", "kind": "create_routine", "target": "arxiv-reading-list",
          "name": "Arxiv reading list", "prompt": "collect new AI papers", "workflow": "general-task"},
+        {"say": "s", "kind": "manage_group", "verb": "create", "name": "Morning jobs",
+         "members": ["weight-coach", "news-digest"], "on_failure": "continue"},
         {"say": "s", "kind": "subruns"},
         {"say": "s", "kind": "kill", "n": 2},
         {"say": "s", "kind": "wait", "all": True, "timeout_s": 120},
