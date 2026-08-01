@@ -64,7 +64,7 @@ asyncio_mode = "auto"
 # Parallel by default (pytest-xdist): the suite is hermetic per-test (tmp_path homes,
 # ephemeral ports, per-process monkeypatching). One stuck test can't hide behind the
 # others' output — use -n0 for a serial run / debugging with -s.
-addopts = ["-n", "auto"]
+addopts = ["-n", "auto", "-rR"]  # -rR: name any flaky rerun in the summary (RERUN <nodeid>) so an intermittent UI flake is diagnosable, not just counted
 # `flaky` is applied to tests/ui by tests/ui/conftest.py. Registered here so it is a known
 # marker even before pytest-rerunfailures is installed in the venv — otherwise the unknown-mark
 # warning would become an error under filterwarnings=error. The marker is inert (no reruns)

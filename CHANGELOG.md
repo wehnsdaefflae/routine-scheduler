@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.147.1] — 2026-08-01
+
+### Changed
+- **pytest now names flaky reruns in the summary (`-rR` in `addopts`).** The browser UI suite's
+  `flaky()` wiring absorbs xdist timing flakiness by rerunning, but the rerun was only *counted*
+  (`N rerun`), never *named* — self-audit watched an unnamed self-recovered rerun across four
+  consecutive runs with no way to identify the culprit test. Adding `-rR` makes every future run
+  print `RERUN <nodeid>`, so an intermittent flake is diagnosable and de-flakeable instead of an
+  indefinite watch. Verified `-rR` reports the node id under `-n auto` (xdist), not just serially.
+  A guard test (`tests/ui/test_flaky_wiring.py::test_addopts_names_reruns`) fails if a future edit
+  drops the flag.
+
 ## [0.147.0] — 2026-08-01
 
 ### Changed
