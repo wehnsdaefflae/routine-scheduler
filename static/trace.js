@@ -12,7 +12,7 @@ const queue = [];
 let timer = null;
 
 function currentView() {
-  return (location.hash || "#/").slice(2).split(/[/?]/)[0] || "dashboard";
+  return (location.hash || "#/").slice(2).split(/[/?]/)[0] || "conversations";
 }
 
 export function trace(kind, target = "", detail = "") {

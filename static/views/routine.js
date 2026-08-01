@@ -72,7 +72,7 @@ export async function render(view, slug, query = {}) {
   }
   async function archive() {
     if (!(await confirmDialog(`Archive "${slug}"? It leaves the scheduler (dir moves to .archive).`, { confirmLabel: "archive" }))) return;
-    try { await api(`/api/routines/${slug}/archive`, { method: "POST" }); location.hash = "#/"; }
+    try { await api(`/api/routines/${slug}/archive`, { method: "POST" }); location.hash = "#/routines"; }
     catch (err) { toast(err.message, 4000, { error: true }); }
   }
 

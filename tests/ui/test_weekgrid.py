@@ -20,7 +20,7 @@ def test_now_cursor_advances_on_its_own(ui, ui_page):
     # (F241: self-audit's own 01:00 nightly gate hit it deterministically).
     morning = datetime.now().astimezone().replace(hour=8, minute=0, second=0, microsecond=0)
     ui_page.clock.install(time=morning)
-    ui_page.goto(f"{ui.url}/#/")
+    ui_page.goto(f"{ui.url}/#/routines")
 
     # the week panel is open by default; its now-cursor renders once a scheduled routine is in view.
     # An SVG <line> has no box, so Playwright treats it as "hidden" — wait for ATTACHED, not visible.

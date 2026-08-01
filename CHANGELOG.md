@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.143.0] — 2026-08-01
+
+### Changed
+- **Conversations is now the landing page and the first nav item (operator request).** Opening
+  the console at its root (empty hash) now shows the Conversations view — the place routine
+  creation and ad-hoc work begin — instead of the Routines dashboard. The Routines dashboard
+  moved to its own `#/routines` route (the nav "Routines" link, routine/run breadcrumbs, the
+  post-archive redirect and the brand→home all updated accordingly); `#/conversations` still
+  works as before. Nav order now leads with **Conversations**, then Decisions · Summary ·
+  Routines · Groups · … A new `tests/ui` flow test pins the landing behaviour, the active-nav
+  highlight and the nav order; the dashboard UI tests were repointed at `#/routines`.
+
 ## [0.142.0] — 2026-08-01
 
 ### Removed

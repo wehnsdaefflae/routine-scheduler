@@ -18,7 +18,7 @@ def _say_event(run_dir, say, *, turn=1, phase=""):
 def test_search_finds_run_and_navigates(ui, ui_page):
     run = ui.seed_run("uir", "20260714-100000", "finished", summary="all done")
     _say_event(run, "zebra migration telemetry captured", phase="gather")
-    ui_page.goto(ui.url)
+    ui_page.goto(f"{ui.url}/#/routines")
     box = ui_page.locator("#global-search input")
     box.click()
     box.fill("zebra")
@@ -33,7 +33,7 @@ def test_search_finds_run_and_navigates(ui, ui_page):
 
 
 def test_search_no_matches_and_shortcut_focus(ui, ui_page):
-    ui_page.goto(ui.url)
+    ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector("h1:has-text('Routines')", timeout=10_000)
     ui_page.keyboard.press("/")                                   # focuses from anywhere
     box = ui_page.locator("#global-search input")

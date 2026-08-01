@@ -16,8 +16,11 @@ installTracing();
 installFormPersistence();
 
 const routes = [
-  [/^#?\/?$/, () => import("/static/views/dashboard.js")],
-  [/^#\/conversations(?:\/([a-z0-9-]+))?$/, () => import("/static/views/conversations.js")],
+  // Conversations is the landing page: the empty hash AND #/conversations both render it
+  // (group 1 = the optional slug, undefined at root). The Routines dashboard moved to
+  // #/routines. One pattern keeps the render arg shape (box, slug, query) correct at root.
+  [/^(?:#?\/?|#\/conversations(?:\/([a-z0-9-]+))?)$/, () => import("/static/views/conversations.js")],
+  [/^#\/routines$/, () => import("/static/views/dashboard.js")],
   [/^#\/items$/, () => import("/static/views/items.js")],
   [/^#\/stats$/, () => import("/static/views/stats.js")],
   [/^#\/groups$/, () => import("/static/views/groups.js")],
@@ -78,7 +81,9 @@ async function route() {
 
 // ---- location indicators: active nav + breadcrumb -------------------------------------------
 function updateLocation(path) {
-  const key = path.startsWith("#/conversations") ? "conversations"
+  // Routines moved to #/routines; #/ (and #/conversations) is the Conversations landing.
+  const key = path.startsWith("#/routines") || path.startsWith("#/routine/")
+      || path.startsWith("#/run/") ? "dashboard"
     : path.startsWith("#/summary") ? "summary"
     : path.startsWith("#/questions") ? "questions"
     : path.startsWith("#/items") ? "items"
@@ -87,7 +92,7 @@ function updateLocation(path) {
     : path.startsWith("#/library") ? "library"
     : path.startsWith("#/settings") ? "settings"
     : path.startsWith("#/help") ? "help"
-    : "dashboard";
+    : "conversations";
   document.querySelectorAll("[data-nav]").forEach((a) =>
     a.classList.toggle("active", a.dataset.nav === key));
   renderCrumbs(path);
@@ -98,7 +103,8 @@ function crumbsFor(path) {
   const parts = path.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
   const top = parts[0] || "";
   switch (top) {
-    case "": return [{ label: "Routines" }];
+    case "": return [{ label: "Conversations" }];
+    case "routines": return [{ label: "Routines" }];
     case "summary": return [{ label: "Summary" }];
     case "questions": return [{ label: "Decisions" }];
     case "items": return [{ label: "Items" }];
@@ -121,14 +127,14 @@ function crumbsFor(path) {
       if (parts[1]) c.push({ label: parts[1] });
       return c;
     }
-    case "routine": return [{ label: "Routines", href: "#/" }, { label: parts[1] || "" }];
+    case "routine": return [{ label: "Routines", href: "#/routines" }, { label: parts[1] || "" }];
     case "run": {
       const [slug, ts] = (parts[1] || "").split(":");
-      return [{ label: "Routines", href: "#/" },
+      return [{ label: "Routines", href: "#/routines" },
         { label: slug || "run", href: slug ? `#/routine/${slug}` : null },
         { label: ts ? `run ${fmtTs(ts)}` : "run" }];
     }
-    default: return [{ label: "Routines" }];
+    default: return [{ label: "Conversations" }];
   }
 }
 

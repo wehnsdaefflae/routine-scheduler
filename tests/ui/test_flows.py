@@ -707,7 +707,7 @@ def test_spend_surfaces(ui, ui_page):
     ui.seed_run("uir", "20260714-070000", "finished", summary="ran",
                 usage={"in": 10, "out": 5, "cost": 0.01})
 
-    ui_page.goto(ui.url)   # dashboard: the card carries the compact month line
+    ui_page.goto(f"{ui.url}/#/routines")   # dashboard: the card carries the compact month line
     card = ui_page.locator(".card", has_text="Test uir")
     expect(card).to_contain_text("Jul: 2.00M tok")
     expect(card).to_contain_text("Jun: 900.0k tok")
@@ -1075,7 +1075,7 @@ def test_dashboard_heartbeat_strip(ui, ui_page):
     ui.seed_run("uir", "20260712-070000", "failed", summary="boom")
     ui.seed_run("uir", "20260713-070000", "aborted")
 
-    ui_page.goto(ui.url)
+    ui_page.goto(f"{ui.url}/#/routines")
     card = ui_page.locator(".card", has_text="Test uir")
     strip = card.locator("svg.heartbeat")
     expect(strip).to_be_visible()
@@ -1086,7 +1086,7 @@ def test_dashboard_heartbeat_strip(ui, ui_page):
     strip.locator("a.hb-bar").last.click()
     expect(ui_page).to_have_url(f"{ui.url}/#/run/uir:20260713-070000")
 
-    ui_page.goto(ui.url)                                       # list view: same strip per row
+    ui_page.goto(f"{ui.url}/#/routines")                                       # list view: same strip per row
     ui_page.get_by_role("button", name="☰ list view").click()
     row = ui_page.locator("table.list tbody tr", has_text="Test uir")
     expect(row.locator("svg.heartbeat")).to_be_visible()
@@ -1099,7 +1099,7 @@ def test_dashboard_running_marker_in_both_views(ui, ui_page):
     question), never `live`, so a running routine looked idle in the table."""
     ui.seed_run("uir", "20260714-070000", "running")
 
-    ui_page.goto(ui.url)
+    ui_page.goto(f"{ui.url}/#/routines")
     expect(ui_page.locator(".card.live", has_text="Test uir")).to_be_visible()
 
     ui_page.get_by_role("button", name="☰ list view").click()
@@ -1110,7 +1110,7 @@ def test_dashboard_table_sort_reverses_on_reclick(ui, ui_page):
     """F208: clicking a sortable column header sorts by it; re-clicking the ACTIVE column
     reverses the direction (was a no-op) — the header arrow shows ▴ asc / ▾ desc."""
     ui.seed_run("uir", "20260729-070000", "finished", summary="ok")
-    ui_page.goto(ui.url)
+    ui_page.goto(f"{ui.url}/#/routines")
     ui_page.get_by_role("button", name="☰ list view").click()
     routine_th = ui_page.locator("table.list th", has_text="routine")
     routine_th.click()                                   # name column, natural ascending
@@ -1128,7 +1128,7 @@ def test_dashboard_live_refresh_preserves_search_focus(ui, ui_page):
     routine running' symptom. Typing survives a live refresh; the filter bar rebuilds only
     when the available tag set changes."""
     ui.seed_run("uir", "20260729-070000", "finished", summary="ok")
-    ui_page.goto(ui.url)
+    ui_page.goto(f"{ui.url}/#/routines")
     search = ui_page.locator(".filterbar input[type=search]")
     expect(search).to_be_visible()
     search.click()
@@ -1140,6 +1140,29 @@ def test_dashboard_live_refresh_preserves_search_focus(ui, ui_page):
     # the SAME input node still holds focus and the typed text — not a fresh replaced node
     expect(search).to_be_focused()
     expect(search).to_have_value("uir")
+
+
+def test_conversations_is_the_landing_page_and_first_in_nav(ui, ui_page):
+    """Operator order: Conversations is the landing page and the first nav item. A bare-origin
+    load (empty hash) opens the conversations view (its new-conversation composer); the
+    Routines dashboard has moved to its own #/routines route; and the first nav link is
+    Conversations. The brand link points home (→ conversations)."""
+    import re
+
+    ui.seed_run("uir", "20260730-070000", "finished", summary="ok")
+    # first nav item is Conversations
+    ui_page.goto(f"{ui.url}/#/routines")
+    first = ui_page.locator("#nav a").first
+    expect(first).to_have_text("Conversations")
+    expect(first).to_have_attribute("data-nav", "conversations")
+    # bare origin (empty hash) lands on conversations — the composer, not the routines dashboard
+    ui_page.goto(ui.url)
+    expect(ui_page.locator(".conv-new textarea")).to_be_visible()
+    expect(ui_page.locator("[data-nav=conversations]")).to_have_class(re.compile(r"\bactive\b"))
+    # the Routines dashboard is reachable at its own route
+    ui_page.goto(f"{ui.url}/#/routines")
+    expect(ui_page.locator(".filterbar input[type=search]")).to_be_visible()
+    expect(ui_page.locator("[data-nav=dashboard]")).to_have_class(re.compile(r"\bactive\b"))
 
 
 def test_global_stream_remints_ticket_on_reconnect(ui, ui_page):
@@ -1165,7 +1188,7 @@ def test_global_stream_remints_ticket_on_reconnect(ui, ui_page):
     ui_page.route("**/api/events*", handle)
 
     ui.seed_run("uir", "20260729-070000", "finished", summary="ok")
-    ui_page.goto(ui.url)
+    ui_page.goto(f"{ui.url}/#/routines")
     # Every ticket is dropped, so the lamp never stays on in EITHER version — the
     # discriminator is whether the client RE-MINTS. The unfixed client lets EventSource
     # retry the SAME dead ticket, so `seen` never grows past 1; the fix mints a fresh ticket

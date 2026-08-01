@@ -77,7 +77,7 @@ def test_dashboard_activity_section_lists_runs(ui, ui_page):
     ts = time.strftime("%Y%m%d-070000")
     run_dir = ui.seed_run("uir", ts, "finished", summary="all done")
     _seed_message_events(run_dir)
-    ui_page.goto(f"{ui.url}/#/")
+    ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector("details.activity-panel", timeout=10_000)
     ui_page.locator("details.activity-panel summary").click()
     expect(ui_page.locator(".activity-panel .stats .stat").first).to_be_visible(timeout=10_000)
