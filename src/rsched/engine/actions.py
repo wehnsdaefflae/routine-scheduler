@@ -16,7 +16,7 @@ from ..ids import is_slug
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "edit_file",
          "memory_read", "memory_write", "read_trait", "llm", "spawn", "subtask", "detach",
-         "schedule_run",
+         "schedule_run", "create_routine",
          "subruns", "kill", "wait", "ask_user", "report", "finish")
 
 # Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist: `finish`
@@ -60,7 +60,8 @@ ACTION_SCHEMA: dict = {
             "description": "util/write_util/remove_util: the global util's name (kebab-case) · "
                            "memory_read/memory_write: the note's topic (kebab-case) · "
                            "read_trait: a practice module in the shared library, or "
-                           '"list" for the catalog',
+                           '"list" for the catalog · '
+                           "create_routine: the NEW routine's human display name",
         },
         "args": {
             "type": "array", "items": {"type": "string"},
@@ -114,6 +115,7 @@ ACTION_SCHEMA: dict = {
         "target": {"type": "string",
                    "description": "schedule_run: the routine slug to arm/cancel a one-shot on "
                                   "(self-target always allowed) · "
+                                  "create_routine: the NEW routine's kebab-case slug · "
                                   "report: OPTIONAL — the slug of the routine that OWNS this "
                                   "problem. With it, the report is delivered to that routine "
                                   "and read on its next scheduled run; without it, the report "
@@ -148,14 +150,17 @@ ACTION_SCHEMA: dict = {
                    "description": "llm: the prompt · spawn/subtask/detach: the child's full "
                                   "self-contained instruction (subtask: fold in the previous "
                                   "subtask's result) · view_image: what to look for (used only if "
-                                  "the file falls back to the vision util)"},
+                                  "the file falls back to the vision util) · create_routine: the "
+                                  "clarified task instruction, decomposed into the new routine's "
+                                  "stages (say WHAT it should do, not when it runs)"},
         "system": {"type": "string", "description": "llm: optional system prompt"},
         "response_schema": {"type": "object",
                             "description": "llm: optional JSON schema constraining the reply"},
         "workflow": {"type": "string",
                      "description": "spawn/subtask/detach: library workflow slug for the child "
                                     "(default general-task) — pick the pattern matching its "
-                                    "purpose"},
+                                    "purpose · create_routine: the library workflow pattern the "
+                                    "new routine is materialized from (default general-task)"},
         "label": {"type": "string",
                   "description": "spawn/subtask/detach: short name shown in the run tree"},
         "turns": {"type": "integer", "minimum": 1,
@@ -238,7 +243,7 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "write_file": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "read_trait": "name",
                "llm": "prompt", "spawn": "label", "subtask": "label",
-               "detach": "label", "schedule_run": "target",
+               "detach": "label", "schedule_run": "target", "create_routine": "target",
                "kill": "n", "wait": "n",
                "ask_user": "question", "report": "title", "finish": "status"}
 
@@ -254,6 +259,10 @@ KIND_EXAMPLES: dict[str, dict] = {
     "schedule_run": {"say": "<why arm a one-shot>", "kind": "schedule_run",
                      "target": "some-routine", "fire_at": "+3d",
                      "reason": "<what the fired run should pick up>"},
+    "create_routine": {"say": "<why create this routine now>", "kind": "create_routine",
+                       "target": "arxiv-reading-list", "name": "Arxiv reading list",
+                       "prompt": "<the clarified task, decomposed into the routine's stages>",
+                       "workflow": "general-task"},
 
     "read_file": {"say": "<why this file>", "kind": "read_file", "path": "state/notes.md"},
     "view_image": {"say": "<why look at it>", "kind": "view_image",
@@ -298,6 +307,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "write_util": (("name",), ("content", "anchor", "replacement", "all")),
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
+    "create_routine": (("target", "name", "prompt"), ("workflow",)),
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
     "view_image": ((), ("path", "paths", "prompt")),
     "write_file": (("path", "content"), ("append",)),
@@ -430,6 +440,9 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             if not str(obj.get("reason") or "").strip():
                 problems.append("kind=schedule_run requires 'reason' (why the one-shot fires) "
                                 "unless cancel: true")
+    if kind == "create_routine" and not is_slug(str(obj.get("target") or "")):
+        problems.append("kind=create_routine requires 'target' to be a kebab-case slug for the "
+                        "new routine")
     if kind in ("read_file", "view_image"):
         paths = obj.get("paths")
         if paths is not None and (not isinstance(paths, list)

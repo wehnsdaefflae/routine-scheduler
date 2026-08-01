@@ -199,6 +199,15 @@ before it fires). The daemon fires the one-shot ONCE at fire_at, then CONSUMES i
 repeats — no cron to clean up). Cancel with `cancel: true` (+ `id` for one, or without to clear \
 all armed on the target). For a run to schedule its own follow-up ("re-check in 3 days") or arm \
 a milestone run on a sibling routine — gated by the scheduling permission."""),
+    (("create_routine",), """- create_routine: turn what you and the user have worked out in \
+THIS conversation into a real \
+scheduled routine — `target` (its new kebab-case slug), `name` (its display name), `prompt` (the \
+clarified task, decomposed into the routine's stages — say WHAT it does, not when), and optional \
+`workflow` (the library pattern to build from, default general-task). Clarify the task WITH the \
+user first — what it produces, what "done" is, which pattern fits — THEN emit this to materialize \
+it (its own dir, adapted traits, git repo). The daemon picks it up on its next registry rescan; \
+tell the user it exists and what to set next (its schedule). This is the ONLY way a routine is \
+created — it is available only inside a conversation."""),
     (("subruns",), """- subruns: a status table of your sub-workflows (state, turns, \
 elapsed)."""),
     (("kill", "wait"), """- kill: terminate sub-workflow "n". wait: block until sub-workflow \

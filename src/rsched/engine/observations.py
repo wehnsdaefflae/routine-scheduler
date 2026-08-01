@@ -129,6 +129,20 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
                     f"one-shot(s) — {which}).")
         return (f"OBSERVATION (schedule_run {target!r}: armed one-shot {obs['armed']} for "
                 f"{obs['fire_at']} — the daemon fires it once, then consumes it).")
+    if kind == "create_routine":
+        slug = obs.get("slug")
+        if obs.get("rejected"):
+            return f"OBSERVATION (create_routine REJECTED): {obs['reason']}"
+        if obs.get("already_exists"):
+            return (f"OBSERVATION (create_routine: a routine {slug!r} already exists — nothing "
+                    "created. Pick another slug, or edit the existing routine instead.)")
+        if obs.get("error"):
+            return (f"OBSERVATION (create_routine {slug!r} FAILED): {obs['error']}. Fix the "
+                    "slug / workflow / instruction and try again.")
+        return (f"OBSERVATION (create_routine: created routine {slug!r} from workflow "
+                f"{obs.get('workflow')!r} — the daemon's registry rescan will pick it up "
+                "shortly and it appears on the dashboard. Tell the user it exists and what to "
+                "set next, e.g. its schedule.)")
     if kind == "report":
         if obs.get("self_target"):
             return ("OBSERVATION (report: a routine cannot address a report to itself — drop "

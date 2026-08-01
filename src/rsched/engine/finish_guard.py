@@ -8,9 +8,10 @@ either actually take the action or drop the false claim before it may finish.
 The check is deliberately NARROW — a false reject blocks a legitimate finish on the shared run
 path, so precision beats recall:
 
-  * Only the three high-signal, side-effecting action kinds whose *engine token* essentially
+  * Only the high-signal, side-effecting action kinds whose *engine token* essentially
     never appears in prose except as a deliberate claim: ``report``, ``ask_user``,
-    ``schedule_run``. We match the LITERAL underscore token, never natural-language paraphrases
+    ``schedule_run``, ``create_routine``. We match the LITERAL underscore token (so the
+    common English word "created" never trips it), never natural-language paraphrases
     ("asked the user"), which are too ambiguous to reject on.
   * The token must be bound (within a short window) to an affirmative completion verb, with no
     negation just before ("did not file a report" is fine).
@@ -29,6 +30,7 @@ _CLAIM_ACTIONS: dict[str, str] = {
     "report": r"fil|submit|post|logg|sent|send|open|escalat|rais",
     "ask_user": r"ask|question|escalat|surfac|prompt",
     "schedule_run": r"schedul|arm|queu",
+    "create_routine": r"creat|materializ|scaffold|set up|built|generat",
 }
 _NEGATION = r"\b(?:not|no|never|without|didn'?t|couldn'?t|cannot|can'?t|skip)\b"
 _WINDOW = 24  # max chars between the verb and the literal token, and the negation look-back

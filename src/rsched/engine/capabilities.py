@@ -162,6 +162,9 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         if g.allows_kind("schedule_run"):
             cap_bits.append("schedule_run (arm/cancel a one-shot future run of a routine — "
                             "self-target always; other routines via the scheduling permission)")
+        if "create_routine" in kinds:
+            cap_bits.append("create_routine (graduate THIS conversation into a new scheduled "
+                            "routine — the only way a routine is created)")
         cap_bits += [f"reserved util {u!r}" for u in sorted(g.utils)]
         if g.run_history != "none":
             cap_bits.append("read previous runs under runs/ "

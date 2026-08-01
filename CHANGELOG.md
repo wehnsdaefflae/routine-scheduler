@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.141.0] — 2026-08-01
+
+### Added
+- **Routine creation from a conversation — the `create_routine` action (D58).** A conversation
+  can now graduate the work it just clarified with the user into a real scheduled routine, via a
+  new conversation-only action kind: `target` (the new kebab-case slug), `name`, `prompt` (the
+  clarified task, decomposed into the routine's stages) and an optional `workflow` (default
+  `general-task`). The handler (`engine/create_routine.py`) reuses the existing
+  `workflows.scaffold` materializer — decompose the chosen workflow into the routine's own
+  `main.md` + `stages/`, adapt its traits, write `routine.yaml`, init the auto-push git repo —
+  so there is exactly one creation path. The daemon's registry rescan picks the new dir up on
+  its own timer; no new daemon manager is needed. **Structurally gated to a root conversation**
+  (mirrors `detach`): the engine only surfaces the kind to a conversation (a `loop.allowed_tools`
+  injection), and the handler rejects every non-conversation as a backstop, so a scheduled
+  routine never sees it. Wired end to end — schema + per-kind validation (`actions.py`), loop
+  dispatch, observation rendering, the CAPABILITIES + harness-contract surfaces, and a
+  finish-guard claim token so a finish claiming a routine was created must be backed by the
+  action. This is the first increment of the operator's directive to make conversation-initiated
+  creation the ONLY path; the standalone new-routine wizard page is retired in a later increment.
+
 ## [0.140.2] — 2026-08-01
 
 ### Fixed

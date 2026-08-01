@@ -50,6 +50,8 @@ def test_schema_compiles_and_example_passes():
          "workflow": "general-task"},
         {"say": "s", "kind": "schedule_run", "target": "some-routine", "fire_at": "+3d",
          "reason": "re-check the thing"},
+        {"say": "s", "kind": "create_routine", "target": "arxiv-reading-list",
+         "name": "Arxiv reading list", "prompt": "collect new AI papers", "workflow": "general-task"},
         {"say": "s", "kind": "subruns"},
         {"say": "s", "kind": "kill", "n": 2},
         {"say": "s", "kind": "wait", "all": True, "timeout_s": 120},
