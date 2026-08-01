@@ -241,6 +241,12 @@ main { max-width: 1180px; margin: 0 auto; padding: 18px 22px 110px; }
 .filterbar .lbl {
   font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.16em; margin-right: 2px;
 }
+/* settings page: grouped nav + per-group blurb + per-section description */
+.settings-nav .lbl:not(:first-child) { margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--line); }
+.set-group { margin-bottom: 2px; }
+.set-group .kicker { color: var(--text); }
+.set-groupblurb { margin: 3px 0 0; max-width: 62ch; }
+.set-desc { margin: 2px 0 10px; max-width: 62ch; }
 
 /* ---------- timestamps: absolute + relative, together ---------- */
 .when { font-variant-numeric: tabular-nums; white-space: nowrap; }

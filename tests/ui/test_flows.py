@@ -842,6 +842,34 @@ def test_settings_endpoints_crud(ui, ui_page):
     assert "llama" not in (cfg.get("models") or {})   # deleting the last model may null the key
 
 
+def test_settings_grouped_layout(ui, ui_page):
+    """The Settings page groups its sections into four labelled categories with a per-group
+    blurb and a per-section description (F248 cognitive-model overhaul), while keeping every
+    stable sec-<id> anchor and the ?section deep-link jump the TOC and other tests rely on."""
+    ui_page.set_viewport_size({"width": 1600, "height": 1000})
+    ui_page.goto(f"{ui.url}/#/settings")
+    ui_page.wait_for_selector("#sec-endpoints", timeout=10_000)
+
+    # the four cognitive-model group eyebrows are present, in order
+    groups = ui_page.locator(".set-group .kicker")
+    expect(groups).to_have_count(4)
+    for i, label in enumerate(["Intelligence", "Connections", "Code & library", "This instance"]):
+        expect(groups.nth(i)).to_have_text(label)
+
+    # every section carries a plain reader-side description, and a group carries a why-blurb
+    expect(ui_page.locator(".set-desc")).to_have_count(10)
+    expect(ui_page.locator("p.set-desc").first).not_to_be_empty()
+    expect(ui_page.locator(".set-groupblurb").first).to_contain_text("reasoning")
+
+    # the grouped nav labels mirror the groups (not one flat "section" label)
+    expect(ui_page.locator(".settings-nav .lbl", has_text="Intelligence")).to_be_visible()
+    expect(ui_page.locator(".settings-nav .lbl", has_text="This instance")).to_be_visible()
+
+    # REGRESSION: the stable id + deep-link jump still work after the restructure
+    ui_page.goto(f"{ui.url}/#/settings?section=notifications")
+    expect(ui_page.locator("#sec-notifications")).to_be_in_viewport()
+
+
 # ---- 5. New-routine setup on the run page (D11) -------------------------------------------
 
 

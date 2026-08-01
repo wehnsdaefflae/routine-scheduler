@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.139.0] — 2026-08-01
+
+### Changed
+- **The Settings page is now grouped by what you're configuring, so it teaches a cognitive
+  model (F248).** Its ten sections were a single flat strip of nav chips with bare headings;
+  they are now organised into four labelled categories — **Intelligence** (LLM endpoints),
+  **Connections** (GitHub, OAuth connections, remote machines), **Code & library** (the source
+  and library repositories and their sync), and **This instance** (secrets, server, notifications)
+  — each introduced by a one-line blurb explaining why those sections belong together. Every
+  section now carries a plain, reader-side description of what it controls, and the section nav
+  is grouped to mirror the page. Presentation only: every section keeps its stable `sec-<id>`
+  anchor, the `?section=<id>` deep link, and side-TOC compatibility, and no settings endpoint or
+  contract changed. Operator-directed via an AUDIT note; built with the interface-design and
+  interface-copy practice modules.
+
 ## [0.138.0] — 2026-08-01
 
 ### Changed
