@@ -200,6 +200,19 @@ async def message(request: Request, slug: str, text: Annotated[str, Form()],
     if not text.strip():
         raise HTTPException(400, "empty message")
     conv_dir = info.cfg.dir
+    is_command = bool(command.strip())
+    last = info.last_run
+    is_mid_run = bool(last and last.state not in registry.TERMINAL_STATES)
+    # R81: a terminal/new conversation must be WOKEN (resume_terminal / fire), and both refuse
+    # while the daemon is draining for a self-update restart — with nothing re-driving a pending
+    # inbox after relaunch. Filing first then failing the wake strands the message and returns a
+    # 409 that reads as total failure, so the operator blind-resends (the observed duplicate
+    # spam). Refuse up front, BEFORE filing, unless the run is live (mid-run drains its own inbox
+    # at the next turn boundary; draining does not kill an already-running run).
+    if not is_mid_run and getattr(request.app.state.runner, "draining", False):
+        raise HTTPException(
+            503, "the server is restarting — your message was NOT saved. Resend it once, in a "
+                 "moment, after the server is back (repeated resends only pile up duplicates).")
     rels = await _save_attachments(conv_dir, files or [])
     full = text.rstrip() + conv_mod.attachment_note(rels)
     atomic_write_json(conv_dir / "inbox"
@@ -207,8 +220,6 @@ async def message(request: Request, slug: str, text: Annotated[str, Form()],
                       {"text": full, "ts": now_iso(), "via": "conversation",
                        **({"command": True} if command.strip() else {}),
                        **({"attachments": rels} if rels else {})})
-    is_command = bool(command.strip())
-    last = info.last_run
     if last and last.state not in registry.TERMINAL_STATES:
         return {"ok": True, "delivery": "mid-run", "run_id": last.run_id,
                 "command": is_command}

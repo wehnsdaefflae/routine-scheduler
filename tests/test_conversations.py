@@ -190,6 +190,42 @@ def test_create_list_detail_message_delete(client):
     assert r.status_code == 200 and not conv_dir.exists()
 
 
+def test_message_to_terminal_conversation_refused_while_draining(client):
+    """R81: a message to a TERMINAL conversation while the daemon is DRAINING for a restart
+    must be refused up front with a clear 503 — NOT filed-then-stranded (resume() refuses
+    during drain and nothing re-drives the inbox after relaunch, which drove the observed 6×
+    resend spam). Both the conversation /message and the run /converse endpoints must refuse,
+    file no inbox message, and take no resume/fire."""
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "Plan the week"}).json()["slug"]
+    conv_dir = server.conversations_home / slug
+    ts = c.get(f"/api/conversations/{slug}").json()["run_id"].split(":")[1]
+    # the run is finished (terminal), and the daemon has entered drain for a self-update restart
+    atomic_write_json(conv_dir / "runs" / ts / "status.json",
+                      {"run_id": f"{slug}:{ts}", "state": "finished", "turn": 3})
+    c.app.state.runner.draining = True
+    c.app.state.runner.calls.clear()
+    before = len(list((conv_dir / "inbox").glob("msg-*.json")))
+
+    r = c.post(f"/api/conversations/{slug}/message", data={"text": "also add the gym"})
+    assert r.status_code == 503, r.text
+    assert "NOT saved" in r.json()["detail"]
+
+    r = c.post(f"/api/runs/{slug}:{ts}/converse", data={"text": "also add the gym"})
+    assert r.status_code == 503, r.text
+    assert "NOT saved" in r.json()["detail"]
+
+    # nothing filed, nothing woken — the message was refused, not stranded
+    assert len(list((conv_dir / "inbox").glob("msg-*.json"))) == before
+    assert c.app.state.runner.calls == []
+
+    # once the restart is done and drain clears, the SAME message lands and resumes normally
+    c.app.state.runner.draining = False
+    r = c.post(f"/api/conversations/{slug}/message", data={"text": "also add the gym"})
+    assert r.status_code == 200 and r.json()["delivery"] == "resumed"
+    assert len(list((conv_dir / "inbox").glob("msg-*.json"))) == before + 1
+
+
 def test_conversation_connections_binding(client):
     """D55 (closes R70): a conversation can bind an OAuth connection just like a routine —
     PATCH /conversations/{slug} accepts `connections`, the binding lands in routine.yaml (so the

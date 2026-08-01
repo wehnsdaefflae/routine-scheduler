@@ -234,9 +234,21 @@ async def converse(request: Request, run_id: str, text: Annotated[str, Form()],
         if (st0.get("state") if isinstance(st0, dict) else None) not in TERMINAL_STATES:
             raise HTTPException(409, "recipe editing unlocks when a FINISHED run is "
                                      "resumed — wait for the run to finish")
-    await _file_inbox_message(request, run_dir, text, files, via="web-converse")
     st = read_json(run_dir / "status.json")
     state = st.get("state") if isinstance(st, dict) else None
+    # R81: a message to a TERMINAL run resumes it, but resume() refuses while the daemon is
+    # draining for a self-update restart — and nothing re-drives a terminal conversation's
+    # pending inbox after relaunch (recover_orphans only closes dead-pid ACTIVE runs). Filing
+    # first and letting the resume fail strands the message AND returns a 409 that reads as
+    # total failure, so the operator blind-resends (each resend a duplicate — the observed
+    # 6× spam). Refuse up front, BEFORE filing, with a clear "not saved — resend once" signal.
+    # A live (mid-run) message is unaffected: the in-flight run drains it at its next turn
+    # boundary; draining does not kill an already-running run.
+    if state in TERMINAL_STATES and getattr(request.app.state.runner, "draining", False):
+        raise HTTPException(
+            503, "the server is restarting — your message was NOT saved. Resend it once, in a "
+                 "moment, after the server is back (repeated resends only pile up duplicates).")
+    await _file_inbox_message(request, run_dir, text, files, via="web-converse")
     if state not in TERMINAL_STATES:
         return {"ok": True, "delivery": "mid-run"}
     from ..config import load_routine

@@ -484,6 +484,11 @@ def test_conversation_composer(ui, ui_page):
     ui_page.locator(".conv-composer textarea").fill("also include the gym")
     ui_page.locator(".conv-composer").get_by_role("button", name="send", exact=True).click()
     expect(_toast(ui_page)).to_be_visible()
+    # The composer clears the textarea and the server persists the inbox file only AFTER the
+    # apiUpload round-trip resolves; a toast alone (any lingering toast satisfies to_be_visible
+    # under xdist load) is NOT proof the send landed. Poll for the file itself — the standing
+    # anti-flake rule for disk asserts — so this does not read the inbox before the write lands.
+    _wait_until(lambda: len(list((conv_dir / "inbox").glob("msg-*.json"))) == 1)
     messages = list((conv_dir / "inbox").glob("msg-*.json"))
     assert len(messages) == 1
     assert "gym" in messages[0].read_text(encoding="utf-8")

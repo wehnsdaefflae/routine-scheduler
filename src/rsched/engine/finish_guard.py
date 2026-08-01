@@ -34,6 +34,28 @@ _NEGATION = r"\b(?:not|no|never|without|didn'?t|couldn'?t|cannot|can'?t|skip)\b"
 _WINDOW = 24  # max chars between the verb and the literal token, and the negation look-back
 
 
+def normalize_escaped_newlines(text: str) -> str:
+    r"""Repair a summary / say / report-detail that DOUBLE-ESCAPED its newlines.
+
+    A finish or report field is authored as JSON, where a real line break is written ``\\n``.
+    A model that instead emits ``\\\\n`` yields a Python string carrying the literal two
+    characters backslash-n, which render verbatim as ``\\n`` in the Markdown console, the
+    dashboard last-outcome and the next run's digest — a silent, recurring UI degradation any
+    model can reintroduce (self-audit R82, 2026-08-01).
+
+    The tell of a WHOLESALE double-escape is unambiguous: the text carries literal ``\\n``
+    (or ``\\t``) escapes and NOT ONE real newline. Then the author plainly meant line breaks,
+    so the literal escapes are normalized to the real characters. If any real newline is
+    already present, every literal ``\\n`` is left untouched — it is intentional (e.g. a code
+    snippet or a quoted path), never a wholesale double-escape.
+    """
+    if not text or "\n" in text:
+        return text
+    if "\\n" not in text and "\\t" not in text:
+        return text
+    return text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t")
+
+
 def unbacked_action_claims(summary: str, taken_kinds, is_meta: bool) -> list[str]:
     """Return the sorted action kinds the ``summary`` claims were performed but that are NOT in
     ``taken_kinds``. Empty for meta routines, an empty summary, or when every claimed action was

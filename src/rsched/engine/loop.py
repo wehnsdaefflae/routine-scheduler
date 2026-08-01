@@ -36,7 +36,7 @@ from .control import (
     pause_gate,
     request_abort,
 )
-from .finish_guard import unbacked_action_claims
+from .finish_guard import normalize_escaped_newlines, unbacked_action_claims
 from .observations import format_observation
 from .run_context import RunContext
 from .subruns import SubrunManager
@@ -382,6 +382,9 @@ class EngineLoop:
 
     def _finish_run(self, status: str, summary: str, *, authored: bool = False) -> str:
         ctx = self.ctx
+        # R82: repair a summary whose newlines were double-escaped (literal ``\n`` and no real
+        # newline) so result.md / the digest render real line breaks instead of verbatim "\n".
+        summary = normalize_escaped_newlines(summary)
         killed = self.subruns.kill_all(reason=f"parent run finished ({status})")
         if killed:
             summary += f"\n[{killed} still-running sub-workflow(s) were terminated at run end.]"

@@ -19,6 +19,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.139.1] — 2026-08-01
+
+### Fixed
+- **A message sent to a finished conversation while the server is restarting is now refused
+  with a clear "not saved — resend once" notice instead of being silently stranded (R81).**
+  When a self-update restart is draining, `resume()`/`fire()` refuse to wake a terminal run,
+  and nothing re-drives a conversation's pending inbox after relaunch (startup only recovers
+  dead-pid active runs). The message endpoints (`POST /api/conversations/{slug}/message` and
+  `POST /api/runs/{id}/converse`) previously filed the message to the inbox first and then
+  failed the wake with a 409 that read as total failure — so the operator blind-resent the
+  same text (an observed 6× pile-up of duplicates). They now check the drain state **before**
+  filing and, for a terminal/new conversation, return a `503` saying the message was NOT saved
+  and to resend once after the restart; a live (mid-run) message is unaffected (the in-flight
+  run drains it at its next turn boundary).
+- **Finish summaries whose newlines were double-escaped now render as real line breaks (R82).**
+  A finish `summary` (or `say` / report detail) is authored as JSON, where a line break is
+  `\n`; a model that emits `\\n` yields a literal backslash-n that renders verbatim in the
+  console, the dashboard last-outcome and the next run's digest. `_finish_run` now normalizes
+  the unambiguous wholesale case — literal `\n`/`\t` escapes with no real newline anywhere — to
+  the real characters, while leaving intentional literal `\n` (in text that already has real
+  newlines, e.g. a code snippet) untouched.
+
+### Testing
+- Hardened `tests/ui/test_flows.py::test_conversation_composer`, which flaked under xdist load
+  and could red self-audit's own nightly gate (F250): it asserted a follow-up landed after
+  merely waiting for *any* toast, then read the inbox — under load a lingering earlier toast
+  satisfied the wait and the inbox was read before the send round-trip persisted. It now polls
+  for the inbox file with the existing `_wait_until` disk-persist helper.
+
 ## [0.139.0] — 2026-08-01
 
 ### Changed
