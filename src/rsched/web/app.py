@@ -110,20 +110,6 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
             library_docs.ensure_dir(server.permissions_home)
         except Exception as exc:  # never block startup on a library hiccup
             log.warning("library bootstrap %s: %s", server.libraries_home, exc)
-        # Reconcile wizard builds orphaned by a restart/crash: finalize.json stuck at 'building'
-        # (a self-restart drains engine runs but not in-flight web-process builds) → mark them a
-        # recoverable error + clean the half-built dir, so a routine setup never hangs forever.
-        try:
-            from . import wizard_store
-
-            recovered = wizard_store.recover_orphan_builds(server)
-            if recovered:
-                log.warning("recovered %d orphaned wizard build(s): %s", len(recovered), recovered)
-                for wid in recovered:
-                    bus.publish({"event": "routine_failed", "wid": wid,
-                                 "error": "build interrupted by a server restart — please retry"})
-        except Exception as exc:  # recovery must never block startup
-            log.warning("wizard build recovery: %s", exc)
         # regenerate the Help tab's content (pdoc + guides) when the source changed — in a
         # thread, and ensure_docs never raises, so startup is never blocked on it
         docs_task = asyncio.create_task(asyncio.to_thread(ensure_docs, server.source_repo))
@@ -188,7 +174,6 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_stats,
         api_summary,
         api_traces,
-        api_wizard,
         api_workflows,
         settings,
     )
@@ -199,7 +184,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
                    api_schedule, api_stats, api_summary, api_questions, api_audit, api_items,
                    api_traces,
                    settings,
-                   api_workflows, api_playbooks, api_wizard, api_llm_tasks, api_hooks,
+                   api_workflows, api_playbooks, api_llm_tasks, api_hooks,
                    api_groups, api_search, api_fs):
         app.include_router(module.router, prefix="/api", dependencies=deps)
     # The ONE deliberately unauthenticated API route: webhook trigger ingest. Third

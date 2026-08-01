@@ -33,8 +33,8 @@ def _mk_run(routines, slug, ts, state, question=None):
 
 
 def _mk_wizard(routines, ts, *, state="running", result=None):
-    """A hidden .wizard-<ts> session on disk (no engine process), mirroring api_wizard.start()'s
-    layout — enough for the list/detail/cancel/finalize endpoints to reconstruct it from disk."""
+    """A hidden .wizard-<ts> clarify session on disk (no engine process) — enough for the
+    /api/questions surfacing of a live clarify run's blocking questions to reconstruct it."""
     wid = f".wizard-{ts}"
     d = routines / wid
     (d / "state").mkdir(parents=True, exist_ok=True)
@@ -1169,149 +1169,6 @@ def test_first_run_setup_flag(client):
     assert c.get("/api/status").json()["needs_setup"] is False
 
 
-def test_finalize_launches_background_build(client):
-    """finalize() returns immediately (the slow decompose build runs in the background) and rejects
-    an obvious conflict up front — a routine already using that slug."""
-    c, tmp = client
-    wid = ".wizard-20260101-000000"
-    d = tmp / "routines" / wid
-    (d / "state").mkdir(parents=True)
-    atomic_write_json(d / "state" / "wizard_result.json",
-                      {"refined_instruction": "do the thing", "suggested_slug": "x"})
-    body = {"slug": "newr", "name": "New R", "workflow_slug": "general-task",
-            "friendly": {"frequency": "manual"}, "tags": ["a", "b", "c"], "run_now": False}
-    r = c.post(f"/api/wizard/{wid}/finalize", json=body)
-    assert r.status_code == 200 and r.json()["building"] is True and r.json()["slug"] == "newr"
-    (tmp / "routines" / "taken").mkdir()                       # up-front slug conflict → 409
-    assert c.post(f"/api/wizard/{wid}/finalize", json={**body, "slug": "taken"}).status_code == 409
-
-
-def test_finalize_refused_while_draining(client):
-    """While the daemon is draining for a self-restart, new wizard builds are refused (503) so the
-    drain converges — the restart waits for in-flight builds but must not keep accepting new ones."""
-    c, tmp = client
-    wid = ".wizard-20260101-000001"
-    d = tmp / "routines" / wid
-    (d / "state").mkdir(parents=True)
-    atomic_write_json(d / "state" / "wizard_result.json",
-                      {"refined_instruction": "do the thing", "suggested_slug": "x"})
-    body = {"slug": "drainr", "name": "Drain R", "workflow_slug": "general-task",
-            "friendly": {"frequency": "manual"}, "tags": ["a", "b", "c"], "run_now": False}
-    c.app.state.runner.draining = True
-    try:
-        assert c.post(f"/api/wizard/{wid}/finalize", json=body).status_code == 503
-        assert not (d / "state" / "finalize.json").exists()    # nothing started
-        assert wid not in c.app.state.scheduler.wizard_builds
-    finally:
-        c.app.state.runner.draining = False
-
-
-def test_wizard_list_detail_and_stage(client):
-    """In-flight sessions are discoverable + resumable from disk; the stage is derived from what
-    the clarify run has actually produced (chat → still clarifying, suggest → result ready)."""
-    c, tmp = client
-    routines = tmp / "routines"
-    wid_chat, _ = _mk_wizard(routines, "20260710-090000", state="running")
-    wid_ready, _ = _mk_wizard(routines, "20260710-100000",
-                              result={"refined_instruction": "do X", "suggested_slug": "x"})
-    lst = c.get("/api/wizard").json()
-    assert lst[0]["wid"] == wid_ready                      # newest first
-    by = {w["wid"]: w for w in lst}
-    assert by[wid_chat]["stage"] == "chat" and by[wid_chat]["has_result"] is False
-    assert by[wid_ready]["stage"] == "suggest" and by[wid_ready]["has_result"] is True
-    det = c.get(f"/api/wizard/{wid_chat}").json()
-    assert det["stage"] == "chat"
-    assert "arxiv" in det["draft"]                         # preview recovered from instruction.md
-    assert c.get("/api/wizard/.wizard-nope").status_code == 404
-
-
-def test_wizard_stage_error_when_terminal_without_result(client):
-    """A clarify run that reached a terminal state without producing a result → 'error' stage."""
-    c, tmp = client
-    wid, _ = _mk_wizard(tmp / "routines", "20260710-110000", state="failed")
-    assert c.get(f"/api/wizard/{wid}").json()["stage"] == "error"
-
-
-def test_wizard_cancel_archives_session(client):
-    """Cancel stops tracking the session and moves it out of routines_home so it is no longer
-    in-flight (the setup banner clears). pid 4242 isn't alive → no real process is signaled."""
-    c, tmp = client
-    routines = tmp / "routines"
-    wid, d = _mk_wizard(routines, "20260710-120000")
-    assert c.delete(f"/api/wizard/{wid}").json()["ok"] is True
-    assert not d.exists()
-    assert (routines / ".archive" / f"{wid.lstrip('.')}-canceled").exists()
-    assert c.get("/api/wizard").json() == []
-    assert c.delete(f"/api/wizard/{wid}").status_code == 404
-
-
-def test_build_routine_threads_params_traits_permissions(client, monkeypatch):
-    """The background build threads the picked traits/permissions + the clarifier's resolved
-    params into scaffold; on failure it records the error and stays retryable."""
-    import asyncio
-
-    from rsched.web import api_wizard, wizard_store
-
-    c, tmp = client
-    wid, d = _mk_wizard(tmp / "routines", "20260710-130000",
-                        result={"refined_instruction": "do the thing", "suggested_slug": "x",
-                                "params": {"DELIVERABLE": "a weekly report"}})
-    captured = {}
-
-    def fake_scaffold(*a, **k):
-        captured.update(k)
-        raise ValueError("probe stop")
-    monkeypatch.setattr(api_wizard, "scaffold", fake_scaffold)
-
-    body = api_wizard.FinalizeBody(slug="newr", name="New R", workflow_slug="general-task",
-                                   friendly={"frequency": "manual"}, tags=["a", "b", "c"],
-                                   traits=["ask-policy", "ledger-discipline"],
-                                   permissions=["util-authoring", "memory"], run_now=False)
-    asyncio.run(api_wizard._build_routine(c.app.state, wid, d, body, wizard_store.read_result(d)))
-    assert captured["traits"] == ["ask-policy", "ledger-discipline"]
-    assert captured["permissions"] == ["util-authoring", "memory"]
-    assert captured["params"] == {"DELIVERABLE": "a weekly report"}
-    fin = read_json(d / "state" / "finalize.json")           # failure recorded, session retryable
-    assert fin["state"] == "error" and "probe stop" in fin["error"]
-
-
-def test_wizard_suggest_leads_with_clarifier_choice(client, monkeypatch):
-    """The clarifier suggested a pattern; /suggest returns it at the head of the pick list (so the
-    wizard pre-selects it) and passes through the resolved params."""
-    from rsched.web import api_wizard, wizard_store
-
-    c, tmp = client
-    wid, _ = _mk_wizard(tmp / "routines", "20260710-140000",
-                        result={"refined_instruction": "do X", "suggested_slug": "x",
-                                "workflow_choice": {"slug": "general-task"},
-                                "params": {"DELIVERABLE": "a report"}})
-    monkeypatch.setattr(api_wizard, "suggest_tags", lambda *a, **k: ["a", "b", "c"])
-    monkeypatch.setattr(wizard_store, "candidate_patterns", lambda server: [
-        {"slug": "other-flow", "description": "another"},
-        {"slug": "general-task", "description": "the default"}])
-    r = c.post(f"/api/wizard/{wid}/suggest").json()
-    assert r["suggestions"][0]["slug"] == "general-task" and r["suggestions"][0]["confidence"] == 1.0
-    assert r["none_fit"] is False and r["wizard_result"]["params"]["DELIVERABLE"] == "a report"
-
-
-def test_wizard_candidates_inline_pattern_source(tmp_path):
-    """start() writes the workflow patterns (with their full Python control flow) into the session's
-    state/, so the clarifier can suggest + marry by reading one file. All patterns are included."""
-    from pathlib import Path
-
-    from rsched.config import ServerConfig
-    from rsched.web import wizard_store
-
-    server = ServerConfig()
-    server.libraries_home = Path(__file__).resolve().parents[1] / "library-seed"
-    d = tmp_path / "wiz"
-    (d / "state").mkdir(parents=True)
-    wizard_store.write_candidates(server, d)
-    text = (d / "state" / "candidates.md").read_text()
-    assert "general-task" in text and "```python" in text and "def main():" in text
-    assert "clarify-instruction" in text              # meta patterns are candidates like any other tag now (D15)
-
-
 def test_library_reports_defaults_and_both_doc_sets(client):
     """/api/library carries DEFAULT_TRAITS + DEFAULT_PERMISSIONS so pickers pre-check from
     config instead of a hard-coded frontend list — and lists traits and permissions apart."""
@@ -1727,19 +1584,6 @@ def test_wizard_blocking_question_listed_once(client):
     assert live["mode"] == "blocking" and live["run_state"] == "waiting_user"
 
 
-def test_wizard_start_refused_while_draining(client):
-    """The restart drain waits for live clarify runs — accepting a NEW one mid-drain would
-    never converge, and the restart would kill it mid-conversation (2026-07-16 incident)."""
-    c, tmp = client
-    c.app.state.runner.draining = True
-    try:
-        r = c.post("/api/wizard/start", json={"draft": "a brand new routine"})
-        assert r.status_code == 503
-        assert not list((tmp / "routines").glob(".wizard-*"))     # no session dir created
-    finally:
-        c.app.state.runner.draining = False
-
-
 def test_settings_model_max_tokens_and_fallbacks(client):
     """The catalog carries per-model max_tokens (audit-flagged when unset/implausible) and
     the ordered failover chain; the API validates chain entries and guards deletion."""
@@ -1848,21 +1692,3 @@ def test_run_detail_model_falls_back_to_config(client):
     _mk_run(tmp / "routines", "apir", "20260709-090000", "queued")
     d = c.get("/api/runs/apir:20260709-090000").json()
     assert d["model"] == "Fable"
-
-
-def test_wizard_snapshot_forwards_build_progress(client):
-    """F192: while a build runs, the decompose pipeline writes step/done/total into
-    finalize.json — the wizard detail endpoint forwards them so the setup panel can show
-    WHICH step the build is on instead of a bare spinner."""
-    c, tmp = client
-    wid = ".wizard-20260724-170000"
-    d = tmp / "routines" / wid
-    _mk_wizard(tmp / "routines", "20260724-170000",
-               result={"refined_instruction": "do the thing"})
-    atomic_write_json(d / "state" / "finalize.json",
-                      {"state": "building", "slug": "newr",
-                       "step": "writing stage 2/4: gather-evidence", "done": 3, "total": 7})
-    snap = c.get(f"/api/wizard/{wid}").json()
-    assert snap["stage"] == "building"
-    assert snap["step"] == "writing stage 2/4: gather-evidence"
-    assert snap["done"] == 3 and snap["total"] == 7

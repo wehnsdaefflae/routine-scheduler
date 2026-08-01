@@ -79,13 +79,7 @@ def suggest(server: ServerConfig, instruction: str) -> dict:
     return obj
 
 
-# --- tag suggestion: every element carries >=3 tags; a new routine reuses the vocabulary --------
-
-TAGS_SCHEMA = {
-    "type": "object", "additionalProperties": False, "required": ["tags"],
-    "properties": {"tags": {"type": "array", "minItems": 3, "maxItems": 3,
-                            "items": {"type": "string"}}},
-}
+# --- tag vocabulary: every element carries >=3 tags; a new routine reuses the vocabulary --------
 
 
 def existing_tags(server: ServerConfig) -> list[str]:
@@ -219,42 +213,3 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
                              f"Invalid: {exc}. Reply again with ONLY the JSON object."})
     return fallback
 
-
-def suggest_tags(server: ServerConfig, instruction: str) -> list[str]:
-    """Suggest exactly 3 tags for a new routine. Reuse the existing vocabulary wherever a tag
-    fits; coin a new tag only for a genuinely uncovered facet, never a synonym of an existing one.
-    Returns [] if no generator endpoint answers (the caller falls back to manual entry).
-    """
-    vocab = existing_tags(server)
-    prompt = (
-        "Assign exactly THREE lowercase kebab-case tags to a new recurring LLM-agent routine so it "
-        "can be filtered alongside the others. The three tags should capture its domain, its main "
-        "capability, and its target/medium.\n"
-        "STRONGLY prefer tags from the EXISTING vocabulary below — reuse a tag whenever it fits. "
-        "Coin a NEW tag only when no existing tag captures a facet, and NEVER coin a synonym or "
-        "near-duplicate of one already in the vocabulary (e.g. no 'messaging' when 'communication' "
-        "exists, no 'automation' when 'browser' exists).\n\n"
-        f"INSTRUCTION:\n{instruction}\n\n"
-        f"EXISTING VOCABULARY ({len(vocab)} tags): {', '.join(vocab) or '(none yet)'}\n\n"
-        "Reply with ONLY one JSON object matching this schema (no prose):\n"
-        + json.dumps(TAGS_SCHEMA)
-    )
-    endpoint, ref = EndpointRegistry(server).for_system()
-    messages = [{"role": "user", "content": prompt}]
-    for _attempt in range(2):
-        try:
-            completion = endpoint.complete(messages, model=ref.model, schema=TAGS_SCHEMA,
-                                           temperature=ref.temperature, effort=ref.effort,
-                                           max_tokens=ref.max_tokens, timeout=120,
-                                           purpose="Suggest tags", kind="suggest")
-        except Exception:
-            return []
-        try:
-            obj = completion.parsed if completion.parsed is not None else parse_reply(
-                completion.text, TAGS_SCHEMA)
-            return normalize_tags(obj.get("tags", []))
-        except SchemaViolation as exc:
-            messages.append({"role": "assistant", "content": completion.text[:2000]})
-            messages.append({"role": "user", "content":
-                             f"Invalid: {exc}. Reply again with ONLY the JSON object."})
-    return []

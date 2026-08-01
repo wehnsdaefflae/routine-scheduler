@@ -2,7 +2,7 @@
 
 Routers are grouped by surface: routines, conversations, background tasks, runs,
 schedule, stats, summary, questions (decisions), audit, traces, settings (incl. oauth +
-machines), workflows/library, playbooks, wizard, LLM tasks, hooks (the one
+machines), workflows/library, playbooks, LLM tasks, hooks (the one
 unauthenticated ingest), search, and the fs picker — see app._include_api_routers for
 the authoritative list.
 

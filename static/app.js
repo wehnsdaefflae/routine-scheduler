@@ -26,7 +26,6 @@ const routes = [
   [/^#\/questions$/, () => import("/static/views/questions.js")],
   [/^#\/summary$/, () => import("/static/views/summary.js")],
   [/^#\/library(?:\/(.*))?$/, () => import("/static/views/library.js")],
-  [/^#\/new-routine$/, () => import("/static/views/new-routine.js")],
   [/^#\/settings$/, () => import("/static/views/settings.js")],
   [/^#\/help(?:\/(.*))?$/, () => import("/static/views/help.js")],
 ];
@@ -88,7 +87,6 @@ function updateLocation(path) {
     : path.startsWith("#/library") ? "library"
     : path.startsWith("#/settings") ? "settings"
     : path.startsWith("#/help") ? "help"
-    : path.startsWith("#/new-routine") ? "new-routine"
     : "dashboard";
   document.querySelectorAll("[data-nav]").forEach((a) =>
     a.classList.toggle("active", a.dataset.nav === key));
@@ -130,7 +128,6 @@ function crumbsFor(path) {
         { label: slug || "run", href: slug ? `#/routine/${slug}` : null },
         { label: ts ? `run ${fmtTs(ts)}` : "run" }];
     }
-    case "new-routine": return [{ label: "Routines", href: "#/" }, { label: "New routine" }];
     default: return [{ label: "Routines" }];
   }
 }
@@ -146,43 +143,6 @@ function renderCrumbs(path) {
       ? el("a", { href: s.href }, s.label)
       : el("span", { class: i === segs.length - 1 ? "here" : "" }, s.label));
   });
-}
-
-// ---- in-flight setup banner ------------------------------------------------------------------
-// While any new-routine setup session is live, show a persistent, always-visible way back to it
-// on every view — the clarify run's page, where the setup panel lives (D11). Driven by
-// /api/wizard so it is correct across reloads, tabs, and daemon restarts.
-const STAGE_LABEL = { chat: "clarifying", suggest: "choosing a workflow",
-                      building: "building the routine", error: "needs attention" };
-
-async function refreshSetupBanner() {
-  const banner = document.getElementById("setup-banner");
-  let sessions = [];
-  try { sessions = await api("/api/wizard"); } catch { return; }   // stay quiet on transient errors
-  const active = Array.isArray(sessions) ? sessions : [];
-  const cur = active[0];   // newest first
-  if (!cur) { banner.hidden = true; banner.replaceChildren(); return; }
-  const more = active.length > 1 ? ` (+${active.length - 1} more)` : "";
-  // name the session (draft preview) — an abandoned session's banner must not read as if it
-  // were about a routine the user just finished creating
-  const what = cur.draft ? ` · “${cur.draft.length > 60 ? `${cur.draft.slice(0, 60)}…` : cur.draft}”` : "";
-  banner.replaceChildren(
-    el("span", { class: "sb-dot" }),
-    el("span", { class: "sb-text" },
-      el("b", {}, "Routine setup in progress"),
-      ` — ${STAGE_LABEL[cur.stage] || "working"}${what}${more}. The backend is still running; pick up where you left off.`),
-    // a pre-D13 session has no run page — the new-routine view offers what's left (cancel)
-    el("a", { class: "btn small primary",
-      href: cur.clarify_run_id ? `#/run/${cur.clarify_run_id}` : "#/new-routine" }, "resume"),
-    // F198: an abandoned session must be dismissible RIGHT HERE — "resume" alone made a
-    // session whose clarify run already finished haunt every view as an eternal banner
-    el("button", { class: "btn small", title: "archive this setup session (recoverable from .archive)",
-      onclick: async (ev) => {
-        ev.currentTarget.disabled = true;
-        try { await api(`/api/wizard/${encodeURIComponent(cur.wid)}`, { method: "DELETE" }); } catch { /* gone */ }
-        refreshSetupBanner();
-      } }, "discard"));
-  banner.hidden = false;
 }
 
 // ---- first-launch notice: self-improvement routines are off ---------------------------------
@@ -282,8 +242,8 @@ function globalStream() {
       retry = 0;   // a delivered event proves the stream is healthy — reset the backoff
       if (ev.event === "run_started") toast(`run started: ${ev.run_id}`);
       if (ev.event === "run_finished") toast(`run ${ev.state}: ${ev.run_id}`);
-      if (ev.event === "routine_created") { toast(`routine ${ev.slug} is ready`, 5000); refreshSetupBanner(); }
-      if (ev.event === "routine_failed") { toast(`routine ${ev.slug} build failed`, 7000, { error: true }); refreshSetupBanner(); }
+      if (ev.event === "routine_created") toast(`routine ${ev.slug} is ready`, 5000);
+      if (ev.event === "routine_failed") toast(`routine ${ev.slug} build failed`, 7000, { error: true });
       if (ev.event === "library_sync" && ev.status !== "ok") toast(`library sync ${ev.status}`, 7000, { error: true });
       if (ev.event !== "llm_task") scheduleBadgeRefresh();
       window.dispatchEvent(new CustomEvent("rsched-bus", { detail: ev }));
@@ -323,14 +283,6 @@ function startClock() {
 }
 
 window.addEventListener("hashchange", route);
-// The new-routine view and the run page's setup panel fire this when a session starts / is
-// canceled / finalized, so the banner updates immediately instead of waiting for the next poll.
-window.addEventListener("rsched-wizard-changed", () => refreshSetupBanner());
-
-function gateNav(ready) {
-  const a = document.getElementById("nav-new-routine");   // dim (but keep clickable → gated view)
-  if (a) { a.style.opacity = ready ? "" : "0.55"; a.title = ready ? "" : "connect an LLM endpoint in Settings first"; }
-}
 
 (async function boot() {
   startClock();
@@ -340,7 +292,6 @@ function gateNav(ready) {
   startTimeTicker();
   try {
     const s = await api("/api/status");
-    gateNav(s.llm_ready !== false);
     renderMetaBanner(s.meta_routines);
     renderVersion(s);
     // First launch: send the user to setup (Settings) until they finish it. The redirect fires a
@@ -354,6 +305,5 @@ function gateNav(ready) {
   route();
 })();
 refreshBadges();
-refreshSetupBanner();
 globalStream();
-setInterval(() => { refreshBadges(); refreshSetupBanner(); refreshStatus(); }, 30000);
+setInterval(() => { refreshBadges(); refreshStatus(); }, 30000);

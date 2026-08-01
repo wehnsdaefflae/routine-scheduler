@@ -19,6 +19,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.142.0] — 2026-08-01
+
+### Removed
+- **The standalone new-routine wizard — retired (D59, operator-selected big-bang).** Routine
+  creation is now done entirely from a conversation via the `create_routine` action (shipped in
+  0.141.0), so the parallel wizard surface is gone: the `/api/wizard/*` endpoints and their
+  modules (`web/api_wizard.py`, `web/wizard_sessions.py`, `web/wizard_common.py`), the
+  `#/new-routine` page (`static/views/new-routine.js`) and its setup panel
+  (`static/components/setuppanel.js`), the persistent in-flight "Routine setup in progress"
+  banner, and the `+ new routine` topbar button. The in-flight-build drain machinery went with
+  it: `Scheduler.wizard_builds`, `restart.clarify_states()`, the `builds_active` parameter of
+  `restart.restart_action()`, and the startup orphan-build reconcile — no web-process build tasks
+  exist anymore, so `restart_action` is now purely `(requested, active_states, draining)`.
+- Dead helpers removed with the wizard: `workflows.suggest.suggest_tags` / `TAGS_SCHEMA` (only the
+  wizard's suggest step called them) and the session machinery in `web/wizard_store.py`
+  (`create_session`, `candidate_patterns`, `recover_orphan_builds`, `template_defaults`,
+  `WIZARD_BUDGETS`, snapshot/list/archive). `wizard_store.py` is trimmed to the clarification
+  **template** support the survivors still import (`TEMPLATE_SLUG`, `read_meta`, `latest_run_ts`,
+  `clarify_run_dir`, `clarify_run_id`, `session_inbox_dir`).
+
+### Notes
+- The protected `clarification` template routine and its run-page question surfacing (a clarify
+  run's blocking questions on `/api/questions`) are **kept** — they remain the substrate the
+  conversation-driven clarification flow uses. Only the standalone-wizard shell was removed.
+
 ## [0.141.0] — 2026-08-01
 
 ### Added

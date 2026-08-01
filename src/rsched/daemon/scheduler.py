@@ -69,10 +69,6 @@ class Scheduler:
         self.oauth = OAuthRefreshManager(server)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
-        # In-flight new-routine wizard builds (wids), registered by api_wizard.finalize and
-        # cleared when the background build ends. The restart drain waits for these to empty
-        # too, so a self-restart never strands a half-scaffolded routine (see restart.py).
-        self.wizard_builds: set[str] = set()
         # the library-sync job (plain, not a routine) rides the same cron machinery
         self.sync_next: datetime | None = None
         self._sync_task: asyncio.Task | None = None
@@ -207,12 +203,7 @@ class Scheduler:
             return True
         requested = restart.restart_requested(self.server)
         active = self.runner.active_states()
-        if requested:
-            # in-flight clarify runs (dot-hidden, invisible to the runner) hold the restart
-            # exactly like ordinary runs: waiting_user defers it, running drains it
-            active = active + restart.clarify_states(self.server)
-        action = restart.restart_action(
-            requested, active, self.runner.draining, len(self.wizard_builds))
+        action = restart.restart_action(requested, active, self.runner.draining)
         if action == "idle":
             if self.runner.draining:
                 log.info("restart request withdrawn — resuming normal scheduling")
