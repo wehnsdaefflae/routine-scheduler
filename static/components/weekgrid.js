@@ -76,22 +76,47 @@ export function weekGrid() {
   // cards: the dashboard's currently visible routines; firesBySlug: Map slug → [ms, …] of
   // recurring cron fires; oneShotsBySlug: Map slug → [ms, …] of armed one-shot fires (rendered
   // as distinct hollow bars). A row shows if it has either kind in view.
-  function update(cards, firesBySlug, oneShotsBySlug = new Map()) {
-    lastArgs = [cards, firesBySlug, oneShotsBySlug];
+  function update(cards, firesBySlug, oneShotsBySlug = new Map(), groups = []) {
+    lastArgs = [cards, firesBySlug, oneShotsBySlug, groups];
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const t0 = start.getTime(), span = DAYS * DAY_MS;
     const now = Date.now();
     const inWin = (t) => t >= t0 && t < t0 + span;
-    const nextUpcoming = (r) => Math.min(
-      r.fires.find((t) => t >= now) ?? Infinity,
-      r.oneShots.find((t) => t >= now) ?? Infinity);
-    const rows = cards
+    const upcoming = (m) => Math.min(
+      m.fires.find((t) => t >= now) ?? Infinity,
+      m.oneShots.find((t) => t >= now) ?? Infinity);
+    // One MEMBER per routine in view that has a fire this week.
+    const members = cards
       .map((c) => ({ c,
         fires: (firesBySlug.get(c.slug) || []).filter(inWin),
         oneShots: (oneShotsBySlug.get(c.slug) || []).filter(inWin) }))
-      .filter((r) => r.fires.length || r.oneShots.length)
-      .sort((a, b) => nextUpcoming(a) - nextUpcoming(b));
+      .filter((m) => m.fires.length || m.oneShots.length);
+    const bySlug = new Map(members.map((m) => [m.c.slug, m]));
+
+    // Group same-group routines onto ONE lane, laid out in the group's member (execution)
+    // order (operator ask, F271). A routine is placed in the FIRST group that lists it; the
+    // group's ordered members that are in view define the lane's left-to-right order (and the
+    // shared time axis already orders their bars by fire time). Ungrouped routines each get
+    // their own single-member lane.
+    const placed = new Set();
+    const lanes = [];
+    for (const g of groups) {
+      const laneMembers = (g.members || [])
+        .map((slug) => bySlug.get(slug))
+        .filter((m) => m && !placed.has(m.c.slug));
+      if (!laneMembers.length) continue;
+      for (const m of laneMembers) placed.add(m.c.slug);
+      lanes.push({ group: g.name, members: laneMembers });
+    }
+    for (const m of members) {
+      if (placed.has(m.c.slug)) continue;
+      placed.add(m.c.slug);
+      lanes.push({ group: null, members: [m] });
+    }
+    const laneUpcoming = (lane) => Math.min(...lane.members.map(upcoming));
+    lanes.sort((a, b) => laneUpcoming(a) - laneUpcoming(b));
+    const rows = lanes;
     node.replaceChildren();
     if (!rows.length) {
       node.append(el("div", { class: "faint small", style: "padding:4px 2px" },
@@ -114,27 +139,35 @@ export function weekGrid() {
     // Bar width to scale against a day's width, floored; clamped so it never runs off the strip.
     const barWidth = (secs, xt) => Math.min(Math.max(MIN_BAR_W, (secs / DAY_SECONDS) * DAY_W), W - xt);
     const legendItems = [];
-    rows.forEach((r, i) => {
+    rows.forEach((lane, i) => {
       const y = HEAD_H + i * ROW_H, cy = y + ROW_H / 2;
-      const color = slugColor(r.c.slug);
-      const name = r.c.name || r.c.slug;
-      const avg = avgRuntime(r.c);
-      const runNote = avg ? ` · runs ~${fmtDur(avg.secs)}` : " · never run";
       const g = s("g", { class: "wg-row" });
       g.append(s("rect", { x: 0, y, width: W, height: ROW_H, class: "wg-rowbg" }));
-      const a = s("a", { href: `#/routine/${r.c.slug}` });   // clicking a bar opens the routine
-      for (const t of r.fires)
-        a.append(s("rect", { x: x(t), y: cy - BAR_H / 2, width: barWidth(avg?.secs ?? 0, x(t)), height: BAR_H,
-          rx: BAR_H / 2, fill: color, class: t < now ? "wg-bar past" : "wg-bar" },
-          `${name} · ${fmtAt.format(new Date(t))}${runNote}`));
-      for (const t of r.oneShots)
-        a.append(s("rect", { x: x(t), y: cy - BAR_H / 2, width: barWidth(avg?.secs ?? 0, x(t)), height: BAR_H,
-          rx: BAR_H / 2, fill: "none", stroke: color, "stroke-width": 1.4,
-          class: t < now ? "wg-bar one-shot past" : "wg-bar one-shot" },
-          `${name} · one-shot · ${fmtAt.format(new Date(t))}${runNote}`));
-      g.append(a);
+      // A grouped lane names the group at the row's left edge, so the merged routines read as
+      // one chain (F271); the members' bars sit on the shared time axis in execution order.
+      const grouped = lane.group != null;
+      // Every member of the lane draws its own bars on this ONE row.
+      for (const m of lane.members) {
+        const color = slugColor(m.c.slug);
+        const name = m.c.name || m.c.slug;
+        const avg = avgRuntime(m.c);
+        const runNote = avg ? ` · runs ~${fmtDur(avg.secs)}` : " · never run";
+        const grpNote = grouped ? ` · group ${lane.group}` : "";
+        const a = s("a", { href: `#/routine/${m.c.slug}` });   // a bar opens its routine
+        for (const t of m.fires)
+          a.append(s("rect", { x: x(t), y: cy - BAR_H / 2, width: barWidth(avg?.secs ?? 0, x(t)), height: BAR_H,
+            rx: BAR_H / 2, fill: color, class: t < now ? "wg-bar past" : "wg-bar" },
+            `${name}${grpNote} · ${fmtAt.format(new Date(t))}${runNote}`));
+        for (const t of m.oneShots)
+          a.append(s("rect", { x: x(t), y: cy - BAR_H / 2, width: barWidth(avg?.secs ?? 0, x(t)), height: BAR_H,
+            rx: BAR_H / 2, fill: "none", stroke: color, "stroke-width": 1.4,
+            class: t < now ? "wg-bar one-shot past" : "wg-bar one-shot" },
+            `${name}${grpNote} · one-shot · ${fmtAt.format(new Date(t))}${runNote}`));
+        g.append(a);
+        legendItems.push({ slug: m.c.slug, name, color, sched: m.c.schedule_desc || "",
+          avg, group: lane.group });
+      }
       svg.append(g);
-      legendItems.push({ slug: r.c.slug, name, color, sched: r.c.schedule_desc || "", avg });
     });
 
     if (now >= t0 && now < t0 + span)
@@ -148,7 +181,8 @@ export function weekGrid() {
                       : "no runs recorded yet" },
         el("span", { class: "wg-swatch", style: `background:${it.color}` }),
         el("span", { class: "wg-leg-name" }, it.name),
-        it.sched ? el("span", { class: "wg-leg-sched" }, it.sched) : null));
+        it.sched ? el("span", { class: "wg-leg-sched" }, it.sched) : null,
+        it.group ? el("span", { class: "wg-leg-group" }, `⛓ ${it.group}`) : null));
 
     node.append(svg, legend);
   }

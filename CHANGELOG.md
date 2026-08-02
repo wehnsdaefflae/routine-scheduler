@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.151.0] — 2026-08-02
+
+### Changed
+- **The dashboard "this week" strip draws same-group routines on one shared row (F271).**
+  Routines that belong to the same group are now merged onto a single week-strip lane, laid out
+  in the group's member (execution) order, so a group reads as one chain across the timeline
+  instead of being scattered over separate rows. A routine is placed in the first group that
+  lists it; ungrouped routines keep their own row; lanes are still ordered by earliest upcoming
+  fire. The legend tags each grouped member with a `⛓ <group>` label. Driven by the ordered
+  groups already fetched from `/api/groups` (a groups hiccup degrades to per-routine rows).
+  Covered by a chromium UI test asserting two grouped routines collapse to one row while a solo
+  routine keeps its own.
+
 ## [0.150.0] — 2026-08-02
 
 ### Added

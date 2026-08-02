@@ -76,6 +76,7 @@ td.hb-cell { min-width: 155px; }
 .weekgrid .wg-leg:hover { color: var(--text); }
 .weekgrid .wg-swatch { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
 .weekgrid .wg-leg-sched { color: var(--faint); font-size: 11px; }
+.weekgrid .wg-leg-group { color: #b48ce8; font-size: 11px; }
 
 /* ---------- log: stats strip + feed rows ---------- */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 14px 0 6px; }

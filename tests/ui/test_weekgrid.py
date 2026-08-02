@@ -5,6 +5,8 @@ the position it had when the page last loaded.
 
 from datetime import datetime
 
+from playwright.sync_api import expect
+
 
 def test_now_cursor_advances_on_its_own(ui, ui_page):
     """With no data refresh, the wg-now cursor re-positions itself on the component's internal
@@ -42,3 +44,31 @@ def test_now_cursor_advances_on_its_own(ui, ui_page):
             break
         ui_page.wait_for_timeout(200)
     assert x_after > x_before + 2, f"now-cursor did not advance: {x_before} -> {x_after}"
+
+
+def test_same_group_routines_share_one_week_row(ui, ui_page, make_routine):
+    """F271 (operator ask): routines in the same group are drawn on the SAME week-strip row, in
+    the group's member (execution) order — so a group reads as one chain on the timeline rather
+    than scattered across separate rows. Two grouped, scheduled routines → ONE wg-row carrying
+    both their bars; ungrouped routines keep their own row."""
+    from rsched import groups
+
+    # uir already exists (ui fixture); add a second scheduled routine and a solo one.
+    make_routine(slug="uir2")
+    make_routine(slug="solo")
+    # Group uir + uir2 in fire order; 'solo' stays ungrouped.
+    groups.create(ui.routines, name="Nightly", members=["uir", "uir2"], on_failure="stop")
+
+    ui_page.goto(f"{ui.url}/#/routines")
+    expect(ui_page.locator(".weekpanel svg.wg")).to_be_visible(timeout=10_000)
+    rows = ui_page.locator(".weekpanel .wg-row")
+    # The two grouped routines collapse into ONE row; solo has its own → 2 rows, not 3.
+    expect(rows).to_have_count(2, timeout=10_000)
+    # The merged row carries bars linking to BOTH grouped routines.
+    group_row = ui_page.locator(".weekpanel .wg-row",
+                                has=ui_page.locator("a[href='#/routine/uir2']")).first
+    expect(group_row.locator("a[href='#/routine/uir'] .wg-bar")).to_have_count(1)
+    expect(group_row.locator("a[href='#/routine/uir2'] .wg-bar")).to_have_count(1)
+    # The legend tags the grouped members with their group name.
+    legend = ui_page.locator(".weekpanel .wg-legend")
+    expect(legend.locator(".wg-leg-group", has_text="Nightly")).to_have_count(2)

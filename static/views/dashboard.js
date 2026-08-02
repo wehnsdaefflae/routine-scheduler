@@ -105,6 +105,7 @@ export async function render(view) {
 
   let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();
   let groupsBySlug = new Map();   // slug -> [group names] (R107/F269 — group badges on the list)
+  let groupsOrdered = [];   // [{name, members:[slug…]}] in fire order (F271 — merged week rows)
   let lastTagSig = null;   // F229: only rebuild the filter bar when the tag set changes
   const active = new Set(JSON.parse(storage.get(FILTER_KEY) || "[]"));
   const states = new Set();
@@ -179,7 +180,7 @@ export async function render(view) {
 
   function renderBody() {
     const shown = ordered(cards.filter(visible));
-    week.update(cards.filter(visible), firesBySlug, oneShotsBySlug);
+    week.update(cards.filter(visible), firesBySlug, oneShotsBySlug, groupsOrdered);
     weekPanel.hidden = !cards.length;
     body.replaceChildren();
     if (!cards.length) {
@@ -216,6 +217,8 @@ export async function render(view) {
     // slug -> [group names]: each routine card/row shows which group(s) it belongs to, so
     // groups are discoverable from the Routines page, not only the separate /groups page.
     groupsBySlug = new Map();
+    groupsOrdered = (groupData?.groups || [])
+      .map((g) => ({ name: g.name, members: g.members || [] }));
     for (const g of groupData?.groups || []) {
       for (const slug of g.members || []) {
         if (!groupsBySlug.has(slug)) groupsBySlug.set(slug, []);
