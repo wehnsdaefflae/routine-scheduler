@@ -1210,6 +1210,28 @@ def test_dashboard_running_marker_in_both_views(ui, ui_page):
     expect(ui_page.locator("table.list tbody tr.live", has_text="Test uir")).to_be_visible()
 
 
+def test_dashboard_shows_group_membership(ui, ui_page):
+    """R107/F269: a routine's group membership is visible on the Routines list — a group
+    chip on the card AND in the list-view row — so groups are discoverable from the routines
+    page, not only the separate /groups page. Clicking the chip goes to the Groups page."""
+    from rsched import groups
+
+    groups.create(ui.routines, name="Maintenance", members=["uir"], on_failure="stop")
+
+    ui_page.goto(f"{ui.url}/#/routines")
+    card = ui_page.locator(".card", has_text="Test uir")
+    chip = card.locator("a.group-chip", has_text="Maintenance")
+    expect(chip).to_be_visible()
+    chip.click()
+    expect(ui_page).to_have_url(f"{ui.url}/#/groups")
+
+    # list view: the same membership shows in the routine's row
+    ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.get_by_role("button", name="☰ list view").click()
+    row = ui_page.locator("table.list tbody tr", has_text="Test uir")
+    expect(row.locator("a.group-chip", has_text="Maintenance")).to_be_visible()
+
+
 def test_dashboard_table_sort_reverses_on_reclick(ui, ui_page):
     """F208: clicking a sortable column header sorts by it; re-clicking the ACTIVE column
     reverses the direction (was a no-op) — the header arrow shows ▴ asc / ▾ desc."""

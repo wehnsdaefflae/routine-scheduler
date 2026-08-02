@@ -104,6 +104,7 @@ export async function render(view) {
   body.append(skeleton(), skeleton(), skeleton());
 
   let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();
+  let groupsBySlug = new Map();   // slug -> [group names] (R107/F269 — group badges on the list)
   let lastTagSig = null;   // F229: only rebuild the filter bar when the tag set changes
   const active = new Set(JSON.parse(storage.get(FILTER_KEY) || "[]"));
   const states = new Set();
@@ -198,17 +199,29 @@ export async function render(view) {
   }
 
   async function load() {
-    let routines, status, sched;
+    let routines, status, sched, groupData;
     try {
-      [routines, status, sched] = await Promise.all([
+      [routines, status, sched, groupData] = await Promise.all([
         api("/api/routines"), api("/api/status").catch(() => ({})),
         api("/api/schedule/week").catch(() => null),
+        // Group membership is a nicety on this page — a groups-fetch hiccup must never blank
+        // the routines list, so it degrades to "no groups" rather than throwing (R107, F269).
+        api("/api/groups").catch(() => null),
       ]);
     } catch (err) {
       body.replaceChildren(emptyState("✕", "Couldn't reach the daemon", err.message));
       return;
     }
     cards = routines;
+    // slug -> [group names]: each routine card/row shows which group(s) it belongs to, so
+    // groups are discoverable from the Routines page, not only the separate /groups page.
+    groupsBySlug = new Map();
+    for (const g of groupData?.groups || []) {
+      for (const slug of g.members || []) {
+        if (!groupsBySlug.has(slug)) groupsBySlug.set(slug, []);
+        groupsBySlug.get(slug).push(g.name);
+      }
+    }
     firesBySlug = new Map((sched?.routines || []).map((r) => [r.slug, r.fires.map((t) => +new Date(t))]));
     oneShotsBySlug = new Map((sched?.routines || []).map((r) => [r.slug, (r.one_shots || []).map((t) => +new Date(t))]));
     llmReady = status.llm_ready !== false;
@@ -256,6 +269,17 @@ export async function render(view) {
     }, "▶ run now");
   }
 
+  // Group membership as a chip row — each group a link to the Groups page, so groups are
+  // discoverable straight from the routines list (R107/F269). null when in no group.
+  function groupChips(slug) {
+    const names = groupsBySlug.get(slug) || [];
+    if (!names.length) return null;
+    return el("div", { class: "groups-row" },
+      el("span", { class: "lbl small" }, "⛓"),
+      ...names.map((n) => el("a", { class: "chip group-chip", href: "#/groups",
+        title: `in group “${n}” — open the Groups page` }, n)));
+  }
+
   function card(c) {
     const stateChip = c.active_state ? chip(c.active_state, c.active_state)
       : c.enabled ? chip("idle", "idle") : chip("disabled", "disabled");
@@ -269,6 +293,7 @@ export async function render(view) {
         el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
         stateChip),
       (c.tags || []).length ? el("div", { class: "tags" }, c.tags.map((t) => tagChip(t))) : null,
+      groupChips(c.slug),
       c.description ? el("div", { class: "desc" }, c.description) : null,
       blocked ? el("div", { class: "qflag" },
         el("span", {}, "waiting on your answer"),
@@ -329,7 +354,8 @@ export async function render(view) {
         c.active_state === "waiting_user" ? "attention" : ""].filter(Boolean).join(" ");
       return el("tr", { class: rowCls },
         el("td", {}, el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
-          c.description ? el("div", { class: "faint small", style: "max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, c.description) : null),
+          c.description ? el("div", { class: "faint small", style: "max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, c.description) : null,
+          groupChips(c.slug)),
         el("td", {}, c.active_state ? chip(c.active_state, c.active_state)
           : c.enabled ? (last ? chip(last.state, last.state) : chip("idle", "idle")) : chip("disabled", "disabled")),
         el("td", { class: "hb-cell" }, c.recent_runs?.length

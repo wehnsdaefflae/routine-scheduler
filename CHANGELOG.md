@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.149.0] — 2026-08-02
+
+### Added
+- **Routine group membership is now visible on the Routines page (F269, R107).** Groups (the
+  ordered collections managed on the /groups page) were invisible from the routines list — a user
+  looking at a routine could not see which group(s) it belonged to. The Routines dashboard now
+  fetches `/api/groups` and renders a group chip on each routine's card AND its list-view row (a
+  cool-accent `⛓ <group name>` chip linking to the Groups page), so group membership is
+  discoverable straight from the routines list rather than only the separate /groups page. The
+  groups fetch degrades gracefully — a groups-endpoint hiccup shows "no groups" and never blanks
+  the routines list. Guarded by a `tests/ui` flow test asserting the chip renders in both views
+  and navigates to /groups.
+
 ## [0.148.5] — 2026-08-02
 
 ### Fixed
