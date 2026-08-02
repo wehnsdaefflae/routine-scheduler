@@ -4,7 +4,7 @@
 // is lost or duplicated. This generalizes the log view's "poll as fallback" pattern for the
 // run view and the wizard chat.
 
-import { api, sse } from "/static/api.js";
+import { api, openStreamCount, sse } from "/static/api.js";
 
 const MAX_BACKOFF_MS = 15000;
 
@@ -45,9 +45,11 @@ export function liveTail({ page, events, offset = 0, onEvent, onState, onStatus,
       // first drop only — backoff retries of the same outage aren't new friction evidence.
       // The detail records the stream's age and traffic (F175: run-view streams die every
       // ~2min — age/traffic tells an idle-timeout kill from a mid-burst one).
-      const detail = openedAt
+      // F263: stamp the concurrent open-EventSource count — a reconnect burst under a high
+      // stream count is the connection-exhaustion signature behind the network-stall freeze.
+      const detail = (openedAt
         ? `alive ${Math.round((Date.now() - openedAt) / 1000)}s, ${seenSinceOpen} events`
-        : "before first open";
+        : "before first open") + `, ${openStreamCount()} streams open`;
       import("/static/trace.js").then(({ trace }) => trace("reconnect", events(base), detail)).catch(() => {});
     }
     const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** retry);

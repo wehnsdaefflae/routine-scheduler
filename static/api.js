@@ -120,9 +120,21 @@ export async function apiBlobUrl(path) {
 // a SHORT-LIVED ticket (POST /api/sse-ticket) and sends that instead; reconnects (via
 // stream.js liveTail, which re-invokes this) mint fresh tickets. Returns { close() } —
 // usable before the connection is even up. Prefer liveTail for transcript tails.
+// Concurrent open-EventSource gauge (F263). Browsers cap ~6 HTTP/1.1 connections per origin,
+// and every EventSource holds one open for its whole life — so several live SSE streams (one
+// per open run/conversation tail + the global bus) can approach the cap, at which point every
+// new fetch (navigation, even the sse-ticket POST) stalls with NO error and NO main-thread long
+// task: a NETWORK-stall "freeze" the F218 longtask observer structurally can't see. This gauge
+// is stamped into `reconnect` and `freeze` traces so an audit can correlate a freeze with how
+// many streams were open when it happened, instead of guessing.
+let openStreams = 0;
+export function openStreamCount() { return openStreams; }
+
 export function sse(path, handlers) {
   let source = null;
   let closed = false;
+  let counted = false;
+  const release = () => { if (counted) { counted = false; openStreams -= 1; } };
   (async () => {
     let ticket;
     try { ticket = (await api("/api/sse-ticket", { method: "POST" })).ticket; }
@@ -130,11 +142,12 @@ export function sse(path, handlers) {
     if (closed) return;
     const sep = path.includes("?") ? "&" : "?";
     source = new EventSource(`${path}${sep}ticket=${encodeURIComponent(ticket)}`);
+    counted = true; openStreams += 1;
     for (const [event, fn] of Object.entries(handlers)) {
       if (event === "onerror") source.onerror = fn;
       else if (event === "onopen") source.onopen = fn;
       else source.addEventListener(event, (e) => fn(JSON.parse(e.data)));
     }
   })();
-  return { close: () => { closed = true; source?.close(); } };
+  return { close: () => { closed = true; release(); source?.close(); } };
 }

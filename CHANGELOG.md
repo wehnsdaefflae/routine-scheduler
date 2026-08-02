@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.148.3] — 2026-08-02
+
+### Added
+- **Concurrent open-EventSource gauge, to diagnose the multi-run UI "freeze" (F263).** The UI
+  freeze users report when ≥2 conversations/runs are open has never produced a `freeze` trace,
+  even though the F218 long-task observer records main-thread stalls ≥200ms — so the freeze is
+  **not CPU jank**: it is a **network stall** (browsers cap ~6 HTTP/1.1 connections per origin,
+  and every EventSource holds one open for its whole life, so several live SSE tails + the global
+  bus can exhaust the pool, after which every new fetch — even a navigation — stalls with no error
+  and no long task, invisible to the existing observer). Added `openStreamCount()` in `api.js`
+  tracking live EventSources, and stamped it into the `reconnect` (stream.js) and `freeze`
+  (trace.js) trace details, so the next occurrence records how many streams were open when it
+  happened — turning an unprovable suspicion into evidence a future audit can act on. Guarded by a
+  static-import test. **No behaviour change yet**; the fix (multiplex run tails over the one global
+  bus, or cap client EventSources) is a separate decision pending this telemetry.
+
 ## [0.148.2] — 2026-08-02
 
 ### Fixed

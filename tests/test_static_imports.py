@@ -46,3 +46,35 @@ def test_md_helpers_are_imported_where_used():
                 rel = path.relative_to(STATIC.parent)
                 problems.append(f"{rel}: calls {name}() but never imports it from {MD_MODULE}")
     assert not problems, "unimported md-helper usage (ReferenceError at runtime):\n" + "\n".join(problems)
+
+
+API_MODULE = "/static/api.js"
+API_HELPERS = ("openStreamCount",)   # F263 stream-count gauge — used by stream.js + trace.js
+
+
+def _imported_from(text: str, module: str) -> set[str]:
+    names: set[str] = set()
+    pattern = r'import\s*\{([^}]*)\}\s*from\s*"' + re.escape(module) + r'"'
+    for m in re.finditer(pattern, text):
+        for part in m.group(1).split(","):
+            part = part.strip()
+            if part:
+                names.add(part)
+    return names
+
+
+def test_api_stream_gauge_is_imported_where_used():
+    """F263: openStreamCount (the concurrent-EventSource gauge stamped into reconnect/freeze
+    traces) is defined in api.js; any module calling it must import it — same ReferenceError
+    class the md-helper guard catches. api.js itself DEFINES it, so it is excluded."""
+    problems = []
+    for path in _js_files():
+        if path.name == "api.js":
+            continue
+        text = path.read_text(encoding="utf-8")
+        imported = _imported_from(text, API_MODULE)
+        for name in API_HELPERS:
+            if _calls(text, name) and name not in imported:
+                rel = path.relative_to(STATIC.parent)
+                problems.append(f"{rel}: calls {name}() but never imports it from {API_MODULE}")
+    assert not problems, "unimported api-helper usage (ReferenceError at runtime):\n" + "\n".join(problems)

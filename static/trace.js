@@ -4,7 +4,7 @@
 // Flushes every 5s / 20 events via fetch; on pagehide via fetch keepalive (sendBeacon
 // cannot carry the Authorization header).
 
-import { getToken } from "/static/api.js";
+import { getToken, openStreamCount } from "/static/api.js";
 
 const FLUSH_MS = 5000;
 const FLUSH_AT = 20;
@@ -72,7 +72,9 @@ function installFreezeObserver() {
         pending = setTimeout(() => {
           pending = null; lastReport = Date.now();
           const ms = worst; worst = 0;
-          trace("freeze", "main-thread", `blocked ${ms}ms`);
+          // F263: stamp the concurrent open-EventSource count so a freeze can be correlated
+          // with stream fan-out (the connection-exhaustion / network-stall hypothesis).
+          trace("freeze", "main-thread", `blocked ${ms}ms, ${openStreamCount()} streams open`);
         }, wait);
       }
     });
