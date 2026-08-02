@@ -73,14 +73,26 @@ def input_cap_chars(context_chars: int, max_output_tokens: int, *, cached: bool)
     """
     fraction = COMPACT_AT_FRACTION_CACHED if cached else COMPACT_AT_FRACTION
     trigger = fraction * context_chars
-    # Reserve the output room PLUS a safety margin (OUTPUT_RESERVE_SAFETY): the
-    # chars-per-token estimate is optimistic, so leaving only max_tokens×4 left the cap flush
-    # against the window and F265 recurred (c-20260802-110156: 49326 real input + 16384 output
-    # = 65710 > 65536). The extra margin fires compaction before the undershoot can overflow.
+    return min(trigger, window_ceiling_chars(context_chars, max_output_tokens))
+
+
+def window_ceiling_chars(context_chars: int, max_output_tokens: int) -> float:
+    """The HARD input ceiling (chars): the largest in-prompt size that still leaves the
+    provider room to emit `max_output_tokens` inside the SAME window, plus an
+    OUTPUT_RESERVE_SAFETY margin because the CHARS_PER_TOKEN estimate is optimistic (real
+    tokenizers pack denser than 4 chars/token). This is the ceiling compaction MUST get the
+    prompt under; `input_cap_chars` compacts earlier still (at the 0.6/0.8 fraction), but when
+    compaction CANNOT shrink the prompt — the incompressible head+tail floor, or a
+    conversation too short to have a middle to elide — `clamp_to_cap` enforces THIS ceiling as
+    the last resort. F265 (c-20260802-110156, 2026-08-02): a 30-message conversation with large
+    observations overflowed a 65536-token window (49326 real input + 16384 output = 65710)
+    because it had no middle to compact — margin tuning alone can never fix that; the ceiling
+    has to be ENFORCED by trimming, not merely used as a compaction trigger.
+    """
     reserved = (context_chars
                 - max_output_tokens * CHARS_PER_TOKEN
                 - OUTPUT_RESERVE_SAFETY * context_chars)
-    return min(trigger, max(0.0, reserved))
+    return max(0.0, reserved)
 
 
 def maybe_compact(messages: list[dict], turn_records: list[dict], context_chars: int
@@ -104,6 +116,67 @@ def maybe_compact(messages: list[dict], turn_records: list[dict], context_chars:
     info = {"elided_messages": elided, "digest_chars": len(digest),
             "before_chars": messages_size(messages), "after_chars": messages_size(new_messages)}
     return new_messages, info
+
+
+# The smallest body clamp_to_cap will ever truncate. A message under this is already tiny; the
+# overflow it is fighting is always a handful of LARGE observation bodies, so trimming below
+# this would mangle small structural messages for no space gain.
+_CLAMP_MIN_BODY = 2_000
+_CLAMP_MARKER = ("\n\n[… {n} chars elided by window clamp — the full text is in this run's "
+                 "transcript.jsonl; read_file the run's history/ if it was archived …]")
+
+
+def clamp_to_cap(messages: list[dict], context_chars: int, max_output_tokens: int
+                 ) -> dict | None:
+    """LAST RESORT: force the in-prompt size under the hard window ceiling by truncating the
+    LARGEST message bodies in place, biggest-first, until the total clears the ceiling.
+
+    Compaction (`maybe_compact` / `compact_to_history`) shrinks the prompt by ELIDING the
+    middle, but the retained head + tail are an incompressible floor — and a short conversation
+    (≤ KEEP_HEAD_MSGS + KEEP_TAIL_MSGS messages) has no middle at all. When that floor's own
+    observation bodies exceed the window minus the output reservation, EVERY compaction path
+    returns unchanged and the very next completion 400s with context_length_exceeded and DIES
+    (non-retryable EndpointError). F265 recurred three times this way despite two margin fixes.
+
+    This trims bodies (never message COUNT — structure and roles are preserved) with a visible
+    marker; the full text is always on disk in the transcript, so nothing is lost, and the
+    marker makes the truncation fail LOUD in the prompt rather than silently. Returns a
+    clamp-info dict (for a transcript event) when it trimmed anything, else None.
+    """
+    ceiling = window_ceiling_chars(context_chars, max_output_tokens)
+    if ceiling <= 0:
+        # Degenerate: the output reservation alone fills the window, so there is no positive
+        # input budget to clamp TO — trimming to 0 would just destroy all context. Decline and
+        # let the (misconfigured) request fail loudly at the endpoint. Real models never hit
+        # this; it only arises in artificial tiny-window unit fixtures.
+        return None
+    before = messages_size(messages)
+    if before <= ceiling:
+        return None
+    # Largest bodies first — each cut buys the most room, so we touch the fewest messages.
+    order = sorted(range(len(messages)),
+                   key=lambda i: len(messages[i]["content"]), reverse=True)
+    trimmed = 0
+    for i in order:
+        if messages_size(messages) <= ceiling:
+            break
+        body = messages[i]["content"]
+        if len(body) <= _CLAMP_MIN_BODY:
+            break   # every remaining body is tiny — nothing worth cutting is left
+        overflow = messages_size(messages) - int(ceiling)
+        # Cut enough from THIS body to clear the overflow (plus the marker's own cost), but
+        # never below the floor; the loop revisits if one body wasn't enough.
+        keep = max(_CLAMP_MIN_BODY, len(body) - overflow - 200)
+        if keep >= len(body):
+            continue
+        elided = len(body) - keep
+        messages[i]["content"] = body[:keep] + _CLAMP_MARKER.format(n=elided)
+        trimmed += 1
+    after = messages_size(messages)
+    if not trimmed:
+        return None
+    return {"clamped_messages": trimmed, "before_chars": before, "after_chars": after,
+            "ceiling_chars": int(ceiling)}
 
 
 _HISTORY_SCHEMA = {

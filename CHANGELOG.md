@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.149.1] — 2026-08-02
+
+### Fixed
+- **Context overflow now enforced by trimming, not just by an earlier compaction trigger
+  (F265, third recurrence).** A conversation with a few very large observation bodies could
+  400 with `context_length_exceeded` and die even after the 0.148.1/0.148.5 margin fixes,
+  because compaction only elides the conversation *middle* — the retained head+tail is an
+  incompressible floor, and a short conversation (≤ 30 messages) has no middle to elide at
+  all. When that floor's own bodies exceeded the window minus the output reservation, every
+  compaction path returned unchanged and the next completion overflowed (observed 3× on
+  conversation `c-20260802-110156`). Added `clamp_to_cap`: a last-resort step that runs after
+  archival and forces the in-prompt size under a shared hard ceiling (`window_ceiling_chars`)
+  by truncating the largest message bodies in place, biggest-first, with a visible
+  `[… elided by window clamp …]` marker — the full text stays in the transcript. Message
+  count and role structure are preserved; small bodies are never touched; a degenerate window
+  with no positive input budget is declined rather than zeroed.
+
 ## [0.149.0] — 2026-08-02
 
 ### Added

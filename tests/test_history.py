@@ -151,3 +151,58 @@ def test_input_cap_large_window_unchanged_by_reservation():
 def test_input_cap_never_negative_on_absurd_reservation():
     # A pathological max_tokens larger than the whole window floors the cap at 0, never negative.
     assert input_cap_chars(10_000, 100_000, cached=False) == 0.0
+
+
+# --- F265 structural fix: enforce the hard window ceiling by TRIMMING, not just triggering ---
+# The three prior F265 fixes tuned the compaction TRIGGER (input_cap_chars). But compaction
+# elides only the MIDDLE; the head+tail floor is incompressible and a short conversation has no
+# middle at all, so a run with a few very large observation bodies overflowed the window with
+# NO compaction path able to help (c-20260802-110156, 3 recurrences). clamp_to_cap enforces the
+# ceiling as a last resort by truncating oversized bodies in place.
+from rsched.engine.history import (  # noqa: E402
+    clamp_to_cap,
+    messages_size,
+    window_ceiling_chars,
+)
+
+
+def test_window_ceiling_reserves_output_and_margin():
+    window = 65536 * CHARS_PER_TOKEN
+    max_out = 16384
+    ceiling = window_ceiling_chars(window, max_out)
+    assert ceiling == window - max_out * CHARS_PER_TOKEN - OUTPUT_RESERVE_SAFETY * window
+    # A prompt filling the ceiling plus the requested output clears the real window even at the
+    # dense 3.9 chars/token pack that broke F265.
+    assert ceiling / 3.9 + max_out <= 65536
+
+
+def test_clamp_forces_short_conversation_floor_under_ceiling():
+    # THE F265 CASE: a 30-message conversation (head+tail floor, no middle to compact) whose
+    # observation bodies overflow a 65536-token window. Compaction cannot touch it; the clamp
+    # must bring it under the ceiling anyway.
+    window = 65536 * CHARS_PER_TOKEN
+    max_out = 16384
+    ceiling = window_ceiling_chars(window, max_out)
+    # 30 messages × ~9000 chars = 270k chars > the ~183k ceiling, so it WOULD overflow.
+    messages = [{"role": "user", "content": "x" * 9000} for _ in range(30)]
+    assert messages_size(messages) > ceiling
+    info = clamp_to_cap(messages, window, max_out)
+    assert info is not None and info["clamped_messages"] > 0
+    # After clamping, prompt + output fits the window (the whole point).
+    assert messages_size(messages) <= ceiling
+    assert len(messages) == 30          # message COUNT preserved — only bodies trimmed
+    assert any("window clamp" in m["content"] for m in messages)   # fails LOUD, not silently
+
+
+def test_clamp_noop_when_already_under_ceiling():
+    window = 65536 * CHARS_PER_TOKEN
+    messages = [{"role": "user", "content": "x" * 500} for _ in range(30)]
+    assert clamp_to_cap(messages, window, 16384) is None
+    assert all(len(m["content"]) == 500 for m in messages)   # untouched
+
+
+def test_clamp_leaves_small_bodies_alone_when_it_cannot_help():
+    # A pathologically tiny window vs many small bodies: nothing exceeds the per-message floor,
+    # so the clamp declines rather than mangling small structural messages to no gain.
+    messages = [{"role": "user", "content": "x" * 100} for _ in range(50)]
+    assert clamp_to_cap(messages, 1000, 0) is None

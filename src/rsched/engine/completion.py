@@ -25,6 +25,7 @@ from .actions import (
 from .history import (
     KEEP_HEAD_MSGS,
     KEEP_TAIL_MSGS,
+    clamp_to_cap,
     compact_to_history,
     input_cap_chars,
     maybe_compact,
@@ -299,9 +300,27 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
 
 
 def compact_if_needed(loop, endpoint, ref) -> None:
-    """When the prompt exceeds ~60% of context, archive the middle to a navigable on-disk
+    """Keep the next prompt inside the model's window. First ARCHIVE the middle if it has grown
+    past the compaction gate (`_archive_if_needed`), then ENFORCE the hard window ceiling as a
+    last resort (`clamp_to_cap`) — because archiving cannot shrink the incompressible head+tail
+    floor and a short conversation has no middle to elide, so a run with a few very large
+    observations would otherwise 400 with context_length_exceeded and die (F265, three
+    recurrences on c-20260802-110156). The clamp trims oversized bodies in place with a visible
+    marker; the full text stays in the transcript.
+    """
+    _archive_if_needed(loop, endpoint, ref)
+    ctx = loop.ctx
+    cl = clamp_to_cap(loop.messages, ref.context_chars, ref.max_tokens)
+    if cl:
+        ctx.transcript.event("compaction", {"clamp": cl})
+        loop._last_compact_after = messages_size(loop.messages)
+
+
+def _archive_if_needed(loop, endpoint, ref) -> None:
+    """When the prompt exceeds the compaction gate, archive the middle to a navigable on-disk
     history via the LLM (compact_to_history); fall back to the deterministic one-line digest if
-    that fails, so a run never stalls on compaction.
+    that fails, so a run never stalls on compaction. Does NOT guarantee the result clears the
+    window — that is the caller's `clamp_to_cap` step (the head+tail floor is incompressible).
     """
     ctx = loop.ctx
     size = messages_size(loop.messages)
