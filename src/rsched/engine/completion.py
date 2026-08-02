@@ -23,11 +23,10 @@ from .actions import (
     validate_action,
 )
 from .history import (
-    COMPACT_AT_FRACTION,
-    COMPACT_AT_FRACTION_CACHED,
     KEEP_HEAD_MSGS,
     KEEP_TAIL_MSGS,
     compact_to_history,
+    input_cap_chars,
     maybe_compact,
     messages_size,
 )
@@ -309,10 +308,12 @@ def compact_if_needed(loop, endpoint, ref) -> None:
     # Observed cache hits flip the economics: re-reading carried context costs ~0.1x,
     # while compacting rewrites the prefix and invalidates the whole cache — so compact
     # later (0.8) once the provider demonstrably serves from cache, earlier (0.6) when
-    # every turn re-reads at full price.
-    fraction = (COMPACT_AT_FRACTION_CACHED if ctx.usage.get("cached_in")
-                else COMPACT_AT_FRACTION)
-    context_cap = fraction * ref.context_chars   # the MODEL's window, not the endpoint default
+    # every turn re-reads at full price. The cap also reserves room for the model's
+    # OUTPUT (ref.max_tokens): the provider counts prompt + requested output against ONE
+    # window, so a small-window model must compact before input + max_tokens overflows it
+    # (F265). Both use the MODEL's window, not the endpoint default.
+    context_cap = input_cap_chars(ref.context_chars, ref.max_tokens,
+                                  cached=bool(ctx.usage.get("cached_in")))
     # Long prompts also burn the token BUDGET — every turn re-sends everything, so a
     # bloated prompt taxes each remaining turn. Once the prompt would eat >10% of the
     # remaining token budget per turn, archive it: the one compaction call costs what

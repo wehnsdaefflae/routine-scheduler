@@ -618,7 +618,10 @@ def test_compaction_gate_uncached_compacts_at_60pct(monkeypatch):
     from rsched.engine.completion import compact_if_needed
 
     loop, calls = _gate_loop(monkeypatch, usage={})
-    compact_if_needed(loop, endpoint=None, ref=ModelRef("e", "m", context_chars=100_000))
+    # max_tokens=0 isolates the FRACTION gate: the output reservation (F265, tested in
+    # test_history.test_input_cap_*) contributes nothing, so only the 0.6/0.8 trigger is under test.
+    compact_if_needed(loop, endpoint=None,
+                      ref=ModelRef("e", "m", context_chars=100_000, max_tokens=0))
     assert calls, "70k chars over a 100k window must compact at the uncached 0.6 gate"
 
 
@@ -629,7 +632,10 @@ def test_compaction_gate_cached_waits_for_80pct(monkeypatch):
     from rsched.engine.completion import compact_if_needed
 
     loop, calls = _gate_loop(monkeypatch, usage={"cached_in": 5_000})
-    compact_if_needed(loop, endpoint=None, ref=ModelRef("e", "m", context_chars=100_000))
+    # max_tokens=0 isolates the FRACTION gate (the F265 output reservation is tested separately
+    # in test_history): 70k over 100k sits under the 0.8 cached trigger with no reservation.
+    compact_if_needed(loop, endpoint=None,
+                      ref=ModelRef("e", "m", context_chars=100_000, max_tokens=0))
     assert not calls, "with cache hits, 70k over 100k sits under the 0.8 gate - no compaction"
 
 

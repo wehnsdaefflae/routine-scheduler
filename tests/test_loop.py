@@ -1853,6 +1853,7 @@ def test_compaction_antithrash(make_routine, monkeypatch):
 
     class _Tiny:   # a resolved ModelRef stand-in: context_chars drives the compaction cap
         context_chars = 1000   # so the 60% size trigger always fires for our messages
+        max_tokens = 0         # F265: no output reservation here → fraction trigger stays binding
 
     msg = {"role": "user", "content": "x" * 500}
     loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]

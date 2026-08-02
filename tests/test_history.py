@@ -72,3 +72,47 @@ def test_queued_status_roundtrip_does_not_defeat_reseed():
     }
     queued = _queued_status("r:1", "20260721-000000", leg1)
     assert prior_counters(queued) == prior_counters(leg1)
+
+
+# --- F265: the compaction input-cap must RESERVE room for the model's output ---
+# The provider counts prompt + requested max_tokens output against ONE window; a small-window
+# model (nano-gpt gemma, 65536-token window) reached ~49k input tokens and still requested
+# 16384 output → the completion 400'd with context_length_exceeded. input_cap_chars must
+# leave max_tokens of output room so compaction fires before that overflow.
+from rsched.engine.history import CHARS_PER_TOKEN, input_cap_chars  # noqa: E402
+
+
+def test_input_cap_reserves_output_room_on_small_window():
+    # gemma: 65536-token window ≈ 262144 chars, output reservation 16384 tokens.
+    window = 65536 * CHARS_PER_TOKEN
+    max_out = 16384
+    for cached in (False, True):
+        cap = input_cap_chars(window, max_out, cached=cached)
+        # After compaction to the cap, prompt + output must fit the window with no overflow.
+        assert cap + max_out * CHARS_PER_TOKEN <= window, (cap, cached)
+    # And it is the reservation (not the fraction trigger) that binds on the cached path:
+    # reserved = 262144 - 65536 = 196608 < 0.8*262144 = 209715.
+    assert input_cap_chars(window, max_out, cached=True) == window - max_out * CHARS_PER_TOKEN
+
+
+def test_input_cap_reproduces_c110156_no_overflow():
+    # The exact failing request: est input ~49264 tokens, output 16384, window 65536.
+    window = 65536 * CHARS_PER_TOKEN
+    cap = input_cap_chars(window, 16384, cached=True)
+    failing_input_chars = 49264 * CHARS_PER_TOKEN
+    # The observed input EXCEEDED the corrected cap, so compaction WOULD have fired.
+    assert failing_input_chars > cap
+
+
+def test_input_cap_large_window_unchanged_by_reservation():
+    # A large window (Claude 200k tokens ≈ 800000 chars): the fraction trigger stays binding,
+    # so this fix does not change behaviour for big-window models.
+    window = 200_000 * CHARS_PER_TOKEN
+    max_out = 16384
+    assert input_cap_chars(window, max_out, cached=False) == 0.6 * window
+    assert input_cap_chars(window, max_out, cached=True) == 0.8 * window
+
+
+def test_input_cap_never_negative_on_absurd_reservation():
+    # A pathological max_tokens larger than the whole window floors the cap at 0, never negative.
+    assert input_cap_chars(10_000, 100_000, cached=False) == 0.0

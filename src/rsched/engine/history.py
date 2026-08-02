@@ -38,6 +38,33 @@ def messages_size(messages: list[dict]) -> int:
                for m in messages)
 
 
+# The codebase's standing approximation: context_chars ≈ 4 × the token window (see
+# ModelConfig.context_chars). Used to convert an output-token reservation into chars.
+CHARS_PER_TOKEN = 4
+
+
+def input_cap_chars(context_chars: int, max_output_tokens: int, *, cached: bool) -> float:
+    """The largest in-prompt size (chars) allowed before compaction MUST fire — the lower
+    of two ceilings:
+
+    - the fraction-of-window trigger (0.6 uncached / 0.8 cached: compact earlier when every
+      turn re-reads at full price, later once the provider serves from cache), and
+    - the window MINUS the output reservation. The provider counts the prompt AND the
+      requested `max_tokens` output against ONE window, so the input must leave
+      `max_output_tokens` of room. Without this second ceiling a small-window model lets
+      input grow to `fraction × window` and still requests the full output on top, so
+      `input + max_tokens > window` and the completion 400s with context_length_exceeded
+      (F265: a 65536-token model reached ~49k input tokens and still requested 16384 output
+      → overflow). The reservation only bites models whose window is small enough that
+      `fraction × window + max_tokens×4 > window`; for large windows the fraction trigger
+      stays the binding one, so behaviour there is unchanged.
+    """
+    fraction = COMPACT_AT_FRACTION_CACHED if cached else COMPACT_AT_FRACTION
+    trigger = fraction * context_chars
+    reserved = context_chars - max_output_tokens * CHARS_PER_TOKEN
+    return min(trigger, max(0.0, reserved))
+
+
 def maybe_compact(messages: list[dict], turn_records: list[dict], context_chars: int
                   ) -> tuple[list[dict], dict | None]:
     """Deterministic compaction. Returns (messages, compaction_info|None)."""

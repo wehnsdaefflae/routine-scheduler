@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.148.1] — 2026-08-02
+
+### Fixed
+- **Compaction now reserves room for the model's OUTPUT, fixing context-length overflows on
+  small-window models (F265).** The prompt-size compaction gate capped only the INPUT at
+  `fraction × context_chars` (0.6 uncached / 0.8 cached) and never subtracted the output
+  reservation the request sends (`max_tokens`). Because a provider counts prompt **and** the
+  requested output against ONE window, a small-window model could let input grow to
+  `fraction × window` and still request the full output on top — so `input + max_tokens >
+  window` and the completion hard-failed with `context_length_exceeded` (HTTP 400). Seen live:
+  conversation `c-20260802-110156` on a 65536-token nano-gpt model reached ~49k input tokens
+  and still requested 16384 output → repeated 400s that failed the run. The cap is now the
+  lower of the fraction trigger and `window − max_tokens`, extracted into a pure, unit-tested
+  `history.input_cap_chars` helper. The reservation only bites models whose window is small
+  enough that `fraction × window + max_tokens×4 > window`; large-window models (Claude, etc.)
+  keep the fraction trigger as the binding one, so their behaviour is unchanged.
+
 ## [0.148.0] — 2026-08-01
 
 ### Fixed
