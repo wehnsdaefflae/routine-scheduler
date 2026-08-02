@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.152.0] — 2026-08-03
+
+### Added
+- **The new-conversation composer can start a conversation in admin mode (D66).** The
+  Conversations "admin" toggle previously lived only on an existing conversation's message
+  composer — but a conversation's **first reply fires on create**, so arming admin afterward
+  always missed it. The new-conversation composer now carries the same admin toggle: arming it
+  and clicking "start conversation" sends the `x-admin-token` header on the create request, and
+  the server drops the one-shot admin marker on the freshly-created run dir **before its engine
+  boots** (no `await` between `fire()` returning and the marker write, so it lands ahead of the
+  supervisor spawning the subprocess that reads it at loop init). Same web-layer-only token
+  check as `/message` and `/runs/{id}/converse` — the token never reaches the engine, and admin
+  lifts only capability gating, never the structural/ownership gates. Wrong or absent token
+  leaves no marker (fail-closed). Covered by a create-endpoint test and a chromium UI flow test.
+
 ## [0.151.1] — 2026-08-02
 
 ### Fixed

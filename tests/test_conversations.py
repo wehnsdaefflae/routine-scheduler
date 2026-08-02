@@ -260,6 +260,35 @@ def test_message_admin_token_drops_marker_only_when_valid(client, monkeypatch):
     assert (run_dir / ADMIN_MARKER).exists()
 
 
+def test_create_conversation_admin_token_drops_marker_only_when_valid(client, monkeypatch):
+    """D66: the NEW-conversation composer's Admin toggle sends x-admin-token ON CREATE.
+    Reply #1 fires on create, so a VALID token must drop the one-shot admin marker on the
+    freshly-created run dir (before its engine boots); a wrong/absent token leaves none.
+    Same web-layer-only check as the /message resume path (D63)."""
+    from rsched.engine.admin import ADMIN_MARKER, ADMIN_TOKEN_ENV
+    monkeypatch.setenv(ADMIN_TOKEN_ENV, "s3cret-admin-token")
+    c, server = client
+
+    def _run_dir(resp):
+        slug = resp["slug"]
+        ts = resp["run_id"].split(":", 1)[1]
+        return server.conversations_home / slug / "runs" / ts
+
+    # no admin header → created + fired, but NO admin marker
+    resp = c.post("/api/conversations", data={"text": "plan a trip"}).json()
+    assert not (_run_dir(resp) / ADMIN_MARKER).exists()
+
+    # a WRONG token → created, still NO marker (fail-closed)
+    resp = c.post("/api/conversations", data={"text": "again"},
+                  headers={"x-admin-token": "wrong"}).json()
+    assert not (_run_dir(resp) / ADMIN_MARKER).exists()
+
+    # a VALID token → the one-shot admin marker is planted on the first run dir
+    resp = c.post("/api/conversations", data={"text": "now with admin"},
+                  headers={"x-admin-token": "s3cret-admin-token"}).json()
+    assert (_run_dir(resp) / ADMIN_MARKER).exists()
+
+
 def test_conversation_connections_binding(client):
     """D55 (closes R70): a conversation can bind an OAuth connection just like a routine —
     PATCH /conversations/{slug} accepts `connections`, the binding lands in routine.yaml (so the

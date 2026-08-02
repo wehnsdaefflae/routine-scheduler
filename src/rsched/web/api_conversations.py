@@ -131,9 +131,20 @@ async def create_conversation(request: Request, text: Annotated[str, Form()] = "
         # attachments to the kickoff (later messages carry attachments through the inbox)
         atomic_write_json(conv_dir / "state" / "pending-media.json", {"attachments": rels})
     cfg, _ = load_routine(conv_dir)
+    # D66: the composer's Admin toggle sends x-admin-token ON CREATE too. Reply #1 fires
+    # here, so the one-shot admin marker must be planted on the created run dir BEFORE its
+    # engine boots — the resume path (write-then-resume an existing dir) cannot apply, a fresh
+    # fire has no prior run dir to mark. Same web-layer-only token check as /message and
+    # /runs/{id}/converse; the token never reaches the engine.
+    from ..engine.admin import ADMIN_HEADER, admin_token_valid, write_admin_marker
+    admin_ok = admin_token_valid(request.headers.get(ADMIN_HEADER))
     rid = await request.app.state.runner.fire(cfg, reason="conversation")
     if rid is None:
         raise HTTPException(409, "could not start the conversation (daemon draining?)")
+    if admin_ok:
+        # No await between fire() returning and this write, so the marker lands before the
+        # runner's supervisor task spawns the engine subprocess that reads it at loop init.
+        write_admin_marker(conv_dir / "runs" / rid.split(":", 1)[1])
     # title + tags off the reply path — best-effort, never blocks the response (the strong
     # ref keeps the task from being GC'd mid-flight)
     task = asyncio.create_task(asyncio.to_thread(conv_mod.autolabel, server, conv_dir, text))

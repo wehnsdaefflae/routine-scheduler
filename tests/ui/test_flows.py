@@ -426,6 +426,31 @@ def test_conversation_admin_toggle_sends_token(ui, ui_page):
     assert req2.value.headers.get("x-admin-token") is None
 
 
+def test_new_conversation_admin_toggle_sends_token_on_create(ui, ui_page):
+    """D66: the NEW-conversation composer also has an Admin toggle, because reply #1 fires
+    on create — arming admin only AFTER create would miss the first reply. Arming it here and
+    starting the conversation makes the CREATE request (POST /api/conversations) carry the
+    x-admin-token header; an unarmed create carries none."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    admin = ui_page.get_by_role("button", name="admin", exact=True)
+    admin.wait_for(timeout=10_000)                      # composer mounts after an async fetch
+    expect(admin).to_be_visible()                       # off by default
+    admin.click()
+    dlg = ui_page.locator(".modal-overlay")
+    expect(dlg).to_be_visible()
+    dlg.locator("input").fill("s3cret-admin-token")
+    dlg.get_by_role("button", name="ok").click()
+    expect(ui_page.get_by_role("button", name="admin: on")).to_be_visible()
+
+    # starting the conversation now carries the admin header on the CREATE request
+    ui_page.locator(".conv-new textarea").fill("plan the week with the full toolset")
+    with ui_page.expect_request(
+            lambda r: r.url.rstrip("/").endswith("/api/conversations")
+            and r.method == "POST") as req:
+        ui_page.get_by_role("button", name="start conversation").click()
+    assert req.value.headers.get("x-admin-token") == "s3cret-admin-token"
+
+
 def test_run_view_recipe_edit_checkbox(ui, ui_page):
     """D37 (revised): a terminal routine run shows the "editable recipe" CHECKBOX right
     next to the composer input — OFF by default; checking it flips the placeholder to say

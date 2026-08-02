@@ -10,6 +10,7 @@
 
 import { api, apiUpload } from "/static/api.js";
 import { deliberationControl } from "/static/components/deliberation.js";
+import { promptDialog } from "/static/components/dialog.js";
 import { filePicker } from "/static/components/filepicker.js";
 import { permissionsPanel } from "/static/components/permissions.js";
 import { settingsSection } from "/static/components/settings-section.js";
@@ -82,6 +83,34 @@ export function mountComposerOnly(main) {
   });
   const { picker, files, clearFiles, wirePaste } = filePicker();
   wirePaste(text);
+  // D66: the Admin toggle on the CREATE composer — reply #1 fires on create, so admin must be
+  // armable HERE (the per-conversation toggle only governs later messages). Holds the token for
+  // this browser session and sends it as x-admin-token with the create request; the server
+  // re-validates it and drops the one-shot marker on the first run. Danger while armed.
+  const ADMIN_KEY = "rsched_admin_token";
+  let adminToken = sessionStorage.getItem(ADMIN_KEY) || "";
+  const adminBtn = el("button", { class: "btn small ghost",
+    title: "start this conversation with the full toolset — sends the admin token on create" },
+    "admin");
+  const paintAdmin = () => {
+    adminBtn.classList.toggle("danger", Boolean(adminToken));
+    adminBtn.classList.toggle("ghost", !adminToken);
+    adminBtn.textContent = adminToken ? "admin: on" : "admin";
+  };
+  adminBtn.onclick = async () => {
+    if (adminToken) {
+      adminToken = ""; sessionStorage.removeItem(ADMIN_KEY); paintAdmin();
+      toast("admin off — the conversation starts normally"); return;
+    }
+    const t = await promptDialog(
+      "Admin token — lifts capability gating for this conversation, starting with the first "
+      + "reply. Stored for this browser session only; the server re-checks it on every request.",
+      { placeholder: "paste the admin token" });
+    if (!t) return;
+    adminToken = t; sessionStorage.setItem(ADMIN_KEY, t); paintAdmin();
+    toast("admin on — this conversation starts with the full toolset");
+  };
+  paintAdmin();
   const send = el("button", { class: "btn primary" }, "start conversation");
   send.onclick = async () => {
     if (!text.value.trim() && !pbSel.value) { toast("write the first message or pick a playbook"); return; }
@@ -99,7 +128,8 @@ export function mountComposerOnly(main) {
       fd.append("deliberation", delib.value);
       if (permPanel) fd.append("permissions", JSON.stringify(permPanel.value()));
       for (const f of files()) fd.append("files", f);
-      const r = await apiUpload("/api/conversations", fd);
+      const r = await apiUpload("/api/conversations", fd,
+        adminToken ? { "x-admin-token": adminToken } : {});
       forgetField(text); forgetField(workdir);   // submitted — never refill the next composer
       clearFiles();
       navigate(`#/conversations/${r.slug}`);
@@ -126,7 +156,7 @@ export function mountComposerOnly(main) {
       el("div", { class: "row mt", style: "gap:8px;align-items:center;flex-wrap:wrap" },
         el("span", { class: "faint small" }, "playbook"), pbSel),
       pbHint,
-      el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, send)),
+      el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, adminBtn, send)),
     // the pre-start settings — the same titled-section vocabulary the routine page uses
     ...settingsSection("Model",
       "Which model answers this conversation — pick one from the catalog or start on the "
