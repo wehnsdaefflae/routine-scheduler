@@ -79,7 +79,11 @@ def test_queued_status_roundtrip_does_not_defeat_reseed():
 # model (nano-gpt gemma, 65536-token window) reached ~49k input tokens and still requested
 # 16384 output → the completion 400'd with context_length_exceeded. input_cap_chars must
 # leave max_tokens of output room so compaction fires before that overflow.
-from rsched.engine.history import CHARS_PER_TOKEN, input_cap_chars  # noqa: E402
+from rsched.engine.history import (  # noqa: E402
+    CHARS_PER_TOKEN,
+    OUTPUT_RESERVE_SAFETY,
+    input_cap_chars,
+)
 
 
 def test_input_cap_reserves_output_room_on_small_window():
@@ -90,9 +94,13 @@ def test_input_cap_reserves_output_room_on_small_window():
         cap = input_cap_chars(window, max_out, cached=cached)
         # After compaction to the cap, prompt + output must fit the window with no overflow.
         assert cap + max_out * CHARS_PER_TOKEN <= window, (cap, cached)
-    # And it is the reservation (not the fraction trigger) that binds on the cached path:
-    # reserved = 262144 - 65536 = 196608 < 0.8*262144 = 209715.
-    assert input_cap_chars(window, max_out, cached=True) == window - max_out * CHARS_PER_TOKEN
+    # The reservation (not the fraction trigger) binds on the cached path, and it now reserves
+    # the output room PLUS the OUTPUT_RESERVE_SAFETY margin (F265 recurrence fix): the cap sits
+    # a safety margin BELOW window - max_out*CHARS_PER_TOKEN, not flush against it.
+    cached_cap = input_cap_chars(window, max_out, cached=True)
+    assert cached_cap == (window - max_out * CHARS_PER_TOKEN
+                          - OUTPUT_RESERVE_SAFETY * window)
+    assert cached_cap < window - max_out * CHARS_PER_TOKEN
 
 
 def test_input_cap_reproduces_c110156_no_overflow():
@@ -102,6 +110,33 @@ def test_input_cap_reproduces_c110156_no_overflow():
     failing_input_chars = 49264 * CHARS_PER_TOKEN
     # The observed input EXCEEDED the corrected cap, so compaction WOULD have fired.
     assert failing_input_chars > cap
+
+
+def test_input_cap_survives_real_tokenizer_undershoot():
+    # F265 RECURRED after the zero-margin 0.148.1 fix: CHARS_PER_TOKEN=4 is OPTIMISTIC, so a
+    # prompt whose CHAR count sat at/under the old cap (window - max_out*4) still counted more
+    # real tokens than budgeted and overflowed (c-20260802-110156: 49326 real input tokens +
+    # 16384 output = 65710 > 65536). Model the real pack density observed in that failure and
+    # assert that a prompt filling the CURRENT cap leaves the output room even so.
+    window = 65536 * CHARS_PER_TOKEN
+    max_out = 16384
+    cap = input_cap_chars(window, max_out, cached=True)
+    # Densest pack seen in the F265 failure: 49326 real tokens for ~49264*4 estimated chars →
+    # ~3.996 chars/token. Use a conservatively denser 3.9 chars/token.
+    real_chars_per_token = 3.9
+    real_input_tokens = cap / real_chars_per_token
+    assert real_input_tokens + max_out <= 65536, (real_input_tokens, cap)
+
+
+def test_input_cap_zero_margin_would_have_overflowed():
+    # Guard the FIX's necessity: the OLD zero-margin reservation (window - max_out*4) packed at
+    # the observed real density DID overflow — this asserts the margin is what prevents it, so
+    # dropping OUTPUT_RESERVE_SAFETY back to 0 re-breaks the test.
+    window = 65536 * CHARS_PER_TOKEN
+    max_out = 16384
+    old_zero_margin_cap = window - max_out * CHARS_PER_TOKEN
+    real_chars_per_token = 3.9
+    assert old_zero_margin_cap / real_chars_per_token + max_out > 65536
 
 
 def test_input_cap_large_window_unchanged_by_reservation():

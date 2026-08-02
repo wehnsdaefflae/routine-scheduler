@@ -42,6 +42,18 @@ def messages_size(messages: list[dict]) -> int:
 # ModelConfig.context_chars). Used to convert an output-token reservation into chars.
 CHARS_PER_TOKEN = 4
 
+# Safety margin (fraction of the window) reserved ON TOP OF the output room. The
+# CHARS_PER_TOKEN estimate is OPTIMISTIC — real tokenizers pack denser than 4 chars/token,
+# so a prompt the estimate sizes at the cap can count MORE tokens than budgeted, and one
+# observation can grow the prompt between per-turn compaction checks. F265 RECURRED
+# (c-20260802-110156, 2026-08-02, AFTER the zero-margin 0.148.1 fix shipped): a prompt whose
+# char count sat under the cap still counted 49326 real input tokens; + 16384 output = 65710
+# > the 65536 window (a ~3.99-chars/token pack the estimate missed). This margin fires
+# compaction early enough that input + output clears the window even when the estimate
+# undershoots. It only bites small-window models — for large windows the fraction trigger
+# stays binding, so their behaviour is unchanged.
+OUTPUT_RESERVE_SAFETY = 0.05
+
 
 def input_cap_chars(context_chars: int, max_output_tokens: int, *, cached: bool) -> float:
     """The largest in-prompt size (chars) allowed before compaction MUST fire — the lower
@@ -61,7 +73,13 @@ def input_cap_chars(context_chars: int, max_output_tokens: int, *, cached: bool)
     """
     fraction = COMPACT_AT_FRACTION_CACHED if cached else COMPACT_AT_FRACTION
     trigger = fraction * context_chars
-    reserved = context_chars - max_output_tokens * CHARS_PER_TOKEN
+    # Reserve the output room PLUS a safety margin (OUTPUT_RESERVE_SAFETY): the
+    # chars-per-token estimate is optimistic, so leaving only max_tokens×4 left the cap flush
+    # against the window and F265 recurred (c-20260802-110156: 49326 real input + 16384 output
+    # = 65710 > 65536). The extra margin fires compaction before the undershoot can overflow.
+    reserved = (context_chars
+                - max_output_tokens * CHARS_PER_TOKEN
+                - OUTPUT_RESERVE_SAFETY * context_chars)
     return min(trigger, max(0.0, reserved))
 
 

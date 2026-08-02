@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.148.5] — 2026-08-02
+
+### Fixed
+- **Conversation context overflow RECURRED after 0.148.1 — the output reservation now keeps a
+  safety margin (F265).** The 0.148.1 fix reserved exactly `max_tokens × 4` chars of output room,
+  leaving the compaction cap flush against the window. But `CHARS_PER_TOKEN = 4` is optimistic —
+  real tokenizers pack denser — so a prompt whose char count sat under the cap still counted more
+  real tokens than budgeted. Conversation `c-20260802-110156` failed again on 2026-08-02 (AFTER
+  0.148.1 shipped and the daemon relaunched onto it): 49326 real input tokens + 16384 output =
+  65710 > the 65536-token window, a ~174-token miss. `input_cap_chars` now also subtracts an
+  `OUTPUT_RESERVE_SAFETY = 0.05` (5%-of-window) margin, so compaction fires early enough that
+  input + output clears the window even when the char→token estimate undershoots or one
+  observation grows the prompt between per-turn checks. Small-window models only — for large
+  windows the fraction trigger stays binding, so their behaviour is unchanged. New regression
+  tests model the observed ~3.9-chars/token real pack density and assert the current cap survives
+  it while the old zero-margin cap would have overflowed.
+
 ## [0.148.4] — 2026-08-02
 
 ### Fixed
