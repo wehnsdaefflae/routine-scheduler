@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.148.4] — 2026-08-02
+
+### Fixed
+- **A blocking approval no longer shows twice in a conversation (F264).** A conversation
+  renders a pending question on two surfaces — inline in the chat transcript (`chat.js`
+  `questionInline`, from the `question` event) and in the pinned panel above the composer
+  (`questionPanel`, from `status.json`). `questionInline` built an actionable answer form for
+  **every** question mode, so a BLOCKING question (which also populates the pinned panel)
+  rendered as **two actionable cards** — the operator's "approvals show up twice" report. The
+  inline form is now gated to **deferred** questions only, exactly as the run view's transcript
+  already does ("blocking ones stay with the panel"); a blocking question renders as static
+  chat text and is answered once, in the panel. Guarded by a source-level test.
+
 ## [0.148.3] — 2026-08-02
 
 ### Added

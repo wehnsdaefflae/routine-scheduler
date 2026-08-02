@@ -120,7 +120,11 @@ export function createChat(container, opts = {}) {
     const p = ev.payload;
     const head = el("div", { class: "msg-body" }, "❓ ", mdInline(p.question || ""),
       p.default ? el("div", { class: "faint small" }, `↪ without an answer: ${p.default}`) : null);
-    if (!opts.answer || !p.qid) return head;
+    // Inline answering is for DEFERRED questions only — the same rule the run view's transcript
+    // follows. A BLOCKING question is answered in the pinned questionPanel above the composer
+    // (it owns the ask-back / expires / util-approval chrome), so rendering an actionable form
+    // here too would show the SAME approval TWICE (F264). Blocking → static text; the panel answers.
+    if (!opts.answer || !p.qid || p.mode !== "deferred") return head;
     const form = answerForm(p, {
       placeholder: "answer… (Shift+Enter for a new line)",
       defaultLine: false,   // the head already shows the default
