@@ -1196,6 +1196,40 @@ def test_dashboard_heartbeat_strip(ui, ui_page):
     expect(row.locator("svg.heartbeat")).to_be_visible()
 
 
+def test_run_view_rewind_button_reopens_terminal_run(ui, ui_page):
+    """D69: a terminal run's view offers a '⟲ rewind' control that re-opens the run at a chosen
+    turn — the remedy for a run that died or derailed. It is hidden while the run is live,
+    shown once terminal; clicking it prompts for a turn and POSTs /rewind with that turn."""
+    import json as _json
+
+    ui.seed_run("uir", "20260715-070000", "failed", summary="died on overflow")
+
+    posted = {}
+
+    def handle(route):
+        posted["body"] = _json.loads(route.request.post_data or "{}")
+        route.fulfill(status=200, content_type="application/json",
+                      body=_json.dumps({"ok": True, "run_id": "uir:20260715-070000",
+                                        "kept_through_turn": posted["body"].get("turn"),
+                                        "kept_events": 3, "dropped_events": 4,
+                                        "archive": "rewind-x.jsonl"}))
+    ui_page.route("**/api/runs/uir:20260715-070000/rewind", handle)
+
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-070000")
+    rewind = ui_page.get_by_role("button", name="⟲ rewind")
+    expect(rewind).to_be_visible()   # terminal run → the control is offered
+    rewind.click()
+    dlg = ui_page.locator(".modal-overlay .panel")
+    expect(dlg).to_be_visible()
+    dlg.locator("input").fill("2")
+    dlg.get_by_role("button", name="ok", exact=True).click()
+    # the POST carried the entered turn — the button→prompt→endpoint wiring, end to end.
+    # (The success toast is transient: setTimeout(remount, 800) tears the view down and clears
+    # it, so asserting its visibility races the remount — the POST body is the real contract.)
+    ui_page.wait_for_timeout(400)
+    assert posted.get("body") == {"turn": 2}, posted
+
+
 def test_dashboard_running_marker_in_both_views(ui, ui_page):
     """A routine with a run in flight is visually marked as running in BOTH the card view
     (.card.live — the mint left-edge) AND the list view (tr.live). The list view used to

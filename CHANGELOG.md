@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.150.0] — 2026-08-02
+
+### Added
+- **Rewind a conversation to a chosen turn and re-open it live (D69).** A run that died or
+  derailed — e.g. a context overflow that killed a conversation — can now be rewound instead of
+  lost. New `POST /api/runs/{run_id}/rewind` (terminal runs only) truncates the transcript
+  through a given turn — keeping that turn's action and the observation it saw — archives the
+  dropped tail to a timestamped `rewind-<ts>.jsonl` sibling (nothing is destroyed), and then
+  resumes on the same run dir so the replay continues live from the kept point with a fresh
+  budget window. The run view offers a **⟲ rewind** control beside *resume* on any terminal run:
+  it prompts for the turn to keep through and reconnects to the re-opened run. Core logic is
+  `history.rewind_transcript`; covered by a unit test, an API test, and a chromium UI flow test.
+
 ## [0.149.1] — 2026-08-02
 
 ### Fixed

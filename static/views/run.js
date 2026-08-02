@@ -7,7 +7,7 @@ import { api, apiUpload } from "/static/api.js";
 import { filePicker } from "/static/components/filepicker.js";
 import { questionPanel } from "/static/components/answerform.js";
 import { deliberationControl } from "/static/components/deliberation.js";
-import { confirmDialog } from "/static/components/dialog.js";
+import { confirmDialog, promptDialog } from "/static/components/dialog.js";
 import { setQuery, remount } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createArtifacts } from "/static/components/artifacts.js";
@@ -180,7 +180,30 @@ export async function render(view, runId, query = {}) {
       setTimeout(remount, 800);
     } catch (err) { toast(err.message, 4000, { error: true }); resumeBtn.disabled = false; }
   };
-  controls.append(pauseBtn, abortBtn, resumeBtn);
+  // D69: rewind a terminal run to a chosen turn and re-open it live from there — the remedy
+  // for a run that died or derailed (e.g. a context overflow) instead of losing the whole
+  // conversation. Truncates the transcript through the turn (archiving the dropped tail) and
+  // resumes on the same run dir.
+  const rewindBtn = el("button", { class: "btn small", hidden: true,
+    title: "rewind to a chosen turn and continue from there" }, "⟲ rewind");
+  rewindBtn.onclick = async () => {
+    const ans = await promptDialog(
+      `Rewind ${runId}: keep the transcript through which turn? Everything after it is `
+      + `archived and the run re-opens live from that point.`, { placeholder: "turn number" });
+    if (ans == null) return;
+    const turn = parseInt(ans, 10);
+    if (!Number.isInteger(turn) || turn < 1) {
+      toast("enter a turn number (1 or higher)", 4000, { error: true }); return;
+    }
+    rewindBtn.disabled = true;
+    try {
+      const r = await api(`/api/runs/${runId}/rewind`,
+        { method: "POST", body: { turn } });
+      toast(`rewound to turn ${r.kept_through_turn} — reconnecting…`);
+      setTimeout(remount, 800);
+    } catch (err) { toast(err.message, 4000, { error: true }); rewindBtn.disabled = false; }
+  };
+  controls.append(pauseBtn, abortBtn, resumeBtn, rewindBtn);
 
   // Live model + mid-run switch (applies at the next turn; the engine re-resolves every turn).
   const switchBox = el("details", { class: "small" },
@@ -327,6 +350,8 @@ export async function render(view, runId, query = {}) {
     pauseBtn.disabled = abortBtn.disabled = terminal;
     pauseBtn.hidden = abortBtn.hidden = terminal;   // controls for a live run
     resumeBtn.hidden = !terminal;                   // resume only a terminal run
+    rewindBtn.hidden = !terminal;                   // D69: rewind only a terminal run
+    if (terminal) rewindBtn.disabled = false;
     switchBox.hidden = terminal;                    // no mid-run switch once the run has ended
     delibBox.hidden = terminal;                     // deliberation re-level is mid-run only
     setModes(terminal);

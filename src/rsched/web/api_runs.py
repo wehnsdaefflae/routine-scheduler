@@ -363,6 +363,41 @@ async def resume_run(request: Request, run_id: str) -> dict:
     return {"ok": True, "run_id": rid}
 
 
+class Rewind(BaseModel):
+    turn: int   # keep the transcript THROUGH this turn, drop everything after, then resume
+
+
+@router.post("/runs/{run_id}/rewind")
+async def rewind_run(request: Request, run_id: str) -> dict:
+    """D69: rewind a terminal conversation to a chosen turn and re-open it live from there —
+    the remedy for a run that died or derailed (e.g. a context overflow) instead of losing it.
+    Truncates the transcript through `turn` (archiving the dropped tail) and then resumes on the
+    same run dir, so the replay continues from the kept point with a fresh budget window.
+    """
+    slug, run_dir = _run_dir(request, run_id)
+    from .routines_common import guard_template
+    guard_template(slug, "clarify sessions are driven by the wizard, never rewound directly")
+    body = Rewind(**(await request.json()))
+    st = read_json(run_dir / "status.json")
+    if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:
+        raise HTTPException(409,
+                            "run is still active — only a finished/failed/aborted run rewinds")
+    from ..engine.history import rewind_transcript
+
+    info = rewind_transcript(run_dir, body.turn)
+    if info is None:
+        raise HTTPException(400,
+                            f"cannot rewind to turn {body.turn} — no such turn, or it is already "
+                            "the last turn (nothing to drop)")
+    cfg, _ = load_routine(run_dir.parent.parent)
+    if cfg is None:
+        raise HTTPException(404, f"routine {slug!r} not found")
+    rid = await request.app.state.runner.resume(cfg, run_dir.name, reason="user")
+    if not rid:
+        raise HTTPException(409, "rewound, but could not resume (already running or draining)")
+    return {"ok": True, "run_id": rid, **info}
+
+
 async def abort_with_fallback(runner, slug: str, run_dir: Path, run_id: str) -> bool:
     """Abort via the runner (daemon-owned runs) with a recorded-pid fallback for runs the
     daemon doesn't track (a CLI run, a pre-restart orphan) — the ONE abort sequence the

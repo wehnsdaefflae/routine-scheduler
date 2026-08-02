@@ -383,6 +383,93 @@ def test_resume_run_endpoint(client, monkeypatch):
     assert c.post("/api/runs/apir:20260710-170000/resume-run").status_code == 409
 
 
+def test_rewind_transcript_unit(tmp_path):
+    """D69 core: rewind_transcript keeps events through a turn's action+observation, archives
+    the dropped tail (nothing is destroyed), and refuses a no-op (last turn / missing turn)."""
+    from rsched.engine.history import rewind_transcript
+    from rsched.engine.transcript import read_events
+
+    run_dir = tmp_path / "runs" / "20260710-160000"
+    run_dir.mkdir(parents=True)
+    events = [
+        {"type": "header", "run_id": "apir:20260710-160000"},
+        {"type": "assistant_action", "turn": 1, "payload": {"say": "a", "kind": "util"}},
+        {"type": "observation", "payload": {"kind": "util", "out": "o1"}},
+        {"type": "assistant_action", "turn": 2, "payload": {"say": "b", "kind": "read_file"}},
+        {"type": "observation", "payload": {"kind": "read_file", "out": "o2"}},
+        {"type": "assistant_action", "turn": 3, "payload": {"say": "c", "kind": "finish"}},
+        {"type": "finish", "payload": {"status": "failed", "summary": "died"}},
+    ]
+    (run_dir / "transcript.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+
+    info = rewind_transcript(run_dir, keep_through_turn=1)
+    assert info is not None
+    assert info["kept_through_turn"] == 1
+    # kept = header + turn-1 action + its observation = 3 events; the rest (4) archived.
+    assert info["kept_events"] == 3 and info["dropped_events"] == 4
+    kept, _ = read_events(run_dir / "transcript.jsonl", 0)
+    assert [e.get("turn") for e in kept if e["type"] == "assistant_action"] == [1]
+    # the tail is archived, not destroyed
+    archived = (run_dir / info["archive"]).read_text(encoding="utf-8")
+    assert '"turn": 2' in archived and '"turn": 3' in archived
+    # rewinding to the LAST real turn (3) is a no-op — nothing after it to drop
+    assert rewind_transcript(run_dir, keep_through_turn=3) is None
+    assert rewind_transcript(run_dir, keep_through_turn=99) is None
+
+
+def test_rewind_run_endpoint(client, monkeypatch):
+    """D69 endpoint: a terminal run rewinds to a turn (truncating + archiving) and delegates to
+    runner.resume; an active run is refused; an impossible turn is a 400."""
+    c, tmp = client
+    routines = tmp / "routines"
+    run_dir = routines / "apir" / "runs" / "20260710-160000"
+    from conftest import mk_run
+    from rsched.engine.transcript import read_events
+    mk_run(routines / "apir", "20260710-160000", "failed", transcript=[
+        {"type": "header", "run_id": "apir:20260710-160000"},
+        {"ts": "t", "type": "assistant_action", "turn": 1,
+         "payload": {"say": "s", "kind": "util", "name": "x"}},
+        {"ts": "t", "type": "observation", "payload": {"kind": "util", "out": "o1"}},
+        {"ts": "t", "type": "assistant_action", "turn": 2,
+         "payload": {"say": "s2", "kind": "finish"}},
+        {"ts": "t", "type": "finish", "payload": {"status": "failed", "summary": "boom"}},
+    ])
+    calls = {}
+
+    async def fake_resume(cfg, ts, *, reason="resume"):
+        calls["ts"], calls["slug"] = ts, cfg.slug
+        return f"{cfg.slug}:{ts}"
+    monkeypatch.setattr(c.app.state.runner, "resume", fake_resume)
+
+    r = c.post("/api/runs/apir:20260710-160000/rewind", json={"turn": 1})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] and body["kept_through_turn"] == 1 and body["dropped_events"] >= 1
+    assert calls == {"ts": "20260710-160000", "slug": "apir"}
+    kept, _ = read_events(run_dir / "transcript.jsonl", 0)
+    assert [e.get("turn") for e in kept if e["type"] == "assistant_action"] == [1]
+
+    # an impossible turn → 400 (and no resume)
+    calls.clear()
+    mk_run(routines / "apir", "20260710-160000", "failed", transcript=[
+        {"type": "header", "run_id": "apir:20260710-160000"},
+        {"ts": "t", "type": "assistant_action", "turn": 1,
+         "payload": {"say": "s", "kind": "util", "name": "x"}},
+        {"ts": "t", "type": "observation", "payload": {"kind": "util", "out": "o1"}},
+        {"ts": "t", "type": "assistant_action", "turn": 2,
+         "payload": {"say": "s2", "kind": "finish"}},
+        {"ts": "t", "type": "finish", "payload": {"status": "failed", "summary": "boom"}},
+    ])
+    assert c.post("/api/runs/apir:20260710-160000/rewind",
+                  json={"turn": 99}).status_code == 400
+    assert not calls
+    # an active run cannot be rewound
+    _mk_run(routines, "apir", "20260710-170000", "running")
+    assert c.post("/api/runs/apir:20260710-170000/rewind",
+                  json={"turn": 1}).status_code == 409
+
+
 def test_questions_flow(client):
     c, tmp = client
     routines = tmp / "routines"

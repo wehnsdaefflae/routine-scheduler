@@ -362,6 +362,49 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
     return messages, last_turn, records
 
 
+def rewind_transcript(run_dir: Path, keep_through_turn: int) -> dict | None:
+    """D69: rewind a conversation to a chosen turn so a dead/derailed run can be RE-OPENED and
+    continued from there instead of being lost. Rewrites runs/<ts>/transcript.jsonl to keep
+    every event up to and INCLUDING the assistant_action of `keep_through_turn` and the
+    observation that immediately followed it — dropping every later turn (and any trailing
+    finish/error). The discarded tail is not destroyed: it is moved to a timestamped
+    `rewind-<ts>.jsonl` sibling so the rewind is auditable and reversible by hand.
+
+    A subsequent `runner.resume` on the same run dir replays the truncated transcript, so the
+    conversation continues live from the kept point with a fresh budget window. Returns a
+    summary dict (kept/dropped counts + archive name), or None when there is nothing to do
+    (turn not found, or already the last turn — no tail to drop).
+    """
+    from ..ids import now_iso
+    from ..paths import atomic_write
+    from .transcript import read_events
+
+    tpath = run_dir / "transcript.jsonl"
+    events, _ = read_events(tpath, 0)
+    if not events:
+        return None
+    # Find the assistant_action for the target turn; keep through it AND its next observation
+    # (the model's turn plus the result it saw), so the replay resumes on a clean turn boundary.
+    cut = None
+    for i, ev in enumerate(events):
+        if ev.get("type") == "assistant_action" and ev.get("turn") == keep_through_turn:
+            cut = i
+            if i + 1 < len(events) and events[i + 1].get("type") == "observation":
+                cut = i + 1
+            break
+    if cut is None or cut >= len(events) - 1:
+        return None   # turn not found, or nothing after it to drop
+    kept = events[: cut + 1]
+    dropped = events[cut + 1 :]
+    archive = f"rewind-{now_iso().replace(':', '').replace('-', '')}.jsonl"
+    atomic_write(run_dir / archive,
+                 "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in dropped))
+    atomic_write(tpath,
+                 "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in kept))
+    return {"kept_events": len(kept), "dropped_events": len(dropped),
+            "kept_through_turn": keep_through_turn, "archive": archive}
+
+
 def orphaned_children(events: list[dict]) -> list[dict]:
     """Children that were RUNNING when the run was interrupted — a `subrun_start` (subtask or
     subrun) with no matching `subrun_end`. Children are threads in the parent process, so they do
