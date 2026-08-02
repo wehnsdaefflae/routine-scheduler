@@ -107,3 +107,19 @@ def test_effective_kinds_intersects_allowlist_and_grants():
     assert effective_kinds({"read_file"}, None) == ["read_file", "report", "finish"]
     # a capability-denied kind is dropped even when the workflow permits it
     assert "write_util" not in effective_kinds({"read_file", "write_util"}, Grants())
+
+
+def test_module_docstring_kind_count_tracks_kinds():
+    """The kindsurface docstring cites how many kinds exist ('permit 8 of the N kinds …
+    all N in the schema'); that N must equal len(KINDS) or the prose lies about the
+    contract (F272: it read 21 while KINDS held 23). Self-updating — no hard-coded count."""
+    import re
+
+    import rsched.engine.kindsurface as ks
+
+    doc = ks.__doc__ or ""
+    cited = [int(n) for n in re.findall(r"of the (\d+) kinds|all (\d+) in the schema",
+                                        doc) for n in n if n]
+    assert cited, "kindsurface docstring no longer cites a kind count — update this guard"
+    assert all(n == len(KINDS) for n in cited), (
+        f"kindsurface docstring cites {cited} kinds but KINDS has {len(KINDS)}")

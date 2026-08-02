@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.151.1] — 2026-08-02
+
+### Fixed
+- **`kindsurface.py`'s module docstring cited the wrong action-kind count (F272).** The prose
+  described a run being sent "8 of the 21 kinds … all 21 in the schema", but the action
+  contract (`actions.py` `KINDS`) has grown to **23** kinds — the "21" was stale by two. The
+  count is corrected to 23. A self-updating guard test
+  (`test_module_docstring_kind_count_tracks_kinds`) now regexes the count out of the docstring
+  and asserts it equals `len(KINDS)`, so this prose can never silently drift from the contract
+  again. Documentation/test only — no behaviour change.
+
 ## [0.151.0] — 2026-08-02
 
 ### Changed
