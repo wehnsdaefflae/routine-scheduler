@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.148.2] — 2026-08-02
+
+### Fixed
+- **Ordered markdown lists now enumerate sequentially in chat + finish-summary rendering
+  (F266 / R103).** `md.js` stripped the authored number from each `1. 2. 3.` item and emitted
+  bare `<li>`, so a model that separated numbered items with blank lines (each item then its
+  own single-item `<ol>`) rendered every item as "1.", and lists starting at a non-1 number
+  lost their start. The parser now carries each item's authored number and stamps `<ol start=N>`
+  + `<li value=N>`, so rendered numbering matches the source exactly — the way GitHub renders
+  the same markdown. Guarded by a browser flow test (`tests/ui/test_flows.py`) covering both a
+  contiguous list and blank-line-separated items.
+
 ## [0.148.1] — 2026-08-02
 
 ### Fixed

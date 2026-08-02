@@ -1124,6 +1124,43 @@ def test_md_tables_and_blockquotes_render(ui, ui_page):
     expect(banner).to_contain_text("| not | a table |")     # literal text, pipes intact
 
 
+def test_md_ordered_lists_enumerate_sequentially(ui, ui_page):
+    """Ordered markdown lists render with the AUTHORED numbers (F266/R103): the model's
+    `1. 2. 3.` must show as 1, 2, 3 — including when items are separated by blank lines
+    (each item then becomes its own <ol>, which would otherwise restart at 1) and when the
+    list starts at a number other than 1. The parser stamps <ol start> + <li value> so the
+    rendered numbering matches the source, the way GitHub renders it."""
+    summary = (
+        "## Steps\n\n"
+        "1. first step\n"
+        "2. second step\n"
+        "3. third step\n\n"
+        "Then, separated by blank lines:\n\n"
+        "1. alpha\n\n"
+        "2. beta\n\n"
+        "3. gamma\n")
+    run_dir = ui.seed_run("uiol", "20260716-091000", "finished", summary="done")
+    finish = {"ts": "2026-07-16T09:12:00+00:00", "type": "finish", "turns": 3,
+              "usage_total": {"in": 10, "out": 5},
+              "payload": {"status": "ok", "summary": summary, "authored": True}}
+    with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(finish) + "\n")
+
+    ui_page.goto(f"{ui.url}/#/run/uiol:20260716-091000")
+    banner = ui_page.locator(".finish-banner")
+    # The contiguous list is one <ol> whose items carry values 1,2,3.
+    contiguous = banner.locator("ol").first
+    expect(contiguous.locator("li")).to_have_count(3)
+    for idx, val in enumerate(("1", "2", "3")):
+        expect(contiguous.locator("li").nth(idx)).to_have_attribute("value", val)
+    # The blank-line-separated items each become their own <ol start=N> — the second item is
+    # NOT re-numbered "1": its single <li> carries value 2, the third value 3.
+    li_beta = banner.locator('li[value="2"]', has_text="beta")
+    expect(li_beta).to_have_count(1)
+    li_gamma = banner.locator('li[value="3"]', has_text="gamma")
+    expect(li_gamma).to_have_count(1)
+
+
 # ---- 9. Dashboard run-history heartbeat strip ----------------------------------------------
 
 

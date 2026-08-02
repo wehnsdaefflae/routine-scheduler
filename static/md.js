@@ -77,12 +77,22 @@ export function mdToHtml(text, _depth = 0) {
   let para = [], list = null, fence = null;
   const flushPara = () => { if (para.length) { out.push(`<p>${para.join("<br>")}</p>`); para = []; } };
   const flushList = () => {
-    if (list) { out.push(`<${list.tag}>${list.items.map((i) => `<li>${i}</li>`).join("")}</${list.tag}>`); list = null; }
+    if (!list) return;
+    // Ordered lists carry the AUTHORED number on each item so numbering is correct even when
+    // the model separates items with blank lines (each item then becomes its own <ol>, which
+    // would otherwise restart at 1) or writes a non-1 start. <ol start> sets the first number,
+    // <li value> pins every item — matching how GitHub renders the same source. (F266/R103.)
+    const start = list.tag === "ol" && list.items[0]?.num != null
+      ? ` start="${list.items[0].num}"` : "";
+    const lis = list.items.map((it) =>
+      it.num != null ? `<li value="${it.num}">${it.html}</li>` : `<li>${it.html}</li>`).join("");
+    out.push(`<${list.tag}${start}>${lis}</${list.tag}>`);
+    list = null;
   };
-  const item = (tag, body) => {
+  const item = (tag, body, num) => {
     flushPara();
     if (!list || list.tag !== tag) { flushList(); list = { tag, items: [] }; }
-    list.items.push(inline(esc(body)));
+    list.items.push({ html: inline(esc(body)), num });
   };
   const cell = (tag, body, align) =>
     `<${tag}${align ? ` style="text-align:${align}"` : ""}>${inline(esc(body))}</${tag}>`;
@@ -131,7 +141,7 @@ export function mdToHtml(text, _depth = 0) {
         + rows.map((r) => `<tr>${r.map((v, c) => cell("td", v, aligns[c])).join("")}</tr>`).join("")
         + "</tbody></table></div>");
     } else if ((m = /^[-*]\s+(.*)$/.exec(t))) item("ul", m[1]);
-    else if ((m = /^\d+[.)]\s+(.*)$/.exec(t))) item("ol", m[1]);
+    else if ((m = /^(\d+)[.)]\s+(.*)$/.exec(t))) item("ol", m[2], parseInt(m[1], 10));
     else { flushList(); para.push(inline(esc(t))); }
   }
   if (fence) out.push(`<pre><code>${fence.join("\n")}</code></pre>`); // unterminated fence
