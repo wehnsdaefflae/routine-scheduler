@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.152.1] — 2026-08-03
+
+### Fixed
+- **Conversation context overflow on small-window orchestrator models — F265, 4th recurrence
+  (R113/R114).** Conversation `c-20260802-110156` (gemma-4-26b, 65536-token window) 400'd again
+  with `context_length_exceeded` at 2026-08-03T04:46 **under the deployed 0.149.1 window clamp**:
+  the clamp trimmed the prompt to its char ceiling, but that ceiling was sized at the optimistic
+  `CHARS_PER_TOKEN = 4`, and the payload (dense usenet dumps) packed at ~3.72 chars/token — so
+  the ceiling's ~183.5k chars counted 49384 real input tokens; + 16384 requested output = 65768,
+  over the 65536 window by 232 tokens. The three prior F265 fixes tuned a flat fractional margin,
+  which cannot cover a density error that scales with the payload. `window_ceiling_chars` now
+  computes in the **token domain** — window tokens minus the output reservation gives an input
+  **token** budget, converted to a char ceiling at a conservative `INPUT_CHARS_PER_TOKEN = 3.5`
+  (denser than any real content) — so `input_tokens + max_output_tokens ≤ window` holds **by
+  construction** for content at or above that density, not by a hoped-for margin. Retired the
+  `OUTPUT_RESERVE_SAFETY` flat-margin constant. Only affects small-window models (large windows
+  stay governed by the 0.6/0.8 fraction trigger — unchanged). Existing F265 regressions updated
+  to the token-domain formula; the real-density guards (3.9 chars/token) still lock the bound in.
+
 ## [0.152.0] — 2026-08-03
 
 ### Added

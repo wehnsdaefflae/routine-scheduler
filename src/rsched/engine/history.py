@@ -39,20 +39,22 @@ def messages_size(messages: list[dict]) -> int:
 
 
 # The codebase's standing approximation: context_chars ≈ 4 × the token window (see
-# ModelConfig.context_chars). Used to convert an output-token reservation into chars.
+# ModelConfig.context_chars). Used to DERIVE the token window back from the char figure.
 CHARS_PER_TOKEN = 4
 
-# Safety margin (fraction of the window) reserved ON TOP OF the output room. The
-# CHARS_PER_TOKEN estimate is OPTIMISTIC — real tokenizers pack denser than 4 chars/token,
-# so a prompt the estimate sizes at the cap can count MORE tokens than budgeted, and one
-# observation can grow the prompt between per-turn compaction checks. F265 RECURRED
-# (c-20260802-110156, 2026-08-02, AFTER the zero-margin 0.148.1 fix shipped): a prompt whose
-# char count sat under the cap still counted 49326 real input tokens; + 16384 output = 65710
-# > the 65536 window (a ~3.99-chars/token pack the estimate missed). This margin fires
-# compaction early enough that input + output clears the window even when the estimate
-# undershoots. It only bites small-window models — for large windows the fraction trigger
-# stays binding, so their behaviour is unchanged.
-OUTPUT_RESERVE_SAFETY = 0.05
+# Conservative INPUT packing density (chars per token) used to size the HARD window ceiling.
+# CHARS_PER_TOKEN=4 is fine for deriving the window, but OPTIMISTIC as an input density: real
+# tokenizers pack denser, so a ceiling sized at 4 chars/token maps to MORE input tokens than
+# `window − output` allows and the completion 400s. F265 recurred FOUR times this way
+# (c-20260802-110156, last on 2026-08-03T04:46 UNDER the deployed 0.149.1 clamp): the clamp
+# trimmed the prompt to its char ceiling, but that ceiling's ~183.5k chars packed at the
+# payload's real ~3.72 chars/token = 49384 input tokens; + 16384 output = 65768 > the 65536
+# window (over by 232 tokens). Three prior fixes tuned a flat margin — the wrong lever, since a
+# fixed fraction cannot cover a density error that scales with the payload. Sizing the input
+# ceiling at this DENSER figure makes `input_tokens + max_output_tokens ≤ window` hold BY
+# CONSTRUCTION for any real content at or above this density, not by a hoped-for margin. It
+# only bites small-window models; for large windows the 0.6/0.8 fraction trigger stays binding.
+INPUT_CHARS_PER_TOKEN = 3.5
 
 
 def input_cap_chars(context_chars: int, max_output_tokens: int, *, cached: bool) -> float:
@@ -78,20 +80,22 @@ def input_cap_chars(context_chars: int, max_output_tokens: int, *, cached: bool)
 
 def window_ceiling_chars(context_chars: int, max_output_tokens: int) -> float:
     """The HARD input ceiling (chars): the largest in-prompt size that still leaves the
-    provider room to emit `max_output_tokens` inside the SAME window, plus an
-    OUTPUT_RESERVE_SAFETY margin because the CHARS_PER_TOKEN estimate is optimistic (real
-    tokenizers pack denser than 4 chars/token). This is the ceiling compaction MUST get the
-    prompt under; `input_cap_chars` compacts earlier still (at the 0.6/0.8 fraction), but when
-    compaction CANNOT shrink the prompt — the incompressible head+tail floor, or a
-    conversation too short to have a middle to elide — `clamp_to_cap` enforces THIS ceiling as
-    the last resort. F265 (c-20260802-110156, 2026-08-02): a 30-message conversation with large
-    observations overflowed a 65536-token window (49326 real input + 16384 output = 65710)
-    because it had no middle to compact — margin tuning alone can never fix that; the ceiling
-    has to be ENFORCED by trimming, not merely used as a compaction trigger.
+    provider room to emit `max_output_tokens` inside the SAME window. Computed in the TOKEN
+    domain and converted back to chars at the conservative `INPUT_CHARS_PER_TOKEN` density, so
+    the ceiling maps to fewer input tokens than `window − output` for any real content at or
+    above that density — `input_tokens + max_output_tokens ≤ window` holds BY CONSTRUCTION, not
+    by a hoped-for fractional margin. This is the ceiling compaction MUST get the prompt under;
+    `input_cap_chars` compacts earlier still (at the 0.6/0.8 fraction), but when compaction
+    CANNOT shrink the prompt — the incompressible head+tail floor, or a conversation too short
+    to have a middle to elide — `clamp_to_cap` enforces THIS ceiling as the last resort. F265
+    recurred FOUR times (c-20260802-110156, last 2026-08-03T04:46 under the 0.149.1 clamp): the
+    clamp trimmed to a char ceiling sized at the optimistic 4 chars/token, but the payload
+    packed denser (~3.72) so 49384 input + 16384 output = 65768 > the 65536 window. Sizing the
+    input budget at the denser figure removes the density error the flat margin could not cover.
     """
-    reserved = (context_chars
-                - max_output_tokens * CHARS_PER_TOKEN
-                - OUTPUT_RESERVE_SAFETY * context_chars)
+    window_tokens = context_chars / CHARS_PER_TOKEN
+    input_token_budget = window_tokens - max_output_tokens
+    reserved = input_token_budget * INPUT_CHARS_PER_TOKEN
     return max(0.0, reserved)
 
 

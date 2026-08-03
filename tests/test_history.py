@@ -81,7 +81,7 @@ def test_queued_status_roundtrip_does_not_defeat_reseed():
 # leave max_tokens of output room so compaction fires before that overflow.
 from rsched.engine.history import (  # noqa: E402
     CHARS_PER_TOKEN,
-    OUTPUT_RESERVE_SAFETY,
+    INPUT_CHARS_PER_TOKEN,
     input_cap_chars,
 )
 
@@ -94,12 +94,13 @@ def test_input_cap_reserves_output_room_on_small_window():
         cap = input_cap_chars(window, max_out, cached=cached)
         # After compaction to the cap, prompt + output must fit the window with no overflow.
         assert cap + max_out * CHARS_PER_TOKEN <= window, (cap, cached)
-    # The reservation (not the fraction trigger) binds on the cached path, and it now reserves
-    # the output room PLUS the OUTPUT_RESERVE_SAFETY margin (F265 recurrence fix): the cap sits
-    # a safety margin BELOW window - max_out*CHARS_PER_TOKEN, not flush against it.
+    # The reservation (not the fraction trigger) binds on the cached path, and it now sizes the
+    # input budget in the TOKEN domain at the conservative INPUT_CHARS_PER_TOKEN density (F265
+    # 4th-recurrence fix): the cap is the input-token budget (window_tokens − output) converted
+    # to chars at the denser packing, so it sits BELOW the naive window − max_out*CHARS_PER_TOKEN.
     cached_cap = input_cap_chars(window, max_out, cached=True)
-    assert cached_cap == (window - max_out * CHARS_PER_TOKEN
-                          - OUTPUT_RESERVE_SAFETY * window)
+    window_tokens = window / CHARS_PER_TOKEN
+    assert cached_cap == (window_tokens - max_out) * INPUT_CHARS_PER_TOKEN
     assert cached_cap < window - max_out * CHARS_PER_TOKEN
 
 
@@ -129,9 +130,10 @@ def test_input_cap_survives_real_tokenizer_undershoot():
 
 
 def test_input_cap_zero_margin_would_have_overflowed():
-    # Guard the FIX's necessity: the OLD zero-margin reservation (window - max_out*4) packed at
-    # the observed real density DID overflow — this asserts the margin is what prevents it, so
-    # dropping OUTPUT_RESERVE_SAFETY back to 0 re-breaks the test.
+    # Guard the FIX's necessity: the OLD reservation sized at the optimistic 4 chars/token
+    # (window - max_out*4) packed at the observed real density DID overflow — this asserts the
+    # conservative INPUT_CHARS_PER_TOKEN sizing is what prevents it, so reverting the ceiling to
+    # the 4-chars/token basis re-breaks the test.
     window = 65536 * CHARS_PER_TOKEN
     max_out = 16384
     old_zero_margin_cap = window - max_out * CHARS_PER_TOKEN
@@ -170,9 +172,12 @@ def test_window_ceiling_reserves_output_and_margin():
     window = 65536 * CHARS_PER_TOKEN
     max_out = 16384
     ceiling = window_ceiling_chars(window, max_out)
-    assert ceiling == window - max_out * CHARS_PER_TOKEN - OUTPUT_RESERVE_SAFETY * window
+    window_tokens = window / CHARS_PER_TOKEN
+    assert ceiling == (window_tokens - max_out) * INPUT_CHARS_PER_TOKEN
     # A prompt filling the ceiling plus the requested output clears the real window even at the
-    # dense 3.9 chars/token pack that broke F265.
+    # design worst-case INPUT_CHARS_PER_TOKEN pack (3.5) — exactly the window, by construction —
+    # and with headroom at the denser-still 3.9 chars/token pack that broke F265.
+    assert ceiling / INPUT_CHARS_PER_TOKEN + max_out <= 65536
     assert ceiling / 3.9 + max_out <= 65536
 
 
@@ -183,7 +188,7 @@ def test_clamp_forces_short_conversation_floor_under_ceiling():
     window = 65536 * CHARS_PER_TOKEN
     max_out = 16384
     ceiling = window_ceiling_chars(window, max_out)
-    # 30 messages × ~9000 chars = 270k chars > the ~183k ceiling, so it WOULD overflow.
+    # 30 messages × ~9000 chars = 270k chars > the ~172k ceiling, so it WOULD overflow.
     messages = [{"role": "user", "content": "x" * 9000} for _ in range(30)]
     assert messages_size(messages) > ceiling
     info = clamp_to_cap(messages, window, max_out)
