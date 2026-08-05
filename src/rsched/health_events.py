@@ -2,11 +2,17 @@
 
 Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON object:
 {"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"orphaned_run"|"run_canceled"
-        |"wizard_build_degraded",
+        |"wizard_build_degraded"|"fire_refused",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 run_canceled: a user-requested abort killed the engine before it could write its own
 finish (same payload shape as orphaned_run, which is reserved for genuine crashes).
+
+fire_refused: a DUE scheduled (cron) fire produced no run — the routine was still active
+from a prior run (overrun) or the daemon was draining for a restart. run_id empty (no run
+was created). Makes a routine that goes chronically un-fired visible to audit consumers
+(R213: self-audit silently missed its 01:00 fire two days running). Only the scheduled
+fire path logs this; resume/trigger/manual overruns are expected and stay quiet.
 
 wizard_build_degraded: a new-routine build's stage-generation pipeline failed hard and
 the routine was scaffolded from the verbatim pattern (run_id empty — builds happen in

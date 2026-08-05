@@ -185,15 +185,34 @@ class Runner:
             states.append(st.get("state", "unknown") if isinstance(st, dict) else "unknown")
         return states
 
+    def _log_refused_scheduled_fire(self, cfg: RoutineConfig, reason: str, cause: str) -> None:
+        """A DUE cron fire that produced no run is otherwise invisible: fire() only log.info's
+        the refusal, so a routine that goes chronically un-fired (a stuck-active slug never
+        reaped, or a long drain) leaves no trace in the audit stream that watches for exactly
+        this — a safety-auditor silently dark for days (R213: self-audit missed its 01:00 fire
+        on 2026-08-04 and 2026-08-05). Emit a health event for the SCHEDULED path only; resume,
+        trigger and manual fires overrun legitimately and must not spam the stream.
+        """
+        if reason != "schedule":
+            return
+        from ..health_events import log_health_event
+        log_health_event(
+            self.server.routines_home, "fire_refused",
+            routine=cfg.slug, run_id="",
+            detail=f"scheduled fire refused ({cause}) — no run started this fire; "
+                   f"a routine refused across several fires is going dark")
+
     async def fire(self, cfg: RoutineConfig, *, reason: str = "schedule") -> str | None:
         """Queue a run unless one is already active for this routine. The subprocess is
         spawned only once a concurrency slot is held. Returns the run_id.
         """
         if self.draining:
             log.info("fire_refused_draining routine=%s reason=%s", cfg.slug, reason)
+            self._log_refused_scheduled_fire(cfg, reason, "draining")
             return None
         if cfg.slug in self.active:
             log.info("overrun_skipped routine=%s reason=%s", cfg.slug, reason)
+            self._log_refused_scheduled_fire(cfg, reason, "overrun")
             return None
         ts = make_run_ts()
         run_dir = cfg.dir / "runs" / ts

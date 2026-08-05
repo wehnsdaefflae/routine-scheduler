@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.154.1] — 2026-08-05
+
+### Fixed
+- **A due cron fire that produces no run is now audible — F276/R213.** `Runner.fire`
+  refusals (a still-active routine, or draining for a restart) only wrote a `log.info`
+  line, so a routine that went chronically un-fired left no trace in the health-events
+  audit stream that watches for exactly that — self-audit silently missed its 01:00 fire
+  on 2026-08-04 and 2026-08-05 (a stuck-active in-memory slot from a run whose restart was
+  never honored, cleared only by the next daemon relaunch). A refused **scheduled** fire
+  now emits a `fire_refused` health event (run_id empty); resume/trigger/manual overruns
+  are expected and stay quiet. A safety-auditor going dark is now visible to the very
+  stream meant to catch it.
+
 ## [0.154.0] — 2026-08-05
 
 ### Added

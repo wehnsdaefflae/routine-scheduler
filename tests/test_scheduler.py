@@ -406,3 +406,43 @@ def test_dead_pid_recovery_still_logs_orphaned_run(make_routine, tmp_path):
     runner = Runner(server, EventBus())
     assert runner.recover_orphans(scan(server)) == 1
     assert [e["event"] for e in _health_events(server, "orphan2")] == ["orphaned_run"]
+
+
+# --- F276/R213: a due cron fire that produces no run must be visible in the audit stream ---
+
+
+async def test_refused_scheduled_fire_logs_health_event(make_routine, tmp_path, monkeypatch):
+    """A SCHEDULED fire refused because the routine is still active (overrun) emits a
+    `fire_refused` health event, so a routine that goes chronically un-fired (R213:
+    self-audit dark two days) is visible to audit consumers — not just a log.info line."""
+    d = make_routine(slug="overfirer")
+    cfg, _ = load_routine(d)
+    _stub_engine(monkeypatch, "sleep 30")
+    server = _server(tmp_path)
+    runner = Runner(server, EventBus())
+    first = await runner.fire(cfg, reason="schedule")
+    assert first is not None
+    assert await _wait_for(lambda: runner.active["overfirer"].proc is not None)
+    # second scheduled fire collides with the still-active first → refused
+    assert await runner.fire(cfg, reason="schedule") is None
+    mine = _health_events(server, "overfirer")
+    assert mine and mine[-1]["event"] == "fire_refused"
+    assert mine[-1]["run_id"] == "" and "overrun" in mine[-1]["detail"]
+    await runner.abort("overfirer")
+
+
+async def test_non_scheduled_overrun_stays_quiet(make_routine, tmp_path, monkeypatch):
+    """A resume/trigger/manual overrun is expected and must NOT spam the health stream —
+    only the scheduled (cron) path logs fire_refused."""
+    d = make_routine(slug="resumer")
+    cfg, _ = load_routine(d)
+    _stub_engine(monkeypatch, "sleep 30")
+    server = _server(tmp_path)
+    runner = Runner(server, EventBus())
+    assert await runner.fire(cfg, reason="schedule") is not None
+    assert await _wait_for(lambda: runner.active["resumer"].proc is not None)
+    assert await runner.fire(cfg, reason="trigger") is None
+    hpath = server.routines_home / ".control" / "health-events.jsonl"
+    events = _health_events(server, "resumer") if hpath.exists() else []
+    assert all(e["event"] != "fire_refused" for e in events)
+    await runner.abort("resumer")
