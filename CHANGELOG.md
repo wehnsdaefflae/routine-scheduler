@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.154.2] — 2026-08-05
+
+### Changed
+- **Summary opens on Unread by default (operator, 2026-08-05).** The Summary tab's point
+  is what you have not yet seen, so it now defaults to the Unread filter unless the URL
+  explicitly asks for `?filter=all`. The All chip still shows every routine's latest
+  message. UI-test updated to assert the default chip and read-persistence via All.
+
 ## [0.154.1] — 2026-08-05
 
 ### Fixed

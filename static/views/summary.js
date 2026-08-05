@@ -18,7 +18,9 @@ export async function render(view, query = {}) {
       el("h1", {}, "Summary"),
       el("div", { class: "sub" }, "the latest finish message from every routine — newest first"))));
 
-  const state = { filter: query.filter === "unread" ? "unread" : "all", items: [] };
+  // Unread is the default (operator, 2026-08-05): the point of Summary is what you have NOT
+  // yet seen, so open on it unless the URL explicitly asks for all.
+  const state = { filter: query.filter === "all" ? "all" : "unread", items: [] };
 
   const filterChips = new Map();
   const chipRow = el("div", { class: "row", style: "gap:6px" });
