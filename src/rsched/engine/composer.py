@@ -193,10 +193,19 @@ def _plan_text(routine_dir: Path) -> str:
         "rest, and TRIM it: a plan this long belongs in stages/<name>.md]")
 
 
-def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]) -> str:
+def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict], *,
+                 routines_home: Path | None = None, slug: str = "") -> str:
     from ..paths import read_json
 
     parts: list[str] = []
+    # The user's ⚑ flags from the Items page, resolved to the items THIS routine owns —
+    # placed first so orient reads the user's "work this first" before any planning.
+    # Optional inputs: a subrun/conversation digest (and most unit fixtures) has no
+    # routines_home context, and a digest without the section is simply unflagged.
+    if routines_home is not None and slug:
+        from ..priorities import digest_section
+        if prio := digest_section(routines_home, slug):
+            parts.append(prio)
     phase = read_json(routine_dir / "state" / "phase.json")
     parts.append(f"Current phase: {json.dumps(phase, ensure_ascii=False)}" if phase
                  else "Current phase: (none recorded — likely the first run)")

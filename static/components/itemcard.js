@@ -102,7 +102,7 @@ function commentBox(item, queued, { onSave, onWithdraw }) {
       el("div", { style: "flex:1" }, note), saveBtn, dropBtn));
 }
 
-export function itemCard(item, { queued, onSave, onWithdraw, answered } = {}) {
+export function itemCard(item, { queued, onSave, onWithdraw, answered, onPriority } = {}) {
   const status = item.status || "unknown";
   // An answered decision (durable marker, survives inbox consumption) reads as answered here
   // too — not re-presented as open once a run drains its feedback message.
@@ -111,13 +111,27 @@ export function itemCard(item, { queued, onSave, onWithdraw, answered } = {}) {
   const tone = label === "answer queued" ? "partial"
     : label === "answered" ? "ok" : (STATUS_TONE[status] ?? "");
   const sev = SEV.includes(item.severity) ? item.severity : "";
+  // The ⚑ toggle: the user's "work this first" — floats the card on the page and the
+  // OWNING routine's next run reads the flagged ids in its state digest (D75).
+  const flag = !onPriority ? null : el("button", {
+    class: `btn small ${item.priority ? "" : "ghost"}`,
+    title: item.priority
+      ? "unflag — stops floating this item and drops it from the owner's priority list"
+      : "flag as priority — floats the card AND the owning routine's next run reads it first",
+    onclick: async (e) => {
+      e.target.disabled = true;
+      try { await onPriority(!item.priority); } finally { e.target.disabled = false; }
+    },
+  }, item.priority ? "⚑ flagged" : "⚑");
   const head = el("div", { class: "row spread" },
     el("div", { class: "row", style: "gap:9px" },
       chip(label, tone),
+      item.priority ? chip("⚑ priority", "partial") : null,
       chip(TYPE_LABEL[item.type] || item.type, "idle"),
       sev ? chip(sev, `sev-${sev}`) : null,
       el("strong", { class: "prose" }, item.title || item.id)),
-    el("span", { class: "faint small" }, item.id));
+    el("div", { class: "row", style: "gap:8px" }, flag,
+      el("span", { class: "faint small" }, item.id)));
 
   const archiveNote = item.archive_only
     ? el("div", { class: "faint small mt" },

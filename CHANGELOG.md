@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.156.0] — 2026-08-06
+
+The Items page becomes a worklist, and the user's priorities reach the routines (D75 —
+operator-selected 2026-08-05).
+
+### Added
+- **Item priorities (⚑).** Every card on the Items page carries a ⚑ toggle. A flagged item
+  floats to the top of the list, and — the point — the OWNING routine's next run reads the
+  flagged ids it owns as a "PRIORITY items" section at the head of its state digest, so its
+  orient stage sees the user's "work this first" before it plans. Ownership is resolved,
+  never stored: an `R<n>` belongs to its `target` (untargeted triage rows to self-audit),
+  every `F<n>`/`D<n>` to self-audit. The store is one small map in
+  `.control/item-priorities.json` (`src/rsched/priorities.py`) — deliberately NOT
+  report.json (self-audit rewrites that wholesale every run, which would clobber the
+  user's flag) and not the append-only reports ledger. `POST /api/items/{id}/priority`
+  writes it; the items read-model treats the store as a fifth memo source so a toggle
+  invalidates the cache like any other edit.
+- **`status` filter accepts a comma list.** `GET /api/items?status=open,in_progress` —
+  one param, no second filter channel.
+
+### Changed
+- **The Items page defaults to the ACTIVE backlog** (open + in_progress), with an `active`
+  chip leading the status row — the page is a worklist first, an archive on request via
+  `?status=all` (mirrors 0.154.2's Summary-unread default). A `?focus=<id>` deep-link still
+  defaults to the whole set: it exists to show that card, which may be archived.
+
 ## [0.155.0] — 2026-08-05
 
 Loop control for the report trigger. Nothing here changes what a routine can DO — a run

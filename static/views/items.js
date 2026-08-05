@@ -22,9 +22,19 @@ const TYPES = [["finding", "findings"], ["decision", "decisions"], ["report", "r
 const STATUSES = ["open", "in_progress", "addressed", "settled", "dropped", "unknown"];
 
 export async function render(view, query = {}) {
-  const filters = { type: query.type || "", status: query.status || "",
+  // Default to the ACTIVE backlog (open + in_progress) — the page is a worklist first,
+  // an archive on request: `?status=all` (or any explicit status) overrides (D75).
+  // A ?focus=<id> deep-link exists to show THAT card, which may be archived — so it
+  // defaults to the whole set, not the active slice.
+  const defaultStatus = query.focus ? "" : "open,in_progress";
+  const filters = { type: query.type || "",
+                    status: query.status ? (query.status === "all" ? "" : query.status)
+                                         : defaultStatus,
                     routine: query.routine || "", search: query.search || "" };
-  const syncURL = () => setQuery({ ...filters, focus: query.focus || "" });
+  // An emptied status filter must survive reload as a CHOICE, not fall back to the
+  // default — so "" (show everything) is written to the URL as the explicit "all".
+  const syncURL = () => setQuery({ ...filters, status: filters.status || "all",
+                                   focus: query.focus || "" });
   let searchTimer = null;
 
   view.append(el("div", { class: "page-head" },
@@ -188,6 +198,10 @@ export async function render(view, query = {}) {
       filterBar.append(tagChip(`${label} ${counts.type[value] || 0}`,
         { active: filters.type === value, onClick: () => pick("type", value) }));
     filterBar.append(el("span", { class: "lbl", style: "margin-left:10px" }, "status"));
+    const ACTIVE = "open,in_progress";
+    const nActive = (counts.status.open || 0) + (counts.status.in_progress || 0);
+    filterBar.append(tagChip(`active ${nActive}`,
+      { active: filters.status === ACTIVE, onClick: () => pick("status", ACTIVE) }));
     for (const s of STATUSES)
       if (counts.status[s])
         filterBar.append(tagChip(`${s} ${counts.status[s]}`,
@@ -266,6 +280,14 @@ export async function render(view, query = {}) {
         body.append(itemCard(item, {
           queued,
           answered: answered.has(item.id),
+          onPriority: async (on) => {
+            try {
+              await api(`/api/items/${item.id}/priority`, { method: "POST", body: { on } });
+              toast(on ? `${item.id} flagged ⚑ — floats here, and its owner's next run reads it first`
+                       : `${item.id} unflagged`);
+              await load();
+            } catch (err) { toast(err.message, 4000, { error: true }); }
+          },
           onSave: item.type === "finding" ? async (text, q) => {
             const payload = { kind: "comment", target: item.id, text };
             try {

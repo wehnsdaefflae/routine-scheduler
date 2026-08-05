@@ -1017,7 +1017,7 @@ def test_item_refs_link_and_flash(ui, ui_page):
         "generated": "2026-07-16T20:00:00+00:00",
         "summary": "F1 is carried this run; D1 awaits you.",
         "findings": [{"id": "F1", "severity": "info", "title": "Watch item",
-                      "detail": "Blocked on D1."}],
+                      "status": "open", "detail": "Blocked on D1."}],
         "decisions": [{"id": "D1", "status": "open", "title": "Pick a path",
                        "detail": "See F1 for the evidence.",
                        "options": ["do it", "leave as-is"]}],
@@ -1083,6 +1083,7 @@ def test_item_detail_renders_markdown(ui, ui_page):
         "summary": "Carrying F2; D2 is settled.",
         "findings": [{
             "id": "F2", "severity": "improvement", "title": "Render `detail` as markdown",
+            "status": "open",
             "detail": ("The Audit view rendered prose flat. Now:\n\n"
                        "- lists become real items\n"
                        "- inline `code` renders\n")}],

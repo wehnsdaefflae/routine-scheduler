@@ -1,10 +1,12 @@
 """Items tab: the system-maintenance index — every finding, decision and bug report with
 its status, purpose, origin and the changelog rows that addressed it (docs/items.md).
 
-This is the READ half; `api_audit` keeps the one write channel the page has (reviewer
-feedback into the self-audit routine's inbox). The endpoint also carries the report header
-the page shows — the current window, the summary, the last self-audit run — which is why
-the old `GET /api/audit` is gone rather than kept beside it.
+Mostly the READ half; `api_audit` keeps the page's prose write channel (reviewer feedback
+into the self-audit routine's inbox), while the one write that lives HERE is the ⚑
+priority toggle — UI state about an item, not a message to a run (priorities.py).
+The GET also carries the report header the page shows — the current window, the summary,
+the last self-audit run — which is why the old `GET /api/audit` is gone rather than kept
+beside it.
 """
 
 from __future__ import annotations
@@ -12,9 +14,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
-from .. import registry
+from .. import priorities, registry
 from ..paths import read_json
 from ..readmodels import items as items_model
 from ..readmodels.items import SELF_AUDIT_SLUG
@@ -68,3 +70,17 @@ def items(request: Request,
             "report": report, "last_run": last_run,
             "pending_feedback": pending_feedback(routine_dir),
             "answered_decisions": answered_decisions(routine_dir, report)}
+
+
+@router.post("/items/{item_id}/priority")
+def set_item_priority(request: Request, item_id: str, body: dict) -> dict:
+    """Flag or unflag one item as a user priority (`{"on": true|false}`). The ⚑ floats
+    the item to the top of the page AND reaches the OWNING routine's next run as a
+    state-digest section — ownership resolution lives in priorities.py (D75).
+    """
+    on = bool((body or {}).get("on", True))
+    try:
+        priorities.set_priority(request.app.state.server.routines_home, item_id, on)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+    return {"ok": True, "id": str(item_id).strip().upper(), "on": on}

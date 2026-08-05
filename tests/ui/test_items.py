@@ -51,7 +51,7 @@ def test_items_page_lists_every_type_with_status_and_history(ui, ui_page):
     the changelog. Each card shows a status; an archive-only card says so instead of
     inventing prose, and a prose-matched changelog link is labelled best-effort."""
     _seed(ui)
-    ui_page.goto(f"{ui.url}/#/items")
+    ui_page.goto(f"{ui.url}/#/items?status=all")
     ui_page.wait_for_selector("h1:has-text('Items')", timeout=10_000)
 
     # the report header rides along (window + since-commit), the arrays are items now
@@ -79,7 +79,7 @@ def test_items_filters_narrow_the_list_and_counts_stay_whole(ui, ui_page):
     """Type / status / search filters run server-side; the chip counts stay over the
     UNFILTERED set so a chip never counts only what the current filter already shows."""
     _seed(ui)
-    ui_page.goto(f"{ui.url}/#/items")
+    ui_page.goto(f"{ui.url}/#/items?status=all")
     ui_page.wait_for_selector("#ref-F1", timeout=10_000)
 
     ui_page.locator(".filterbar .tag", has_text="reports").click()
@@ -103,7 +103,7 @@ def test_items_composer_queues_edits_and_withdraws_feedback(ui, ui_page):
     run", stays editable in place (same message file), and can be withdrawn."""
     _seed(ui)
     inbox = ui.routines / "self-audit" / "inbox"
-    ui_page.goto(f"{ui.url}/#/items")
+    ui_page.goto(f"{ui.url}/#/items?status=all")
     ui_page.wait_for_selector("#ref-F1", timeout=10_000)
 
     ui_page.locator("#ref-F1 textarea").fill("please fix this first")
@@ -133,7 +133,7 @@ def test_items_general_note_reaches_the_inbox(ui, ui_page):
     """The free note for the next run — the page's other write path — lands in the same
     inbox as a tagged message."""
     _seed(ui)
-    ui_page.goto(f"{ui.url}/#/items")
+    ui_page.goto(f"{ui.url}/#/items?status=all")
     ui_page.wait_for_selector("h2:has-text('Note for the next run')", timeout=10_000)
     ui_page.locator("textarea.code").fill("focus on the daemon logging")
     ui_page.locator("button", has_text="send to the next run").click()
@@ -148,7 +148,7 @@ def test_items_without_a_report_still_lists_the_archive(ui, ui_page):
     """A routine that never produced a report is not an empty page: the changelog archive and
     the bug stream are items in their own right, and the note box stays available."""
     _seed(ui, report=False)
-    ui_page.goto(f"{ui.url}/#/items")
+    ui_page.goto(f"{ui.url}/#/items?status=all")
     ui_page.wait_for_selector("h1:has-text('Items')", timeout=10_000)
     expect(ui_page.locator("#ref-R1")).to_be_visible(timeout=10_000)
     expect(ui_page.locator("#ref-F7")).to_be_visible()
@@ -156,5 +156,38 @@ def test_items_without_a_report_still_lists_the_archive(ui, ui_page):
 
 
 def test_items_empty_state_without_the_self_audit_routine(ui, ui_page):
-    ui_page.goto(f"{ui.url}/#/items")
+    ui_page.goto(f"{ui.url}/#/items?status=all")
     expect(ui_page.locator(".empty .t")).to_contain_text("isn't set up yet", timeout=10_000)
+
+
+def test_items_defaults_to_the_active_backlog(ui, ui_page):
+    """A bare #/items shows only open + in_progress (the worklist), with the `active` chip
+    lit — the archive (addressed/settled/unknown) needs the explicit ?status=all (D75)."""
+    _seed(ui)
+    ui_page.goto(f"{ui.url}/#/items")
+    ui_page.wait_for_selector("h1:has-text('Items')", timeout=10_000)
+    expect(ui_page.locator("#ref-D1")).to_be_visible(timeout=10_000)   # open → shown
+    expect(ui_page.locator("#ref-R1")).to_have_count(0)                # addressed → hidden
+    expect(ui_page.locator("#ref-F1")).to_have_count(0)                # unknown → hidden
+    expect(ui_page.locator(".filterbar .tag.on", has_text="active")).to_be_visible()
+    # clearing the filters is the explicit "show everything" and survives as ?status=all
+    ui_page.locator(".filterbar .btn", has_text="clear").click()
+    expect(ui_page.locator("#ref-R1")).to_be_visible(timeout=10_000)
+    expect(ui_page).to_have_url(re.compile(r"status=all"))
+
+
+def test_items_priority_flag_round_trips(ui, ui_page):
+    """The ⚑ toggle (D75): flagging a card floats it, badges it, and lands in the
+    .control/item-priorities.json store the owning routine's next run reads; unflagging
+    clears the store again."""
+    _seed(ui)
+    ui_page.goto(f"{ui.url}/#/items")
+    ui_page.wait_for_selector("#ref-D1", timeout=10_000)
+    ui_page.locator("#ref-D1 button[title*='flag as priority']").click()
+    expect(ui_page.locator("#ref-D1")).to_contain_text("⚑ priority", timeout=10_000)
+    store = ui.routines / ".control" / "item-priorities.json"
+    assert "D1" in json.loads(store.read_text(encoding="utf-8"))
+    ui_page.locator("#ref-D1 button[title*='unflag']").click()
+    expect(ui_page.locator("#ref-D1 button[title*='flag as priority']")).to_be_visible(
+        timeout=10_000)
+    assert json.loads(store.read_text(encoding="utf-8")) == {}

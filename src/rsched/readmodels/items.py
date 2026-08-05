@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from ..paths import read_json
+from ..priorities import priorities_path
 from ..reports import REPORTS_FILE, read_reports
 from . import memo
 
@@ -55,11 +56,15 @@ def _audit_dir(routine_dir: Path) -> Path:
 
 
 def source_paths(routine_dir: Path, routines_home: Path) -> list[Path]:
-    """The four inputs, in the order the docs list them — also the memo fingerprint."""
+    """The five inputs, in the order the docs list them — also the memo fingerprint.
+    The priorities store rides along so a ⚑ toggle invalidates the memo like any other
+    source edit.
+    """
     audit = _audit_dir(routine_dir)
     return [audit / "report.json", audit / "changelog.jsonl",
             audit / "decisions-answered.json",
-            Path(routines_home) / ".control" / REPORTS_FILE]
+            Path(routines_home) / ".control" / REPORTS_FILE,
+            priorities_path(routines_home)]
 
 
 # ---- source readers ---------------------------------------------------------------------
@@ -255,7 +260,7 @@ def build(routine_dir: Path, routines_home: Path) -> dict:
 
 
 def _build(report_path: Path, changelog_path: Path,
-           answered_path: Path, reports_path: Path) -> dict:
+           answered_path: Path, reports_path: Path, priorities_file: Path) -> dict:
     report = read_json(report_path)
     report = report if isinstance(report, dict) else {}
     answered = read_json(answered_path)
@@ -285,7 +290,16 @@ def _build(report_path: Path, changelog_path: Path,
         if item_id and item_id not in items and item_id[:1] in TYPE_BY_PREFIX:
             items[item_id] = _archive_item(item_id, addressed.get(item_id, []), answered)
 
+    prior = read_json(priorities_file)
+    flagged = ({str(k).upper() for k, v in prior.items() if isinstance(v, dict)}
+               if isinstance(prior, dict) else set())
+    for item in items.values():
+        if item["id"] in flagged:
+            item["priority"] = True
     ordered = sorted(items.values(), key=_sort_key, reverse=True)
+    # A ⚑ outranks recency: the user's explicit "work this first" floats above the feed
+    # (stable sort — flagged and unflagged each keep newest-origin-first inside their band).
+    ordered.sort(key=lambda i: not i.get("priority"))
     return {"items": ordered, "counts": counts(ordered)}
 
 
@@ -308,11 +322,14 @@ def filter_items(items: list[dict], *, type_: str = "", status: str = "",
     its changelog summaries are the only way to find it by text.
     """
     needle = search.strip().lower()
+    # `status` accepts a comma list ("open,in_progress") — the Items page's default
+    # "active" view is exactly that pair, and one param beats a second filter channel.
+    wanted_status = {s.strip() for s in status.split(",") if s.strip()}
     out = []
     for item in items:
         if type_ and item["type"] != type_:
             continue
-        if status and item["status"] != status:
+        if wanted_status and item["status"] not in wanted_status:
             continue
         if routine and item["origin"]["routine"] != routine:
             continue

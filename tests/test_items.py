@@ -9,6 +9,7 @@ import json
 
 import pytest
 
+from rsched import priorities
 from rsched.readmodels import items as items_model
 from rsched.readmodels import memo
 
@@ -263,3 +264,74 @@ def test_api_items_without_the_self_audit_routine(api_client):
         "exists": False, "routine": "self-audit", "items": [],
         "counts": {"type": {}, "status": {}}, "report": None,
         "last_run": None, "pending_feedback": [], "answered_decisions": []}
+
+
+# ---- priorities (D75): the user's ⚑ reaches the owner's next run -------------------------
+
+
+def test_priority_store_roundtrip_and_bad_id(tmp_path):
+    home = tmp_path / "routines"
+    assert priorities.read_priorities(home) == {}
+    priorities.set_priority(home, "r1", True)                 # id is normalized upper-case
+    assert "R1" in priorities.read_priorities(home)
+    priorities.set_priority(home, "R1", False)                # unflag removes the entry
+    assert priorities.read_priorities(home) == {}
+    with pytest.raises(ValueError):
+        priorities.set_priority(home, "X99", True)
+
+
+def test_priority_flag_floats_the_item_and_busts_the_memo(audit_home):
+    first = items_model.build(audit_home / "self-audit", audit_home)["items"]
+    assert not any(i.get("priority") for i in first)
+    # flag AFTER a memoized build: the store is a fingerprint source, so no reset() needed
+    priorities.set_priority(audit_home, "R1", True)
+    items = items_model.build(audit_home / "self-audit", audit_home)["items"]
+    assert items[0]["id"] == "R1" and items[0]["priority"] is True
+    assert not items[1].get("priority")                       # only the flagged one carries it
+
+
+def test_filter_items_accepts_a_comma_status_list(audit_home):
+    items = items_model.build(audit_home / "self-audit", audit_home)["items"]
+    active = items_model.filter_items(items, status="open,in_progress")
+    assert {i["id"] for i in active} == {"F2", "D1", "R1"}    # the Items page's default view
+    assert {i["id"] for i in items_model.filter_items(items, status="open")} \
+        == {"F2", "D1", "R1"}                                 # single status unchanged
+
+
+def test_owner_resolution_and_digest_section(audit_home):
+    priorities.set_priority(audit_home, "R1", True)   # untargeted triage row → self-audit
+    priorities.set_priority(audit_home, "F1", True)   # findings live in self-audit's report
+    with (audit_home / ".control" / "reports.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"id": "R3", "ts": "2026-08-05T10:00:00+02:00",
+                             "routine": "self-audit", "run_id": "self-audit:x",
+                             "title": "fix the tool", "target": "global-utils-review"}) + "\n")
+    priorities.set_priority(audit_home, "R3", True)   # targeted → the target owns it
+    sa = priorities.digest_section(audit_home, "self-audit")
+    assert "R1" in sa and "F1" in sa and "R3" not in sa
+    assert "A finding with no status on disk" in sa           # F/D titles from report.json
+    gur = priorities.digest_section(audit_home, "global-utils-review")
+    assert "R3" in gur and "fix the tool" in gur and "R1" not in gur
+    assert priorities.digest_section(audit_home, "newsletter-digest") == ""
+
+
+def test_state_digest_carries_the_priority_section(audit_home):
+    from rsched.engine.composer import state_digest
+    d = audit_home / "self-audit"
+    priorities.set_priority(audit_home, "D1", True)
+    digest = state_digest(d, [], [], routines_home=audit_home, slug="self-audit")
+    assert "PRIORITY items the user flagged" in digest and "D1" in digest
+    # a digest without the routines-home context (subrun-shaped call) has no section
+    assert "PRIORITY items" not in state_digest(d, [], [])
+    # and an unrelated routine's digest stays clean
+    other = state_digest(d, [], [], routines_home=audit_home, slug="newsletter-digest")
+    assert "PRIORITY items" not in other
+
+
+def test_api_priority_toggle(api_client):
+    c, tmp = api_client
+    r = c.post("/api/items/R1/priority", json={"on": True})
+    assert r.status_code == 200 and r.json() == {"ok": True, "id": "R1", "on": True}
+    assert "R1" in priorities.read_priorities(tmp / "routines")
+    assert c.post("/api/items/R1/priority", json={"on": False}).status_code == 200
+    assert priorities.read_priorities(tmp / "routines") == {}
+    assert c.post("/api/items/notanid/priority", json={"on": True}).status_code == 400
