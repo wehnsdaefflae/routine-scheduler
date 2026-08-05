@@ -129,7 +129,11 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
             atomic_write_json(target_dir / "inbox" / f"msg-rep-{item_id}.json", {
                 "text": message_text(item_id, routine, title[:TITLE_MAX], detail[:DETAIL_MAX],
                                      answers, closes),
-                "ts": now_iso(), "via": "report", "report": item_id, "from": routine})
+                "ts": now_iso(), "via": "report", "report": item_id, "from": routine,
+                # A closure asks nothing, so it must not BUY the target a run: the report
+                # trigger skips it (daemon/triggers) and it is read by the next run that
+                # happens anyway. Delivery is unchanged — only the waking is.
+                **({"closes": True} if closes else {})})
     except OSError:
         return None
     return path, item_id

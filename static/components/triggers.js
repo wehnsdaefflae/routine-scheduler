@@ -10,6 +10,10 @@ import { el, toast, when } from "/static/util.js";
 
 const COOLDOWN_HINT = "minimum seconds between trigger-initiated fires — events arriving "
   + "inside the window coalesce into one run";
+const CAP_HINT = "most trigger-initiated fires this routine may spend in one day (0 = "
+  + "uncapped) — the backstop the cooldown cannot be: it bounds the rate, not the total. "
+  + "Work that arrives past the cap waits for the next scheduled run.";
+const LABEL = { cooldown_s: "cooldown", max_fires_per_day: "daily cap" };
 
 export function triggersCard(slug, initial, opts = {}) {
   const body = el("div", { class: "triggers-body" });
@@ -58,7 +62,8 @@ export function triggersCard(slug, initial, opts = {}) {
       el("span", {}, `fired events · ${t.events || 0}`),
       el("span", { title: "events recorded but not yet turned into a run (coalescing)" },
         `pending · ${t.pending || 0}`),
-      cooldownCell(t));
+      cooldownCell(t),
+      capCell(t));
     const urlLine = t.type === "webhook" ? webhookUrl(t)
       : t.type === "report"
         ? el("div", { class: "muted small" },
@@ -78,26 +83,42 @@ export function triggersCard(slug, initial, opts = {}) {
   function cooldownCell(t) {
     if (opts.protected) return el("span", { title: COOLDOWN_HINT }, `cooldown · ${t.cooldown_s}s`);
     const input = el("input", { type: "number", min: "0", value: String(t.cooldown_s),
-      style: "width:70px", title: COOLDOWN_HINT, onchange: () => retune(t, input) });
+      class: "cooldown-in", style: "width:70px", title: COOLDOWN_HINT,
+      onchange: () => retune(t, input) });
     return el("span", { class: "row", style: "gap:5px;align-items:center" },
       "cooldown ·", input, "s");
   }
 
-  async function retune(t, input) {
-    const cooldown = parseInt(input.value, 10);
-    if (!Number.isFinite(cooldown) || cooldown < 0) {
-      input.value = String(t.cooldown_s);
-      toast("cooldown is a whole number of seconds (0 or more)", 4000, { error: true });
+  // The day's cap is the loop backstop the cooldown can't be (it bounds rate, not total).
+  // 0 = uncapped; the count resets on the server's date.
+  function capCell(t) {
+    const label = t.max_fires_per_day
+      ? `fires today · ${t.fires_today}/${t.max_fires_per_day}`
+      : `fires today · ${t.fires_today} (uncapped)`;
+    if (opts.protected) return el("span", { title: CAP_HINT }, label);
+    const input = el("input", { type: "number", min: "0", value: String(t.max_fires_per_day),
+      class: "cap-in", style: "width:70px", title: CAP_HINT,
+      onchange: () => retune(t, input, "max_fires_per_day") });
+    return el("span", { class: "row", style: "gap:5px;align-items:center", title: CAP_HINT },
+      `fires today · ${t.fires_today} / max`, input, "per day");
+  }
+
+  async function retune(t, input, field = "cooldown_s") {
+    const next = parseInt(input.value, 10);
+    const current = t[field];
+    if (!Number.isFinite(next) || next < 0) {
+      input.value = String(current);
+      toast(`${LABEL[field]} is a whole number, 0 or more`, 4000, { error: true });
       return;
     }
-    if (cooldown === t.cooldown_s) return;
+    if (next === current) return;
     try {
       await api(`/api/routines/${slug}/triggers/${t.id}`,
-        { method: "PATCH", body: { cooldown_s: cooldown } });
-      toast(`cooldown saved — ${cooldown}s`);
+        { method: "PATCH", body: { [field]: next } });
+      toast(`${LABEL[field]} saved — ${next}${field === "cooldown_s" ? "s" : " per day"}`);
       refresh();
     } catch (err) {
-      input.value = String(t.cooldown_s);
+      input.value = String(current);
       toast(err.message, 4000, { error: true });
     }
   }

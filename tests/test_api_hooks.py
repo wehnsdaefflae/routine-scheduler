@@ -2,6 +2,8 @@
 auth (constant-time, generic 404), payload cap, rate limit + spool cap, the durable
 web→daemon handoff, and the routine-page CRUD with its 409/403 guards."""
 
+import asyncio
+
 import yaml
 from fastapi.testclient import TestClient
 
@@ -247,3 +249,82 @@ def test_patch_trigger_guards(api_client, make_routine):
     assert TestClient(c.app).patch(path, json={"cooldown_s": 60}).status_code == 401
     _mk_active_run(tmp, "testr")
     assert c.patch(path, json={"cooldown_s": 60}).status_code == 409
+
+
+def _add_report_trigger(tmp, slug, *, tid="t-report01", cooldown_s=0, cap=24):
+    path = tmp / "routines" / slug / "routine.yaml"
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw.setdefault("triggers", []).append(
+        {"id": tid, "type": "report", "cooldown_s": cooldown_s, "max_fires_per_day": cap})
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+
+def _fire_once(c, tmp):
+    from conftest import FakeRunner
+
+    runner = FakeRunner()
+    asyncio.run(TriggerManager(c.app.state.server, runner).tick(registry.scan(c.app.state.server)))
+    return runner
+
+
+def test_closure_message_does_not_buy_a_run(api_client, make_routine):
+    """A closure asks nothing, so it must not WAKE the target — it rides in the inbox and
+    is read by the next run that happens anyway. Anything else in the inbox still fires."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    _add_report_trigger(tmp, "testr")
+    inbox = tmp / "routines" / "testr" / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(inbox / "msg-rep-R2.json", {
+        "text": "REPORT R2 (answering R1 — closes the exchange, no reply needed)",
+        "ts": "2026-08-05T23:00:00+02:00", "via": "report", "report": "R2",
+        "from": "peer", "closes": True})
+    assert _fire_once(c, tmp).fired == []                    # closure-only inbox stays quiet
+
+    atomic_write_json(inbox / "msg-rep-R3.json", {
+        "text": "REPORT R3 — real work", "ts": "2026-08-05T23:01:00+02:00",
+        "via": "report", "report": "R3", "from": "peer"})
+    assert _fire_once(c, tmp).fired == [("testr", "trigger")]             # a real report still wakes it
+    # the closure was never consumed by the trigger — the fired run's drain owns that
+    assert (inbox / "msg-rep-R2.json").exists()
+
+
+def test_report_trigger_daily_cap(api_client, make_routine):
+    """The cooldown bounds the RATE of fires; the cap bounds the day's TOTAL, so a
+    routine-to-routine exchange cannot stay awake forever. Hitting it is visible."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    _add_report_trigger(tmp, "testr", cooldown_s=0, cap=2)
+    inbox = tmp / "routines" / "testr" / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(inbox / "msg-1.json", {"text": "work", "ts": "2026-08-05T23:00:00+02:00"})
+
+    assert _fire_once(c, tmp).fired == [("testr", "trigger")]
+    assert _fire_once(c, tmp).fired == [("testr", "trigger")]
+    assert _fire_once(c, tmp).fired == []                    # cap reached — no third fire
+    events = (tmp / "routines" / ".control" / "health-events.jsonl").read_text(encoding="utf-8")
+    assert "trigger_capped" in events
+    assert events.count("trigger_capped") == 1               # once per trigger per day
+
+    # a new day releases it (the counter is dated, not a rolling window)
+    state = read_json(tmp / "routines" / ".control" / "triggers" / "testr" / "state.json")
+    state["triggers"]["t-report01"]["day"] = "2026-08-04"
+    atomic_write_json(tmp / "routines" / ".control" / "triggers" / "testr" / "state.json", state)
+    assert _fire_once(c, tmp).fired == [("testr", "trigger")]
+
+
+def test_patch_trigger_daily_cap(api_client, make_routine):
+    c, tmp = api_client
+    make_routine(slug="testr")
+    trig = c.post("/api/routines/testr/triggers", json={"type": "report"}).json()["trigger"]
+    assert trig["max_fires_per_day"] == 24                   # the type's own default
+    path = f"/api/routines/testr/triggers/{trig['id']}"
+    assert c.patch(path, json={"max_fires_per_day": 6}).json()["trigger"]["max_fires_per_day"] == 6
+    raw = yaml.safe_load((tmp / "routines" / "testr" / "routine.yaml").read_text())
+    assert raw["triggers"][0]["max_fires_per_day"] == 6
+    assert raw["triggers"][0]["cooldown_s"] == 900           # untouched by a partial patch
+    assert c.patch(path, json={"max_fires_per_day": 0}).status_code == 200      # 0 = uncapped
+    assert c.patch(path, json={"max_fires_per_day": -1}).status_code == 422
+    assert c.patch(path, json={}).status_code == 400
+    detail = c.get("/api/routines/testr").json()["triggers"][0]
+    assert detail["max_fires_per_day"] == 0 and detail["fires_today"] == 0

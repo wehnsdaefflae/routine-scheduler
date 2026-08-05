@@ -134,6 +134,11 @@ reopens the discussion, as its own open item.
 The stream is append-only. The report row is written by the `report` action; the `delivered`
 event is a second row, folded onto it by `reports.read_reports`.
 
+A closure (`closes: true`) is delivered like any other addressed report but never WAKES its
+target: the receiving routine's `report` trigger skips a closure-only inbox, so an
+acknowledgment costs the recipient nothing and is read by the next run it holds anyway
+(docs/triggers.md § Firing semantics).
+
 ## Joining the changelog
 
 Each changelog row carries an explicit `items: ["F202", "R7"]` field naming the items it

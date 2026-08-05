@@ -30,11 +30,33 @@ from pathlib import Path
 
 from .. import registry, triggers
 from ..config import ServerConfig
+from ..health_events import log_health_event
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
 from .runner import Runner
 
 log = logging.getLogger("rsched.triggers")
+
+
+def _inbox_wants_a_run(inbox: Path) -> bool:
+    """True if the inbox holds a message worth WAKING for.
+
+    Answers (`answer-*`) never were: they resolve a question the routine already asked. A
+    CLOSURE (`closes` — the terminal acknowledgment of an exchange this routine started)
+    joins them: it asks nothing, and buying a full run of a recipe to read "no reply needed"
+    is exactly the amplification the cooldown cannot see. Both still ride in the inbox and
+    are read by the next run that happens anyway. Anything unreadable or unrecognised WAKES
+    (fail open — a message the daemon cannot classify must never be silently swallowed).
+    """
+    if not inbox.is_dir():
+        return False
+    for path in inbox.iterdir():
+        if not path.is_file() or path.name.startswith("answer-"):
+            continue
+        msg = read_json(path)
+        if not isinstance(msg, dict) or not msg.get("closes"):
+            return True
+    return False
 
 
 class TriggerManager:
@@ -72,9 +94,7 @@ class TriggerManager:
         trig = next((t for t in info.cfg.triggers if t.get("type") == "report"), None)
         if trig is None or not info.cfg.enabled:
             return
-        inbox = info.cfg.dir / "inbox"
-        if not inbox.is_dir() or not any(p.is_file() and not p.name.startswith("answer-")
-                                         for p in inbox.iterdir()):
+        if not _inbox_wants_a_run(info.cfg.dir / "inbox"):
             return
         if self.runner.draining or self.runner.is_active(slug):
             return
@@ -82,14 +102,31 @@ class TriggerManager:
         raw_per = state.get("triggers")
         per: dict = raw_per if isinstance(raw_per, dict) else {}
         tid = str(trig["id"])
-        cooldown = int(trig.get("cooldown_s") or triggers.DEFAULT_REPORT_COOLDOWN_S)
+        # `.get(key, default)`, never `or`: a configured 0 means "no wait, fire on every
+        # delivery" and an `or` fallback silently turns that into the 15-minute default.
+        cooldown = int(trig.get("cooldown_s", triggers.DEFAULT_REPORT_COOLDOWN_S))
         got = per.get(tid)
         mine: dict = got if isinstance(got, dict) else {}
         if self._cooling(mine, cooldown):
             return
-        rid = await self.runner.fire(info.cfg, reason="trigger")
         now = now_iso()
-        per[tid] = {"last_fired": now, "events": int(mine.get("events") or 0) + 1}
+        today = now[:10]
+        cap = int(trig.get("max_fires_per_day", triggers.DEFAULT_REPORT_MAX_FIRES_PER_DAY))
+        fires_today = int(mine.get("fires_today") or 0) if mine.get("day") == today else 0
+        if cap and fires_today >= cap:
+            # Silence would repeat F276's lesson: a capped trigger is a DARK routine, and
+            # dark must be visible. One event per trigger per day, at the transition.
+            if mine.get("capped_logged") != today:
+                log_health_event(self.home, "trigger_capped", routine=slug, run_id="",
+                                 detail=f"report trigger {tid} hit its {cap}/day cap — "
+                                        "inbox work waits for the next scheduled run")
+                per[tid] = {**mine, "capped_logged": today}
+                state.update(triggers=per)
+                triggers.write_state(self.home, slug, state)
+            return
+        rid = await self.runner.fire(info.cfg, reason="trigger")
+        per[tid] = {"last_fired": now, "events": int(mine.get("events") or 0) + 1,
+                    "day": today, "fires_today": fires_today + 1}
         state.update(last_fired=now, fires=int(state.get("fires") or 0) + 1, triggers=per)
         triggers.write_state(self.home, slug, state)
         if rid:

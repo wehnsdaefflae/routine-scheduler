@@ -19,6 +19,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.155.0] — 2026-08-05
+
+Loop control for the report trigger. Nothing here changes what a routine can DO — a run
+still only files work — but the fleet-scale cost of that work is now bounded.
+
+### Added
+- **A day's cap on trigger-initiated fires.** `max_fires_per_day` (report triggers: **24**;
+  `0` = uncapped) bounds what the cooldown structurally cannot: a cooldown limits the RATE
+  of fires, not the total, so two routines answering each other would stay awake forever at
+  one run per window. Editable in place beside the cooldown; the count is per trigger, keyed
+  on the server's date. Reaching it emits ONE `trigger_capped` health event for the day —
+  a capped trigger is a dark routine, and dark must be visible (F276) — and the waiting
+  inbox work is picked up by the next scheduled run, never dropped.
+
+### Fixed
+- **A closure no longer buys its recipient a run.** A report filed with `closes: true` asks
+  nothing, yet it landed in the target's inbox and fired that routine's report trigger — a
+  full run of a recipe to read "no reply needed". Closures now carry the marker into the
+  inbox message and the trigger skips a closure-only inbox, the same exemption `answer-*`
+  files have; delivery is unchanged and the next run reads it anyway. This was the
+  amplification path the 0.153.0 answer-everything closeouts opened: every acknowledgment
+  in the fleet was buying a run.
+- **`cooldown_s: 0` on a report trigger meant 900, not 0.** The daemon read it as
+  `int(trig.get("cooldown_s") or DEFAULT)`, and `0` is falsy — so the documented "fire on
+  every delivery" silently became the 15-minute default. Reads the key with a default
+  argument now. (The webhook path's `or 0` was always correct.)
+
 ## [0.154.3] — 2026-08-05
 
 ### Fixed

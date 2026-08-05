@@ -43,6 +43,13 @@ DEFAULT_COOLDOWN_S = 60
 # today, not at the next cron" — not "worked within a minute". One run per window; every
 # message that landed meanwhile is drained by that one run.
 DEFAULT_REPORT_COOLDOWN_S = 900
+# The loop backstop the cooldown cannot be: a cooldown bounds the RATE of trigger fires,
+# never their TOTAL, so two routines answering each other stay awake forever at one run per
+# window. A day's cap converts that into a bounded, visible cost. Report triggers carry it
+# because routines feed each other; a webhook is driven by an external system whose volume
+# is the operator's business (0 = uncapped, and that stays the webhook default).
+DEFAULT_REPORT_MAX_FIRES_PER_DAY = 24
+UNCAPPED_FIRES = 0
 MAX_PAYLOAD_BYTES = 64 * 1024   # a webhook body past this is rejected 413, never stored
 MAX_PENDING_EVENTS = 32         # spool cap per routine — past it new events are rejected 429
 
@@ -57,13 +64,16 @@ def new_webhook_trigger(*, cooldown_s: int = DEFAULT_COOLDOWN_S) -> dict:
             "cooldown_s": int(cooldown_s), "created": now_iso()}
 
 
-def new_report_trigger(*, cooldown_s: int = DEFAULT_REPORT_COOLDOWN_S) -> dict:
+def new_report_trigger(*, cooldown_s: int = DEFAULT_REPORT_COOLDOWN_S,
+                       max_fires_per_day: int = DEFAULT_REPORT_MAX_FIRES_PER_DAY) -> dict:
     """A fresh report trigger entry: fire this routine when a report/inbox message lands
-    for it, coalesced by cooldown_s. No token — nothing external can reach it; the only
-    writers of an inbox are the engine's report delivery, the daemon managers and the web.
+    for it, coalesced by cooldown_s and capped per day. No token — nothing external can
+    reach it; the only writers of an inbox are the engine's report delivery, the daemon
+    managers and the web.
     """
     return {"id": f"t-{uuid.uuid4().hex[:8]}", "type": "report",
-            "cooldown_s": int(cooldown_s), "created": now_iso()}
+            "cooldown_s": int(cooldown_s), "max_fires_per_day": int(max_fires_per_day),
+            "created": now_iso()}
 
 
 def hook_path(slug: str, trigger: dict) -> str:
@@ -109,6 +119,17 @@ def validate_triggers(raw: object) -> tuple[list[dict], list[str]]:
                             f"(got {cooldown!r}; using {DEFAULT_COOLDOWN_S})")
             cooldown = DEFAULT_COOLDOWN_S
         entry["cooldown_s"] = cooldown
+        # Absent = the type's own default (report 24/day, everything else uncapped), the
+        # same convention cooldown_s follows — so a trigger written before the cap existed
+        # is capped without a migration.
+        default_cap = (DEFAULT_REPORT_MAX_FIRES_PER_DAY if ttype == "report"
+                       else UNCAPPED_FIRES)
+        cap = entry.get("max_fires_per_day", default_cap)
+        if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
+            problems.append(f"{where}: max_fires_per_day must be a non-negative integer "
+                            f"(got {cap!r}; using {default_cap})")
+            cap = default_cap
+        entry["max_fires_per_day"] = cap
         if ttype == "webhook" and not str(entry.get("token") or "").strip():
             problems.append(f"{where}: webhook trigger without a token — dropped "
                             "(recreate it on the routine page)")
@@ -192,8 +213,12 @@ def describe_triggers(routines_home: Path, slug: str, entries: list[dict]) -> li
         got = per.get(tid)
         mine: dict = got if isinstance(got, dict) else {}
         ttype = str(t.get("type"))
+        today = now_iso()[:10]
         rows.append({"id": tid, "type": ttype,
                      "cooldown_s": int(t.get("cooldown_s") or 0),
+                     "max_fires_per_day": int(t.get("max_fires_per_day") or UNCAPPED_FIRES),
+                     "fires_today": (int(mine.get("fires_today") or 0)
+                                     if mine.get("day") == today else 0),
                      "created": str(t.get("created") or ""),
                      "url_path": hook_path(slug, t) if ttype == "webhook" else "",
                      "last_fired": str(mine.get("last_fired") or ""),

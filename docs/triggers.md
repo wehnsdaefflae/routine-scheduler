@@ -124,7 +124,21 @@ These are the trigger analog of the schedule's catchup/overrun rules:
   token, so a URL already handed to a third party survives, and a report trigger — one per
   routine — has no other route to a non-default window. `id`, `token` and `type` are the
   trigger's identity and are never patchable; a config edit is guarded while a run is
-  active, like every other.
+  active, like every other. `0` means *no wait* — fire on every delivery.
+- **Daily cap.** `max_fires_per_day` (report triggers: **24**; other types uncapped unless
+  set; `0` = uncapped) bounds the day's TOTAL trigger-initiated fires, which the cooldown
+  cannot: a cooldown limits the rate, so two routines answering each other would stay awake
+  forever at one run per window. The count is per trigger, keyed on the server's date, and
+  resets with it. Reaching the cap emits ONE `trigger_capped` health event for that day —
+  a capped trigger is a dark routine, and dark must be visible (F276) — and the waiting
+  inbox work is picked up by the next scheduled run, never dropped. Editable in place
+  beside the cooldown.
+- **Closures never wake.** A report filed with `closes: true` is the terminal
+  acknowledgment of an exchange: it asks nothing, so it is delivered to the target's inbox
+  but does NOT fire its report trigger (the same exemption `answer-*` files have). It is
+  read by the next run that happens anyway. Without this, every "done, no reply needed"
+  would buy the recipient a full run of its recipe — the amplification a cooldown cannot
+  see, since each closure is a genuinely new message.
 - **Durability.** An accepted event survives restarts: it is either in the spool (fired at
   a later tick) or already injected into the routine's inbox (drained by the routine's
   next run, whoever starts it). Injection uses deterministic filenames, so a crash between

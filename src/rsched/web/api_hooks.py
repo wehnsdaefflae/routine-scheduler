@@ -173,10 +173,11 @@ def create_trigger(request: Request, slug: str, body: TriggerCreate) -> dict:
 
 
 class TriggerPatch(BaseModel):
-    # The cooldown is the only tunable field: id, token and type ARE the trigger's identity.
+    # The two firing bounds are tunable; id, token and type ARE the trigger's identity.
     model_config = ConfigDict(extra="forbid")
 
-    cooldown_s: int = Field(ge=0)
+    cooldown_s: int | None = Field(None, ge=0)
+    max_fires_per_day: int | None = Field(None, ge=0)   # 0 = uncapped
 
 
 @router.patch("/routines/{slug}/triggers/{trigger_id}")
@@ -187,6 +188,9 @@ def patch_trigger(request: Request, slug: str, trigger_id: str, body: TriggerPat
     already holds keeps working, and a report trigger — of which a routine may hold only
     one — has no other way to reach a non-default window.
     """
+    fields = body.model_dump(exclude_none=True)
+    if not fields:
+        raise HTTPException(400, "nothing to patch — send cooldown_s and/or max_fires_per_day")
     info = _info(request, slug)
     guard_not_active(request, info)
     path = info.cfg.dir / "routine.yaml"
@@ -195,10 +199,11 @@ def patch_trigger(request: Request, slug: str, trigger_id: str, body: TriggerPat
     target = next((t for t in entries if str(t.get("id")) == trigger_id), None)
     if target is None:
         raise HTTPException(404, f"no trigger {trigger_id!r} on {slug!r}")
-    target["cooldown_s"] = body.cooldown_s
+    target.update(fields)
     raw["triggers"] = entries
     atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
-    _git_commit(info.cfg.dir, f"set trigger {trigger_id} cooldown to {body.cooldown_s}s")
+    _git_commit(info.cfg.dir, f"retune trigger {trigger_id}: "
+                              + ", ".join(f"{k}={v}" for k, v in sorted(fields.items())))
     _state(request).scheduler.rescan()
     return {"ok": True, "trigger": target}
 
