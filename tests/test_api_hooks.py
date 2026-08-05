@@ -210,3 +210,40 @@ def test_create_report_trigger(api_client, make_routine):
     assert c.delete(f"/api/routines/testr/triggers/{trig['id']}").status_code == 200
     r = c.post("/api/routines/testr/triggers", json={"type": "report", "cooldown_s": 300})
     assert r.json()["trigger"]["cooldown_s"] == 300
+
+
+def test_patch_trigger_cooldown(api_client, make_routine):
+    """Retuning is in-place: the webhook keeps its token (the URL a third party holds
+    survives the edit), the daemon reads the new window, and only cooldown is settable."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    trig = c.post("/api/routines/testr/triggers", json={"cooldown_s": 60}).json()["trigger"]
+
+    r = c.patch(f"/api/routines/testr/triggers/{trig['id']}", json={"cooldown_s": 300})
+    assert r.status_code == 200
+    assert r.json()["trigger"]["cooldown_s"] == 300
+    raw = yaml.safe_load((tmp / "routines" / "testr" / "routine.yaml").read_text())
+    assert raw["triggers"][0]["cooldown_s"] == 300
+    assert raw["triggers"][0]["token"] == trig["token"]        # identity survives the edit
+    assert c.get("/api/routines/testr").json()["triggers"][0]["cooldown_s"] == 300
+    assert TestClient(c.app).post(trig["url_path"], content=b"hi").status_code == 202
+
+    assert c.patch(f"/api/routines/testr/triggers/{trig['id']}",
+                   json={"cooldown_s": 0}).status_code == 200  # 0 = fire every event
+    assert c.patch(f"/api/routines/testr/triggers/{trig['id']}",
+                   json={"cooldown_s": -1}).status_code == 422
+    assert c.patch(f"/api/routines/testr/triggers/{trig['id']}",
+                   json={"cooldown_s": 60, "type": "report"}).status_code == 422
+    assert c.patch("/api/routines/testr/triggers/t-ghost",
+                   json={"cooldown_s": 60}).status_code == 404
+
+
+def test_patch_trigger_guards(api_client, make_routine):
+    """A cooldown edit is a config edit: same active-run guard and bearer gate as create."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    trig = c.post("/api/routines/testr/triggers", json={"type": "report"}).json()["trigger"]
+    path = f"/api/routines/testr/triggers/{trig['id']}"
+    assert TestClient(c.app).patch(path, json={"cooldown_s": 60}).status_code == 401
+    _mk_active_run(tmp, "testr")
+    assert c.patch(path, json={"cooldown_s": 60}).status_code == 409

@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.154.0] — 2026-08-05
+
+### Added
+- **A live trigger's cooldown is editable in place.** `PATCH
+  /api/routines/<slug>/triggers/<id>` takes `{"cooldown_s": N}`, and the Triggers card
+  renders each row's cooldown as a field that saves on commit. Editing beats
+  delete-and-recreate: a webhook keeps its token, so a URL already handed to a third party
+  survives the change, and a report trigger — one per routine — had **no** route to a
+  non-default window at all. `id`/`token`/`type` are identity and stay unpatchable
+  (`extra="forbid"`); the edit is guarded while a run is active, like every config write.
+
+### Fixed
+- **The Triggers card's "cooldown (s)" box read as an editor for the triggers listed above
+  it.** It was the create-form's input, wired only to "+ add webhook trigger" — so a
+  changed value looked unsaveable (there was nothing to save) and silently did nothing to
+  existing rows. Each add-button now carries its own cooldown box, adjacent to the button
+  it feeds, and "+ add report trigger" honors it instead of always using the 900 s default.
+  The one-per-routine refusal ("adjust its cooldown instead") now names a path that exists.
+
 ## [0.153.0] — 2026-08-05
 
 **Backlog-clearing operation**: an operator-directed sweep resolved every open/in_progress

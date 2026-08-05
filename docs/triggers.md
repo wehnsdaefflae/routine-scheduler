@@ -115,9 +115,16 @@ These are the trigger analog of the schedule's catchup/overrun rules:
   draining) **waits in the spool**. N events while busy → **ONE fire** when the routine is
   free, and every coalesced event still lands as its own inbox message for that fire — no
   payload is lost, no run per event.
-- **Cooldown.** `cooldown_s` (default 60) is the minimum gap between trigger-initiated
-  fires; events inside the window coalesce into the next fire. When pending events span
-  triggers with different cooldowns, the largest applies.
+- **Cooldown.** `cooldown_s` (default 60; **900** for a report trigger) is the minimum gap
+  between trigger-initiated fires; events inside the window coalesce into the next fire.
+  When pending events span triggers with different cooldowns, the largest applies. It is
+  the one field of a live trigger that is tunable — the Triggers card edits it in place
+  (`PATCH /api/routines/<slug>/triggers/<id>`, `{"cooldown_s": N}`), and the daemon reads
+  the new window at the next rescan. Editing beats delete-and-recreate: a webhook keeps its
+  token, so a URL already handed to a third party survives, and a report trigger — one per
+  routine — has no other route to a non-default window. `id`, `token` and `type` are the
+  trigger's identity and are never patchable; a config edit is guarded while a run is
+  active, like every other.
 - **Durability.** An accepted event survives restarts: it is either in the spool (fired at
   a later tick) or already injected into the routine's inbox (drained by the routine's
   next run, whoever starts it). Injection uses deterministic filenames, so a crash between

@@ -27,8 +27,8 @@ def test_triggers_card_renders_and_creates(ui, ui_page):
     expect(row).to_contain_text("webhook")
     expect(row).to_contain_text("t-uiseed01")
     expect(row).to_contain_text("last fired · never")
-    expect(row).to_contain_text("cooldown · 60s")
-    expect(row.locator("input")).to_have_value(f"{ui.url}/api/hooks/uir/{SEED_TOKEN}")
+    expect(row.locator('input[type="number"]')).to_have_value("60")   # editable in place
+    expect(row.locator('input[type="text"]')).to_have_value(f"{ui.url}/api/hooks/uir/{SEED_TOKEN}")
     expect(row.get_by_role("button", name="copy")).to_be_visible()
 
     ui_page.get_by_role("button", name="+ add webhook trigger").click()
@@ -50,3 +50,25 @@ def test_trigger_delete_flow(ui, ui_page):
     expect(ui_page.locator(".triggers-body")).to_contain_text("no triggers yet")
     raw = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
     assert raw["triggers"] == []
+
+
+def test_routine_page_trigger_cooldown_edits_in_place(ui, ui_page):
+    """The cooldown on a listed trigger IS an editor (it used to be static text next to a
+    create-form input, which read as an editor and had no save path), and each add-button
+    carries its own cooldown box."""
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    panel = ui_page.locator(".panel", has=ui_page.get_by_role("button", name="+ add report trigger"))
+    panel.get_by_role("button", name="+ add report trigger").click()
+    expect(_toast(ui_page)).to_contain_text("report trigger created")
+
+    row = panel.locator(".trigger-row").first
+    cooldown = row.locator('input[type="number"]')
+    expect(cooldown).to_have_value("900")            # the type's own default
+    cooldown.fill("120")
+    cooldown.press("Enter")                          # change fires on commit — no save button
+    expect(_toast(ui_page)).to_contain_text("cooldown saved — 120s")
+    ui_page.reload()
+    expect(panel.locator(".trigger-row").first.locator('input[type="number"]')).to_have_value("120")
+
+    # a second report trigger stays refused, and its add-box is disabled with the reason
+    expect(panel.get_by_role("button", name="+ add report trigger")).to_be_disabled()

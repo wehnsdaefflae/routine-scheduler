@@ -8,6 +8,9 @@ import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { el, toast, when } from "/static/util.js";
 
+const COOLDOWN_HINT = "minimum seconds between trigger-initiated fires — events arriving "
+  + "inside the window coalesce into one run";
+
 export function triggersCard(slug, initial, opts = {}) {
   const body = el("div", { class: "triggers-body" });
   const host = el("div", { class: "panel" },
@@ -26,20 +29,27 @@ export function triggersCard(slug, initial, opts = {}) {
   }
 
   function render(rows) {
-    const cooldownIn = el("input", { type: "number", min: "0", value: "60", style: "width:80px",
-      title: "minimum seconds between trigger-initiated fires — more events coalesce into one" });
     const hasReport = rows.some((t) => t.type === "report");
+    // One cooldown input per add-button, adjacent to the button it feeds: a single shared
+    // box reads as an editor for the triggers listed above it, which it never was.
+    const webhookCooldown = el("input", { type: "number", min: "0", value: "60",
+      style: "width:80px", title: COOLDOWN_HINT });
+    const reportCooldown = el("input", { type: "number", min: "0", value: "900",
+      style: "width:80px", title: COOLDOWN_HINT, ...(hasReport ? { disabled: "" } : {}) });
     body.replaceChildren(
       rows.length ? el("div", {}, ...rows.map(row))
         : el("div", { class: "muted small" }, "no triggers yet — this routine fires on schedule or manually only"),
       opts.protected ? "" : el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" },
-        el("span", { class: "muted small" }, "cooldown (s)"), cooldownIn,
-        el("button", { class: "btn primary", onclick: () => create(cooldownIn) }, "+ add webhook trigger"),
+        el("span", { class: "muted small" }, "cooldown (s)"), webhookCooldown,
+        el("button", { class: "btn primary", onclick: () => create(webhookCooldown) },
+          "+ add webhook trigger")),
+      opts.protected ? "" : el("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-top:6px" },
+        el("span", { class: "muted small" }, "cooldown (s)"), reportCooldown,
         el("button", { class: "btn", ...(hasReport ? { disabled: "" } : {}),
           title: hasReport
-            ? "one inbox, one watcher — this routine already has a report trigger"
-            : "fire this routine when a report or message lands in its inbox (default cooldown 15 min — bursts become one run)",
-          onclick: () => createReport() }, "+ add report trigger")));
+            ? "one inbox, one watcher — this routine already has a report trigger (edit its cooldown above)"
+            : "fire this routine when a report or message lands in its inbox — bursts within the cooldown become one run",
+          onclick: () => createReport(reportCooldown) }, "+ add report trigger")));
   }
 
   function row(t) {
@@ -48,8 +58,7 @@ export function triggersCard(slug, initial, opts = {}) {
       el("span", {}, `fired events · ${t.events || 0}`),
       el("span", { title: "events recorded but not yet turned into a run (coalescing)" },
         `pending · ${t.pending || 0}`),
-      el("span", { title: "minimum seconds between trigger-initiated fires — more events coalesce" },
-        `cooldown · ${t.cooldown_s}s`));
+      cooldownCell(t));
     const urlLine = t.type === "webhook" ? webhookUrl(t)
       : t.type === "report"
         ? el("div", { class: "muted small" },
@@ -62,6 +71,35 @@ export function triggersCard(slug, initial, opts = {}) {
           el("span", { class: "muted small" }, t.id)),
         opts.protected ? "" : el("button", { class: "btn small danger", onclick: () => remove(t) }, "delete")),
       urlLine, meta);
+  }
+
+  // The row's cooldown is the LIVE value and edits in place — the stored number is the
+  // truth, so a rejected or malformed edit snaps the field back to it.
+  function cooldownCell(t) {
+    if (opts.protected) return el("span", { title: COOLDOWN_HINT }, `cooldown · ${t.cooldown_s}s`);
+    const input = el("input", { type: "number", min: "0", value: String(t.cooldown_s),
+      style: "width:70px", title: COOLDOWN_HINT, onchange: () => retune(t, input) });
+    return el("span", { class: "row", style: "gap:5px;align-items:center" },
+      "cooldown ·", input, "s");
+  }
+
+  async function retune(t, input) {
+    const cooldown = parseInt(input.value, 10);
+    if (!Number.isFinite(cooldown) || cooldown < 0) {
+      input.value = String(t.cooldown_s);
+      toast("cooldown is a whole number of seconds (0 or more)", 4000, { error: true });
+      return;
+    }
+    if (cooldown === t.cooldown_s) return;
+    try {
+      await api(`/api/routines/${slug}/triggers/${t.id}`,
+        { method: "PATCH", body: { cooldown_s: cooldown } });
+      toast(`cooldown saved — ${cooldown}s`);
+      refresh();
+    } catch (err) {
+      input.value = String(t.cooldown_s);
+      toast(err.message, 4000, { error: true });
+    }
   }
 
   function webhookUrl(t) {
@@ -86,11 +124,12 @@ export function triggersCard(slug, initial, opts = {}) {
     } catch (err) { toast(err.message, 4000, { error: true }); }
   }
 
-  async function createReport() {
-    // no cooldown input: the server default (15 min) fits the burst-coalescing intent;
-    // the row shows the value and the operator can delete/recreate to change it
+  async function createReport(cooldownIn) {
+    const cooldown = parseInt(cooldownIn?.value, 10);
     try {
-      await api(`/api/routines/${slug}/triggers`, { method: "POST", body: { type: "report" } });
+      await api(`/api/routines/${slug}/triggers`, { method: "POST",
+        body: { type: "report",
+                ...(Number.isFinite(cooldown) && cooldown >= 0 ? { cooldown_s: cooldown } : {}) } });
       toast("report trigger created — a delivered report now wakes this routine");
       refresh();
     } catch (err) { toast(err.message, 4000, { error: true }); }

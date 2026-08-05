@@ -25,7 +25,7 @@ from typing import Literal, NoReturn
 
 import yaml
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .. import registry, triggers
 from ..paths import atomic_write
@@ -170,6 +170,37 @@ def create_trigger(request: Request, slug: str, body: TriggerCreate) -> dict:
     _state(request).scheduler.rescan()
     extra = {"url_path": triggers.hook_path(slug, trigger)} if body.type == "webhook" else {}
     return {"ok": True, "trigger": {**trigger, **extra}}
+
+
+class TriggerPatch(BaseModel):
+    # The cooldown is the only tunable field: id, token and type ARE the trigger's identity.
+    model_config = ConfigDict(extra="forbid")
+
+    cooldown_s: int = Field(ge=0)
+
+
+@router.patch("/routines/{slug}/triggers/{trigger_id}")
+def patch_trigger(request: Request, slug: str, trigger_id: str, body: TriggerPatch) -> dict:
+    """Retune a live trigger's cooldown in place (user config: guarded like create/delete).
+
+    Editing beats delete-and-recreate: a webhook keeps its token, so the URL a third party
+    already holds keeps working, and a report trigger — of which a routine may hold only
+    one — has no other way to reach a non-default window.
+    """
+    info = _info(request, slug)
+    guard_not_active(request, info)
+    path = info.cfg.dir / "routine.yaml"
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
+    target = next((t for t in entries if str(t.get("id")) == trigger_id), None)
+    if target is None:
+        raise HTTPException(404, f"no trigger {trigger_id!r} on {slug!r}")
+    target["cooldown_s"] = body.cooldown_s
+    raw["triggers"] = entries
+    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    _git_commit(info.cfg.dir, f"set trigger {trigger_id} cooldown to {body.cooldown_s}s")
+    _state(request).scheduler.rescan()
+    return {"ok": True, "trigger": target}
 
 
 @router.delete("/routines/{slug}/triggers/{trigger_id}")
