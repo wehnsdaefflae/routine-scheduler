@@ -187,11 +187,13 @@ class Runner:
 
     def _log_refused_scheduled_fire(self, cfg: RoutineConfig, reason: str, cause: str) -> None:
         """A DUE cron fire that produced no run is otherwise invisible: fire() only log.info's
-        the refusal, so a routine that goes chronically un-fired (a stuck-active slug never
-        reaped, or a long drain) leaves no trace in the audit stream that watches for exactly
-        this — a safety-auditor silently dark for days (R213: self-audit missed its 01:00 fire
-        on 2026-08-04 and 2026-08-05). Emit a health event for the SCHEDULED path only; resume,
-        trigger and manual fires overrun legitimately and must not spam the stream.
+        the refusal when a routine is still active from a prior run (overrun) or the daemon is
+        draining for a self-update restart, so a routine chronically un-fired for one of those
+        reasons leaves no trace in the health-events audit stream. Emit a health event for the
+        SCHEDULED path only; resume, trigger and manual fires overrun legitimately and must not
+        spam the stream. NB: a deliberate global PAUSE skips due fires at the SCHEDULER level
+        (scheduler.py, before fire() is called) and is intentional — it is not a refusal and is
+        not logged here; a pause is the operator's own known action, not a silent drop.
         """
         if reason != "schedule":
             return

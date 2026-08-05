@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.154.3] — 2026-08-05
+
+### Fixed
+- **Correct the `fire_refused` (F276) justification — it was based on a wrong diagnosis.**
+  The 0.154.1 docstrings (runner.py, health_events.py) and CHANGELOG claimed a 44 h
+  self-audit gap on 2026-08-04/05 was a dropped scheduled fire (a stuck-active slot from an
+  un-honored restart). The operator corrected this: the gap was a **deliberate pause of all
+  routines**. A global pause is skipped in the scheduler (`is_paused`, before `Runner.fire`)
+  and is intentional — never a refusal, never this event. The prose now describes only the
+  genuine overrun/drain refusals `fire_refused` actually covers, and states explicitly that a
+  pause is not logged as a refusal. No behaviour change — the 0.154.1 telemetry stands; only
+  the misleading example is removed.
+
 ## [0.154.2] — 2026-08-05
 
 ### Changed
@@ -30,15 +43,17 @@ _Nothing yet._
 ## [0.154.1] — 2026-08-05
 
 ### Fixed
-- **A due cron fire that produces no run is now audible — F276/R213.** `Runner.fire`
-  refusals (a still-active routine, or draining for a restart) only wrote a `log.info`
-  line, so a routine that went chronically un-fired left no trace in the health-events
-  audit stream that watches for exactly that — self-audit silently missed its 01:00 fire
-  on 2026-08-04 and 2026-08-05 (a stuck-active in-memory slot from a run whose restart was
-  never honored, cleared only by the next daemon relaunch). A refused **scheduled** fire
-  now emits a `fire_refused` health event (run_id empty); resume/trigger/manual overruns
-  are expected and stay quiet. A safety-auditor going dark is now visible to the very
-  stream meant to catch it.
+- **A due cron fire that produces no run is now audible — F276.** `Runner.fire`
+  refusals (a still-active routine from a prior run — overrun — or the daemon draining
+  for a self-update restart) only wrote a `log.info` line, so a routine chronically
+  un-fired for one of those reasons left no trace in the health-events audit stream. A
+  refused **scheduled** fire now emits a `fire_refused` health event (run_id empty);
+  resume/trigger/manual overruns are expected and stay quiet. A deliberate global pause is
+  NOT this event — it is skipped earlier in the scheduler and is the operator's own known
+  action. (This instrumentation was originally motivated by a mistaken diagnosis of a 44 h
+  self-audit gap on 2026-08-04/05 that was in fact a deliberate operator pause of all
+  routines, not a dropped fire; the telemetry gap it closes for genuine overrun/drain
+  refusals is real regardless.)
 
 ## [0.154.0] — 2026-08-05
 

@@ -9,10 +9,12 @@ run_canceled: a user-requested abort killed the engine before it could write its
 finish (same payload shape as orphaned_run, which is reserved for genuine crashes).
 
 fire_refused: a DUE scheduled (cron) fire produced no run — the routine was still active
-from a prior run (overrun) or the daemon was draining for a restart. run_id empty (no run
-was created). Makes a routine that goes chronically un-fired visible to audit consumers
-(R213: self-audit silently missed its 01:00 fire two days running). Only the scheduled
-fire path logs this; resume/trigger/manual overruns are expected and stay quiet.
+from a prior run (overrun) or the daemon was draining for a self-update restart. run_id
+empty (no run was created). Makes a routine that goes chronically un-fired for one of those
+reasons visible to audit consumers instead of only a log.info line. Only the scheduled fire
+path logs this; resume/trigger/manual overruns are expected and stay quiet. A deliberate
+global PAUSE is NOT this event: it is skipped earlier, in the scheduler, and is the
+operator's own intentional action — never logged as a refusal.
 
 wizard_build_degraded: a new-routine build's stage-generation pipeline failed hard and
 the routine was scaffolded from the verbatim pattern (run_id empty — builds happen in
