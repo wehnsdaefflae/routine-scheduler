@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import registry, schedule
+from .. import groups, registry, schedule
 from .. import triggers as triggers_mod
 from ..config import MODEL_KINDS
 from ..paths import resolve_rel
@@ -147,6 +147,12 @@ def routine_detail(request: Request, slug: str) -> dict:
         "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
         "server_tz": schedule.server_tz(),
         "catchup": info.cfg.catchup,   # skip | run_once when a scheduled fire was missed
+        # D71: set when a SCHEDULED group contains this routine — its own cron is
+        # suppressed and the Schedule dropdown renders the "group managed" state,
+        # linking to the group.
+        "group_managed": next(({"id": g["id"], "name": g["name"]}
+                               for g in groups.list_groups(server.routines_home)
+                               if g["cron"] and slug in g["members"]), None),
         # Provenance is a CLAIM ("generated from") — in_library says whether the referenced
         # pattern actually exists in the current library, so the UI never implies a findable
         # workflow that isn't there (hand-authored recipes carry an empty slug).

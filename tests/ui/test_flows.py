@@ -1522,3 +1522,98 @@ def test_secret_exposure_panel_refreshes_on_decision(ui, ui_page):
     row = ui_page.locator('[data-secret-row="FOO_TOKEN"]')
     expect(row).to_be_visible()
     expect(row.locator("select")).to_have_value("true")
+
+
+# ---- R132 / D70 / R128 flows -------------------------------------------------------------
+
+
+def test_run_transcript_inline_blocking_approval_strip(ui, ui_page):
+    """R132: a BLOCKING util approval is actionable WHERE the user reads — the transcript's
+    inline question node carries the one-click approve/decline strip (quick answerForm),
+    submitting through the same answer endpoint the Decisions page uses. The pinned panel
+    keeps the one full form (F264); the strip has buttons only."""
+    run_dir = ui.seed_run("uir", "20260805-090000", "waiting_user",
+                          question={"qid": "q-wu", "mode": "blocking",
+                                    "question": "Approve revise of global util 'x'?",
+                                    "options": ["approve", "decline"],
+                                    "type": "util-approval",
+                                    "default": "the util is NOT applied until approved",
+                                    "asked": "20260805-090000"})
+    ui.seed_question("uir", "q-wu", "Approve revise of global util 'x'?", mode="blocking",
+                     options=["approve", "decline"],
+                     default="the util is NOT applied until approved")
+    with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"type": "question", "payload": {
+            "qid": "q-wu", "mode": "blocking",
+            "question": "Approve revise of global util 'x'?",
+            "options": ["approve", "decline"], "type": "util-approval",
+            "default": "the util is NOT applied until approved"}}) + "\n")
+
+    ui_page.goto(f"{ui.url}/#/run/uir:20260805-090000")
+    inline = ui_page.locator(".transcript .ev.question")
+    expect(inline).to_be_visible()
+    expect(inline).to_contain_text("Approve revise of global util 'x'?")
+    # buttons only — the free-text row stays with the pinned panel (F264)
+    expect(inline.locator(".answer-opts button")).to_have_count(2)
+    assert inline.locator("textarea").count() == 0
+    inline.get_by_role("button", name="approve", exact=True).click()
+    _wait_until((ui.routine_dir("uir") / "inbox" / "answer-q-wu.json").exists)
+    answer = json.loads((ui.routine_dir("uir") / "inbox" / "answer-q-wu.json")
+                        .read_text(encoding="utf-8"))
+    assert answer["text"] == "approve"
+    # settled note: onSuccess writes "✅ answered: approve"; the question_answered bus
+    # event may land first with its own phrasing — both start "✅ answered"
+    expect(inline).to_contain_text("✅ answered")
+
+
+def test_new_conversation_composer_folder_access(ui, ui_page):
+    """D70: the composer's Folder access section grants fs roots at CREATE time — picked
+    with the server-side directory browser, sent as fs_write_roots/fs_read_roots on the
+    create request, landing on the conversation's config before the engine boots."""
+    data_dir = ui.tmp / "data"
+    data_dir.mkdir(exist_ok=True)
+    ui_page.goto(f"{ui.url}/#/conversations")
+    add = ui_page.get_by_role("button", name="+ add directory…").first   # the read+write editor
+    add.wait_for(timeout=10_000)
+    add.click()
+    dlg = ui_page.locator(".modal-overlay")
+    expect(dlg).to_be_visible()
+    dlg.locator("input").fill(str(data_dir))
+    dlg.locator("input").press("Enter")               # jump to the typed path
+    # the jump is async — the empty-dir hint proves the picker LANDED there (selecting
+    # before the load resolves would pick the previous directory)
+    expect(dlg.locator(".dirpicker-list")).to_contain_text("empty directory")
+    dlg.get_by_role("button", name="select this folder").click()
+    expect(ui_page.locator(".root-row", has_text=str(data_dir))).to_be_visible()
+
+    ui_page.locator(".conv-new textarea").fill("work on my data folder")
+    with ui_page.expect_request(
+            lambda r: r.url.rstrip("/").endswith("/api/conversations")
+            and r.method == "POST") as req:
+        ui_page.get_by_role("button", name="start conversation").click()
+    assert str(data_dir) in (req.value.post_data or "")
+    ui_page.wait_for_url("**/conversations/**")
+    slug = ui_page.url.rstrip("/").split("/")[-1]
+    cfg = yaml.safe_load((ui.conversations / slug / "routine.yaml").read_text(encoding="utf-8"))
+    assert str(data_dir) in cfg["fs_write_roots"]
+    assert str(data_dir) in cfg["fs_read_roots"]      # write grants imply read
+
+
+def test_model_pickers_label_window_sizes(ui, ui_page):
+    """R128: the model pickers surface per-model window metadata — the harness model 'm'
+    (100k-char default window, 16.4k-token output reservation) labels as a tight window in
+    the composer picker (fed by /api/settings/models `window`) and in the conversation
+    header's switcher (fed by the detail's `catalog_meta`)."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    opt = ui_page.locator('option[value="m"]').first
+    opt.wait_for(state="attached", timeout=10_000)
+    text = opt.text_content() or ""
+    assert "ctx" in text and "tight window" in text
+
+    # the header switcher on an existing conversation carries the same labeling
+    ui_page.locator(".conv-new textarea").fill("label check")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    head_opt = ui_page.locator('.conv-model option[value="m"]').first
+    head_opt.wait_for(state="attached", timeout=10_000)
+    assert "ctx" in (head_opt.text_content() or "")

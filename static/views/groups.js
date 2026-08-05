@@ -4,9 +4,13 @@
 // instance default), and delete. Phase B (live): "Run now" arms a sequential fire
 // (POST /api/groups/{id}/run) that the daemon advances one member per tick; the page shows an
 // in-flight chain's progress from the /api/groups `in_flight` map.
+// D71: a group may carry its OWN cron schedule (the same friendly editor a routine uses) —
+// the daemon then auto-arms the chain on that cron, and every member's own schedule is
+// suppressed (its routine page shows "group managed") while the group stays scheduled.
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
+import { scheduleEditor } from "/static/components/schedule.js";
 import { el, emptyState, skeleton, toast } from "/static/util.js";
 
 export async function render(view) {
@@ -115,6 +119,18 @@ export async function render(view) {
       catch (err) { toast(err.message, 4000, { error: true }); load(); }
     };
 
+    // D71: the group schedule — fires member 0 on this cron, the rest chain on completion.
+    // While set, every member's OWN cron is suppressed ("group managed" on its page).
+    const sched = scheduleEditor(g.schedule_friendly || { frequency: "manual" }, d.server_tz);
+    const schedBtn = el("button", { class: "btn small", "data-group-schedule-save": "" },
+      "save schedule");
+    schedBtn.onclick = async () => {
+      try { await api(`/api/groups/${g.id}`,
+          { method: "PATCH", body: { schedule: { friendly: sched.value() } } });
+        toast("group schedule saved"); load(); }
+      catch (err) { toast(err.message, 4000, { error: true }); load(); }
+    };
+
     const del = el("button", { class: "btn small danger" }, "delete group");
     del.onclick = async () => {
       if (!(await confirmDialog(`Delete group “${g.name}”?`, { confirmLabel: "delete" }))) return;
@@ -144,7 +160,14 @@ export async function render(view) {
       ...(progress ? [progress] : []),
       el("div", { class: "mt" }, rows),
       el("div", { class: "row mt", style: "gap:8px;align-items:center" },
-        el("span", { class: "small" }, "on failure:"), ofSel));
+        el("span", { class: "small" }, "on failure:"), ofSel),
+      el("div", { class: "mt", "data-group-schedule": "" },
+        el("div", { class: "small", style: "font-weight:600" }, "Schedule"),
+        el("div", { class: "muted small" },
+          "fires the chain on this cadence — member 0 starts, the rest follow on completion; "
+          + "each member's own schedule is suppressed while this is set"),
+        sched.node,
+        el("div", { class: "row mt" }, schedBtn)));
     return card;
   }
 

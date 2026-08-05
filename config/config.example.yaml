@@ -4,6 +4,8 @@
 bind: 127.0.0.1        # 0.0.0.0 to expose on the LAN
 port: 8321
 token: "change-me"     # bearer token for the web UI / API (install.sh generates one)
+routine_token: "change-me-too"  # second tier: injected into runs as RSCHED_API_TOKEN; refused on
+                                # config-mutating routes (generated on first boot when absent)
 
 routines_home: ~/routines
 

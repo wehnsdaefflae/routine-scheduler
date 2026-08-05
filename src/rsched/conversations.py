@@ -134,12 +134,14 @@ def _seed_instruction(pb: dict | None, first_message: str, conv_dir: Path) -> st
     return "\n\n".join(parts)
 
 
-def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
+def create_conversation(server: ServerConfig, *, slug: str, first_message: str,  # noqa: PLR0913 — the parameter list IS the composer's config surface (scaffold's twin)
                         workdir: str = "", models: dict[str, str] | None = None,
                         permissions: list[str] | None = None,
                         capabilities: dict | None = None, deliberation: str = "",
                         playbook_slug: str = "",
-                        budgets: dict | None = None) -> Path:
+                        budgets: dict | None = None,
+                        fs_read_roots: list[str] | None = None,
+                        fs_write_roots: list[str] | None = None) -> Path:
     """Create <conversations_home>/<slug> ready to run: materialized converse main.md with
     a Standing-practices tail, verbatim trait copies, instruction.md = the first message,
     and a schedule-less routine.yaml marked `kind: conversation`. NO git init — a
@@ -148,6 +150,11 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
     A `playbook_slug` seeds instruction.md from that library playbook's brief (the first message
     specializes it) and records a `playbook: {slug, commit}` binding — the Update-playbook button
     later revises that source playbook from this conversation's deltas.
+
+    `fs_read_roots` / `fs_write_roots` are extra folder grants applied at CREATE time (D70):
+    they land in routine.yaml's native root lists — the same keys an allow-forever fs grant
+    is written to (web.grants_apply) — BEFORE the engine boots, so reply #1 already runs
+    with the access (the workdir stays the first root: the project directory).
     """
     from . import library_docs, playbooks
     from .workflows.adapt import dump_markdown
@@ -209,9 +216,19 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str,
                     **{k: int(v) for k, v in (budgets or {}).items() if k in DEFAULT_BUDGETS}},
         "retention": {"keep_runs": 1000},   # one continuous run — retention never prunes it
     }
-    if workdir.strip():
-        cfg["fs_read_roots"] = [workdir.strip()]
-        cfg["fs_write_roots"] = [workdir.strip()]
+    # workdir first (the project directory — detail/PATCH treat the first write root as it),
+    # then the composer's extra folder grants, deduped, in the canonical native-key form.
+    # A read+write folder lands in BOTH lists (the workdir convention: the engine's own
+    # read_file resolves against fs_read_roots only, so a write-only root would be
+    # util-writable yet unreadable to the file actions).
+    wd = [workdir.strip()] if workdir.strip() else []
+    write_roots = wd + [r for r in (fs_write_roots or []) if r not in wd]
+    read_roots = list(write_roots)
+    read_roots += [r for r in (fs_read_roots or []) if r not in read_roots]
+    if read_roots:
+        cfg["fs_read_roots"] = read_roots
+    if write_roots:
+        cfg["fs_write_roots"] = write_roots
     atomic_write(conv_dir / "routine.yaml",
                  yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
     # tuning.yaml: chat is judgment-heavy — context-on-paper by default (composer +

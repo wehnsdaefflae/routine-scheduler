@@ -12,11 +12,12 @@ import { api, apiUpload } from "/static/api.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { promptDialog } from "/static/components/dialog.js";
 import { filePicker } from "/static/components/filepicker.js";
+import { rootsEditor } from "/static/components/fsroots.js";
 import { permissionsPanel } from "/static/components/permissions.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { forgetField } from "/static/formpersist.js";
 import { navigate } from "/static/router.js";
-import { el, toast } from "/static/util.js";
+import { el, modelOption, toast } from "/static/util.js";
 
 export const PREFILL_KEY = "conv-new-prefill";
 
@@ -56,12 +57,19 @@ export function mountComposerOnly(main) {
     style: "width:100px", title: "max tokens per reply (-1 = unlimited)" });
   // Pre-start model picker: pick a catalog model by NAME (or fall back to the system model),
   // so a conversation can start on the right model instead of system-default-then-switch.
+  // Options carry the model's context window and disable ones the harness cannot run
+  // (R112/R128 — the create endpoint refuses those too; the picker says so up front).
   const modelSel = el("select", { "data-nopersist": "" },
     el("option", { value: "" }, "default · system model"));
   api("/api/settings/models").then((r) => {
     if (r.system_model) modelSel.options[0].textContent = `default · ${r.system_model}`;
-    (r.models || []).forEach((m) => modelSel.append(el("option", { value: m.name }, m.name)));
+    (r.models || []).forEach((m) => modelSel.append(modelOption(m.name, m.window)));
   }).catch(() => { /* settings unreachable — the default option still works */ });
+  // D70: folder access granted at CREATE time — the roots land on the conversation's
+  // config before the engine boots, so reply #1 already has them (the workdir above
+  // stays the project directory; these are extra grants, e.g. a data folder).
+  const readRoots = rootsEditor([], { pickTitle: "read-only folder" });
+  const writeRoots = rootsEditor([], { pickTitle: "read + write folder" });
   // Permissions + deliberation govern reply #1, which fires on create — so they must be set
   // here (afterwards the conversation header panel takes over). Fed by /api/conversations/defaults.
   const delib = deliberationControl("deliberate");
@@ -121,6 +129,8 @@ export function mountComposerOnly(main) {
       if (pbSel.value) fd.append("playbook", pbSel.value);
       if (modelSel.value) fd.append("model", modelSel.value);
       if (workdir.value.trim()) fd.append("workdir", workdir.value.trim());
+      if (readRoots.value().length) fd.append("fs_read_roots", JSON.stringify(readRoots.value()));
+      if (writeRoots.value().length) fd.append("fs_write_roots", JSON.stringify(writeRoots.value()));
       if (turnsIn.value.trim()) fd.append("max_turns", turnsIn.value.trim());
       if (totalTurnsIn.value.trim()) fd.append("max_total_turns", totalTurnsIn.value.trim());
       if (minsIn.value.trim()) fd.append("max_wall_clock_min", minsIn.value.trim());
@@ -166,6 +176,13 @@ export function mountComposerOnly(main) {
       "A folder on the server the agent may read and edit for this conversation. Leave empty "
       + "to keep it sandboxed to the conversation's own directory.",
       workdir),
+    ...settingsSection("Folder access",
+      "Extra folders this conversation may use, granted BEFORE the first reply fires — so "
+      + "reply #1 already has them instead of asking mid-run. Read + write folders are also "
+      + "readable; paths need not exist yet.",
+      el("div", {},
+        el("div", { class: "faint small" }, "read + write"), writeRoots.node,
+        el("div", { class: "faint small mt" }, "read-only"), readRoots.node)),
     ...settingsSection("Budgets",
       "Optional ceilings. The per-reply limits bound one turn of the agent's work; the "
       + "whole-conversation cap bounds the entire thread. Blank keeps the default; -1 means unlimited.",

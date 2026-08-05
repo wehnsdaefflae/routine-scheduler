@@ -60,10 +60,18 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
                     "usage), or write it with write_util, then call it.")
         if obs.get("declined_secrets") or obs.get("pending_secrets"):
             # D39 secret-exposure gate: the util was NOT run — say why and what to do next.
-            held = obs.get("declined_secrets") or obs.get("pending_secrets") or []
-            text = (f"OBSERVATION (util {obs['name']} NOT run — secret exposure "
-                    f"{'declined' if obs.get('declined_secrets') else 'pending'} "
-                    f"for {', '.join(held)}): {obs['reason']}")
+            # A DECLINE never enumerates the names it refused (R17): the refusal must not
+            # read as a consolation listing of exactly what the user just protected — the
+            # model gets a count; the transcript dict keeps the names for the user's own
+            # surfaces. A PENDING request still names them: it is the run's open ask, not
+            # a refusal, and the names are the run's working knowledge (the util's own
+            # `secrets:` declarations).
+            if declined := obs.get("declined_secrets"):
+                head = (f"secret exposure declined for {len(declined)} "
+                        f"secret{'s' if len(declined) != 1 else ''} it declares")
+            else:
+                head = f"secret exposure pending for {', '.join(obs['pending_secrets'])}"
+            text = f"OBSERVATION (util {obs['name']} NOT run — {head}): {obs['reason']}"
             if obs.get("answer"):
                 text += f"\nThe user's verbatim reply: {obs['answer']}"
             return text
@@ -90,6 +98,14 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
         if obs.get("edit_failed"):
             return (f"OBSERVATION (write_util {obs['name']!r} edit mode: NOT applied — "
                     f"{obs.get('reason', '')})")
+        if obs.get("header_ok") is False:
+            # A doc-standard rejection is NOT a selftest failure (R93: reporting it as one
+            # sent authors debugging their test logic instead of adding a header line) —
+            # name the violated header contract and each concrete fix.
+            probs = "\n".join(f"- {p}" for p in (obs.get("problems") or []))
+            return (f"OBSERVATION (write_util {obs['name']!r}: docstring HEADER violations — "
+                    f"not saved, the selftest was not run):\n{probs}\n"
+                    "Fix the docstring header lines (not the test logic) and write_util again.")
         if not obs.get("selftest_ok"):
             return (f"OBSERVATION (write_util {obs['name']!r}: selftest FAILED — not committed):\n"
                     f"{obs.get('output', '')}\nFix the script and write_util again.")
@@ -324,7 +340,7 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
         return "OBSERVATION (wait):\n" + "\n\n".join(parts)
     if kind == "ask_user":
         if obs.get("decision"):
-            # an access request settled by one of the four typed decisions — the result
+            # an access request settled by one of the typed decisions — the result
             # line already teaches scope (this run vs forever) and the way forward
             return f"OBSERVATION (ask_user — access request decided): {obs['result']}"
         if obs.get("answered"):

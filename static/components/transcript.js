@@ -2,9 +2,10 @@
 // transcript JSONL contract (assistant_action/observation pairs render as one turn box).
 //
 // opts wire the conversation to the live system (all optional — omitted = plain rendering):
-//   answer(qid, text)  — enables an inline answer form on DEFERRED question events, so a
-//                        decision can be settled right where it was asked (blocking
-//                        questions keep the run view's prominent panel).
+//   answer(qid, text, decision) — enables inline answering on question events: a full form
+//                        for DEFERRED questions, a one-click button strip for BLOCKING
+//                        options/access-request ones (the pinned panel keeps the one full
+//                        form — F264; the strip keeps the decision in view at the tail — R132).
 //   loadSub(n, offset) — enables expanding a subrun's own conversation in place under its
 //                        start/end lines; n may be a nested path like "2/1". Returns
 //                        {events, offset}.
@@ -59,9 +60,25 @@ export function createTranscript(container, opts = {}) {
     const head = el("span", {}, `❓ [${label}] `, mdInline(p.question),
       p.options?.length ? ` — options: ${p.options.join(" | ")}` : null,
       p.default ? el("span", { class: "faint" }, ` · without an answer: ${p.default}`) : null);
-    // Inline answering: deferred questions used to be dead text here, answerable only on
-    // the Decisions page. Blocking ones stay with the run view's panel (it handles dialog).
-    if (!opts.answer || !p.qid || p.mode !== "deferred") return el("div", { class: "ev question" }, head);
+    if (!opts.answer || !p.qid) return el("div", { class: "ev question" }, head);
+    if (p.mode !== "deferred") {
+      // BLOCKING: the run view's pinned panel owns the ONE full form (free text, ask-back,
+      // dialog — F264). The transcript adds the one-click strip because the panel sits at
+      // the page TOP while a followed tail reads at the bottom — a util approval scrolled
+      // past with no buttons in sight sent the user hunting through the Decisions tab
+      // (R132). Same qforms registry, so a panel/Decisions answer settles this strip too.
+      if (!(p.options?.length || (Array.isArray(p.request) && p.request.length))) {
+        return el("div", { class: "ev question" }, head);
+      }
+      const strip = answerForm(p, {
+        quick: true,
+        defaultLine: false,   // the head already states the default inline
+        submitText: (text, _intermediate, decision) => opts.answer(p.qid, text, decision),
+        onSuccess: (text) => closeQuestion(p.qid, `✅ answered: ${text}`),
+      });
+      qforms.set(p.qid, { controls: strip.node, created: Date.now() });
+      return el("div", { class: "ev question" }, el("div", {}, head), strip.node);
+    }
     const form = answerForm(p, {
       placeholder: "answer here — or on the Decisions page… (Shift+Enter for a new line)",
       defaultLine: false,   // the head already states the default inline

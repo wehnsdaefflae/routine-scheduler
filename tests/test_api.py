@@ -60,6 +60,83 @@ def test_auth_required(client):
     assert c.get("/api/status").status_code == 200
 
 
+def test_routine_token_tier_reads_but_never_mutates_config(tmp_path, make_routine):
+    """R94 (operator decision 2026-08-05: ENFORCE — superseding D68's earlier leave-as-is):
+    the routine bearer reads everything; every config-mutating route class answers 403
+    (authenticated but sealed — never a 401); the primary passes the same routes."""
+    make_routine(slug="apir")
+    server = make_test_server(tmp_path, routine_token="routine-tok")
+    app = create_app(server, with_scheduler=False)
+    with TestClient(app) as c:
+        rt = {"Authorization": "Bearer routine-tok"}
+        # read routes pass on the routine tier
+        assert c.get("/api/routines", headers=rt).status_code == 200
+        assert c.get("/api/routines/apir", headers=rt).status_code == 200
+        assert c.get("/api/status", headers=rt).status_code == 200
+        assert c.get("/api/items", headers=rt).status_code == 200
+        # config-mutating route classes: 403 with the config_patch pointer
+        cases = [
+            ("PATCH", "/api/routines/apir", {"description": "x"}),       # routine config
+            ("PUT", "/api/routines/apir/permissions", {"active": []}),   # permission layers
+            ("POST", "/api/routines/apir/triggers", {"type": "report"}),  # trigger config
+            ("POST", "/api/groups", {"name": "G"}),                      # groups store
+            ("POST", "/api/questions/q-x/answer", {"text": "hi"}),       # decisions/grants
+            ("PUT", "/api/settings/secrets", {"key": "K_X", "value": "v"}),  # settings
+        ]
+        for method, path, body in cases:
+            r = c.request(method, path, json=body, headers=rt)
+            assert r.status_code == 403, (method, path, r.status_code, r.text)
+            assert "config_patch" in r.json()["detail"]
+        # a garbage bearer stays 401; the primary passes the sealed routes
+        assert c.get("/api/routines",
+                     headers={"Authorization": "Bearer nope"}).status_code == 401
+        pt = {"Authorization": f"Bearer {TOKEN}"}
+        assert c.patch("/api/routines/apir", json={"description": "x"},
+                       headers=pt).status_code == 200
+
+
+def test_bootstrap_generates_and_backfills_the_routine_token(tmp_path, monkeypatch):
+    """A fresh config carries both tokens; an existing config that predates the tier gains
+    a routine_token at the next boot (idempotent — a second call changes nothing)."""
+    import rsched.paths as paths_mod
+    from rsched.bootstrap import ensure_config
+
+    monkeypatch.setattr(paths_mod, "config_file", lambda: tmp_path / "cfg" / "config.yaml")
+    import rsched.bootstrap as bootstrap_mod
+    monkeypatch.setattr(bootstrap_mod, "config_file", lambda: tmp_path / "cfg" / "config.yaml")
+    assert ensure_config() is True
+    text = (tmp_path / "cfg" / "config.yaml").read_text()
+    assert "token:" in text and "routine_token:" in text
+    primary = next(ln for ln in text.splitlines() if ln.startswith("token:"))
+    routine = next(ln for ln in text.splitlines() if ln.startswith("routine_token:"))
+    assert primary.split(":", 1)[1] != routine.split(":", 1)[1]   # two distinct secrets
+
+    # an older config without the tier gains it in place, keeping its primary
+    (tmp_path / "cfg" / "config.yaml").write_text('token: "old-primary"\n', encoding="utf-8")
+    assert ensure_config() is False
+    text = (tmp_path / "cfg" / "config.yaml").read_text()
+    assert 'token: "old-primary"' in text and "routine_token:" in text
+    before = text
+    assert ensure_config() is False                               # idempotent
+    assert (tmp_path / "cfg" / "config.yaml").read_text() == before
+
+
+def test_engine_injects_the_routine_token_for_the_reserved_name():
+    """The util-side override: RSCHED_API_TOKEN resolves to the server's routine_token
+    (beating any secrets-store value in the _child_env merge), so utils talk to the API
+    on the read-only tier."""
+    from types import SimpleNamespace
+
+    from rsched.engine.executor import _extra_secrets
+
+    ctx = SimpleNamespace(server=SimpleNamespace(routine_token="routine-tok", machines={}),
+                          routine=SimpleNamespace(connections={}, machines=[]),
+                          granted_now=set(), grant_args={})
+    assert _extra_secrets(ctx)["RSCHED_API_TOKEN"] == "routine-tok"
+    ctx.server.routine_token = ""              # tier off → nothing injected for the name
+    assert "RSCHED_API_TOKEN" not in _extra_secrets(ctx)
+
+
 def test_sse_ticket_flow(client):
     """EventSource auth: a short-lived ticket minted over the authed channel authenticates
     the SSE endpoints ONLY — a URL-carriable credential must never be a full-API bearer
@@ -683,6 +760,64 @@ def test_access_request_decisions_apply_at_click_time(client):
                   json={"decision": "maybe"}).status_code == 400
 
 
+def test_patch_models_forbid_unknown_keys(client):
+    """A misspelled body key silently dropped reads as "saved" to a direct API caller —
+    RoutinePatch/ConversationPatch/GroupPatch forbid extras, so it is a 422 naming the
+    stray; a valid patch still applies and reports its fields in `updated`."""
+    c, _ = client
+    r = c.patch("/api/routines/apir", json={"descriptoin": "typo"})
+    assert r.status_code == 422
+    assert "descriptoin" in str(r.json()["detail"])
+    r = c.patch("/api/routines/apir", json={"description": "real"})
+    assert r.status_code == 200 and r.json()["updated"] == ["description"]
+
+
+def test_routine_detail_reports_group_managed_state(client):
+    """D71: a member of a SCHEDULED group carries group_managed (id+name) so the routine
+    page renders the locked Schedule dropdown; an unscheduled group sets nothing."""
+    from rsched import groups as groups_mod
+    c, tmp = client
+    home = tmp / "routines"
+    assert c.get("/api/routines/apir").json()["group_managed"] is None
+    grp = groups_mod.create(home, name="Morning", members=["apir"])
+    assert c.get("/api/routines/apir").json()["group_managed"] is None    # no cron: no lock
+    groups_mod.update(home, grp["id"], cron="0 7 * * *", tz="UTC")
+    gm = c.get("/api/routines/apir").json()["group_managed"]
+    assert gm == {"id": grp["id"], "name": "Morning"}
+
+
+def test_allow_once_is_turn_action_only_at_the_endpoint(client):
+    """D65: allow_once settles a turn-action request like allow_now (nothing persists);
+    on a secret/fs request the endpoint refuses with 400 — a secret is consumed inside a
+    util subprocess the engine never observes as a turn, so the button would promise a
+    precision the engine cannot keep."""
+    c, tmp = client
+    routines = tmp / "routines"
+    pending = routines / "apir" / "questions" / "pending"
+    pending.mkdir(parents=True, exist_ok=True)
+
+    def seed(qid, request):
+        atomic_write_json(pending / f"{qid}.json",
+                          {"qid": qid, "question": "May I?", "options": [],
+                           "asked": "20260729", "mode": "deferred", "type": "request",
+                           "request": request})
+
+    seed("q-o1", ["util:discord"])
+    r = c.post("/api/questions/q-o1/answer", json={"decision": "allow_once"})
+    assert r.status_code == 200
+    ans = read_json(routines / "apir" / "inbox" / "answer-q-o1.json")
+    assert ans["decision"] == "allow_once" and "ONE action" in ans["text"]
+    raw = yaml.safe_load((routines / "apir" / "routine.yaml").read_text())
+    assert "util:discord" not in (raw.get("grants") or {})       # nothing persisted
+    assert not (raw.get("capabilities") or {}).get("utils")
+
+    for qid, req in (("q-o2", ["secret:FOO_KEY"]), ("q-o3", ["fs-write:~/somewhere"])):
+        seed(qid, req)
+        r = c.post(f"/api/questions/{qid}/answer", json={"decision": "allow_once"})
+        assert r.status_code == 400
+        assert "turn-action" in r.json()["detail"]
+
+
 def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
     """allow_forever for a reserved util activates its covering conduct doc AND the
     capability through the same raise-then-floor the permissions editor uses — the saved
@@ -705,6 +840,45 @@ def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
     raw = yaml.safe_load((routines / "apir" / "routine.yaml").read_text())
     assert "communication" in raw["permissions"]
     assert "discord" in raw["capabilities"]["utils"]
+
+
+def test_permissions_put_persists_remove_util_under_util_authoring(client):
+    """R2 endpoint-level: remove_util has no conduct doc of its own (util-authoring's
+    requires: predates the kind), so the SAVE path's floor must carry the explicit
+    opt-in via the canonical-source fallback — before 0.76.0 the toggle silently
+    reverted to unchecked on save. Fail-closed stays intact: without the covering
+    permission held, the kind is floored away."""
+    c, tmp = client
+    perms = tmp / "library" / "permissions"
+    perms.mkdir(parents=True, exist_ok=True)
+    (perms / "util-authoring.md").write_text(
+        "---\ntags: [tool-use, utils, authoring]\nrequires:\n  actions: [write_util]\n---\n"
+        "# permission: util authoring — create and revise utils\nbody\n", encoding="utf-8")
+    r = c.put("/api/routines/apir/permissions",
+              json={"active": ["util-authoring"],
+                    "capabilities": {"actions": ["write_util", "remove_util"]}})
+    assert r.status_code == 200
+    assert "remove_util" in r.json()["capabilities"]["actions"]
+    raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
+    assert "remove_util" in raw["capabilities"]["actions"]     # persisted, not reverted
+    r2 = c.put("/api/routines/apir/permissions",
+               json={"active": [], "capabilities": {"actions": ["write_util", "remove_util"]}})
+    assert r2.status_code == 200
+    assert r2.json()["capabilities"]["actions"] == []          # no held doc → floored away
+
+
+def test_patch_routine_reports_every_applied_field(client):
+    """`updated` lists EVERY field the PATCH applied — including the ones dedicated
+    appliers pop (connections, models, …). The Decisions page's config-patch apply
+    verifies its patch keys against this list (R102): an under-report would read as
+    'silently not applied' and block a legitimate apply."""
+    c, tmp = client
+    r = c.patch("/api/routines/apir",
+                json={"tags": ["media"], "connections": {"google": "personal"}})
+    assert r.status_code == 200
+    assert sorted(r.json()["updated"]) == ["connections", "tags"]
+    raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
+    assert raw["connections"] == {"google": "personal"} and raw["tags"] == ["media"]
 
 
 def test_wizard_questions_join_the_decisions_inbox(client):

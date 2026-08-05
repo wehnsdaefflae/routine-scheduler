@@ -66,6 +66,15 @@ def test_validate_action_report():
     assert validate_action({"say": "s", "kind": "report", "title": "   "})
 
 
+def test_validate_action_closes_needs_answers():
+    """`closes` marks an ANSWER as terminal — without `answers` there is no exchange to
+    complete, so a bare closes is rejected rather than silently ignored."""
+    assert validate_action({"say": "s", "kind": "report", "title": "t",
+                            "answers": "R3", "closes": True}) == []
+    problems = validate_action({"say": "s", "kind": "report", "title": "t", "closes": True})
+    assert any("closes" in p and "answers" in p for p in problems)
+
+
 def test_report_bypasses_allowlist_and_capability_gate():
     obj = {"say": "s", "kind": "report", "title": "a defect"}
     # a restrictive workflow tools: allowlist that omits report still permits it
@@ -213,6 +222,46 @@ def test_items_shows_a_report_and_its_lifecycle(tmp_path):
     assert closed["R1"]["status"] == "settled"
     assert closed["R1"]["answered_by"] == "R2"
     assert closed["R2"]["answers"] == "R1"
+    # WITHOUT closes, the answer itself is a new open report — the ratchet the terminal
+    # acknowledgment exists to end
+    assert closed["R2"]["status"] == "open"
+
+
+def test_a_closure_is_born_settled_and_ends_the_exchange(tmp_path):
+    """`closes: true` beside `answers`: the reply settles its target AND itself — the thread
+    has a terminal state instead of every answer needing one more answer."""
+    loop, home = _loop(tmp_path, slug="self-audit")
+    audit = home / "self-audit"
+    _routine(home, "routine-improver")
+    handle_report(loop, {"target": "routine-improver", "title": "fix the pattern"})
+
+    back = SimpleNamespace(ctx=SimpleNamespace(
+        server=SimpleNamespace(routines_home=home),
+        routine=SimpleNamespace(slug="routine-improver"),
+        run_id="routine-improver:20260726-010000"))
+    handle_report(back, {"target": "self-audit", "title": "fixed it — nothing more needed",
+                         "answers": "R1", "closes": True})
+
+    by_id = _items(home, audit)
+    assert by_id["R1"]["status"] == "settled"
+    assert by_id["R2"]["status"] == "settled"        # born settled: no open tail
+    assert by_id["R2"]["closes"] is True
+    # the closure is still DELIVERED (the filer learns the outcome), marked terminal
+    msg = json.loads((home / "self-audit" / "inbox" / "msg-rep-R2.json").read_text())
+    assert "closes the exchange, no reply needed" in msg["text"]
+
+    # answering a closure anyway still works and changes nothing — it is already settled
+    handle_report(loop, {"target": "routine-improver", "title": "ack", "answers": "R2"})
+    assert _items(home, audit)["R2"]["status"] == "settled"
+
+
+def test_file_report_refuses_closes_without_answers(tmp_path):
+    """Out-of-band callers (batch scripts) get the same pairing rule the action layer
+    enforces: a bare closes is dropped, never recorded."""
+    from rsched.reports import file_report
+    _, home = _loop(tmp_path)
+    file_report(home, routine="x", run_id="x:1", title="t", closes=True)
+    assert "closes" not in _rows(home)[0]
 
 
 def test_an_unaddressed_report_has_no_routing(tmp_path):

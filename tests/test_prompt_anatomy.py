@@ -67,6 +67,18 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "do NOT restart from step 1",
         "NOT a new run: do not restart the workflow",
         "OBSERVATION (finish REJECTED)",
+        # the finish-window race (R108, loop.run + _finish_run): a message landing as the
+        # model finishes defers the finish — or, on the spent reserved turn, is surfaced
+        # as still queued in the summary
+        "OBSERVATION (finish deferred)",
+        "it stays queued and opens the next run/reply",
+        # write_util doc-standard rejections carry their own head, never the selftest one
+        # (R93, observations.format_observation)
+        "docstring HEADER violations",
+        # the terminal acknowledgment (kindsurface report bullet + ACTION_SCHEMA `closes`):
+        # a reply that completes an exchange ends the thread settled instead of ratcheting
+        "sets `closes: true` so the thread ends settled",
+        "it settles its target AND is itself born settled",
         # the say contract (composer harness line + ACTION_SCHEMA description)
         "lead with what the last observation taught you",
         # the note channel (ACTION_SCHEMA description + composer contract sentence)
@@ -94,6 +106,14 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "OBSERVATION (ask_user — access request decided)",
         "Granted for THIS RUN only",
         "[reserved — declined by the user]",
+        # allow-once (D65): the decision phrase, the consuming observation's engine line,
+        # and the CAPABILITIES annotation for a boot-seeded once-grant
+        "allowed for ONE action only",
+        "ONCE-GRANT SPENT",
+        "(one action only)",
+        # the group shared store (D67): a grouped run's harness contract names the
+        # injected root and its collision contract
+        "Group shared store (read+write",
     ]
     for needle in needles:
         assert needle in DOC, f"engine string {needle!r} missing from docs/prompt-anatomy.md"

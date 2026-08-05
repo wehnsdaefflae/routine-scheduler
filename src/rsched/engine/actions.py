@@ -125,6 +125,11 @@ ACTION_SCHEMA: dict = {
                     "description": "report: OPTIONAL — the id (R<n>) of a report you RECEIVED "
                                    "that this one answers: what you did about it, or why you "
                                    "will not. That is how a report gets closed"},
+        "closes": {"type": "boolean",
+                   "description": "report: with `answers` — this reply COMPLETES the exchange: "
+                                  "it settles its target AND is itself born settled, asking "
+                                  "nothing back. Set it whenever your answer needs no reply; a "
+                                  "closure is reopened only by a NEW report that names it"},
         "fire_at": {"type": "string",
                     "description": "schedule_run: when to fire ONCE — an absolute ISO-8601 UTC "
                                    "instant, or a relative offset like '+3d' / '+2h' / '+30m'"},
@@ -345,7 +350,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "kill": (("n",), ()),
     "wait": ((), ("n", "all", "timeout_s")),
     "ask_user": (("question",), ("mode", "options", "default", "config_patch", "request")),
-    "report": (("title",), ("detail", "target", "answers")),
+    "report": (("title",), ("detail", "target", "answers", "closes")),
     "finish": (("status", "summary"), ()),
 }
 
@@ -491,6 +496,11 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             problems.append(f"kind={kind}: at most {READ_PATHS_MAX} paths per action")
     if kind == "edit_file" and "replacement" in obj and not isinstance(obj["replacement"], str):
         problems.append("kind=edit_file: 'replacement' must be a string (\"\" deletes the anchor)")
+    # `closes` is a property OF an answer — a terminal acknowledgment. Without `answers`
+    # there is no exchange to complete, so a bare closes is a contradiction, not a no-op.
+    if kind == "report" and obj.get("closes") and not str(obj.get("answers") or "").strip():
+        problems.append("kind=report: 'closes' is valid only together with 'answers' — it "
+                        "marks the ANSWER as completing that exchange")
     if kind == "ask_user" and "request" in obj and not isinstance(obj["request"], str):
         problems.append('kind=ask_user: \'request\' must be ONE entity id string, "<class>:'
                         '<name>" (e.g. "util:discord") — file one request per ask')

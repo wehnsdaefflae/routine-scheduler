@@ -125,6 +125,41 @@ print("ok")
     assert "stderr-traceback: AssertionError" in out           # …and stderr is present
 
 
+def test_selftest_prewarms_deps_for_net_outbound(tmp_path, monkeypatch):
+    """R20: the selftest prewarms PEP 723 deps for a net:outbound util itself — run_util
+    prewarms only net:none/undeclared, so without this a heavy-dep outbound util paid its
+    first dependency install INSIDE the selftest timeout and failed while correct."""
+    home = tmp_path / "utils-home"
+    utils_lib.ensure_library(home)
+    outbound = ADDER.replace('usage: gu adder A B [--json]"""',
+                             'usage: gu adder A B [--json]\nnet: outbound"""')
+    utils_lib.write_util_file(home, "adder", outbound)
+    prewarmed: list[str] = []
+    monkeypatch.setattr(utils_lib, "_prewarm_script_deps",
+                        lambda script, policy, _home: prewarmed.append(script))
+    monkeypatch.setattr(utils_lib, "run_util", lambda *a, **k: (0, "", "selftest: ok"))
+    ok, _out = utils_lib.selftest(home, "adder", policy=OFF)
+    assert ok
+    assert len(prewarmed) == 1 and prewarmed[0].endswith("adder/main.py")
+
+
+def test_selftest_leaves_prewarm_to_run_util_for_net_none(tmp_path, monkeypatch):
+    """A net:none util's deps are prewarmed inside run_util already (R40) — the selftest
+    must not add a second install pass on top."""
+    home = tmp_path / "utils-home"
+    utils_lib.ensure_library(home)
+    none_net = ADDER.replace('usage: gu adder A B [--json]"""',
+                             'usage: gu adder A B [--json]\nnet: none"""')
+    utils_lib.write_util_file(home, "adder", none_net)
+    prewarmed: list[str] = []
+    monkeypatch.setattr(utils_lib, "_prewarm_script_deps",
+                        lambda script, policy, _home: prewarmed.append(script))
+    monkeypatch.setattr(utils_lib, "run_util", lambda *a, **k: (0, "", "selftest: ok"))
+    ok, _out = utils_lib.selftest(home, "adder", policy=OFF)
+    assert ok
+    assert prewarmed == []                        # run_util owns the net:none prewarm
+
+
 def test_util_composition(tmp_path):
     home = tmp_path / "utils-home"
     utils_lib.ensure_library(home)

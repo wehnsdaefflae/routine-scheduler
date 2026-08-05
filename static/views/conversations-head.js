@@ -10,18 +10,22 @@ import { permissionsPanel } from "/static/components/permissions.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { traitPicker } from "/static/components/traitpicker.js";
 import { navigate } from "/static/router.js";
-import { el, toast } from "/static/util.js";
+import { el, modelOption, toast } from "/static/util.js";
 
 // The model line at the top of a conversation: shows the EFFECTIVE model (override or
 // system default) and switches it at any point — routine.yaml is patched (each reply
 // boots on it), and a live reply additionally gets the mid-run control.json switch.
+// Options carry each model's context window from `catalog_meta`, and a model whose
+// window cannot run the harness is disabled (R112/R128 — the PATCH refuses it anyway;
+// the picker says so up front instead of erroring after the click).
 function modelControl(detail, slug, isLive) {
   const cur = detail.models?.main || "";        // a catalog model NAME, or "" = system default
   const sysLabel = detail.system_model || "system model";
+  const meta = detail.catalog_meta || {};
   const sel = el("select", { style: "width:auto;font-size:11.5px;padding:3px 6px" },
     el("option", { value: "" }, `default · ${sysLabel}`),
     (detail.catalog || []).map((n) =>
-      el("option", { value: n, selected: cur === n || null }, n)));
+      modelOption(n, meta[n], { selected: cur === n || null })));
   const apply = el("button", { class: "btn small primary", hidden: true }, "apply");
   sel.onchange = () => { apply.hidden = false; };
   apply.onclick = async () => {

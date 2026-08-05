@@ -458,6 +458,85 @@ def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, 
     assert ran == []                                   # the util never executed
 
 
+def test_secret_decline_observation_names_no_secrets(make_routine, scripted, monkeypatch):
+    """R17: a DENIAL must not enumerate the names it refused — the model-facing reason
+    and rendering carry a COUNT only (the transcript dict keeps the names for the user's
+    own surfaces). The names are legitimately listed in every run's CAPABILITIES since
+    0.119.0, so this is not secrecy — a refusal must simply never read as a consolation
+    listing of exactly what the user just declined."""
+    from rsched import secrets as secrets_mod
+    from rsched.engine.observations import format_observation
+
+    ran = []
+    monkeypatch.setattr(notify.utils_lib, "run_util",
+                        lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
+                        **_kw: (ran.append(name) or (0, "ran", "")))
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(notify.utils_lib, "util_needs",
+                        lambda home, name: ({"FOO_KEY", "BAR_KEY"}, False))
+    monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x", "BAR_KEY": "y"})
+    d = make_routine(slug="secmute")
+    import yaml as _yaml
+    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
+    cfg["grants"] = {"secret:FOO_KEY": False, "secret:BAR_KEY": False}
+    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+    scripted([{"say": "call it", "kind": "util", "name": "frob", "args": []}, finish()])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    obs = next(e for e in _events(run_dir) if e["type"] == "observation"
+               and e["payload"]["kind"] == "util")
+    assert sorted(obs["payload"]["declined_secrets"]) == ["BAR_KEY", "FOO_KEY"]  # audit keeps them
+    assert "FOO_KEY" not in obs["payload"]["reason"]
+    assert "BAR_KEY" not in obs["payload"]["reason"]
+    assert "2 secrets" in obs["payload"]["reason"]
+    rendered = format_observation(obs["payload"])          # what the MODEL reads
+    assert "FOO_KEY" not in rendered and "BAR_KEY" not in rendered
+    assert "declined for 2 secrets" in rendered
+    assert ran == []
+
+
+def test_secret_decline_after_ask_stays_generic(make_routine, scripted, monkeypatch):
+    """R17, the just-declined path: the user answers the exposure request with a deny —
+    the refusing observation must not hand the names back either; it carries the count
+    plus the shared decision phrase (deny_forever's 'never request it again')."""
+    from rsched import secrets as secrets_mod
+    from rsched.engine.observations import format_observation
+
+    monkeypatch.setattr(notify.utils_lib, "run_util",
+                        lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
+                        **_kw: (0, "ran", ""))
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(notify.utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False))
+    monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
+    d = make_routine(slug="secmute2", budgets={"ask_timeout_min": 1})
+
+    def decline_soon():
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            recs = list((d / "questions" / "pending").glob("*.json"))
+            if recs:
+                rec = read_json(recs[0])
+                atomic_write_json(d / "inbox" / f"answer-{rec['qid']}.json",
+                                  {"qid": rec["qid"], "decision": "deny_forever",
+                                   "text": "no", "source": "web"})
+                return
+            time.sleep(0.02)
+
+    th = threading.Thread(target=decline_soon)
+    th.start()
+    scripted([{"say": "call it", "kind": "util", "name": "frob", "args": []}, finish()])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    th.join()
+    assert status == "ok"
+    obs = next(e for e in _events(run_dir) if e["type"] == "observation"
+               and e["payload"]["kind"] == "util")
+    assert obs["payload"]["declined_secrets"] == ["FOO_KEY"]   # transcript keeps the audit
+    assert "FOO_KEY" not in obs["payload"]["reason"]
+    assert "1 secret " in obs["payload"]["reason"]
+    assert "declined permanently" in obs["payload"]["reason"]  # the shared phrase, no ids
+    assert "FOO_KEY" not in format_observation(obs["payload"])
+
+
 def test_reply_items_pin_the_discord_util_shape():
     """ONE pinned shape — the discord util's `read --json` emits a list of message
     objects with a snowflake `id` and text in `message`. Anything else reads as no

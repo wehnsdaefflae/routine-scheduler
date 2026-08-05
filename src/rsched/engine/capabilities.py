@@ -181,9 +181,12 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                      + ". Held permissions (conduct notes below): "
                      + (", ".join(g.active) if g.active else "(none)") + ".")
         if g.granted_now:
+            # a once-grant (D65) is narrower than the run: one matching action spends it
+            once = ctx.granted_once
             parts.append("Granted for THIS RUN only (one-time user approvals — they do "
                          "not persist beyond this run): "
-                         + ", ".join(sorted(g.granted_now)) + ".")
+                         + ", ".join(e + " (one action only)" if e in once else e
+                                     for e in sorted(g.granted_now)) + ".")
         notes = _permission_notes(ctx, g)
         if notes:
             parts.append(notes)

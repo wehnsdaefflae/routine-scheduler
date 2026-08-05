@@ -92,14 +92,19 @@ class Completion:
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
     provider: str = ""            # serving provider behind an aggregator (OpenRouter), if reported
     # Why generation stopped, VERBATIM from the provider (anthropic stop_reason, openai
-    # finish_reason, the CLI envelope's subtype) — "" when unreported. The engine keys off
-    # it to tell a classifier refusal (an EMPTY completion with stop_reason "refusal")
-    # from a provider hiccup: the first is referred/failed over, not blind-retried.
+    # finish_reason, the CLI envelope's stop_reason/subtype) — "" when unreported. One
+    # mapped exception: openai_compat promotes the spec's dedicated `message.refusal`
+    # field to "refusal" when content is empty, so the same semantic isn't hidden behind
+    # a bare finish_reason "stop". The engine keys off this to tell a classifier refusal
+    # (HTTP 200, stop_reason "refusal"/"content_filter", usually an EMPTY reply) from a
+    # provider hiccup: a refusal is referred/failed over, NEVER blind-retried against the
+    # same model (engine/completion.py REFUSAL_STOPS).
     stop_reason: str = ""
-    # Provider detail on WHY it stopped, verbatim (the CLI envelope's `stop_details`,
-    # e.g. {"category": ...} on a classifier refusal) — {} when unreported. Diagnostic
-    # only: surfaced in the empty-completion error event so a refusal's category is
-    # visible in the transcript (F164); the engine never branches on it.
+    # Provider detail on WHY it stopped, verbatim ({category, explanation, ...} on a
+    # classifier refusal — the Messages API and the CLI envelope both send it; can be
+    # missing even on a refusal) — {} when unreported. Diagnostic only: surfaced in the
+    # refusal error event so the category is visible in the transcript (F164, R5); the
+    # engine branches on stop_reason, never on this.
     stop_details: dict = field(default_factory=dict)
 
 

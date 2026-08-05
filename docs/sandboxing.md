@@ -27,7 +27,10 @@ jailed) plus **scoped secrets injection**. Three cooperating layers:
 
 ## What a util can see
 
-Derived from the RUN's permissions, per dispatch:
+Derived from the RUN's permissions, per dispatch — the policy is rebuilt from the run's
+EFFECTIVE roots (config `fs_*_roots` plus this run's one-time fs grants) on every util
+call, so a mid-run fs grant answered on the Decisions page applies from the very next
+call, live run included:
 
 - **read+write** — the routine's own dir, its `fs_write_roots`, `/tmp` + `/var/tmp` +
   `/dev`, and tool state: `~/.cache` (uv script envs, playwright browsers),

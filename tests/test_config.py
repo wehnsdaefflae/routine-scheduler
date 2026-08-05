@@ -295,3 +295,15 @@ def test_catalog_max_tokens_and_fallbacks(tmp_path):
     assert any("fallbacks must not name the model itself" in x for x in problems)
     assert any("fallback 'ghost' is not a catalog model" in x for x in problems)
     assert not any("'b'" in x for x in problems)       # a valid fallback raises no problem
+
+
+def test_unreadable_server_config_is_a_problem_line_not_a_traceback(tmp_path):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("token: x\n", encoding="utf-8")
+    cfg.chmod(0o000)
+    try:
+        server, problems = load_server_config(cfg)
+    finally:
+        cfg.chmod(0o600)
+    assert any("unreadable" in p for p in problems)
+    assert server.source == cfg

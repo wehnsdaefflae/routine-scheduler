@@ -246,5 +246,17 @@ class OpenAICompatEndpoint:
             out["cached_in"] = cached
         if usage.get("cost") is not None:   # OpenRouter usage accounting → $ (credits)
             out["cost"] = float(usage.get("cost") or 0)
+        stop = str(data["choices"][0].get("finish_reason") or "")
+        stop_details: dict = {}
+        refusal = message.get("refusal")
+        if not text.strip() and isinstance(refusal, str) and refusal.strip():
+            # The spec's dedicated refusal field (structured-outputs declines): content is
+            # null and finish_reason is often just "stop", so without this promotion the
+            # decline would masquerade as an empty completion. The refusal prose rides
+            # stop_details so the transcript shows WHY (R5). finish_reason
+            # "content_filter" — the other openai-vocabulary decline — passes through
+            # verbatim above; the engine treats both as refusal-shaped (REFUSAL_STOPS).
+            stop = "refusal"
+            stop_details = {"explanation": refusal.strip()}
         return Completion(text=text, usage=out, provider=str(data.get("provider") or ""),
-                          stop_reason=str(data["choices"][0].get("finish_reason") or ""))
+                          stop_reason=stop, stop_details=stop_details)

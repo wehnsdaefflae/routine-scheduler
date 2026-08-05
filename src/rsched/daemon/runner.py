@@ -36,6 +36,29 @@ log = logging.getLogger("rsched.runner")
 _NOTABLE_RE = re.compile(r"\b(?:WARNING|ERROR|CRITICAL)\b|Traceback \(most recent call last\)")
 
 
+# The injection channels that count as "a user is talking to this run" for the
+# post-finish sweep (R108/F268): the conversation composer and the run page. Everything
+# else that lands in an inbox — report deliveries, trigger events, one-shot provenance,
+# background results, audit feedback — has its own wake policy and must never re-open a
+# finished run from the reap.
+_USER_MESSAGE_VIAS = ("conversation", "web", "web-converse")
+
+
+def _stranded_user_messages(routine_dir: Path) -> bool:
+    """An unconsumed USER message is waiting in the dir's inbox (see _USER_MESSAGE_VIAS)."""
+    inbox = routine_dir / "inbox"
+    if not inbox.is_dir():
+        return False
+    for p in inbox.iterdir():
+        if not p.is_file() or p.name.startswith("answer-"):
+            continue
+        obj = read_json(p)
+        if (isinstance(obj, dict) and obj.get("text")
+                and str(obj.get("via") or "") in _USER_MESSAGE_VIAS):
+            return True
+    return False
+
+
 def _notable_stderr(stderr: bytes, *, max_lines: int = 12, max_chars: int = 800) -> str:
     """A compact tail of the WARNING/ERROR/CRITICAL/traceback lines in captured stderr, or
     "" when the subprocess logged nothing notable. Keeps only the tail so a chatty run can
@@ -326,10 +349,38 @@ class Runner:
                           "state": info.state, "summary": info.summary[:300]})
         log.info("run_finished routine=%s run=%s rc=%s state=%s",
                  run.slug, run.run_id, rc, info.state)
+        # R108 residual (F268): a USER message that landed after the engine's LAST inbox
+        # check (the web saw the run still live, chose inject-over-resume, and the run
+        # finished in between) would strand until a later message nudged it. The reap is
+        # the one seam that always runs after every finish, so sweep here: an unconsumed
+        # user message re-opens the run through the same terminal-resume a message to an
+        # idle conversation takes. Only a CLEAN finish re-wakes — resuming a failed/
+        # aborted run on its own leftover message invites a crash-resume loop (and an
+        # abort was the user stopping it). Report/trigger/one-shot/audit deliveries never
+        # wake: each has its own contract (reports wait for the schedule or the routine's
+        # own report trigger).
+        if info.state == "finished" and _stranded_user_messages(cfg.dir):
+            log.info("post-finish inbox sweep: user message stranded — resuming %s", run.slug)
+            self._resume_for_stranded(cfg)
         try:
             registry.apply_retention(cfg.dir, cfg.slug, cfg.keep_runs)
         except OSError as exc:
             log.warning("retention failed for %s: %s", cfg.slug, exc)
+
+    def _resume_for_stranded(self, cfg: RoutineConfig) -> None:
+        """Fire-and-forget the terminal resume for a post-finish stranded message (the
+        reap itself is sync inside the supervisor's event loop). A refusal — draining,
+        raced by another wake — is logged, and the message stays durable in the inbox
+        for whatever run comes next.
+        """
+        async def _wake() -> None:
+            rid = await self.resume_terminal(cfg, reason="converse")
+            if not rid:
+                log.warning("post-finish inbox sweep could not resume %s — the message "
+                            "stays durable for the next run", cfg.slug)
+        task = asyncio.create_task(_wake())
+        self._supervisors.add(task)
+        task.add_done_callback(self._supervisors.discard)
 
     def _close_out(self, run_dir: Path, run_id: str, message: str, *,
                    event: str = "orphaned_run") -> None:

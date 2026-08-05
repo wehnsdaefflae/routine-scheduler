@@ -68,8 +68,10 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
       nextFireLine.replaceChildren(...(nd.next_fire ? ["next run · ", when(nd.next_fire)] : []));
     } catch { /* cosmetic refresh — the save itself already succeeded */ }
   }
+  // D71: a member of a SCHEDULED group is "group managed" — the dropdown locks on that
+  // state (linking to the group) and a save leaves the stored schedule untouched.
   const sched = scheduleEditor(d.schedule_friendly || { frequency: "manual" }, d.server_tz,
-    { catchup: d.catchup || "skip" });
+    { catchup: d.catchup || "skip", groupManaged: d.group_managed || null });
   const enabledBox = el("input", { type: "checkbox", checked: d.enabled || null });
   const improveBox = el("input", { type: "checkbox", checked: d.improve !== false || null });
   view.append(...settingsSection("Schedule",
@@ -85,7 +87,9 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
           try {
             await api(`/api/routines/${slug}`, { method: "PATCH",
               body: { enabled: enabledBox.checked, improve: improveBox.checked,
-                      schedule: { friendly: sched.value(), catchup: sched.catchup() } } });
+                      // group-managed: the schedule stays the group's business — send none
+                      ...(d.group_managed ? {}
+                        : { schedule: { friendly: sched.value(), catchup: sched.catchup() } }) } });
             toast("schedule saved"); refreshHead();
           } catch (err) { toast(err.message, 4000, { error: true }); }
         },

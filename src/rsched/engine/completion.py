@@ -1,13 +1,15 @@
 """One valid action from the model — the completion side of a turn: the schema-guarded
-retry cycle (≤3 attempts), model failover down the role's fallback chain, repeat-streak
-schema shedding, refusal referral to the `uncensored` model, image→vision-util fallback,
-the prompt-size compaction gate, and usage folding. Every function takes the live
-EngineLoop; the turn ORDER stays in loop.run().
+retry cycle (≤3 attempts), model failover down the role's fallback chain (hard failures,
+empty-reply streaks, AND classifier refusals — the last never retried same-model),
+repeat-streak schema shedding, refusal referral to the `uncensored` model,
+image→vision-util fallback, the prompt-size compaction gate, and usage folding. Every
+function takes the live EngineLoop; the turn ORDER stays in loop.run().
 """
 
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -33,6 +35,15 @@ from .history import (
 )
 
 MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
+
+# Refusal-shaped stop reasons across provider vocabularies: anthropic and the claude CLI
+# report a safety-classifier decline as stop_reason "refusal" (HTTP 200, content usually
+# empty, stop_details carrying {category, explanation}); openai-compatible providers mark
+# the same class of decline with finish_reason "content_filter" (or the adapter promotes
+# the spec's `message.refusal` field to "refusal"). Handled BEFORE the empty-completion
+# branch: re-sending a refused prompt to the same model usually earns another refusal, so
+# a refusal is never blind-retried — see _handle_refusal (R5).
+REFUSAL_STOPS = frozenset({"refusal", "content_filter"})
 
 
 def fold_usage(usage_sum: dict, completion) -> None:
@@ -67,8 +78,8 @@ def next_action(loop) -> tuple[dict | None, dict]:
         loop._shed_schema_turns -= 1
         schema = None
     prev_raw: str | None = None
-    # Shared across attempts: one uncensored referral per turn (free-text OR empty-refusal
-    # path), and the consecutive-empty streak from the CURRENT model.
+    # Shared across attempts: one uncensored referral per turn (free-text OR
+    # classifier-refusal path), and the consecutive-empty streak from the CURRENT model.
     refstate = {"referral_tried": False, "empty": 0}
     base_len = len(loop.messages)   # schema-retry debris beyond this is dropped on success
     attempt = 0
@@ -88,42 +99,38 @@ def next_action(loop) -> tuple[dict | None, dict]:
                                                       else f" · retry {attempt}"),
                                            kind="turn")
         except EndpointError as exc:
-            # Runtime net 1: if the failure is on a turn whose tail carries an image the
-            # endpoint couldn't show, convert it to vision-util text and retry text-only —
-            # and lift the cooldown the instrumentation just started, since the image, not
-            # the provider, was the problem.
-            if apply_media_fallback(loop, exc):
-                failover.clear(ref.endpoint, ref.model)
-                attempt -= 1   # a transport repair, not a model attempt
-                continue
-            # Runtime net 2: a hard provider failure — advance down the role's fallback
-            # chain (the failed model is already cooling); chain exhausted → propagate,
-            # failing the run exactly as before fallbacks existed.
-            switched = _switch_to_fallback(loop, chain, ref, exc)
-            if switched is None:
-                raise
-            endpoint, ref = switched
+            # media repair / transport failover — neither consumes a schema attempt;
+            # a chain-exhausted failure re-raises out of _recover_transport.
+            endpoint, ref = _recover_transport(loop, chain, endpoint, ref, exc)
             ctx.main_model = f"{ref.endpoint}/{ref.model}"
-            attempt -= 1   # transport failover doesn't consume a schema attempt
+            attempt -= 1
             continue
         fold_usage(usage_sum, completion)
-        if completion.parsed is None and not completion.text.strip():
-            referred_action, switched = _handle_empty(loop, completion, chain, ref,
-                                                      usage_sum, base_len, attempt, refstate)
-            if referred_action is not None:
-                loop._referred_turn = True
+        switched = None
+        if completion.stop_reason in REFUSAL_STOPS:
+            # BEFORE the empty check: a mid-stream classifier cut can leave partial text
+            # (and the CLI's refusal envelope carries error prose), but a refused turn is
+            # never a usable action and never a same-model retry.
+            referred_action, switched = _handle_refusal(loop, completion, chain, ref,
+                                                        usage_sum, base_len, attempt,
+                                                        refstate)
+            if switched is None:
+                loop._referred_turn = True      # _handle_refusal raised otherwise
                 return referred_action, usage_sum
-            if switched is not None:
-                endpoint, ref = switched
-                ctx.main_model = f"{ref.endpoint}/{ref.model}"
-                attempt -= 1   # the fallback model gets this attempt
+        elif completion.parsed is None and not completion.text.strip():
+            switched = _handle_empty(loop, completion, chain, ref, attempt, refstate)
+            if switched is None:
+                if attempt == MAX_SCHEMA_ATTEMPTS - 1:
+                    schema = None
+                # Same test knob as endpoints.base.with_retries: the retry LOGIC always
+                # runs, the backoff clock is zeroed in the suite (RSCHED_RETRY_BASE_DELAY).
+                time.sleep(1.5 * attempt
+                           * float(os.environ.get("RSCHED_RETRY_BASE_DELAY", "1.0")))
                 continue
-            if attempt == MAX_SCHEMA_ATTEMPTS - 1:
-                schema = None
-            # Same test knob as endpoints.base.with_retries: the retry LOGIC always runs,
-            # the backoff clock is zeroed in the suite (RSCHED_RETRY_BASE_DELAY).
-            import os
-            time.sleep(1.5 * attempt * float(os.environ.get("RSCHED_RETRY_BASE_DELAY", "1.0")))
+        if switched is not None:
+            endpoint, ref = switched
+            ctx.main_model = f"{ref.endpoint}/{ref.model}"
+            attempt -= 1   # the fallback model gets this attempt's clean retry
             continue
         refstate["empty"] = 0
         kind_hint: str | None = None
@@ -173,31 +180,81 @@ def next_action(loop) -> tuple[dict | None, dict]:
     return None, usage_sum
 
 
-def _handle_empty(loop, completion, chain, ref, usage_sum: dict, base_len: int,
-                  attempt: int, refstate: dict) -> tuple[dict | None, tuple | None]:
-    """One empty completion (no content, no parsed object). A provider hiccup gets a clean
-    same-model retry (no poisoned context) — but an empty reply is also how a CLASSIFIER
-    REFUSAL surfaces (stop_reason "refusal"), and how a hard-broken model keeps failing,
-    so it must not be blind-retried into a dead run: a refusal is referred to the
-    `uncensored` model like a free-text refusal, and the SECOND empty in one turn engages
-    the failover chain exactly like a hard EndpointError (the refusal gap: same-model
-    retries can never fix either). Returns (referred_action, switched_chain_entry) — at
-    most one is set; both None = plain retry.
+def _recover_transport(loop, chain, endpoint, ref, exc: EndpointError) -> tuple:
+    """The completion call failed with a hard EndpointError — the two runtime nets, in
+    order. Net 1: a turn whose tail carries an image the endpoint couldn't show is
+    converted to vision-util text (media fallback) and retried text-only on the SAME
+    model — the cooldown the instrumentation just started is lifted, since the image, not
+    the provider, was the problem. Net 2: a genuine hard provider failure advances down
+    the role's fallback chain (the failed model is already cooling); chain exhausted →
+    re-raise, failing the run exactly as before fallbacks existed. Returns the
+    (endpoint, ref) to retry on.
+    """
+    if apply_media_fallback(loop, exc):
+        failover.clear(ref.endpoint, ref.model)
+        return endpoint, ref
+    switched = _switch_to_fallback(loop, chain, ref, exc)
+    if switched is None:
+        raise exc
+    return switched
+
+
+def _handle_refusal(loop, completion, chain, ref, usage_sum: dict, base_len: int,
+                    attempt: int, refstate: dict) -> tuple[dict | None, tuple | None]:
+    """A classifier refusal (stop_reason in REFUSAL_STOPS — an HTTP 200, so error-rate
+    monitoring never sees it; content usually empty, stop_details naming the category).
+    Never blind-retried against the same model: re-sending a refused prompt usually earns
+    another refusal, so the pre-R5 path — 3 same-model retries, then a "failed to produce
+    a valid action" death — burned the run while hiding the cause. Instead: a distinct
+    refusal-marked transcript error first, then the turn is referred to the `uncensored`
+    model once (when configured), else the fallback chain advances — cooling the refused
+    model like a hard failure, which is RUN-scoped (the failover registry is
+    process-local), so the rest of this run stops re-asking while other runs, with other
+    prompts, still probe it fresh. Chain exhausted (or no fallbacks): raises, failing the
+    run HONESTLY with the category named — never "empty completion".
+    Returns (referred_action, switched_chain_entry) — exactly one is set.
+    """
+    details = completion.stop_details or {}
+    category = str(details.get("category") or "") or "unreported"
+    explanation = str(details.get("explanation") or "")
+    what = (f"{ref.name or ref.model} refused the turn "
+            f"(stop_reason={completion.stop_reason}, category={category}"
+            + (f": {explanation[:200]}" if explanation else "") + ")")
+    loop.ctx.transcript.event("error", {
+        "where": "endpoint", "attempt": attempt, "message": what,
+        "refusal": {"category": category, "model": ref.name or ref.model,
+                    **({"explanation": explanation[:500]} if explanation else {})}})
+    if not refstate["referral_tried"]:
+        refstate["referral_tried"] = True
+        referred = refer_turn_to_uncensored(loop, usage_sum, base_len)
+        if referred is not None:
+            return referred, None
+    switched = _switch_to_fallback(loop, chain, ref, EndpointError(what))
+    if switched is not None:
+        return None, switched
+    raise EndpointError(
+        f"{what}; no usable fallback model — configure `fallbacks:` on the catalog "
+        f"model (or an `uncensored` role) to survive classifier refusals")
+
+
+def _handle_empty(loop, completion, chain, ref,
+                  attempt: int, refstate: dict) -> tuple | None:
+    """One empty completion (no content, no parsed object) that is NOT a refusal — those
+    divert to _handle_refusal before this. A provider hiccup gets a clean same-model retry
+    (no poisoned context), but a hard-broken model keeps failing the same way, so the
+    SECOND empty in one turn engages the failover chain exactly like a hard EndpointError
+    (same-model blind retries can never fix it). Returns the switched chain entry, or
+    None = plain same-model retry.
     """
     stop = completion.stop_reason
-    # stop_details (CLI envelope diagnostic, e.g. {"category": ...} on a classifier
-    # refusal) rides along VERBATIM so the transcript shows WHY the reply was empty (F164).
+    # stop_details rides along VERBATIM so the transcript shows WHY the reply was
+    # empty (F164) — e.g. a reasoning model that spent its whole budget thinking.
     details = getattr(completion, "stop_details", None) or {}
     loop.ctx.transcript.event("error", {
         "where": "endpoint", "attempt": attempt,
         "message": "empty completion (no content/reasoning; "
                    f"stop_reason={stop or 'unreported'}"
                    + (f", stop_details={details}" if details else "") + ")"})
-    if stop == "refusal" and not refstate["referral_tried"]:
-        refstate["referral_tried"] = True
-        referred = refer_turn_to_uncensored(loop, usage_sum, base_len)
-        if referred is not None:
-            return referred, None
     refstate["empty"] += 1
     if refstate["empty"] >= 2:
         failure = EndpointError(
@@ -205,10 +262,10 @@ def _handle_empty(loop, completion, chain, ref, usage_sum: dict, base_len: int,
         switched = _switch_to_fallback(loop, chain, ref, failure)
         if switched is not None:
             refstate["empty"] = 0
-            return None, switched
+            return switched
         # chain exhausted (or none configured): the caller keeps the pre-failover
         # behavior — remaining attempts run schema-free
-    return None, None
+    return None
 
 
 def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):

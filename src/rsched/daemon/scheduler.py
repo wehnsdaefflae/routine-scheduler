@@ -14,10 +14,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
-from .. import library_sync, registry
+from .. import group_runs as group_runs_store
+from .. import groups, library_sync, registry
 from ..config import ServerConfig
 from ..ids import now_iso
+from ..schedule import server_tz
 from . import pause, restart
 from .detached import DetachedManager
 from .events import EventBus
@@ -69,6 +72,13 @@ class Scheduler:
         self.oauth = OAuthRefreshManager(server)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
+        # D71: groups with a cron of their own. A due group fire ARMS the sequential
+        # chain (member 0 fires, the rest chain on completion — GroupRunManager);
+        # meanwhile every member of a scheduled group is SUPPRESSED from the routine
+        # fire table above, so one fire path exists and nothing double-fires.
+        self.scheduled_groups: list[dict] = []
+        self.suppressed_members: set[str] = set()
+        self.group_next_fires: dict[str, datetime] = {}
         # the library-sync job (plain, not a routine) rides the same cron machinery
         self.sync_next: datetime | None = None
         self._sync_task: asyncio.Task | None = None
@@ -80,8 +90,17 @@ class Scheduler:
     def rescan(self) -> None:
         self.catalog = registry.scan(self.server)
         now = _now()
+        # D71: a member of a SCHEDULED group fires only through the group's chain — its
+        # own cron is suppressed while the membership lasts (removing the schedule or
+        # leaving the group restores it on the next rescan). Unscheduled groups suppress
+        # nothing. Read fresh each rescan, like the catalog.
+        self.scheduled_groups = [g for g in groups.list_groups(self.server.routines_home)
+                                 if g["cron"]]
+        self.suppressed_members = {m for g in self.scheduled_groups for m in g["members"]}
         fires: dict[str, datetime] = {}
         for slug, info in self.catalog.items():
+            if slug in self.suppressed_members:
+                continue
             nf = registry.next_fire(info.cfg, now)
             if nf is None:
                 continue
@@ -89,13 +108,32 @@ class Scheduler:
             # a fire that came due since the last tick is still owed — don't recompute past it
             fires[slug] = prev if (prev is not None and prev <= now) else nf
         self.next_fires = fires
+        gfires: dict[str, datetime] = {}
+        for g in self.scheduled_groups:
+            nf = registry.next_fire(self._group_schedulable(g), now)
+            if nf is None:
+                continue
+            prev = self.group_next_fires.get(g["id"])
+            gfires[g["id"]] = prev if (prev is not None and prev <= now) else nf
+        self.group_next_fires = gfires
         # library sync: LibrarySyncConfig carries the same enabled/cron/tz trio next_fire reads
         nf = registry.next_fire(self.server.library_sync, now)
         self.sync_next = self.sync_next if (nf is not None and self.sync_next is not None
                                             and self.sync_next <= now) else nf
 
+    @staticmethod
+    def _group_schedulable(g: dict) -> SimpleNamespace:
+        """A group's cron/tz as the Schedulable shape next_fire reads. tz falls back to
+        the server zone — groups are saved with the server tz by the web layer, but an
+        older or hand-edited row must still fire somewhere sensible.
+        """
+        return SimpleNamespace(cron=g["cron"], tz=g.get("tz") or server_tz(), enabled=True)
+
     async def boot_catchup(self) -> None:
         for slug, info in self.catalog.items():
+            if slug in self.suppressed_members:
+                # D71: a group-managed member's own cron never fires, catch-up included
+                continue
             missed = registry.missed_fire(info.cfg, info.runs, _now())
             if missed is not None:
                 log.info("catchup routine=%s missed_fire=%s → one make-up run", slug, missed)
@@ -144,6 +182,32 @@ class Scheduler:
                         log.info("scheduling paused — skipped due fire of %r", slug)
                         continue
                     await self.runner.fire(info.cfg, reason="schedule")
+                # D71: due GROUP fires — arm the sequential chain; GroupRunManager
+                # (ticked below) fires member 0 and chains the rest on completion.
+                for gid, due in list(self.group_next_fires.items()):
+                    if now < due:
+                        continue
+                    group = next((g for g in self.scheduled_groups if g["id"] == gid), None)
+                    if group is None:
+                        self.group_next_fires.pop(gid, None)
+                        continue
+                    self.group_next_fires[gid] = (
+                        registry.next_fire(self._group_schedulable(group), now) or due)
+                    if is_paused:
+                        log.info("scheduling paused — skipped due group fire of %r", gid)
+                        continue
+                    rec = group_runs_store.arm(
+                        self.server.routines_home, group,
+                        default_on_failure=groups.default_on_failure(
+                            self.server.routines_home),
+                        armed_by="schedule")
+                    if rec is None:
+                        # the chain overrun rule: a group still mid-chain skips this
+                        # fire (the routine analog is Runner.fire's overrun_skipped)
+                        log.info("group fire skipped — chain still in flight group=%s", gid)
+                    else:
+                        log.info("group fire armed group=%s members=%d", gid,
+                                 len(rec.get("members") or []))
                 if self.sync_next is not None and now >= self.sync_next:
                     self.sync_next = registry.next_fire(self.server.library_sync, now)
                     self._fire_library_sync()
@@ -234,6 +298,8 @@ class Scheduler:
             "routines": len(self.catalog),
             "active_runs": {slug: run.run_id for slug, run in self.runner.active.items()},
             "next_fires": {s: t.isoformat() for s, t in sorted(self.next_fires.items())},
+            "group_next_fires": {g: t.isoformat()
+                                 for g, t in sorted(self.group_next_fires.items())},
             "draining": self.runner.draining,
             "started": self.started,
             "restart_requested": restart.restart_requested(self.server),

@@ -207,25 +207,30 @@ def parse_result(stdout_text: str, want_json: bool,
     stop_details — the envelope's diagnostic dict, e.g. {"category": ...} on a
     classifier refusal; {} when absent).
     A garbled/truncated stdout is a transport fault — retryable, like an unparseable
-    HTTP body (json_or_raise), so with_retries catches it.
+    HTTP body (json_or_raise), so with_retries catches it. A CLASSIFIER REFUSAL
+    (stop_reason "refusal") is checked BEFORE the is_error raise and always returned as
+    a completion, never raised: the CLI marks an unhandled refusal as an API-error frame
+    internally, so the final envelope may carry is_error either way (its `result` prose
+    is then the text), and raising would lose the category and tell a "hard failure"
+    story — the engine's refusal branch (referral/failover) needs the stop_reason.
     """
     try:
         obj = _result_event(stdout_text) if stream_out else json.loads(stdout_text)
     except json.JSONDecodeError as exc:
         raise EndpointError(f"claude-cli: unparseable CLI output: {stdout_text[:300]}",
                             retryable=True) from exc
-    if obj.get("is_error"):
+    # The envelope reports why generation stopped as `stop_reason` (newer CLIs) or only the
+    # result `subtype` (e.g. success / error_during_execution) — surface what it has.
+    stop = str(obj.get("stop_reason") or "")
+    if not stop and str(obj.get("subtype") or "") not in ("", "success"):
+        stop = str(obj["subtype"])
+    if obj.get("is_error") and stop != "refusal":
         msg = str(obj.get("result") or "claude CLI reported an error")
         raise EndpointError(f"claude-cli: {msg}", auth="401" in msg)
     # input_tokens excludes cache traffic on this API — without cached_in/cache_write a run
     # shows "in=4" while the real prompt was served from (and written into) the cache.
     usage = anthropic_usage(obj.get("usage") or {})
     text = obj.get("result", "") or ""
-    # The envelope reports why generation stopped as `stop_reason` (newer CLIs) or only the
-    # result `subtype` (e.g. success / error_during_execution) — surface what it has.
-    stop = str(obj.get("stop_reason") or "")
-    if not stop and str(obj.get("subtype") or "") not in ("", "success"):
-        stop = str(obj["subtype"])
     parsed = None
     if want_json:
         structured = obj.get("structured_output")

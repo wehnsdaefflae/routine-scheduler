@@ -45,6 +45,13 @@ const sourceLink = (q) => (q.wizard
   // a clarify session's surface is its run page (D11); a pre-D13 session has none
   ? (q.run_id ? el("a", { href: `#/run/${q.run_id}` }, "new-routine setup")
               : el("span", { class: "muted" }, "new-routine setup"))
+  // each decision links its OWN home: a conversation's page lives under #/conversations,
+  // a detached task's surface is its owning conversation (the task itself has no page)
+  : q.conversation ? el("a", { href: `#/conversations/${q.routine}` }, q.routine)
+  : q.background ? (q.owner
+      ? el("a", { href: `#/conversations/${q.owner}`, title: "the conversation that launched this background task" },
+          `${q.routine} (background)`)
+      : el("span", { class: "muted" }, `${q.routine} (background)`))
   : el("a", { href: `#/routine/${q.routine}` }, q.routine));
 
 export async function render(view, query = {}) {
@@ -267,26 +274,45 @@ export async function render(view, query = {}) {
     inputs.push(form.input);
     const controls = el("div", {}, form.node);
     // Config bridge: a revise run can't edit routine.yaml, so it proposes the change as a
-    // config_patch on the decision; approving it here PATCHes the routine and resolves the ask.
+    // config_patch on the decision; approving it here PATCHes the owning config and resolves
+    // the ask. Each home has its own PATCH surface (R102: a conversation's decision must hit
+    // /api/conversations — PATCHing /api/routines with a conversation slug 404s, so the
+    // patch silently never landed); a detached task / clarify workspace has none — its
+    // proposal renders read-only rather than pretending a button would work.
     const configBar = (q.config_patch && !q.meta) ? (() => {
-      const btn = el("button", { class: "btn small primary" }, "approve & apply");
-      btn.onclick = async () => {
+      const home = q.conversation ? "conversations" : (q.background || q.wizard) ? "" : "routines";
+      const noun = q.conversation ? "conversation" : "routine";
+      const btn = home ? el("button", { class: "btn small primary" }, "approve & apply") : null;
+      if (btn) btn.onclick = async () => {
         btn.disabled = true;
         try {
-          await api(`/api/routines/${q.routine}`, { method: "PATCH", body: q.config_patch });
+          const res = await api(`/api/${home}/${q.routine}`,
+            { method: "PATCH", body: q.config_patch });
+          // Honesty gate (R102): a field the endpoint doesn't support is silently dropped
+          // server-side — verify every patch key was actually applied before telling the
+          // routine (and the user) it was. `updated` is the endpoint's applied-field list.
+          const missing = Object.keys(q.config_patch)
+            .filter((k) => !(res.updated || []).includes(k));
+          if (missing.length) {
+            throw new Error(`${missing.join(", ")}: not applicable to a ${noun} — `
+              + "the proposal needs a different route; answer in text instead");
+          }
           await api(`/api/questions/${q.qid}/answer`,
             { method: "POST", body: { text: "approved & applied the proposed config change" } });
-          toast("config change applied to the routine");
+          toast(`config change applied to the ${noun}`);
           panel.classList.remove("warn");
           controls.replaceChildren(el("div", { class: "flow-note" },
-            chip("applied", "ok"), el("span", {}, "the config change was applied to the routine")));
+            chip("applied", "ok"), el("span", {}, `the config change was applied to the ${noun}`)));
           state.items = state.items.filter((x) => x.qid !== q.qid);
           syncToolbar();
         } catch (err) { toast(err.message, 5000, { error: true }); btn.disabled = false; }
       };
       return el("div", { class: "flow-note mt" },
         el("div", { class: "small", style: "margin-bottom:4px" },
-          "proposed config change — a run can't edit routine.yaml, so approve it here:"),
+          home ? "proposed config change — a run can't edit routine.yaml, so approve it here:"
+               : "proposed config change — this decision's home has no config to patch "
+                 + "(a detached task / setup workspace is one-shot); answer in text, and make "
+                 + "any lasting change on the owning conversation or routine:"),
         el("pre", { class: "doc", style: "margin:0 0 6px;white-space:pre-wrap" },
           JSON.stringify(q.config_patch, null, 2)),
         btn);

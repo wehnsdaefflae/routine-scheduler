@@ -2,11 +2,14 @@
 
 A trigger fires a routine on an EXTERNAL EVENT, alongside cron: routine.yaml grows one
 canonical `triggers:` list (user config — created/deleted on the routine page, never by a
-run), each entry `{id, type, ...}` carrying its type's own keys. `webhook`
-(POST /api/hooks/<slug>/<token>) is the implemented type; `imap` (mail arrival) and
-`watch_path` (file drop) are reserved names in the SAME shape so they slot in later
-without reshaping anything — their watchers will drop the same spool events a webhook
-does and everything downstream is already type-agnostic.
+run), each entry `{id, type, ...}` carrying its type's own keys. Two types are
+implemented: `webhook` (POST /api/hooks/<slug>/<token>) and `report` — fire when a
+report/inbox message lands for this routine, so a delivered hand-off is worked within the
+cooldown window instead of waiting for the next scheduled run (the durable inbox file IS
+the event; no spool entry exists, the daemon watches the inbox directly). `imap` (mail
+arrival) and `watch_path` (file drop) are reserved names in the SAME shape so they slot
+in later without reshaping anything — their watchers will drop the same spool events a
+webhook does and everything downstream is already type-agnostic.
 
 Ownership mirrors restart.request and the background .requests/ idiom: the WEB layer
 (api_hooks) only RECORDS events — one JSON file per event under the spool
@@ -30,11 +33,16 @@ from pathlib import Path
 from .ids import now_iso, run_ts
 from .paths import atomic_write_json, read_json
 
-TRIGGER_TYPES = ("webhook", "imap", "watch_path")
+TRIGGER_TYPES = ("webhook", "report", "imap", "watch_path")
 # Minimum seconds between trigger-initiated fires of one routine — the budget backstop
 # that makes a leaked hook URL boring: however hard it is hammered, at most one run per
 # window, everything else coalesces (docs/triggers.md § Coalescing).
 DEFAULT_COOLDOWN_S = 60
+# The report trigger's default is deliberately GENEROUS: report deliveries come in bursts
+# (a meta routine closing a sweep files several), and the value of the trigger is "worked
+# today, not at the next cron" — not "worked within a minute". One run per window; every
+# message that landed meanwhile is drained by that one run.
+DEFAULT_REPORT_COOLDOWN_S = 900
 MAX_PAYLOAD_BYTES = 64 * 1024   # a webhook body past this is rejected 413, never stored
 MAX_PENDING_EVENTS = 32         # spool cap per routine — past it new events are rejected 429
 
@@ -46,6 +54,15 @@ def new_webhook_trigger(*, cooldown_s: int = DEFAULT_COOLDOWN_S) -> dict:
     """
     return {"id": f"t-{uuid.uuid4().hex[:8]}", "type": "webhook",
             "token": secrets.token_urlsafe(24),
+            "cooldown_s": int(cooldown_s), "created": now_iso()}
+
+
+def new_report_trigger(*, cooldown_s: int = DEFAULT_REPORT_COOLDOWN_S) -> dict:
+    """A fresh report trigger entry: fire this routine when a report/inbox message lands
+    for it, coalesced by cooldown_s. No token — nothing external can reach it; the only
+    writers of an inbox are the engine's report delivery, the daemon managers and the web.
+    """
+    return {"id": f"t-{uuid.uuid4().hex[:8]}", "type": "report",
             "cooldown_s": int(cooldown_s), "created": now_iso()}
 
 
@@ -96,7 +113,7 @@ def validate_triggers(raw: object) -> tuple[list[dict], list[str]]:
             problems.append(f"{where}: webhook trigger without a token — dropped "
                             "(recreate it on the routine page)")
             continue
-        if ttype != "webhook":
+        if ttype in ("imap", "watch_path"):
             problems.append(f"{where}: trigger type {ttype!r} is reserved but not "
                             "implemented yet — the entry is kept, nothing fires it")
         seen.add(tid)
@@ -163,16 +180,23 @@ def describe_triggers(routines_home: Path, slug: str, entries: list[dict]) -> li
         ev = read_json(p)
         if isinstance(ev, dict):
             counts[str(ev.get("trigger"))] += 1
+    # a report trigger's "pending" is the routine's unconsumed inbox messages — its
+    # events live there, not in the spool
+    inbox_dir = routines_home / slug / "inbox"
+    inbox_pending = (sum(1 for p in inbox_dir.iterdir()
+                         if p.is_file() and not p.name.startswith("answer-"))
+                     if inbox_dir.is_dir() else 0)
     rows = []
     for t in entries:
         tid = str(t.get("id"))
         got = per.get(tid)
         mine: dict = got if isinstance(got, dict) else {}
-        rows.append({"id": tid, "type": str(t.get("type")),
+        ttype = str(t.get("type"))
+        rows.append({"id": tid, "type": ttype,
                      "cooldown_s": int(t.get("cooldown_s") or 0),
                      "created": str(t.get("created") or ""),
-                     "url_path": hook_path(slug, t) if t.get("type") == "webhook" else "",
+                     "url_path": hook_path(slug, t) if ttype == "webhook" else "",
                      "last_fired": str(mine.get("last_fired") or ""),
                      "events": int(mine.get("events") or 0),
-                     "pending": counts.get(tid, 0)})
+                     "pending": inbox_pending if ttype == "report" else counts.get(tid, 0)})
     return rows

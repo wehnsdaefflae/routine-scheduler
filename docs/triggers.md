@@ -1,9 +1,12 @@
 # Event triggers
 
-Routines fire on cron, manually — or on an **external event**. A trigger is a routine.yaml
+Routines fire on cron (their own — or their GROUP's, which suppresses the member crons
+while it is set: docs/architecture.md § Routine groups, D71), manually — or on an
+**external event**. A trigger is a routine.yaml
 config entry that lets the outside world start a run: today that means an authenticated
 **webhook** URL a third party POSTs to (CI finished, a form was submitted, a monitor
-alerted); `imap` (mail arrival) and `watch_path` (file drop) are reserved trigger types in
+alerted), or a **report** trigger that fires the routine when a report lands in its inbox;
+`imap` (mail arrival) and `watch_path` (file drop) are reserved trigger types in
 the same config shape, to be implemented as daemon-side watchers later. Event triggers are
 what let a radar-style routine stop polling on a schedule and burn tokens only when
 something actually happened.
@@ -21,6 +24,10 @@ triggers:
     token: "kJ8…32-url-safe-chars…Qw"   # server-generated URL secret — the hook's auth
     cooldown_s: 60           # min seconds between trigger-initiated fires (coalescing window)
     created: "2026-07-17T09:00:00+02:00"
+  - id: t-9c21d0aa          # report trigger: fire when a report/inbox message lands here
+    type: report
+    cooldown_s: 900          # generous by design — delivery bursts become ONE run
+    created: "2026-08-05T17:00:00+02:00"
   # reserved types — same envelope, own keys; nothing fires them yet:
   # - {id: t-…, type: imap, host: imap.example.org, mailbox: INBOX, cooldown_s: 300}
   # - {id: t-…, type: watch_path, path: ~/drop/incoming, glob: "*.csv", cooldown_s: 60}
@@ -68,6 +75,29 @@ the payload.
   the disk.
 - **Tokens never leave the instance.** The library sync's instance export redacts
   `token` values in routine.yaml exactly like the server config's secrets.
+
+## The report trigger
+
+An addressed report (`report` with `target`) is delivered into the target's `inbox/` and —
+by default — read on the target's NEXT SCHEDULED RUN: delivery never starts a run
+(docs/items.md). A **report trigger** is the target's own opt-in to be woken instead: when
+an unconsumed report/message file sits in the routine's inbox, the daemon fires ONE run
+(reason `trigger`), and everything that lands within `cooldown_s` (default **900 s** —
+generous on purpose, delivery bursts coalesce) is drained by that same run. The
+DELIVERING side still starts nothing and needs no capability — waking is entirely the
+receiving routine's configuration, so the "nothing seizes another routine's schedule"
+rule stands.
+
+Mechanics differ from the webhook only in where the event lives: there is no spool entry —
+the durable inbox message file IS the event, the daemon's watch is a cheap per-tick check
+of exactly the routines that declare the trigger, and nothing is consumed daemon-side (the
+fired run's own boot drain empties the inbox; a crash before the drain just means one more
+fire after the cooldown). The usual guards apply unchanged: never while the routine has an
+active/queued run, never while the daemon drains for a restart, never for a disabled
+routine, and at most one fire per cooldown window. One report trigger per routine (one
+inbox, one watcher); create it on the Triggers card — no URL, nothing external can reach
+it. Answer files (`answer-*.json`) never fire it — they belong to a question's own
+lifecycle.
 
 ## Firing semantics: coalescing and cooldown
 

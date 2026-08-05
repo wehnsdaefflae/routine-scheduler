@@ -20,7 +20,7 @@ from collections import deque
 from ..endpoints.base import EndpointError
 from ..grants import load_policy
 from ..health_events import log_health_event
-from . import create_routine, detach, executor, interact, manage_group, notes
+from . import create_routine, detach, executor, inbox, interact, manage_group, notes, requests
 from .actions import BRIEF_FIELD
 from .autocommit import autocommit as _autocommit
 from .boot import boot
@@ -285,6 +285,26 @@ class EngineLoop:
                                   f"{repeat_streak} times in a row. Aborting the run.")
 
                 if action["kind"] == "finish":
+                    # R108/F268: a user message that landed in the window between this
+                    # turn's inbox drain and the finish is DELIVERED, never silently
+                    # outlived. The finish is set aside (a rejected observation, like the
+                    # guards below) and the drained message(s) follow it, so the model
+                    # addresses them and finishes again. The spent reserved-finish turn is
+                    # the one exception — deferring it would force-finish the run with an
+                    # engine string on the next boundary — so _finish_run surfaces the
+                    # still-queued message to both sides instead.
+                    if (ctx.depth == 0 and not self._finish_reserved
+                            and inbox.has_pending_messages(ctx.routine.dir)):
+                        obs = {"kind": "finish", "rejected": True, "pending_user_input": True}
+                        ctx.transcript.event("observation", obs, turn=ctx.turn)
+                        self.messages.append({"role": "user", "content":
+                            "OBSERVATION (finish deferred): a user message arrived while "
+                            "you were finishing — it is delivered below instead of being "
+                            "dropped. Address it, then finish again with an updated "
+                            "summary."})
+                        drain_injections(self)
+                        ctx.write_status()
+                        continue
                     if action["status"] == "ok" and self.executed_actions == 0 and ctx.depth == 0:
                         # Fabrication guard: a top-level ok-finish as the very first action
                         # is a hallucinated completion (the classic no-tools failure mode) —
@@ -364,6 +384,11 @@ class EngineLoop:
                     log_admin_action(ctx.server.routines_home, run_id=ctx.run_id,
                                      kind=action["kind"], brief=brief)
                 text = format_observation(obs)
+                # D65: an `allow once` grant is spent by THIS successfully-dispatched
+                # matching action — revoked here, at the same boundary, and announced so
+                # the next matching attempt is not an unexplained denial.
+                if spent := requests.consume_once_grants(self, action, obs):
+                    text += requests.spent_notice(spent)
                 if REPEAT_WARN <= repeat_streak < REPEAT_FAIL:
                     self._shed_schema_turns = 1   # re-arms on every further repeat
                     self._sheds += 1
@@ -413,6 +438,15 @@ class EngineLoop:
         killed = self.subruns.kill_all(reason=f"parent run finished ({status})")
         if killed:
             summary += f"\n[{killed} still-running sub-workflow(s) were terminated at run end.]"
+        if ctx.depth == 0 and inbox.has_pending_messages(ctx.routine.dir):
+            # The paths the R108 deferral cannot serve (the spent reserved-finish turn,
+            # aborts, engine failures — plus a message racing this very write): the
+            # message could not become a turn THIS run, so say so on BOTH sides — this
+            # note rides result.md (a conversation's rendered reply) and the next run's
+            # digest. The message itself stays queued; the next leg's boot drains it.
+            summary += ("\n[A user message arrived as this run ended — it could not be "
+                        "delivered this run; it stays queued and opens the next "
+                        "run/reply.]")
         ctx.transcript.event("finish", {"status": status, "summary": summary, "authored": authored},
                              usage_total=ctx.usage_total(), turns=ctx.turn)
         if status in ("partial", "failed", "aborted") and ctx.depth == 0:

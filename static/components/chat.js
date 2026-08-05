@@ -3,7 +3,8 @@
 // expandable group per reply, rendered at full altitude by the shared transcript component.
 //
 // opts:
-//   answer(qid, text) — inline answering for deferred questions (same contract as transcript.js)
+//   answer(qid, text, decision) — inline answering for question events (same contract as
+//                       transcript.js: deferred → full form, blocking → one-click strip)
 //   loadSub(n, off)   — subrun expansion inside the work fold
 //   isLive()          — live-run predicate for subrun polling
 //   onArtifact(path)  — a write_file into artifacts/ landed (the panel refreshes)
@@ -116,21 +117,44 @@ export function createChat(container, opts = {}) {
       el("pre", {}, String(body)));
   }
 
+  const qforms = new Map();   // qid -> answerForm (inline), settled by the answer event
+  function settleQuestion(qid, note) {
+    const f = qforms.get(qid);
+    if (!f) return;
+    qforms.delete(qid);
+    f.setSettled(note);
+  }
+
   function questionInline(ev) {
     const p = ev.payload;
     const head = el("div", { class: "msg-body" }, "❓ ", mdInline(p.question || ""),
       p.default ? el("div", { class: "faint small" }, `↪ without an answer: ${p.default}`) : null);
-    // Inline answering is for DEFERRED questions only — the same rule the run view's transcript
-    // follows. A BLOCKING question is answered in the pinned questionPanel above the composer
-    // (it owns the ask-back / expires / util-approval chrome), so rendering an actionable form
-    // here too would show the SAME approval TWICE (F264). Blocking → static text; the panel answers.
-    if (!opts.answer || !p.qid || p.mode !== "deferred") return head;
+    if (!opts.answer || !p.qid) return head;
+    if (p.mode !== "deferred") {
+      // BLOCKING: the pinned questionPanel above the composer owns the ONE full form —
+      // free text, ask-back, expires/util-approval chrome — so this bubble must never
+      // duplicate it (F264). But the user reads the CHAT, and an approval whose only
+      // controls live elsewhere sent them hunting through the Decisions tab (R132) — so
+      // the bubble carries the one-click strip: the option / typed-decision buttons,
+      // submitting through the same answer endpoint the Decisions page uses. Free-text
+      // blocking questions stay static here; the panel answers those.
+      if (!(p.options?.length || (Array.isArray(p.request) && p.request.length))) return head;
+      const strip = answerForm(p, {
+        quick: true,
+        defaultLine: false,   // the head already shows the default
+        submitText: (text, _intermediate, decision) => opts.answer(p.qid, text, decision),
+        onSuccess: (text) => settleQuestion(p.qid, `✅ answered: ${text}`),
+      });
+      qforms.set(p.qid, strip);
+      return el("div", {}, head, strip.node);
+    }
     const form = answerForm(p, {
       placeholder: "answer… (Shift+Enter for a new line)",
       defaultLine: false,   // the head already shows the default
       submitText: (text, _intermediate, decision) => opts.answer(p.qid, text, decision),
-      onSuccess: (text) => form.setSettled(`✅ answered: ${text}`),
+      onSuccess: (text) => settleQuestion(p.qid, `✅ answered: ${text}`),
     });
+    qforms.set(p.qid, form);
     return el("div", {}, head, form.node);
   }
 
@@ -190,6 +214,10 @@ export function createChat(container, opts = {}) {
             referButton(opts.onRefer, "your question", p.question)));
           return;
         case "answer":
+          // the answer line supersedes any inline strip/form for the same question — a
+          // panel/Decisions-page answer must settle the chat controls too (dialog replies
+          // keep the question open, so their form stays live)
+          if (!p.intermediate) settleQuestion(p.qid, "");
           root.append(el("div", { class: "ev answer" }, p.intermediate
             ? `💬 you (dialog): ${p.text}` : `✅ you answered: ${p.text}`));
           return;

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from .. import schedule
 from .. import traits as traits_mod
@@ -135,6 +135,12 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
 
 
 class RoutinePatch(BaseModel):
+    # forbid unknown keys: this is the validated single-writer save path — a misspelled
+    # field silently dropped reads as "saved" to a direct API caller (and to the Decisions
+    # page's config-patch apply, which verifies its keys against `updated`); a 422 names
+    # the stray instead.
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool | None = None
     schedule: dict | None = None            # {"friendly":…, "catchup":…} (cron built server-side)
     budgets: dict | None = None
@@ -198,6 +204,12 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     updates = patch.model_dump(exclude_none=True)
+    # `updated` reports every field this PATCH applied. Captured BEFORE the appliers pop
+    # what they consume (models/connections/machines/grants/keep_runs/schedule) — the
+    # response and commit message must not under-report, because the Decisions page's
+    # config-patch apply verifies its patch keys against this list (R102: a key an
+    # endpoint silently ignores must read as NOT applied, never as success).
+    requested = list(updates)
     # deliberation is TUNING, not config — it lands in tuning.yaml (recipe-classed), never in
     # routine.yaml (the user's sealed authority surface). Handle it FIRST, before any raw
     # mutation, so a tuning-only patch returns without rewriting routine.yaml.
@@ -260,9 +272,9 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
         else:
             raw[key] = val
     atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
-    _git_commit(info.cfg.dir, f"routine.yaml edit via web ({', '.join(updates)})")
+    _git_commit(info.cfg.dir, f"routine.yaml edit via web ({', '.join(requested)})")
     _state(request).scheduler.rescan()
-    return {"ok": True, "updated": list(updates)}
+    return {"ok": True, "updated": requested}
 
 
 @router.post("/routines/{slug}/run")

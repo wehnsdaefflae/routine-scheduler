@@ -132,30 +132,44 @@ async def receive_hook(request: Request, slug: str, token: str) -> dict:
 
 
 class TriggerCreate(BaseModel):
-    # only webhooks are creatable today — imap/watch_path are reserved shape, no watcher
-    type: Literal["webhook"] = "webhook"
-    cooldown_s: int = Field(triggers.DEFAULT_COOLDOWN_S, ge=0)
+    # webhook + report are creatable — imap/watch_path are reserved shape, no watcher.
+    # cooldown_s None = the type's own default (60s webhook, 900s report — report
+    # deliveries come in bursts and coalesce into one run per window).
+    type: Literal["webhook", "report"] = "webhook"
+    cooldown_s: int | None = Field(None, ge=0)
 
 
 @router.post("/routines/{slug}/triggers")
 def create_trigger(request: Request, slug: str, body: TriggerCreate) -> dict:
-    """Append a server-generated webhook trigger to routine.yaml (user config: 409 while
-    a run is active, like every config edit). The response carries the one place the
-    full hook URL path is handed out.
+    """Append a server-generated trigger to routine.yaml (user config: 409 while a run is
+    active, like every config edit). A webhook's response carries the one place the full
+    hook URL path is handed out; a report trigger has no URL — the daemon watches the
+    routine's inbox (web records, daemon fires).
     """
     info = _info(request, slug)
     guard_template(slug, "it never runs, so nothing can trigger it")
     guard_not_active(request, info)
-    trigger = triggers.new_webhook_trigger(cooldown_s=body.cooldown_s)
+    if body.type == "report":
+        if any(t.get("type") == "report" for t in info.cfg.triggers):
+            raise HTTPException(409, "this routine already has a report trigger — one "
+                                     "inbox, one watcher; adjust its cooldown instead")
+        trigger = triggers.new_report_trigger(
+            cooldown_s=triggers.DEFAULT_REPORT_COOLDOWN_S if body.cooldown_s is None
+            else body.cooldown_s)
+    else:
+        trigger = triggers.new_webhook_trigger(
+            cooldown_s=triggers.DEFAULT_COOLDOWN_S if body.cooldown_s is None
+            else body.cooldown_s)
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
     entries.append(trigger)
     raw["triggers"] = entries
     atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
-    _git_commit(info.cfg.dir, f"add webhook trigger {trigger['id']}")
+    _git_commit(info.cfg.dir, f"add {body.type} trigger {trigger['id']}")
     _state(request).scheduler.rescan()
-    return {"ok": True, "trigger": {**trigger, "url_path": triggers.hook_path(slug, trigger)}}
+    extra = {"url_path": triggers.hook_path(slug, trigger)} if body.type == "webhook" else {}
+    return {"ok": True, "trigger": {**trigger, **extra}}
 
 
 @router.delete("/routines/{slug}/triggers/{trigger_id}")

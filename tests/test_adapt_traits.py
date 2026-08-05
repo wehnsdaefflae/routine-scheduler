@@ -241,6 +241,27 @@ def test_decompose_binds_params_inline(monkeypatch, tmp_path):
         assert "Bind each resolved VALUE inline" in p
 
 
+def test_decompose_fallback_carries_resolved_params(monkeypatch, tmp_path):
+    """R14: the degraded fallback ships the pattern VERBATIM — dummy imports and all, which
+    NAME the parameters — while the instruction the values came from is consumed at compile
+    time. The fallback main must therefore carry the resolved values itself; without them a
+    run reads "params.DRAFT" with nothing on disk holding the draft (the clarify session
+    probed a dozen params paths, all ENOENT)."""
+    dead = _DeadEndpoint()
+    _install(monkeypatch, dead)
+    result = decompose(_server(tmp_path), "general-task", "some task",
+                       params={"DRAFT": "research scheduler improvements each run"})
+    assert result["degraded"] is True
+    assert "## Parameters" in result["main"]
+    assert "- **DRAFT**: research scheduler improvements each run" in result["main"]
+    # the decomposed (non-degraded) path stays param-section-free: values are bound inline
+    fake = _PipelineEndpoint()
+    _install(monkeypatch, fake)
+    ok = decompose(_server(tmp_path), "general-task", "some task",
+                   params={"DRAFT": "research scheduler improvements each run"})
+    assert ok["degraded"] is False and "## Parameters" not in ok["main"]
+
+
 # ---- pinned deliverables (META["pin"]) ----------------------------------------------------------
 
 

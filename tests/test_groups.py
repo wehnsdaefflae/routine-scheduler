@@ -1,8 +1,9 @@
-"""Routine groups (D53 Phase A): the store (rsched.groups) + its CRUD API (web.api_groups).
+"""Routine groups: the store (rsched.groups) + its CRUD API (web.api_groups), the shared
+group store injected into member runs' fs roots (D67), and the group schedule (D71).
 
-Phase A is the store + CRUD only — nothing fires. These tests pin the store's shape
-guarantees (ordered/deduped members, on_failure vocabulary, the update tri-state) and the
-API's member-existence validation against the live registry.
+These tests pin the store's shape guarantees (ordered/deduped members, on_failure
+vocabulary, the update tri-state), the API's member-existence validation against the live
+registry, and the shared-store root injection end to end.
 """
 
 from __future__ import annotations
@@ -181,3 +182,141 @@ def test_api_run_group_arms_a_chain(api_client):
 
     # a second arm of the same group is a 409 (one chain at a time)
     assert client.post(f"/api/groups/{gid}/run").status_code == 409
+
+
+# -- the group schedule (D71) --------------------------------------------------------------
+
+
+def test_store_cron_validation_and_clear(tmp_path):
+    home = tmp_path
+    rec = groups.create(home, name="Sched", cron="0 7 * * *", tz="UTC")
+    assert rec["cron"] == "0 7 * * *" and rec["tz"] == "UTC"
+    assert groups.scheduled_member_slugs(home) == set()      # no members yet
+    groups.update(home, rec["id"], members=["alpha"])
+    assert groups.scheduled_member_slugs(home) == {"alpha"}
+    # clearing the schedule un-suppresses the members
+    groups.update(home, rec["id"], cron="")
+    assert groups.scheduled_member_slugs(home) == set()
+    # bad cron is rejected on create and update
+    try:
+        groups.create(home, name="Bad", cron="not a cron")
+        raise AssertionError("expected ValueError for bad cron")
+    except ValueError:
+        pass
+    try:
+        groups.update(home, rec["id"], cron="61 * * * *")
+        raise AssertionError("expected ValueError for bad cron")
+    except ValueError:
+        pass
+    # a corrupt stored cron degrades to unscheduled instead of raising
+    from rsched.paths import atomic_write_json
+    atomic_write_json(groups.groups_file(home),
+                      {"groups": [{"id": "grp-x", "name": "G", "cron": "junk junk"}]})
+    assert groups.load(home)["groups"][0]["cron"] == ""
+
+
+def test_group_patch_forbids_unknown_keys(api_client):
+    client, tmp_path = api_client
+    _mk(tmp_path, "alpha")
+    gid = client.post("/api/groups", json={"name": "G", "members": ["alpha"]}) \
+                .json()["group"]["id"]
+    r = client.patch(f"/api/groups/{gid}", json={"membrs": ["alpha"]})
+    assert r.status_code == 422 and "membrs" in str(r.json()["detail"])
+    assert client.patch(f"/api/groups/{gid}", json={"name": "G2"}).status_code == 200
+
+
+def test_api_group_schedule_roundtrip(api_client):
+    """D71 web half: PATCH {schedule: {friendly}} → cron + server tz recorded; GET rides
+    the friendly prefill back; a manual spec clears the schedule; a bad spec 400s."""
+    client, tmp_path = api_client
+    _mk(tmp_path, "alpha")
+    gid = client.post("/api/groups",
+                      json={"name": "Sched", "members": ["alpha"]}).json()["group"]["id"]
+
+    r = client.patch(f"/api/groups/{gid}",
+                     json={"schedule": {"friendly": {"frequency": "daily", "time": "07:30"}}})
+    assert r.status_code == 200, r.text
+    assert r.json()["group"]["cron"] == "30 7 * * *"
+    assert r.json()["group"]["tz"]                      # the server zone rides beside it
+
+    body = client.get("/api/groups").json()
+    grp = next(g for g in body["groups"] if g["id"] == gid)
+    assert grp["schedule_friendly"] == {"frequency": "daily", "time": "07:30"}
+    assert body["server_tz"]
+
+    # manual clears it
+    r = client.patch(f"/api/groups/{gid}",
+                     json={"schedule": {"friendly": {"frequency": "manual"}}})
+    assert r.status_code == 200
+    assert r.json()["group"]["cron"] == "" and r.json()["group"]["tz"] == ""
+
+    # a bad friendly spec is a 400, and the stored schedule is untouched
+    r = client.patch(f"/api/groups/{gid}",
+                     json={"schedule": {"friendly": {"frequency": "sometimes"}}})
+    assert r.status_code == 400
+    assert client.get("/api/groups").json()["groups"][0]["cron"] == ""
+
+
+# -- the shared group store (D67, option B-i) ----------------------------------------------
+
+
+def test_member_store_roots_lookup_and_lazy_creation(tmp_path):
+    home = tmp_path
+    rec = groups.create(home, name="Morning", members=["alpha", "beta"])
+    # lookup without create: named but not materialized
+    roots = groups.member_store_roots(home, "alpha")
+    assert roots == [groups.store_dir(home, rec["id"])]
+    assert not roots[0].exists()
+    # create=True (the boot seam) materializes it; non-members get nothing
+    roots = groups.member_store_roots(home, "beta", create=True)
+    assert roots[0].is_dir()
+    assert groups.member_store_roots(home, "loner") == []
+
+
+def test_grouped_run_reads_and_writes_the_shared_store(make_routine, scripted):
+    """D67 end to end: a grouped routine's run gets .control/group-stores/<gid>/ as an
+    injected fs read+write root — file actions on it succeed with no grant dance — while
+    an ungrouped run's roots never carry it."""
+    from rsched.engine.runtime import run_routine
+    from test_loop import _server
+
+    d = make_routine(slug="grpmember")
+    server = _server(d)
+    rec = groups.create(server.routines_home, name="Pipeline", members=["grpmember"])
+    store = groups.store_dir(server.routines_home, rec["id"])
+    scripted([
+        {"say": "leave a note for the group", "kind": "write_file",
+         "path": str(store / "grpmember-status.md"), "content": "ingest done\n"},
+        {"say": "read it back", "kind": "read_file",
+         "path": str(store / "grpmember-status.md")},
+        {"say": "done", "kind": "finish", "status": "ok",
+         "summary": "wrote and re-read the group note, eight words here now yes ok done"},
+    ])
+    status, run_dir = run_routine(d, server, run_ts="20260805-070000")
+    assert status == "ok"
+    assert (store / "grpmember-status.md").read_text() == "ingest done\n"
+    from rsched.engine.transcript import read_events
+    events = read_events(run_dir / "transcript.jsonl")[0]
+    reads = [e for e in events if e["type"] == "observation"
+             and e["payload"].get("kind") == "read_file"]
+    assert reads and not reads[0]["payload"].get("error")
+
+
+def test_ungrouped_run_context_has_no_store_root(tmp_path):
+    from types import SimpleNamespace
+
+    from rsched.config import ServerConfig
+    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.transcript import Transcript
+
+    routine = SimpleNamespace(slug="solo", dir=tmp_path / "solo",
+                              fs_read_roots=[], fs_write_roots=[])
+    (tmp_path / "solo").mkdir()
+    ctx = RunContext(routine=routine, server=ServerConfig(), registry=None,
+                     run_ts="20260805-070000", run_dir=tmp_path / "solo" / "runs" / "x",
+                     transcript=Transcript(tmp_path / "t.jsonl"),
+                     budgets=Budgets(max_turns=1, max_wall_clock_min=1,
+                                     max_total_tokens=1, max_subruns=1,
+                                     max_subrun_depth=1, ask_timeout_min=1))
+    assert ctx.group_store_roots == []
+    assert ctx.read_roots() == [] and ctx.write_roots() == []

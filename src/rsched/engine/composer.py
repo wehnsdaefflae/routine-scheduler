@@ -35,6 +35,15 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
     if r.fs_read_roots or r.fs_write_roots:
         extra = (f"\nAdditional readable roots: {[str(p) for p in r.fs_read_roots]}; "
                  f"writable roots: {[str(p) for p in r.fs_write_roots]}.")
+    if ctx.group_store_roots:
+        # D67: the injected shared store — the run must know the root EXISTS and what it
+        # is for, or it never looks there. Collision semantics stated honestly: whole-file
+        # atomic writes, last write wins per file.
+        extra += ("\nGroup shared store (read+write, shared with the other routines in "
+                  f"your group): {[str(p) for p in ctx.group_store_roots]} — exchange "
+                  "files with your group members there. Writes are whole-file and last "
+                  "write wins per file, so prefer per-routine filenames "
+                  "(<your-slug>-<topic>.md) and treat shared files as read-mostly.")
     # write_util is a user-set capability; the confirm level is its approval policy.
     # ctx.grants None (direct construction) = ungated.
     g = ctx.grants

@@ -204,7 +204,7 @@ util, a `read_file` into `runs/` beyond the enabled depth, and any `write_file` 
 OWN recipe — `main.md` / `stages/` / `traits/` (a fixed rule, not a capability — unlocked only
 when a user-granted fs_write_root covers the routine dir, the routine-improver's case) — are
 rejected inside the schema-retry cycle by `validate_action`, with an error naming the way out:
-a typed ACCESS REQUEST for the denied entity (see the four-state model below), or the settled
+a typed ACCESS REQUEST for the denied entity (see the grant model below), or the settled
 do-not-re-request wording when the user already declined it. A run NEVER writes
 its own `routine.yaml` at all: config (budgets, models, permissions, capabilities, fs-roots) is
 the user's, so even the routine-improver proposes a config change with a deferred `ask_user`
@@ -228,15 +228,17 @@ reserved utils, no recipe writes, no traits of their own.
 Budgets, `fs_read_roots` / `fs_write_roots` and schedules are resources, not capabilities —
 they stay plain `routine.yaml` config.
 
-## Access requests — the four-state grant model
+## Access requests — the grant model
 
 Every grantable thing has ONE id in the entity vocabulary (`entities.py`):
 `action:<gated-kind>`, `util:<reserved-name>`, `secret:<STORE_NAME>`,
 `connection:<provider>`, `machine:<name>`, `fs-read:<path>` / `fs-write:<path>`,
 `runs:last|all`, `workflows:generate`, `recreate:<deleted-util-slug>`. A run that hits a
 gate files an `ask_user` carrying `request: "<entity-id>"` (the question stays its prose —
-WHY it needs the entity); the Decisions page renders four buttons, and each entity is
-always in exactly one of four states:
+WHY it needs the entity); the Decisions page renders the typed decision buttons — four
+(allow/deny × now/forever) for every class, plus a fifth, **allow once (this action
+only)**, offered for the turn-action classes — and each entity is always in exactly one
+of four states (a once-grant passes through *allowed now* and back out):
 
 - **allowed forever** — the entity's NATIVE routine.yaml key: a capability switched on
   through the permission cascade (allow-forever activates a covering conduct doc and
@@ -255,7 +257,29 @@ always in exactly one of four states:
   sandbox's filesystem roots, and the declared-only env injection (a once-granted
   connection/machine/secret flows exactly like a bound one, for this run). Decided
   between runs (a deferred request answered on the Decisions page), the consuming run's
-  boot seeds the overlay before the prompt is composed.
+  boot seeds the overlay before the prompt is composed; decided while the run is LIVE
+  (the same deferred request, answered mid-run), the next turn boundary's inbox drain
+  bridges the decision into the running overlay — forever-decisions included, since the
+  run's loaded config predates the click — so "usable now" holds for the running run
+  too, not just the next one. Entity ids are canonicalized where the request enters
+  (`fs-read`/`fs-write` paths expand to one absolute form), so the record, the config
+  write and the overlay always name the same root.
+
+- **allowed once** (D65, turn-action classes only: `action:` / `util:` / `runs:` /
+  `workflows:`) — an allow-now that the engine REVOKES after exactly one use. The grant
+  seeds the same run overlay (so it reaches the same enforcers, and the CAPABILITIES
+  line marks it "(one action only)"); the first successfully-DISPATCHED matching action
+  spends it — the engine drops it from the overlay and rebuilds the policy at that same
+  boundary, appending an `[ONCE-GRANT SPENT: …]` line to the consuming observation so
+  the next matching attempt is not an unexplained denial. A schema retry or a validation
+  rejection never consumes (it never becomes a turn), and neither does a user gate
+  refusing the call pre-execution (a declined write_util, refused secrets) or a bounced
+  handler (unknown target, failed read, missing util) — the grant is spent by USE, not
+  by attempt. Why only these classes: their use IS a turn action `validate_action`
+  observes, so consume-once is exact. `secret:`/`fs-read:`/`fs-write:` are consumed
+  inside a util SUBPROCESS the engine never sees as a turn — "once" for them could only
+  mean "the next util call that touches it", a coarser promise than the button makes —
+  so those classes stay four-state and the button is not offered (the API refuses it).
 
 Ownership is strict: FOREVER decisions are persisted by the WEB layer at click time —
 the engine never writes routine.yaml, not even to record an approval. Sub-workflows

@@ -50,3 +50,26 @@ def test_write_file_overwrite_size_equals_payload(make_routine, tmp_path):
     over = do_write_file({"path": str(target), "content": "bb\n"}, ctx)
     assert not over.get("append")
     assert over["size"] == over["bytes"] == len(b"bb\n")
+
+
+def test_append_outside_own_dir_preserves_existing_content(make_routine, tmp_path):
+    """R1 regression: append:true on an existing file OUTSIDE the routine dir (an
+    fs_write_root — the reported case was a conversation LEDGER) passes the grounding
+    gate UNREAD (append adds without destroying) and keeps every original byte; the
+    observation proves it (size == prior + bytes, never == bytes)."""
+    ctx = _ctx(make_routine, tmp_path)
+    ext = tmp_path / "conversations" / "c-20260719-162554"
+    ext.mkdir(parents=True)
+    ctx.routine.fs_write_roots = [tmp_path / "conversations"]
+    target = ext / "LEDGER.md"
+    original = "# LEDGER — conversation\n\n### seed — conversation created\n"
+    target.write_text(original, encoding="utf-8")
+
+    entry = "### 20260719-190013 — appended entry\n"
+    obs = do_write_file({"path": str(target), "content": entry, "append": True}, ctx)
+    assert "error" not in obs                       # never read this run, still allowed
+    text = target.read_text(encoding="utf-8")
+    assert text == original + entry                 # appended, NOT overwritten
+    assert obs["append"] is True
+    assert obs["size"] == len((original + entry).encode("utf-8"))
+    assert obs["size"] == len(original.encode("utf-8")) + obs["bytes"]

@@ -116,11 +116,13 @@ def take_answer(routine_dir: Path, qid: str, consumed_dir: Path) -> dict | None:
 
 
 def collect_deferred_answers(routine_dir: Path, consumed_dir: Path) -> list[dict]:
-    """At run start: match stray answer files against questions/pending/, consume both,
-    and return [{question, answer}] for the state digest. An access-request pair also
-    carries `request` (the record's entity ids) + `decision` (+ `account`), so the boot
-    can seed the run overlay (requests.apply_boot_decisions) — an "allow now" decided
-    between runs grants exactly the run that consumes it.
+    """Match stray answer files against questions/pending/, consume both, and return
+    [{question, answer}] — called at run start (boot digest) AND at every live turn
+    boundary (control.drain_injections, the F195 delivery). An access-request pair also
+    carries `request` (the record's entity ids) + `decision` (+ `account`), so both
+    consumers can seed the run overlay (requests.apply_deferred_decisions) — an
+    "allow now" decided between runs grants exactly the run that consumes it, and a
+    decision landing mid-run reaches the running run's policy at once (R118).
     """
     inbox = routine_dir / "inbox"
     pending = routine_dir / "questions" / "pending"

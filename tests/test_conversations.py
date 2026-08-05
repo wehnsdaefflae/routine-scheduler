@@ -190,6 +190,44 @@ def test_create_list_detail_message_delete(client):
     assert r.status_code == 200 and not conv_dir.exists()
 
 
+def test_conversation_patch_forbids_unknown_keys(client):
+    c, _srv = client
+    slug = c.post("/api/conversations", data={"text": "hello"}).json()["slug"]
+    r = c.patch(f"/api/conversations/{slug}", json={"titel": "typo"})
+    assert r.status_code == 422 and "titel" in str(r.json()["detail"])
+    assert c.patch(f"/api/conversations/{slug}",
+                   json={"title": "Real title"}).status_code == 200
+
+
+def test_message_racing_a_finish_still_wakes_the_run(client, monkeypatch):
+    """R108 residual (F268): the handler snapshots liveness BEFORE writing the message —
+    a run that finishes inside that window used to get a 'mid-run' delivery nobody would
+    ever drain. The post-write re-check must fall through to the terminal resume."""
+    import rsched.web.api_conversations as api_conv
+
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "long job"}).json()["slug"]
+    conv_dir = server.conversations_home / slug
+    run_id = c.get(f"/api/conversations/{slug}").json()["run_id"]
+    ts = run_id.split(":")[1]        # fake_fire left it "running"
+
+    real_save = api_conv._save_attachments
+
+    async def finish_mid_window(conv_dir_, files):
+        # the run finishes AFTER the handler's liveness snapshot, BEFORE the re-check
+        atomic_write_json(conv_dir / "runs" / ts / "status.json",
+                          {"run_id": run_id, "state": "finished", "turn": 5})
+        return await real_save(conv_dir_, files)
+
+    monkeypatch.setattr(api_conv, "_save_attachments", finish_mid_window)
+    c.app.state.runner.calls.clear()
+    r = c.post(f"/api/conversations/{slug}/message", data={"text": "one more thing"})
+    assert r.status_code == 200, r.text
+    assert r.json()["delivery"] == "resumed"                  # not a stranded "mid-run"
+    assert ("resume", slug) in c.app.state.runner.calls
+    assert list((conv_dir / "inbox").glob("msg-*.json"))      # durable for the woken run
+
+
 def test_message_to_terminal_conversation_refused_while_draining(client):
     """R81: a message to a TERMINAL conversation while the daemon is DRAINING for a restart
     must be refused up front with a clear 503 — NOT filed-then-stranded (resume() refuses
@@ -395,6 +433,112 @@ def test_create_conversation_accepts_prestart_layers(client):
                   data={"text": "x", "deliberation": "extreme"}).status_code == 400
     assert c.post("/api/conversations",
                   data={"text": "x", "permissions": "{not json"}).status_code == 400
+
+
+def test_create_conversation_with_folder_access(client):
+    """D70: the composer's folder-access roots ride the create request and land on the
+    config BEFORE the engine boots — workdir first (the project dir), write roots also
+    readable (the workdir convention: read_file resolves against fs_read_roots only),
+    everything deduped, in the same native keys an allow-forever fs grant is written to."""
+    import json
+
+    c, server = client
+    r = c.post("/api/conversations", data={
+        "text": "work on my data", "workdir": "~/projects/x",
+        "fs_write_roots": json.dumps(["/srv/videos", "~/projects/x", "/srv/videos/"]),
+        "fs_read_roots": json.dumps(["~/datasets", "/srv/videos"]),
+    })
+    assert r.status_code == 200, r.text
+    slug = r.json()["slug"]
+    raw = yaml.safe_load((server.conversations_home / slug / "routine.yaml").read_text())
+    assert raw["fs_write_roots"] == ["~/projects/x", "/srv/videos"]
+    assert raw["fs_read_roots"] == ["~/projects/x", "/srv/videos", "~/datasets"]
+    # the detail payload exposes the full lists (workdir stays write_roots[0])
+    d = c.get(f"/api/conversations/{slug}").json()
+    assert d["workdir"].endswith("projects/x")
+    assert d["fs_write_roots"] == ["~/projects/x", "/srv/videos"]
+    assert d["fs_read_roots"] == ["~/projects/x", "/srv/videos", "~/datasets"]
+    # relative paths and non-JSON payloads are refused before anything lands on disk
+    assert c.post("/api/conversations", data={
+        "text": "x", "fs_write_roots": json.dumps(["srv/videos"])}).status_code == 400
+    assert c.post("/api/conversations", data={
+        "text": "x", "fs_read_roots": "not json"}).status_code == 400
+
+
+def test_patch_workdir_preserves_granted_roots(client):
+    """The workdir is by convention the FIRST write root; changing the project directory
+    replaces that slot only — folder grants beyond it (D70 create-time roots, allow-forever
+    fs decisions) survive the change instead of being wiped."""
+    import json
+
+    c, server = client
+    slug = c.post("/api/conversations", data={
+        "text": "t", "workdir": "~/projects/x",
+        "fs_write_roots": json.dumps(["/srv/videos"])}).json()["slug"]
+    conv_dir = server.conversations_home / slug
+    r = c.patch(f"/api/conversations/{slug}", json={"workdir": "~/projects/y"})
+    assert r.status_code == 200, r.text
+    raw = yaml.safe_load((conv_dir / "routine.yaml").read_text())
+    assert raw["fs_write_roots"] == ["~/projects/y", "/srv/videos"]
+    assert raw["fs_read_roots"] == ["~/projects/y", "/srv/videos"]
+    # clearing the workdir keeps the granted root
+    c.patch(f"/api/conversations/{slug}", json={"workdir": ""})
+    raw = yaml.safe_load((conv_dir / "routine.yaml").read_text())
+    assert raw["fs_write_roots"] == ["/srv/videos"]
+
+
+def _tiny_window_model(server, name="tiny"):
+    """A catalog model whose max output tokens alone fill its window (65_536 chars ≈
+    16_384 tokens = the default output reservation) — the class the harness cannot run."""
+    from rsched.config import ModelConfig
+
+    server.models[name] = ModelConfig(name=name, endpoint="dummy", model="t",
+                                      context_chars=65_536, max_tokens=16_384)
+
+
+def test_create_refuses_model_the_harness_cannot_run(client):
+    """R112/R128: name-in-catalog is not enough — a model whose window minus its output
+    reservation leaves no input budget dies on its first completion, so create refuses it
+    up front with a message naming the numbers and the fix."""
+    c, server = client
+    _tiny_window_model(server)
+    r = c.post("/api/conversations", data={"text": "t", "model": "tiny"})
+    assert r.status_code == 400
+    assert "cannot run a single turn" in r.json()["detail"]
+    assert "16,384" in r.json()["detail"]
+    # a workable model still passes (the fixture's default: 100k chars, default output cap)
+    assert c.post("/api/conversations", data={"text": "t", "model": "m"}).status_code == 200
+
+
+def test_model_change_refuses_impossible_window(client):
+    c, server = client
+    _tiny_window_model(server)
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    r = c.patch(f"/api/conversations/{slug}",
+                json={"models": {"main": "tiny", "subroutine": "tiny", "tool_call": "tiny"}})
+    assert r.status_code == 400
+    assert "cannot run a single turn" in r.json()["detail"]
+    raw = yaml.safe_load((server.conversations_home / slug / "routine.yaml").read_text())
+    assert "models" not in raw                     # nothing landed on the config
+    ok = c.patch(f"/api/conversations/{slug}",
+                 json={"models": {"main": "m", "subroutine": "m", "tool_call": "m"}})
+    assert ok.status_code == 200
+
+
+def test_detail_and_settings_pickers_carry_window_meta(client):
+    """R128: the picker payloads expose per-model window metadata so the UI can label and
+    disable — the conversation detail's catalog_meta and /api/settings/models' window
+    field come from the same derivation."""
+    c, server = client
+    _tiny_window_model(server)
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    meta = c.get(f"/api/conversations/{slug}").json()["catalog_meta"]
+    assert meta["m"]["fit"] in ("ok", "tight") and meta["m"]["input_ceiling_chars"] > 0
+    assert meta["tiny"]["fit"] == "impossible"
+    assert meta["tiny"]["context_tokens"] == 16_384
+    by_name = {m["name"]: m for m in c.get("/api/settings/models").json()["models"]}
+    assert by_name["tiny"]["window"]["fit"] == "impossible"
+    assert by_name["m"]["window"] == meta["m"]
 
 
 def test_conversation_phase_mapping():

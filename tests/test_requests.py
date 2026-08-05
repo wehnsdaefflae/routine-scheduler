@@ -1,7 +1,8 @@
-"""Typed access requests — the run side of the four-state grant model: request
-validation inside the schema-retry cycle, the blocking decision flow (allow/deny ×
-now/forever), deferred decisions consumed at boot, the run-scoped overlay's reach
-(policy + schema + fs roots), and the prompt surfaces that teach it."""
+"""Typed access requests — the run side of the grant model: request validation inside
+the schema-retry cycle, the blocking decision flow (allow/deny × now/forever, plus
+allow-once for turn-action classes — D65), deferred decisions consumed at boot, the
+run-scoped overlay's reach (policy + schema + fs roots), and the prompt surfaces that
+teach it."""
 
 from __future__ import annotations
 
@@ -192,6 +193,130 @@ def test_blocking_request_allow_now_unlocks_a_reserved_util(make_routine, script
                 .get("capabilities") or {}).get("utils")
 
 
+def test_blocking_request_allow_once_spends_on_the_next_matching_dispatch(make_routine,
+                                                                          scripted):
+    """D65 end-to-end: an allow_once decision unlocks the gated kind for EXACTLY one
+    dispatched use — the first schedule_run arms its one-shot (a real execution), the
+    second is corrected inside the schema-retry cycle (revoked, never a turn)."""
+    d = make_routine(slug="reqonce", budgets={"ask_timeout_min": 1})
+    server = _server(d)
+    t = _answer_when_asked(d, {"decision": "allow_once", "text": "allow once"})
+    scripted([
+        {"say": "need a one-shot", "kind": "ask_user", "mode": "blocking",
+         "request": "action:schedule_run", "question": "May I arm a follow-up run?",
+         "default": "note the need in the summary"},
+        {"say": "arm it", "kind": "schedule_run", "target": "reqonce",
+         "fire_at": "+3d", "reason": "follow up on the digest"},
+        {"say": "arm another", "kind": "schedule_run", "target": "reqonce",
+         "fire_at": "+5d", "reason": "and again"},
+        finish(),
+    ])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    t.join()
+    assert status == "ok"
+    events = read_events(run_dir / "transcript.jsonl")[0]
+    ask_obs = next(e for e in events if e["type"] == "observation"
+                   and e["payload"].get("kind") == "ask_user")
+    assert ask_obs["payload"]["decision"] == "allow_once"
+    assert "ONE action" in ask_obs["payload"]["result"]
+    armed = [e for e in events if e["type"] == "observation"
+             and e["payload"].get("kind") == "schedule_run"]
+    assert len(armed) == 1                      # the second attempt never became a turn
+    schema_errors = [e["payload"]["message"] for e in events if e["type"] == "error"
+                     and e["payload"].get("where") == "schema"]
+    assert any("switched OFF" in m for m in schema_errors)   # revoked → gated again
+    import yaml as _yaml
+    persisted = (_yaml.safe_load((d / "routine.yaml").read_text())
+                 .get("capabilities") or {}).get("actions") or []
+    assert "schedule_run" not in persisted       # nothing persisted
+
+
+def test_a_missing_util_does_not_spend_a_once_grant(make_routine, scripted):
+    """The grant is spent by USE, not by attempt: a dispatched call the handler bounced
+    (here: the util does not exist in the test library) leaves the once-grant armed, so
+    the retry is still permitted."""
+    d = make_routine(slug="reqoncemiss", budgets={"ask_timeout_min": 1})
+    server = _server(d)
+    _reserve_discord(server)
+    t = _answer_when_asked(d, {"decision": "allow_once", "text": "allow once"})
+    scripted([
+        {"say": "need the channel", "kind": "ask_user", "mode": "blocking",
+         "request": "util:discord", "question": "May I post once?",
+         "default": "skip the post"},
+        {"say": "post it", "kind": "util", "name": "discord", "args": ["send", "hi"]},
+        {"say": "retry", "kind": "util", "name": "discord", "args": ["send", "hi again"]},
+        finish(),
+    ])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    t.join()
+    assert status == "ok"
+    events = read_events(run_dir / "transcript.jsonl")[0]
+    calls = [e for e in events if e["type"] == "observation"
+             and e["payload"].get("kind") == "util"]
+    assert len(calls) == 2                       # both dispatched — neither was denied
+    assert all(c["payload"].get("missing") for c in calls)
+
+
+def _once_loop(granted):
+    ctx = SimpleNamespace(granted_now=set(granted), denied_now=set(),
+                          granted_once=set(granted), grant_args={}, run_ts=TS)
+    return SimpleNamespace(ctx=ctx, base_grants=GrantPolicy(), allowed_tools=None,
+                           grants=GrantPolicy(), _finish_reserved=False,
+                           action_schema=None)
+
+
+def test_consume_once_spends_on_use_and_survives_gate_refusals():
+    from rsched.engine.requests import consume_once_grants, spent_notice
+
+    loop = _once_loop({"util:discord"})
+    # a user gate refused the call pre-execution — still armed
+    assert consume_once_grants(loop, {"kind": "util", "name": "discord"},
+                               {"kind": "util", "declined_secrets": ["X"]}) == set()
+    # an unrelated action — still armed
+    assert consume_once_grants(loop, {"kind": "read_file", "path": "state/x"}, {}) == set()
+    assert "util:discord" in loop.ctx.granted_once
+    # the real use spends it: gone from BOTH overlay sets, policy rebuilt without it
+    spent = consume_once_grants(loop, {"kind": "util", "name": "discord"},
+                                {"kind": "util", "name": "discord", "exit": 0})
+    assert spent == {"util:discord"}
+    assert loop.ctx.granted_once == set() and loop.ctx.granted_now == set()
+    assert "discord" not in loop.grants.utils
+    assert "ONCE-GRANT SPENT" in spent_notice(spent)
+
+
+def test_once_match_covers_each_turn_action_class():
+    from rsched.engine.requests import _once_match
+
+    assert _once_match("action:memory_read", {"kind": "memory_read", "name": "x"}, TS)
+    assert not _once_match("action:memory_read", {"kind": "memory_write", "name": "x"}, TS)
+    assert _once_match("util:discord", {"kind": "util", "name": "discord"}, TS)
+    assert not _once_match("util:discord", {"kind": "util", "name": "other"}, TS)
+    # runs: spent by reading ANOTHER run's tree — never by the run's own
+    assert _once_match("runs:last",
+                       {"kind": "read_file", "path": "runs/20260101-000000/result.md"}, TS)
+    assert not _once_match("runs:last",
+                           {"kind": "read_file", "path": f"runs/{TS}/state.json"}, TS)
+    assert not _once_match("runs:last", {"kind": "read_file", "path": "state/notes.md"}, TS)
+    assert _once_match("workflows:generate",
+                       {"kind": "subtask", "workflow": "generate", "prompt": "p"}, TS)
+    assert not _once_match("workflows:generate",
+                           {"kind": "subtask", "workflow": "general-task", "prompt": "p"}, TS)
+
+
+def test_apply_decision_allow_once_arms_only_turn_action_classes():
+    """Engine fail-closed mirror of the web guard: allow_once on a non-turn-action class
+    grants NOTHING (never a silent widening to allow_now — an unconsumable once-grant
+    would revoke nothing all run)."""
+    from rsched.engine.requests import apply_decision
+
+    loop = _once_loop(set())
+    apply_decision(loop, ["secret:FOO_KEY"], "allow_once")
+    assert loop.ctx.granted_now == set() and loop.ctx.granted_once == set()
+    apply_decision(loop, ["util:discord"], "allow_once")
+    assert loop.ctx.granted_now == {"util:discord"}
+    assert loop.ctx.granted_once == {"util:discord"}
+
+
 def test_blocking_request_deny_now_keeps_the_gate_shut(make_routine, scripted):
     """deny_now: the util attempt after the decision is corrected inside the schema-retry
     cycle with the do-not-re-request wording — it never becomes a turn."""
@@ -218,7 +343,7 @@ def test_blocking_request_deny_now_keeps_the_gate_shut(make_routine, scripted):
 
 
 def test_free_text_on_a_request_is_held_then_a_decision_settles(make_routine, scripted):
-    """D38 extended to requests: a reply that is not one of the four typed decisions is
+    """D38 extended to requests: a reply that is not one of the typed decisions is
     HELD as a delayed user message (the question stays open) — only a decision settles
     the request. The held text arrives as a normal message after the decision."""
     d = make_routine(slug="reqhold", budgets={"ask_timeout_min": 1})
@@ -263,6 +388,93 @@ def test_free_text_on_a_request_is_held_then_a_decision_settles(make_routine, sc
     ask_obs = next(e for e in events if e["type"] == "observation"
                    and e["payload"].get("kind") == "ask_user")
     assert ask_obs["payload"].get("decision") == "deny_now"
+
+
+def test_request_ids_canonicalize_fs_paths(monkeypatch, tmp_path):
+    """Ids are canonicalized where the request enters the pipeline: an fs entity asked
+    as `~/…` must yield the SAME absolute id in the pending record, the web's config
+    write and the run overlay — or the granted root never matches what the enforcers
+    compare (write_roots/read_roots hold expanded absolute paths)."""
+    from rsched.engine.requests import request_ids
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert request_ids({"request": "fs-write:~/proj"}) == [f"fs-write:{tmp_path / 'proj'}"]
+    # non-fs ids pass unchanged; a malformed id passes RAW so request_denial can teach it
+    assert request_ids({"request": ["util:discord", "gibberish"]}) \
+        == ["util:discord", "gibberish"]
+
+
+def test_web_decision_mid_run_bridges_into_the_live_overlay(make_routine, scripted,
+                                                            tmp_path, monkeypatch):
+    """R118: a deferred access request answered on the Decisions page WHILE the run is
+    live grants the RUNNING run, not just the next one. Before the drain bridge only the
+    answer's prose ("usable now") reached the model — ctx.granted_now never updated, so
+    file actions kept rejecting the path and every later util call's sandbox was built
+    without the new root (EACCES until the next run rebuilt it from config)."""
+    from rsched.engine import executor as executor_mod
+
+    target = tmp_path / "granted-target"
+    target.mkdir()
+    policies = []
+    monkeypatch.setattr(executor_mod.utils_lib, "run_util",
+                        lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
+                        **_kw: (policies.append(policy) or (0, "ran", "")))
+    monkeypatch.setattr(executor_mod.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(executor_mod.utils_lib, "util_needs",
+                        lambda home, name: (set(), False))
+    d = make_routine(slug="livegrant")
+    qid = f"q-{TS}-2"
+    scripted([
+        {"say": "try before the grant", "kind": "write_file",
+         "path": str(target / "before.txt"), "content": "x"},
+        {"say": "ask for the root", "kind": "ask_user", "mode": "deferred",
+         "question": "May I write the media library?", "request": f"fs-write:{target}"},
+        # the user clicks allow-forever on the Decisions page while the run is LIVE —
+        # the web layer persists config at click time (not emulated here: the ENGINE
+        # must not depend on it) and files exactly this answer shape into the inbox
+        {"say": "the web's answer file lands", "kind": "write_file",
+         "path": f"inbox/answer-{qid}.json",
+         "content": {"qid": qid, "decision": "allow_forever", "source": "web",
+                     "text": "allowed permanently — recorded in the routine's config "
+                             "(and usable now)", "ts": "2026-07-29T07:01:00+00:00"}},
+        {"say": "try after the grant", "kind": "write_file",
+         "path": str(target / "after.txt"), "content": "it works now"},
+        {"say": "the sandbox too", "kind": "util", "name": "frob", "args": []},
+        finish(),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    # before the decision: rejected (outside every root); after: written
+    assert not (target / "before.txt").exists()
+    assert (target / "after.txt").read_text(encoding="utf-8") == "it works now"
+    events = read_events(run_dir / "transcript.jsonl")[0]
+    before = next(e for e in events if e["type"] == "observation"
+                  and e["payload"].get("kind") == "write_file")
+    assert before["payload"].get("error")
+    # the very next util call's sandbox already carries the granted root
+    assert policies and any(target in (p.write_roots or ()) for p in policies)
+    # the bridge carries the RUNTIME grant only — the engine never writes config
+    import yaml as _yaml
+    raw = _yaml.safe_load((d / "routine.yaml").read_text())
+    assert str(target) not in str(raw.get("fs_write_roots") or [])
+
+
+def test_reserved_finish_schema_survives_a_drain_time_decision():
+    """A decision bridged at the same boundary that spent the reserved finish turn must
+    not un-narrow the finish-only grammar — the last turn stays a finish; the policy
+    update itself still lands (resource consumers read it)."""
+    from rsched.engine.requests import rebuild_policy
+
+    sentinel = {"narrowed": "finish-only"}
+    ctx = SimpleNamespace(granted_now={"util:discord"}, denied_now=set())
+    loop = SimpleNamespace(ctx=ctx, base_grants=GrantPolicy(), allowed_tools=None,
+                           action_schema=sentinel, _finish_reserved=True)
+    rebuild_policy(loop)
+    assert loop.action_schema is sentinel          # the narrowed grammar survived
+    assert "discord" in loop.grants.utils          # the grant itself still landed
+    loop._finish_reserved = False
+    rebuild_policy(loop)
+    assert loop.action_schema is not sentinel      # normal turns re-project as before
 
 
 def test_deferred_decision_applies_at_next_boot(make_routine, scripted):

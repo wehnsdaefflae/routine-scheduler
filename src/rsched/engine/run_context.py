@@ -116,6 +116,17 @@ class RunContext:
     granted_now: set[str] = field(default_factory=set)
     denied_now: set[str] = field(default_factory=set)
     grant_args: dict = field(default_factory=dict)
+    # The subset of granted_now armed as `allow once (this action only)` (D65): each id is
+    # revoked — removed from BOTH sets and the policy rebuilt — the moment the next
+    # successfully-dispatched matching action lands (requests.consume_once_grants). Only
+    # entities.TURN_ACTION_CLASSES ever appear here. In-memory like its parent overlay.
+    granted_once: set[str] = field(default_factory=set)
+    # D67: the group shared store(s) — <routines_home>/.control/group-stores/<gid>/ for
+    # every group this routine belongs to, injected into the effective fs read+write
+    # roots (read_roots/write_roots below). Seeded at boot (engine/runtime, dirs created
+    # lazily there) and inherited by children like every resource; empty for ungrouped
+    # routines and conversations.
+    group_store_roots: list = field(default_factory=list)
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
     # Spend recorded by EARLIER legs of this run (set on resume from the transcript).
     # Budgets deliberately ignore it — a resume gets a fresh window — but reporting must
@@ -175,15 +186,17 @@ class RunContext:
 
     def read_roots(self) -> list[Path]:
         """The run's EFFECTIVE readable roots: config fs_read_roots plus one-time
-        fs-read grants. Every consumer (file actions, the util sandbox, the vision
-        fallback) resolves against this, so a granted root behaves exactly like a
-        configured one — for this run.
+        fs-read grants plus the group shared store(s). Every consumer (file actions,
+        the util sandbox, the vision fallback) resolves against this, so a granted root
+        behaves exactly like a configured one — for this run.
         """
-        return [*self.routine.fs_read_roots, *self._granted_paths("fs-read")]
+        return [*self.routine.fs_read_roots, *self._granted_paths("fs-read"),
+                *self.group_store_roots]
 
     def write_roots(self) -> list[Path]:
         """The effective writable roots — write_roots' counterpart of read_roots()."""
-        return [*self.routine.fs_write_roots, *self._granted_paths("fs-write")]
+        return [*self.routine.fs_write_roots, *self._granted_paths("fs-write"),
+                *self.group_store_roots]
 
     @property
     def root_run_dir(self) -> Path:

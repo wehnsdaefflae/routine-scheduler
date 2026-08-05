@@ -1,15 +1,17 @@
 """Routine groups — the durable store for named, ordered collections of routines (D53).
 
-A group is an ORDERED list of routine slugs plus a mid-chain-failure policy. Phase A (this
-module + api_groups + the Groups UI) is the STORE and its CRUD surface only: creating,
-naming, ordering and deleting groups, and choosing what happens if a member fails mid-chain.
-Phase B (sequential-fire) is a later increment that will READ this store to run a group's
-members back-to-back on the daemon tick — nothing here fires anything yet.
+A group is an ORDERED list of routine slugs plus a mid-chain-failure policy, and optionally
+a CRON SCHEDULE (D71): a scheduled group auto-arms its sequential chain on the group's cron
+(member 0 fires, the rest chain on completion — daemon/group_runs.py), and every member's
+OWN cron is SUPPRESSED while it belongs to a scheduled group — one fire path, no
+double-firing. The routine page's Schedule dropdown shows such a member as "group managed".
+An UNSCHEDULED group changes nothing about its members' own schedules.
 
 Ownership mirrors rsched.triggers / rsched.schedule_once: a group is instance-level operator
-state that the WEB layer writes and a future daemon reads, so it CANNOT live in a routine's
-routine.yaml (config is the user's, per-routine, never run-written across routines). It lives
-in ONE daemon-owned file the registry's dot-dir scan ignores:
+state that the WEB layer writes and the daemon reads (web RECORDS, daemon FIRES), so it
+CANNOT live in a routine's routine.yaml (config is the user's, per-routine, never
+run-written across routines). It lives in ONE daemon-owned file the registry's dot-dir scan
+ignores:
 
     <routines_home>/.control/groups.json
 
@@ -19,17 +21,22 @@ Shape (single document, atomic-written):
      "groups": [{"id": "grp-1a2b3c4d", "name": "Morning jobs",
                  "members": ["weight-coach", "news-digest"],
                  "on_failure": null,          # null = inherit default_on_failure
+                 "cron": "0 7 * * *",         # "" = unscheduled (fire only when armed)
+                 "tz": "Europe/Berlin",       # written beside cron by the web layer
                  "created": "2026-07-31T…"}]}
 
 This module owns the shared vocabulary and the file IO. It validates SHAPE only (types,
-dedup, the on_failure vocabulary); validating that each member slug names a REAL routine is
-the API layer's job (it holds the registry), exactly as api_hooks validates against registry.
+dedup, the on_failure vocabulary, cron syntax); validating that each member slug names a
+REAL routine is the API layer's job (it holds the registry), exactly as api_hooks validates
+against registry.
 """
 
 from __future__ import annotations
 
 import uuid
 from pathlib import Path
+
+from croniter import croniter
 
 from .ids import now_iso
 from .paths import atomic_write_json, read_json
@@ -54,6 +61,38 @@ def groups_file(routines_home: Path) -> Path:
     return Path(routines_home) / ".control" / "groups.json"
 
 
+# ---- the shared store (D67, option B-i) --------------------------------------------------
+#
+# Every run of a grouped routine gets its group's store dir injected into its fs read+write
+# roots at boot (engine/runtime seeds RunContext.group_store_roots) — an INJECTED FS ROOT,
+# not a new action kind: the normal file actions and the util sandbox already honor the
+# effective roots. Writers are whole-file atomic (the engine's write path), and collisions
+# are last-write-wins PER FILE — concurrent members should write per-routine filenames
+# (`<slug>-<topic>.md`) and treat shared files as read-mostly. The dir is created lazily at
+# run boot; it is run data under .control/, not config — engine-side creation is fine.
+
+STORES_DIRNAME = "group-stores"
+
+
+def store_dir(routines_home: Path, gid: str) -> Path:
+    return Path(routines_home) / ".control" / STORES_DIRNAME / gid
+
+
+def member_store_roots(routines_home: Path, slug: str, *, create: bool = False) -> list[Path]:
+    """The shared-store dirs for every group `slug` belongs to (usually 0 or 1). With
+    `create`, each is made on the spot — the boot-time caller's job, so the root a run is
+    told about always exists.
+    """
+    out: list[Path] = []
+    for g in list_groups(routines_home):
+        if slug in g["members"]:
+            d = store_dir(routines_home, g["id"])
+            if create:
+                d.mkdir(parents=True, exist_ok=True)
+            out.append(d)
+    return out
+
+
 def load(routines_home: Path) -> dict:
     """The whole store, normalized: {default_on_failure, groups:[…]}. A missing or corrupt
     file reads as the empty store with the built-in default — never raises.
@@ -72,13 +111,33 @@ def _normalize(g: dict) -> dict:
     on_failure = g.get("on_failure")
     if on_failure not in ON_FAILURE:
         on_failure = None
+    cron = str(g.get("cron") or "").strip()
+    if cron and not croniter.is_valid(cron):
+        cron = ""                       # a corrupt row degrades to unscheduled, never raises
     return {
         "id": str(g.get("id") or ""),
         "name": str(g.get("name") or ""),
         "members": _clean_members(g.get("members")),
         "on_failure": on_failure,
+        "cron": cron,
+        "tz": str(g.get("tz") or ""),
         "created": str(g.get("created") or ""),
     }
+
+
+def _check_cron(cron: str) -> str:
+    cron = str(cron or "").strip()
+    if cron and not croniter.is_valid(cron):
+        raise ValueError(f"invalid cron expression {cron!r}")
+    return cron
+
+
+def scheduled_member_slugs(routines_home: Path) -> set[str]:
+    """Every routine slug whose OWN cron is suppressed because it belongs to a group WITH a
+    schedule (D71) — the daemon's cron-fire loop and boot catch-up skip these, and the
+    routine page renders their Schedule dropdown as "group managed".
+    """
+    return {m for g in list_groups(routines_home) if g["cron"] for m in g["members"]}
 
 
 def _clean_members(members: object) -> list[str]:
@@ -124,9 +183,11 @@ def get(routines_home: Path, gid: str) -> dict | None:
 
 
 def create(routines_home: Path, *, name: str, members: list[str] | None = None,
-           on_failure: str | None = None) -> dict:
+           on_failure: str | None = None, cron: str = "", tz: str = "") -> dict:
     """Create a group. `name` must be non-empty; `members` is stored in order (deduped);
-    `on_failure` must be in ON_FAILURE or None (inherit). Raises ValueError on a bad value.
+    `on_failure` must be in ON_FAILURE or None (inherit); `cron` (optional, D71) must be a
+    valid cron expression — "" leaves the group unscheduled. Raises ValueError on a bad
+    value.
     """
     name = str(name or "").strip()
     if not name:
@@ -138,6 +199,8 @@ def create(routines_home: Path, *, name: str, members: list[str] | None = None,
         "name": name,
         "members": _clean_members(members),
         "on_failure": on_failure,
+        "cron": _check_cron(cron),
+        "tz": str(tz or ""),
         "created": now_iso(),
     }
     data = load(routines_home)
@@ -147,11 +210,13 @@ def create(routines_home: Path, *, name: str, members: list[str] | None = None,
 
 
 def update(routines_home: Path, gid: str, *, name: str | None = None,
-           members: list[str] | None = None, on_failure: object = _UNSET) -> dict | None:
+           members: list[str] | None = None, on_failure: object = _UNSET,
+           cron: str | None = None, tz: str | None = None) -> dict | None:
     """Patch a group in place (only the fields passed are touched). `on_failure` is a
     tri-state: omit it to leave unchanged, pass None to inherit the default, pass a value in
-    ON_FAILURE to override. Returns the updated record, or None if no group has that id.
-    Raises ValueError on a bad value.
+    ON_FAILURE to override. `cron` "" clears the schedule (members fire on their own crons
+    again); a non-empty value must be valid cron. Returns the updated record, or None if no
+    group has that id. Raises ValueError on a bad value.
     """
     data = load(routines_home)
     for g in data["groups"]:
@@ -169,6 +234,10 @@ def update(routines_home: Path, gid: str, *, name: str | None = None,
                 raise ValueError(
                     f"on_failure must be one of {ON_FAILURE} or null, got {on_failure!r}")
             g["on_failure"] = on_failure
+        if cron is not None:
+            g["cron"] = _check_cron(cron)
+        if tz is not None:
+            g["tz"] = str(tz)
         _save(routines_home, data)
         return g
     return None

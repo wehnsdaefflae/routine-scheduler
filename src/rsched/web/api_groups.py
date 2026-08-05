@@ -1,10 +1,12 @@
-"""Routine-groups CRUD (D53 Phase A): the Groups page's API over the instance-level
+"""Routine-groups CRUD (D53): the Groups page's API over the instance-level
 `.control/groups.json` store (rsched.groups).
 
-A group is an ORDERED list of routine slugs plus a mid-chain-failure policy. This surface
-lets the operator create/name/order/delete groups and set the instance default + per-group
-override. It does NOT fire anything — sequential-fire is Phase B, which reads this store on
-the daemon tick. Every member slug is validated against the live registry here (the store
+A group is an ORDERED list of routine slugs plus a mid-chain-failure policy, and
+optionally a cron schedule (D71) that auto-arms the chain — saved here as a friendly spec
+converted to cron + the server's tz, exactly like a routine's schedule. The WEB layer only
+RECORDS it; the daemon fires (the 0.62.0 split). While a group has a schedule, its
+members' own crons are suppressed by the daemon and their Schedule dropdowns read "group
+managed". Every member slug is validated against the live registry here (the store
 validates shape only), so a group can never name a routine that does not exist.
 
 `router` rides the normal authed include in app.py like every other api_* module.
@@ -13,9 +15,9 @@ validates shape only), so a group can never name a routine that does not exist.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from .. import group_runs, groups
+from .. import group_runs, groups, schedule
 from .routines_common import _catalog, _state
 
 router = APIRouter(tags=["groups"])
@@ -43,15 +45,36 @@ class GroupCreate(BaseModel):
     name: str = Field(min_length=1)
     members: list[str] = Field(default_factory=list)
     on_failure: str | None = None
+    # D71: {"friendly": {…}} — the same spec shape the routine schedule editor sends;
+    # cron is built server-side and the server tz recorded beside it.
+    schedule: dict | None = None
 
 
 class GroupPatch(BaseModel):
+    # forbid unknown keys, like RoutinePatch: a silently-dropped stray reads as "saved"
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = None
     members: list[str] | None = None
     # Tri-state on_failure is expressed with a separate flag so JSON null (inherit) is
     # distinguishable from "field omitted" (leave unchanged) — Pydantic collapses both to None.
     on_failure: str | None = None
     set_on_failure: bool = False
+    schedule: dict | None = None
+
+
+def _schedule_to_cron(spec: dict | None) -> tuple[str, str] | None:
+    """The body's schedule field → (cron, tz), or None when the field was omitted. A
+    friendly 'manual' spec yields ("", "") — the group becomes unscheduled and its
+    members' own crons fire again. Raises HTTPException(400) on a bad spec.
+    """
+    if spec is None:
+        return None
+    try:
+        cron = schedule.friendly_to_cron(spec.get("friendly") or {})
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, f"bad schedule: {exc}") from exc
+    return (cron, schedule.server_tz() if cron else "")
 
 
 class DefaultBody(BaseModel):
@@ -71,11 +94,15 @@ def list_groups(request: Request) -> dict:
     in_flight = {str(r["group_id"]): {"cursor": r.get("cursor", 0), "status": r.get("status"),
                                       "members": r.get("members", []), "log": r.get("log", [])}
                  for r in group_runs.in_flight(home)}
+    # each group rides out with its schedule prefill (the editor speaks friendly specs)
+    recs = [{**g, "schedule_friendly": schedule.cron_to_friendly(g["cron"])}
+            for g in groups.list_groups(home)]
     return {"default_on_failure": groups.default_on_failure(home),
             "on_failure_vocab": list(groups.ON_FAILURE),
-            "groups": groups.list_groups(home),
+            "groups": recs,
             "in_flight": in_flight,
-            "known_routines": known}
+            "known_routines": known,
+            "server_tz": schedule.server_tz()}
 
 
 @router.put("/groups/default")
@@ -87,14 +114,28 @@ def set_default(request: Request, body: DefaultBody) -> dict:
     return {"ok": True, "default_on_failure": value}
 
 
+def _rescan(request: Request) -> None:
+    """A schedule change must reach the daemon's fire table (and the member-suppression
+    set) now, not at the next periodic rescan — mirroring the routine-schedule save.
+    """
+    try:
+        request.app.state.scheduler.rescan()
+    except AttributeError:
+        pass   # test apps without a scheduler — the store on disk is already right
+
+
 @router.post("/groups")
 def create_group(request: Request, body: GroupCreate) -> dict:
     members = _validate_members(request, body.members)
+    sched = _schedule_to_cron(body.schedule)
     try:
         rec = groups.create(_routines_home(request), name=body.name, members=members,
-                            on_failure=body.on_failure)
+                            on_failure=body.on_failure,
+                            cron=sched[0] if sched else "", tz=sched[1] if sched else "")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    if sched:
+        _rescan(request)
     return {"ok": True, "group": rec}
 
 
@@ -102,13 +143,18 @@ def create_group(request: Request, body: GroupCreate) -> dict:
 def update_group(request: Request, gid: str, body: GroupPatch) -> dict:
     members = _validate_members(request, body.members) if body.members is not None else None
     on_failure = body.on_failure if body.set_on_failure else groups._UNSET
+    sched = _schedule_to_cron(body.schedule)
     try:
         rec = groups.update(_routines_home(request), gid, name=body.name,
-                           members=members, on_failure=on_failure)
+                           members=members, on_failure=on_failure,
+                           cron=sched[0] if sched else None,
+                           tz=sched[1] if sched else None)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     if rec is None:
         raise HTTPException(404, f"no group {gid!r}")
+    if sched is not None or members is not None:
+        _rescan(request)   # membership changes move the suppression set too
     return {"ok": True, "group": rec}
 
 

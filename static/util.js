@@ -123,6 +123,24 @@ export function fmtNum(n) {
   return String(Math.round(n));
 }
 
+// One label + disable rule for every model PICKER option (R112/R128): the name plus its
+// context window, "· tight window" when the input budget is small, and disabled with a
+// reason when the harness cannot run it at all (window ≤ output reservation). `w` is the
+// server's per-model window meta (conversation detail `catalog_meta[name]`, or
+// /api/settings/models `window`); absent meta renders the bare name.
+export function modelOption(name, w, extra = {}) {
+  const label = !w?.context_tokens ? name
+    : `${name} · ${fmtNum(w.context_tokens)} ctx${w.fit === "tight" ? " · tight window" : ""}`;
+  const attrs = { value: name, ...extra };
+  if (w?.fit === "impossible") {
+    attrs.disabled = true;
+    attrs.title = "window too small for the harness — its max output tokens alone fill the context window";
+  } else if (w?.fit === "tight") {
+    attrs.title = "small input budget — expect heavy compaction on long replies";
+  }
+  return el("option", attrs, label);
+}
+
 // A raw dollar amount (fmtCost's usage-object sibling): always renders — a zero shows as
 // "$0.00" in a stats table rather than disappearing; 4 decimals under $1 so tiny per-run
 // costs stay legible.

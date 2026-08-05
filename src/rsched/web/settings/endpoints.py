@@ -22,6 +22,7 @@ from ...endpoints import EndpointRegistry
 from ...endpoints.base import EndpointError, api_key_source
 from ...endpoints.claude_cli import token_source
 from ...schema_guard import SchemaViolation, parse_reply
+from ..model_fit import fit_fields
 from .common import server_of, update_config
 
 router = APIRouter()
@@ -79,7 +80,8 @@ def _max_tokens_warning(mc: ModelConfig, ep: EndpointConfig | None) -> str | Non
 def _model_view(mc: ModelConfig, endpoints: dict) -> dict:
     """A catalog model's raw config PLUS the effective multimodal/context/max_tokens
     (endpoint-kind or endpoint default filled in) so the list can label it and the editor
-    can show what's set, and the max_tokens audit flag.
+    can show what's set, the max_tokens audit flag, and the window-fit sizing every model
+    picker labels options with (R112/R128 — `window.fit` is "ok" | "tight" | "impossible").
     """
     ep = endpoints.get(mc.endpoint)
     kind = ep.kind if ep else ""
@@ -92,7 +94,8 @@ def _model_view(mc: ModelConfig, endpoints: dict) -> dict:
             "context_effective": mc.context_chars or (ep.context_chars if ep else 0),
             "max_tokens_effective": mc.max_tokens or (ep.max_tokens if ep else None)
             or DEFAULT_MODEL_MAX_TOKENS,
-            "max_tokens_warning": _max_tokens_warning(mc, ep)}
+            "max_tokens_warning": _max_tokens_warning(mc, ep),
+            "window": fit_fields(mc, ep)}
 
 
 @router.get("/settings/endpoints")

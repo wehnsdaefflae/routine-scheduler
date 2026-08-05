@@ -364,6 +364,24 @@ def _pipeline(resolve, raw: str, instruction: str, *, params: dict, pins: list[s
     return {"main": main, "stages": stages, "traits": adapted, "degraded": False}
 
 
+def _params_markdown(params: dict) -> str:
+    """Resolved parameter values as a main.md section — for the VERBATIM fallback only.
+
+    The decomposed path never needs this: the generator binds each value inline and the
+    parameter names disappear from the tailored files. But the fallback renders the pattern
+    verbatim — dummy imports included, which NAME the parameters — while the instruction the
+    values came from is a compile seed a top-level run never sees again. Without this
+    section the run reads "the draft is in params.DRAFT" with nothing on disk carrying the
+    draft (R14: the clarify session probed a dozen params paths, all ENOENT).
+    """
+    if not params:
+        return ""
+    lines = "\n".join(f"- **{k}**: {v}" for k, v in params.items())
+    return ("\n\n## Parameters\n"
+            "The pattern's dummy imports name these parameters; their values for this "
+            "routine are:\n" + lines + "\n")
+
+
 def decompose(server, slug: str, instruction: str, *, params: dict | None = None,
               traits: list[str] | None = None, progress=None) -> dict:
     """Generator LLM: apply a single-file workflow to `instruction` and split it into the
@@ -402,5 +420,6 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
         log.warning("decompose(%s) pipeline failed — materializing the whole pattern as "
                     "main.md", slug, exc_info=exc)
         from .pyworkflow import render_markdown
-        return {"main": render_markdown(raw, meta), "stages": {}, "traits": {},
+        return {"main": render_markdown(raw, meta) + _params_markdown(params or {}),
+                "stages": {}, "traits": {},
                 "degraded": True, "reason": f"{type(exc).__name__}: {exc}"}

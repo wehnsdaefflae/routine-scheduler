@@ -36,6 +36,14 @@ RESOURCE_CLASSES = frozenset({"secret", "connection", "machine", "fs-read", "fs-
 # `recreate:` never offers "allow forever": a fresh user deletion must always outrank an
 # old grant, so recreating a deleted util is decided per run (or tombstoned).
 NO_FOREVER_CLASSES = frozenset({"recreate"})
+# Classes whose USE the engine observes as a TURN ACTION (validate_action sees the
+# consuming call), so `allow once (this action only)` is an exact promise: the next
+# successfully-dispatched matching action spends it, then the engine revokes it (D65,
+# operator decision 2026-08-05: turn-action classes ONLY). secret:/fs-read:/fs-write:
+# are consumed inside a util SUBPROCESS the engine never sees as a turn — "once" for
+# them could only mean "the next util call that touches it", a coarser promise than the
+# button makes — so those classes stay four-state.
+TURN_ACTION_CLASSES = frozenset({"action", "util", "runs", "workflows"})
 # grants: TRUE rows are legal only where no native routine.yaml switch exists.
 TRUE_ROW_CLASSES = frozenset({"secret"})
 # fs paths that are never grantable, whatever the user clicks: the instance's credential

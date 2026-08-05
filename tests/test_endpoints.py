@@ -271,6 +271,37 @@ def test_openai_reasoning_content_fallback_on_empty_content(monkeypatch):
     assert '"kind":"finish"' in c.text
 
 
+def test_openai_refusal_field_promoted(monkeypatch):
+    """R5: the chat-completions spec marks a structured-outputs decline with a dedicated
+    `message.refusal` field (content null, finish_reason often just "stop") — the adapter
+    promotes it to stop_reason "refusal" with the prose in stop_details, so the engine's
+    refusal branch sees it instead of an anonymous empty completion."""
+    monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
+        "choices": [{"message": {"content": None, "refusal": "I can't help with that."},
+                     "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 0}}))
+    c = _oai().complete(MESSAGES, model="m")
+    assert c.text == "" and c.stop_reason == "refusal"
+    assert c.stop_details == {"explanation": "I can't help with that."}
+    # a refusal field alongside REAL content is not a refusal — the answer wins
+    monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
+        "choices": [{"message": {"content": "answer", "refusal": ""},
+                     "finish_reason": "stop"}], "usage": {}}))
+    c2 = _oai().complete(MESSAGES, model="m")
+    assert c2.text == "answer" and c2.stop_reason == "stop" and c2.stop_details == {}
+
+
+def test_openai_content_filter_finish_reason_verbatim(monkeypatch):
+    """finish_reason "content_filter" (the openai-vocabulary classifier decline) passes
+    through verbatim — the ENGINE treats it as refusal-shaped (REFUSAL_STOPS), the adapter
+    invents nothing."""
+    monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
+        "choices": [{"message": {"content": ""}, "finish_reason": "content_filter"}],
+        "usage": {}}))
+    c = _oai().complete(MESSAGES, model="m")
+    assert c.text == "" and c.stop_reason == "content_filter" and c.stop_details == {}
+
+
 def test_openai_think_preamble_stripped(monkeypatch):
     """Hybrid-thinking models (qwen3/GLM via NanoGPT) inline `<think>…</think>` before the
     answer in `content`; the adapter drops closed think blocks so the action JSON parses.
@@ -460,6 +491,28 @@ def test_anthropic_cache_usage_captured(monkeypatch):
     assert c.usage == {"in": 12, "out": 3, "cached_in": 9000, "cache_write": 400}
 
 
+def test_anthropic_refusal_envelope(monkeypatch):
+    """R5: a Fable/Mythos-class classifier refusal is an HTTP 200 with stop_reason
+    "refusal", content [], and a stop_details {type, category, explanation} — both fields
+    must ride the Completion so the engine can fail over and name the category."""
+    monkeypatch.setattr(anth_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
+        "content": [], "stop_reason": "refusal",
+        "stop_details": {"type": "refusal", "category": "cyber",
+                         "explanation": "declined by the safety classifier"},
+        "usage": {"input_tokens": 12, "output_tokens": 0}}))
+    c = _anth().complete(MESSAGES, model="m", schema={"type": "object"})
+    assert c.text == "" and c.parsed is None
+    assert c.stop_reason == "refusal"
+    assert c.stop_details == {"type": "refusal", "category": "cyber",
+                              "explanation": "declined by the safety classifier"}
+    # stop_details is null on every other stop_reason — surfaced as {}
+    monkeypatch.setattr(anth_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
+        "content": [{"type": "text", "text": "hi"}], "stop_reason": "end_turn",
+        "stop_details": None, "usage": {"input_tokens": 1, "output_tokens": 1}}))
+    c2 = _anth().complete(MESSAGES, model="m")
+    assert c2.stop_reason == "end_turn" and c2.stop_details == {}
+
+
 def test_anthropic_cache_control_degradation_on_400(monkeypatch):
     """A gateway that rejects cache_control gets one degraded retry without the markers
     (string-form system restored) — caching is an optimization, never a hard dependency."""
@@ -556,6 +609,21 @@ def test_parse_result_envelopes():
     with pytest.raises(EndpointError) as exc:
         parse_result(json.dumps({"is_error": True, "result": "401 unauthorized"}), False)
     assert exc.value.auth
+
+
+def test_parse_result_refusal_wins_over_is_error():
+    """R5: the CLI marks an unhandled refusal as an API-error frame internally, so its
+    final envelope can carry is_error either way — a refusal is ALWAYS returned as a
+    completion (never raised), keeping the category for the engine's refusal branch."""
+    text, parsed, _, stop, details = parse_result(json.dumps(
+        {"is_error": True, "result": "API Error: the request was declined",
+         "stop_reason": "refusal", "stop_details": {"category": "cyber"}}), False)
+    assert stop == "refusal" and details == {"category": "cyber"}
+    assert text == "API Error: the request was declined" and parsed is None
+    # a non-refusal is_error still raises exactly as before
+    with pytest.raises(EndpointError):
+        parse_result(json.dumps({"is_error": True, "result": "boom",
+                                 "stop_reason": "end_turn"}), False)
 
 
 def _cli_endpoint(monkeypatch, tmp_path):

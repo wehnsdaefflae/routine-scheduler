@@ -539,8 +539,11 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     # `uv sync --script` (env lands in ~/.cache/uv, already a jail-RW toolchain root; it
     # writes nothing beside the script), THEN run offline-capable under the real policy.
     # Best-effort: a prewarm failure (offline host, no deps, older uv) is non-fatal — the
-    # real run still surfaces the true error.
-    if net != "outbound":
+    # real run still surfaces the true error. `net` is util_needs' BOOL (True = outbound —
+    # the old `!= "outbound"` string compare was vacuously true and prewarmed every call);
+    # an outbound util installs inside its own net-open `uv run`, so it skips the pass here
+    # and the selftest runner owns its warm-up instead (R20).
+    if not net:
         _prewarm_script_deps(script, policy, home)
     try:
         cmd = sandbox.wrap(["uv", "run", "--script", script, *args],
@@ -587,6 +590,16 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
 
 def selftest(home: Path, name: str, *, timeout: int = 120,
              policy: sandbox.SandboxPolicy) -> tuple[bool, str]:
+    # Build phase vs test phase (R20): run_util prewarms PEP 723 deps itself for
+    # net:none/undeclared utils, but a net:outbound one (util_needs' bool: True) resolves
+    # + installs its deps INSIDE `uv run` — so a first selftest of a heavy-dep script (a
+    # cold pandas/scipy tree is a ~60 MB fetch plus a bytecode compile) would spend this
+    # timeout on the toolchain and fail a correct util. Prewarm here (same best-effort
+    # jail as the run path) so the timed window below covers the selftest, never the
+    # install.
+    _, net = util_needs(home, name)
+    if net:
+        _prewarm_script_deps(str(util_dir(home, name) / "main.py"), policy, home)
     code, out, err = run_util(home, name, ["--selftest"], timeout=timeout, policy=policy)
     if code == 0:
         return True, (err or out).strip()

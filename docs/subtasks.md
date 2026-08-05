@@ -36,6 +36,20 @@ whether you are waiting or doing other work. Unlike a plain workflow step, a sub
 fresh context window and pattern; unlike `spawn` (parallel, disjoint outputs) it is meant to run
 one-at-a-time with results forwarded.
 
+## What a child can reach
+
+A child's OWN dir is `runs/<ts>/sub/<n>/` — its materialized `main.md`, its instruction, its
+scratch files — but its allowed fs roots **extend** the parent's rather than replace them
+(`childrun._sub_routine`): the parent routine dir and every configured or one-time-granted
+read/write root stay reachable, and the extension chains for grandchildren. A subtask briefed on
+the parent's `state/` files therefore reads and writes them directly — before this (F185, R13:
+ards sub/1, 2026-07-24) moving the child's dir to `sub/<n>` silently dropped the routine dir
+from the allowed roots and stranded exactly such children. Children inherit the parent's
+RESOURCES only (fs roots, secrets, connections, machines — one-time grants included), never its
+capability-class grants: permissions and capabilities are off at depth > 0. Keep parallel
+children's outputs disjoint by convention — they share the tree, and the harness contract
+already forbids them `LEDGER.md` / `state/phase.json`.
+
 ## The decomposition gate
 
 Concrete subtasks are never known statically — you can't put them in the workflow file. Instead

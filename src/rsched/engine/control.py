@@ -247,7 +247,17 @@ def drain_injections(loop) -> None:
     # the live run finished claiming "awaits your answer" (observed 2026-07-24 with
     # q-20260724-121507-11). Same delivery as any mid-run user message; the pending
     # record is consumed with it.
-    for qa in inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir):
+    pairs = inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir)
+    if pairs:
+        # R118: when the answer is a typed ACCESS-REQUEST decision, the GRANT must
+        # arrive with the prose — seed the run overlay and rebuild the live policy
+        # BEFORE injecting the text, so the answer's "usable now" is true from the very
+        # next action (the util sandbox and the file actions read ctx.granted_now
+        # live). Without this bridge only the words reached the run and e.g. a mid-run
+        # fs-write grant stayed EACCES until the next run.
+        from .requests import apply_deferred_decisions
+        apply_deferred_decisions(loop, pairs)
+    for qa in pairs:
         inject_user_message(loop, {"text": f"ANSWER to your deferred question "
                                            f"“{qa['question']}”:\n{qa['answer']}"})
     drained = inbox.drain_messages(ctx.routine.dir, loop.consumed_dir)

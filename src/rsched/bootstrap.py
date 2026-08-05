@@ -26,13 +26,22 @@ def repo_root() -> Path:
 
 
 def ensure_config() -> bool:
-    """Create config.yaml with a random token if it's missing. Returns True if it generated one.
-    Without this a fresh deploy has an empty token → auth is disabled → an open API on the LAN.
+    """Create config.yaml with random tokens if it's missing, and add a `routine_token`
+    to an existing config that predates the two-tier auth (R94) — the primary must never
+    double as the routine tier, or the seal is vacuous. Returns True if it generated the
+    whole config. Without this a fresh deploy has an empty token → auth is disabled → an
+    open API on the LAN.
     """
     path = config_file()
     if path.exists():
+        text = path.read_text(encoding="utf-8")
+        if not re.search(r"(?m)^routine_token:", text):
+            atomic_write(path, text.rstrip()
+                         + f'\nroutine_token: "{secrets.token_urlsafe(24)}"\n')
+            log.warning("boot: added a routine_token to %s (R94 two-tier auth)", path)
         return False
     token = secrets.token_urlsafe(24)
+    routine_token = secrets.token_urlsafe(24)
     example = repo_root() / "config" / "config.example.yaml"
     if example.exists():
         # replace WHATEVER token line the example carries (a drifted placeholder must
@@ -41,11 +50,16 @@ def ensure_config() -> bool:
                           example.read_text(encoding="utf-8"), count=1)
         if not n:
             text = text.rstrip() + f'\ntoken: "{token}"\n'
+        text, n = re.subn(r"(?m)^routine_token:.*$", f'routine_token: "{routine_token}"',
+                          text, count=1)
+        if not n:
+            text = text.rstrip() + f'\nroutine_token: "{routine_token}"\n'
     else:
-        text = f'bind: 127.0.0.1\nport: 8321\ntoken: "{token}"\n'
+        text = (f'bind: 127.0.0.1\nport: 8321\ntoken: "{token}"\n'
+                f'routine_token: "{routine_token}"\n')
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write(path, text)
-    log.warning("first boot: generated %s with a fresh access token", path)
+    log.warning("first boot: generated %s with fresh access tokens", path)
     return True
 
 

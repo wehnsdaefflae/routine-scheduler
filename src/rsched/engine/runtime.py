@@ -116,6 +116,12 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     ctx = RunContext(routine=cfg, server=server, registry=registry, run_ts=ts,
                      run_dir=run_dir, transcript=transcript,
                      budgets=Budgets.from_config(cfg.budgets))
+    # D67: a grouped routine's runs share <routines_home>/.control/group-stores/<gid>/
+    # as an injected fs read+write root (created lazily here — run data, not config).
+    # Ungrouped routines and conversations get none; membership is read fresh per run.
+    from ..groups import member_store_roots
+
+    ctx.group_store_roots = member_store_roots(server.routines_home, cfg.slug, create=True)
     # Stamp the recipe version that produces this run (recipes.current_recipe_commit —
     # snapshots any uncommitted recipe edits first, e.g. the routine-improver's). None
     # for unversioned dirs (conversations). Lands in status.json + the usage record.

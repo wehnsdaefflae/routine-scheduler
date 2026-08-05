@@ -44,11 +44,13 @@ export function pickDirectory({ title = "Select a directory", start = "" } = {})
         if (e.unreadable) r.title = "not readable by the daemon — open it to see the exact error";
         rows.push(r);
       }
-      listBox.replaceChildren(rows.length
-        ? el("div", {}, ...rows)
-        : el("div", { class: "muted small", style: "padding:8px" },
-            "(empty directory — as the DAEMON sees it: mounts hidden from its service or "
-            + "container namespace don't appear here; type a path above to jump directly)"));
+      if (!data.entries.length) {
+        // the parent-nav row is not an entry: an empty directory says so even when ".." shows
+        rows.push(el("div", { class: "muted small", style: "padding:8px" },
+          "(empty directory — as the DAEMON sees it: mounts hidden from its service or "
+          + "container namespace don't appear here; type a path above to jump directly)"));
+      }
+      listBox.replaceChildren(el("div", {}, ...rows));
       if (data.truncated) note.textContent = "…directory truncated (too many entries to list all)";
     }
 

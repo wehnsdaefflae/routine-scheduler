@@ -219,9 +219,15 @@ class AnthropicEndpoint:
                 parsed = block.get("input")
             elif block.get("type") == "text":
                 texts.append(block.get("text", ""))
+        # stop_details is populated by the API only on stop_reason "refusal" — a dict
+        # like {"type": "refusal", "category": "cyber"|…|null, "explanation": …} — and is
+        # null on every other stop; surfaced verbatim so the transcript can name WHY a
+        # classifier declined (R5). A refusal is an HTTP 200, so it reaches this parse.
+        details = data.get("stop_details")
         return Completion(
             text="\n".join(texts),
             parsed=parsed if isinstance(parsed, dict) else None,
             usage=anthropic_usage(data.get("usage") or {}),  # reads ~0.1x, writes ~1.25x
             stop_reason=str(data.get("stop_reason") or ""),
+            stop_details=details if isinstance(details, dict) else {},
         )

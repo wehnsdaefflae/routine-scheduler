@@ -17,6 +17,12 @@ export function answerForm(q, {
   numbered = false,            // option buttons labeled "1 · a" + digit keys 1-9 prefill
   defaultLine = true,          // "↪ without an answer: …" under the options (if q.default)
   askBack = false,             // the intermediate-reply button (submit(true))
+  quick = false,               // buttons-only strip: the option / typed-decision buttons
+  //                              submit as usual, but no free-text row and no ask-back.
+  //                              For the chat/transcript inline rendering of a BLOCKING
+  //                              question — the pinned panel keeps the one full form
+  //                              (F264) while the decision stays one click away where the
+  //                              user is actually reading (R132).
   onArrow = null,              // (±1) => — ArrowUp/Down focus moves (Decisions page)
   submitText,                  // REQUIRED: async (text, intermediate, decision) — the API call
   //                              (decision set = an access-request button; text is null then)
@@ -25,26 +31,36 @@ export function answerForm(q, {
   extraControls = null,        // node(s) beside the send button (lifecycle etc.)
 } = {}) {
   const options = q.options || [];
-  // An ACCESS REQUEST (the record carries grant-entity ids): the four typed decisions
-  // replace free-form options. `recreate:` entities never offer "allow forever" — a
-  // fresh deletion must always outrank an old grant, so that class is per-run only.
+  // An ACCESS REQUEST (the record carries grant-entity ids): the typed decisions replace
+  // free-form options. `recreate:` entities never offer "allow forever" — a fresh
+  // deletion must always outrank an old grant, so that class is per-run only. Turn-action
+  // classes (action/util/runs/workflows) also offer "allow once" (D65): the engine
+  // observes their consuming use as a turn, so it can revoke after exactly one matching
+  // action — a secret/fs grant is consumed inside a util subprocess it never sees, so
+  // those stay four-state.
   const request = Array.isArray(q.request) ? q.request : [];
+  const TURN_ACTION = ["action:", "util:", "runs:", "workflows:"];
+  const onceOk = request.length > 0
+    && request.every((e) => TURN_ACTION.some((p) => e.startsWith(p)));
   const DECISIONS = [
     ["allow_now", "allow now", "grant it for the asking run only — nothing persists"],
+    ["allow_once", "allow once", "grant exactly ONE matching action — the engine revokes it the moment it is used"],
     ["allow_forever", "allow forever", "record the grant in the routine's config"],
     ["deny_now", "deny now", "decline for this run — the routine works without it"],
     ["deny_forever", "never", "decline forever — the routine stops asking for this"],
-  ].filter(([key]) => key !== "allow_forever" || !request.every((e) => e.startsWith("recreate:")));
+  ].filter(([key]) => (key !== "allow_forever" || !request.every((e) => e.startsWith("recreate:")))
+    && (key !== "allow_once" || onceOk));
   const input = control === "input"
     ? el("input", { type: "text", placeholder,
         "data-persist": `answer-${q.qid}`, style: "flex:1" })
     : el("textarea", { rows: "1", placeholder,
         "data-persist": `answer-${q.qid}`, style: "flex:1;resize:vertical" });
   const send = el("button", { class: "btn primary" }, "answer");
-  const discuss = askBack ? el("button", { class: "btn",
+  const discuss = askBack && !quick ? el("button", { class: "btn",
     title: "send as a follow-up question / thought — the model replies and the question stays open" },
     "ask back") : null;
-  const row = el("div", { class: "row mt" }, input, send, discuss, extraControls);
+  // quick mode drops the free-text row (input still backs the option buttons' submit path)
+  const row = quick ? null : el("div", { class: "row mt" }, input, send, discuss, extraControls);
   const decide = async (decision, btnRow) => {
     for (const b of btnRow.querySelectorAll("button")) b.disabled = true;
     try {

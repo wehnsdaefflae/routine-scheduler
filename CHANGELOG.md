@@ -19,6 +19,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.153.0] — 2026-08-05
+
+**Backlog-clearing operation**: an operator-directed sweep resolved every open/in_progress
+maintenance item (80: 69 R + 7 F + 4 D) via seven parallel verification/repair sessions plus a
+sequential feature wave, then closed the ledger loops. Companion protocol changes attack WHY the
+backlog grew (see the meta-productivity analysis in the operation record).
+
+### Added
+- **Terminal ack for reports.** `report` gained `closes` (valid only with `answers`): a closure
+  settles its target AND is itself born settled — the settle protocol no longer mints a new open
+  report per handshake (54% of the backlog was exactly that). Prompt surface, Items read model,
+  itemcard, docs/items.md, prompt-anatomy all carry it.
+- **`allow once (this action only)` grant scope — D65 (operator: turn-action classes only).**
+  Fifth decision for `action:`/`util:`/`runs:`/`workflows:`; spent by the next successfully-
+  dispatched matching action, engine-revoked at that boundary with an `[ONCE-GRANT SPENT]`
+  teach-back; secret/fs stay four-state (their consuming use is invisible to the turn loop);
+  web refuses the button there, engine seams fail closed.
+- **Group shared store — D67 (B-i).** Runs of grouped routines get
+  `.control/group-stores/<gid>/` injected into fs read+write roots (sandbox-honored,
+  child-inherited, named in the harness contract; whole-file atomic, last-write-wins per file).
+- **Group cron — D71/F275.** A group may carry its own schedule (web records, daemon fires): a
+  due fire auto-arms the D53 chain; members of a scheduled group are suppressed from the cron
+  loop and boot catch-up — one fire path. The routine page's Schedule dropdown shows the
+  "group managed" state, linking to the group.
+- **`report` trigger type.** A routine declaring it is fired by the daemon when a report lands
+  in its inbox (900 s cooldown coalescing; never while active; disabled respected) — multi-leg
+  report exchanges collapse from days to minutes.
+- **Two-tier API auth — R94 (operator: ENFORCE, superseding D68).** `routine_token` (generated
+  on boot, injected into runs as `RSCHED_API_TOKEN`) is refused on every config-mutating route
+  with a pointer to `ask_user config_patch`; mutating routes are primary-only by default. The
+  HTTP flank of "config is the user's" is closed.
+- **Folder access at conversation create — D70.** The new-conversation composer grants fs
+  read/write roots written into the config before the engine boots (native root-list form);
+  changing the project dir later no longer wipes granted roots.
+- **Model window-fit — R128 residual.** Conversation-create/model-change refuse a model whose
+  output reservation exceeds its window (warn on merely-tight), and both pickers label per-model
+  context sizes — same math as the runtime ceiling.
+- **Inline approvals — R132.** Blocking questions render one-click approve/decline (and the
+  typed grant decisions) directly in the conversation/transcript bubble, through the same
+  answer endpoint as the Decisions page.
+- **xvfb + xauth in the engine image — F274.** Headful Chrome per util via `xvfb-run`, opt-in,
+  no global DISPLAY.
+
+### Fixed
+- **Classifier refusals — R5.** All three adapters surface `stop_reason`/`stop_details`
+  (claude-cli handles both envelope shapes); the engine branches on refusal before the
+  empty-completion path: distinct transcript error naming the category, optional uncensored
+  referral, immediate fallback-chain advance (run-scoped cooldown), honest terminal error when
+  no fallback — never a same-model retry, never "empty completion".
+- **Mid-run web grants — R118/F273.** A web-answered deferred access request bridges into the
+  running run at the next turn boundary (same `apply_deferred_decisions` seam as boot):
+  "usable now" is now true. Request entity ids canonicalize (`fs-write:~/…` grants the
+  absolute root every enforcer compares).
+- **Conversation config_patch — R102/F267.** The Decisions page applies to the owning home
+  (conversations vs routines; the 404 black hole is gone), verifies the endpoint's
+  applied-field list before claiming success, and un-appliable proposals fail honestly.
+  `patch_routine` reports every applied field. Patch models (`RoutinePatch`,
+  `ConversationPatch`, `GroupPatch`) now `extra="forbid"`.
+- **Finish-window messages — R108/F268.** A `finish` racing an injected user message is
+  deferred (message becomes the next turn); paths that must end name the still-queued message
+  in the summary; the conversation message endpoint re-checks liveness after the durable write
+  and the daemon's reap sweeps every clean finish for stranded user messages — no more manual
+  "pls resume".
+- **Secret-decline leak — R17.** A declined exposure reports a count, never the names.
+- **write_util diagnostics — R93/R20.** Header violations render as such (naming each bad
+  line); failed-selftest output keeps head+tail so the traceback survives; the selftest runner
+  prewarms deps for net:outbound utils; a bool-vs-string bug that silently prewarmed EVERY
+  util call since 0.125.0 is corrected.
+- **UI stream budget — F263.** Transcript tails capped at 3 held sockets (+bus), REST-polling
+  fallback with self-upgrade, jittered backoff, corrected reconnect telemetry — the diagnosed
+  per-origin connection-pool exhaustion is structurally impossible.
+- **Degraded decompose — R14 class.** The verbatim-fallback path renders resolved parameter
+  values into main.md (the wizard materializer itself was retired in D59).
+- **CLI vs sandbox — R25 residual.** An unreadable server config yields a problem line with
+  the unjailed-shell hint instead of a traceback.
+- Regression pins added for the already-fixed R1 (append preserves content), R2 (remove_util
+  persists), R3 (resume reseeds util counters), R9 (one-action contract), R13 (child roots).
+
+### Library & recipes (companion commits in the library/routine repos)
+- usenet-nzb destination-safe fetch (R135); digest-render `--votes` sinking (R127);
+  newsletter-extract heise bundled blocks with a real-issue fixture (R96/R99/R100); gmail
+  fixes verified already live (R10/R11/R64). Closeout friction-sweep nudge (R18) +
+  one-problem-one-id correction discipline in maintenance-routing; self-audit now triages the
+  FULL open set with a move-ten-oldest quota; all three meta closeouts answer every delivered
+  report the same run (`closes: true`). bina draft generation pinned to the routine's own
+  `llm` action (R133); self-audit's cruft child-brief matches the subrun toolset (R4).
+
 ## [0.152.1] — 2026-08-03
 
 ### Fixed

@@ -157,6 +157,20 @@ engine instead **fails over**:
   a transcript `error` event carrying a `failover` payload (`from`/`to`/`cooldown_s`), and
   every turn's usage records the model that actually served it, so spend attribution stays
   correct. Only when the whole chain is exhausted does the run fail as before.
+- **Classifier refusals** engage the same chain, on the FIRST refusal. Claude Fable/Mythos-
+  class safety classifiers decline a request as an HTTP **200** with `stop_reason:
+  "refusal"`, empty content, and a `stop_details` naming the category (`cyber`, `bio`,
+  `frontier_llm`, `reasoning_extraction`) — so error-rate monitoring never sees it, and
+  re-sending the refused prompt to the same model usually just earns another refusal.
+  The engine therefore never blind-retries a refusal: it logs a transcript `error` with a
+  `refusal` payload (category + explanation), tries the `uncensored` referral once (below,
+  when configured), then advances the fallback chain — cooling the refused model for this
+  run only. With no usable fallback the run fails HONESTLY, naming the category, instead
+  of dying as "empty completion". OpenAI-compatible providers signal the same class of
+  decline as `finish_reason: "content_filter"` (or the spec's `message.refusal` field) —
+  treated identically. **If a catalog model runs a classifier-bearing provider model
+  (Fable/Mythos-class), give it a `fallbacks:` entry** (e.g. an Opus-class model — the
+  provider's own recommendation) so a refusal costs one switch, not the run.
 - **Cooldown**: a hard-failed (endpoint, model) is marked *cooling* for 5 minutes — every
   later resolution in the same run process (main turns, `llm` actions, compaction, spawned
   children) skips it for the first not-cooling chain member instead of hammering a flapping
@@ -283,13 +297,17 @@ instead, with `referred: true` on the observation.
   `tool_call` on your normal model. Requests the normal model refuses get answered by the
   abliterated one; everything else stays on the normal model.
 - **Scope: the `llm` tool-call AND the agent loops** (main orchestrator + subroutine). In a
-  loop, a turn is a schema-constrained *action*, so a refusal shows up as a free-text reply
-  that fails to parse as an action **and** reads as a decline: when that happens and an
-  `uncensored` model is configured, the engine re-issues the same turn to it once and, if it
+  loop, a turn is a schema-constrained *action*, so a refusal shows up in one of two shapes:
+  a free-text reply that fails to parse as an action **and** reads as a decline, or a
+  **classifier refusal** — `stop_reason: "refusal"` / `"content_filter"` on the completion
+  itself, usually with empty content (see *Failover & cooldowns* above). Either way, when an
+  `uncensored` model is configured the engine re-issues the same turn to it once and, if it
   produces a valid action, continues the run with it (the `assistant_action` transcript event
   carries `referred: true`). A malformed-but-not-refusing reply still takes the normal
-  schema-retry path — the uncensored model is only consulted on a genuine decline. Subroutines
-  run the same loop, so they are covered by the same mechanism.
+  schema-retry path — the uncensored model is only consulted on a genuine decline. A
+  classifier refusal whose referral does not resolve it advances the model's `fallbacks:`
+  chain instead of retrying the refusing model. Subroutines run the same loop, so they are
+  covered by the same mechanism.
 
 ## Troubleshooting
 
@@ -305,5 +323,10 @@ instead, with `referred: true` on the observation.
 - **Truncated / empty answers from reasoning models** → the model spent its output budget
   thinking. The engine already maps effort to the provider's reasoning knob; pick a lower
   effort for that model role, or a non-reasoning model.
+- **A run failed with "refused the turn (… category=…)"** → the provider's safety
+  classifier declined the prompt (an HTTP 200, not an outage — see *Failover & cooldowns*).
+  Give that catalog model a `fallbacks:` entry pointing at a model without that classifier
+  (or configure the routine's `uncensored` role); the transcript's `error` event carries the
+  category and explanation.
 - **A provider mangles structured output** (dropped fields, foreign keys) → exclude it via
   `extra_body.provider.ignore` (OpenRouter) and keep `allow_fallbacks: true`.

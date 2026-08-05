@@ -36,10 +36,18 @@ Optional, all on the same form:
   guide. With a playbook picked you can even leave the message empty.
 - **Project directory** — a folder the agent may read and edit. This is how a conversation works on
   a real codebase or document set.
+- **Folder access** — extra folders beyond the project directory, granted **before the first reply
+  fires**: read + write ones (also readable) and read-only ones, each picked with the server-side
+  directory browser. They land on the conversation's config the same way an allow-forever folder
+  grant does, so reply #1 already has the access instead of asking you mid-run.
 - **Model** — start on a specific catalog model (picked by name), or the system default
-  (switchable any time later).
+  (switchable any time later). Every option shows the model's context window; one whose window is
+  too small to run the harness at all is disabled — and the server refuses it too.
 - **Shell** — off by default (the agent works through selftested utils); flip it on for the rare
   session that needs the escape hatch.
+- **Admin** — arm the admin token for this browser session so the conversation starts with
+  capability gating lifted (reply #1 included). The server re-checks the token on every request
+  and never stores it.
 - **Attachments** — drop in files (or paste a screenshot straight into the box).
 
 ## The reply cycle
@@ -48,6 +56,14 @@ A conversation is **one continuous run**, and every reply is a self-contained le
 
 - You send a message → the agent works (each step visible in the transcript) → it **finishes with a
   reply**. That reply *is* the finish summary of this leg.
+- A message can never fall between the cracks of a finishing reply (R108/F268): one that
+  arrives while the model is finishing DEFERS the finish and is answered in the same leg;
+  one that races past even that — the run finished in the instant between the web's
+  liveness check and the file landing — is caught twice over: the message endpoint
+  re-checks liveness AFTER writing (and wakes the run when it finished in between), and
+  the daemon's post-finish reap sweeps the inbox for any still-unconsumed USER message and
+  resumes the run itself. Report/trigger deliveries are exempt from the sweep — they keep
+  their own read-on-next-run contract.
 - You send another message → the same run **resumes in place** with a fresh budget window. Nothing
   is lost between messages; the files, the LEDGER, and everything the agent observed carry over.
 - If you message while the agent is still working, it's delivered as an injection and **picked up at
@@ -67,6 +83,16 @@ reply itself — you never get an engine error where an answer should be.
 
 Because chat replies draw from a **reserved interactive pool**, a busy schedule never makes you wait
 in line behind cron runs, and vice versa.
+
+## Questions and approvals
+
+When the agent needs a decision — a plain question, a util-change approval, a typed access
+request — the question appears **twice, answering once**: pinned above the composer as the full
+form (free text, ask-back, the timeout line), and inline in the chat where it was asked. For a
+blocking question with options (approve/decline) or an access request, the chat bubble carries
+the **one-click buttons** right there, so you can approve without scrolling to the panel or
+switching to the Decisions page — all three surfaces settle each other the moment any one of
+them answers.
 
 ## The working plan
 
@@ -178,7 +204,9 @@ running conversation, where changes apply from the next reply:
   conversation starts with the default set; **shell** is a one-click grant. Previous-run depth is
   greyed out — a conversation is one continuous run, so it doesn't apply.
 - **Model** switches from the line at the top. Change it any time; if a reply is in flight, it
-  switches at its next turn boundary too.
+  switches at its next turn boundary too. The picker labels every model with its context window
+  (and flags tight ones); a model whose window minus its max output tokens leaves no room for
+  input cannot complete a single turn, so the picker disables it and the server refuses it.
 - **Traits** (its practice files — how it asks you, uses utils, researches, keeps a LEDGER, and makes
   git checkpoints) are shown read-only.
 

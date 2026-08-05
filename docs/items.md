@@ -74,8 +74,9 @@ arbitrary payload keys). Nothing reads them.
 - **`archive_only`** — true when no source holds the item's own record any more and it
   survives solely through the changelog / answered markers.
 - Type extras: **`severity`** (findings), **`options[]`** + **`resolution`** (decisions),
-  **`to`** + **`delivered{ts,run_id}`** + **`answers`** + **`answered_by`** (reports; `to` is
-  empty on an unaddressed one, which has no routing to show).
+  **`to`** + **`delivered{ts,run_id}`** + **`answers`** + **`closes`** + **`answered_by`**
+  (reports; `to` is empty on an unaddressed one, which has no routing to show; `closes` is
+  true on a terminal acknowledgment — see the status rules below).
 
 ## Status vocabulary
 
@@ -109,16 +110,26 @@ does not translate synonyms.
 ### Reports
 
 An `R<n>` derives its status from its OWN ledger, which is the authority for it the way
-`report.json` is for an `F<n>`. In precedence order: **`settled`** when a later report carries
-`answers: "<this id>"` — the target replied, having acted or having said why not;
-**`addressed`** when a changelog row names the id; **`in_progress`** once an ADDRESSED report's
-target drained the message from its inbox and the engine stamped a `delivered` event onto the
-row; otherwise **`open`**.
+`report.json` is for an `F<n>`. In precedence order: **`settled`** when the row itself carries
+`closes: true` (see below) or when a later report carries `answers: "<this id>"` — the target
+replied, having acted or having said why not; **`addressed`** when a changelog row names the
+id; **`in_progress`** once an ADDRESSED report's target drained the message from its inbox and
+the engine stamped a `delivered` event onto the row; otherwise **`open`**.
 
 That progression is the whole reason the ledger exists: it distinguishes a hand-off that
 carried from one that silently never arrived. An addressed report's card shows the routing line
 (`sender → target`, whether it was picked up, and which reply closed it); an unaddressed one
-has no routing and simply waits in triage.
+has no routing and simply waits in triage. Delivery itself never starts a run; a target that
+wants to be WOKEN by deliveries declares a `report` trigger on its own Triggers card
+(docs/triggers.md) — bursts coalesce into one run per cooldown window.
+
+**The terminal acknowledgment.** A reply row may set `closes: true` beside `answers` (the
+action layer rejects a bare `closes`): it settles its target as any answer does AND is itself
+born settled — it asks nothing back, so the exchange ENDS there instead of ratcheting (every
+answer otherwise being a new open report waiting for one more reply). A closure is still
+delivered when addressed, with the message marked "no reply needed"; answering a closure
+anyway is harmless — it is already settled — and only a NEW report that names the closure
+reopens the discussion, as its own open item.
 
 The stream is append-only. The report row is written by the `report` action; the `delivered`
 event is a second row, folded onto it by `reports.read_reports`.

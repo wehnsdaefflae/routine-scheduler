@@ -63,7 +63,8 @@ function routingLine(item) {
   } else {
     bits.push(el("span", { class: "faint" }, "not picked up yet — waits for the target's next run"));
   }
-  if (item.answers) bits.push(el("span", {}, `answers ${item.answers}`));
+  // a closure (closes: true) is the exchange's terminal acknowledgment — born settled
+  if (item.answers) bits.push(el("span", {}, item.closes ? `answers ${item.answers} — closes it` : `answers ${item.answers}`));
   if (item.answered_by) bits.push(el("span", {}, `answered by ${item.answered_by}`));
   const row = el("div", { class: "faint small mt", style: "display:flex;gap:8px;flex-wrap:wrap" },
     el("span", {}, "routing"));

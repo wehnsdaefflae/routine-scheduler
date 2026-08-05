@@ -20,6 +20,7 @@ from .. import reports, sandbox, schedule_once, utils_lib
 from ..ids import is_slug, question_id
 from . import decisions, detach, inbox, requests
 from .control import RunAborted
+from .observations import truncate
 
 # Natural affirmatives count: approval answers arrive as free text (Discord mirrors the
 # question to a phone), and "Do it. The mail is …" must not read as a decline (F161 —
@@ -52,7 +53,7 @@ def _settles_approval(text: str) -> bool:
 def _held_not_settled(qtype: str, answer: dict) -> bool:
     """D38 across record types: does this reply fail to SETTLE the question? A
     util-approval settles only on a clear approve/decline, an access request only on one
-    of the four typed decisions; defer markers and dialog replies pass through to their
+    of the typed decisions; defer markers and dialog replies pass through to their
     own paths. A held reply becomes a delayed user message and the wait continues.
     """
     if not answer.get("text") or answer.get("defer") or answer.get("intermediate"):
@@ -80,9 +81,10 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # decision record for the Decisions page's one-click apply (see engine/revise.py).
     cpatch = action.get("config_patch") if isinstance(action.get("config_patch"), dict) else None
     # A typed access request (entities.py) rides the same record; the Decisions page
-    # renders the four allow/deny × now/forever buttons for it, and the answer's
-    # `decision` is what settles it (free text is held, D38). Validation already ran in
-    # the schema-retry cycle (requests.request_denial), so the ids here are requestable.
+    # renders the allow/deny × now/forever buttons for it (plus allow-once for
+    # turn-action classes, D65), and the answer's `decision` is what settles it (free
+    # text is held, D38). Validation already ran in the schema-retry cycle
+    # (requests.request_denial), so the ids here are requestable.
     req_ids = requests.request_ids(action)
     if req_ids:
         qtype = "request"
@@ -124,7 +126,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
             if not answer and mirror and (reply := mirror.poll()):
                 answer = {"text": reply, "source": "discord"}
             # D38: an approval is settled ONLY by a clear approve/decline, and an access
-            # REQUEST only by one of the four typed decisions (the web's buttons). Any
+            # REQUEST only by one of the typed decisions (the web's buttons). Any
             # other reply ("Bin hier", an unrelated instruction) is user INPUT that
             # arrived while the question blocks — hold it as a normal delayed message
             # (drained at the next turn boundary, i.e. after this decision) and keep
@@ -187,7 +189,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         if mirror:
             mirror.notify_resolved(answer["text"], source)
         if req_ids:
-            # One of the four typed decisions (guaranteed by the settle rule above):
+            # One of the typed decisions (guaranteed by the settle rule above):
             # seed the run overlay, rebuild the live policy + transport schema, and
             # teach the outcome. Forever-decisions were persisted by the web layer at
             # click time — the engine bridges them into this run and writes no config.
@@ -276,8 +278,13 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
 
     denied = [s for s in present if _state(s) == "denied"]
     if denied:
+        # R17: a DENIAL enumerates nothing — the refusal must not hand back the very
+        # names it refused (the transcript event keeps them for the user's surfaces;
+        # the model-facing reason and rendering carry a count only).
+        n = len(denied)
         return {"kind": "util", "name": name, "declined_secrets": denied,
-                "reason": f"the user has declined exposing {', '.join(denied)} to this "
+                "reason": f"the user has declined exposing {n} secret"
+                          f"{'s' if n != 1 else ''} this util call declares to this "
                           "routine — the util was not run. The mapping is editable on the "
                           "routine page (secret exposure); work without this util, or file "
                           "a deferred ask_user explaining why it is needed."}
@@ -302,12 +309,19 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
                 "pending_approval": True, "qid": ask.get("qid"),
                 "reason": "the secret-exposure request is still open — do other work and "
                           "retry the util once it is settled."}
-    if str(ask.get("decision") or "").startswith("allow"):
+    decision = str(ask.get("decision") or "")
+    if decision.startswith("allow"):
         return None
+    # R17: the decline reason stays GENERIC — a count and the decision's shared phrase,
+    # never the names (requests.observation_text would enumerate the entity ids, which
+    # is right for entities the model itself requested, and wrong for a refusal).
+    n = len(undecided)
+    phrase = requests.DECISION_PHRASES.get(decision, "declined")
     return {"kind": "util", "name": name, "declined_secrets": undecided,
             "decision": ask.get("decision"),
-            "reason": "the user declined exposing these secrets to this routine — the util "
-                      "was not run. " + str(ask.get("result") or "")}
+            "reason": f"the user declined exposing {n} secret{'s' if n != 1 else ''} "
+                      f"this util call declares to this routine — the util was not run "
+                      f"({phrase})."}
 
 
 def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR0911 — gate ladder: every refusal is its own teaching exit
@@ -385,8 +399,12 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
             utils_lib.remove_util_file(home, name)
         else:
             utils_lib.write_util_file(home, name, previous)
+        # Head+tail, never a head slice: a traceback's END is the repair material, and a
+        # long selftest log sliced at its head hid exactly the AssertionError that
+        # explained the failure (R93).
+        output, _ = truncate(output, cap=2000)
         return {"kind": "write_util", "name": name, "created": creating,
-                "selftest_ok": False, "reverted": True, "output": output[:2000]}
+                "selftest_ok": False, "reverted": True, "output": output}
     utils_lib.git_commit(home, f"{'create' if creating else 'revise'} {name}",
                          paths=[f"utils/{name}"])
     return {"kind": "write_util", "name": name, "created": creating, "selftest_ok": True}
@@ -506,7 +524,8 @@ def handle_report(loop, action: dict) -> dict:
                     "valid_targets": slugs}
     filed = reports.file_report(home, routine=ctx.routine.slug, run_id=ctx.run_id, title=title,
                                 detail=detail, target=target, target_dir=target_dir,
-                                answers=str(action.get("answers") or "").strip())
+                                answers=str(action.get("answers") or "").strip(),
+                                closes=bool(action.get("closes")))
     out = {"kind": "report", "title": title, "filed": filed is not None,
            "id": filed[1] if filed else ""}
     if target:

@@ -122,7 +122,10 @@ PEP 723 script: `# /// script` deps block, a module docstring whose first line i
 built-in checks, data on stdout / diagnostics on stderr / exit 0 on success; on invalid or
 missing arguments it MUST print its own usage line to stderr and exit 2 — an error that
 doesn't teach the correct call wastes every future caller's turn). The engine runs
-`--selftest` and only commits if it passes; a util may call sibling utils via `gu <name>` — \
+`--selftest` and only commits if it passes. To REVISE an existing util surgically, pass
+`anchor`/`replacement` INSTEAD of content — a verbatim in-place patch like edit_file, so a \
+small fix never re-emits the whole script (read the current source first: `util name=show \
+args=["<name>", "--full"]`). A util may call sibling utils via `gu <name>` — \
 declare those on a `calls: <name>, …` header line. If it \
 needs a secret (token, password, API key), read it env-first — `os.environ["NAME"]` — never \
 hardcode or prompt for it, AND declare the names in a header `secrets: NAME1, NAME2` line so the \
@@ -238,8 +241,11 @@ which it reads on its NEXT SCHEDULED RUN — nothing is started and nobody is in
 `target` out when you cannot name the owner: the report goes to triage and is routed for you. \
 Omitting it is always allowed; guessing wrong sends the work to someone who will bounce it.
 A report addressed to YOU arrives in its own prompt section — act on it, or close it by \
-reporting back to the sender with `answers` set to its id. Use this for problems you notice in \
-passing, not for your own task's outcome (that belongs in your finish summary)."""),
+reporting back to the sender with `answers` set to its id. A reply that completes the \
+exchange sets `closes: true` so the thread ends settled — without it your answer is itself a \
+new open report waiting for one more reply; a message marked "no reply needed" gets none. Use \
+this for problems you notice in passing, not for your own task's outcome (that belongs in \
+your finish summary)."""),
     (("finish",), """- finish: end the run with status ok|partial|failed and a DETAILED 8-20 \
 line summary: concrete \
 outcomes (numbers, names, links), decisions taken and why, what changed on disk, open ends and \

@@ -27,7 +27,8 @@ one you are about to touch, not all of them.
   change to composer / loop / actions / schema_guard wording; `tests/test_prompt_anatomy.py`
   fails on drift
 - `docs/traits-permissions.md`, `docs/curated-traits.md` — the two-layer permission set,
-  the four-state ACCESS-REQUEST grant model (entities.py ids; allow/deny × now/forever),
+  the ACCESS-REQUEST grant model (entities.py ids; allow/deny × now/forever, plus allow-once
+  for turn-action classes),
   and each curated practice module's provenance
 - `docs/subtasks.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
   — the child-task and firing mechanisms
@@ -80,7 +81,9 @@ one you are about to touch, not all of them.
   the model could have ended itself**: the FIRST budget violation spends a one-time RESERVED FINISH TURN
   (schema narrowed to `finish`, one turn granted, `OBSERVATION (budget spent)` telling it so), and only a
   second violation force-finishes — so a run overruns a budget by at most one turn and the summary is
-  always authored. Budgets are a runaway BACKSTOP, never a pace; do not reintroduce prose that has a run
+  always authored. A finish emitted while an undrained user message waits is deferred so the message
+  becomes the next turn (a finish that must stand — the spent reserved turn, an abort — names the
+  still-queued message in the summary instead). Budgets are a runaway BACKSTOP, never a pace; do not reintroduce prose that has a run
   ration its work against the turn counter. Every action carries `say` (finding-first narration:
   what the last observation taught you + why this action; terse for routine steps, 2-3 sentences
   at decision points; worded per the routine's `deliberation` level) + `kind`, plus an optional
@@ -90,7 +93,9 @@ one you are about to touch, not all of them.
   curation into `.memory/` stays memory_write's turn-priced job). `read_file` batches
   related reads via `paths` (one turn, one
   observation section per file); `edit_file` anchor-replaces in place so revisions cost the diff, not
-  the document. `write_file` is GROUNDED: overwriting an existing file OUTSIDE the routine's own dir
+  the document; `write_util` mirrors it — `anchor`/`replacement` instead of `content` patches an
+  existing util in place under the same approval + selftest + rollback gate (`util show <name>
+  --full` returns the complete source). `write_file` is GROUNDED: overwriting an existing file OUTSIDE the routine's own dir
   is rejected unless this run has seen it (`ctx.seen_paths` — read/viewed/written this run, rebuilt
   from the transcript on resume); the own dir is exempt (state/report rewrites are the normal mode),
   append and new files pass, and `edit_file` needs no gate — its verbatim anchor is self-grounding.
@@ -101,7 +106,9 @@ one you are about to touch, not all of them.
   every routine. What varies is whether the run can name an owner. UNADDRESSED goes to the
   triage stream self-audit reads; ADDRESSED (`target`) is ALSO delivered into that routine's
   `inbox/`, which its NEXT SCHEDULED RUN drains — it starts no run and wakes nobody. The target
-  closes it by reporting back with `answers: "<R id>"`. One `R<n>` namespace, one append-only
+  closes it by reporting back with `answers: "<R id>"`, adding `closes: true` when the reply ends
+  the exchange — a closure is born settled; without it the reply is itself a new open report.
+  One `R<n>` namespace, one append-only
   ledger `.control/reports.jsonl` (order rows + `delivered` event rows), one Items type; the
   page shows open → in_progress once drained → settled once answered. Triage is therefore
   FORWARDING, not absorbing.
@@ -208,5 +215,7 @@ so the container keeps the host's zone; `schedule.server_tz()` honors TZ env / t
 `/etc/timezone` / the localtime symlink, in that order). Server config:
 `~/.config/routine-scheduler/config.yaml` (generated with a random token on
 first boot by `bootstrap.ensure_config`, so a fresh deploy is never an open API). Web UI on `:8321`,
-bearer-token auth; `RSCHED_BIND` / `RSCHED_PORT` override for containers. First launch redirects to
+two-tier bearer auth (the operator token, plus a generated `routine_token` — what runs get injected
+as `RSCHED_API_TOKEN` — which is refused on config-mutating routes); `RSCHED_BIND` / `RSCHED_PORT`
+override for containers. First launch redirects to
 Settings until setup (secrets, endpoints + system model, GitHub device-flow, the library) is finished.

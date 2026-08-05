@@ -15,13 +15,18 @@ endpoints, authoring.
 The turn loop (`engine/loop.py`) is the heart; `engine/runtime.py` is the entry above it
 (`run_routine`, workflow loading/decomposition), `engine/boot.py` the initial message list
 (kickoff or resume rehydration), `engine/completion.py` the get-one-valid-action side (schema
-retries, refusal referral, media fallback, the compaction gate), `engine/control.py` the
+retries, model failover incl. classifier refusals, refusal referral, media fallback, the
+compaction gate), `engine/control.py` the
 between-turns control plane (abort, pause gate, `control.json` model switch, injection drain,
 subrun announcements), and
 `engine/interact.py` the user-conversing handlers (`ask_user`, grant-gated `write_util`). Each turn:
 check budgets → pause gate → drain injected user messages (`inbox.py`) → announce finished subruns →
 get ONE valid action from the model (3 attempts: up to 2 schema-retries) → dispatch → append the observation →
-repeat until `finish`. **Budgets are one unified primitive** (`engine/budget.py`: a `Budget` = a stop
+repeat until `finish`. A `finish` emitted while an undrained user message waits (the message landed
+AFTER this turn's drain — the finish-window race, R108) is deferred, not executed: the loop rejects
+it as an observation and delivers the message as the next turn, so no instruction needs a manual
+"resume" to be seen; only the spent reserved-finish turn ends anyway, its summary naming the
+still-queued message (delivered by the next leg's boot drain). **Budgets are one unified primitive** (`engine/budget.py`: a `Budget` = a stop
 condition over a resource, a `BudgetLedger` over them, `allocate()` for child slices) shared by the run,
 a conversation reply window, a subtask, and a subrun — `RunContext` holds the live meter, the ledger holds
 the limits (single-writer status.json preserved).
@@ -297,7 +302,9 @@ and the capabilities digest's catalog listing):
 
 - **A subtask and a subroutine are the same thing** — a child task materialized from a workflow
   pattern and run recursively (`engine/childrun.py` `build_child`, tree on disk under
-  `runs/<ts>/sub/<n>/`), differing only in SCHEDULING and budget. Both are NON-BLOCKING background
+  `runs/<ts>/sub/<n>/`), differing only in SCHEDULING and budget. A child's fs roots EXTEND the
+  parent's — the parent routine dir and every configured/granted root stay reachable from
+  `sub/<n>` (F185; capabilities stay off, resources inherit). Both are NON-BLOCKING background
   threads — the turn loop never monopolizes on a child, so the conversation stays responsive.
   **spawn** = PARALLEL (≤4 parallel; you keep working). **subtask** = SEQUENTIAL (start it, then
   `wait n=N` before the next so you can fold its result in; `turns` pins its budget, else half the
@@ -341,10 +348,15 @@ and the capabilities digest's catalog listing):
   CONTINUES on the action's stated `default` and the record stays open as deferred) or `deferred`
   (filed to `questions/pending/`, surfaced in a later run's state digest). An ask may carry
   `request: "<entity-id>"` — a typed ACCESS REQUEST (entities.py; docs/traits-permissions.md's
-  four-state model): the record then settles ONLY on one of the four allow/deny × now/forever
-  decisions (the Decisions page's buttons; free text is held, D38), forever-decisions are applied
+  grant model): the record then settles ONLY on one of the typed allow/deny × now/forever
+  decisions (plus *allow once* for turn-action classes, spent by the next dispatched matching
+  action and then revoked — D65; the Decisions page's buttons; free text is held, D38),
+  forever-decisions are applied
   to routine.yaml by the WEB at click time (`web/grants_apply.py` — the engine never writes
-  config), and now-decisions seed the run's in-memory overlay (`engine/requests.py`). Blocking
+  config), and every decision seeds the run's in-memory overlay (`engine/requests.py`) at
+  whichever seam consumes it: the blocking answer, boot (decided between runs), or the live
+  turn boundary (a deferred ask answered mid-run — the running run's policy, schema and util
+  sandbox pick the grant up at once). Blocking
   asks are durable records too, and — when the routine holds the `communication` permission — are mirrored to Discord by
   the ENGINE (`engine/decisions.py`): a reply on either surface resolves everywhere and the other side
   is notified. All implicit outbound sends (the mirror + the detached-delivery ping) go through
@@ -584,7 +596,15 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   saving. `write_util` is gated twice: `utils_lib.header_problems` rejects a missing `tags:`/`net:`
   line or a credential env var the code reads but `secrets:` doesn't declare (the Settings page can
   only prompt for declared secrets), then the selftest; approval rides the routine's write_util
-  `confirm:` capability level. A slug with a DELETION in the library's git history is a user
+  `confirm:` capability level. A header rejection is reported AS one — its own observation head
+  naming each violated line — never as a selftest failure (R93), and a failed selftest surfaces
+  exit code + both streams head+tail so the traceback's end survives. EDIT MODE (`anchor`/
+  `replacement` instead of `content`) patches an existing util's source engine-side — a surgical
+  fix never re-emits the whole script (`util name=show --full` returns the complete source) — and
+  rides the same approval + selftest + rollback gates. The selftest runner prewarms a net:outbound
+  util's PEP 723 deps before the timed run (`run_util` prewarms net:none/undeclared ones itself,
+  R40/R20), so a heavy dependency tree never spends the selftest timeout on toolchain install.
+  A slug with a DELETION in the library's git history is a user
   decision: `write_util` on it is rejected inside the schema-retry cycle until the user allows the
   `recreate:<slug>` access request this run (`interact.recreate_denial` / `utils_lib.was_deleted`;
   no allow-forever — a fresh deletion outranks any old grant), and the boot
@@ -633,6 +653,31 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   ONCE then CONSUMES the file (auto-deactivate = deletion). A conversation's self-armed one-shot
   is namespaced `conv--<slug>` and wakes the conversation by RESUMING its run ("remind me in 3
   days"). Cooldowns/expiry per request; corrupt requests are dropped, not rescanned.
+- **Routine groups (D53/D61/D67/D71)**: a group is an ORDERED list of routine slugs plus a
+  mid-chain-failure policy, stored instance-level in `.control/groups.json` (`rsched/groups.py` —
+  web-written CRUD via `web/api_groups.py` and the Groups page, or the `manage_group` action from a
+  root conversation; a group is never routine config). "Run group now" — or the group's OWN cron
+  (below) — ARMS a sequential chain (`rsched/group_runs.py`, one in-flight chain per group,
+  snapshot of members + resolved policy at arm time); the scheduler-ticked **`GroupRunManager`**
+  (`daemon/group_runs.py`) advances it one transition per tick: fire member 0, wait for a terminal
+  state, then per the outcome and `on_failure` (`stop` aborts the rest — any non-`ok` outcome
+  counts as failure, a missing/disabled/crashed member too; `continue` fires on) fire the next.
+  Two group-wide facilities ride membership:
+  - **The group schedule (D71)**: a group may carry its own `cron` (+ the server `tz`, written by
+    the web beside it — the Groups page has the same friendly editor a routine's schedule uses;
+    web RECORDS, daemon FIRES). The scheduler arms the chain on the group's cron — member 0 fires,
+    the rest chain on completion — and while a routine belongs to a SCHEDULED group its OWN cron is
+    SUPPRESSED from the fire table and boot catch-up (one fire path, no double-firing); its
+    Schedule dropdown renders a locked "group managed" state linking to the group, and clearing the
+    group's schedule (or leaving the group) restores the member's own cron at the next rescan.
+    A group fire due while its chain is still in flight is SKIPPED (the chain analog of
+    `overrun_skipped`); there is no group catch-up. Manual "Run now" on a member is unaffected.
+  - **The shared group store (D67)**: every run of a grouped routine gets
+    `.control/group-stores/<group-id>/` injected into its effective fs read+write roots at boot
+    (`RunContext.group_store_roots`, created lazily engine-side — run data, not config; children
+    inherit it like every resource). The harness contract names the root and its collision
+    semantics: writes are whole-file atomic and LAST WRITE WINS PER FILE, so members exchange
+    files under per-routine names (`<slug>-<topic>.md`) and treat shared files as read-mostly.
 - **Event triggers fire through the same seam** (docs/triggers.md): the webhook route
   (`web/api_hooks.py`, POST `/api/hooks/<slug>/<token>` — the ONE unauthenticated API route:
   constant-time token compare, generic 404, 64 KiB cap, rate limit + spool cap, rejections logged,
@@ -643,7 +688,20 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   its own inbox message for that fire (deterministic filenames → exactly-once across crashes).
   `cooldown_s` per trigger (default 60) bounds trigger-fire frequency, so a leaked URL can't burn
   budget; `state.json` in the spool is the daemon-written fire ledger the Triggers card renders.
-- **Instance-wide search** (`search/` + `web/api_search.py` + the header box
+- **API auth is two-tier (R94; operator decision 2026-08-05: ENFORCE — superseding D68's
+  earlier "leave as-is")**: the PRIMARY bearer (`config.yaml token:`) is the human/web
+  credential and authorizes everything; the ROUTINE bearer (`routine_token:`, generated by
+  `bootstrap.ensure_config` when absent — an existing config gains it at the next daemon
+  boot) authorizes read-only methods plus an explicit non-config allowlist
+  (`web/app.py ROUTINE_TOKEN_MUTATIONS`; empty today — the wild-usage survey found only
+  reads plus the config writes this seal stops). The
+  engine injects the routine token into util subprocesses as `RSCHED_API_TOKEN`
+  (`engine/executor._extra_secrets`, overriding any secrets-store value for that reserved
+  name), so a run holding the API secret can READ the daemon API but every config-mutating
+  route (routine/conversation PATCH, permissions PUT, grant decisions, settings, triggers,
+  groups, schedule spools) answers 403 with a pointer to `ask_user config_patch` — the
+  HTTP flank of "config is the user's" is sealed, mutating routes are primary-only BY
+  DEFAULT, and opening one to routines is an explicit allowlist edit with its reason.
   `components/searchbox.js`, focused by `/` or Ctrl-K): SQLite FTS5 over both homes' PROSE —
   transcript say/note/finish/questions/answers/user messages (gz + subrun trees included),
   result.md, history/ archives, LEDGER.md, `.memory/`, pending decision records, recipe

@@ -402,6 +402,14 @@ def test_write_util_header_gate_blocks_bad_docs(make_routine, scripted, monkeypa
     assert wu["payload"]["header_ok"] is False
     assert any("tags" in p for p in wu["payload"]["problems"])
     assert any("FOO_API_KEY" in p for p in wu["payload"]["problems"])
+    # R93: the RENDERED observation reports a header violation AS a header violation —
+    # naming each problem — never as the generic "selftest FAILED" (which sent authors
+    # debugging their test logic instead of adding a header line)
+    from rsched.engine.observations import format_observation
+    rendered = format_observation(wu["payload"])
+    assert "docstring HEADER violations" in rendered
+    assert "FOO_API_KEY" in rendered and "tags" in rendered
+    assert "selftest FAILED" not in rendered
 
 
 def test_write_util_gating_and_commit(make_routine, scripted, monkeypatch):
@@ -445,7 +453,27 @@ def test_write_util_selftest_failure_not_committed(make_routine, scripted, monke
     assert "selftest FAILED" in ep.calls[1]["messages"][-1]["content"]
 
 
-def test_write_util_confirmation_declined(make_routine, scripted, monkeypatch):
+def test_write_util_selftest_failure_output_keeps_the_tail(make_routine, scripted, monkeypatch):
+    """R93: a LONG selftest log is truncated head+tail, never head-sliced — the traceback's
+    END (the AssertionError that explains the failure) must reach the observation."""
+    import rsched.utils_lib as ul
+
+    long_output = ("exit 1\nstdout:\n" + "filler line\n" * 400
+                   + "stderr:\nTraceback (most recent call last):\nAssertionError: THE-CAUSE")
+    monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
+    monkeypatch.setattr(ul, "exists", lambda home, name: False)
+    monkeypatch.setattr(ul, "write_util_file", lambda home, name, content: None)
+    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (False, long_output))
+    _d, _ep, _status, _run_dir, events = _run(make_routine, scripted, [
+        {"say": "Create it.", "kind": "write_util", "name": "longbad",
+         "content": util_src("longbad")},
+        finish(status="partial", summary="selftest failed"),
+    ], slug="wulong")
+    wu = next(e for e in events if e["type"] == "observation" and e["payload"]["kind"] == "write_util")
+    out = wu["payload"]["output"]
+    assert len(out) < len(long_output)                    # it WAS truncated…
+    assert out.endswith("AssertionError: THE-CAUSE")      # …but the tail survived
+    assert "truncated" in out                             # and says so (head+tail marker)
     import rsched.utils_lib as ul
 
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
@@ -618,6 +646,65 @@ def test_turn_budget_forces_partial_finish(make_routine, scripted):
     # `state` folds partial into finished — the outcome field keeps it distinguishable
     # (the dashboard heartbeat strip renders it amber, not green)
     assert st["state"] == "finished" and st["outcome"] == "partial"
+
+
+def test_finish_with_pending_user_message_defers_and_delivers(make_routine, scripted):
+    """R108/F268: a user message landing in the window between the turn's inbox drain and
+    the model's `finish` is never silently swallowed — the finish is set aside (a rejected
+    observation) and the message is delivered as the next actionable turn."""
+    from rsched.engine.inbox import file_message
+
+    d = make_routine(slug="finrace")
+
+    def racing_finish():
+        file_message(d, "wait — also do X")   # lands AFTER this turn's inbox drain
+        return finish(summary="all done")
+
+    ep = scripted([probe(), racing_finish,
+                   {"say": "Addressing the late message.", "kind": "finish",
+                    "status": "ok", "summary": "did X too"}])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    # the raced finish became a rejected observation, not the end of the run
+    deferred = [e for e in events if e["type"] == "observation"
+                and e["payload"].get("kind") == "finish"
+                and e["payload"].get("pending_user_input")]
+    assert len(deferred) == 1
+    # the message reached the transcript AND the model's next prompt, after the deferral note
+    assert any(e["type"] == "user_injection" and "also do X" in e["payload"]["text"]
+               for e in events)
+    last_prompt = ep.calls[2]["messages"]
+    assert "OBSERVATION (finish deferred)" in last_prompt[-2]["content"]
+    assert "also do X" in last_prompt[-1]["content"]
+    # the SECOND finish ended the run and authored the result
+    fin = next(e for e in events if e["type"] == "finish")
+    assert fin["payload"]["summary"].startswith("did X too")
+    assert (run_dir / "result.md").read_text(encoding="utf-8").startswith("did X too")
+    # delivered = consumed: nothing left queued
+    assert not any(p.name.startswith("msg-") for p in (d / "inbox").iterdir())
+
+
+def test_reserved_finish_surfaces_still_queued_message(make_routine, scripted):
+    """The spent reserved-finish turn cannot defer (the next boundary would force-finish
+    with an engine string) — the finish goes through, and the summary tells BOTH sides the
+    message is still queued; the next leg's boot drain delivers it."""
+    from rsched.engine.inbox import file_message
+
+    d = make_routine(slug="finrace2", budgets={"max_turns": 1})
+
+    def racing_finish():
+        file_message(d, "too late for this run")
+        return finish(status="partial", summary="out of budget")
+
+    scripted([probe(), racing_finish])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "partial"
+    result = (run_dir / "result.md").read_text(encoding="utf-8")
+    assert result.startswith("out of budget")
+    assert "it stays queued and opens the next run/reply" in result
+    # NOT consumed — the message survives for the next leg
+    assert any(p.name.startswith("msg-") for p in (d / "inbox").iterdir())
 
 
 def test_repeated_action_warn_then_fail(make_routine, scripted):

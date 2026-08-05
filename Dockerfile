@@ -14,6 +14,8 @@ FROM python:3.12-slim-bookworm
 #   lib*/fonts-* — Chromium's system libraries, so the page-fetch util's Playwright browser RUNS
 #     here (the ~170 MB browser itself is user-level: downloaded once by the util into the
 #     bind-mounted ~/.cache/ms-playwright — image carries the stable root-owned libs only)
+#   xvfb/xauth — virtual X display so a browser util can run HEADFUL Chrome on this headless
+#     host when a site defeats headless mode; opt-in per util via xvfb-run, no global DISPLAY
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git curl ca-certificates gnupg sshfs \
     # GitHub CLI apt repo
@@ -31,6 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 \
         libxkbcommon0 libxrandr2 libfontconfig1 libfreetype6 \
         fonts-liberation fonts-noto-color-emoji fonts-unifont \
+        xvfb xauth \
     && npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*

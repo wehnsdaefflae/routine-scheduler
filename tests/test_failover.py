@@ -194,19 +194,20 @@ def test_resolve_time_avoidance_skips_cooling_primary(make_routine, monkeypatch)
     assert eps["epA"].calls == []   # never probed while cooling
 
 
-# ---- empty completions: the refusal gap ------------------------------------------------------
+# ---- empty completions + classifier refusals (R5) --------------------------------------------
 
 def test_empty_completions_fail_over_to_fallback(make_routine, monkeypatch):
     """Two consecutive EMPTY completions from one model engage the failover chain exactly
-    like a hard EndpointError — same-model blind retries can never fix a broken/refusing
-    model, so the turn moves on and the model cools (the refusal-gap fix)."""
+    like a hard EndpointError — same-model blind retries can never fix a broken model, so
+    the turn moves on and the model cools. (A refusal-shaped stop never reaches this
+    path — it advances the chain on the FIRST occurrence, see the refusal tests below.)"""
     from rsched.endpoints.base import Completion
 
     d = make_routine("emptyfo")
     server = _catalog_server(d.parent)
     eps = _wire(monkeypatch, server, {
-        "epA": [Completion(text="", stop_reason="refusal"),
-                Completion(text="", stop_reason="refusal")],
+        "epA": [Completion(text=""),
+                Completion(text="")],
         "epB": [write_file("state/probe.txt", say="grounding work"),
                 finish(summary="served by the backup model")]})
     status, run_dir = run_routine(d, server, run_ts=TS)
@@ -216,7 +217,7 @@ def test_empty_completions_fail_over_to_fallback(make_routine, monkeypatch):
     empties = [e for e in events if e["type"] == "error"
                and "empty completion (no content" in e["payload"].get("message", "")]
     assert len(empties) == 2
-    assert "stop_reason=refusal" in empties[0]["payload"]["message"]
+    assert "stop_reason=unreported" in empties[0]["payload"]["message"]
     switch = [e for e in events if e["type"] == "error" and e["payload"].get("failover")]
     assert switch and switch[0]["payload"]["failover"]["to"] == "backup"
     assert failover.is_cooling("epA", "m-a")
@@ -224,10 +225,73 @@ def test_empty_completions_fail_over_to_fallback(make_routine, monkeypatch):
     assert [t["usage"]["model"] for t in turns] == ["epB/m-b", "epB/m-b"]
 
 
+def test_refusal_advances_chain_immediately(make_routine, monkeypatch):
+    """R5: a classifier refusal (HTTP 200, stop_reason "refusal", stop_details naming the
+    category) is NEVER retried against the same model — the FIRST refusal emits a
+    refusal-marked transcript error and advances the fallback chain; the refused model
+    cools (run-scoped: the registry is process-local)."""
+    from rsched.endpoints.base import Completion
+
+    d = make_routine("refusalfo")
+    server = _catalog_server(d.parent)
+    eps = _wire(monkeypatch, server, {
+        "epA": [Completion(text="", stop_reason="refusal",
+                           stop_details={"type": "refusal", "category": "cyber",
+                                         "explanation": "declined by the classifier"})],
+        "epB": [write_file("state/probe.txt", say="grounding work"),
+                finish(summary="served by the backup model")]})
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "ok"
+    assert len(eps["epA"].calls) == 1       # ONE refusal — no same-model retry, ever
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    refusals = [e for e in events if e["type"] == "error" and e["payload"].get("refusal")]
+    assert len(refusals) == 1
+    assert refusals[0]["payload"]["refusal"]["category"] == "cyber"
+    assert refusals[0]["payload"]["refusal"]["explanation"] == "declined by the classifier"
+    assert "category=cyber" in refusals[0]["payload"]["message"]
+    switch = [e for e in events if e["type"] == "error" and e["payload"].get("failover")]
+    assert switch and switch[0]["payload"]["failover"]["to"] == "backup"
+    assert failover.is_cooling("epA", "m-a")
+    turns = [e for e in events if e["type"] == "assistant_action"]
+    assert [t["usage"]["model"] for t in turns] == ["epB/m-b", "epB/m-b"]
+
+
+def test_refusal_without_fallback_fails_run_honestly(make_routine, monkeypatch):
+    """R5: no fallbacks configured (and no uncensored role) → the run dies with an HONEST
+    error naming the refusal category — never "empty completion", never "failed to
+    produce a valid action"."""
+    from rsched.endpoints.base import Completion
+
+    d = make_routine("refusalsolo")
+    server = ServerConfig(
+        endpoints={"epA": EndpointConfig(kind="openai", base_url="http://127.0.0.1:1/v1")},
+        models={"solo": ModelConfig(endpoint="epA", model="m-a")},
+        system_model="solo")
+    server.endpoints["epA"].name = "epA"
+    server.models["solo"].name = "solo"
+    server.routines_home = d.parent
+    server.libraries_home = d.parent.parent / "test-library"
+    _wire(monkeypatch, server, {
+        "epA": [Completion(text="", stop_reason="refusal",
+                           stop_details={"category": "bio"})]})
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "failed"
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    refusals = [e for e in events if e["type"] == "error" and e["payload"].get("refusal")]
+    assert refusals and refusals[0]["payload"]["refusal"]["category"] == "bio"
+    fin = next(e for e in events if e["type"] == "finish")
+    assert "refused the turn" in fin["payload"]["summary"]
+    assert "category=bio" in fin["payload"]["summary"]
+    assert "no usable fallback" in fin["payload"]["summary"]
+    assert "empty completion" not in fin["payload"]["summary"]
+    assert "valid action" not in fin["payload"]["summary"]
+
+
 def test_empty_refusal_referred_to_uncensored(make_routine, monkeypatch):
-    """An EMPTY completion whose stop_reason is `refusal` (a classifier refusal — there is
-    no free text to sniff) is referred to the routine's `uncensored` model exactly like a
-    free-text refusal: the referred action serves the turn and the referral is audited."""
+    """The FIRST classifier refusal is referred to the routine's `uncensored` model (when
+    configured) exactly like a free-text refusal — the referred action serves the turn,
+    the referral is audited, and the refused model is NOT cooled (no failover happened),
+    so the next turn probes it again."""
     import json as _json
 
     import yaml as _yaml
@@ -253,7 +317,10 @@ def test_empty_refusal_referred_to_uncensored(make_routine, monkeypatch):
     status, run_dir = run_routine(d, server, run_ts=TS)
     assert status == "ok"
     assert len(eps["epU"].calls) == 1 and len(eps["epA"].calls) == 2
+    assert not failover.is_cooling("epA", "m-a")   # a referred refusal is not a failover
     events, _ = read_events(run_dir / "transcript.jsonl")
+    refusals = [e for e in events if e["type"] == "error" and e["payload"].get("refusal")]
+    assert len(refusals) == 1                      # the refusal itself is still audited
     turns = [e for e in events if e["type"] == "assistant_action"]
     assert turns[0].get("referred") is True
     assert turns[0]["usage"]["model"] == "epU/m-u"

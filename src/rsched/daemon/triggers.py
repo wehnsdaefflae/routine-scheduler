@@ -48,12 +48,52 @@ class TriggerManager:
         self.home = server.routines_home
 
     async def tick(self, catalog: dict[str, registry.RoutineInfo]) -> None:
-        """One pass over the spool. Never raises into the scheduler loop."""
+        """One pass over the spool + the report-trigger inbox watch. Never raises into
+        the scheduler loop.
+        """
         try:
             for slug in triggers.slugs_with_events(self.home):
                 await self._service(slug, catalog.get(slug))
+            # report triggers have no spool — the durable inbox file IS the event, so
+            # the watch is a cheap glob on exactly the routines that DECLARE one
+            for slug, info in catalog.items():
+                await self._service_report(slug, info)
         except Exception:
             log.exception("trigger tick failed")
+
+    async def _service_report(self, slug: str, info: registry.RoutineInfo) -> None:
+        """Fire a routine whose inbox holds an unconsumed report/message, if it declares
+        a `report` trigger: one fire per cooldown window (everything that lands meanwhile
+        is drained by that one run — coalescing), never while a run is active/queued or
+        the daemon drains, never for a disabled routine. Nothing is consumed here: the
+        fired run's own boot drain empties the inbox, and a crash before the drain just
+        means one more fire after the cooldown — the messages are durable either way.
+        """
+        trig = next((t for t in info.cfg.triggers if t.get("type") == "report"), None)
+        if trig is None or not info.cfg.enabled:
+            return
+        inbox = info.cfg.dir / "inbox"
+        if not inbox.is_dir() or not any(p.is_file() and not p.name.startswith("answer-")
+                                         for p in inbox.iterdir()):
+            return
+        if self.runner.draining or self.runner.is_active(slug):
+            return
+        state = triggers.read_state(self.home, slug)
+        raw_per = state.get("triggers")
+        per: dict = raw_per if isinstance(raw_per, dict) else {}
+        tid = str(trig["id"])
+        cooldown = int(trig.get("cooldown_s") or triggers.DEFAULT_REPORT_COOLDOWN_S)
+        got = per.get(tid)
+        mine: dict = got if isinstance(got, dict) else {}
+        if self._cooling(mine, cooldown):
+            return
+        rid = await self.runner.fire(info.cfg, reason="trigger")
+        now = now_iso()
+        per[tid] = {"last_fired": now, "events": int(mine.get("events") or 0) + 1}
+        state.update(last_fired=now, fires=int(state.get("fires") or 0) + 1, triggers=per)
+        triggers.write_state(self.home, slug, state)
+        if rid:
+            log.info("report trigger fired routine=%s run=%s", slug, rid)
 
     async def _service(self, slug: str, info: registry.RoutineInfo | None) -> None:
         events = triggers.pending_events(self.home, slug)

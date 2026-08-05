@@ -1,18 +1,19 @@
-"""F264: a blocking approval must render ONCE in a conversation, not twice.
+"""F264 + R132: a blocking question renders ONE full answer form, and its buttons in view.
 
 A conversation renders a pending question on TWO surfaces: inline in the chat transcript
 (chat.js `questionInline`, fed by the `question` transcript event) and in the pinned panel
-above the composer (conversations.js `questionPanel`, fed by status.json's question). For a
-DEFERRED question only the inline chat form is actionable (the panel is empty — deferred
-questions never set status.question). For a BLOCKING question the panel owns the answer
-(ask-back / expires / util-approval chrome), so the inline chat card must be STATIC text —
-otherwise the same approval shows twice, both actionable (the operator's F264 report).
+above the composer (conversations.js `questionPanel`, fed by status.json's question). The
+run view mirrors this (transcript.js `questionNode` + the page-top panel). Two rules hold:
 
-The run view's transcript (transcript.js) already follows this exact rule ("Blocking ones
-stay with the run view's panel"). This guards that chat.js keeps the same deferred-only gate.
-It is a source-level guard (like test_static_imports / test_lint) because the console is
-no-build vanilla ES modules; a browser-level assertion would need a live conversation with a
-seeded blocking question, which the UI harness cannot yet seed.
+- F264: the pinned panel owns the ONE full form (free text, ask-back, expires chrome). The
+  inline rendering of a BLOCKING question must never build a second full form.
+- R132: the inline rendering must still carry the one-click controls (option buttons /
+  typed-decision buttons, `quick: true` in answerform.js) — a util approval whose only
+  buttons live on another surface sent the operator hunting through the Decisions tab.
+
+Source-level guard (like test_static_imports / test_lint) because the console is no-build
+vanilla ES modules; the browser-level half lives in tests/ui/test_flows.py (the run-view
+inline approve flow), which needs the Playwright harness.
 """
 import re
 from pathlib import Path
@@ -20,19 +21,43 @@ from pathlib import Path
 STATIC = Path(__file__).resolve().parents[1] / "static"
 
 
-def test_chat_inline_answer_form_is_deferred_only():
-    text = (STATIC / "components" / "chat.js").read_text(encoding="utf-8")
-    m = re.search(r"function questionInline\(ev\)\s*\{(.*?)\n  \}", text, re.DOTALL)
-    assert m, "questionInline(ev) not found in chat.js — did it move/rename?"
-    body = m.group(1)
-    # The early-return guard before building the answerForm must exclude non-deferred
-    # (blocking) questions, so a blocking question renders as static text and is answered
-    # only in the pinned questionPanel.
+def _body(path: str, func: str) -> str:
+    text = (STATIC / path).read_text(encoding="utf-8")
+    m = re.search(r"function " + func + r"\(ev\)\s*\{(.*?)\n  \}", text, re.DOTALL)
+    assert m, f"{func}(ev) not found in {path} — did it move/rename?"
+    return m.group(1)
+
+
+def _blocking_branch_is_quick_only(body: str, where: str) -> None:
+    # The non-deferred (blocking) branch must exist and build ONLY the quick strip.
     assert 'p.mode !== "deferred"' in body, (
-        "chat.js questionInline must gate its inline answer form on deferred mode "
-        '(p.mode !== "deferred" in the pre-form early return) so a BLOCKING approval does '
-        "not render an actionable card in BOTH the chat and the pinned panel (F264).")
-    # And that guard must sit before the answerForm is constructed (a return, not dead code).
-    guard_at = body.index('p.mode !== "deferred"')
-    form_at = body.index("answerForm(")
-    assert guard_at < form_at, "the deferred-mode guard must precede the answerForm construction"
+        f"{where} must branch on deferred vs blocking mode — a blocking question gets the "
+        "quick strip, never a second full form (F264)")
+    blocking = body[body.index('p.mode !== "deferred"'):]
+    blocking = blocking[:blocking.index("const form")]   # up to the deferred full form
+    assert "quick: true" in blocking, (
+        f"{where}: the blocking branch must render the one-click strip (answerForm "
+        "quick: true) — without it an approval has no buttons where the user reads (R132)")
+    assert "placeholder" not in blocking, (
+        f"{where}: the blocking branch must not build a free-text form — the pinned panel "
+        "owns the one full form (F264)")
+
+
+def test_chat_inline_blocking_is_quick_strip_only():
+    _blocking_branch_is_quick_only(_body("components/chat.js", "questionInline"),
+                                   "chat.js questionInline")
+
+
+def test_transcript_inline_blocking_is_quick_strip_only():
+    _blocking_branch_is_quick_only(_body("components/transcript.js", "questionNode"),
+                                   "transcript.js questionNode")
+
+
+def test_answerform_quick_mode_drops_the_free_text_row():
+    """quick mode is buttons-only by construction: no input row, no ask-back — so a quick
+    strip can never grow into the duplicate full form F264 was about."""
+    text = (STATIC / "components" / "answerform.js").read_text(encoding="utf-8")
+    assert "const row = quick ? null" in text, (
+        "answerform.js quick mode must omit the free-text row entirely")
+    assert "askBack && !quick" in text, (
+        "answerform.js quick mode must omit the ask-back button")

@@ -185,3 +185,28 @@ def test_trigger_crud_guards(api_client, make_routine):
     # CRUD stays bearer-gated (only the hook ingest is public)
     bare = TestClient(c.app)
     assert bare.post("/api/routines/testr/triggers", json={}).status_code == 401
+
+
+def test_create_report_trigger(api_client, make_routine):
+    """The report trigger's web half: server-generated entry, no token/URL, the type's
+    own generous default cooldown, and one-per-routine (409 on a second)."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    r = c.post("/api/routines/testr/triggers", json={"type": "report"})
+    assert r.status_code == 200
+    trig = r.json()["trigger"]
+    assert trig["type"] == "report"
+    assert trig["cooldown_s"] == 900                  # the type's own default, not 60
+    assert "token" not in trig and "url_path" not in trig
+    raw = yaml.safe_load((tmp / "routines" / "testr" / "routine.yaml").read_text())
+    assert raw["triggers"][0]["id"] == trig["id"]
+    detail = c.get("/api/routines/testr").json()
+    assert detail["triggers"][0]["type"] == "report"
+    assert detail["triggers"][0]["url_path"] == ""
+    # one inbox, one watcher
+    assert c.post("/api/routines/testr/triggers",
+                  json={"type": "report"}).status_code == 409
+    # an explicit cooldown is honored
+    assert c.delete(f"/api/routines/testr/triggers/{trig['id']}").status_code == 200
+    r = c.post("/api/routines/testr/triggers", json={"type": "report", "cooldown_s": 300})
+    assert r.json()["trigger"]["cooldown_s"] == 300

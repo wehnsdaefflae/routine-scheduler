@@ -73,13 +73,46 @@ def _is_sse_path(path: str) -> bool:
     return path == "/api/events" or (path.startswith("/api/runs/") and path.endswith("/events"))
 
 
+# R94 (operator decision 2026-08-05: ENFORCE — this supersedes decision D68's 2026-08-03
+# "leave as-is"): two bearer tiers. The PRIMARY token (config.yaml `token:`) is the
+# human/web credential and authorizes everything. The ROUTINE token (`routine_token:`,
+# injected into util subprocesses as RSCHED_API_TOKEN) authorizes READ-ONLY methods plus
+# the explicit non-config mutations below — so no run can rewrite ANY routine's config
+# (schedule, permissions, capabilities, grants, connections, settings, triggers, groups)
+# through the HTTP API around the engine's "config is the user's" seal. Mutating routes
+# are therefore primary-only BY DEFAULT: a new endpoint is born sealed, and opening one to
+# routines is an explicit allowlist entry here, with its reason.
+# ("METHOD", "/api/path-prefix") pairs. EMPTY today — the wild rsched-api usage survey
+# (2026-08-05) found only reads plus the config mutations this seal exists to stop (the
+# one historical non-config mutation, self-audit's DELETE /api/wizard/<wid> orphan-session
+# archive, targeted a route the wizard unification removed). Add a pair here — with its
+# reason — the day a run legitimately needs a non-config mutation.
+ROUTINE_TOKEN_MUTATIONS: tuple[tuple[str, str], ...] = ()
+
+
+def _routine_token_allowed(request: Request) -> bool:
+    return request.method in ("GET", "HEAD", "OPTIONS") or any(
+        request.method == method and request.url.path.startswith(prefix)
+        for method, prefix in ROUTINE_TOKEN_MUTATIONS)
+
+
 def require_auth(request: Request) -> None:
-    token = request.app.state.server.token
+    server = request.app.state.server
+    token = server.token
     if not token:
         return  # auth disabled (empty token in config)
     header = request.headers.get("authorization", "")
     if header == f"Bearer {token}":
         return
+    routine_token = server.routine_token
+    if routine_token and header == f"Bearer {routine_token}":
+        if _routine_token_allowed(request):
+            return
+        raise HTTPException(
+            status_code=403,
+            detail="the routine API token is read-only — config-mutating endpoints "
+                   "take the operator's primary token (R94). A run that needs a config "
+                   "change proposes it via ask_user with config_patch instead.")
     # EventSource cannot send headers, and the bearer token in a query string would leak
     # into access logs — a SHORT-LIVED ticket (POST /api/sse-ticket) rides there instead,
     # valid ONLY for the SSE GET endpoints themselves (never a general API credential).

@@ -109,6 +109,73 @@ async def test_library_sync_disabled_never_scheduled(tmp_path):
     assert sched.snapshot()["library_sync_next"] is None
 
 
+# --- D71: group schedules — member-cron suppression + the group's own fire ---------
+
+
+def test_rescan_suppresses_scheduled_group_members(make_routine, tmp_path):
+    """A member of a group WITH a cron loses its own fire-table entry (one fire path);
+    a member of an UNSCHEDULED group keeps firing on its own cron."""
+    from rsched import groups
+    make_routine(slug="chained")
+    make_routine(slug="loose")
+    server = _server(tmp_path)
+    groups.create(server.routines_home, name="Plain", members=["loose"])          # no cron
+    grp = groups.create(server.routines_home, name="Sched", members=["chained"],
+                        cron="0 7 * * *", tz="UTC")
+    sched = Scheduler(server, FakeRunner(), EventBus())
+    sched.rescan()
+    assert "chained" not in sched.next_fires          # suppressed: group-managed
+    assert "loose" in sched.next_fires                # unscheduled group changes nothing
+    assert grp["id"] in sched.group_next_fires        # the group has its own fire
+    assert sched.snapshot()["group_next_fires"]
+    # removing the schedule restores the member's own cron on the next rescan
+    groups.update(server.routines_home, grp["id"], cron="")
+    sched.rescan()
+    assert "chained" in sched.next_fires
+    assert grp["id"] not in sched.group_next_fires
+
+
+async def test_boot_catchup_skips_group_managed_members(make_routine, tmp_path):
+    from rsched import groups
+    d = make_routine(slug="gcatch")
+    text = (d / "routine.yaml").read_text().replace("catchup: skip", "catchup: run_once")
+    (d / "routine.yaml").write_text(text)
+    server = _server(tmp_path)
+    groups.create(server.routines_home, name="Sched", members=["gcatch"],
+                  cron="0 7 * * *", tz="UTC")
+    fr = FakeRunner()
+    sched = Scheduler(server, fr, EventBus())
+    sched.rescan()
+    await sched.boot_catchup()
+    assert fr.fired == []          # its own cron is suppressed, catch-up included
+
+
+async def test_due_group_cron_arms_the_chain_and_fires_member_zero(make_routine, tmp_path,
+                                                                   monkeypatch):
+    """The group cron auto-arms the D53 chain: the scheduler arms it at the due tick and
+    the GroupRunManager fires member 0 (the rest chain on completion, as when armed by
+    hand). A second due fire while the chain is in flight is skipped (overrun rule)."""
+    from rsched import group_runs, groups
+    make_routine(slug="first")
+    make_routine(slug="second")
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+    server = _server(tmp_path)
+    grp = groups.create(server.routines_home, name="Chain", members=["first", "second"],
+                        cron="0 7 * * *", tz="UTC")
+    fr = FakeRunner()
+    sched = Scheduler(server, fr, EventBus())
+    task = asyncio.create_task(sched.run_forever())
+    await asyncio.sleep(0.05)
+    sched.group_next_fires[grp["id"]] = datetime.now(UTC) - timedelta(seconds=1)
+    assert await _wait_for(lambda: ("first", "group") in fr.fired)
+    task.cancel()
+    assert sched.group_next_fires[grp["id"]] > datetime.now(UTC)   # advanced past the fire
+    rec = group_runs.read(server.routines_home, grp["id"])
+    assert rec is not None and rec["armed_by"] == "schedule"
+    assert rec["current_run"].startswith("first:")
+    assert ("second", "group") not in fr.fired      # sequential: member 1 waits its turn
+
+
 # --- Runner with stub engine processes -------------------------------------------
 
 
@@ -242,6 +309,59 @@ async def test_reap_surfaces_clean_exit_diagnostics(make_routine, tmp_path, monk
         assert await _wait_for(lambda: not runner.is_active("warner"))
     surfaced = [r.getMessage() for r in caplog.records if "finished but logged" in r.getMessage()]
     assert surfaced and "util-stats snapshot write failed" in surfaced[0]
+
+
+# --- R108 residual (F268): the post-finish inbox sweep ---------------------------------
+
+
+async def test_reap_sweeps_stranded_user_message_and_resumes(make_routine, tmp_path,
+                                                             monkeypatch):
+    """A USER message that raced the finish (landed after the engine's last inbox check)
+    re-opens the run from the reap via the same terminal resume a message to an idle
+    conversation takes — and ONLY user messages do: a report delivery beside it stays for
+    the schedule, and once the message is consumed nothing loops."""
+    d = make_routine(slug="strand")
+    cfg, _ = load_routine(d)
+    atomic_write_json(d / "inbox" / "msg-20260805T1200-x1.json",
+                      {"text": "also do X", "ts": "t", "via": "conversation"})
+    atomic_write_json(d / "inbox" / "msg-rep-R999.json",
+                      {"text": "REPORT R999", "ts": "t", "via": "report",
+                       "report": "R999", "from": "sender"})
+    # leg 1 finishes with the message still queued (the race); leg 2 — the sweep's resume
+    # — consumes it the way a real boot drain would
+    _stub_engine(monkeypatch,
+                 'echo x >> legs; if [ "$(wc -l < legs)" -ge 2 ]; then rm -f inbox/msg-2026*.json; fi; '
+                 'printf \'{"state": "finished", "pid": 1}\' > runs/{TS}/status.json.tmp '
+                 '&& mv runs/{TS}/status.json.tmp runs/{TS}/status.json')
+    runner = Runner(_server(tmp_path), EventBus())
+    await runner.fire(cfg)
+    assert await _wait_for(lambda: (d / "legs").exists()
+                           and len((d / "legs").read_text().splitlines()) >= 2)
+    assert await _wait_for(lambda: not runner.active)
+    await asyncio.sleep(0.3)                       # room for a (wrong) third leg to appear
+    assert len((d / "legs").read_text().splitlines()) == 2       # exactly one re-open
+    assert not list((d / "inbox").glob("msg-2026*.json"))        # consumed by the resume
+    assert list((d / "inbox").glob("msg-rep-*.json"))            # the report waited
+
+
+async def test_reap_sweep_ignores_non_user_messages(make_routine, tmp_path, monkeypatch):
+    """A finish with ONLY report/trigger-style deliveries queued wakes nothing — those
+    wait for the schedule (or the routine's own report trigger)."""
+    d = make_routine(slug="quiet")
+    cfg, _ = load_routine(d)
+    atomic_write_json(d / "inbox" / "msg-rep-R1000.json",
+                      {"text": "REPORT R1000", "ts": "t", "via": "report",
+                       "report": "R1000", "from": "sender"})
+    _stub_engine(monkeypatch,
+                 'echo x >> legs; '
+                 'printf \'{"state": "finished", "pid": 1}\' > runs/{TS}/status.json.tmp '
+                 '&& mv runs/{TS}/status.json.tmp runs/{TS}/status.json')
+    runner = Runner(_server(tmp_path), EventBus())
+    await runner.fire(cfg)
+    assert await _wait_for(lambda: not runner.active)
+    await asyncio.sleep(0.3)
+    assert len((d / "legs").read_text().splitlines()) == 1       # no wake
+    assert list((d / "inbox").glob("msg-rep-*.json"))
 
 
 # --- F188: a user cancel must not masquerade as a crash in the health stream -----------

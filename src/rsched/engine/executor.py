@@ -83,8 +83,19 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     """Engine-resolved, per-run secrets a util may receive (still under the declared-only gate):
     OAuth connection access tokens + bound remote-machine details/keys. The var names are
     disjoint, so a plain merge is safe.
+
+    RSCHED_API_TOKEN (R94, operator decision 2026-08-05: ENFORCE): the reserved name a
+    util declares to talk to the daemon API resolves to the server's ROUTINE token — the
+    read-only tier — and OVERRIDES any secrets-store value for it (extra_secrets win the
+    _child_env merge by design), so the primary console token can never reach a util
+    subprocess through the store. Config stays honest: the engine reads `routine_token`
+    here, it never writes it (bootstrap.ensure_config generates it).
     """
-    return {**_connection_env(ctx), **_machine_env(ctx)}
+    out = {**_connection_env(ctx), **_machine_env(ctx)}
+    routine_token = str(getattr(ctx.server, "routine_token", "") or "")
+    if routine_token:
+        out["RSCHED_API_TOKEN"] = routine_token
+    return out
 
 
 def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/show dispatch, many small exits

@@ -1,6 +1,10 @@
 // Friendly schedule builder. `initial` is a friendly spec {frequency, time, weekday, ...};
 // returns { node, value(), catchup() }. Pass opts.catchup (a string) to also offer a
 // missed-run policy select — routines want it, the library-sync editor does not.
+// Pass opts.groupManaged ({id, name} — D71) when the routine belongs to a SCHEDULED group:
+// the dropdown locks on a selected, disabled "Group managed" state linking to the group
+// (the routine's own cron is suppressed by the daemon; value() returns the stored spec
+// unchanged so a page save never clobbers it).
 
 import { el } from "/static/util.js";
 
@@ -8,10 +12,12 @@ const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frida
 
 export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "", opts = {}) {
   const spec = { time: "07:00", weekday: 1, day: 1, minute: 0, ...initial };
-  const freq = el("select", {},
+  const gm = opts.groupManaged || null;
+  const freq = el("select", { ...(gm ? { disabled: true } : {}) },
     ...["manual", "hourly", "daily", "weekly", "monthly"].map((f) =>
-      el("option", { value: f, ...(spec.frequency === f ? { selected: true } : {}) },
-        f[0].toUpperCase() + f.slice(1))));
+      el("option", { value: f, ...(!gm && spec.frequency === f ? { selected: true } : {}) },
+        f[0].toUpperCase() + f.slice(1))),
+    ...(gm ? [el("option", { value: "group-managed", selected: true }, "Group managed")] : []));
   const time = el("input", { type: "time", value: spec.time });
   const minute = el("input", { type: "number", min: 0, max: 59, value: spec.minute, style: "width:70px" });
   const weekday = el("select", {}, ...WEEKDAYS.map((d, i) =>
@@ -35,12 +41,16 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
   function sync() {
     const f = freq.value;
     detail.replaceChildren();
-    if (f === "hourly") detail.append(document.createTextNode("at minute"), minute);
+    if (gm) {
+      detail.append(el("span", { class: "muted" }, "fires with group "),
+        el("a", { href: "#/groups" }, gm.name || gm.id),
+        el("span", { class: "muted" }, " — this routine's own schedule is suppressed while the group is scheduled"));
+    } else if (f === "hourly") detail.append(document.createTextNode("at minute"), minute);
     else if (f === "daily") detail.append(document.createTextNode("at"), time);
     else if (f === "weekly") detail.append(document.createTextNode("on"), weekday, document.createTextNode("at"), time);
     else if (f === "monthly") detail.append(document.createTextNode("on day"), day, document.createTextNode("at"), time);
     else detail.append(el("span", { class: "muted" }, "runs only when you click Run now"));
-    if (catchupRow) catchupRow.style.display = f === "manual" ? "none" : "";
+    if (catchupRow) catchupRow.style.display = (f === "manual" || gm) ? "none" : "";
   }
   freq.addEventListener("change", sync);
   sync();
@@ -54,6 +64,9 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
   return {
     node,
     value() {
+      // group-managed: the stored spec rides back UNCHANGED — the suppression lives in
+      // the daemon, and a save from this page must not rewrite the routine's own cron
+      if (gm) return initial;
       const f = freq.value;
       if (f === "manual") return { frequency: "manual" };
       if (f === "hourly") return { frequency: "hourly", minute: Number(minute.value) };
