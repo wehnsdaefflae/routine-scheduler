@@ -190,3 +190,56 @@ def test_migrate_util_headers(tmp_path):
     assert utils_lib.header_problems(migrated) == []
     assert utils_lib.read_util(home, "modern") == before_modern
     assert bootstrap.migrate_util_headers(home) == 0       # converged: nothing to do
+
+
+def test_write_util_path_validation():
+    """F280: 'path' is a third, byte-faithful content source — and stands ALONE."""
+    from rsched.engine.actions import validate_action
+
+    base = {"say": "s", "kind": "write_util", "name": "from-file"}
+    assert validate_action({**base, "path": "state/draft.py"}) == []
+    assert any("ALONE" in p for p in
+               validate_action({**base, "path": "d.py", "content": "x"}))
+    assert any("ALONE" in p for p in
+               validate_action({**base, "path": "d.py", "anchor": "a"}))
+    assert any("'path'" in p for p in validate_action(dict(base)))
+
+
+def _path_loop(d, server):
+    from rsched.config import load_routine
+
+    cfg, _ = load_routine(d)
+    ctx = SimpleNamespace(server=server, depth=0, routine=cfg, read_roots=list,
+                          grants=SimpleNamespace(needs_confirm=lambda creating: False))
+    return SimpleNamespace(ctx=ctx)
+
+
+def test_write_util_path_outside_roots_declines(make_routine):
+    """The path source rides the run's OWN read sandbox — no reach outside the roots."""
+    from rsched.engine.interact import handle_write_util
+    from test_loop import _server
+
+    d = make_routine(slug="pathsrc")
+    loop = _path_loop(d, _server(d))
+    res = handle_write_util(loop, {"kind": "write_util", "name": "sneaky",
+                                   "path": "/etc/passwd"}, 0.01)
+    assert res.get("read_failed") is True
+    assert "outside the allowed roots" in res["reason"]
+
+
+@pytest.mark.skipif(shutil.which("uv") is None, reason="uv required to run utils")
+def test_write_util_path_installs_exact_bytes(make_routine):
+    """F280 end-to-end: the library copy is byte-identical to the source file, and the
+    normal header + selftest gate still ran."""
+    from rsched.engine.interact import handle_write_util
+    from test_loop import _server
+
+    d = make_routine(slug="pathsrc2")
+    server = _server(d)
+    (d / "state").mkdir(exist_ok=True)
+    (d / "state" / "draft-util.py").write_text(UTIL_BODY, encoding="utf-8")
+    loop = _path_loop(d, server)
+    res = handle_write_util(loop, {"kind": "write_util", "name": "from-file",
+                                   "path": "state/draft-util.py"}, 0.01)
+    assert res.get("selftest_ok") is True, res
+    assert utils_lib.read_util(server.libraries_home, "from-file") == UTIL_BODY

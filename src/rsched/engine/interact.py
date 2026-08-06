@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 
 from .. import reports, sandbox, schedule_once, utils_lib
 from ..ids import is_slug, question_id
+from ..paths import resolve_rel
 from . import decisions, detach, inbox, requests
 from .control import RunAborted
 from .observations import truncate
@@ -332,7 +333,8 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
                 "reason": "sub-workflows cannot create/revise utils — use existing ones"}
     home = ctx.server.libraries_home
     utils_lib.ensure_library(home, remote=ctx.server.libraries_remote)
-    edit_mode = raw_content is None
+    src_path = str(action.get("path") or "")
+    edit_mode = raw_content is None and not src_path
     if edit_mode:
         # Edit mode (D42-B / F187): anchor-patch the EXISTING source ENGINE-side, so a
         # 3-line fix to a 50KB util never requires re-emitting the whole script through
@@ -358,6 +360,18 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
                     "reason": f"anchor occurs {count}× in the source — extend it until "
                               "unique, or set all: true to replace every occurrence"}
         content = source.replace(anchor, str(action.get("replacement") or ""))
+    elif src_path:
+        # Content-from-file (F280): install the script from a file's EXACT bytes — a
+        # large pre-built util (a subtask's tested draft, a consolidation) must not be
+        # re-typed through one reply, which caps out and is never guaranteed faithful.
+        # Reads under the run's own readable roots only; the result rides the SAME
+        # header + approval + selftest + rollback gate as inline content.
+        try:
+            content = resolve_rel(ctx.routine.dir, src_path,
+                                  ctx.read_roots()).read_text(encoding="utf-8")
+        except (OSError, PermissionError) as exc:
+            return {"kind": "write_util", "name": name, "read_failed": True,
+                    "reason": str(exc)}
     else:
         content = str(raw_content)
     # Doc-standard gate BEFORE the approval ask: a util without tags or with undeclared

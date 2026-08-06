@@ -8,13 +8,16 @@ function takes the live EngineLoop; the turn ORDER stays in loop.run().
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import re
 import time
 from pathlib import Path
 
 from ..endpoints import failover
 from ..endpoints.base import EndpointError
+from ..health_events import log_health_event
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
 from . import executor, fileops
 from .actions import (
@@ -25,6 +28,7 @@ from .actions import (
     validate_action,
 )
 from .history import (
+    CHARS_PER_TOKEN,
     KEEP_HEAD_MSGS,
     KEEP_TAIL_MSGS,
     clamp_to_cap,
@@ -44,6 +48,81 @@ MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
 # branch: re-sending a refused prompt to the same model usually earns another refusal, so
 # a refusal is never blind-retried — see _handle_refusal (R5).
 REFUSAL_STOPS = frozenset({"refusal", "content_filter"})
+
+# F278: the window guard. The clamp (`clamp_to_cap`) sizes everything from the CATALOG's
+# context figure — when that figure claims a larger window than the provider actually
+# enforces, no compaction gate ever fires and the completion 400s with
+# context_length_exceeded (2026-08-05: a gemma entry raised to 250k tokens against the
+# provider's real 65,536 disarmed the whole net and killed two live conversations). The
+# guard closes the loop at the error itself: parse the provider's STATED maximum from the
+# overflow text, shrink this RUN's view of that model's window to it, re-clamp the prompt,
+# and retry the same model once. Config stays authoritative for sizing DOWN (a smaller
+# configured window is a deliberate budget); the provider is authoritative for sizing UP —
+# a stated max at or above the configured window means config wasn't the problem, so the
+# guard declines and the ordinary transport nets take over.
+_OVERFLOW_HINTS = ("context_length_exceeded", "maximum context length", "context window")
+_OVERFLOW_TOKENS_RE = re.compile(
+    r"(?:maximum context length(?: is)?|context (?:window|length) of(?: only)?|"
+    r"context_length_exceeded\D{0,40}?)\s*(\d{4,7})\s*tokens", re.IGNORECASE)
+
+
+def parse_overflow_limit(text: str) -> int | None:
+    """The provider-stated maximum context TOKENS from a context-overflow error message,
+    or None when the text is not an overflow error (or states no usable figure).
+    """
+    low = text.lower()
+    if not any(h in low for h in _OVERFLOW_HINTS):
+        return None
+    m = _OVERFLOW_TOKENS_RE.search(text)
+    return int(m.group(1)) if m else None
+
+
+def _override_window(loop, ref):
+    """This run's corrected view of a model's window, when the guard has shrunk it: every
+    turn re-picks the ref from the registry (which still carries the catalog's figure), so
+    the correction is re-applied here rather than by mutating shared registry state.
+    """
+    overrides = getattr(loop, "_window_overrides", None)
+    shrunk = overrides.get((ref.endpoint, ref.model)) if overrides else None
+    if shrunk and shrunk < ref.context_chars:
+        return dataclasses.replace(ref, context_chars=shrunk)
+    return ref
+
+
+def _shrink_window_to_provider(loop, endpoint, ref, exc: EndpointError) -> tuple | None:
+    """Net 0 of _recover_transport: a context-overflow failure whose stated maximum is
+    SMALLER than the configured window means the catalog entry lies — shrink the run-local
+    window to the provider's figure, re-clamp the prompt under it, emit the audit trail
+    (transcript event + `model_window_corrected` health event naming the bad entry), and
+    hand back the same endpoint with the corrected ref for one clean retry. Returns None
+    when the error is not an overflow, states no figure, config was not the problem, or
+    this model was already corrected once this run (never loops).
+    """
+    stated = parse_overflow_limit(str(exc))
+    if stated is None:
+        return None
+    corrected = int(stated * CHARS_PER_TOKEN)
+    key = (ref.endpoint, ref.model)
+    overrides = getattr(loop, "_window_overrides", None)
+    if overrides is None:
+        overrides = loop._window_overrides = {}
+    if overrides.get(key, float("inf")) <= corrected or corrected >= ref.context_chars:
+        return None
+    overrides[key] = corrected
+    new_ref = dataclasses.replace(ref, context_chars=corrected)
+    cl = clamp_to_cap(loop.messages, new_ref.context_chars, new_ref.max_tokens)
+    ctx = loop.ctx
+    ctx.transcript.event("compaction", {"window_guard": {
+        "model": ref.name or ref.model, "configured_chars": ref.context_chars,
+        "provider_max_tokens": stated, "corrected_chars": corrected,
+        **({"clamp": cl} if cl else {})}})
+    log_health_event(ctx.server.routines_home, "model_window_corrected",
+                     routine=ctx.routine.slug, run_id=ctx.run_id,
+                     detail=(f"{ref.name or ref.model}: catalog claims "
+                             f"{ref.context_chars:,} context chars but the provider "
+                             f"enforces {stated:,} tokens — run continues on "
+                             f"{corrected:,} chars; correct the catalog entry"))
+    return endpoint, new_ref
 
 
 def fold_usage(usage_sum: dict, completion) -> None:
@@ -70,6 +149,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
     loop._referred_turn = False   # set when the uncensored model produced THIS turn's action
     chain = ctx.registry.for_model_chain("main", ctx.routine.models)
     endpoint, ref = failover.pick(chain)   # first chain member not in provider cooldown
+    ref = _override_window(loop, ref)      # re-apply any run-local window correction (F278)
     ctx.main_model = f"{ref.endpoint}/{ref.model}"     # in status.json; updates on a switch
     compact_if_needed(loop, endpoint, ref)
     usage_sum: dict = {"in": 0, "out": 0}   # + "model"/"provider" attribution (str) on success
@@ -181,8 +261,11 @@ def next_action(loop) -> tuple[dict | None, dict]:
 
 
 def _recover_transport(loop, chain, endpoint, ref, exc: EndpointError) -> tuple:
-    """The completion call failed with a hard EndpointError — the two runtime nets, in
-    order. Net 1: a turn whose tail carries an image the endpoint couldn't show is
+    """The completion call failed with a hard EndpointError — the three runtime nets, in
+    order. Net 0: a context-overflow whose stated maximum is smaller than the configured
+    window is a lying catalog entry, not a provider failure — shrink the run-local window,
+    re-clamp, and retry the SAME model (once; see _shrink_window_to_provider, F278).
+    Net 1: a turn whose tail carries an image the endpoint couldn't show is
     converted to vision-util text (media fallback) and retried text-only on the SAME
     model — the cooldown the instrumentation just started is lifted, since the image, not
     the provider, was the problem. Net 2: a genuine hard provider failure advances down
@@ -190,6 +273,10 @@ def _recover_transport(loop, chain, endpoint, ref, exc: EndpointError) -> tuple:
     re-raise, failing the run exactly as before fallbacks existed. Returns the
     (endpoint, ref) to retry on.
     """
+    shrunk = _shrink_window_to_provider(loop, endpoint, ref, exc)
+    if shrunk is not None:
+        failover.clear(ref.endpoint, ref.model)   # the CONFIG, not the provider, was at fault
+        return shrunk
     if apply_media_fallback(loop, exc):
         failover.clear(ref.endpoint, ref.model)
         return endpoint, ref

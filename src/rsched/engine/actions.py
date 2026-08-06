@@ -77,7 +77,9 @@ ACTION_SCHEMA: dict = {
         "path": {
             "type": "string",
             "description": "read_file/view_image/write_file/edit_file: path relative to the "
-                           "routine dir (or an allowed root)",
+                           "routine dir (or an allowed root) · write_util: install the util "
+                           "script from this file's EXACT bytes (byte-faithful; instead of "
+                           "inline content)",
         },
         "paths": {
             "type": "array", "items": {"type": "string"}, "maxItems": READ_PATHS_MAX,
@@ -330,7 +332,7 @@ KIND_EXAMPLES: dict[str, dict] = {
 # kind → (required fields, allowed extra fields beyond say/kind)
 KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s")),
-    "write_util": (("name",), ("content", "anchor", "replacement", "all")),
+    "write_util": (("name",), ("content", "path", "anchor", "replacement", "all")),
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
     "create_routine": (("target", "name", "prompt"), ("workflow",)),
@@ -435,16 +437,22 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     if kind == "write_util":
         has_content = obj.get("content") is not None
         has_anchor = obj.get("anchor") is not None
+        has_path = bool(obj.get("path"))
         if has_content and not isinstance(obj["content"], str):
             problems.append("kind=write_util requires 'content' to be the script text "
                             "(one string)")
-        if not has_content and not has_anchor:
-            problems.append("kind=write_util needs 'content' (the COMPLETE script) or — to "
-                            "patch an EXISTING util in place — 'anchor' + 'replacement' "
+        if not has_content and not has_anchor and not has_path:
+            problems.append("kind=write_util needs 'content' (the COMPLETE script), or "
+                            "'path' (a readable file the engine installs BYTE-FAITHFULLY "
+                            "as the script — for large pre-built utils), or — to patch an "
+                            "EXISTING util in place — 'anchor' + 'replacement' "
                             "(edit mode, like edit_file; no full re-emit needed)")
         if has_content and has_anchor:
             problems.append("kind=write_util takes 'content' OR 'anchor'/'replacement', not "
                             "both — a full rewrite and an in-place edit are different intents")
+        if has_path and (has_content or has_anchor):
+            problems.append("kind=write_util takes 'path' ALONE — it IS the content source "
+                            "(the file's exact bytes); drop 'content'/'anchor'")
         if has_anchor and not isinstance(obj["anchor"], str):
             problems.append("kind=write_util: 'anchor' must be a string (the exact text to "
                             "find in the util's current source)")

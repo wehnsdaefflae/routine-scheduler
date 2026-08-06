@@ -2,8 +2,14 @@
 
 Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON object:
 {"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"orphaned_run"|"run_canceled"
-        |"wizard_build_degraded"|"fire_refused",
+        |"wizard_build_degraded"|"fire_refused"|"model_window_corrected",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
+
+model_window_corrected: a completion 400'd with a context-overflow whose provider-stated
+maximum is SMALLER than the catalog entry's configured window — the config lies, the
+run's window guard shrank its local view to the provider's figure, re-clamped and
+retried (engine/completion.py, F278). detail names the entry to correct; the run
+survives, but every such event is a standing config defect an audit should surface.
 
 run_canceled: a user-requested abort killed the engine before it could write its own
 finish (same payload shape as orphaned_run, which is reserved for genuine crashes).

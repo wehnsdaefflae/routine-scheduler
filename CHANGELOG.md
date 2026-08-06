@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.158.0] — 2026-08-06
+
+Engine hardening for two externally-surfaced defects (F278 window guard; F280 byte-faithful
+util install).
+
+### Added
+- **The window guard (F278).** A completion that 400s with a context-overflow stating a
+  SMALLER maximum than the catalog's configured window no longer kills the run: the engine
+  parses the provider's stated max from the error text, shrinks the RUN-LOCAL view of that
+  model's window to it, re-clamps the prompt and retries the same model exactly once —
+  emitting a `compaction` transcript event and a new `model_window_corrected` health event
+  naming the lying catalog entry. Config stays authoritative for sizing down; the provider
+  is authoritative for sizing up. (On 2026-08-05 a gemma entry raised to 250k tokens against
+  the provider's real 65,536 disarmed every compaction gate and 400'd two live conversations
+  — the operator has since corrected the entry; this guard makes the next config lie a
+  logged correction instead of a dead run.)
+- **`write_util` content-from-file (F280, R226).** `write_util` accepts `path` as a third
+  content source: the engine installs the util script from that file's EXACT bytes (read
+  under the run's own readable roots), so a large pre-built script — a subtask's tested
+  draft, a 62KB consolidation — is never re-typed through one reply. Rides the identical
+  header + approval + selftest + rollback gate as inline content; `path` stands alone
+  (never combined with `content`/`anchor`).
+
 ## [0.157.0] — 2026-08-06
 
 The Routines page becomes table-first (D72 + D73 — operator-selected 2026-08-05).
