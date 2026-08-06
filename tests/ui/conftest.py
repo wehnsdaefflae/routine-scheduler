@@ -33,17 +33,20 @@ _UI_DIR = Path(__file__).parent
 def pytest_collection_modifyitems(items):
     """Auto-retry the browser UI tests. They are flaky under pytest-xdist — browser/timing/
     shared-resource contention between parallel workers occasionally reds a genuinely-passing
-    test on a full-suite run (F120). `flaky(reruns=2)` reruns ONLY on failure: an intermittent
+    test on a full-suite run (F120). `flaky` reruns ONLY on failure: an intermittent
     contention blip passes on retry, while a real regression still fails all attempts. Scoped to
     this directory so the rest of the suite keeps failing fast (pytest-rerunfailures provides
-    the marker; it is a project dev dependency)."""
+    the marker; it is a project dev dependency). reruns=4 with a 2s backoff, up from 2/1s
+    (F261, 2026-08-06): under ~02:00 cron machine load the 2-rerun shield was pierced twice
+    in one night — every pierced test then passed in isolation — and each pierce costs a
+    6-9 minute re-gate plus a hand arbitration, far more than a few extra seconds-long reruns."""
     for item in items:
         item_path = getattr(item, "path", None)
         in_ui = bool(item_path) and (item_path == _UI_DIR or _UI_DIR in item_path.parents)
         if not in_ui:  # fall back to fspath for any item lacking a pathlib .path
             in_ui = str(_UI_DIR) in str(getattr(item, "fspath", ""))
         if in_ui:
-            item.add_marker(pytest.mark.flaky(reruns=2, reruns_delay=1))
+            item.add_marker(pytest.mark.flaky(reruns=4, reruns_delay=2))
 
 
 class StubRunner:

@@ -27,4 +27,4 @@ def test_ui_items_are_marked_flaky(request):
     pytest-rerunfailures actually being installed."""
     marker = request.node.get_closest_marker("flaky")
     assert marker is not None, "tests/ui conftest hook did not apply the flaky marker"
-    assert marker.kwargs.get("reruns") == 2, marker.kwargs
+    assert marker.kwargs.get("reruns") == 4, marker.kwargs
