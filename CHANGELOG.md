@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.157.0] — 2026-08-06
+
+The Routines page becomes table-first (D72 + D73 — operator-selected 2026-08-05).
+
+### Added
+- **Inline ⏸ pause / ▶ resume on every routine** — card actions AND table rows. One PATCH
+  on `enabled`, no trip to the config page. While a run is active the control disables
+  itself with an explanatory title instead of letting the click bounce into the 409 toast.
+- **Groups as collapsible table rows (D73).** Each group renders as its own header row in
+  the routines table; expanding lists its member rows right beneath it in the group's FIRE
+  order. The flat sorted list below stays complete — sorting and filtering keep their
+  meaning, and a routine in two groups appears under both. Expansion persists like the
+  view mode.
+
+### Changed
+- **The table IS the default routines view** (was the card grid); a stored user choice
+  still wins, and the card grid stays one toggle away.
+- **The routines table fits the screen**: the list view breaks out of the 1180px shell
+  column (`.breakout`, capped at 1800px) instead of cramming eleven columns into it.
+
+### Fixed
+- The card/table toggle's own label now flips immediately on click — it used to stay stale
+  until an unrelated tag change happened to rebuild the filter bar.
+
 ## [0.156.0] — 2026-08-06
 
 The Items page becomes a worklist, and the user's priorities reach the routines (D75 —

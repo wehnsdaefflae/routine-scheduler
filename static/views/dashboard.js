@@ -17,6 +17,7 @@ const SORT_KEY = "rsched_dash_sort";
 const DIR_KEY = "rsched_dash_dir";
 const WEEK_KEY = "rsched_dash_week";
 const ACTIVITY_KEY = "rsched_dash_activity";
+const GROUPS_OPEN_KEY = "rsched_dash_groups_open";
 
 // ---- sort keys: [label, value-fn, descending?] -------------------------------------------------
 const tokensOf = (c) => (c.last_run?.usage?.in || 0) + (c.last_run?.usage?.out || 0);
@@ -109,7 +110,9 @@ export async function render(view) {
   let lastTagSig = null;   // F229: only rebuild the filter bar when the tag set changes
   const active = new Set(JSON.parse(storage.get(FILTER_KEY) || "[]"));
   const states = new Set();
-  let viewMode = storage.get(VIEW_KEY) || "cards";
+  // D72: the table IS the default (operator, 2026-08-05) — denser, sortable, and where the
+  // group rows live. The card grid stays one toggle away and a user's choice persists.
+  let viewMode = storage.get(VIEW_KEY) || "list";
   let sortKey = storage.get(SORT_KEY) || "activity";
   // F208: an explicit sort DIRECTION, so re-clicking the active column reverses it instead
   // of being a no-op. "" = the column's natural direction (from SORTS); "asc"/"desc" override.
@@ -170,7 +173,10 @@ export async function render(view) {
     searchIn.oninput = () => { search = searchIn.value.trim().toLowerCase(); renderBody(); };
     const toggle = el("button", { class: "btn ghost small", style: "margin-left:6px",
       title: "switch between the card grid and a sortable detail table",
-      onclick: () => { viewMode = viewMode === "cards" ? "list" : "cards"; storage.set(VIEW_KEY, viewMode); renderBody(); } },
+      // renderFilterBar too: the toggle's own label must flip immediately (it used to stay
+      // stale until a tag change happened to rebuild the bar). A deliberate click may tear
+      // down the search input — the F229 focus concern only guards LIVE refreshes.
+      onclick: () => { viewMode = viewMode === "cards" ? "list" : "cards"; storage.set(VIEW_KEY, viewMode); renderFilterBar(); renderBody(); } },
       viewMode === "cards" ? "☰ list view" : "▦ card view");
     filterBar.append(sortSel, searchIn, toggle);
     if (active.size || states.size) filterBar.append(el("button", { class: "btn ghost small",
@@ -272,6 +278,29 @@ export async function render(view) {
     }, "▶ run now");
   }
 
+  // D72: start/pause without the config page — one PATCH on `enabled`, from both views.
+  // While a run is active the web layer refuses config edits (409 guard_not_active), so the
+  // control disables itself instead of letting the click bounce into an error toast.
+  function enableToggle(c, cls = "btn small ghost") {
+    const on = !!c.enabled;
+    return el("button", {
+      class: cls,
+      disabled: !!c.active_run,
+      title: c.active_run ? "a run is active — pausing waits until it ends"
+        : on ? "pause this routine — schedule, triggers and one-shots stop firing (“▶ run now” still works)"
+        : "resume this routine's schedule",
+      onclick: async (e) => {
+        e.target.disabled = true;
+        try {
+          await api(`/api/routines/${c.slug}`, { method: "PATCH", body: { enabled: !on } });
+          toast(on ? `${c.name || c.slug} paused — nothing fires until resumed`
+                   : `${c.name || c.slug} resumed`);
+          await load();
+        } catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
+      },
+    }, on ? "⏸ pause" : "▶ resume");
+  }
+
   // Group membership as a chip row — each group a link to the Groups page, so groups are
   // discoverable straight from the routines list (R107/F269). null when in no group.
   function groupChips(slug) {
@@ -323,6 +352,7 @@ export async function render(view) {
         c.active_run
           ? el("a", { class: "btn small", href: `#/run/${c.active_run}` }, "◉ watch live")
           : runNowBtn(c),
+        enableToggle(c),
         last ? el("a", { class: "btn small", href: `#/run/${last.run_id}` }, "last run") : null));
   }
 
@@ -350,11 +380,12 @@ export async function render(view) {
       label + (key === sortKey
         ? ((sortDir || (SORTS[key]?.[2] ? "desc" : "asc")) === "desc" ? " ▾" : " ▴")
         : ""))));
-    const rows = shown.map((c) => {
+    const rowFor = (c, extraCls = "") => {
       const last = c.last_run;
       const tok = tokensOf(c);
       const rowCls = [RUNNING.has(c.active_state) ? "live" : "",
-        c.active_state === "waiting_user" ? "attention" : ""].filter(Boolean).join(" ");
+        c.active_state === "waiting_user" ? "attention" : "", extraCls]
+        .filter(Boolean).join(" ");
       return el("tr", { class: rowCls },
         el("td", {}, el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
           c.description ? el("div", { class: "faint small", style: "max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, c.description) : null,
@@ -372,11 +403,40 @@ export async function render(view) {
         el("td", { class: "num" }, last?.elapsed_s != null ? fmtDur(last.elapsed_s) : "—"),
         el("td", { class: "num" }, c.open_questions
           ? el("a", { href: "#/questions", class: "chip blocking" }, String(c.open_questions)) : "—"),
-        el("td", {}, c.active_run
-          ? el("a", { class: "btn small", href: `#/run/${c.active_run}` }, "◉ live")
-          : runNowBtn(c, "btn small")));
-    });
-    return el("div", { class: "panel", style: "padding:0" },
+        el("td", { class: "row-actions" },
+          c.active_run
+            ? el("a", { class: "btn small", href: `#/run/${c.active_run}` }, "◉ live")
+            : runNowBtn(c, "btn small"),
+          enableToggle(c)));
+    };
+    // D73: each group is its own collapsible row — expanding lists its members right
+    // beneath it, in the group's FIRE order (not the table sort). The flat sorted list
+    // below stays complete, so sorting/filtering keep their meaning and a routine in two
+    // groups appears under both. Expansion persists like the view mode does.
+    const openGroups = new Set(JSON.parse(storage.get(GROUPS_OPEN_KEY) || "[]"));
+    const bySlug = new Map(shown.map((c) => [c.slug, c]));
+    const rows = [];
+    for (const g of groupsOrdered) {
+      const members = g.members.map((s) => bySlug.get(s)).filter(Boolean);
+      if (!members.length) continue;                 // fully filtered out → no header either
+      const open = openGroups.has(g.name);
+      rows.push(el("tr", { class: "group-row" },
+        el("td", { colSpan: COLS.length,
+          title: open ? "collapse this group's rows" : "expand this group's member rows",
+          onclick: () => {
+            open ? openGroups.delete(g.name) : openGroups.add(g.name);
+            storage.set(GROUPS_OPEN_KEY, JSON.stringify([...openGroups]));
+            renderBody();
+          } },
+          el("span", { class: "tri" }, open ? "▾ " : "▸ "),
+          `⛓ ${g.name}`,
+          el("span", { class: "faint small", style: "margin-left:8px" },
+            `${members.length} routine${members.length === 1 ? "" : "s"} · fire order`))));
+      if (open) for (const m of members) rows.push(rowFor(m, "group-member"));
+    }
+    for (const c of shown) rows.push(rowFor(c));
+    // D72: the table breaks out of the 1180px shell column and fits the screen width.
+    return el("div", { class: "panel breakout", style: "padding:0" },
       el("div", { class: "tablewrap" },
         el("table", { class: "list" }, el("thead", {}, head), el("tbody", {}, rows))));
   }

@@ -800,6 +800,7 @@ def test_spend_surfaces(ui, ui_page):
                 usage={"in": 10, "out": 5, "cost": 0.01})
 
     ui_page.goto(f"{ui.url}/#/routines")   # dashboard: the card carries the compact month line
+    ui_page.get_by_role("button", name="▦ card view").click()   # list is the default (D72)
     card = ui_page.locator(".card", has_text="Test uir")
     expect(card).to_contain_text("Jul: 2.00M tok")
     expect(card).to_contain_text("Jun: 900.0k tok")
@@ -1206,6 +1207,7 @@ def test_dashboard_heartbeat_strip(ui, ui_page):
     ui.seed_run("uir", "20260713-070000", "aborted")
 
     ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.get_by_role("button", name="▦ card view").click()   # list is the default (D72)
     card = ui_page.locator(".card", has_text="Test uir")
     strip = card.locator("svg.heartbeat")
     expect(strip).to_be_visible()
@@ -1264,6 +1266,7 @@ def test_dashboard_running_marker_in_both_views(ui, ui_page):
     ui.seed_run("uir", "20260714-070000", "running")
 
     ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.get_by_role("button", name="▦ card view").click()   # list is the default (D72)
     expect(ui_page.locator(".card.live", has_text="Test uir")).to_be_visible()
 
     ui_page.get_by_role("button", name="☰ list view").click()
@@ -1279,6 +1282,7 @@ def test_dashboard_shows_group_membership(ui, ui_page):
     groups.create(ui.routines, name="Maintenance", members=["uir"], on_failure="stop")
 
     ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.get_by_role("button", name="▦ card view").click()   # list is the default (D72)
     card = ui_page.locator(".card", has_text="Test uir")
     chip = card.locator("a.group-chip", has_text="Maintenance")
     expect(chip).to_be_visible()
@@ -1292,12 +1296,47 @@ def test_dashboard_shows_group_membership(ui, ui_page):
     expect(row.locator("a.group-chip", has_text="Maintenance")).to_be_visible()
 
 
+def test_dashboard_list_default_group_rows_and_inline_pause(ui, ui_page):
+    """D72+D73 (operator-selected 2026-08-05): the TABLE is the default routines view and
+    breaks out of the shell column to fit the screen; a group is a collapsible row whose
+    expansion lists its members; and every row carries an inline ⏸ pause / ▶ resume that
+    PATCHes `enabled` without a trip to the config page."""
+    from rsched import groups
+
+    groups.create(ui.routines, name="Nightly", members=["uir"], on_failure="stop")
+
+    ui_page.goto(f"{ui.url}/#/routines")
+    expect(ui_page.locator("table.list")).to_be_visible()   # no toggle click — the default
+    expect(ui_page.locator(".panel.breakout")).to_be_visible()
+
+    # the group row: present, collapsed by default, expands to member rows, collapses back
+    grow = ui_page.locator("tr.group-row", has_text="Nightly")
+    expect(grow).to_be_visible()
+    expect(ui_page.locator("tr.group-member")).to_have_count(0)
+    grow.locator("td").click()
+    expect(ui_page.locator("tr.group-member", has_text="Test uir")).to_be_visible()
+    ui_page.locator("tr.group-row", has_text="Nightly").locator("td").click()
+    expect(ui_page.locator("tr.group-member")).to_have_count(0)
+
+    # inline pause: the row's toggle disables the routine on disk and re-renders…
+    ui_page.locator("table.list tbody tr", has_text="Test uir").last \
+        .get_by_role("button", name="⏸ pause").click()
+    expect(ui_page.locator("table.list tbody tr", has_text="Test uir").last) \
+        .to_contain_text("disabled", timeout=10_000)
+    cfg = yaml.safe_load((ui.routines / "uir" / "routine.yaml").read_text(encoding="utf-8"))
+    assert cfg["enabled"] is False
+    # …and resumes from the same control
+    ui_page.locator("table.list tbody tr", has_text="Test uir").last \
+        .get_by_role("button", name="▶ resume").click()
+    expect(ui_page.locator("table.list tbody tr", has_text="Test uir").last
+           .get_by_role("button", name="⏸ pause")).to_be_visible(timeout=10_000)
+
+
 def test_dashboard_table_sort_reverses_on_reclick(ui, ui_page):
     """F208: clicking a sortable column header sorts by it; re-clicking the ACTIVE column
     reverses the direction (was a no-op) — the header arrow shows ▴ asc / ▾ desc."""
     ui.seed_run("uir", "20260729-070000", "finished", summary="ok")
-    ui_page.goto(f"{ui.url}/#/routines")
-    ui_page.get_by_role("button", name="☰ list view").click()
+    ui_page.goto(f"{ui.url}/#/routines")            # the table IS the default view (D72)
     routine_th = ui_page.locator("table.list th", has_text="routine")
     routine_th.click()                                   # name column, natural ascending
     expect(routine_th).to_contain_text("▴")

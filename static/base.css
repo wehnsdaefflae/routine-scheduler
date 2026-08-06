@@ -276,7 +276,19 @@ main { max-width: 1180px; margin: 0 auto; padding: 18px 22px 110px; }
 .panel.err { border-color: rgba(242, 105, 92, 0.45); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
 .tablewrap { overflow-x: auto; }
+/* D72: a full-width escape from the 1180px shell column — the routines detail table wants
+   the screen. Centered: shift left by half the difference between viewport and column. */
+.breakout {
+  width: min(100vw - 44px, 1800px);
+  margin-left: calc((100% - min(100vw - 44px, 1800px)) / 2);
+}
 table.list { width: 100%; border-collapse: collapse; }
+/* D73: a group's collapsible header row + its indented member rows */
+table.list tr.group-row td { cursor: pointer; font-weight: 600; background: rgba(255, 255, 255, 0.03); }
+table.list tr.group-row:hover td { background: rgba(255, 255, 255, 0.05); }
+table.list tr.group-member td:first-child { padding-left: 30px; }
+table.list td.row-actions { white-space: nowrap; }
+table.list td.row-actions .btn { margin-right: 6px; }
 table.list td, table.list th { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
 table.list tr:last-child td { border-bottom: none; }
 table.list th {
