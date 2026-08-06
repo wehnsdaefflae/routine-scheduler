@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.159.1] — 2026-08-06
+
+### Removed
+- **4 proven-dead CSS classes (F288).** `.setup-banner` / `.sb-dot` / `.sb-text` (base.css)
+  and `.pick-row` (views.css) were referenced only in the stylesheets — the setup banner has
+  built with `panel warn` since the wizard-machinery retirement (D59). Removed the rules
+  (keeping the live `.notice-banner` they shared a selector with). No behavior change.
+
 ## [0.159.0] — 2026-08-06
 
 ### Added

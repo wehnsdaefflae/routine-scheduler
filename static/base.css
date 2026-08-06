@@ -152,7 +152,7 @@ h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .gs-note { border-top: 1px solid var(--line); margin-top: 4px; }
 
 /* ---------- banners ---------- */
-.notice-banner, .setup-banner {
+.notice-banner {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 9px 22px; font-size: 12px; position: relative; z-index: 19;
 }
@@ -167,16 +167,6 @@ h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
   font-size: 15px; padding: 2px 6px;
 }
 .notice-banner .nb-close:hover { color: var(--text); }
-.setup-banner {
-  background: rgba(242, 193, 78, 0.06); border-bottom: 1px solid rgba(242, 193, 78, 0.3);
-  color: var(--text);
-}
-.setup-banner .sb-dot {
-  width: 8px; height: 8px; border-radius: 2px; background: var(--warn);
-  box-shadow: 0 0 8px var(--warn); animation: pulse 1.4s infinite; flex: 0 0 auto;
-}
-.setup-banner .sb-text { flex: 1; min-width: 180px; }
-.setup-banner b { color: var(--warn); font-weight: 600; }
 
 /* ---------- breadcrumbs + main ---------- */
 .crumbs {
@@ -435,7 +425,7 @@ input[type=time], input[type=number] { width: auto; }
   .clock { display: none; }
   main { padding: 16px 14px 90px; }
   .crumbs { padding: 10px 14px 0; }
-  .notice-banner, .setup-banner { padding: 9px 14px; }
+  .notice-banner { padding: 9px 14px; }
   .grid { grid-template-columns: 1fr; }
   .page-head { flex-wrap: wrap; gap: 10px; }
   .kbd-hint { display: none; }                      /* keyboard hints mean nothing on touch */

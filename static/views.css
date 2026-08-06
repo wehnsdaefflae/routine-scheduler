@@ -278,9 +278,6 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .test-result.bad { color: var(--err); }
 .test-result .dim { color: var(--muted); }
 
-/* ---------- new-routine setup (run-page panel + draft view) ---------- */
-.pick-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-
 /* ---------- audit reference links (reflinks.js: F63/D14 -> the card they name) ---------- */
 .ref-link { text-decoration: underline dotted; text-underline-offset: 2px; }
 .ref-flash { animation: ref-flash 2.4s ease-out; }
