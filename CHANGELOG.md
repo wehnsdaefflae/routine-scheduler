@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.160.0] — 2026-08-06
+
+### Added
+- **Mid-conversation folder access (D82).** A conversation's fs read/write roots are now
+  editable from the ⚙ capabilities & budgets header panel — the same server-side directory
+  picker the composer offers at create time. `PATCH /api/conversations/{slug}` accepts
+  `fs_read_roots`/`fs_write_roots` (validated, replace-wholesale; an empty list clears the
+  grants), and like every conversation config edit the change applies at the NEXT reply's
+  boot. Unblocks granting a running conversation new directories without recreating it
+  (R240's fs-ops stopgap loses its main justification).
+
 ## [0.159.1] — 2026-08-06
 
 ### Removed

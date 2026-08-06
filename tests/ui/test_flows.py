@@ -1648,6 +1648,36 @@ def test_new_conversation_composer_folder_access(ui, ui_page):
     assert str(data_dir) in cfg["fs_read_roots"]      # write grants imply read
 
 
+def test_conversation_header_folder_access_edit(ui, ui_page):
+    """D82: folder access is editable MID-conversation from the ⚙ header panel — a
+    directory picked into the write editor saves via PATCH fs_write_roots and lands in
+    routine.yaml, where the NEXT reply's boot reads it."""
+    extra = ui.tmp / "extra-grant"
+    extra.mkdir(exist_ok=True)
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill("Grant me a folder mid-thread.")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    slug = ui_page.url.rsplit("/", 1)[-1]
+    ui_page.locator("summary", has_text="capabilities & budgets").click()
+    # two editors in the panel: read first, write second
+    add = ui_page.get_by_role("button", name="+ add directory…").nth(1)
+    add.wait_for(timeout=10_000)
+    add.click()
+    dlg = ui_page.locator(".modal-overlay")
+    expect(dlg).to_be_visible()
+    dlg.locator("input").fill(str(extra))
+    dlg.locator("input").press("Enter")               # jump to the typed path
+    expect(dlg.locator(".dirpicker-list")).to_contain_text("empty directory")
+    dlg.get_by_role("button", name="select this folder").click()
+    expect(ui_page.locator(".root-row", has_text=str(extra))).to_be_visible()
+    ui_page.get_by_role("button", name="save folder access").click()
+    expect(_toast(ui_page)).to_contain_text("folder access saved")
+    cfg = yaml.safe_load((ui.conversations / slug / "routine.yaml").read_text(encoding="utf-8"))
+    assert str(extra) in cfg["fs_write_roots"]
+    assert cfg.get("fs_read_roots") == []             # the read editor was left empty
+
+
 def test_model_pickers_label_window_sizes(ui, ui_page):
     """R128: the model pickers surface per-model window metadata — the harness model 'm'
     (100k-char default window, 16.4k-token output reservation) labels as a tight window in

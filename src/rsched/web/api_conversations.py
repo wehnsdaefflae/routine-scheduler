@@ -374,6 +374,8 @@ class ConversationPatch(BaseModel):
     models: dict | None = None
     connections: dict | None = None   # {provider: account} — bound OAuth connections (D55)
     deliberation: str | None = None   # DELIBERATION_LEVELS — applies at the next reply
+    fs_read_roots: list[str] | None = None    # D82: full folder-access lists — REPLACE
+    fs_write_roots: list[str] | None = None   # wholesale (workdir stays write_roots[0])
 
 
 @router.patch("/conversations/{slug}")
@@ -401,6 +403,18 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
             roots = [str(r) for r in raw.get(key) or []]
             roots = [r for r in roots if r not in (prev, wd)]
             raw[key] = ([wd] if wd else []) + roots
+    # D82: the header panel edits the FULL folder-access lists — REPLACE wholesale, same
+    # validation as the routine page's save path (api_routine_edit._apply_resource_fields).
+    # Placed AFTER the workdir slot-swap so a request carrying both (the UI sends one or the
+    # other) lands on the explicit lists. Like every conversation config edit, the change
+    # reaches the NEXT reply's boot — a live reply keeps the roots it booted with.
+    for roots_key in ("fs_read_roots", "fs_write_roots"):
+        if roots_key in updates:
+            vals = updates[roots_key]
+            if any(not isinstance(p, str) or not p.strip() for p in vals):
+                raise HTTPException(400, f"{roots_key}: must be a list of non-empty "
+                                         f"path strings")
+            raw[roots_key] = [p.strip() for p in vals]
     if "budgets" in updates:
         raw.setdefault("budgets", {}).update({k: int(v) for k, v in updates["budgets"].items()})
     if "models" in updates:

@@ -487,6 +487,38 @@ def test_patch_workdir_preserves_granted_roots(client):
     assert raw["fs_write_roots"] == ["/srv/videos"]
 
 
+def test_patch_folder_access_lists(client):
+    """D82: the header panel edits the FULL folder-access lists mid-conversation — PATCH
+    fs_read_roots/fs_write_roots replaces wholesale (an empty list clears the grants),
+    lands in routine.yaml for the NEXT reply's boot, and refuses blank entries."""
+    c, server = client
+    slug = c.post("/api/conversations", data={
+        "text": "t", "workdir": "~/projects/x"}).json()["slug"]
+    conv_dir = server.conversations_home / slug
+    r = c.patch(f"/api/conversations/{slug}", json={
+        "fs_read_roots": ["~/datasets", " /srv/media "],
+        "fs_write_roots": ["~/projects/x", "/srv/out"]})
+    assert r.status_code == 200, r.text
+    assert set(r.json()["updated"]) == {"fs_read_roots", "fs_write_roots"}
+    raw = yaml.safe_load((conv_dir / "routine.yaml").read_text())
+    assert raw["fs_read_roots"] == ["~/datasets", "/srv/media"]     # stripped
+    assert raw["fs_write_roots"] == ["~/projects/x", "/srv/out"]
+    # the detail payload reflects the saved lists (what the editors re-open on)
+    d = c.get(f"/api/conversations/{slug}").json()
+    assert d["fs_read_roots"] == ["~/datasets", "/srv/media"]
+    assert d["fs_write_roots"] == ["~/projects/x", "/srv/out"]
+    # a blank entry is refused before anything lands on disk
+    assert c.patch(f"/api/conversations/{slug}",
+                   json={"fs_write_roots": ["  "]}).status_code == 400
+    raw = yaml.safe_load((conv_dir / "routine.yaml").read_text())
+    assert raw["fs_write_roots"] == ["~/projects/x", "/srv/out"]
+    # an empty list clears the grants entirely
+    assert c.patch(f"/api/conversations/{slug}",
+                   json={"fs_write_roots": []}).status_code == 200
+    raw = yaml.safe_load((conv_dir / "routine.yaml").read_text())
+    assert raw["fs_write_roots"] == []
+
+
 def _tiny_window_model(server, name="tiny"):
     """A catalog model whose max output tokens alone fill its window (65_536 chars ≈
     16_384 tokens = the default output reservation) — the class the harness cannot run."""

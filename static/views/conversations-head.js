@@ -6,6 +6,7 @@ import { api } from "/static/api.js";
 import { connectionsCard } from "/static/components/connections.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { confirmDialog } from "/static/components/dialog.js";
+import { rootsEditor } from "/static/components/fsroots.js";
 import { permissionsPanel } from "/static/components/permissions.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { traitPicker } from "/static/components/traitpicker.js";
@@ -93,6 +94,26 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
   capBody.append(el("div", { class: "row", style: "gap:12px;flex-wrap:wrap;align-items:flex-end" },
     budgetField("turns / reply", turnsIn), budgetField("minutes / reply (-1=∞)", minsIn),
     budgetField("tokens / reply (-1=∞)", tokIn), saveBudgets));
+  // Folder access (D82): the same read/write roots the composer grants at create time,
+  // editable mid-conversation. Saved to config wholesale; they reach the NEXT reply's
+  // boot (a live reply keeps the roots it booted with) — same contract as budgets above.
+  const readRoots = rootsEditor(detail.fs_read_roots, { pickTitle: "add a read root" });
+  const writeRoots = rootsEditor(detail.fs_write_roots, { pickTitle: "add a write root" });
+  const saveRoots = el("button", { class: "btn small" }, "save folder access");
+  saveRoots.onclick = async () => {
+    try {
+      await api(`/api/conversations/${slug}`, { method: "PATCH", body: {
+        fs_read_roots: readRoots.value(), fs_write_roots: writeRoots.value() } });
+      toast("folder access saved — applies from the next reply");
+    } catch (err) { toast(err.message, 4000, { error: true }); }
+  };
+  capBody.append(el("div", { class: "mt" },
+    el("div", { class: "faint small" }, "folder access — directories the conversation may "
+      + "use beyond its own; the first write root is the project folder"),
+    el("div", { class: "row", style: "gap:20px;flex-wrap:wrap;align-items:flex-start" },
+      el("div", {}, el("span", { class: "faint small" }, "read"), readRoots.node),
+      el("div", {}, el("span", { class: "faint small" }, "write"), writeRoots.node)),
+    el("div", { class: "row mt" }, saveRoots)));
   // Deliberation: saved to config on release (next reply composes with it) AND, when a
   // reply is live, the current run is re-leveled too — a conversation IS one run, so the
   // durable/live distinction collapses here.
