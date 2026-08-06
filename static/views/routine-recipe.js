@@ -4,7 +4,7 @@
 // { refreshTree } (recipe health's roll-back re-syncs the tree through it).
 
 import { api } from "/static/api.js";
-import { el, toast } from "/static/util.js";
+import { el, queuedToast, toast } from "/static/util.js";
 import { md } from "/static/md.js";
 import { recipeNav } from "/static/components/recipenav.js";
 import { setQuery } from "/static/router.js";
@@ -51,8 +51,9 @@ export function mountRecipe(navCol, editorCol, slug, initialFile) {
     const saveBtn = el("button", { class: "btn primary" }, "save");
     saveBtn.onclick = async () => {
       try {
-        await api(`/api/routines/${slug}/file`, { method: "PUT", body: { path, content: ta.value } });
-        toast(`${path} saved`); refreshTree();   // headings may have changed
+        const res = await api(`/api/routines/${slug}/file`,
+          { method: "PUT", body: { path, content: ta.value } });
+        queuedToast(res, `${path} saved`); refreshTree();   // headings may have changed
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
     if (heading) requestAnimationFrame(() => scrollToHeading(ta, heading));

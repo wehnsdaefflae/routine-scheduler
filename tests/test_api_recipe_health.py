@@ -50,13 +50,20 @@ def test_revert_route_and_guards(api_client, make_routine):
     r = c.post("/api/routines/revr/recipe/revert", json={"commit": "0" * 40})
     assert r.status_code == 400 and "unknown commit" in r.json()["detail"]
 
-    # active run → 409, nothing touched
+    # D78-A: an active run no longer bounces the revert with a 409 — it is QUEUED and
+    # applied at run end (the recipe is untouched now; the spool holds one pending edit).
     run_dir = tmp / "routines" / "revr" / "runs" / "20260717-070000"
     run_dir.mkdir(parents=True)
     atomic_write_json(run_dir / "status.json",
                       {"run_id": "revr:20260717-070000", "state": "running", "turn": 1})
-    assert c.post("/api/routines/revr/recipe/revert",
-                  json={"commit": v2}).status_code == 409
+    rq = c.post("/api/routines/revr/recipe/revert", json={"commit": v2})
+    assert rq.status_code == 200 and rq.json().get("queued") is True
+    assert "# v2" in (d / "main.md").read_text(encoding="utf-8")   # not reverted yet
+    from rsched import pending_edits
+    assert pending_edits.pending_count(tmp / "routines", "revr") == 1
+    # drop the queued edit so the direct-apply case below starts from a clean spool
+    for p in pending_edits.pending(tmp / "routines", "revr"):
+        p.unlink()
     atomic_write_json(run_dir / "status.json",
                       {"run_id": "revr:20260717-070000", "state": "finished", "turn": 1})
 

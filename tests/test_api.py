@@ -222,8 +222,11 @@ def test_patch_routine_and_409_guard(client):
                          "connections": {}}).status_code == 200
     raw_mid = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
     assert raw_mid["grants"] == {"secret:GMAIL_APP_PASSWORD": True}
-    assert c.put("/api/routines/apir/file",
-                 json={"path": "main.md", "content": "x"}).status_code == 409
+    # D78-A: a recipe/file edit mid-run is no longer bounced with a 409 — it is QUEUED and
+    # replayed at run end (the file is NOT changed yet, and the spool holds one edit).
+    rq = c.put("/api/routines/apir/file", json={"path": "main.md", "content": "x"})
+    assert rq.status_code == 200 and rq.json().get("queued") is True
+    assert (tmp / "routines" / "apir" / "main.md").read_text() != "x"
 
 
 def test_patch_routine_resource_fields(client):
@@ -259,6 +262,63 @@ def test_put_routine_file(client):
     r = c.put("/api/routines/apir/file", json={"path": "main.md", "content": "# New main"})
     assert r.status_code == 200
     assert (tmp / "routines" / "apir" / "main.md").read_text() == "# New main"
+
+
+def test_mid_run_edits_queue_and_replay(client):
+    """D78-A: while a run is active, non-destructive edits are queued (not 409'd) and
+    replayed at run end (the daemon reap). Here we drive the spool + applier directly to
+    prove queue → replay produces the same effect as an immediate edit."""
+    from rsched import pending_edits
+    from rsched.config import load_routine
+
+    c, tmp = client
+    routines = tmp / "routines"
+    _mk_run(routines, "apir", "20260708-090000", "running")
+    home = routines
+    rdir = routines / "apir"
+
+    # A file edit and a webhook trigger create, both mid-run, both queue (200, queued).
+    rf = c.put("/api/routines/apir/file", json={"path": "stages/x.md", "content": "queued!"})
+    assert rf.status_code == 200 and rf.json().get("queued") is True
+    rt = c.post("/api/routines/apir/triggers", json={"type": "webhook"})
+    assert rt.status_code == 200 and rt.json().get("queued") is True
+    # a webhook's URL is returned even when queued (token is generated at request time)
+    assert rt.json()["trigger"]["url_path"].startswith("/api/hooks/apir/")
+    tid = rt.json()["trigger"]["id"]
+
+    assert pending_edits.pending_count(home, "apir") == 2
+    assert not (rdir / "stages" / "x.md").exists()          # not applied yet
+    assert not any(t.get("id") == tid                        # not in config yet
+                   for t in (load_routine(rdir)[0].triggers or []))
+
+    # Replay (what Runner._reap calls after a clean finish).
+    rows = pending_edits.apply_pending(rdir, home, "apir")
+    assert len(rows) == 2 and all(r["ok"] for r in rows)
+    assert pending_edits.pending_count(home, "apir") == 0   # spool drained
+    assert (rdir / "stages" / "x.md").read_text() == "queued!"
+    assert any(t.get("id") == tid for t in (load_routine(rdir)[0].triggers or []))
+
+
+def test_mid_run_edit_idle_applies_immediately(client):
+    """No active run → queue_or_apply takes the fast path: the edit lands now, nothing
+    is spooled."""
+    from rsched import pending_edits
+
+    c, tmp = client
+    r = c.put("/api/routines/apir/file", json={"path": "main.md", "content": "now"})
+    assert r.status_code == 200 and r.json().get("queued") is None
+    assert (tmp / "routines" / "apir" / "main.md").read_text() == "now"
+    assert pending_edits.pending_count(tmp / "routines", "apir") == 0
+
+
+def test_mid_run_bad_trigger_id_404s_upfront(client):
+    """A delete/patch of a non-existent trigger is a 404 at request time, never a silent
+    replay failure — the operator learns immediately."""
+    c, tmp = client
+    _mk_run(tmp / "routines", "apir", "20260708-090000", "running")
+    assert c.delete("/api/routines/apir/triggers/nope").status_code == 404
+    assert c.patch("/api/routines/apir/triggers/nope",
+                   json={"cooldown_s": 30}).status_code == 404
 
 
 def test_file_read_guarded(client):

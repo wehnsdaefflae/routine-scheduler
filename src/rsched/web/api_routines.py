@@ -25,6 +25,7 @@ from .routines_common import (  # noqa: F401 — re-exported: siblings historica
     guard_not_active,
     guard_template,
     permission_layers_detail,
+    queue_or_apply,
 )
 from .wizard_store import TEMPLATE_SLUG
 
@@ -232,12 +233,16 @@ def revert_recipe(request: Request, slug: str, body: RevertBody) -> dict:
     from ..recipes import revert_recipe as do_revert
 
     info = _info(request, slug)
-    guard_not_active(request, info)
-    try:
-        result = do_revert(info.cfg.dir, body.commit)
-    except RecipeError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    return {"ok": True, **result}
+
+    def _apply() -> dict:
+        try:
+            result = do_revert(info.cfg.dir, body.commit)
+        except RecipeError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"ok": True, **result}
+
+    # D78-A: queue while a run is active (apply at run end) instead of a 409 busy toast
+    return queue_or_apply(request, info, "recipe_revert", {"commit": body.commit}, _apply)
 
 
 @router.get("/routines/{slug}/stategraph")
@@ -305,12 +310,19 @@ def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict
     which may never write its own recipe or config.
     """
     info = _info(request, slug)
-    guard_not_active(request, info)
+    # validate the path up front so a bad path is a 400 NOW, not a silent replay failure
     try:
-        p = resolve_rel(info.cfg.dir, body.path)
+        resolve_rel(info.cfg.dir, body.path)
     except PermissionError as exc:
         raise HTTPException(400, str(exc)) from exc
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(body.content, encoding="utf-8")
-    _git_commit(info.cfg.dir, f"edit {body.path} via web")
-    return {"ok": True}
+
+    def _apply() -> dict:
+        p = resolve_rel(info.cfg.dir, body.path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body.content, encoding="utf-8")
+        _git_commit(info.cfg.dir, f"edit {body.path} via web")
+        return {"ok": True}
+
+    # D78-A: queue while a run is active (apply at run end) instead of a 409 busy toast
+    return queue_or_apply(request, info, "file",
+                          {"path": body.path, "content": body.content}, _apply)

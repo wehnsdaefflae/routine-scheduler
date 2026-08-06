@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.159.0] — 2026-08-06
+
+### Added
+- **Editing a routine while a run is active no longer bounces with a "busy" 409 — the edit
+  is queued and applied at run end (D78 option A, F279).** Operators tuning a routine
+  mid-run were hitting ~20 `guard_not_active` 409 toasts in 40 minutes. Non-destructive
+  edits — recipe/state file saves (`PUT …/file`), recipe rollback (`POST …/recipe/revert`),
+  and webhook/report trigger create/retune/delete — now land in a durable per-routine
+  pending-edit spool (`.control/pending-edits/<slug>/`, mirroring the trigger event spool)
+  while a run is active, and the daemon replays them in order at the reap that follows every
+  run (`Runner._reap`), when no writer contends the git index. The editors show
+  "queued, applies when it ends" instead of an error. Destructive operations (archive,
+  conversation teardown) keep their hard 409 — "apply this deletion after the run" is not a
+  safe default. One applier per edit kind (`rsched.pending_edits`) serves both the immediate
+  (idle) and replayed (queued) paths, so a queued edit has identical effect to a live one; a
+  bad edit is recorded and its spool file dropped so one can't wedge the queue. New module
+  `pending_edits.py`; queue-or-apply helper in `routines_common`; tests in
+  `test_pending_edits.py` + `test_api.py`.
+
 ## [0.158.1] — 2026-08-06
 
 ### Fixed

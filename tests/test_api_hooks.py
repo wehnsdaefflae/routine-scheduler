@@ -181,7 +181,16 @@ def test_trigger_crud_guards(api_client, make_routine):
     make_routine(slug="testr")
     make_routine(slug="clarification")   # the protected wizard template
     _mk_active_run(tmp, "testr")
-    assert c.post("/api/routines/testr/triggers", json={}).status_code == 409
+    # D78-A: an active run no longer bounces trigger create with a 409 — it is QUEUED and
+    # applied at run end (the webhook's URL is still returned; the config is untouched).
+    rq = c.post("/api/routines/testr/triggers", json={})
+    assert rq.status_code == 200 and rq.json().get("queued") is True
+    assert rq.json()["trigger"]["url_path"].startswith("/api/hooks/testr/")
+    from rsched import pending_edits
+    assert pending_edits.pending_count(tmp / "routines", "testr") == 1
+    assert not (yaml.safe_load(
+        (tmp / "routines" / "testr" / "routine.yaml").read_text()).get("triggers"))
+    # the protected template and unknown routines still refuse outright (guards run first)
     assert c.post("/api/routines/clarification/triggers", json={}).status_code == 403
     assert c.post("/api/routines/ghost/triggers", json={}).status_code == 404
     # CRUD stays bearer-gated (only the hook ingest is public)
@@ -241,14 +250,18 @@ def test_patch_trigger_cooldown(api_client, make_routine):
 
 
 def test_patch_trigger_guards(api_client, make_routine):
-    """A cooldown edit is a config edit: same active-run guard and bearer gate as create."""
+    """A cooldown edit is a config edit: bearer-gated, and D78-A queues it while a run is
+    active (applied at run end) instead of a 409."""
     c, tmp = api_client
     make_routine(slug="testr")
     trig = c.post("/api/routines/testr/triggers", json={"type": "report"}).json()["trigger"]
     path = f"/api/routines/testr/triggers/{trig['id']}"
     assert TestClient(c.app).patch(path, json={"cooldown_s": 60}).status_code == 401
     _mk_active_run(tmp, "testr")
-    assert c.patch(path, json={"cooldown_s": 60}).status_code == 409
+    rq = c.patch(path, json={"cooldown_s": 60})
+    assert rq.status_code == 200 and rq.json().get("queued") is True
+    from rsched import pending_edits
+    assert pending_edits.pending_count(tmp / "routines", "testr") == 1
 
 
 def _add_report_trigger(tmp, slug, *, tid="t-report01", cooldown_s=0, cap=24):

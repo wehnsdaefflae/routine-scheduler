@@ -6,7 +6,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, toast, when } from "/static/util.js";
+import { el, queuedToast, toast, when } from "/static/util.js";
 
 const COOLDOWN_HINT = "minimum seconds between trigger-initiated fires — events arriving "
   + "inside the window coalesce into one run";
@@ -113,9 +113,10 @@ export function triggersCard(slug, initial, opts = {}) {
     }
     if (next === current) return;
     try {
-      await api(`/api/routines/${slug}/triggers/${t.id}`,
+      const res = await api(`/api/routines/${slug}/triggers/${t.id}`,
         { method: "PATCH", body: { [field]: next } });
-      toast(`${LABEL[field]} saved — ${next}${field === "cooldown_s" ? "s" : " per day"}`);
+      queuedToast(res,
+        `${LABEL[field]} saved — ${next}${field === "cooldown_s" ? "s" : " per day"}`);
       refresh();
     } catch (err) {
       input.value = String(current);
@@ -137,10 +138,10 @@ export function triggersCard(slug, initial, opts = {}) {
   async function create(cooldownIn) {
     const cooldown = parseInt(cooldownIn?.value, 10);
     try {
-      await api(`/api/routines/${slug}/triggers`, { method: "POST",
+      const res = await api(`/api/routines/${slug}/triggers`, { method: "POST",
         body: { type: "webhook",
                 ...(Number.isFinite(cooldown) && cooldown >= 0 ? { cooldown_s: cooldown } : {}) } });
-      toast("webhook trigger created");
+      queuedToast(res, "webhook trigger created");
       refresh();
     } catch (err) { toast(err.message, 4000, { error: true }); }
   }
@@ -148,10 +149,10 @@ export function triggersCard(slug, initial, opts = {}) {
   async function createReport(cooldownIn) {
     const cooldown = parseInt(cooldownIn?.value, 10);
     try {
-      await api(`/api/routines/${slug}/triggers`, { method: "POST",
+      const res = await api(`/api/routines/${slug}/triggers`, { method: "POST",
         body: { type: "report",
                 ...(Number.isFinite(cooldown) && cooldown >= 0 ? { cooldown_s: cooldown } : {}) } });
-      toast("report trigger created — a delivered report now wakes this routine");
+      queuedToast(res, "report trigger created — a delivered report now wakes this routine");
       refresh();
     } catch (err) { toast(err.message, 4000, { error: true }); }
   }
@@ -160,8 +161,8 @@ export function triggersCard(slug, initial, opts = {}) {
     if (!(await confirmDialog(`Delete trigger ${t.id}? Its hook URL stops working immediately.`,
                               { confirmLabel: "delete" }))) return;
     try {
-      await api(`/api/routines/${slug}/triggers/${t.id}`, { method: "DELETE" });
-      toast("trigger deleted");
+      const res = await api(`/api/routines/${slug}/triggers/${t.id}`, { method: "DELETE" });
+      queuedToast(res, "trigger deleted");
       refresh();
     } catch (err) { toast(err.message, 4000, { error: true }); }
   }

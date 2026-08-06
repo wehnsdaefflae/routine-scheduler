@@ -230,3 +230,15 @@ export function toast(msg, ms = 2600, { error = false } = {}) {
     import("/static/trace.js").then(({ trace }) => trace("error", "toast", msg)).catch(() => {});
   }
 }
+
+// D78-A: an edit made WHILE a run is active is accepted and QUEUED (applied at run end)
+// rather than bounced with a 409 busy toast. When the endpoint response says so
+// (`{queued:true}`), tell the operator it will land at run end; otherwise show the normal
+// success message. One helper so every queueable editor speaks with one voice.
+export function queuedToast(res, savedMsg) {
+  if (res && res.queued) {
+    toast("a run is active — queued, applies when it ends");
+  } else {
+    toast(savedMsg);
+  }
+}

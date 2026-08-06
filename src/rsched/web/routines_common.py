@@ -49,6 +49,33 @@ def guard_not_active(request: Request, info: registry.RoutineInfo,
                                  "— try again after it ends")
 
 
+def queue_or_apply(request: Request, info: registry.RoutineInfo, kind: str,
+                   payload: dict, apply_now) -> dict:
+    """D78-A: a non-destructive routine edit made while a run is active is HELD in the
+    durable pending-edit spool and replayed at run end (daemon reap), instead of being
+    bounced with a 409 'busy' toast (F279). When no run is active, `apply_now()` runs
+    immediately and its result is returned verbatim.
+
+    `kind`/`payload` are the pending_edits record shape (`payload` must be JSON-round-trip
+    plain data — it is written to disk and replayed by the daemon, which never sees the
+    request). `apply_now` is a zero-arg callable doing the live edit (the same effect the
+    applier will have at replay). Returns either that result, or `{ok, queued:true, …}`.
+    """
+    from .. import pending_edits
+
+    if not (info.active_run or request.app.state.runner.is_active(info.slug)):
+        return apply_now()
+    home = request.app.state.server.routines_home
+    if pending_edits.pending_count(home, info.slug) >= pending_edits.MAX_PENDING_EDITS:
+        raise HTTPException(429, f"{info.slug!r} already has "
+                                 f"{pending_edits.MAX_PENDING_EDITS} edits queued for run "
+                                 "end — wait for the active run to finish")
+    pending_edits.queue(home, info.slug, kind, payload)
+    return {"ok": True, "queued": True,
+            "pending": pending_edits.pending_count(home, info.slug),
+            "detail": "a run is active — this edit is queued and applied when the run ends"}
+
+
 def permission_layers_detail(server, cfg, *,
                              routine_only: list[str] | None = None) -> tuple[list[dict], dict]:
     """The two permission layers of a detail payload (shared with conversations): every

@@ -5,7 +5,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, fmtNum, toast } from "/static/util.js";
+import { el, fmtNum, queuedToast, toast } from "/static/util.js";
 
 export function mountHealth(box, slug, { onRecipeChanged }) {
   async function reload() {
@@ -20,8 +20,9 @@ export function mountHealth(box, slug, { onRecipeChanged }) {
         `Roll back recipe change ${label}? main.md / stages / traits / tuning.yaml return to their state just before it (a new commit — nothing is lost). Config and state are untouched.`,
         { confirmLabel: "roll back" }))) return;
       try {
-        await api(`/api/routines/${slug}/recipe/revert`, { method: "POST", body: { commit } });
-        toast("recipe rolled back"); onRecipeChanged(); reload();
+        const res = await api(`/api/routines/${slug}/recipe/revert`,
+          { method: "POST", body: { commit } });
+        queuedToast(res, "recipe rolled back"); onRecipeChanged(); reload();
       } catch (err) { toast(err.message, 5000, { error: true }); }
     }
     if (reg.flagged) {

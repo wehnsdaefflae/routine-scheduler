@@ -383,6 +383,13 @@ class Runner:
         if info.state == "finished" and _stranded_user_messages(cfg.dir):
             log.info("post-finish inbox sweep: user message stranded — resuming %s", run.slug)
             self._resume_for_stranded(cfg)
+        # D78-A: a web routine edit made WHILE this run was active was held in the durable
+        # pending-edit spool (the git index was contended). The reap is the one seam that
+        # always follows a run, and the run is now out of `self.active`, so no writer
+        # contends the index — replay the queued edits in order. Applies after ANY terminal
+        # state (config edits are independent of the run's success); a bad edit is logged,
+        # not raised, and its file dropped so one can't wedge the queue.
+        self._apply_pending_edits(cfg, run.slug)
         try:
             registry.apply_retention(cfg.dir, cfg.slug, cfg.keep_runs)
         except OSError as exc:
@@ -402,6 +409,29 @@ class Runner:
         task = asyncio.create_task(_wake())
         self._supervisors.add(task)
         task.add_done_callback(self._supervisors.discard)
+
+    def _apply_pending_edits(self, cfg: RoutineConfig, slug: str) -> None:
+        """Replay any web edits queued while this run was active (D78-A). Best-effort and
+        never raises out of the reap: a spool or applier failure is logged, the run's
+        finalization already happened above. No explicit catalog rescan is needed — the
+        scheduler tick rescans every registry_rescan_s (scheduler._tick_once), so a queued
+        schedule/config change is picked up on the next tick, exactly like a between-run
+        web edit.
+        """
+        from .. import pending_edits
+        try:
+            rows = pending_edits.apply_pending(cfg.dir, self.server.routines_home, slug)
+        except OSError as exc:
+            log.warning("pending-edit replay failed for %s: %s", slug, exc)
+            return
+        if not rows:
+            return
+        ok = sum(1 for r in rows if r.get("ok"))
+        log.info("pending-edit replay for %s: %d applied, %d failed", slug, ok, len(rows) - ok)
+        for r in rows:
+            if not r.get("ok"):
+                log.warning("pending edit (%s) failed for %s: %s",
+                            r.get("kind"), slug, r.get("error"))
 
     def _close_out(self, run_dir: Path, run_id: str, message: str, *,
                    event: str = "orphaned_run") -> None:
