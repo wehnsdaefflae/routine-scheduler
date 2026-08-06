@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.160.1] — 2026-08-06
+
+### Fixed
+- **A granted write root that didn't exist yet silently vanished from the util jail
+  (F293, R244).** The Landlock child wrapper attaches each rule to a live fd and skips
+  paths it cannot open, so a fresh grant (e.g. a new WhatsApp session store) died with
+  `PermissionError` on the util's first `mkdir`. The grant now implies the directory:
+  `sandbox.wrap()` creates missing write roots daemon-side before assembling the jail;
+  a missing READ root is warned about once instead (creating it would mask a config typo).
+- **A write grant now implies read (F294, R244).** The engine's `read_file` gate refused
+  paths under a write-only root even though the util sandbox always gave write roots full
+  rw access — a run could write a file it was not allowed to read back.
+  `RunContext.read_roots()` folds in the writable roots.
+
 ## [0.160.0] — 2026-08-06
 
 ### Added

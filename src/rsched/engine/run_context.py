@@ -186,12 +186,16 @@ class RunContext:
 
     def read_roots(self) -> list[Path]:
         """The run's EFFECTIVE readable roots: config fs_read_roots plus one-time
-        fs-read grants plus the group shared store(s). Every consumer (file actions,
-        the util sandbox, the vision fallback) resolves against this, so a granted root
-        behaves exactly like a configured one — for this run.
+        fs-read grants plus every WRITABLE root — a write grant implies read
+        (R244/F294: the util sandbox always gave write roots full rw access, so an
+        engine read gate refusing them was friction posing as a boundary — a run could
+        write a file it was not allowed to read back). write_roots() already carries
+        the group shared store(s). Every consumer (file actions, the util sandbox, the
+        vision fallback) resolves against this, so a granted root behaves exactly like
+        a configured one — for this run.
         """
         return [*self.routine.fs_read_roots, *self._granted_paths("fs-read"),
-                *self.group_store_roots]
+                *self.write_roots()]
 
     def write_roots(self) -> list[Path]:
         """The effective writable roots — write_roots' counterpart of read_roots()."""

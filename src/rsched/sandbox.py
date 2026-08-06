@@ -128,6 +128,26 @@ def _toolchain() -> tuple[list[str], list[str]]:
     return ro, rw
 
 
+def _ensure_write_roots(policy: SandboxPolicy) -> None:
+    """A GRANTED write root that does not exist yet is SILENTLY dropped from the jail — the
+    child wrapper attaches each Landlock rule to a live fd and skips paths it cannot open —
+    so the very grant the user approved surfaces as a PermissionError on the util's first
+    mkdir under it (R244/F293: a fresh WhatsApp session store broke every first pairing).
+    The grant implies the directory: create missing write roots daemon-side, before the
+    jail is assembled. Read roots are NOT created (reading a directory into existence would
+    mask a config typo) — a missing one is warned about instead, once per path.
+    """
+    for root in policy.write_roots:
+        try:
+            Path(root).mkdir(parents=True, exist_ok=True)
+        except OSError as exc:   # e.g. the root is actually a file, or a parent is read-only
+            _warn_once(f"wr:{root}", f"cannot create granted write root {root}: {exc}")
+    for root in policy.read_roots:
+        if not Path(root).exists():
+            _warn_once(f"ro:{root}", f"granted read root {root} does not exist — "
+                                     f"it grants nothing until created")
+
+
 def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
          net: bool) -> list[str]:
     """The command that actually runs: `cmd` wrapped in the landlock.py child wrapper when
@@ -135,6 +155,7 @@ def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
     SandboxRefusal when mode=strict and the jail can't close as specified — the caller
     turns that into the util's error observation.
     """
+    _ensure_write_roots(policy)   # mode-independent: the grant implies the directory
     if policy.mode == "off":
         return list(cmd)
     strict = policy.mode == "strict"

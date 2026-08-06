@@ -438,7 +438,8 @@ def test_create_conversation_accepts_prestart_layers(client):
 def test_create_conversation_with_folder_access(client):
     """D70: the composer's folder-access roots ride the create request and land on the
     config BEFORE the engine boots — workdir first (the project dir), write roots also
-    readable (the workdir convention: read_file resolves against fs_read_roots only),
+    listed as read roots (kept for visible config even though the engine's read gate now
+    folds write roots in itself — F294: a write grant implies read),
     everything deduped, in the same native keys an allow-forever fs grant is written to."""
     import json
 

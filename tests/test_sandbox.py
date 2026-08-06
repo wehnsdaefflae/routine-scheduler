@@ -103,6 +103,26 @@ def test_prewarm_opens_network_for_build_time_dep_install(tmp_path, monkeypatch)
     assert str(tmp_path) in json.loads(wrapped[2])["ro"]   # filesystem still jailed
 
 
+def test_wrap_creates_missing_granted_write_roots(tmp_path, monkeypatch, caplog):
+    """R244/F293: a granted write root that does not exist yet is silently dropped from
+    the jail (the child wrapper skips paths it cannot open), so the util's first mkdir
+    under it dies with PermissionError. The grant implies the directory: wrap() creates
+    missing write roots daemon-side; missing READ roots are only warned about (creating
+    them would mask a config typo)."""
+    _force_abi(monkeypatch, 4)
+    monkeypatch.setattr(sandbox, "_warned", set())
+    fresh = tmp_path / "sessions" / "4917"          # nested: parents are created too
+    gone = tmp_path / "not-there"
+    policy = sandbox.SandboxPolicy(mode="permissive", read_roots=(gone,),
+                                   write_roots=(fresh,))
+    with caplog.at_level("WARNING", logger="rsched.sandbox"):
+        cmd = sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=False)
+    assert fresh.is_dir()                            # the grant implies the directory
+    assert str(fresh) in json.loads(cmd[2])["rw"]    # so the jail rule can attach to it
+    assert not gone.exists()                         # read roots are never created
+    assert sum(str(gone) in r.message for r in caplog.records) == 1
+
+
 def _ctx(server, routine, extra_read=(), extra_write=()):
     """A live-run stand-in: the ctx surface policy_for_ctx consumes — the EFFECTIVE roots
     (config + one-time fs grants), exactly what RunContext.read_roots/write_roots return."""
