@@ -28,11 +28,26 @@ router = APIRouter(tags=["questions"])
 _DECISION_RE = re.compile(r"\[AUDIT decision · ([^\]]+)\]")
 
 
+#: Statuses that mean the decision is already MADE — the report carries them so the Items
+#: page can show progress, but they are not asks. `in_progress` is the big one: self-audit
+#: is already building the thing, so queueing it for an answer is a card with nothing to
+#: choose (2026-08-06: D74/D76/D77/D78/D80 all reached the operator this way in one night).
+_DECIDED_STATUSES = frozenset({"settled", "closed", "done", "in_progress", "in progress",
+                               "authorized", "shipped", "building"})
+
+
 def _audit_decisions(server) -> list[dict]:
     """The self-audit report's OPEN decisions as meta-badged question items. A decision
-    leaves the inbox when an answer is queued for it, or when the report marks it
-    settled (`status: settled` — or the routine's prose convention, a detail starting
-    with SETTLED).
+    leaves the inbox when an answer is queued for it, when the report marks it decided
+    (`_DECIDED_STATUSES` — or the routine's prose convention, a detail starting with
+    SETTLED), or when it offers EXACTLY ONE option.
+
+    The one-option rule is the load-bearing half: an already-decided item re-presented as
+    a card whose only option restates the decision ("phase 1 next run") costs the operator
+    a read and a click for no choice, and it is the shape self-audit reaches for whenever
+    it wants an acknowledgment. Zero options stays open on purpose — that is a free-text
+    ask, which the answer POST accepts. Nothing is hidden by this: every decision, at every
+    status, is still listed on the Items page (`readmodels.items`) with its status.
     """
     from ..readmodels.items import SELF_AUDIT_SLUG
     from .api_audit import pending_feedback
@@ -54,9 +69,10 @@ def _audit_decisions(server) -> list[dict]:
     out = []
     for d in report.get("decisions") or []:
         did = str(d.get("id") or "").strip()
-        settled = (str(d.get("status") or "").lower() in ("settled", "closed", "done")
+        options = [str(o) for o in (d.get("options") or [])]
+        settled = (str(d.get("status") or "").strip().lower() in _DECIDED_STATUSES
                    or str(d.get("detail") or "").lstrip().upper().startswith("SETTLED"))
-        if not did or did in queued or settled:
+        if not did or did in queued or settled or len(options) == 1:
             continue
         marker = str(answered.get(did) or "")
         if marker and marker >= str(report.get("generated") or ""):
@@ -67,8 +83,7 @@ def _audit_decisions(server) -> list[dict]:
         if d.get("detail"):
             text += "\n\n" + str(d["detail"])
         out.append({"qid": f"audit:{did}", "routine": SELF_AUDIT_SLUG, "mode": "deferred",
-                    "meta": True, "question": text,
-                    "options": [str(o) for o in (d.get("options") or [])],
+                    "meta": True, "question": text, "options": options,
                     "asked": report.get("generated") or ""})
     return out
 

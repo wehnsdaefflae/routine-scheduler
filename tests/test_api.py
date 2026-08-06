@@ -1569,10 +1569,20 @@ def test_audit_decisions_merge_into_questions(client):
             {"id": "D2", "title": "Pick a path", "detail": "context", "status": "open",
              "options": ["A", "B", "leave as-is"]},
             {"id": "D3", "title": "Closed", "detail": "x", "status": "settled", "options": []},
+            # already being built — a card here would have nothing to choose
+            {"id": "D4", "title": "Under way", "detail": "x", "status": "in_progress",
+             "options": ["phase 1 next run"]},
+            # nominally open, but a single option is an acknowledgment, not a decision
+            {"id": "D5", "title": "Rubber stamp", "detail": "x", "status": "open",
+             "options": ["ordered — build in increments"]},
+            # zero options = a genuine free-text ask; it stays open
+            {"id": "D6", "title": "What should this be called?", "detail": "x",
+             "status": "open", "options": []},
         ]})
     qs = c.get("/api/questions").json()
     metas = [q for q in qs if q.get("meta")]
-    assert [q["qid"] for q in metas] == ["audit:D2"]      # settled ones stay out of the inbox
+    # settled, in-progress and one-option items all stay out of the inbox
+    assert [q["qid"] for q in metas] == ["audit:D2", "audit:D6"]
     q = metas[0]
     assert q["routine"] == "self-audit" and q["options"] == ["A", "B", "leave as-is"]
     assert "Pick a path" in q["question"]
@@ -1583,10 +1593,14 @@ def test_audit_decisions_merge_into_questions(client):
     msgs = list((tmp / "routines" / "self-audit" / "inbox").glob("msg-*.json"))
     assert len(msgs) == 1
     assert read_json(msgs[0])["text"] == "[AUDIT decision · D2] selected: A"
-    # queued now → gone from the open list
-    assert not [q for q in c.get("/api/questions").json() if q.get("meta")]
+    # queued now → gone from the open list (the free-text ask is untouched)
+    assert [q["qid"] for q in c.get("/api/questions").json()
+            if q.get("meta")] == ["audit:D6"]
     # unknown decision → 404
     assert c.post("/api/questions/audit:D9/answer", json={"text": "x"}).status_code == 404
+    # a decided one is not answerable through the decisions surface either — the Items
+    # page's feedback channel is where a comment on in-flight work belongs
+    assert c.post("/api/questions/audit:D4/answer", json={"text": "x"}).status_code == 404
 
 
 def test_converse_endpoint(client, monkeypatch):
