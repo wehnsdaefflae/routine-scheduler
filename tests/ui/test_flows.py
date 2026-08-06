@@ -1289,10 +1289,13 @@ def test_dashboard_shows_group_membership(ui, ui_page):
     chip.click()
     expect(ui_page).to_have_url(f"{ui.url}/#/groups")
 
-    # list view: the same membership shows in the routine's row
+    # list view: a grouped routine lives ONLY under its group row (F281) — expand it,
+    # then the member row carries the same chip
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.get_by_role("button", name="☰ list view").click()
-    row = ui_page.locator("table.list tbody tr", has_text="Test uir")
+    expect(ui_page.locator("table.list tbody tr", has_text="Test uir")).to_have_count(0)
+    ui_page.locator("tr.group-row", has_text="Maintenance").locator("td").click()
+    row = ui_page.locator("tr.group-member", has_text="Test uir")
     expect(row.locator("a.group-chip", has_text="Maintenance")).to_be_visible()
 
 
@@ -1309,16 +1312,22 @@ def test_dashboard_list_default_group_rows_and_inline_pause(ui, ui_page):
     expect(ui_page.locator("table.list")).to_be_visible()   # no toggle click — the default
     expect(ui_page.locator(".panel.breakout")).to_be_visible()
 
-    # the group row: present, collapsed by default, expands to member rows, collapses back
+    # the group row: present, collapsed by default, expands to member rows, collapses back.
+    # F281 (reviewer order 2026-08-06): a grouped routine appears ONLY under its group row —
+    # collapsed means NO row for it anywhere, expanded means exactly one member row.
     grow = ui_page.locator("tr.group-row", has_text="Nightly")
     expect(grow).to_be_visible()
     expect(ui_page.locator("tr.group-member")).to_have_count(0)
+    expect(ui_page.locator("table.list tbody tr", has_text="Test uir")).to_have_count(0)
     grow.locator("td").click()
     expect(ui_page.locator("tr.group-member", has_text="Test uir")).to_be_visible()
+    expect(ui_page.locator("table.list tbody tr", has_text="Test uir")).to_have_count(1)
     ui_page.locator("tr.group-row", has_text="Nightly").locator("td").click()
     expect(ui_page.locator("tr.group-member")).to_have_count(0)
 
-    # inline pause: the row's toggle disables the routine on disk and re-renders…
+    # inline pause on the expanded MEMBER row (the only row a grouped routine has, F281):
+    # the toggle disables the routine on disk and re-renders…
+    ui_page.locator("tr.group-row", has_text="Nightly").locator("td").click()
     ui_page.locator("table.list tbody tr", has_text="Test uir").last \
         .get_by_role("button", name="⏸ pause").click()
     expect(ui_page.locator("table.list tbody tr", has_text="Test uir").last) \

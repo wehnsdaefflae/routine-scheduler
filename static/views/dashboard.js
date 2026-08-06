@@ -409,10 +409,11 @@ export async function render(view) {
             : runNowBtn(c, "btn small"),
           enableToggle(c)));
     };
-    // D73: each group is its own collapsible row — expanding lists its members right
-    // beneath it, in the group's FIRE order (not the table sort). The flat sorted list
-    // below stays complete, so sorting/filtering keep their meaning and a routine in two
-    // groups appears under both. Expansion persists like the view mode does.
+    // D73 + F281: each group is its own collapsible row — expanding lists its members
+    // right beneath it, in the group's FIRE order (not the table sort). A grouped routine
+    // lives ONLY under its group row (reviewer order 2026-08-06: the flat list used to
+    // repeat every grouped routine, so the table double-listed them); the flat sorted
+    // list below carries just the ungrouped rest. Expansion persists like the view mode.
     const openGroups = new Set(JSON.parse(storage.get(GROUPS_OPEN_KEY) || "[]"));
     const bySlug = new Map(shown.map((c) => [c.slug, c]));
     const rows = [];
@@ -434,7 +435,8 @@ export async function render(view) {
             `${members.length} routine${members.length === 1 ? "" : "s"} · fire order`))));
       if (open) for (const m of members) rows.push(rowFor(m, "group-member"));
     }
-    for (const c of shown) rows.push(rowFor(c));
+    const grouped = new Set(groupsOrdered.flatMap((g) => g.members));
+    for (const c of shown) if (!grouped.has(c.slug)) rows.push(rowFor(c));
     // D72: the table breaks out of the 1180px shell column and fits the screen width.
     return el("div", { class: "panel breakout", style: "padding:0" },
       el("div", { class: "tablewrap" },

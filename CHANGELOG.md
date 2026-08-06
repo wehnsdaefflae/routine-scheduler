@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.158.1] — 2026-08-06
+
+### Fixed
+- **The routines table no longer double-lists grouped routines (F281, reviewer order).**
+  0.157.0's flat-list-stays-complete choice meant every grouped routine appeared twice —
+  once under its collapsible group row, once in the flat list. A grouped routine now lives
+  ONLY under its group row (expand to see or act on it); the flat sorted list carries just
+  the ungrouped rest. A groups-fetch hiccup still degrades to the full flat list.
+
 ## [0.158.0] — 2026-08-06
 
 Engine hardening for two externally-surfaced defects (F278 window guard; F280 byte-faithful
