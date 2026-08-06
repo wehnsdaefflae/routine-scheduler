@@ -88,7 +88,7 @@ async def cancel_background(request: Request, slug: str, taskid: str) -> dict:
 
     runner = request.app.state.runner
     last = registry.run_index(task_dir, taskid)
-    cancelled = (await abort_with_fallback(runner, taskid, last[0].dir, last[0].run_id)
+    cancelled = (await abort_with_fallback(runner, taskid, last[0].dir)
                  if last else await runner.abort(taskid))
     if not cancelled:
         # honesty: the UI used to toast "cancelling…" off ok:true while nothing died
@@ -106,7 +106,7 @@ async def teardown_background(request: Request, slug: str) -> None:
     for taskid, ti in _background_tasks(request, slug):
         last = ti.last_run
         if last:
-            await abort_with_fallback(runner, taskid, last.dir, last.run_id)
+            await abort_with_fallback(runner, taskid, last.dir)
         else:
             await runner.abort(taskid)
         shutil.rmtree(ti.cfg.dir, ignore_errors=True)

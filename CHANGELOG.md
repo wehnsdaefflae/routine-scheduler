@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.160.2] — 2026-08-06
+
+### Removed
+- **`abort_process`'s two dead parameters (F283).** The run-dir/run-id every caller
+  dutifully passed were never used — close-out attribution is the caller's job
+  (`_close_out`/`_reap`). Signature narrowed to `abort_process(pid)`; `abort_with_fallback`
+  loses its equally-dead `run_id` and all five call sites are updated.
+- Also: `readmodels/stats.py` `_run_ref` docstring now states the real fallback condition
+  (any value without an endpoint separator, not only an empty field) — F287 verified, the
+  behavior itself was correct.
+
 ## [0.160.1] — 2026-08-06
 
 ### Fixed

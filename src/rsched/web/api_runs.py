@@ -398,7 +398,7 @@ async def rewind_run(request: Request, run_id: str) -> dict:
     return {"ok": True, "run_id": rid, **info}
 
 
-async def abort_with_fallback(runner, slug: str, run_dir: Path, run_id: str) -> bool:
+async def abort_with_fallback(runner, slug: str, run_dir: Path) -> bool:
     """Abort via the runner (daemon-owned runs) with a recorded-pid fallback for runs the
     daemon doesn't track (a CLI run, a pre-restart orphan) — the ONE abort sequence the
     run, conversation, and background endpoints all share.
@@ -407,12 +407,12 @@ async def abort_with_fallback(runner, slug: str, run_dir: Path, run_id: str) -> 
         return True
     st = read_json(run_dir / "status.json")
     pid = st.get("pid") if isinstance(st, dict) else None
-    return await abort_process(pid, run_dir, run_id)
+    return await abort_process(pid)
 
 
 @router.post("/runs/{run_id}/abort")
 async def abort(request: Request, run_id: str) -> dict:
     slug, run_dir = _run_dir(request, run_id)
-    if not await abort_with_fallback(request.app.state.runner, slug, run_dir, run_id):
+    if not await abort_with_fallback(request.app.state.runner, slug, run_dir):
         raise HTTPException(409, "no live process for this run")
     return {"ok": True}

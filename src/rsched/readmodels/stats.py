@@ -57,8 +57,10 @@ def _run_day(ts: str) -> str:
 def _run_ref(recorded: str, main_ref) -> tuple[str, str]:
     """(endpoint, model) attribution for one run. status.json's `model` is the engine's
     resolved `<endpoint>/<model>` for that run — authoritative, it survives a mid-run
-    switch_model. An EMPTY field (a run that died before its first resolution, or a
-    pre-field run still inside retention) falls back to the routine's main ref.
+    switch_model. Any value WITHOUT an endpoint separator — empty (a run that died before
+    its first resolution, or a pre-field run still inside retention) or a bare model name —
+    falls back to the routine's main ref (F287: the fallback keys on the missing "/",
+    not on emptiness).
     """
     endpoint, sep, model = recorded.partition("/")
     if sep:

@@ -269,7 +269,7 @@ def cmd_abort(args) -> int:
     run_dir = _dir_across_homes(server, slug) / "runs" / ts
     st = read_json(run_dir / "status.json")
     pid = st.get("pid") if isinstance(st, dict) else None
-    ok = asyncio.run(abort_process(pid, run_dir, f"{slug}:{ts}"))
+    ok = asyncio.run(abort_process(pid))
     print(f"abort {'sent' if ok else 'failed — process not found'} for {slug}:{ts}",
           file=sys.stderr)
     return 0 if ok else 1

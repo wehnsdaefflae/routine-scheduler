@@ -472,7 +472,7 @@ class Runner:
         # mark BEFORE killing: if the engine needs SIGKILL and dies without a finish,
         # _reap must attribute the close-out to the user's cancel (F188)
         run.user_cancel = True
-        return await abort_process(run.proc.pid, run.run_dir, run.run_id)
+        return await abort_process(run.proc.pid)
 
     def recover_orphans(self, catalog: dict[str, registry.RoutineInfo]) -> int:
         """At boot: any run dir claiming to be alive whose pid is dead gets closed out."""
@@ -499,8 +499,11 @@ def _pid_alive(pid: int | None) -> bool:
     return True
 
 
-async def abort_process(pid: int | None, _run_dir: Path, _run_id: str) -> bool:
-    """SIGTERM the engine's process group; SIGKILL stragglers after the grace period."""
+async def abort_process(pid: int | None) -> bool:
+    """SIGTERM the engine's process group; SIGKILL stragglers after the grace period.
+    (F283: the run-dir/run-id params every caller dutifully passed were never used —
+    close-out attribution is the CALLER's job, via _close_out/_reap.)
+    """
     if not pid or not _pid_alive(pid):
         return False
     try:
