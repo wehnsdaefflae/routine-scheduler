@@ -347,6 +347,12 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .chat { display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 92%; border-radius: 10px; padding: 10px 13px; border: 1px solid var(--line); }
 .msg.user { align-self: flex-end; background: var(--raised); border-color: var(--line-2); }
+/* F295: the optimistic echo of a just-sent message — below the streamed history, dashed
+   until the woken leg's real user_injection event replaces it */
+.chat-echo { display: flex; flex-direction: column; gap: 10px; }
+.chat-echo:not(:empty) { margin-top: 10px; }
+.msg.user.pending { border-style: dashed; opacity: .8; }
+.msg.user.pending .pending-hint { margin-top: 6px; font-size: 11px; color: var(--muted); text-align: right; }
 .msg.assistant { align-self: flex-start; background: var(--surface); }
 .msg.question-msg { align-self: flex-start; background: rgba(242, 193, 78, 0.06); border-color: rgba(242, 193, 78, 0.4); }
 .msg-body { font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }

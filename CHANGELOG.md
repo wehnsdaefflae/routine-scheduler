@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.160.3] — 2026-08-07
+
+### Fixed
+- **A message sent to a finished conversation now appears immediately (F295).** The chat
+  renders user bubbles from `user_injection` transcript events, and a post-finish send has
+  no such event until the woken leg boots — so the user had no proof the message landed
+  (operator report, 2026-08-07). The view now echoes the sent message at once as a pending
+  bubble (dashed, "✓ sent" hint) that survives the post-send remount and is replaced by the
+  real transcript bubble when the leg picks the message up.
+
 ## [0.160.2] — 2026-08-06
 
 ### Removed

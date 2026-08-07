@@ -37,6 +37,17 @@ function userNode(text, refBtn) {
     refBtn || null);
 }
 
+// F295: the optimistic echo bubble — the just-sent message, shown by the VIEW the moment
+// the POST lands (with a "✓ sent" hint), because no transcript event carries a post-finish
+// message until the woken leg boots and injects it. The caller owns its lifetime: it
+// re-appends the echo across remounts and removes it when the real user_injection arrives.
+export function userEcho(text) {
+  const node = userNode(text);
+  node.classList.add("pending");
+  node.append(el("div", { class: "pending-hint" }, "✓ sent"));
+  return node;
+}
+
 export function createChat(container, opts = {}) {
   const root = el("div", { class: "chat" });
   container.append(root);

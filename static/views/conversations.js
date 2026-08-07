@@ -16,7 +16,7 @@ import { questionPanel } from "/static/components/answerform.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
-import { createChat } from "/static/components/chat.js";
+import { createChat, userEcho } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createStateGraph } from "/static/components/stategraph.js";
@@ -53,6 +53,11 @@ export async function render(view, slug, _query = {}) {
 
   let items = [], activeTag = "";
   let cleanup = [];   // per-mount teardowns (tail, timers, artifact blobs)
+  // F295: the optimistic echo of a just-sent message. A post-finish send has NO transcript
+  // event until the woken leg boots, and the view remounts ~700ms after every send — so the
+  // echo lives here (render scope), is re-appended by each mount, and is dropped only when
+  // the matching user_injection event arrives.
+  let pendingEcho = null;   // { text, node }
 
   // ---- sidebar --------------------------------------------------------------------------------
   async function loadList() {
@@ -161,10 +166,14 @@ export async function render(view, slug, _query = {}) {
     renderHead(head, detail, stateChip,
                { slug, isLive: () => !TERMINAL.has(curState), onListChanged: loadList });
     const chatBox = el("div", { class: "conv-chat" });
+    // the echo box sits AFTER the chat so the pending bubble always renders below the
+    // transcript history, which streams in asynchronously (F295)
+    const echoBox = el("div", { class: "chat-echo" });
     const waiting = el("div", {});
     const questionBox = el("div", {});
     const composer = buildComposer();
-    main.replaceChildren(head, chatBox, waiting, questionBox, composer.node);
+    main.replaceChildren(head, chatBox, echoBox, waiting, questionBox, composer.node);
+    if (pendingEcho) { pendingEcho.node = userEcho(pendingEcho.text); echoBox.append(pendingEcho.node); }
 
     artBody.replaceChildren();
     // the state graph rides at the top of the artifact rail: current phase lit up,
@@ -261,7 +270,11 @@ export async function render(view, slug, _query = {}) {
       page: (o) => `/api/runs/${detail.run_id}/transcript?offset=${o}`,
       events: (o) => `/api/runs/${detail.run_id}/events?offset=${o}`,
       offset: 0,
-      onEvent: (ev) => { chat.add(ev); scrollDown();
+      onEvent: (ev) => { if (pendingEcho && ev.type === "user_injection"
+                             && (ev.payload?.text || "").trim() === pendingEcho.text.trim()) {
+                           pendingEcho.node?.remove(); pendingEcho = null;   // the real bubble takes over (F295)
+                         }
+                         chat.add(ev); scrollDown();
                          if (ev.type === "subrun_start" || ev.type === "subrun_end") taskTree?.refresh();
                          if (ev.type === "observation" && ["read_file", "view_image", "write_file",
                              "edit_file"].includes(ev.payload?.kind)) fileActivity?.poke(); },
@@ -447,6 +460,14 @@ export async function render(view, slug, _query = {}) {
           toast(r.command ? "command running — you keep the turn"
             : r.delivery === "mid-run" ? "delivered — picked up next turn"
             : "waking the conversation…");
+          // F295: show the message AT ONCE — no transcript event carries it until the
+          // woken leg (or the next turn) picks it up, and the user must see it landed
+          if (!r.command) {
+            const sentText = String(fd.get("text") || "");
+            pendingEcho?.node?.remove();
+            pendingEcho = { text: sentText, node: userEcho(sentText) };
+            echoBox.append(pendingEcho.node);
+          }
           // reattach to show the result (command) or the live reply; mid-run streams already
           if (r.delivery !== "mid-run") setTimeout(mountConversation, 700);
         } catch (err) { toast(err.message, 5000, { error: true }); }

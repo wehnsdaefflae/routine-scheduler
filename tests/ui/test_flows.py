@@ -585,6 +585,15 @@ def test_conversation_composer(ui, ui_page):
     assert len(messages) == 1
     assert "gym" in messages[0].read_text(encoding="utf-8")
 
+    # F295: the sent message is echoed into the chat AT ONCE as a pending bubble — no
+    # transcript event carries it until the woken leg boots (the stub never boots one) —
+    # and the echo must SURVIVE the ~700ms post-send remount instead of vanishing with it.
+    pending = ui_page.locator(".msg.user.pending")
+    expect(pending).to_contain_text("also include the gym")
+    expect(pending.locator(".pending-hint")).to_contain_text("sent")
+    ui_page.wait_for_timeout(1200)   # outlive the post-send remount
+    expect(pending).to_contain_text("also include the gym")
+
 
 def test_conversation_slash_commands(ui, ui_page):
     """The chat composer's command surface: the reference panel lists actions + utils,
