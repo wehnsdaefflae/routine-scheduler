@@ -66,6 +66,25 @@ def _held_not_settled(qtype: str, answer: dict) -> bool:
     return False
 
 
+def _unescape_newlines(text: str) -> str:
+    r"""Literal backslash-n sequences ("\n") become real newlines — see _normalize_plain."""
+    if "\\n" not in text:
+        return text
+    return text.replace("\\r\\n", "\n").replace("\\n", "\n")
+
+
+def _normalize_plain(qtype: str, question: str, default: str) -> tuple[str, str]:
+    r"""D85-A (F291/R242): some models double-escape newlines in PLAIN question text, so a
+    literal backslash-n reached the UI as "\n" (the renderer and store are correct —
+    mdInline handles real newlines). Normalize question + default at intake, but ONLY for
+    plain questions: util-approvals embed util SOURCE and access requests carry typed ids,
+    where the two-character sequence is intended verbatim.
+    """
+    if qtype != "question":
+        return question, default
+    return _unescape_newlines(question), _unescape_newlines(default)
+
+
 def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> dict:
     ctx = loop.ctx
     if qtype == "question" and loop.dialog_qid:
@@ -89,7 +108,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     req_ids = requests.request_ids(action)
     if req_ids:
         qtype = "request"
-    question = action["question"]
+    question, default = _normalize_plain(qtype, str(action["question"]), default)
     extra = {"type": qtype, **({"default": default} if default else {})}
     ctx.transcript.event("question", {"qid": qid, "mode": mode, "question": question,
                                       "options": options, **extra,

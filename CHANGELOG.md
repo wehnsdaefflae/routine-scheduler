@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.160.4] — 2026-08-07
+
+### Fixed
+- **Plain `ask_user` questions no longer render literal `\n` (D85-A, F291, R242).** Some
+  models double-escape newlines when authoring the question; the renderer and store were
+  correct, so intake now normalizes literal backslash-n in the question and default of
+  PLAIN questions only — util-approval and access-request text (which can embed util
+  source) stays verbatim.
+
 ## [0.160.3] — 2026-08-07
 
 ### Fixed

@@ -765,6 +765,25 @@ def test_ask_user_deferred(make_routine, scripted):
     assert "filed as deferred" in ep.calls[1]["messages"][-1]["content"]
 
 
+def test_ask_user_plain_question_unescapes_literal_newlines(make_routine, scripted):
+    """D85-A (F291/R242): some models double-escape newlines when authoring ask_user, so
+    PLAIN question text reached the UI with a literal backslash-n. Intake normalizes the
+    question and default of plain questions only — approval/request text stays verbatim
+    (it can embed util source where the two-character sequence is intended)."""
+    d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
+        {"say": "Ask.", "kind": "ask_user", "mode": "deferred",
+         "question": "Two lines:\\nsecond", "default": "keep going\\nquietly"},
+        finish(),
+    ])
+    assert status == "ok"
+    q = read_json(next(iter((d / "questions" / "pending").glob("*.json"))))
+    assert q["question"] == "Two lines:\nsecond"
+    assert q["default"] == "keep going\nquietly"
+    # the transcript event the chat renders carries the normalized text too
+    ev = next(e for e in events if e["type"] == "question")
+    assert ev["payload"]["question"] == "Two lines:\nsecond"
+
+
 def test_ask_user_blocking_answered(make_routine, scripted):
     qid = f"q-{TS}-1"
 
