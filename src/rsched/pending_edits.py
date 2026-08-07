@@ -26,6 +26,7 @@ module (web imports daemon, never the reverse).
 
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -154,7 +155,12 @@ def queue(routines_home: Path, slug: str, kind: str, payload: dict[str, Any]) ->
     """
     if kind not in QUEUEABLE_KINDS:
         raise ValueError(f"not a queueable edit kind: {kind!r}")
-    name = f"pe-{run_ts()}-{uuid.uuid4().hex[:6]}.json"
+    # F298: the name must sort in QUEUE order. The old second-resolution timestamp broke
+    # ties with RANDOM hex, so a same-second burst of edits replayed shuffled. A single
+    # nanosecond sample (zero-padded, taken after run_ts so both fields order together)
+    # makes the sort strict; the hex suffix only de-collides parallel writers.
+    stamp = run_ts()
+    name = f"pe-{stamp}-{time.time_ns():020d}-{uuid.uuid4().hex[:6]}.json"
     return atomic_write_json(spool_dir(routines_home, slug) / name,
                              {"kind": kind, "payload": payload, "ts": now_iso()})
 

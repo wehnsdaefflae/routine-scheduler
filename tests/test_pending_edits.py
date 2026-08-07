@@ -37,3 +37,13 @@ def test_replay_records_failure_and_drops_file(tmp_path):
 
 def test_replay_empty_spool_is_noop(tmp_path):
     assert pending_edits.apply_pending(tmp_path / "r", tmp_path, "r") == []
+
+
+def test_queue_order_survives_a_same_second_burst(tmp_path):
+    """F298: filenames must sort in QUEUE order. The old name was second-resolution time
+    plus RANDOM hex, so edits queued within one second replayed shuffled — this burst
+    (queued far faster than a second) flushed that out reliably."""
+    queued = [pending_edits.queue(tmp_path, "r", "file",
+                                  {"path": f"stages/f{i}.md", "content": str(i)})
+              for i in range(8)]
+    assert [p.name for p in pending_edits.pending(tmp_path, "r")] == [p.name for p in queued]

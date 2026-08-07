@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.160.5] — 2026-08-07
+
+### Fixed
+- **Same-second mid-run edits now replay in queue order (F298).** The pending-edit spool
+  named files with a second-resolution timestamp plus RANDOM hex, so a burst of edits
+  queued within one second was shuffled at replay (and the replay test was a coin-flip).
+  A single zero-padded nanosecond sample in the name makes the sort strict; the hex
+  suffix only de-collides parallel writers.
+
 ## [0.160.4] — 2026-08-07
 
 ### Fixed
