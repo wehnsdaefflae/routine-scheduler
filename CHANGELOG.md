@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.165.1] — 2026-08-08
+
+### Fixed
+
+- The `practice-library` permission doc survived the 0.164.0 deploy on the live instance.
+  Deleting it from `library-seed/` only stops FRESH instances getting it — the seed sync
+  never deletes (by design: it must not clobber a user's own library docs), so the existing
+  copy stayed. Its `requires: [read_trait]` names an action kind the engine no longer has, so
+  it sat permanently lint-red on the Library tab. `migrate_rules` now deletes retired conduct
+  docs from the live library too. Found by checking the running instance after the deploy, not
+  by a test — the suite only ever saw a seeded library.
+
 ## [0.165.0] — 2026-08-08
 
 ### Publishing the instance is a routine again, not a Settings job

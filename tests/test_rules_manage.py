@@ -291,3 +291,37 @@ def test_migration_expands_a_conflating_slug_into_every_rule_that_replaced_it():
     # ownership table went to the one routine that needs it (not a rule at all)
     assert _SLUG_MAP["maintenance-routing"] == ("problem-routing",)
     assert _SLUG_MAP["global-utils"] == ()             # became a permission
+
+
+def test_migration_drops_the_retired_permission_doc_from_a_live_library(tmp_path):
+    """Deleting a doc from library-seed/ does NOT reach an existing instance: the seed sync
+    only ADDS (it must never clobber the user's own docs). `practice-library` requires
+    `read_trait`, which is no longer an action kind, so left in place it fails the library
+    lint on every page load — which is exactly how it was found, after the first deploy.
+
+    Runs even once the main conversion has converged: traits/ is already gone by then.
+    """
+    from rsched.config import ServerConfig
+    from rsched.migrate_rules import migrate_rules
+    from rsched.workflows.lint import lint_permission_text
+
+    lib = tmp_path / "lib"
+    (lib / "permissions").mkdir(parents=True)
+    (lib / "rules").mkdir()
+    doomed = lib / "permissions" / "practice-library.md"
+    doomed.write_text("---\ntags: [a, b, c]\nrequires:\n  actions: [read_trait]\n---\n"
+                      "# permission: practice library — retired\n\nbody\n", encoding="utf-8")
+    keeper = lib / "permissions" / "memory.md"
+    keeper.write_text("---\ntags: [a, b, c]\nrequires:\n  actions: [memory_read]\n---\n"
+                      "# permission: memory — kept\n\nbody\n", encoding="utf-8")
+    # the state that made this visible: the doc cannot lint clean any more
+    assert any("read_trait" in p for p in lint_permission_text(
+        doomed.read_text(encoding="utf-8"), filename="practice-library.md"))
+
+    server = ServerConfig(libraries_home=lib, routines_home=tmp_path / "routines",
+                          conversations_home=tmp_path / "conv", background_home=tmp_path / "bg")
+    assert not (lib / "traits").exists()      # main conversion already converged
+    migrate_rules(server)
+    assert not doomed.exists()
+    assert keeper.is_file()                   # only the named docs go
+    migrate_rules(server)                     # idempotent

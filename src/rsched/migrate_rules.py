@@ -24,7 +24,9 @@ Per routine / conversation / background dir:
   4. `practice-library` dropped from `permissions:` and `read_trait` from
      `capabilities.actions` (the action is ungated now); `global-utils` added to
      `permissions:` for any routine that held the trait, since its prose became a
-     conduct doc.
+     conduct doc. The retired permission DOC is deleted from the library too — dropping
+     it from the seed does not touch a live instance, and a doc whose `requires:` names a
+     kind the engine no longer has sits permanently lint-red on the Library tab.
   5. main.md's `## Standing practices` tail rebuilt from the new held set.
 """
 
@@ -59,6 +61,10 @@ _SLUG_MAP: dict[str, tuple[str, ...]] = {
     "anticipatory-stewardship": ("root-cause-fix", "intent-inference"),
 }
 
+# Conduct docs retired with the rules layer. `read_trait` is gone from KINDS, so this doc's
+# `requires:` can no longer normalize — it lints red forever until the file itself goes.
+_RETIRED_PERMISSIONS = ("practice-library",)
+
 
 def _migrate_library(server: ServerConfig) -> bool:
     old, new = server.libraries_home / "traits", server.rules_home
@@ -79,6 +85,29 @@ def _migrate_library(server: ServerConfig) -> bool:
     shutil.rmtree(old, ignore_errors=True)
     libgit.commit(server.libraries_home, "migrate: traits/ -> rules/ (general rules)")
     return True
+
+
+def _drop_retired_permissions(server: ServerConfig) -> int:
+    """Delete conduct docs the rules layer retired, from the LIVE library.
+
+    Removing one from `library-seed/` only stops fresh instances getting it; the seed sync
+    never deletes (by design — it must not clobber a user's own docs), so an existing
+    instance keeps the file forever. `practice-library` requires `read_trait`, which is no
+    longer an action kind, so it also fails the library lint on every page load.
+    """
+    dropped = 0
+    for slug in _RETIRED_PERMISSIONS:
+        path = server.permissions_home / f"{slug}.md"
+        if not path.is_file():
+            continue
+        path.unlink()
+        log.warning("rules migration: deleted the retired permission doc %r from the library",
+                    slug)
+        dropped += 1
+    if dropped:
+        libgit.commit(server.libraries_home,
+                      f"migrate: drop {dropped} retired permission doc(s)")
+    return dropped
 
 
 def _promote_orphans(server: ServerConfig, homes: tuple[Path, ...]) -> int:
@@ -158,6 +187,7 @@ def migrate_rules(server: ServerConfig) -> int:
     homes = (server.routines_home, server.conversations_home, server.background_home)
     try:
         _migrate_library(server)
+        _drop_retired_permissions(server)
         # BEFORE the per-dir conversion, which deletes traits/ — an orphan must be lifted
         # out while its only copy still exists.
         _promote_orphans(server, homes)
