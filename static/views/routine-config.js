@@ -15,7 +15,7 @@ import { scheduleEditor } from "/static/components/schedule.js";
 import { scheduleOnceCard } from "/static/components/schedule-once.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { tagsEditor } from "/static/components/tags.js";
-import { traitPicker } from "/static/components/traitpicker.js";
+import { rulePicker } from "/static/components/rulepicker.js";
 import { triggersCard } from "/static/components/triggers.js";
 
 export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip }) {
@@ -128,26 +128,27 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
      "change either column; the routine can never grant itself anything. Takes effect at the next run."],
       permHost));
 
-  // -- practice modules (traits the routine holds; the traits/ dir IS the state) -----
-  const traitHost = el("div", {});
-  const buildTraitPanel = async (detail) => {
-    const lib = await api("/api/library").catch(() => ({ traits: [] }));
-    return traitPicker(lib.traits || [], detail.traits || [], {
+  // -- general rules (routine.yaml's `rules:` IS the state; the prose is in the library) --
+  const ruleHost = el("div", {});
+  const buildRulePanel = async (detail) => {
+    const lib = await api("/api/library").catch(() => ({ rules: [] }));
+    return rulePicker(lib.rules || [], detail.rules || [], {
       live: !!detail.active_run,
       onSave: async (payload) => {
-        await api(`/api/routines/${slug}/traits`, { method: "POST", body: payload });
+        await api(`/api/routines/${slug}/rules`, { method: "POST", body: payload });
         const nd = await api(`/api/routines/${slug}`);
-        traitHost.replaceChildren(await buildTraitPanel(nd));
+        ruleHost.replaceChildren(await buildRulePanel(nd));
       },
     }).node;
   };
-  buildTraitPanel(d).then((n) => traitHost.replaceChildren(n));
-  view.append(...settingsSection("Practice modules",
-    ["the standing practices this routine reads before the situations they govern. Added ",
-     "modules are copied in verbatim and become the routine's own files; an addition reaches ",
-     "a run already in flight, a removal takes effect at the next run. The routine can ",
-     "CONSULT an unheld module for one run (read_trait) but never change this set."],
-      traitHost));
+  buildRulePanel(d).then((n) => ruleHost.replaceChildren(n));
+  view.append(...settingsSection("General rules",
+    ["the rules this routine reads before the situations they govern. Each states a ",
+     "principle the run applies to its own case; the prose lives once in the library, so ",
+     "editing it there reaches every routine holding it. Binding one reaches a run already ",
+     "in flight, unbinding takes effect at the next run. A run can READ any rule (read_rule) ",
+     "but never change this set."],
+      ruleHost));
 
   // -- budgets (per-run ceilings — every invisible limit, surfaced) -----------------
   const budgetInputs = {};
@@ -203,7 +204,7 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
   view.append(...settingsSection("Filesystem roots",
     ["extra directories this routine may access beyond its own dir — browse to each. ",
      el("strong", {}, "Write roots are powerful"), ": a write root that covers this routine's own ",
-     "directory unlocks editing its OWN recipe (main.md / stages / traits / tuning.yaml) — the same ",
+     "directory unlocks editing its OWN recipe (main.md / stages / tuning.yaml) — the same ",
      "lever the routine-improver holds. routine.yaml stays sealed regardless. Takes effect next run."],
       el("div", { class: "field" }, el("span", {}, "read roots"), readRoots.node),
       el("div", { class: "field mt" }, el("span", {}, "write roots"), writeRoots.node),

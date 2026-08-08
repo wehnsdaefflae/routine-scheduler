@@ -130,13 +130,13 @@ export async function render(view, runId, query = {}) {
   // "editable recipe" checkbox (D37, revised): sits right next to the input, OFF by
   // default. Checked, the finished run resumes as the SAME conversation — the sole
   // difference is that the continued leg may edit this routine's own recipe files
-  // (main.md / stages/ / traits/ / tuning.yaml) via the run-scoped unlock.
+  // (main.md / stages/ / tuning.yaml) via the run-scoped unlock.
   let isTerminal = false;
   const recipeChk = el("input", { type: "checkbox", "data-nopersist": true });
   const recipeLbl = el("label", { class: "row small", hidden: true,
     style: "gap:4px;align-items:center;white-space:nowrap;color:var(--muted)",
     title: "when checked, the continued conversation may edit this routine's recipe files "
-      + "(main.md, stages/, traits/, tuning.yaml) — it still sees this whole conversation" },
+      + "(main.md, stages/, tuning.yaml) — it still sees this whole conversation" },
     recipeChk, el("span", {}, "editable recipe"));
   const syncPlaceholder = () => {
     msgInput.placeholder = recipeChk.checked

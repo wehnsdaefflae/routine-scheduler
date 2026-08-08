@@ -12,8 +12,14 @@ schedule:
   tz: Europe/Berlin
   catchup: skip
 permissions:
+- global-utils
 - memory
 - run-history
+rules:
+- ask-policy
+- web-research
+- decision-record
+- evidence-discipline
 capabilities:
   actions:
   - memory_read

@@ -39,7 +39,7 @@ sandboxed:
   Both obey the SAME declared-var rule store secrets obey (`utils_lib._child_env`): a value reaches
   a util iff the routine binds the machine AND the util declares the var. A run may request an
   unbound catalog machine (`ask_user` with `request: "machine:<name>"`,
-  docs/traits-permissions.md): allow-forever adds the binding; allow-now covers EXEC for the
+  docs/rules-permissions.md): allow-forever adds the binding; allow-now covers EXEC for the
   asking run only — the sshfs share is mounted at binding time by the daemon, so mounts come
   with forever-bindings.
 - **The `remote` util** (`library-seed/utils/remote`) — the ONLY thing that opens an SSH

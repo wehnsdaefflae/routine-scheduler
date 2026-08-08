@@ -5,11 +5,11 @@ referencing a retired module layout, a workflow naming a kind that no longer exi
 permission whose `requires:` stopped normalizing — all invisible until a fresh install
 broke. This suite makes seed drift a test failure in the same commit as the rename.
 
-Covered: routine-seed/ (routine.yaml via load_routine, stages/traits file references,
-`state/phase.json` instructions in the canonical {"phase": ...} shape, action-kind
-references, permissions that exist in library-seed), library-seed/ (workflows parse via
-pyworkflow and lint clean; traits/permissions/playbooks lint clean; permission `requires:`
-normalize), and util-seed/ (docstring headers pass the engine's own gate).
+Covered: routine-seed/ (routine.yaml via load_routine, stage-module references, held rules
+that exist in library-seed, `state/phase.json` instructions in the canonical {"phase": ...}
+shape, action-kind references, permissions that exist in library-seed), library-seed/
+(workflows parse via pyworkflow and lint clean; rules/permissions/playbooks lint clean;
+permission `requires:` normalize), and util-seed/ (docstring headers pass the engine's own gate).
 """
 
 import re
@@ -62,10 +62,19 @@ def test_routine_seed_recipe_structure(seed):
     assert "## Standing practices" in body, (
         f"{seed.name}/main.md lacks the Standing practices tail "
         "(scaffold.with_practices_tail guarantees it on every real routine)")
-    # every trait the tail references is bundled with the seed
-    for name in re.findall(r"traits/([a-z0-9-]+\.md)", body):
-        assert (seed / "traits" / name).is_file(), (
-            f"{seed.name}/main.md references traits/{name} which the seed does not bundle")
+    # the tail is DERIVED from routine.yaml's `rules:` — every held rule must be named in it,
+    # and every rule named must exist in the library seed (a rule has no per-routine copy)
+    import yaml
+    held = yaml.safe_load((seed / "routine.yaml").read_text(encoding="utf-8")).get("rules") or []
+    assert held, f"{seed.name}/routine.yaml holds no rules — every seed routine should"
+    tail = body[body.index("## Standing practices"):]
+    for slug in held:
+        assert f"`{slug}`" in tail, (
+            f"{seed.name}/main.md's Standing practices tail does not name the held rule {slug!r}")
+        assert (REPO / "library-seed" / "rules" / f"{slug}.md").is_file(), (
+            f"{seed.name} holds rule {slug!r}, which library-seed/rules/ does not carry")
+    assert not (seed / "rules").exists(), (
+        f"{seed.name} carries a rules/ directory — a rule has ONE copy, in the library")
 
 
 @pytest.mark.parametrize("seed", ROUTINE_SEEDS, ids=_ids(ROUTINE_SEEDS))

@@ -1,4 +1,4 @@
-"""Routine config editing: traits, permissions+capabilities, the PATCH endpoint,
+"""Routine config editing: general rules, permissions+capabilities, the PATCH endpoint,
 run-now, and archive — the write half of the old api_routines (which keeps the read
 surfaces: cards, detail, health, recipe, artifacts).
 """
@@ -12,8 +12,8 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
+from .. import rules as rules_mod
 from .. import schedule
-from .. import traits as traits_mod
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
 from ..ids import now_iso, run_ts
 from ..paths import atomic_write
@@ -28,53 +28,51 @@ from .routines_common import (
 
 router = APIRouter(tags=["routines"])
 
-class TraitsBody(BaseModel):
+class RulesBody(BaseModel):
     add: list[str] = []
     remove: list[str] = []
 
 
-def apply_trait_edit(request: Request, routine_dir: Path, body: TraitsBody,
-                     active_run_dir: Path | None) -> dict:
-    """Add/remove practice modules on an existing routine or conversation — the ONE
-    implementation both homes use.
+def apply_rule_edit(request: Request, routine_dir: Path, body: RulesBody,
+                    active_run_dir: Path | None) -> dict:
+    """Bind/unbind general rules on an existing routine or conversation — the ONE
+    implementation both homes use. Only the SET changes here; the prose lives in the
+    library and is edited on the Library tab, where a revision reaches every holder.
 
-    Deliberately NOT guarded by an active run, unlike other routine file edits: a run may
-    never write its own `traits/` (the recipe invariant), so the web layer is the only
-    writer there and no two-writer race exists. When a run IS live, the durable copy alone
-    would not reach it — its prompt was composed at boot and is immutable under the
-    prompt-caching contract — so an `add_traits` signal goes into the run's control.json and
-    `engine/control.apply_trait_additions` appends the prose at the next turn boundary.
-    Removal has no live counterpart on purpose: prose already in the context cannot be
-    unsaid, so a removal takes effect at the next run.
+    Deliberately NOT guarded by an active run, unlike other routine file edits: no run
+    writes routine.yaml, so the web layer is the only writer and no two-writer race exists.
+    When a run IS live, the config alone would not reach it — its prompt was composed at
+    boot and is immutable under the prompt-caching contract — so an `add_rules` signal goes
+    into the run's control.json and `engine/control.apply_rule_additions` appends the prose
+    at the next turn boundary. Removal has no live counterpart on purpose: prose already in
+    the context cannot be unsaid, so an unbind takes effect at the next run.
     """
-    from .. import library_docs
-
     server = request.app.state.server
-    known = set(library_docs.slugs(server.traits_home))
-    if unknown := [s for s in body.add if s not in known]:
-        raise HTTPException(400, f"unknown practice module(s): {sorted(unknown)}")
-    added, removed = traits_mod.apply_changes(server.traits_home, routine_dir,
-                                              body.add, body.remove)
+    try:
+        added, removed = rules_mod.apply_changes(server.rules_home, routine_dir,
+                                                 body.add, body.remove)
+    except KeyError as exc:
+        raise HTTPException(400, f"unknown rule: {exc.args[0]!r}") from exc
     if not added and not removed:
-        return {"ok": True, "added": [], "removed": [], "traits": traits_mod.current_traits(
-            routine_dir)}
-    _git_commit(routine_dir, f"traits via web (+{len(added)}/-{len(removed)})")
+        return {"ok": True, "added": [], "removed": [],
+                "rules": rules_mod.current_rules(routine_dir)}
+    _git_commit(routine_dir, f"rules via web (+{len(added)}/-{len(removed)})")
     if added and active_run_dir is not None:
         from .api_runs import merge_control
-        merge_control(active_run_dir, {"add_traits": {"slugs": added, "ts": now_iso()}})
+        merge_control(active_run_dir, {"add_rules": {"slugs": added, "ts": now_iso()}})
     return {"ok": True, "added": added, "removed": removed,
             "live": bool(added and active_run_dir is not None),
-            "traits": traits_mod.current_traits(routine_dir)}
+            "rules": rules_mod.current_rules(routine_dir)}
 
 
-@router.post("/routines/{slug}/traits")
-def set_routine_traits(request: Request, slug: str, body: TraitsBody) -> dict:
-    """Add/remove this routine's practice modules. Applies to a LIVE run too (see
-    apply_trait_edit); otherwise it lands at the next run.
+@router.post("/routines/{slug}/rules")
+def set_routine_rules(request: Request, slug: str, body: RulesBody) -> dict:
+    """Bind/unbind this routine's general rules. Applies to a LIVE run too (see
+    apply_rule_edit); otherwise it lands at the next run.
     """
     info = _info(request, slug)
-    guard_template(slug, "the clarification template's practices are fixed")
-    return apply_trait_edit(request, info.cfg.dir, body, active_run_dir(info))
+    guard_template(slug, "the clarification template's rules are fixed")
+    return apply_rule_edit(request, info.cfg.dir, body, active_run_dir(info))
 
 
 class PermissionsBody(BaseModel):
@@ -117,8 +115,8 @@ def resolve_permission_layers(server, body: PermissionsBody, current: dict) -> t
 def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     """Set both permission layers (user-only; a routine can never change its own): the
     held conduct docs AND the capabilities mapping. Pure routine.yaml config, read at run
-    start, so changes take effect at the next run. Traits are NOT toggleable here: they
-    became the routine's own files at creation.
+    start, so changes take effect at the next run. The general rules are config too, but
+    they have their own endpoint (they can reach a LIVE run).
     """
     info = _info(request, slug)
     # No busy-guard (D35): the engine reads routine.yaml exactly ONCE, at run boot

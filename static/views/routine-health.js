@@ -17,7 +17,7 @@ export function mountHealth(box, slug, { onRecipeChanged }) {
     const reg = h.regression || {};
     async function revert(commit, label) {
       if (!(await confirmDialog(
-        `Roll back recipe change ${label}? main.md / stages / traits / tuning.yaml return to their state just before it (a new commit — nothing is lost). Config and state are untouched.`,
+        `Roll back recipe change ${label}? main.md / stages / tuning.yaml return to their state just before it (a new commit — nothing is lost). Config and state are untouched.`,
         { confirmLabel: "roll back" }))) return;
       try {
         const res = await api(`/api/routines/${slug}/recipe/revert`,

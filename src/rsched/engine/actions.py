@@ -15,7 +15,8 @@ from ..ids import is_slug
 
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "edit_file",
-         "memory_read", "memory_write", "read_trait", "llm", "spawn", "subtask", "detach",
+         "memory_read", "memory_write", "read_rule", "write_rule",
+         "llm", "spawn", "subtask", "detach",
          "schedule_run", "create_routine", "manage_group",
          "subruns", "kill", "wait", "ask_user", "report", "finish")
 
@@ -59,8 +60,8 @@ ACTION_SCHEMA: dict = {
             "type": "string",
             "description": "util/write_util/remove_util: the global util's name (kebab-case) · "
                            "memory_read/memory_write: the note's topic (kebab-case) · "
-                           "read_trait: a practice module in the shared library, or "
-                           '"list" for the catalog · '
+                           "read_rule/write_rule: a general rule in the shared library "
+                           '(read_rule "list" = the catalog) · '
                            "create_routine: the NEW routine's human display name",
         },
         "args": {
@@ -97,13 +98,15 @@ ACTION_SCHEMA: dict = {
             "description": "edit_file: exact text to find in the file (must be unique unless "
                            "all: true) — copy it verbatim, whitespace included · "
                            "write_util edit mode: exact text to find in the util's current "
-                           "source (read it with util show <name> --full)",
+                           "source (read it with util show <name> --full) · "
+                           "write_rule edit mode: exact text to find in the rule's current "
+                           "prose (read it with read_rule first)",
         },
         "replacement": {
             "type": "string",
-            "description": 'edit_file/write_util edit mode: the text that replaces the anchor '
-                           '(omit or "" to delete it) — edit in place instead of re-emitting '
-                           "whole files/scripts",
+            "description": 'edit_file/write_util/write_rule edit mode: the text that replaces '
+                           'the anchor (omit or "" to delete it) — edit in place instead of '
+                           "re-emitting whole files/scripts/rules",
         },
         "content": {"type": ["string", "object", "array"],
                     "description": "write_file: the full new content — a string, or a JSON "
@@ -111,6 +114,10 @@ ACTION_SCHEMA: dict = {
                                    "write_util: the complete PEP 723 script as a string "
                                    "(or omit content and pass anchor/replacement to patch "
                                    "the existing script in place) · "
+                                   "write_rule: the complete rule markdown as a string — "
+                                   "frontmatter tags + a '# rule: <name> — <summary>' heading "
+                                   "+ the principle (or omit content and pass "
+                                   "anchor/replacement to revise the existing rule in place) · "
                                    "memory_write: the note's full markdown (one string, "
                                    "≤100 lines)"},
         # schedule_run — arm/cancel a one-shot time trigger on a routine (gated: scheduling)
@@ -265,7 +272,7 @@ ACTION_SCHEMA: dict = {
 BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "read_file": "path",
                "view_image": "path",
                "write_file": "path", "edit_file": "path", "memory_read": "name",
-               "memory_write": "name", "read_trait": "name",
+               "memory_write": "name", "read_rule": "name", "write_rule": "name",
                "llm": "prompt", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",
                "manage_group": "verb",
@@ -306,8 +313,12 @@ KIND_EXAMPLES: dict[str, dict] = {
     "memory_write": {"say": "<what surprised you>", "kind": "memory_write", "name": "topic-slug",
                      "content": "<the note's full markdown, at most 100 lines>",
                      "about": "<one line: what this note holds + when to consult it>"},
-    "read_trait": {"say": "<why this practice now>", "kind": "read_trait",
-                   "name": "test-design"},
+    "read_rule": {"say": "<why this rule now>", "kind": "read_rule",
+                  "name": "test-design"},
+    "write_rule": {"say": "<the evidence that this wording is the cause>", "kind": "write_rule",
+                   "name": "test-design",
+                   "anchor": "<the exact sentence(s) to replace, copied verbatim>",
+                   "replacement": "<the new wording, in the rule's own voice>"},
     "llm": {"say": "<why delegate>", "kind": "llm", "prompt": "<the subtask prompt>"},
     "spawn": {"say": "<why a child>", "kind": "spawn",
               "prompt": "<self-contained instruction>", "label": "child-1"},
@@ -343,7 +354,8 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "edit_file": (("path", "anchor"), ("replacement", "all")),
     "memory_read": (("name",), ()),
     "memory_write": (("name",), ("content", "about", "delete")),
-    "read_trait": (("name",), ()),
+    "read_rule": (("name",), ()),
+    "write_rule": (("name",), ("content", "anchor", "replacement", "all")),
     "llm": (("prompt",), ("system", "response_schema")),
     "spawn": (("prompt",), ("workflow", "label")),
     "subtask": (("prompt",), ("workflow", "label", "turns")),

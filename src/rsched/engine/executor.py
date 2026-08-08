@@ -24,7 +24,7 @@ from .fileops import (
     do_memory_read,
     do_memory_write,
     do_read_file,
-    do_read_trait,
+    do_read_rule,
     do_view_image,
     do_write_file,
 )
@@ -309,7 +309,7 @@ DISPATCH = {
     "edit_file": do_edit_file,
     "memory_read": do_memory_read,
     "memory_write": do_memory_write,
-    "read_trait": do_read_trait,
+    "read_rule": do_read_rule,
     "llm": do_llm,
 }
 

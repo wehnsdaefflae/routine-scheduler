@@ -1,4 +1,4 @@
-// Library: workflows (control-flow patterns), traits (practice prose), permissions (grants), global utils.
+// Library: workflows (control-flow patterns), rules (general principle prose), permissions (grants), global utils.
 // A tag filter narrows all three sections; deep-link #/library/workflow/<slug> opens an
 // editor directly. Save failures (lint / selftest) render inline under the editor;
 // decisions update in place — no page reloads.
@@ -26,7 +26,7 @@ export async function render(view, sub, query = {}) {
   catch (err) { sections.replaceChildren(emptyState("✕", "Couldn't load the library", err.message)); return; }
   data.playbooks = data.playbooks || [];
   countLine.textContent =
-    `workflows ${data.workflows.length} · traits ${data.traits.length} · permissions ${data.permissions.length} · playbooks ${data.playbooks.length} · utils ${data.utils.length}`;
+    `workflows ${data.workflows.length} · rules ${data.rules.length} · permissions ${data.permissions.length} · playbooks ${data.playbooks.length} · utils ${data.utils.length}`;
 
   // Both the tag filter and the open editor are kept in the URL (#/library/<kind>/<slug>?tags=…)
   // so the view is shareable and restores on reload — without tearing itself down on each change.
@@ -37,7 +37,7 @@ export async function render(view, sub, query = {}) {
   const matches = (tags) => !active.size || (tags || []).some((t) => active.has(t));
 
   function renderFilterBar() {
-    const all = [...new Set([...data.workflows, ...data.traits, ...data.permissions,
+    const all = [...new Set([...data.workflows, ...data.rules, ...data.permissions,
       ...data.playbooks, ...data.utils]
       .flatMap((x) => x.tags || []))].sort((a, b) => a.localeCompare(b));
     filterBar.replaceChildren();
@@ -58,10 +58,10 @@ export async function render(view, sub, query = {}) {
         item(w.name || w.slug, w.problems, w.tags, () => openWorkflow(w.slug), w.description,
              `#/library/workflow/${w.slug}`)));
     section("Traits", "reusable practices — adapted into each new routine at creation, then owned by the routine (this is only the template)",
-      data.traits.filter((f) => matches(f.tags)).map((f) =>
-        item(f.slug, f.problems, f.tags, () => openDoc("traits", f.slug), f.summary,
-             `#/library/trait/${f.slug}`)),
-      el("button", { class: "btn ghost small", onclick: () => newDoc("traits") }, "+ new trait"));
+      data.rules.filter((f) => matches(f.tags)).map((f) =>
+        item(f.slug, f.problems, f.tags, () => openDoc("rules", f.slug), f.summary,
+             `#/library/rule/${f.slug}`)),
+      el("button", { class: "btn ghost small", onclick: () => newDoc("rules") }, "+ new rule"));
     section("Permissions", "conduct docs — held per routine via its Permissions panel; the requires: frontmatter names the capabilities each doc's instructions presume (activating the doc switches them on; open a doc to edit the mapping)",
       data.permissions.filter((f) => matches(f.tags)).map((f) => {
         const req = requiresSummary(f.requires);
@@ -129,13 +129,14 @@ export async function render(view, sub, query = {}) {
     // permissions get a structured, prefilled requires: panel — it is authoritative for
     // that key on save (the server merges it into the frontmatter); prose stays in the editor
     const requires = kind === "permissions" ? requiresPanel(d.requires || {}) : null;
-    // traits are deletable (a seed trait returns at the next boot; routines keep their
-    // adapted copies) — permission docs are NOT (the capability layer's conduct surface)
-    const docDelete = kind === "traits" ? async () => {
-      if (!(await confirmDialog(`Delete trait "${slug}"? Routines keep their own adapted copies; `
-                   + "a seed trait returns at the next daemon boot.",
+    // rules are deletable (a seed rule returns at the next boot) — permission docs are NOT
+    // (the capability layer's conduct surface). There is only ONE copy of a rule, so a
+    // deletion reaches every routine that holds it at its next run.
+    const docDelete = kind === "rules" ? async () => {
+      if (!(await confirmDialog(`Delete rule "${slug}"? Every routine holding it loses it at `
+                   + "the next run; a seed rule returns at the next daemon boot.",
                    { confirmLabel: "delete" }))) return false;
-      await api(`/api/library/traits/${slug}`, { method: "DELETE" });
+      await api(`/api/library/rules/${slug}`, { method: "DELETE" });
       return true;
     } : undefined;
     showEditor(`${kind.slice(0, -1)}: ${slug}`, d.content, d.log, async (content) =>
@@ -144,7 +145,7 @@ export async function render(view, sub, query = {}) {
       undefined, docDelete, requires?.node);
   }
 
-  // Author a fresh trait/permission doc: a lint-satisfying template plus a slug field; save
+  // Author a fresh rule/permission doc: a lint-satisfying template plus a slug field; save
   // PUTs to /api/library/<kind>/<slug> (create-or-update, lint-gated) and reopens the saved doc.
   function newDoc(kind) {
     const isPerm = kind === "permissions";
@@ -155,10 +156,11 @@ export async function render(view, sub, query = {}) {
         + "# permission: <name> — <one-line summary of the conduct>\n\n"
         + "Short conduct instructions — at most ~14 lines reach the prompt while the doc is held.\n"
         + "Tick what the instructions presume in the requires panel above.\n"
-      : "---\ntags: [conduct, practice, draft]\n---\n"
-        + "# trait: <name> — <one-line summary of the practice>\n\n"
-        + "The practice prose: when it applies, what it looks like in action, what to avoid.\n"
-        + "It is adapted to each new routine at creation — write the general form here.\n";
+      : "---\ntags: [conduct, principle, draft]\n---\n"
+        + "# rule: <name> — <one-line summary of the principle>\n\n"
+        + "The principle: when it applies, what it looks like in action, what to avoid.\n"
+        + "Write the GENERAL form — every routine holding it reads this same text and applies\n"
+        + "it to its own case. Name no tool and no routine.\n";
     const head = el("div", { class: "panel", style: "margin-bottom:10px" },
       el("div", { class: "lbl" }, "slug — the doc's file name in the library"), slugIn);
     showEditor(`new ${kind.slice(0, -1)}`, template, null, async (content) => {
@@ -255,7 +257,7 @@ export async function render(view, sub, query = {}) {
       }, extra);
   }
 
-  // workflows + utils are Python → highlighted editor; traits/permissions are markdown → plain.
+  // workflows + utils are Python → highlighted editor; rules/permissions are markdown → plain.
   // `extra` renders above the editor (the permissions requires: panel).
   function showEditor(label, content, log, save, lang, del, extra) {
     editor.replaceChildren();
@@ -317,7 +319,7 @@ export async function render(view, sub, query = {}) {
   if (sub) {
     const [kind, id] = sub.split("/");
     const opener = { workflow: openWorkflow,
-                     trait: (id) => openDoc("traits", id),
+                     rule: (id) => openDoc("rules", id),
                      permission: (id) => openDoc("permissions", id),
                      playbook: openPlaybook,
                      util: openUtil }[kind];

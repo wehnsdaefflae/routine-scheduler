@@ -32,13 +32,13 @@ Eight sections, in this order:
 
 | # | Section | Source | What the model learns |
 |---|---|---|---|
-| 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a finding-first `say`, worded per the routine's **deliberation level** (see below; the default `standard` reads: lead with what the last observation taught you, then why this action — a few words for routine steps, 2-3 sentences on decisions, direction changes, and surprises), "the run starts NOW", stages-on-demand, working dir + extra fs roots (a GROUPED routine's run also names its `Group shared store (read+write` root — `.control/group-stores/<gid>/`, injected into the effective fs roots at boot, D67 — with the collision contract: whole-file writes, last write wins per file, prefer per-routine filenames), **no shell**, capability-aware `write_util` and memory-action glosses, the traits-vs-capabilities prose ownership rule, the concrete budgets, a prose gloss of every action kind **this run can use** (including `read_file` batching via `paths`, in-place `edit_file` instead of whole-file rewrites, and `view_image` to SEE an image/PDF — natively when the model is multimodal, else via the vision util), sequential `subtask` decomposition (a background child the parent starts then WAITS for, its own context + pattern + budget) alongside parallel `spawn`, the injection warning. The `finish` gloss also states that the summary renders as Markdown in the UI — including GitHub-style pipe tables and > blockquotes — so tabular results (shortlists, comparisons, digests) should be real pipe tables instead of ASCII art. |
+| 1 | *(untitled)* harness contract | `harness_contract()` | Identity (routine, run id, cron), the one-JSON-action-per-turn contract with a finding-first `say`, worded per the routine's **deliberation level** (see below; the default `standard` reads: lead with what the last observation taught you, then why this action — a few words for routine steps, 2-3 sentences on decisions, direction changes, and surprises), "the run starts NOW", stages-on-demand, working dir + extra fs roots (a GROUPED routine's run also names its `Group shared store (read+write` root — `.control/group-stores/<gid>/`, injected into the effective fs roots at boot, D67 — with the collision contract: whole-file writes, last write wins per file, prefer per-routine filenames), **no shell**, capability-aware `write_util` and memory-action glosses, the rules-vs-capabilities prose ownership rule, the concrete budgets, a prose gloss of every action kind **this run can use** (including `read_file` batching via `paths`, in-place `edit_file` instead of whole-file rewrites, and `view_image` to SEE an image/PDF — natively when the model is multimodal, else via the vision util), sequential `subtask` decomposition (a background child the parent starts then WAITS for, its own context + pattern + budget) alongside parallel `spawn`, the injection warning. The `finish` gloss also states that the summary renders as Markdown in the UI — including GitHub-style pipe tables and > blockquotes — so tabular results (shortlists, comparisons, digests) should be real pipe tables instead of ASCII art. |
 | 2 | `# ACTION SCHEMA (your every reply matches this)` | `ACTION_SCHEMA`, **projected** by `kindsurface.schema_for_kinds()` | The exact reply grammar, narrowed to the kinds this run may actually emit (see *The projection* below); field descriptions double as micro-docs (`question` says that simple Markdown renders in the UI, `summary` that Markdown — incl. pipe tables, > quotes — renders (tables render only on BLOCK surfaces like the finish summary and llm replies; `say`/`question` render inline, so they stay tables-free); the optional `note` captures 1-3 self-contained lines to state/notes.md at no turn cost; `summary` demands a DETAILED 8-20 lines). `say`'s description carries only the field's mechanics — **how much** to say is the deliberation level's job, stated once in (1). |
 | 3 | `# EXAMPLE of a valid reply` | `example_action()` | One few-shot example (`read_file stages/scan.md`) that models on-demand stage reading and a finding-first `say` — deliberately NOT `util name=list`: the catalog already sits in CAPABILITIES, so opening a run by re-listing it just re-buys known information. |
-| 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow **and the task**: a top-level routine's recipe is self-contained — goal, deliverable, constraints and completion criteria are compiled into `main.md` + `stages/*.md` (stage detail read on demand), practice detail in `traits/*.md`. main.md ends with a `## Standing practices` section: one line per trait file + when to read it. |
+| 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow **and the task**: a top-level routine's recipe is self-contained — goal, deliverable, constraints and completion criteria are compiled into `main.md` + `stages/*.md` (stage detail read on demand); cross-cutting conduct is the shared general RULES, whose prose lives in the library and is read with `read_rule`. main.md ends with a `## Standing practices` section: one line per held rule slug + when to read it. |
 | 5 | `# INSTRUCTION (your assigned task)` | the parent's spawn `prompt` (subruns), or `instruction.md` (conversations) | **Subruns AND conversations.** A top-level scheduled ROUTINE has NO instruction section and no `instruction.md` on disk: its task is entirely its self-contained recipe (`main.md` + `stages/`) — the clarified instruction was only a transient compile **SEED**, consumed at creation and never persisted. A **subrun** has no decomposed stages, so its self-contained brief (the parent's `prompt`) rides here. A **conversation** runs at depth 0 but its task is its first message (`instruction.md`), so it carries the section too (discriminated by HOME — its dir sits directly under `conversations_home`); without it the agent would see only the converse HOW-to pattern and never its actual task. |
 | 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ capabilities — switched-off gated kinds like `memory_*`/`write_util` simply don't appear), the enabled capabilities + the held conduct permissions, each held permission's short capability note (the library doc's body, capped), any one-time grants (`Granted for THIS RUN only (one-time user approvals — they do not persist beyond this run): <entity ids>` — present only when a request was allowed now, at boot via a consumed deferred decision or already this run), any **bound remote machines** (name + description + tags — the SSH hosts this routine can act on via the `remote` util, named here so the model knows its hardware without a discovery turn), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map** (name + one-line summary; a reserved util is flagged `[reserved — not granted to this routine]`, or `[reserved — declined by the user]` when a deny-forever tombstone covers it — the settled decision reads differently from the requestable one). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
-| 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the **WORKING PLAN** (`state/plan.md`, inlined in full up to 60 lines — the run's own living decomposition; see below), the `state/` file list, `stages/` module names, **`artifacts/` delivered so far** (name + size), the `traits/` practice-module names, the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), the newest **`.util_outputs/`** spills (path + size, only once something has spilled — `read_file one when you need what an earlier call already fetched, rather than re-running the util`), open deferred questions, answers that arrived since the last run. |
+| 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the **WORKING PLAN** (`state/plan.md`, inlined in full up to 60 lines — the run's own living decomposition; see below), the `state/` file list, `stages/` module names, **`artifacts/` delivered so far** (name + size), the general RULES binding the routine (slugs, from `routine.yaml`), the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), the newest **`.util_outputs/`** spills (path + size, only once something has spilled — `read_file one when you need what an earlier call already fetched, rather than re-running the util`), open deferred questions, answers that arrived since the last run. |
 
 **The projection: a run is shown only the vocabulary it has.** Sections (1), (2) and (6)
 describe action kinds, and all three are filtered through the same
@@ -58,24 +58,29 @@ a well-formed action the run wasn't allowed to take must stay a precise, teachin
 the real shapes: ~19% off the schema+prose surface for a default routine, ~12% for a
 conversation, ~60-64% for a tools-restricted workflow like `clarify-instruction`.
 
-**The practice set is the USER's, in both directions.** A routine's `traits/` files are its
-standing practices, listed in (7) and referenced from the workflow's Standing practices tail;
-the user adds or removes one at any time (`POST /routines/{slug}/traits`, the same endpoint
-conversations use — `rsched/traits.py` copies the library text VERBATIM, since only creation
-adapts, and rebuilds the tail from the directory). An addition reaches a run **already in
-flight**: the composed prompt is immutable under the caching contract, so `control.json`
-`add_traits` → `control.apply_trait_additions` appends the module's prose as an engine note at
-the next turn boundary. Removal has no live counterpart on purpose — prose already in a context
-cannot be unsaid — so it lands at the next run. A RUN never changes its own set; it may only
-**consult** an unheld module for the current run with `read_trait` (gated by the
-`practice-library` permission, default-on for conversations), which writes nothing.
+**The rule SET is the USER's; the rule TEXT is the library's.** The general rules binding a
+routine are `routine.yaml` `rules:` — slugs, never copies — listed in (7) and named in the
+workflow's Standing practices tail; the prose has ONE copy under `<library>/rules/` and is read
+on demand with `read_rule`, so a library revision reaches every holder at its next run with no
+migration. The user binds and unbinds at any time (`POST /routines/{slug}/rules`, the same
+endpoint conversations use — `rsched/rules.py` writes the config list and rebuilds the tail from
+it). A newly bound rule reaches a run **already in flight**: the composed prompt is immutable
+under the caching contract, so `control.json` `add_rules` → `control.apply_rule_additions`
+appends the rule's prose as an engine note at the next turn boundary. Unbinding has no live
+counterpart on purpose — prose already in a context cannot be unsaid — so it lands at the next
+run. A run never changes which rules bind it; `read_rule` is ungated (a routine must be able to
+read what binds it, and reading library prose has no side effect), and reading one it does NOT
+hold applies it for that run only. Rewriting the text is a separate capability: `write_rule`,
+gated by the `rule-authoring` permission under its own approval dial `rule_confirm`, because a
+revision lands on every holder. There is no delete — that would silently un-bind every holder,
+so a run reports it and the user removes it on the Library tab.
 | 8 | `# MESSAGES FROM THE USER (consume now)` | inbox drain at boot | Only present if messages were waiting — and only on a FRESH run: a resume delivers waiting messages as trailing `USER MESSAGE` injections instead (§2). |
 | 9 | `# REPORTS ADDRESSED TO YOU (consume now)` | the same inbox drain | The drained messages another ROUTINE addressed here with `report`, split out of (8): a report is not something the user said, and rendering it as one would have the run answer the wrong party. Each carries its own `REPORT <id> from routine <slug>` heading. Mid-run they arrive as `REPORT (injected mid-run)` (§2). What to do with one is the `report` bullet's job in the harness contract, so this section carries no standing prose. |
 
-So: **conduct** lives in the routine's own `traits/` files (referenced from the workflow,
-read on demand — never inlined), **capability facts** in (6), **memory** in (7) — and
+So: **conduct** lives in the shared general RULES (named by the workflow's Standing practices
+tail, read on demand — never inlined), **capability facts** in (6), **memory** in (7) — and
 whatever is not in the prompt is reachable by an action (`util name=list`,
-`read_file stages/…`, `read_file traits/…`, `memory_read <topic>`).
+`read_file stages/…`, `read_rule <slug>`, `memory_read <topic>`).
 
 **Deliberation levels** — the `say` contract sentence is picked by the routine's
 `deliberation` tuning key (`tuning.yaml`; `engine/deliberation.py` owns the wording; the
@@ -96,7 +101,7 @@ cannot rewrite the composed prompt (append-only caching contract), so the engine
 at the turn boundary as an ENGINE NOTE carrying the new contract sentence. Children inherit
 the parent's live level. The durable value lives in **`tuning.yaml`** — the routine's
 machine-tunable behavior parameters, classed with the RECIPE (the routine-improver may edit
-it under its fs_write_root, like main.md/stages/traits); `routine.yaml` stays the user's
+it under its fs_write_root, like main.md/stages/); `routine.yaml` stays the user's
 sealed authority config, no exceptions.
 
 **The note channel** — the capture tier under the deliberation contract: ANY action may
@@ -121,7 +126,7 @@ self-contained `prompt` verbatim (a top-level scheduled routine omits section 5 
 task is in the workflow; a **conversation** is the exception — it runs at depth 0 but carries
 section 5, its first message / `instruction.md`, since the converse pattern only defines HOW to
 work a reply). Permissions and capabilities are off (so no `write_util`, no `memory_*`, no
-reserved utils, no traits of their own), and section 7 collapses to `(subrun — no routine state
+reserved utils, no rules of their own), and section 7 collapses to `(subrun — no routine state
 digest; everything you need is in the instruction)`.
 
 ---
@@ -184,13 +189,15 @@ back — `format_observation(obs)`, always starting `OBSERVATION (<kind>…)`:
 - `OBSERVATION (edit_file): replaced 1 occurrence(s) in state/shortlist.md (now 1790 bytes)` — failures teach the fix (`anchor not found … copy it VERBATIM`, `anchor appears N times — extend it … or set all: true`)
 - `OBSERVATION (memory_read portal-quirks.md, 14 lines):\n<note>` / `no note named 'x'. Existing topics: …`
 - `OBSERVATION (memory_write): note portal-quirks.md revised (14 lines); INDEX.md updated from 'about'.`
+- `OBSERVATION (read_rule <slug>, 22 lines — this rule BINDS you). It states a principle: apply it to the case in front of you.\n<prose>` / `… — you do not hold this rule; it applies for the rest of this run only` / `OBSERVATION (read_rule list) — general rules in the shared library. One you do not hold applies to THIS run only; which rules bind you is the user's call:` + one `- <slug>[ (binds you)]: <summary>` line each / `no rule named 'x'. Available: …`. Ungated on purpose: a routine must be able to read what binds it, and reading library prose has no side effect.
+- `OBSERVATION (write_rule <slug>): authored|revised and committed to the shared library. It binds: <routines> — each picks the new text up at its next run.` / `… — REJECTED, the rule is unchanged:` + one `- <problem>` line each (the library linter: a `# rule:` heading, ≥3 tags, no capabilities in frontmatter — checked BEFORE the approval ask so a malformed draft never reaches the user) / `…waiting on the user's approval (q-…). The rule is unchanged until they answer.` / `…NOT applied — the user answered '<text>'.` / edit-mode misses that teach the route (`anchor not found in the rule's current text — copy it VERBATIM from {"kind": "read_rule", "name": "x"}` / `anchor occurs N× in the rule — extend it until unique, or set all: true`). Gated by the **rule-authoring** capability under its OWN approval dial `rule_confirm` (a revision lands on every holder — not the decision `confirm`/write_util governs), and refused inside a sub-workflow. There is no `remove_rule`: deleting one would silently un-bind every holder, so a run reports it and the user deletes it.
 - `OBSERVATION (llm reply):\n<the tool-call model's reply>`
 - `OBSERVATION (ask_user): question filed as deferred (q-…). … Continue.` / `…the user answered (via discord):\n<text>` / `…no answer within 8h — question stays open as deferred (q-…). Proceed on your stated default: …` / `…the user DEFERRED this question to a future run — it stays open as deferred (q-…). Proceed on your stated default: …` (the Decisions page's defer-to-next-run action — the timeout path, chosen by the user)
 - `OBSERVATION (ask_user — access request decided): <ids>: allowed for THIS RUN only — usable now; the grant does not survive this run.` — an ask carrying `request:` settles ONLY on one of the typed decisions (allow_now / allow_once / allow_forever / deny_now / deny_forever; the Decisions page's buttons — allow_once is offered for once-grantable classes: turn-action ones spend exactly at the matching action, D65; secret/fs ones spend — coarser, by design — at the next util invocation that receives them or a file action under the fs root, D76); free text on a request is HELD as a delayed user message like any non-settling approval reply (D38). The engine seeds the run's one-time overlay and re-projects the action schema at the decision, so an allowed-now kind is generatable on the very next turn; forever-decisions are persisted by the WEB at click time — the engine never writes routine.yaml. An allow_once phrase reads `allowed for ONE action only — your next matching action spends it, then the engine revokes it; request again if you need another use`; when the consuming action lands, its observation gains the engine line `[ONCE-GRANT SPENT: <ids> — allowed for one action, which this was; the grant is now revoked. Request it again if you need another use.]` and a boot-seeded once-grant is marked `(one action only)` on the CAPABILITIES granted-now line.
 - `OBSERVATION (write_util 'x': selftest passed, created and committed).` / `…approval requested from the user (q-…)…` / `…selftest FAILED — not committed):\n<exit code + labelled stdout/stderr, head+tail so the traceback's END survives>\nFix the script and write_util again.` — the failing write was rolled back, so a broken script is never left live. Doc-standard violations get their own head, never the selftest one (R93): `OBSERVATION (write_util 'x': docstring HEADER violations — not saved, the selftest was not run):` + one `- <problem>` line each (the standard: a `tags:` line, every credential env var declared on `secrets:`, a `net: outbound|none` line, siblings on `calls:`), rejected before the approval ask. EDIT MODE — `anchor`/`replacement` instead of `content` — patches the EXISTING source engine-side (a 3-line fix never re-emits a 50 KB script) and rides the exact same approval + selftest + rollback gate; its failures teach the route: `…edit mode: NOT applied — anchor not found in the util's current source — copy it VERBATIM (whitespace included) from {"kind": "util", "name": "show", "args": ["x", "--full"]}` / `anchor occurs N× in the source — extend it until unique, or set all: true`. A write_util for a slug the user DELETED from the library is rejected inside the schema-retry cycle (never a turn): the correction routes to an access request for the entity `recreate:<slug>` — an allow-now decision this run unblocks the recreate (interact.recreate_denial; `recreate:` has no allow-forever on purpose, so a fresh deletion always outranks an old grant).
 - `OBSERVATION (remove_util 'x': removed from the library and committed — recoverable from git history).` / `…REFUSED): still called by <utils>. Remove or update those callers first.` (the `gu remove` no-callers guard, applied to the action) / `…no such util…` / approval requested / DECLINED. `remove_util` is the curation counterpart to `write_util`, gated by the same **util-authoring** capability; a sub-workflow cannot curate the library (interact.handle_remove_util).
 - `OBSERVATION (schedule_run 'some-routine': armed one-shot so-XXXX for <fire_at> — the daemon fires it once, then consumes it).` / `…cancelled N one-shot(s)…` / `no routine 'x'…` / `REJECTED): <bad fire_at>`. `schedule_run` arms a ONE-SHOT future run of a routine (self-target always; another routine via the **scheduling** capability); the engine writes the `.control/schedule-once/<slug>/` request spool un-sandboxed and the daemon's OneShotManager fires-then-consumes it (interact.handle_schedule_run).
-- `OBSERVATION (create_routine: created routine 'arxiv-reading-list' from workflow 'general-task' — the daemon's registry rescan will pick it up shortly …).` / `…a routine 'x' already exists…` / `…FAILED): <error>` / `REJECTED): create_routine is only available from a top-level conversation…`. `create_routine` graduates a CONVERSATION into a new scheduled routine (D58): it reuses `workflows.scaffold` (decompose the chosen workflow into the routine's own `main.md` + `stages/`, adapt its traits, init its git repo), and is available ONLY inside a root conversation — the engine surfaces the kind to a conversation and the handler rejects every non-conversation as a backstop (engine.create_routine.handle_create_routine).
+- `OBSERVATION (create_routine: created routine 'arxiv-reading-list' from workflow 'general-task' — the daemon's registry rescan will pick it up shortly …).` / `…a routine 'x' already exists…` / `…FAILED): <error>` / `REJECTED): create_routine is only available from a top-level conversation…`. `create_routine` graduates a CONVERSATION into a new scheduled routine (D58): it reuses `workflows.scaffold` (decompose the chosen workflow into the routine's own `main.md` + `stages/`, record its held rules, init its git repo), and is available ONLY inside a root conversation — the engine surfaces the kind to a conversation and the handler rejects every non-conversation as a backstop (engine.create_routine.handle_create_routine).
 - `OBSERVATION (manage_group create: group 'Morning jobs' (grp-XXXX) now has members [...] and on_failure=...).` / `…list: default_on_failure='stop'; groups: …` / `…set to 'continue'` / `…deleted group 'grp-XXXX'` / `…armed a sequential fire of group 'grp-XXXX' …` / `REJECTED): …`. `manage_group` is the `/groups` page's routine-GROUP surface as an action (D61): one compact kind whose `verb` (list/create/update/delete/set-default/run) drives every operation over the same `rsched.groups` store the endpoints use, with member slugs validated against the live registry. Like `create_routine` it is available ONLY inside a root conversation — the engine surfaces the kind to a conversation and the handler rejects every non-conversation as a backstop (engine.manage_group.handle_manage_group).
 - `OBSERVATION (report filed as R7: 'schedule_run ate my args' — unaddressed, so it goes to triage. Refer to it by that id if you mention it again. Continue your own task.)`, or `…delivered to 'routine-improver' — it reads this on its next scheduled run (no run was started)…` when `target` is set. `R7` is the id stamped on it at append time (`rsched/reports.py`) and the item's handle on the console's Items page (docs/items.md). Other branches: `…no routine 'x'…` (with `suggestions` + `valid_targets`, like schedule_run) / `…cannot address a report to itself…` / the I/O failure, which says the report was NOT filed and to put it in the finish summary instead. `interact.handle_report` writes the `R<n>` ledger row un-sandboxed, plus the target's inbox message when addressed; the target's own drain stamps delivery back onto the row.
 - `OBSERVATION (spawn): sub-workflow 1 'child' started … keep going.`
@@ -267,7 +274,7 @@ turn-action classes, D65). One decision model, four states: allowed forever live
 entity's native routine.yaml key, denied forever is a `grants:` tombstone row,
 allowed/denied now live in-memory on the run (a resumed leg re-asks; a once-grant passes
 through allowed-now and is revoked at its first matching use). See
-docs/traits-permissions.md for the model; `entities.py` for the vocabulary.
+docs/rules-permissions.md for the model; `entities.py` for the vocabulary.
 
 ### 3f · Compaction (the middle gets replaced)
 
@@ -335,11 +342,11 @@ endpoint failure (`failed`) — these write the transcript `finish` event direct
 Produced by `engine/composer.py` for a realistic routine ("job-radar": 3 stages, previous
 runs, LEDGER, `.memory/`, one open + one answered question, one waiting inbox message,
 `discord` reserved and NOT granted, `write_util` granted with confirm: always, memory
-granted). Note what is NOT here: the routine's practice prose (its
-`traits/*.md` files) is never inlined — the workflow's Standing practices tail and the
-state digest point at the files, read on demand. The working-directory path is shortened.
+granted). Note what is NOT here: the general rules' prose is never inlined — the workflow's
+Standing practices tail and the state digest name the held slugs, and the run reads one with
+`read_rule` when it needs it. The working-directory path is shortened.
 The ACTION SCHEMA block below is the **projection** for that routine's kinds, not the full
-21-kind schema (see *The projection* above) — the kinds it cannot emit contribute neither
+22-kind schema (see *The projection* above) — the kinds it cannot emit contribute neither
 fields nor prose.
 
 ### 5.1 System prompt
@@ -355,11 +362,11 @@ Working directory: /home/user/routines/job-radar. All relative paths resolve the
 
 You have NO shell. The ONLY way to run code is a global util (the `util` action). If no util does what you need, WRITE one (the `write_util` action) and then call it — utils are reusable, selftested, and shared across all routines. You never run git yourself: the engine commits your working directory automatically at run end.
 
-Ownership of prose: your recipe is self-contained — the WORKFLOW below (its main.md entry and the stages/<name>.md modules it routes to) fully defines your task: goal, deliverable, constraints, completion criteria. It is the single source of truth for what to do. Cross-cutting conduct (when to ask the user, after-run improvement passes, util and research discipline) lives in this routine's PRACTICE MODULES under traits/ — your own adapted copies, referenced at the end of the workflow below; read the relevant one before the situation it governs. Your own recipe (main.md, stages/, traits/) is READ-ONLY to you — the routine-improver meta routine refines recipes; routine.yaml config is the user's — file a deferred ask_user for changes you believe are needed. What you are ALLOWED to do (util authoring, reserved channels, memory, previous runs) is a separate matter: CAPABILITIES, set only by the user and enforced by the engine on every action — the held permissions' notes below state the conduct for each.
+Ownership of prose: your recipe is self-contained — the WORKFLOW below (its main.md entry and the stages/<name>.md modules it routes to) fully defines your task: goal, deliverable, constraints, completion criteria. It is the single source of truth for what to do. Cross-cutting conduct (when to ask the user, research discipline, what to record) is set by the GENERAL RULES that bind you — named at the end of the workflow below and read with read_rule before the situation each one governs. A rule states a principle, not a procedure: apply it to the case in front of you. The prose lives once in the shared library, so a revision reaches every routine holding that rule; WHICH rules bind you is the user's config, and rewriting one needs the rule-authoring capability. Your own recipe (main.md, stages/) is READ-ONLY to you — the routine-improver meta routine refines recipes; routine.yaml config is the user's — file a deferred ask_user for changes you believe are needed. What you are ALLOWED to do (util authoring, reserved channels, memory, previous runs) is a separate matter: CAPABILITIES, set only by the user and enforced by the engine on every action — the held permissions' notes below state the conduct for each.
 
 > **Variant — recipe unlocked:** when a user-granted `fs_write_root` covers the routine's own
 > dir (the routine-improver's case; `grants.recipe_unlocked`), the recipe sentence instead
-> reads "Your own recipe (main.md, stages/, traits/, tuning.yaml) IS WRITABLE to you this
+> reads "Your own recipe (main.md, stages/, tuning.yaml) IS WRITABLE to you this
 > run…" — the prompt always states what the engine actually enforces.
 
 Budgets for this run: 60 turns, 45 minutes, unlimited total tokens, at most 8 subruns (depth ≤ 2). Spend them on the workflow's priorities. These are a CEILING, not a pace: work until the job (or a step of it worth handing over) is actually done, then `finish` deliberately. When the budget runs out you get exactly ONE reserved turn and it can only be a finish — so a summary you wrote at a point you chose always beats one written against that wall.
@@ -622,11 +629,11 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
 
 ## Standing practices
 
-These practice modules are this routine's own adapted standards — read each with read_file before the situation it governs, and refine them as you learn:
-- `traits/ask-policy.md` — when and how to involve the user. Consult before any ask_user.
-- `traits/global-utils.md` — util discovery and repair discipline. Consult before the first util call.
-- `traits/web-research.md` — verify external facts by searching. Consult before relying on a fact about the world.
-- `traits/ledger-discipline.md` — the run's LEDGER entry. Consult before finishing.
+These general rules bind this routine. Each states a principle, not a procedure — read one with read_rule before the situation it governs and apply it to the case in front of you:
+- `ask-policy` — when and how to involve the user. Read before any ask_user.
+- `web-research` — verify external facts by searching, don't guess from memory. Read before relying on a fact about the world.
+- `decision-record` — keep the reasoning the artefacts cannot carry. Read before finishing.
+- `intent-inference` — read every intervention as a standing preference. Read after the user corrects anything.
 
 *(No `# INSTRUCTION` section — this is a top-level routine: its task is compiled into the WORKFLOW
 above and its `stages/` modules, the single source of truth. There is no `instruction.md` on disk —
@@ -670,7 +677,7 @@ state/: hits.json (2B), phase.json (44B)
 
 stages/ stage modules (read the relevant one on demand with read_file): report.md, scan.md, score.md
 
-traits/ practice modules (this routine's own adapted standards — read each before the situation it governs; the workflow's Standing practices section says when): ask-policy.md, global-utils.md, ledger-discipline.md, web-research.md
+General rules binding this routine (read one with read_rule before the situation it governs; the workflow's Standing practices section says when): ask-policy, web-research, decision-record, intent-inference
 
 Last run result (20260711-070000):
 Scanned 38 postings, shortlisted 5 (top score 9 — LLM agent platform, 95 €/h).

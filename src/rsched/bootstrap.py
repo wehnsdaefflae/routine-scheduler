@@ -127,7 +127,7 @@ def seed_routines(routines_home: Path) -> int:
 # DEFAULT_PERMISSIONS entries introduced AFTER routines already existed never reach them via
 # scaffold. Slugs listed here are added ONCE to every existing routine at daemon boot —
 # tracked in a marker file, so a user who later revokes one is never overridden.
-ADOPT_PERMISSIONS: list[str] = ["practice-library"]
+ADOPT_PERMISSIONS: list[str] = ["global-utils"]
 _ADOPTED_MARKER = ".permissions-adopted.json"
 
 
@@ -218,7 +218,7 @@ def _merge_caps(caps: dict, extra: dict) -> None:
 
 
 def seed_libraries(home: Path) -> None:
-    """Populate an empty library repo (workflows/ + traits/ + permissions/ + utils/) from the
+    """Populate an empty library repo (workflows/ + rules/ + permissions/ + utils/) from the
     built-in seeds + git-init it (matches deploy/install.sh). The `gu` dispatcher is installed
     by utils_lib.ensure_library on first use.
     """
@@ -226,7 +226,7 @@ def seed_libraries(home: Path) -> None:
     home.mkdir(parents=True, exist_ok=True)
     if (root / "library-seed" / "workflows").is_dir():
         shutil.copytree(root / "library-seed" / "workflows", home / "workflows", dirs_exist_ok=True)
-    for kind in ("traits", "permissions"):
+    for kind in ("rules", "permissions"):
         (home / kind).mkdir(exist_ok=True)
         if (root / "library-seed" / kind).is_dir():
             for f in sorted((root / "library-seed" / kind).glob("*.md")):
@@ -247,15 +247,15 @@ def seed_libraries(home: Path) -> None:
 
 
 def sync_seed_library_docs(libraries_home: Path) -> int:
-    """Install seed workflows/traits/permissions MISSING from the live library (runs at
+    """Install seed workflows/rules/permissions MISSING from the live library (runs at
     every daemon boot, like sync_seed_utils). seed_libraries only runs at repo creation,
-    so a pattern or trait added to library-seed/ later — e.g. the `converse` workflow the
+    so a pattern or rule added to library-seed/ later — e.g. the `converse` workflow the
     Conversations tab materializes — would never reach an existing instance. Copies each
     absent file verbatim; NEVER overwrites (local edits win). Returns how many landed.
     """
     root = repo_root() / "library-seed"
     installed: list[str] = []
-    for kind, pattern in (("workflows", "*.py"), ("traits", "*.md"), ("permissions", "*.md")):
+    for kind, pattern in (("workflows", "*.py"), ("rules", "*.md"), ("permissions", "*.md")):
         src = root / kind
         dest = libraries_home / kind
         if not src.is_dir() or not libraries_home.is_dir():

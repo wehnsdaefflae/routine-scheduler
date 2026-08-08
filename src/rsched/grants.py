@@ -15,12 +15,14 @@ and a routine can never write its own routine.yaml into effect):
   so a doc-without-capability misconfiguration fails CLOSED.
 
 Schema — routine.yaml `capabilities:` and permission-doc `requires:` share it, except
-`confirm` is capabilities-only (the approval level is user policy, never a doc's demand):
+the approval dials are capabilities-only (an approval level is user policy, never a doc's
+demand):
 
     capabilities:
-      actions: [write_util, memory_read, memory_write]   # only GATED_KINDS are enforced
+      actions: [write_util, write_rule, memory_read, memory_write]  # only GATED_KINDS count
       utils: [discord]                 # reserved utils switched on for this routine
-      confirm: always | creations | never    # write_util approval level
+      confirm: always | creations | never       # write_util approval level
+      rule_confirm: always | creations | never  # write_rule approval level
       runs: none | last | all          # previous-run read depth (requires: last | all)
 
 Which utils are "reserved" at all is library-defined: the union of every permission
@@ -32,8 +34,8 @@ recipe/config files — a rejected call is corrected inside the schema-retry cyc
 never becomes a turn. Base kinds — util, read_file, write_file, llm, spawn, … — stay
 ungated.
 
-Recipe writes are NOT a capability: a run never edits its own recipe (main.md, stages/,
-traits/) — recipe improvement is the routine-improver meta routine's job. The single
+Recipe writes are NOT a capability: a run never edits its own recipe (main.md, stages/)
+— recipe improvement is the routine-improver meta routine's job. The single
 override is the user-granted resource `fs_write_roots`: when a write root covers a
 routine's dir (the improver's case), the engine unlocks the recipe files for that run.
 `routine.yaml` is NEVER writable by any run — not even the improver, not even under an
@@ -49,18 +51,26 @@ from pathlib import Path
 from .engine.actions import KINDS
 from .ids import is_slug
 
-GATED_KINDS = ("write_util", "remove_util", "memory_read", "memory_write", "detach",
-               "schedule_run", "read_trait")
+# `read_rule` is deliberately NOT gated: a routine must be able to read the general rules
+# it holds, and reading library prose has no side effect worth a decision. The catalog
+# (`name: "list"`) is open for the same reason.
+GATED_KINDS = ("write_util", "remove_util", "write_rule", "memory_read", "memory_write",
+               "detach", "schedule_run")
 # When no library permission doc requires a gated kind (e.g. the library predates it),
 # denials still name the doc that canonically covers its conduct.
 _DEFAULT_KIND_SOURCE = {"write_util": "util-authoring", "remove_util": "util-authoring",
                         "memory_read": "memory", "memory_write": "memory",
-                        "detach": "background-tasks", "schedule_run": "scheduling",
-                        "read_trait": "practice-library"}
+                        "write_rule": "rule-authoring",
+                        "detach": "background-tasks", "schedule_run": "scheduling"}
 _DEFAULT_RUNS_SOURCE = ("run-history",)
 # write_util approval policy, least → most permissive: "always" (user approves create AND
 # revise), "creations" (revisions are autonomous once the selftest passes; NEW utils ask),
 # "never".
+# Shared by BOTH approval dials: `confirm` (write_util) and `rule_confirm` (write_rule). Same
+# ladder, separate dials on purpose — a rule is held by many routines, so a revision lands in
+# every one of them at their next run. That blast radius is a different decision from "may this
+# routine author utils", and collapsing the two would make a never-confirm util policy silently
+# authorize it.
 CONFIRM_LEVELS = ("always", "creations", "never")
 # runs: access to previous runs, none → last (only the previous run) → all
 RUN_HISTORY_LEVELS = ("none", "last", "all")
@@ -71,14 +81,15 @@ RUN_HISTORY_LEVELS = ("none", "last", "all")
 WORKFLOW_LEVELS = ("catalog", "generate")
 # The routine's own recipe files — never writable by the owning run unless a user-granted
 # fs_write_root covers the routine dir (the improver's case; see the module docstring).
-# traits/ holds the routine's adapted practice copies; stages/ + main.md the materialized
-# workflow. routine.yaml (the user's config) is guarded separately: NEVER writable by any
-# run, even the improver — see CONFIG_FILE and GrantPolicy.deny.
-RECIPE_PREFIXES = ("main.md", "stages/", "traits/", "tuning.yaml")
+# stages/ + main.md are the materialized workflow. The general RULES are not here at all:
+# they live in the library, one copy, and no run writes them under any grant. routine.yaml
+# (the user's config) is guarded separately: NEVER writable by any run, even the improver —
+# see CONFIG_FILE and GrantPolicy.deny.
+RECIPE_PREFIXES = ("main.md", "stages/", "tuning.yaml")
 CONFIG_FILE = "routine.yaml"
 # An all-off capabilities mapping — the base for cascades and the subrun/clarify default.
-EMPTY_CAPABILITIES = {"actions": [], "utils": [], "confirm": "always", "runs": "none",
-                      "workflows": "catalog"}
+EMPTY_CAPABILITIES = {"actions": [], "utils": [], "confirm": "always",
+                      "rule_confirm": "always", "runs": "none", "workflows": "catalog"}
 
 
 def normalize_capabilities(raw: object, *, label: str = "capabilities",
@@ -86,8 +97,8 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
     """Validate + normalize one capabilities mapping (routine.yaml `capabilities:` or,
     with requires=True, a permission doc's `requires:`). Returns (mapping, problems);
     invalid parts are dropped and reported, so a bad edit degrades a capability instead
-    of crashing a run. `confirm` comes back as a CONFIRM_LEVELS value and is rejected
-    inside requires — the approval level is the user's policy, not a doc's demand.
+    of crashing a run. `confirm` / `rule_confirm` come back as CONFIRM_LEVELS values and are
+    rejected inside requires — an approval level is the user's policy, not a doc's demand.
     """
     if raw is None:
         return {}, []
@@ -95,10 +106,10 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
         return {}, [f"{label} must be a mapping (actions / utils"
                     + (" / runs)" if requires else " / confirm / runs)")]
     known = (("actions", "utils", "runs", "workflows") if requires
-             else ("actions", "utils", "confirm", "runs", "workflows"))
+             else ("actions", "utils", "confirm", "rule_confirm", "runs", "workflows"))
     problems = [f"{label}.{k}: unknown key (expected {' / '.join(known)})"
                 + (" — the approval level is a capability the user sets, not a requirement"
-                   if requires and k == "confirm" else "")
+                   if requires and k in ("confirm", "rule_confirm") else "")
                 for k in raw if k not in known]
     out: dict = {}
     for key, valid, kind_label in (("actions", lambda a: a in KINDS, "an action kind"),
@@ -112,11 +123,12 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
             continue
         problems += [f"{label}.{key}: {v!r} is not {kind_label}" for v in vals if not valid(v)]
         out[key] = [v for v in vals if valid(v)]
-    if "confirm" in raw and not requires:
-        if raw["confirm"] in CONFIRM_LEVELS:
-            out["confirm"] = raw["confirm"]
-        else:
-            problems.append(f"{label}.confirm must be always, creations or never")
+    for dial in ("confirm", "rule_confirm"):
+        if dial in raw and not requires:
+            if raw[dial] in CONFIRM_LEVELS:
+                out[dial] = raw[dial]
+            else:
+                problems.append(f"{label}.{dial} must be always, creations or never")
     runs_ok = ("last", "all") if requires else ("none", "last", "all")
     if "runs" in raw:
         if raw["runs"] in runs_ok:
@@ -185,7 +197,9 @@ def capabilities_for(active: list[str], lib: dict[str, dict],
         if _WORKFLOW_RANK.get(need_wf, 0) > _WORKFLOW_RANK.get(workflows, 0):
             workflows = need_wf
     return {"actions": actions, "utils": utils,
-            "confirm": caps.get("confirm") or "always", "runs": runs, "workflows": workflows}
+            "confirm": caps.get("confirm") or "always",
+            "rule_confirm": caps.get("rule_confirm") or "always",
+            "runs": runs, "workflows": workflows}
 
 
 def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> dict:
@@ -193,7 +207,7 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
     means of asking for it (see the module docstring's two-layer model): a gated action or
     reserved util survives ONLY when some HELD conduct permission's `requires:` names it,
     and run access falls to `none` unless a held doc grants it. The policy DIALS that ride
-    a capability — write_util's `confirm` level and the run-history depth — are preserved:
+    a capability — the two approval levels and the run-history depth — are preserved:
     they are user policy, meaningful only while their backing permission is held.
 
     This is the complement of `capabilities_for`'s raise: apply raise THEN floor and the
@@ -228,7 +242,9 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
     runs = (caps.get("runs") or "none") if grants_runs else "none"
     workflows = (caps.get("workflows") or "catalog") if grants_wf else "catalog"
     return {"actions": actions, "utils": utils,
-            "confirm": caps.get("confirm") or "always", "runs": runs, "workflows": workflows}
+            "confirm": caps.get("confirm") or "always",
+            "rule_confirm": caps.get("rule_confirm") or "always",
+            "runs": runs, "workflows": workflows}
 
 
 def _norm_rel(path: str) -> str:
@@ -261,6 +277,7 @@ class GrantPolicy:
     gated_utils: dict = field(default_factory=dict)   # util → library docs requiring it
     kind_sources: dict = field(default_factory=dict)  # gated kind → library docs requiring it
     confirm: str = "always"                    # write_util approval policy
+    rule_confirm: str = "always"               # write_rule approval policy (own blast radius)
     run_history: str = "none"                  # previous-runs read access: none | last | all
     workflows: str = "catalog"                 # child-pattern sourcing: catalog | generate
     # The four-state grant model's persistent NO: entity ids (entities.py) the user has
@@ -363,6 +380,15 @@ class GrantPolicy:
         """Must the user approve this write_util? (creating=False → revising an existing util)"""
         return self.confirm == "always" or (self.confirm == "creations" and creating)
 
+    def needs_rule_confirm(self, creating: bool) -> bool:
+        """Must the user approve this write_rule? (creating=False → revising an existing rule)
+
+        Its own dial, deliberately: a rule revision reaches every routine holding it, so the
+        decision is not the same one as authoring a util for yourself.
+        """
+        return (self.rule_confirm == "always"
+                or (self.rule_confirm == "creations" and creating))
+
     def deny(self, action: dict) -> str | None:
         """A precise, actionable rejection for a gated call — or None when permitted. Worded
         for the model inside the schema-retry cycle: capabilities are switched by the USER
@@ -420,8 +446,8 @@ class GrantPolicy:
                             f"File a deferred ask_user describing the change you need.")
                 if writes and is_recipe_path(path) and not self.recipe_unlocked:
                     return (f"writing {_norm_rel(path)!r} would modify this routine's own recipe "
-                            f"(main.md / stages/ / traits/ / tuning.yaml) — a run never edits its "
-                            f"own recipe; the routine-improver meta routine refines it. File a "
+                            f"(main.md / stages/ / tuning.yaml) — a run never edits its own "
+                            f"recipe; the routine-improver meta routine refines it. File a "
                             f"deferred ask_user describing the change instead.")
         return None
 
@@ -457,6 +483,7 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                        gated_utils={k: tuple(v) for k, v in gated_utils.items()},
                        kind_sources={k: tuple(v) for k, v in kind_sources.items()},
                        confirm=caps.get("confirm") or "always",
+                       rule_confirm=caps.get("rule_confirm") or "always",
                        run_history=caps.get("runs") or "none",
                        workflows=caps.get("workflows") or "catalog",
                        denied=frozenset(k for k, v in (grants_map or {}).items()

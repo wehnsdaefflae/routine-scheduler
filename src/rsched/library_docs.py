@@ -1,9 +1,9 @@
 """Library markdown docs — shared access to the two per-document library sets:
 
-- **traits** (`<library>/traits/`): reusable practice prose. Selected at routine creation,
-  ADAPTED to the routine and copied into `<routine>/traits/`; from then on they are the
-  routine's own files (the routine may refine them; the user edits them like any routine
-  file). The library copy is only the template.
+- **rules** (`<library>/rules/`): general rules — principle prose a run applies to its own
+  case. There is exactly ONE copy: a routine holds SLUGS (routine.yaml `rules:`) and reads
+  the prose on demand (`read_rule`), so a revision here reaches every holder at once. Nothing
+  copies them anywhere; every run is read-only to them.
 - **permissions** (`<library>/permissions/`): conduct docs of the two-layer permission set.
   Activation lives in routine.yaml `permissions:` (user-only); the frontmatter `requires:`
   of the LIBRARY copy declares which capabilities the doc's instructions presume (see
@@ -11,7 +11,7 @@
   capability notes shown in the UI and appended to the prompt's CAPABILITIES section when
   active.
 
-Both are one markdown file per doc with a `# trait: <name> — <summary>` /
+Both are one markdown file per doc with a `# rule: <name> — <summary>` /
 `# permission: <name> — <summary>` heading line.
 """
 
@@ -29,7 +29,7 @@ from .paths import atomic_write
 
 # Title before the em-dash may be a kebab slug OR a readable phrase ("ask policy"); the summary is
 # whatever follows the em-dash. (Splitting on a bare hyphen would swallow hyphens inside a slug.)
-DOC_RE = re.compile(r"^#\s*(?:trait|permission):\s*(?P<slug>.+?)\s*—\s*(?P<summary>.+)$",
+DOC_RE = re.compile(r"^#\s*(?:rule|permission):\s*(?P<slug>.+?)\s*—\s*(?P<summary>.+)$",
                     re.MULTILINE)
 
 
@@ -53,7 +53,7 @@ def doc_body(raw: str) -> str:
 
 
 def ensure_dir(home: Path) -> None:
-    """traits/ and permissions/ live in the library repo — the repo itself is managed by
+    """rules/ and permissions/ live in the library repo — the repo itself is managed by
     utils_lib.ensure_library; here we only make sure the directory exists.
     """
     home.mkdir(parents=True, exist_ok=True)

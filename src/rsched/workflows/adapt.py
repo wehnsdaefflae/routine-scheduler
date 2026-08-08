@@ -4,9 +4,13 @@
   the routine's main.md. Used for sub-routines and as a fallback.
 - `decompose`: the generator LLM applies the workflow to the initial instruction and splits it
   into the routine's entry (main.md) + one markdown STAGE per step/state of the workflow. Runs
-  as a PIPELINE of scoped completions — outline → main → one call per stage → adapted traits —
-  so no single completion carries the whole routine (the 2026-07-24 one-shot truncation shipped
+  as a PIPELINE of scoped completions — outline → main → one call per stage — so no single
+  completion carries the whole routine (the 2026-07-24 one-shot truncation shipped
   stageless/stub routines twice in one day). Falls back to `materialize` on failure.
+
+  General RULES are NOT decomposed: a rule is general by construction, lives once in the
+  library, and the run applies it to its own case. Creation only records which slugs the
+  routine holds.
 """
 
 from __future__ import annotations
@@ -36,7 +40,7 @@ def _routine_frontmatter(meta: dict, slug: str, provenance: dict) -> dict:
     """The keys a materialized main.md carries. Only `materialized_from` and `tools` are READ
     back (runtime.load_workflow); `name`/`slug` stay as the human identity of a file the user
     edits in the recipe editor. Anything else here would be a second copy of a fact whose
-    source of truth is elsewhere — the `stages/` and `traits/` directories, routine.yaml — and
+    source of truth is elsewhere — the `stages/` directory, routine.yaml — and
     would silently drift from it.
     """
     fm = {"name": meta.get("name", slug), "slug": meta.get("slug", slug),
@@ -60,8 +64,8 @@ def materialize(home: Path, slug: str) -> tuple[str, dict]:
 
 log = logging.getLogger("rsched.adapt")
 
-# Pipeline budgets: each completion carries ONE artifact (the outline, main, a single stage, or
-# the adapted traits) — small enough that output truncation cannot ship a stub routine. Each
+# Pipeline budgets: each completion carries ONE artifact (the outline, main, or a single
+# stage) — small enough that output truncation cannot ship a stub routine. Each
 # call gets DECOMPOSE_ATTEMPTS tries (transport errors AND invalid payloads) before the whole
 # pipeline degrades to the verbatim pattern.
 DECOMPOSE_TIMEOUT_S = 300
@@ -69,7 +73,6 @@ DECOMPOSE_ATTEMPTS = 2
 OUTLINE_MAX_TOKENS = 8000
 MAIN_MAX_TOKENS = 16000
 STAGE_MAX_TOKENS = 16000
-TRAITS_MAX_TOKENS = 32000
 
 OUTLINE_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["stages"],
@@ -99,14 +102,6 @@ STAGE_SCHEMA = {
                             "description": "the stage's complete markdown module"}},
 }
 
-TRAITS_SCHEMA = {
-    "type": "object", "additionalProperties": False, "required": ["traits"],
-    "properties": {"traits": {"type": "array", "items": {
-        "type": "object", "additionalProperties": False, "required": ["slug", "body"],
-        "properties": {"slug": {"type": "string", "description": "the trait's slug, unchanged"},
-                       "body": {"type": "string",
-                                "description": "the trait ADAPTED to this routine"}}}}},
-}
 
 _CONTEXT = """\
 You are generating a ROUTINE by applying a workflow pattern to a specific task.
@@ -188,31 +183,6 @@ _STAGE_RULES = """\
 
 Return ONLY the JSON object {"body": ...}."""
 
-_TRAITS_PROMPT = """\
-You are adapting practice modules (TRAITS) for a routine that was just generated.
-
-INSTRUCTION (the task this routine runs):
----
-{instruction}
----
-
-The routine's main.md:
----
-{main}
----
-
-TRAITS (reusable practice modules this routine adopts; each will live as the routine's own file
-`traits/<slug>.md`, read on demand):
-{trait_docs}
-
-Return "traits": one entry per trait above, same slug, with the SAME practice ADAPTED to this
-routine — keep its rules, structure and heading line (`# trait: <name> — <summary>`), but make
-wording and examples concrete to THIS task, and cut anything that cannot apply to it. Keep each
-about as long as the original or shorter.
-
-Return ONLY the JSON object {{"traits": [{{"slug", "body"}}, ...]}}."""
-
-
 def _render_outline(outline: list[dict]) -> str:
     return "\n".join(f"- `stages/{s['name']}.md` — scope: {s['scope']} · inputs: {s['inputs']}"
                      f" · outputs: {s['outputs']}" for s in outline)
@@ -224,10 +194,9 @@ def _is_stub(body: str) -> bool:
 
 
 def _pipeline(resolve, raw: str, instruction: str, *, params: dict, pins: list[str],
-              trait_bodies: dict[str, str], slug: str, progress=None) -> dict:
-    """Outline → main → one call per stage → adapted traits. Raises on any hard failure
-    (the caller falls back to materialize); a failed trait adaptation degrades softly to
-    verbatim library traits. `progress(step: str, done: int, total: int)` — best-effort
+              rule_lines: str, slug: str, progress=None) -> dict:
+    """Outline → main → one call per stage. Raises on any hard failure (the caller falls
+    back to materialize). `progress(step: str, done: int, total: int)` — best-effort
     live reporting (F192: the wizard shows WHICH step the build is on); total grows once
     the outline fixes the stage count.
 
@@ -297,17 +266,16 @@ def _pipeline(resolve, raw: str, instruction: str, *, params: dict, pins: list[s
     report("planning the stage outline", 0, 3)
     outline = complete(context + _OUTLINE_TAIL + param_note + pin_note,
                        OUTLINE_SCHEMA, OUTLINE_MAX_TOKENS, "outline", check=check_outline)
-    # total = outline + main + each stage + traits (traits only when selected)
-    total = 2 + len(outline) + (1 if trait_bodies else 0)
+    # total = outline + main + each stage
+    total = 2 + len(outline)
     outline_txt = _render_outline(outline)
 
     standing = ""
-    if trait_bodies:
-        trait_lines = "\n".join(f"- {t}: {body.strip().splitlines()[0]}"
-                                for t, body in trait_bodies.items())
-        standing = ("\n\nEnd main with a `## Standing practices` section: one line per trait — "
-                    "`- traits/<slug>.md — <when to read it during a run>` — for these traits "
-                    "(adapted copies will exist as the routine's own files):\n" + trait_lines)
+    if rule_lines:
+        standing = ("\n\nEnd main with a `## Standing practices` section: one line per rule — "
+                    "`- <slug> — <when to read it during a run>` — for the general rules this "
+                    "routine holds. They live in the shared library and the run reads one with "
+                    "read_rule; do NOT restate or tailor their prose here:\n" + rule_lines)
 
     def check_main(data: dict) -> str:
         main = str(data.get("main") or "").strip()
@@ -347,21 +315,7 @@ def _pipeline(resolve, raw: str, instruction: str, *, params: dict, pins: list[s
     if missing:
         raise ValueError(f"decompose dropped pinned deliverable(s): {missing}")
 
-    adapted: dict[str, str] = {}
-    if trait_bodies:
-        report("adapting the practice modules (traits)", 2 + len(outline), total)
-        try:
-            docs = "\n\n".join(f"--- trait: {t} ---\n{body}"
-                               for t, body in trait_bodies.items())
-            tdata = complete(_TRAITS_PROMPT.format(instruction=instruction, main=main,
-                                                   trait_docs=docs),
-                             TRAITS_SCHEMA, TRAITS_MAX_TOKENS, "traits")
-            adapted = {t["slug"]: str(t["body"]).strip() for t in (tdata.get("traits") or [])
-                       if t.get("slug") in trait_bodies and str(t.get("body", "")).strip()}
-        except Exception as exc:  # soft: the caller copies the library traits verbatim
-            log.warning("decompose(%s) trait adaptation failed — library traits will be "
-                        "copied verbatim: %s", slug, exc)
-    return {"main": main, "stages": stages, "traits": adapted, "degraded": False}
+    return {"main": main, "stages": stages, "degraded": False}
 
 
 def _params_markdown(params: dict) -> str:
@@ -383,19 +337,18 @@ def _params_markdown(params: dict) -> str:
 
 
 def decompose(server, slug: str, instruction: str, *, params: dict | None = None,
-              traits: list[str] | None = None, progress=None) -> dict:
+              rules: list[str] | None = None, progress=None) -> dict:
     """Generator LLM: apply a single-file workflow to `instruction` and split it into the
-    routine's main.md body + stage/state modules, ADAPTING the selected traits along the way.
-    Returns {'main': <body>, 'stages': {name: body}, 'traits': {slug: adapted body},
-    'degraded': bool}.
+    routine's main.md body + stage/state modules. Returns {'main': <body>,
+    'stages': {name: body}, 'degraded': bool}.
 
-    Runs as a pipeline of SCOPED completions (outline → main → one per stage → traits), each
+    Runs as a pipeline of SCOPED completions (outline → main → one per stage), each
     retried DECOMPOSE_ATTEMPTS times over transport errors and invalid payloads — the one-shot
     design shipped stub routines whenever its single huge completion truncated (D41,
     2026-07-24). Any hard failure degrades to the whole workflow rendered as main.md with
     `degraded` True so callers can SAY so.
     """
-    from .. import library_docs
+    from .. import rules as rules_mod
 
     meta, raw = read_workflow(server.libraries_home, slug)
     # A pattern may PIN deliverable paths (META["pin"]: str | list) that MUST survive
@@ -404,22 +357,21 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
     # the generator sometimes builds THAT routine and silently drops the pattern's real
     # deliverable. A dropped pin falls back to the verbatim pattern, which always keeps it.
     pins = [meta["pin"]] if isinstance(meta.get("pin"), str) else list(meta.get("pin") or [])
-    trait_bodies: dict[str, str] = {}
-    for t in traits or []:
-        raw_doc = library_docs.read_doc(server.traits_home, t)
-        if raw_doc:
-            trait_bodies[t] = library_docs.doc_body(raw_doc).strip()
+    # rules reach the generator as an INDEX only (slug + summary): main.md must route to
+    # them, and must not paraphrase prose that lives in the library.
+    rule_lines = "\n".join(f"- {slug_}: {summary}" for slug_, summary
+                           in rules_mod.summaries(server.rules_home, list(rules or [])).items())
     try:
         from ..endpoints import EndpointRegistry
 
         return _pipeline(EndpointRegistry(server).for_system, raw, instruction,
                          params=params or {}, pins=pins,
-                         trait_bodies=trait_bodies, slug=slug, progress=progress)
+                         rule_lines=rule_lines, slug=slug, progress=progress)
     except Exception as exc:
         # a stageless recipe is a real quality drop — the fallback must never be silent
         log.warning("decompose(%s) pipeline failed — materializing the whole pattern as "
                     "main.md", slug, exc_info=exc)
         from .pyworkflow import render_markdown
         return {"main": render_markdown(raw, meta) + _params_markdown(params or {}),
-                "stages": {}, "traits": {},
+                "stages": {},
                 "degraded": True, "reason": f"{type(exc).__name__}: {exc}"}

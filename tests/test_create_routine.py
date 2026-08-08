@@ -21,11 +21,11 @@ SEED = REPO / "library-seed"
 
 
 def _server(tmp_path):
-    """Tmp homes with the REAL library-seed workflows/traits/permissions copied in, so
+    """Tmp homes with the REAL library-seed workflows/rules/permissions copied in, so
     scaffold's decompose degrades to its no-LLM fallback (no endpoint) and still writes a
     complete routine dir."""
     lib = tmp_path / "library"
-    for kind in ("workflows", "traits", "permissions"):
+    for kind in ("workflows", "rules", "permissions"):
         shutil.copytree(SEED / kind, lib / kind, ignore=shutil.ignore_patterns("__pycache__"))
     s = ServerConfig()
     s.routines_home = tmp_path / "routines"

@@ -14,7 +14,7 @@ _PERMISSION_NOTE_MAX_LINES = 14
 def _permission_notes(ctx: RunContext, g) -> str:
     """Usage notes for the held permissions that carry one — the library permission's body,
     capped. This is the ONLY prose a permission contributes to the prompt (permissions are
-    an enforcement surface, not standards); traits carry the routine's practice prose.
+    an enforcement surface, not standards); the general RULES carry the principles.
     """
     from .. import library_docs
 

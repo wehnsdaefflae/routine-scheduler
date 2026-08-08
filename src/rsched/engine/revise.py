@@ -4,7 +4,7 @@ for a change from the run view ("Revise recipe" beside the message box).
 The web `/revise` endpoint drops a marker in the finished run's dir + injects the framed
 instruction, then resumes the run. The turn loop reads the marker ONCE at init and, for that
 leg only, grants recipe self-write (`recipe_unlocked`) plus the file-edit kinds — so the
-orchestrator can read and rewrite its own `main.md` / `stages/` / `traits/` / `tuning.yaml`
+orchestrator can read and rewrite its own `main.md` / `stages/` / `tuning.yaml`
 with `edit_file`/`write_file`, even when the routine's workflow `tools:` list omits them.
 
 No persisted `fs_write_root` is involved, so the recipe stays sealed to every ORDINARY run —

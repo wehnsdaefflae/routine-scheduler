@@ -4,7 +4,7 @@ utils, run-history depth, workflow generation) AND the resource layer (secrets,
 connections, machines, filesystem roots) plus the recreate unlock, so every access
 request, denial tombstone and one-run grant speaks the same language.
 
-Four decision states per entity (docs/traits-permissions.md):
+Four decision states per entity (docs/rules-permissions.md):
 - allowed forever  — the NATIVE routine.yaml key (capability via the permission cascade,
   binding present, fs root listed). `secret:` is the one class with no native switch:
   its allow-forever is a `grants:` true row.
@@ -13,7 +13,7 @@ Four decision states per entity (docs/traits-permissions.md):
 
 Deliberately NOT entities — structurally impossible stays impossible, never a deniable
 row: routine.yaml writes, runs/ writes, .memory/ via file actions, own-recipe writes,
-base action kinds, traits (the grantable thing is `action:read_trait`), conduct docs
+base action kinds, general rules (library prose, read-only to every run), conduct docs
 (they ride the permission cascade; they grant nothing).
 """
 

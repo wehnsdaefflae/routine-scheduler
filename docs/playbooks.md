@@ -15,7 +15,7 @@ way it worked last time" (reuse) and "that was right — remember how to do it" 
   changes how the agent loops, what it's allowed to do, or its schedule.
 - It is **generalized**. A playbook isn't a frozen recording of one conversation — it's the
   *pattern* behind it, with the specifics that should change between uses turned into parameters.
-- It lives in the **library** (Library tab), git-versioned and synced alongside workflows, traits,
+- It lives in the **library** (Library tab), git-versioned and synced alongside workflows, rules,
   permissions, and utils — so a playbook you save on one instance travels with the rest.
 
 ## The three moves

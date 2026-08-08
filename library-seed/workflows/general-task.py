@@ -35,7 +35,7 @@ META = {
                    "ordinary tool work.",
     "version": 9,
     "tags": ["general", "research", "tool-use"],
-    "includes": ["ask-policy", "global-utils", "web-research", "ledger-discipline"],
+    "includes": ["ask-policy", "web-research", "decision-record", "intent-inference"],
     "tools": None,          # None = every action kind is allowed
 }
 

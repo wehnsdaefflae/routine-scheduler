@@ -11,9 +11,10 @@ action per turn. **A second AGENT LOOP in the path is banned**: it fights this h
 conversation. Endpoints are model TRANSPORTS only (docs/architecture.md). Routines have **no shell** — the
 only way to run code is a global util (a reserved `shell` util exists behind the `shell`
 permission), and every util subprocess runs inside a Landlock sandbox scoped to the run's
-permissions (docs/sandboxing.md). The instruction contains only the task; conduct prose lives in the routine's own
-`traits/` (adapted in at creation); schedule, PERMISSIONS, workdir, budgets, and model roles are
-routine config (`routine.yaml` / UI).
+permissions (docs/sandboxing.md). The instruction contains only the task; cross-cutting conduct is
+a set of GENERAL RULES with ONE library copy each (`rules:` in routine.yaml holds slugs — the run
+reads the prose with `read_rule` and applies the principle to its own case); schedule, PERMISSIONS,
+workdir, budgets, and model roles are routine config (`routine.yaml` / UI).
 
 ## Where the detail lives
 
@@ -26,10 +27,9 @@ one you are about to touch, not all of them.
 - `docs/prompt-anatomy.md` — every string the orchestrator sees, and why. Revise it with ANY
   change to composer / loop / actions / schema_guard wording; `tests/test_prompt_anatomy.py`
   fails on drift
-- `docs/traits-permissions.md`, `docs/curated-traits.md` — the two-layer permission set,
-  the ACCESS-REQUEST grant model (entities.py ids; allow/deny × now/forever, plus allow-once
-  for turn-action classes),
-  and each curated practice module's provenance
+- `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer, the two-layer
+  permission set, the ACCESS-REQUEST grant model (entities.py ids; allow/deny × now/forever, plus
+  allow-once for turn-action classes), and each curated rule's provenance
 - `docs/subtasks.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
   — the child-task and firing mechanisms
 - `docs/conversations.md`, `docs/playbooks.md` — interactive sessions and reusable briefs. A
@@ -68,15 +68,15 @@ one you are about to touch, not all of them.
 - `uv run rsched daemon` — scheduler + web UI in one process (what systemd runs).
 - `uv run rsched validate | lint | suggest --instruction … | scaffold <slug> --workflow … | abort <slug>[:<ts>]`
   — see `rsched --help`. `validate` checks every routine's `routine.yaml` AND lints its recipe
-  prose (`main.md`, `stages/`, `traits/`); `lint` covers the library. `engine-run` is internal
+  prose (`main.md`, `stages/`); `lint` covers the library. `engine-run` is internal
   (daemon-spawned).
 
 ## Core contracts — extend, never repurpose
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, edit_file,
-  memory_read, memory_write, read_trait, llm, spawn, subtask, detach, schedule_run,
-  subruns, kill, wait, ask_user, report, finish` (21). `finish` and `report` are ALWAYS_KINDS — available on every
+  memory_read, memory_write, read_rule, write_rule, llm, spawn, subtask, detach, schedule_run,
+  subruns, kill, wait, ask_user, report, finish` (22). `finish` and `report` are ALWAYS_KINDS — available on every
   turn regardless of the workflow's `tools:` allowlist or the capability set. **The engine never ends a run
   the model could have ended itself**: the FIRST budget violation spends a one-time RESERVED FINISH TURN
   (schema narrowed to `finish`, one turn granted, `OBSERVATION (budget spent)` telling it so), and only a
@@ -120,6 +120,16 @@ one you are about to touch, not all of them.
   three enforcers (validate_action, the util sandbox's roots, declared-only env injection).
   `memory_*` are the ONLY way into `.memory/` (generic file actions are rejected there); the engine
   owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line note cap.
+  **`read_rule` / `write_rule` are the general-rules layer** — ONE library copy per rule
+  (`<library>/rules/`), never a per-routine fork. `read_rule` is UNGATED (a routine must be able
+  to read what binds it, and library prose has no side effect); `write_rule` is gated by the
+  `rule-authoring` permission and carries its OWN approval dial `rule_confirm` — a rule revision
+  lands on every holder at its next run, which is not the decision `confirm` (write_util) governs.
+  The two halves are owned apart: WHICH rules bind a routine is config (`rules:`, user-only, and no
+  run writes routine.yaml), the TEXT is the library's. There is deliberately **no remove_rule** —
+  deleting a rule silently un-binds every holder with nothing to catch it, so a run reports it and
+  the user deletes it. The `rules-review` meta routine owns the layer: it reads how runs actually
+  interpreted each rule and revises the shared text from that evidence.
   **Util output too large for its observation is SAVED, not lost** — `engine/outputs.py` spills the
   full captured text to `.util_outputs/<run-ts>/t<turn>-<util>.out` and the observation that lost the
   middle carries the path (so the store needs no index). ONLY truncated output is kept: an
@@ -153,8 +163,8 @@ by a test, by the engine, or by a past incident.
   runs ruff, mypy AND vulture (dead code — what ruff cannot see is a symbol whose last caller
   went away; `src` and `tests` are scanned together so a src symbol used only by a test is not
   reported), and the engine bypasses pre-commit — so a red gate can otherwise sail through.
-- **A recipe says WHAT, never which tool.** Workflow patterns, materialized recipes, traits and
-  playbooks may not name a util or show its flags — they name the capability, the run picks the
+- **A recipe says WHAT, never which tool.** Workflow patterns, materialized recipes, general
+  rules and playbooks may not name a util or show its flags — they name the capability, the run picks the
   tool from its live CAPABILITIES catalog, and what worked is persisted in the ROUTINE'S memory,
   never the recipe. Enforced AT GENERATION — `workflows/adapt.py` (materialization) and
   `workflows/generate.py` (pattern drafting) spell out the forbidden forms in the prompt — not

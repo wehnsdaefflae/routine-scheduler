@@ -13,7 +13,18 @@ schedule:
   catchup: skip
 permissions:
 - communication
+- global-utils
 - util-authoring
+rules:
+- ask-policy
+- web-research
+- decision-record
+- evidence-discipline
+- change-restraint
+- review-recall
+- intent-inference
+- problem-routing
+- root-cause-fix
 capabilities:
   actions:
   - write_util

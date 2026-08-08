@@ -3,8 +3,8 @@ projection of ACTION_SCHEMA onto them.
 
 `actions.py` stays the single source of truth for what a turn may do — this module only
 NARROWS what the model is shown to what the engine would accept anyway. A run whose
-workflow `tools:` allowlist and capabilities permit 8 of the 23 kinds was previously sent
-all 23 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
+workflow `tools:` allowlist and capabilities permit 8 of the 24 kinds was previously sent
+all 24 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
 model read, every turn, the full description of channels the validator would reject. The
 projection is derived from `actions.KIND_FIELDS` — the same map `validate_action` builds
 its allowed-field set from — so the shown schema and the enforced contract cannot drift.
@@ -161,11 +161,19 @@ the engine maintains .memory/INDEX.md from `about`; delete: true removes a note.
 memory_read(name) returns one. The state digest shows the INDEX at run start — consult it \
 before re-discovering anything; revise notes that turned out wrong instead of appending \
 contradictions. read_file / write_file are rejected on .memory/ paths."""),
-    (("read_trait",), """- read_trait: CONSULT a practice module from the shared library that \
-you do not already hold — \
-`name: "list"` for the catalog, `name: "<slug>"` for one module's prose. It applies for the rest \
-of THIS run only and is never added to your recipe (your traits/ set is the user's to change); if \
-one keeps proving necessary, name it in your finish summary."""),
+    (("read_rule",), """- read_rule: read a GENERAL RULE from the shared library — \
+`name: "list"` for the catalog, `name: "<slug>"` for one rule's prose. The rules that bind you are \
+named in Standing practices; read one before the situation it governs and apply it to the case in \
+front of you. Reading one you do NOT hold applies it for the rest of this run only; which rules \
+bind you is the user's call, so if one keeps proving necessary, name it in your finish \
+summary."""),
+    (("write_rule",), """- write_rule: author a NEW general rule, or revise an existing one, in \
+the shared library — `content` (the complete rule markdown) to create, `anchor` + `replacement` \
+to revise in place. What you write binds EVERY routine holding that rule from its next run, so \
+say what evidence made the current wording wrong. A rule states a principle and names no tool, \
+no routine and no file — mechanism belongs in a recipe or a conduct doc. The library linter \
+gates the write and your approval level decides whether the user confirms it. There is no \
+delete: a rule that should go is a report or a deferred ask_user naming it."""),
     (("llm",), """- llm: one scoped, stateless LLM subcall (runs on this routine's tool-call \
 model). It sees ONLY \
 your prompt/system — include everything it needs; set response_schema for structured replies."""),
@@ -208,7 +216,7 @@ scheduled routine — `target` (its new kebab-case slug), `name` (its display na
 clarified task, decomposed into the routine's stages — say WHAT it does, not when), and optional \
 `workflow` (the library pattern to build from, default general-task). Clarify the task WITH the \
 user first — what it produces, what "done" is, which pattern fits — THEN emit this to materialize \
-it (its own dir, adapted traits, git repo). The daemon picks it up on its next registry rescan; \
+it (its own dir, its held rules, git repo). The daemon picks it up on its next registry rescan; \
 tell the user it exists and what to set next (its schedule). This is the ONLY way a routine is \
 created — it is available only inside a conversation."""),
     (("manage_group",), """- manage_group: manage routine GROUPS (ordered collections that fire \

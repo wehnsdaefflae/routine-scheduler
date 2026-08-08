@@ -65,7 +65,7 @@ def test_deployed_config_keys_load_exactly(tmp_path):
     assert server.system_model == "ds"
     # derived properties hang off libraries_home
     assert server.libraries_home == server.libraries_home == server.libraries_home
-    assert server.traits_home == server.libraries_home / "traits"
+    assert server.rules_home == server.libraries_home / "rules"
     assert server.permissions_home == server.libraries_home / "permissions"
     assert server.library_sync.enabled is True and server.library_sync.cron == "0 6 * * *"
 

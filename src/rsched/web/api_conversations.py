@@ -30,8 +30,8 @@ from . import artifacts
 from .api_background import list_background_rows, teardown_background
 from .api_routine_edit import (
     PermissionsBody,
-    TraitsBody,
-    apply_trait_edit,
+    RulesBody,
+    apply_rule_edit,
     resolve_permission_layers,
 )
 from .model_fit import model_window_problem, window_meta
@@ -327,8 +327,6 @@ def detail(request: Request, slug: str) -> dict:
     server = request.app.state.server
     permissions, capabilities = permission_layers_detail(
         server, info.cfg, routine_only=conv_mod.ROUTINE_ONLY_PERMISSIONS)
-    traits_dir = info.cfg.dir / "traits"
-    traits = sorted(p.stem for p in traits_dir.glob("*.md")) if traits_dir.is_dir() else []
     return {
         **_item(info),
         "description": info.cfg.description,
@@ -354,7 +352,7 @@ def detail(request: Request, slug: str) -> dict:
         "connections": dict(info.cfg.connections),
         "permissions": permissions,
         "capabilities": capabilities,
-        "traits": traits,
+        "rules": list(info.cfg.rules),
         "budgets": info.cfg.budgets,
         "deliberation": info.cfg.deliberation,
         "runs": [{"run_id": r.run_id, "ts": r.ts, "state": r.state} for r in info.runs],
@@ -450,15 +448,15 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
     return {"ok": True, "updated": list(updates)}
 
 
-@router.post("/conversations/{slug}/traits")
-def set_conversation_traits(request: Request, slug: str, body: TraitsBody) -> dict:
-    """Add/remove this conversation's practice modules — the same implementation routines
+@router.post("/conversations/{slug}/rules")
+def set_conversation_rules(request: Request, slug: str, body: RulesBody) -> dict:
+    """Bind/unbind this conversation's general rules — the same implementation routines
     use. A conversation is where this matters most: the work shifts topic mid-thread, and
-    an added module reaches the reply already in flight (control.json) as well as every
+    a newly bound rule reaches the reply already in flight (control.json) as well as every
     reply after it.
     """
     info = conversation_info(request, slug)
-    return apply_trait_edit(request, info.cfg.dir, body, active_run_dir(info))
+    return apply_rule_edit(request, info.cfg.dir, body, active_run_dir(info))
 
 
 @router.put("/conversations/{slug}/permissions")

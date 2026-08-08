@@ -28,7 +28,7 @@ def server(tmp_path):
     """A ServerConfig with tmp homes and the REAL library-seed copied in (no git)."""
     lib = tmp_path / "library"
     shutil.copytree(SEED / "workflows", lib / "workflows")
-    shutil.copytree(SEED / "traits", lib / "traits")
+    shutil.copytree(SEED / "rules", lib / "rules")
     shutil.copytree(SEED / "permissions", lib / "permissions")
     return make_test_server(tmp_path, conversations_home=str(tmp_path / "conversations"),
                             libraries_home=str(lib))
@@ -65,14 +65,14 @@ def client(server):
 
 def test_converse_seed_lints_clean():
     from rsched import library_docs
-    from rsched.workflows.lint import lint_trait_text, lint_workflow_py
+    from rsched.workflows.lint import lint_rule_text, lint_workflow_py
 
-    traits = library_docs.slugs(SEED / "traits")
-    assert "git-checkpoint" in traits
+    rules = library_docs.slugs(SEED / "rules")
+    assert "git-checkpoint" in rules
     src = (SEED / "workflows" / "converse.py").read_text()
-    assert lint_workflow_py(src, filename="converse.py", trait_slugs=traits) == []
-    raw = (SEED / "traits" / "git-checkpoint.md").read_text()
-    assert lint_trait_text(raw, filename="git-checkpoint.md") == []
+    assert lint_workflow_py(src, filename="converse.py", rule_slugs=rules) == []
+    raw = (SEED / "rules" / "git-checkpoint.md").read_text()
+    assert lint_rule_text(raw, filename="git-checkpoint.md") == []
 
 
 # ---- disk scaffolding ---------------------------------------------------------------------------
@@ -81,7 +81,7 @@ def test_migrate_conversations_relifts_pattern_and_budgets(server):
     """MIGRATION(expires=2026-08-31) coverage. A conversation created before 0.114.0 keeps
     its creation-time main.md and per-reply budgets forever — nothing else rewrites either.
     The boot migration re-renders main.md from the current pattern, lifts budgets off the
-    retired values, leaves the conversation's OWN traits alone, and is idempotent.
+    retired values, leaves the conversation's held rule SET alone, and is idempotent.
     """
     d = conv_mod.create_conversation(server, slug="c-old", first_message="do a thing")
     # roll it back to the pre-0.114.0 shape
@@ -91,8 +91,6 @@ def test_migrate_conversations_relifts_pattern_and_budgets(server):
                       "max_subruns": 4}
     (d / "routine.yaml").write_text(yaml.safe_dump(raw, sort_keys=False))
     (d / "main.md").write_text("---\nname: old\n---\n# stale pattern\n", encoding="utf-8")
-    (d / "traits" / "ask-policy.md").write_text("# trait: my own refined copy\n",
-                                                encoding="utf-8")
 
     assert conv_mod.migrate_conversations(server) == 1
     after = yaml.safe_load((d / "routine.yaml").read_text())
@@ -101,8 +99,9 @@ def test_migrate_conversations_relifts_pattern_and_budgets(server):
     assert after["workflow"]["version"] == 3
     main = (d / "main.md").read_text()
     assert "working_plan" in main and "roughly 10 turns per reply" not in main
-    # the conversation's own trait copies are never re-seeded from the library
-    assert (d / "traits" / "ask-policy.md").read_text() == "# trait: my own refined copy\n"
+    # the held SET is config and is never rewritten by the re-render — only its tail is
+    assert after["rules"] == raw["rules"]
+    assert "## Standing practices" in main
     assert conv_mod.migrate_conversations(server) == 0        # idempotent
 
 
@@ -118,9 +117,9 @@ def test_create_conversation_disk_shape(server):
     assert raw["kind"] == "conversation"
     main = (d / "main.md").read_text()
     assert "materialized_from" in main and "converse" in main
-    assert "## Standing practices" in main and "traits/git-checkpoint.md" in main
-    assert (d / "traits" / "git-checkpoint.md").exists()
-    assert not (d / "traits" / "improve-bugfix.md").exists()   # improve-* are routine-improver lenses, not materialized traits
+    assert "## Standing practices" in main and "`git-checkpoint`" in main
+    assert "git-checkpoint" in raw["rules"]
+    assert not (d / "rules").exists()          # the prose lives in the library, nowhere else
     assert (d / "instruction.md").read_text().startswith("Fix the flaky test")
     assert (d / "artifacts").is_dir() and (d / "attachments").is_dir()
     assert cfg.name == conv_mod.fallback_title("Fix the flaky test")
@@ -161,7 +160,7 @@ def test_create_list_detail_message_delete(client):
     perm = {p["slug"]: p for p in detail["permissions"]}
     assert perm["shell"]["active"] is False                  # off by default, one-click grant
     assert perm["run-history"]["routine_only"] is True       # greyed in the panel
-    assert "git-checkpoint" in detail["traits"]
+    assert "git-checkpoint" in detail["rules"]
 
     # message to the LIVE run → inbox only (mid-run injection)
     r = c.post(f"/api/conversations/{slug}/message", data={"text": "also check the README"})
@@ -822,13 +821,13 @@ def test_sync_seed_library_docs(tmp_path):
 
     lib = tmp_path / "lib"
     (lib / "workflows").mkdir(parents=True)
-    (lib / "traits").mkdir()
-    (lib / "traits" / "ask-policy.md").write_text("local edit — must survive")
+    (lib / "rules").mkdir()
+    (lib / "rules" / "ask-policy.md").write_text("local edit — must survive")
     n = sync_seed_library_docs(lib)
     assert n > 0
     assert (lib / "workflows" / "converse.py").exists()
-    assert (lib / "traits" / "git-checkpoint.md").exists()
-    assert (lib / "traits" / "ask-policy.md").read_text() == "local edit — must survive"
+    assert (lib / "rules" / "git-checkpoint.md").exists()
+    assert (lib / "rules" / "ask-policy.md").read_text() == "local edit — must survive"
     assert sync_seed_library_docs(lib) == 0                          # idempotent
 
 

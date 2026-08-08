@@ -99,10 +99,10 @@ class RunContext:
     # routine config by EngineLoop, mutated by a control.json mid-run switch.
     deliberation: str = ""
     # Practice modules already delivered into THIS run's context — modules the user added
-    # mid-run (control.json `add_traits`). Guards against re-appending the same prose when
-    # a later signal repeats a slug; a `read_trait` consult needs no such guard (it is the
+    # mid-run (control.json `add_rules`). Guards against re-appending the same prose when
+    # a later signal repeats a slug; a `read_rule` read needs no such guard (it is the
     # model's own turn, and re-reading is its choice).
-    consulted_traits: set[str] = field(default_factory=set)
+    consulted_rules: set[str] = field(default_factory=set)
     # Resolved paths this run has read, viewed, or written — write_file's grounding set:
     # overwriting an existing file OUTSIDE the routine's own dir requires the run to have
     # seen it (rebuilt from the transcript on resume, so grounding survives legs).

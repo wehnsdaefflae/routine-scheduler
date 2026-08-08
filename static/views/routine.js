@@ -1,5 +1,5 @@
 // Routine detail: schedule, permissions (user-only toggles), budgets, models, origin, and the
-// navigable recipe (main.md + stage modules + trait modules), then state & runs.
+// navigable recipe (main.md + stage modules), then state & runs.
 
 import { api } from "/static/api.js";
 import { renderConfigSections } from "/static/views/routine-config.js";
@@ -129,7 +129,7 @@ export async function render(view, slug, query = {}) {
 
   // -- config + recipe: rendered flat into a DETACHED host, then regrouped by groupSections
   // into labeled, collapsible groups. Every section body is untouched; the async panels
-  // (permissions/traits/connections/machines) fill node refs that grouping only relocates. --
+  // (permissions/rules/connections/machines) fill node refs that grouping only relocates. --
   const cfgHost = el("div", {});
   const { refreshHead } = renderConfigSections(cfgHost, d, { slug, titleH1, chipHost, runChip });
 
@@ -139,7 +139,7 @@ export async function render(view, slug, query = {}) {
   const healthBox = el("div", { class: "panel" }, skeleton(["60%", "90%"]));
   cfgHost.append(el("h2", {}, "Recipe health"), healthBox);
 
-  // recipe: the routine's OWN workflow files (main.md + stage modules + practice traits) — a
+  // recipe: the routine's OWN workflow files (main.md + stage modules) — a
   // navigable tree; edits go through the generic /file endpoint. A run never edits its own
   // recipe/config, so this editor is the human's lever on the recipe.
   cfgHost.append(el("h2", {}, "Recipe"));
@@ -149,8 +149,8 @@ export async function render(view, slug, query = {}) {
   cfgHost.append(el("div", { class: "panel" },
     el("div", { class: "muted small", style: "margin-bottom:10px" },
       "the routine's OWN workflow — ", el("strong", {}, "main.md"), " routes through the ",
-      el("strong", {}, "stage"), " modules (in run-flow order); ", el("strong", {}, "traits"),
-      " are its adapted practices. Edit freely; the routine-improver may also refine these."),
+      el("strong", {}, "stage"), " modules (in run-flow order). The general rules it holds "
+      + "live in the library, not here. Edit freely; the routine-improver may also refine these."),
     el("div", { class: "recipe-wrap" }, navCol, editorCol)));
   const recipe = mountRecipe(navCol, editorCol, slug, query.file || "");
   const health = mountHealth(healthBox, slug, { onRecipeChanged: recipe.refreshTree });

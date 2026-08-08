@@ -1,6 +1,6 @@
 # record-close — leave the trail, finish
 
-1. Append the LEDGER entry (consult `traits/ledger-discipline.md`): what was measured,
+1. Append the LEDGER entry (read the `decision-record` rule): what was measured,
    what was tested, the verdict, backlog movements, and candidates REJECTED with why.
 2. Reset `state/phase.json` to `{"phase": "orient"}` so the next run starts clean.
 3. Finish with an authored summary (8-20 lines): the baseline's headline numbers, the

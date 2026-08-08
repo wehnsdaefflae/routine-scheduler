@@ -46,25 +46,22 @@ DEFAULT_BUDGETS = {
 # routine-improver meta routine refines recipes centrally (its fs_write_roots covering
 # the homes is the one engine-recognized unlock). Defaults added here AFTER routines
 # exist reach them via bootstrap.ADOPT_PERMISSIONS (one-time, at boot).
-# practice-library (`read_trait`) is a default because it is the cheapest possible form of
-# context: the curated practice modules cost NOTHING in the composed prompt (the digest
-# lists names only) and are fetched just-in-time when a run meets a situation its own
-# traits/ set doesn't cover. It writes nothing — an unheld module applies for that run
-# only, so the routine's own practice set stays the user's in both directions.
-DEFAULT_PERMISSIONS = ["util-authoring", "memory", "practice-library"]
-DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write",
-                                    "read_trait"],
+# global-utils is a default because every routine reaches for the toolbox: it is the one
+# conduct doc that presumes NO capability (`requires: {}`) — the `util` action is a base
+# kind — and exists purely to teach discovery, composition, and never-silently-route-around
+# a broken util.
+DEFAULT_PERMISSIONS = ["util-authoring", "memory", "global-utils"]
+DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write"],
                         "utils": [], "confirm": "always", "runs": "none",
                         "workflows": "catalog"}
-# TRAITS a new routine gets when creation picks none explicitly (the wizard normally
-# preselects per task): reusable practice prose, adapted into the routine's own traits/
-# at creation and referenced from the end of its main.md. The USER may add or remove one
-# later (traits.py — a later add copies the library text verbatim, since only creation
-# adapts); a RUN never changes its own set, and may only CONSULT an unheld module for the
-# current run (`read_trait`). Improvement passes are NOT part of a
-# routine's own traits: the routine-improver meta routine runs them across all routines
-# and conversations (honoring each one's `improve: false` opt-out).
-DEFAULT_TRAITS = ["ask-policy", "global-utils", "ledger-discipline", "web-research"]
+# RULES a new routine gets when creation picks none explicitly (the wizard normally
+# preselects per task). A rule is a GENERAL rule — principle prose the run applies to its
+# own particular case — and it lives in ONE place, the library. A routine holds slugs, not
+# copies: `rules:` in routine.yaml, listed at the end of its main.md and fetched on demand
+# (`read_rule`). Read-only to every run; only the USER changes the set (rules.py) or the
+# prose (the Library tab). Improvement of the RULES THEMSELVES is the rules-review meta
+# routine's job — it observes how runs actually interpreted each one and proposes revisions.
+DEFAULT_RULES = ["ask-policy", "web-research", "decision-record", "intent-inference"]
 # Each routine picks its own models: the MAIN orchestrator loop, the model spawned
 # SUBROUTINEs run their main loop on, the model TOOL_CALLs (the `llm` action) use, and an
 # OPTIONAL UNCENSORED model a refused `llm` tool-call is re-referred to. The uncensored role

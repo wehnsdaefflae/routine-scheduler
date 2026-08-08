@@ -83,21 +83,18 @@ def test_outline_extracts_headings_skipping_fences():
 def test_recipe_tree_orders_stages_by_run_flow(tmp_path):
     d = tmp_path / "r"
     (d / "stages").mkdir(parents=True)
-    (d / "traits").mkdir()
     (d / "main.md").write_text(
         "## Run flow\n1. **collect** — c.\n2. **draft** — d.\n\n## Completion criteria\n- done\n",
         encoding="utf-8")
     (d / "stages" / "draft.md").write_text("## How\ndo it\n", encoding="utf-8")
     (d / "stages" / "collect.md").write_text("text\n", encoding="utf-8")
     (d / "stages" / "extra.md").write_text("no flow entry\n", encoding="utf-8")   # extras sort last
-    (d / "traits" / "ask-policy.md").write_text("# trait\n## When\n", encoding="utf-8")
     tree = statemap.recipe_tree(d)
     assert tree["main"]["path"] == "main.md"
     assert [h["text"] for h in tree["main"]["outline"]] == ["Run flow", "Completion criteria"]
     # stages ordered by ## Run flow (collect, draft); extras with no flow entry appended
     assert [s["name"] for s in tree["stages"]] == ["collect", "draft", "extra"]
     assert [h["text"] for h in tree["stages"][1]["outline"]] == ["How"]
-    assert [t["name"] for t in tree["traits"]] == ["ask-policy"]
 
 
 def test_phase_stats_aggregates_turns_tokens_time(tmp_path):

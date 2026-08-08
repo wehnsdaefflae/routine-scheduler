@@ -94,4 +94,4 @@ mirror (`engine/decisions.py`) and the daemon's background-task ping (`daemon/de
 both call it. If a new channel is ever added, it becomes a new permission + a `notify.py`
 transport; nothing else in the codebase learns about channels.
 
-See also: [Traits & permissions](traits-permissions.md) · [Background tasks](background-tasks.md)
+See also: [Rules & permissions](rules-permissions.md) · [Background tasks](background-tasks.md)

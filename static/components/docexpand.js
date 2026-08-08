@@ -1,6 +1,6 @@
 // Lazy full-doc expander for the permissions & practice-module panels (F178): each row
 // gets a "▸ full description" toggle that fetches the LIBRARY doc once (GET
-// /api/library/{permissions|traits}/{slug}) and renders its complete markdown under the
+// /api/library/{permissions|rules}/{slug}) and renders its complete markdown under the
 // row — the exact prose the run's prompt receives, so the page explains a permission or
 // practice module with the text that actually governs the model's conduct, examples
 // included. Frontmatter (`requires:` metadata) is stripped: panel mechanics, not prose.
@@ -12,7 +12,7 @@ import { md } from "/static/md.js";
 const stripFrontmatter = (text) =>
   text.startsWith("---\n") ? text.replace(/^---\n[\s\S]*?\n---\n?/, "") : text;
 
-// kind: "permissions" | "traits" · slug: the library doc.
+// kind: "permissions" | "rules" · slug: the library doc.
 // Returns {btn, body}: the caller places btn inside the row (it swallows the click so a
 // wrapping <label> never flips its checkbox) and body directly under it.
 export function docExpander(kind, slug) {

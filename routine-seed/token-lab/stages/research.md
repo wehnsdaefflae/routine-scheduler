@@ -6,7 +6,7 @@ test it here** (an experiment sketch runnable with the `llm` action), and **stat
 (open / testing / supported / refuted / adopted-elsewhere).
 
 1. Search the literature for methods new since the backlog's newest entry (websearch;
-   consult `traits/web-research.md` first). Productive queries: prompt caching, context
+   read the `web-research` rule first). Productive queries: prompt caching, context
    compression/editing, agentic memory (A-MEM, sleep-time compute), tool/catalog pruning,
    structured-output overhead, compaction policies, KV-cache economics.
 2. Add genuinely new methods (2-3 per run at most — depth beats a link dump). Sharpen or

@@ -1,4 +1,4 @@
-"""The library repository (ONE git repo: workflows/ + traits/ + permissions/ + utils/): status,
+"""The library repository (ONE git repo: workflows/ + rules/ + permissions/ + utils/): status,
 remote wiring, and first-run provisioning (clone existing, or seed + create).
 """
 
@@ -24,7 +24,7 @@ def _has_content(home) -> bool:
     from ... import library_docs, utils_lib
     from ...workflows.library import list_workflows
     try:
-        return bool(list_workflows(home) or library_docs.list_docs(home / "traits")
+        return bool(list_workflows(home) or library_docs.list_docs(home / "rules")
                     or library_docs.list_docs(home / "permissions")
                     or utils_lib.list_utils(home))
     except Exception:

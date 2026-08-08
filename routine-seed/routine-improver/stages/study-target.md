@@ -4,8 +4,10 @@ Take the next target from `cursor.targets`. Understand what it is FOR and what i
 DID before touching anything.
 
 ## Do
-1. Read the target's recipe — `main.md`, the `stages/` modules it routes to, its `traits/`
-   — and its `LEDGER.md` tail (last ~40 lines — earlier improvement attempts and rejected
+1. Read the target's recipe — `main.md` and the `stages/` modules it routes to — and note the
+   general rules it holds (`routine.yaml` `rules:`; those are the SHARED library's, not this
+   target's, so a problem with one belongs to rules-review, never to your edit). Read its
+   `LEDGER.md` tail (last ~40 lines — earlier improvement attempts and rejected
    candidates live there; never re-apply a known-bad change). A routine carries no
    `instruction.md`: the recipe IS the task. A conversation target additionally has its
    seed `instruction.md` — read that too. Note the target's `tuning.yaml` `deliberation`

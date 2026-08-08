@@ -63,7 +63,7 @@ class ServerConfig(_Config):
     # `detach` action) are routine-shaped dirs under their OWN home too: daemon-managed,
     # each `routine.yaml` records its `owner` conversation, deleted after delivery.
     background_home: HomePath = Field(default_factory=lambda: expand("~/background"))
-    # ONE git repo holding workflows/, traits/, permissions/, playbooks/, utils/ — the library.
+    # ONE git repo holding workflows/, rules/, permissions/, playbooks/, utils/ — the library.
     libraries_home: HomePath = Field(
         default_factory=lambda: expand("~/.local/share/routine-scheduler-libraries"))
     libraries_remote: BlankableStr = ""  # clone-from / sync-to for the library repo
@@ -102,9 +102,9 @@ class ServerConfig(_Config):
     source: Path | None = None
 
     @property
-    def traits_home(self) -> Path:
-        """The library repo's traits/ subdir (reusable practice prose)."""
-        return self.libraries_home / "traits"
+    def rules_home(self) -> Path:
+        """The library repo's rules/ subdir — the ONE copy of every general rule."""
+        return self.libraries_home / "rules"
 
     @property
     def permissions_home(self) -> Path:

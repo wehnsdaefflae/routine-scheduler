@@ -1,10 +1,10 @@
 """Run control plane: the abort switch, the pause gate, mid-run model, deliberation and
-practice-trait switches, and the turn-boundary message feeds (injected user messages,
+rule-binding switches, and the turn-boundary message feeds (injected user messages,
 finished sub-workflow announcements).
 
 Everything here runs BETWEEN turns and mutates only the loop's message list / context —
 never the model call itself. control.json stays web-owned: the engine only reads it
-(pause, switch_model, set_deliberation, add_traits) and reacts at the next turn boundary.
+(pause, switch_model, set_deliberation, add_rules) and reacts at the next turn boundary.
 """
 
 from __future__ import annotations
@@ -35,14 +35,14 @@ def load_applied_baselines(loop) -> None:
     """Seed the mid-run-switch edge-triggers from the run's applied ledger. control.json is
     web-owned (the engine never writes it), so a consumed signal can't be cleared there —
     without this ledger every RESUME leg would re-fire the run's stale switch_model /
-    set_deliberation / add_traits signals (re-pinning models the user has since changed
+    set_deliberation / add_rules signals (re-pinning models the user has since changed
     back, and re-injecting the same engine notes every leg).
     """
     applied = read_json(_applied_path(loop))
     if isinstance(applied, dict):
         loop._last_switch_ts = str(applied.get("switch_model") or "")
         loop._last_deliberation_ts = str(applied.get("set_deliberation") or "")
-        loop._last_traits_ts = str(applied.get("add_traits") or "")
+        loop._last_rules_ts = str(applied.get("add_rules") or "")
 
 
 def _mark_applied(loop, signal: str, ts: str) -> None:
@@ -134,32 +134,34 @@ def apply_deliberation_switch(loop) -> None:
     loop.messages.append({"role": "user", "content": f"ENGINE NOTE: {note}"})
 
 
-def apply_trait_additions(loop) -> None:
-    """Turn-boundary: honour traits the USER added to a LIVE run from the web layer.
+def apply_rule_additions(loop) -> None:
+    """Turn-boundary: honour general rules the USER bound to a LIVE run from the web layer.
 
     Same edge-trigger discipline as the model/deliberation switches — the engine never writes
-    control.json. The durable copy into <routine>/traits/ is the web layer's job (traits.py);
-    what cannot wait is the prose reaching the model, and the composed prompt is immutable
-    (prompt-caching contract), so each added module arrives as an appended engine note. On the
-    next run it is an ordinary standing practice read from the routine's own traits/.
+    control.json. Recording the slug in routine.yaml is the web layer's job (rules.py); what
+    cannot wait is the prose reaching the model, and the composed prompt is immutable
+    (prompt-caching contract), so each added rule arrives as an appended engine note read
+    straight from the library. From the next run it is an ordinary standing practice.
     """
+    from .. import library_docs
+
     ctx = loop.ctx
     obj = read_json(ctx.root_run_dir / "control.json")
-    sw = obj.get("add_traits") if isinstance(obj, dict) else None
-    if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_traits_ts:
+    sw = obj.get("add_rules") if isinstance(obj, dict) else None
+    if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_rules_ts:
         return
-    loop._last_traits_ts = str(sw["ts"])
-    _mark_applied(loop, "add_traits", str(sw["ts"]))
+    loop._last_rules_ts = str(sw["ts"])
+    _mark_applied(loop, "add_rules", str(sw["ts"]))
     for slug in sw.get("slugs") or []:
-        if not isinstance(slug, str) or slug in ctx.consulted_traits:
+        if not isinstance(slug, str) or slug in ctx.consulted_rules:
             continue
-        body = (ctx.routine.dir / "traits" / f"{slug}.md")
-        if not body.is_file():
+        raw = library_docs.read_doc(ctx.server.rules_home, slug)
+        if raw is None:
             continue
-        ctx.consulted_traits.add(slug)
-        text = body.read_text(encoding="utf-8").strip()
-        note = (f"the user added the practice module traits/{slug}.md to this routine — it "
-                f"applies from now on, and is part of your recipe from the next run:\n\n{text}")
+        ctx.consulted_rules.add(slug)
+        text = library_docs.doc_body(raw).strip()
+        note = (f"the user bound the general rule {slug!r} to this routine — it applies from "
+                f"now on, and is one of your standing practices from the next run:\n\n{text}")
         ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
         loop.messages.append({"role": "user", "content": f"ENGINE NOTE: {note}"})
 

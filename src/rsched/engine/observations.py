@@ -253,22 +253,42 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
                     f"Existing topics: {topics}.")
         return (f"OBSERVATION (memory_read {obs['name']}.md, {obs['lines']} lines):\n"
                 f"{obs['content']}")
-    if kind == "read_trait":
+    if kind == "read_rule":
         if obs["name"] == "list":
-            rows = "\n".join(f"- {t['slug']}{' (already yours)' if t['held'] else ''}: "
-                             f"{t['summary']}" for t in obs["traits"]) or "(library is empty)"
-            return ("OBSERVATION (read_trait list) — practice modules in the shared library. "
-                    "Reading one applies it to THIS run only; making it a standing practice is "
-                    f"the user's call:\n{rows}")
+            rows = "\n".join(f"- {r['slug']}{' (binds you)' if r['held'] else ''}: "
+                             f"{r['summary']}" for r in obs["rules"]) or "(library is empty)"
+            return ("OBSERVATION (read_rule list) — general rules in the shared library. One you "
+                    "do not hold applies to THIS run only; which rules bind you is the user's "
+                    f"call:\n{rows}")
         if obs.get("missing"):
             avail = ", ".join(obs.get("available") or []) or "(none)"
-            return (f"OBSERVATION (read_trait): no practice module named {obs['name']!r}. "
+            return (f"OBSERVATION (read_rule): no rule named {obs['name']!r}. "
                     f"Available: {avail}.")
-        already = (" — this is ALREADY one of your standing practices"
-                   if obs.get("held") else "")
-        return (f"OBSERVATION (read_trait {obs['name']}, {obs['lines']} lines{already}). "
-                "It applies for the rest of this run; it is not added to your recipe:\n"
+        binds = (" — this rule BINDS you" if obs.get("held")
+                 else " — you do not hold this rule; it applies for the rest of this run only")
+        return (f"OBSERVATION (read_rule {obs['name']}, {obs['lines']} lines{binds}). "
+                "It states a principle: apply it to the case in front of you.\n"
                 f"{obs['content']}")
+    if kind == "write_rule":
+        name = obs["name"]
+        if obs.get("written"):
+            who = ", ".join(obs.get("holders") or []) or "no routine yet"
+            verb = "authored" if obs.get("created") else "revised"
+            return (f"OBSERVATION (write_rule {name}): {verb} and committed to the shared "
+                    f"library. It binds: {who} — each picks the new text up at its next run.")
+        if obs.get("lint_ok") is False:
+            return (f"OBSERVATION (write_rule {name}) — REJECTED, the rule is unchanged:\n- "
+                    + "\n- ".join(obs.get("problems") or []))
+        if obs.get("pending_approval"):
+            return (f"OBSERVATION (write_rule {name}): waiting on the user's approval "
+                    f"({obs.get('qid')}). The rule is unchanged until they answer.")
+        if obs.get("declined"):
+            answer = obs.get("answer")
+            return (f"OBSERVATION (write_rule {name}): NOT applied — "
+                    + (f"the user answered {answer!r}." if answer
+                       else str(obs.get("reason") or "declined.")))
+        return (f"OBSERVATION (write_rule {name}): not applied — "
+                f"{obs.get('reason') or 'the edit could not be resolved'}")
     if kind == "memory_write":
         if obs.get("deleted"):
             fate = ("deleted and INDEX updated" if obs.get("existed")

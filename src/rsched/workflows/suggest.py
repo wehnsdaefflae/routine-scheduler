@@ -90,7 +90,7 @@ def existing_tags(server: ServerConfig) -> list[str]:
     tags: set[str] = set()
     for w in list_workflows(server.libraries_home):
         tags.update(w.get("tags") or [])
-    for home in (server.traits_home, server.permissions_home):
+    for home in (server.rules_home, server.permissions_home):
         for d in library_docs.list_docs(home):
             tags.update(d.get("tags") or [])
     for u in utils_lib.list_utils(server.libraries_home):
@@ -116,33 +116,33 @@ def normalize_tags(raw: list) -> list[str]:
     return out[:3]
 
 
-TRAITS_PERMS_SCHEMA = {
+RULES_PERMS_SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["traits", "permissions", "deliberation"],
-    "properties": {"traits": {"type": "array", "items": {"type": "string"}},
+    "required": ["rules", "permissions", "deliberation"],
+    "properties": {"rules": {"type": "array", "items": {"type": "string"}},
                    "permissions": {"type": "array", "items": {"type": "string"}},
                    "deliberation": {"type": "string", "enum": list(DELIBERATION_LEVELS)}},
 }
 
 
-def suggest_traits_permissions(server: ServerConfig, instruction: str,
-                               workflow_slug: str = "") -> dict:
-    """Preselect the traits (practice modules, adapted in at creation), permissions
-    (engine-enforced capabilities), and deliberation level for a new routine, from its
-    instruction + chosen workflow. Returns {'traits': [...], 'permissions': [...],
+def suggest_rules_permissions(server: ServerConfig, instruction: str,
+                              workflow_slug: str = "") -> dict:
+    """Preselect the general RULES that will bind a new routine, its permissions
+    (engine-enforced capabilities), and its deliberation level, from its
+    instruction + chosen workflow. Returns {'rules': [...], 'permissions': [...],
     'deliberation': <level>}, validated against the library; falls back to the defaults
     when no endpoint answers. The wizard shows the result as an editable preselection —
     this is a first pass, not a decision.
     """
     from .. import library_docs
-    from ..config import DEFAULT_PERMISSIONS, DEFAULT_TRAITS
+    from ..config import DEFAULT_PERMISSIONS, DEFAULT_RULES
 
-    traits = library_docs.list_docs(server.traits_home)
+    rules = library_docs.list_docs(server.rules_home)
     perms = library_docs.list_docs(server.permissions_home)
-    fallback = {"traits": [t for t in DEFAULT_TRAITS if t in {d["slug"] for d in traits}],
+    fallback = {"rules": [r for r in DEFAULT_RULES if r in {d["slug"] for d in rules}],
                 "permissions": [p for p in DEFAULT_PERMISSIONS if p in {d["slug"] for d in perms}],
                 "deliberation": DEFAULT_DELIBERATION}
-    if not traits and not perms:
+    if not rules and not perms:
         return fallback
     workflow_note = ""
     if workflow_slug:
@@ -150,20 +150,21 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
                    if w["slug"] == workflow_slug), None)
         if wf:
             workflow_note = (f"\nCHOSEN WORKFLOW: {wf['slug']} — {wf['description']}\n"
-                             f"Its suggested traits: {wf.get('includes') or '(none)'}")
-    t_list = "\n".join(f"- {d['slug']}: {d['summary']}" for d in traits)
+                             f"Its suggested rules: {wf.get('includes') or '(none)'}")
+    r_list = "\n".join(f"- {d['slug']}: {d['summary']}" for d in rules)
     p_list = "\n".join(f"- {d['slug']}: {d['summary']}"
                        + (f" [requires: {d['requires']}]" if d.get("requires") else "")
                        for d in perms)
     prompt = (
-        "A new recurring LLM-agent routine is being created. Pick its TRAITS (reusable practice "
-        "modules, adapted into the routine's own instructions at creation) and PERMISSIONS "
+        "A new recurring LLM-agent routine is being created. Pick the general RULES that will "
+        "bind it (shared library prose the run applies to its own case) and its PERMISSIONS "
         "(conduct docs whose required capabilities the engine then enforces) from the catalogs "
         "below.\n\n"
         f"INSTRUCTION:\n{instruction}\n{workflow_note}\n\n"
-        f"TRAITS:\n{t_list}\n\nPERMISSIONS:\n{p_list}\n\n"
-        "Guidance: include ask-policy and ledger-discipline for almost everything. "
-        "From the curated practice set take only what the task actually exercises: "
+        f"RULES:\n{r_list}\n\nPERMISSIONS:\n{p_list}\n\n"
+        "Guidance: include ask-policy and decision-record for almost everything, and "
+        "intent-inference wherever the user will correct the routine's output. "
+        "From the rest take only what the task actually exercises: "
         "evidence-discipline whenever the routine REPORTS findings someone acts on; "
         "change-restraint and error-recovery for routines that edit code or drive tools; "
         "independent-verification when the deliverable is irreversible, outward-facing, or "
@@ -172,8 +173,8 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
         "output as it is produced; interface-design when the routine BUILDS or restyles UI; "
         "interface-copy when it writes text a person reads as a product surface (UI labels, "
         "notifications, report headings); test-design and failure-visibility when the routine "
-        "WRITES code that others will run. Each one costs prompt every run it is on — do not take "
-        "the whole set by default.\n"
+        "WRITES code that others will run. Each rule is one more thing the run must read and "
+        "honour — do not take the whole set by default.\n"
         "Pick permissions conservatively: only what the task clearly needs (e.g. communication "
         "only if it must reach the user outside the web UI; run-history only if runs build on "
         "each other's details beyond the last summary; shell almost never).\n\n"
@@ -184,26 +185,26 @@ def suggest_traits_permissions(server: ServerConfig, instruction: str,
         "curating, writing for a reader); 'think-on-paper' only for genuinely "
         "decision-heavy analysis where reasoning must persist across a long run.\n\n"
         "Reply with ONLY one JSON object matching this schema (no prose):\n"
-        + json.dumps(TRAITS_PERMS_SCHEMA)
+        + json.dumps(RULES_PERMS_SCHEMA)
     )
     endpoint, ref = EndpointRegistry(server).for_system()
     messages = [{"role": "user", "content": prompt}]
     for _attempt in range(2):
         try:
             completion = endpoint.complete(messages, model=ref.model,
-                                           schema=TRAITS_PERMS_SCHEMA, temperature=ref.temperature,
+                                           schema=RULES_PERMS_SCHEMA, temperature=ref.temperature,
                                            effort=ref.effort, max_tokens=ref.max_tokens,
                                            timeout=120,
-                                           purpose="Suggest traits & permissions", kind="suggest")
+                                           purpose="Suggest rules & permissions", kind="suggest")
         except Exception:
             return fallback
         try:
             obj = completion.parsed if completion.parsed is not None else parse_reply(
-                completion.text, TRAITS_PERMS_SCHEMA)
-            known_t = {d["slug"] for d in traits}
+                completion.text, RULES_PERMS_SCHEMA)
+            known_r = {d["slug"] for d in rules}
             known_p = {d["slug"] for d in perms}
             level = obj.get("deliberation")
-            return {"traits": [t for t in obj.get("traits", []) if t in known_t],
+            return {"rules": [r for r in obj.get("rules", []) if r in known_r],
                     "permissions": [p for p in obj.get("permissions", []) if p in known_p],
                     "deliberation": level if level in DELIBERATION_LEVELS
                                     else DEFAULT_DELIBERATION}

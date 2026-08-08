@@ -222,11 +222,15 @@ def cmd_daemon(_args) -> int:
     seed_routines(server.routines_home)   # fresh deploy: install bundled meta routines (off)
     adopt_seed_routine(server.routines_home, "token-lab")  # seeds added after first boot land once
     adopt_seed_routine(server.routines_home, "clarification")  # the wizard's template (D10)
+    adopt_seed_routine(server.routines_home, "rules-review")    # owns the general-rule library
     # new default permissions reach existing routines once, at boot
     adopt_permissions(server.routines_home, server.permissions_home)
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap
-    sync_seed_library_docs(server.libraries_home)  # workflows/traits/permissions added since, too
+    sync_seed_library_docs(server.libraries_home)  # workflows/rules/permissions added since, too
     migrate_util_headers(server.libraries_home)  # MIGRATION(expires=2026-08-17): sandbox rollout
+    from .migrate_rules import migrate_rules
+
+    migrate_rules(server)  # MIGRATION(expires=2026-09-30): traits -> library-global rules
     from .conversations import migrate_conversations
 
     migrate_conversations(server)  # MIGRATION(expires=2026-08-31): converse v3 + budgets

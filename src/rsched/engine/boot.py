@@ -39,7 +39,7 @@ def boot(loop) -> None:
         reports.stamp_delivered(ctx.server.routines_home, msgs, run_id=ctx.run_id)
         digest = state_digest(ctx.routine.dir, deferred_qa, open_qs,
                               routines_home=ctx.server.routines_home,
-                              slug=ctx.routine.slug)
+                              slug=ctx.routine.slug, held_rules=list(ctx.routine.rules))
     else:
         msgs = []
         digest = "(subrun — no routine state digest; everything you need is in the instruction)"

@@ -1,0 +1,24 @@
+---
+tags: [self-management, record-keeping, review]
+---
+# rule: decision record — keep the reasoning the artefacts cannot carry
+
+What you produce shows what the state IS. It cannot show what you tried and abandoned, what
+you weighed, or why the obvious approach was wrong — and that is precisely what a later run
+needs in order not to buy the same lesson twice. Keep a durable record of it alongside the
+work.
+
+- **Read the record before you explore.** A dead end that already cost turns is not worth
+  rediscovering, and an idea that was considered and rejected is not worth re-proposing.
+  Consulting it first is the entire return on writing it.
+- **Append, never rewrite.** The record is chronological: entries are added, not edited.
+- **One entry per run, written before you finish.** What changed, why, the decisions you
+  took — and the candidates you rejected, each with its reason. Negative evidence is the
+  most valuable thing in the entry and the first thing a hurried run drops.
+- **Write for a reader without your context.** Name the artefact, give the evidence, say what
+  "done" looked like. A note only you could decode has recorded nothing.
+- **Keep it readable.** Once the record outgrows what a run can usefully read, fold the
+  oldest entries into a few summary lines and archive the rest. The version history is the
+  real archive, so pruning loses nothing.
+- **Artefacts stay present-tense.** Do not narrate previous versions inside the work itself —
+  what a thing is now belongs in the thing; how it got there belongs in the record.

@@ -564,8 +564,8 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   .conv-view:has(> .run-rail[hidden]) { grid-template-columns: 218px minmax(0, 1fr); }
 }
 
-/* the routine page's recipe file-tree: main.md + stage modules (run-flow order) + trait
-   modules, each expandable to its heading outline; a nav | editor two-column that stacks narrow */
+/* the routine page's recipe file-tree: main.md + stage modules (run-flow order), each
+   expandable to its heading outline; a nav | editor two-column that stacks narrow */
 .recipe-wrap { display: flex; gap: 14px; align-items: flex-start; }
 .recipe-navcol { flex: 0 0 236px; max-width: 236px; border-right: 1px solid var(--line);
   padding-right: 10px; max-height: 560px; overflow-y: auto; }

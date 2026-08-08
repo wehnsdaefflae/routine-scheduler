@@ -1,5 +1,5 @@
 // The routine's recipe as a navigable tree that mirrors the markdown files: main.md (the entry),
-// the stage modules in Run-flow order, and the trait modules — each expandable to its heading
+// and the stage modules in Run-flow order — each expandable to its heading
 // outline. onOpen(path, heading?) opens the file in the editor (scrolling to the heading if given).
 // activePath highlights the file currently open in the editor.
 
@@ -27,6 +27,5 @@ export function recipeNav(tree, onOpen, activePath = "") {
 
   root.append(group("entry", [tree.main]));
   if (tree.stages?.length) root.append(group(`stages · ${tree.stages.length}`, tree.stages));
-  if (tree.traits?.length) root.append(group(`practices · ${tree.traits.length}`, tree.traits));
   return root;
 }

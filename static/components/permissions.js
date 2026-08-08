@@ -1,6 +1,6 @@
 // Two-layer permissions panel: CONDUCT permissions (library docs whose prose reaches the
 // run's prompt) beside the machine-enforced CAPABILITIES (gated actions, reserved utils,
-// the write_util approval level, previous-run depth). The two cascade: activating a doc
+// the two approval levels, previous-run depth). The two cascade: activating a doc
 // switches on the capabilities its `requires:` names; switching a capability off
 // deactivates the docs that require it. Shared by the routine page and the conversation
 // rail — the server re-applies the activation cascade, so the invariant holds either way.
@@ -13,6 +13,14 @@ const CONFIRM_OPTIONS = [
   ["always", "on — every create/revise asks you"],
   ["creations", "on — new utils ask; revisions are autonomous"],
   ["never", "on — fully autonomous (selftest-gated)"],
+];
+// write_rule rides the SAME ladder on its own dial: a rule is held by many routines, so
+// "author your own tools freely" must not silently mean "reword what everyone follows".
+const RULE_CONFIRM_OPTIONS = [
+  ["off", "off — engine rejects write_rule"],
+  ["always", "on — every rule change asks you"],
+  ["creations", "on — new rules ask; revisions are autonomous"],
+  ["never", "on — fully autonomous (lint-gated)"],
 ];
 const RUNS_OPTIONS = [
   ["none", "off — previous runs unreadable"],
@@ -43,7 +51,9 @@ const ACTION_HELP = {
     + "conversation when it finishes",
   schedule_run: "arm a one-shot future run of this or a sibling routine — e.g. \"re-check the "
     + "parcel status in 3 days\" instead of waiting for the next scheduled fire",
-  read_trait: "consult a library practice module mid-run without holding it — e.g. read the "
+  write_rule: "author or revise a general rule in the shared library — the text every "
+    + "routine holding that rule follows from its next run. Its own approval dial.",
+  read_rule: "read a general rule from the library mid-run — e.g. read the "
     + "web-research discipline once before an unusual research step",
 };
 const UTIL_HELP = {
@@ -76,6 +86,7 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
     actions: new Set(capabilities?.active?.actions || []),
     utils: new Set(capabilities?.active?.utils || []),
     confirm: capabilities?.active?.confirm || "always",
+    rule_confirm: capabilities?.active?.rule_confirm || "always",
     runs: capabilities?.active?.runs || "none",
     workflows: capabilities?.active?.workflows || "catalog",
   };
@@ -173,6 +184,18 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
         capsCol.append(capRow(sel, "write_util — author global utils",
           ACTION_HELP.write_util,
           badge(requiredBy((r) => (r.actions || []).includes("write_util")))));
+      } else if (a === "write_rule") {
+        const sel = el("select", {}, ...RULE_CONFIRM_OPTIONS.map(([v, label]) =>
+          el("option", { value: v, selected: (caps.actions.has("write_rule") ? caps.rule_confirm : "off") === v ? "" : null }, label)));
+        sel.onchange = () => {
+          if (sel.value === "off") { caps.actions.delete("write_rule"); dropUnsatisfied(); }
+          else { caps.actions.add("write_rule"); caps.rule_confirm = sel.value;
+                 holdCovering((r) => (r.actions || []).includes("write_rule")); }
+          render();
+        };
+        capsCol.append(capRow(sel, "write_rule — author the shared general rules",
+          ACTION_HELP.write_rule,
+          badge(requiredBy((r) => (r.actions || []).includes("write_rule")))));
       } else {
         const box = el("input", { type: "checkbox", checked: caps.actions.has(a) ? "" : null });
         box.onchange = () => {
@@ -227,7 +250,8 @@ export function permissionsPanel(permissions, capabilities, opts = {}) {
   const value = () => ({
     active: docs.filter((p) => p.routine_only ? p.active : held.has(p.slug)).map((p) => p.slug),
     capabilities: { actions: [...caps.actions], utils: [...caps.utils],
-                    confirm: caps.confirm, runs: caps.runs, workflows: caps.workflows },
+                    confirm: caps.confirm, rule_confirm: caps.rule_confirm,
+                    runs: caps.runs, workflows: caps.workflows },
   });
 
   let footer = null;

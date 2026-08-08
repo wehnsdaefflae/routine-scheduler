@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from ..paths import atomic_write
 from ..workflows import library
-from ..workflows.lint import lint_all, lint_permission_text, lint_trait_text, lint_workflow_py
+from ..workflows.lint import lint_all, lint_permission_text, lint_rule_text, lint_workflow_py
 
 router = APIRouter(tags=["workflows"])
 
@@ -30,9 +30,9 @@ def _workflow_file(home, slug: str):
 
 @router.get("/library")
 def library_overview(request: Request) -> dict:
-    """Everything under the Library tab: workflows, traits, permissions, playbooks, global utils."""
+    """Everything under the Library tab: workflows, rules, permissions, playbooks, global utils."""
     from .. import library_docs, playbooks, utils_lib
-    from ..config import DEFAULT_BUDGETS, DEFAULT_DELIBERATION, DEFAULT_PERMISSIONS, DEFAULT_TRAITS
+    from ..config import DEFAULT_BUDGETS, DEFAULT_DELIBERATION, DEFAULT_PERMISSIONS, DEFAULT_RULES
 
     home = _home(request)
     server = request.app.state.server
@@ -40,14 +40,14 @@ def library_overview(request: Request) -> dict:
     return {
         "workflows": [{**w, "problems": lint.get(f"workflows/{w['file']}", [])}
                       for w in library.list_workflows(home)],
-        "traits": [{**t, "problems": lint.get(f"traits/{t['slug']}.md", [])}
-                   for t in library_docs.list_docs(server.traits_home)],
+        "rules": [{**r, "problems": lint.get(f"rules/{r['slug']}.md", [])}
+                  for r in library_docs.list_docs(server.rules_home)],
         "permissions": [{**p, "problems": lint.get(f"permissions/{p['slug']}.md", [])}
                         for p in library_docs.list_docs(server.permissions_home)],
         "playbooks": [{**p, "problems": lint.get(f"playbooks/{p['slug']}/MAIN.md", [])}
                       for p in playbooks.list_playbooks(home)],
         "utils": utils_lib.list_utils(server.libraries_home),
-        "default_traits": list(DEFAULT_TRAITS),
+        "default_rules": list(DEFAULT_RULES),
         "default_permissions": list(DEFAULT_PERMISSIONS),
         "default_budgets": dict(DEFAULT_BUDGETS),
         "default_deliberation": DEFAULT_DELIBERATION,
@@ -57,8 +57,8 @@ def library_overview(request: Request) -> dict:
 
 def _docs_home(request: Request, kind: str):
     server = request.app.state.server
-    if kind == "traits":
-        return server.traits_home
+    if kind == "rules":
+        return server.rules_home
     if kind == "permissions":
         return server.permissions_home
     raise HTTPException(404, f"unknown library doc kind {kind!r}")
@@ -120,8 +120,8 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
             raise HTTPException(422, f"invalid frontmatter: {exc}") from exc
         post.metadata["requires"] = req
         content = fm.dumps(post, sort_keys=False)
-    problems = (lint_trait_text(content, filename=f"{slug}.md")
-                if kind == "traits" else lint_permission_text(content, filename=f"{slug}.md"))
+    problems = (lint_rule_text(content, filename=f"{slug}.md")
+                if kind == "rules" else lint_permission_text(content, filename=f"{slug}.md"))
     if problems:
         raise HTTPException(422, "; ".join(problems))
     library_docs.write_doc(home, slug, content.rstrip() + "\n")
@@ -131,7 +131,7 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
 
 @router.delete("/library/{kind}/{slug}")
 def delete_library_doc(request: Request, kind: str, slug: str) -> dict:
-    """Delete a trait (committed; a deleted SEED trait returns at the next daemon boot) or
+    """Delete a rule (committed; a deleted SEED rule returns at the next daemon boot) or
     a util (`kind=utils` dispatches below). Permission docs are NOT deletable — they are
     the capability layer's conduct surface; edit them instead.
     """
@@ -222,8 +222,8 @@ def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
 
     home = _home(request)
     server = request.app.state.server
-    traits = library_docs.slugs(server.traits_home)
-    problems = lint_workflow_py(body.content, filename=f"{slug}.py", trait_slugs=traits)
+    rules = library_docs.slugs(server.rules_home)
+    problems = lint_workflow_py(body.content, filename=f"{slug}.py", rule_slugs=rules)
     if problems:
         raise HTTPException(422, "; ".join(problems))
     rel = f"workflows/{slug}.py"

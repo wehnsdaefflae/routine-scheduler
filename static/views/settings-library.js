@@ -16,7 +16,7 @@ export function renderLibraries(view) {
     try {
       const { libraries } = await api("/api/settings/libraries");
       libBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
-        "One git repo holds everything the instance acquires: workflows/, traits/, permissions/, utils/ ",
+        "One git repo holds everything the instance acquires: workflows/, rules/, permissions/, utils/ ",
         "(with the gu dispatcher) — plus routines/ and sanitized config, exported by the scheduled ",
         "Library sync below. ",
         "Clone your existing repo, or create a new private one seeded with the built-in defaults. ",

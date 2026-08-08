@@ -101,7 +101,7 @@ def permission_layers_detail(server, cfg, *,
 
 def _git_commit(routine_dir: Path, message: str) -> None:
     """Commit a web-side routine-dir edit under the SAME per-repo lock the engine's
-    autocommit takes (libgit) — a trait edit is allowed during a LIVE run and used to
+    autocommit takes (libgit) — a rule change is allowed during a LIVE run and used to
     race the engine on git's index, the loser failing silently.
     """
     if not (routine_dir / ".git").exists():
@@ -111,7 +111,7 @@ def _git_commit(routine_dir: Path, message: str) -> None:
 
 
 def active_run_dir(info: registry.RoutineInfo) -> Path | None:
-    """The live run's directory, or None when nothing is running — so a trait edit can
+    """The live run's directory, or None when nothing is running — so a rule change can
     reach a run already in flight. Shared by both homes (a conversation's reply is a run
     like any other).
     """

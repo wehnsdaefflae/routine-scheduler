@@ -1,5 +1,6 @@
-"""Action handlers that converse with the user: ask_user (blocking/deferred questions)
-and write_util, whose approval gate is the routine's write_util capability level.
+"""Action handlers that converse with the user: ask_user (blocking/deferred questions),
+write_util and write_rule, each gated by its own approval level in the routine's
+capabilities (`confirm` / `rule_confirm`).
 
 EVERY kind of required user feedback funnels into the same decision record
 (inbox.file_question): plain asks and util approvals, deferred and blocking. A blocking
@@ -441,6 +442,115 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
     utils_lib.git_commit(home, f"{'create' if creating else 'revise'} {name}",
                          paths=[f"utils/{name}"])
     return {"kind": "write_util", "name": name, "created": creating, "selftest_ok": True}
+
+
+def handle_write_rule(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR0911 — gate ladder: every refusal is its own teaching exit
+    """Author or revise a GENERAL RULE in the shared library — the write_util shape, applied
+    to prose instead of code, gated by the rule-authoring permission.
+
+    Two differences from a util, both from blast radius. A rule is held by many routines, so
+    the approval dial is its OWN (`rule_confirm`) rather than write_util's: a routine trusted
+    to author its own tools is not thereby trusted to reword what every other routine follows.
+    And the gate is the library LINTER instead of a selftest — prose has nothing to execute,
+    so conformance (a `# rule:` heading, tags, no capabilities smuggled into frontmatter) is
+    the only mechanical check there is; it runs BEFORE the approval ask, so a malformed draft
+    never reaches the user.
+
+    DELETION is deliberately not an action. Removing a rule silently un-binds every routine
+    holding it, and unlike a util there is no callers check that can catch it — a run that
+    believes a rule should go says so in a report or a deferred ask_user, and the user
+    deletes it on the Library tab.
+    """
+    from .. import library_docs
+    from ..workflows.lint import lint_rule_text
+
+    ctx = loop.ctx
+    name = action["name"]
+    if ctx.depth > 0:
+        return {"kind": "write_rule", "name": name, "declined": True,
+                "reason": "sub-workflows cannot author rules — a rule binds whole routines, "
+                          "so it is a top-level decision"}
+    if not is_slug(name):
+        return {"kind": "write_rule", "name": name, "declined": True,
+                "reason": f"{name!r} is not a kebab-case slug — a rule's slug is its filename"}
+    home = ctx.server.rules_home
+    home.mkdir(parents=True, exist_ok=True)
+    existing = library_docs.read_doc(home, name)
+    raw_content = action.get("content")
+    if raw_content is None:
+        # Edit mode, the normal shape for a revision: anchor-patch the current prose so a
+        # one-clause fix costs one clause, and so the change is legible as a diff to the
+        # user approving it.
+        anchor = str(action.get("anchor") or "")
+        if existing is None:
+            return {"kind": "write_rule", "name": name, "edit_failed": True,
+                    "reason": f"no rule {name!r} exists to revise — pass 'content' (the "
+                              "complete rule markdown) to author a new one"}
+        if not anchor:
+            return {"kind": "write_rule", "name": name, "edit_failed": True,
+                    "reason": "pass either 'content' (the whole rule) or 'anchor' + "
+                              "'replacement' (an in-place revision)"}
+        count = existing.count(anchor)
+        if count == 0:
+            return {"kind": "write_rule", "name": name, "edit_failed": True,
+                    "reason": "anchor not found in the rule's current text — copy it VERBATIM "
+                              f'from {{"kind": "read_rule", "name": "{name}"}}'}
+        if count > 1 and not action.get("all"):
+            return {"kind": "write_rule", "name": name, "edit_failed": True,
+                    "reason": f"anchor occurs {count}× in the rule — extend it until unique, "
+                              "or set all: true to replace every occurrence"}
+        content = existing.replace(anchor, str(action.get("replacement") or ""))
+    else:
+        content = str(raw_content)
+    if problems := lint_rule_text(content, filename=f"{name}.md"):
+        return {"kind": "write_rule", "name": name, "lint_ok": False, "problems": problems}
+    creating = existing is None
+    # WHO ELSE this lands on: a revision reaches every holder at its next run, so the
+    # approval question names them. This is the fact that makes the decision reviewable.
+    holders = _rule_holders(ctx, name)
+    if ctx.grants is None or ctx.grants.needs_rule_confirm(creating):
+        verb = "author" if creating else "revise"
+        excerpt = (f"anchor:\n{str(action.get('anchor'))[:200]}\nreplacement:\n"
+                   f"{str(action.get('replacement') or '')[:200]}" if raw_content is None
+                   else f"First lines:\n{content.strip()[:400]}")
+        who = (", ".join(holders) if holders else "no routine yet")
+        ask = handle_ask(loop, {
+            "question": f"Approve {verb} of general rule '{name}'? It binds: {who}. {excerpt}",
+            "mode": "blocking", "options": ["approve", "decline"],
+            "default": "the rule is NOT changed until approved"}, poll_s,
+            qtype="rule-approval")
+        if not ask.get("answered"):
+            return {"kind": "write_rule", "name": name, "pending_approval": True,
+                    "qid": ask.get("qid")}
+        if not _is_approval(ask["answer"]):
+            return {"kind": "write_rule", "name": name, "declined": True,
+                    "answer": str(ask["answer"])[:200]}
+    library_docs.write_doc(home, name, content)
+    library_docs.git_commit(ctx.server.libraries_home,
+                            f"{'author' if creating else 'revise'} rule {name}",
+                            paths=[f"rules/{name}.md"])
+    return {"kind": "write_rule", "name": name, "created": creating, "written": True,
+            "holders": holders}
+
+
+def _rule_holders(ctx, slug: str) -> list[str]:
+    """Every routine/conversation whose config binds this rule — who a revision reaches.
+
+    Read straight off the config files rather than the registry: a rule is authored from a
+    maintenance routine that may not hold run-history access, and this is a fact about the
+    instance, not about any run.
+    """
+    from .. import rules as rules_mod
+
+    out: list[str] = []
+    for home in (ctx.server.routines_home, ctx.server.conversations_home):
+        if not home.is_dir():
+            continue
+        out.extend(d.name
+                   for d in sorted(p for p in home.iterdir()
+                                   if p.is_dir() and not p.name.startswith("."))
+                   if slug in rules_mod.current_rules(d))
+    return out
 
 
 def handle_remove_util(loop, action: dict, poll_s: float) -> dict:

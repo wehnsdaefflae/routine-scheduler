@@ -67,8 +67,13 @@ States, in order:
 
 ## Standing practices
 
-These practice modules are this routine's own adapted standards — read each with read_file before the situation it governs, and refine them as you learn:
-- `traits/ask-policy.md` — when and how to involve the user
-- `traits/global-utils.md` — your tools, and how to use them
-- `traits/ledger-discipline.md` — the routine's memory of its own changes
-- `traits/web-research.md` — verify external facts by searching, don't guess from memory
+These general rules bind this routine. Each states a principle, not a procedure — read one with read_rule before the situation it governs and apply it to the case in front of you:
+- `ask-policy` — when and how to involve the user
+- `web-research` — verify external facts by searching, don't guess from memory
+- `decision-record` — keep the reasoning the artefacts cannot carry
+- `evidence-discipline` — every claim traced to an observation
+- `change-restraint` — the smallest change that does the job
+- `review-recall` — report everything, filter afterwards
+- `intent-inference` — read every intervention as a standing preference
+- `problem-routing` — send a problem to whoever owns it, not upward
+- `root-cause-fix` — repair the cause, never the symptom

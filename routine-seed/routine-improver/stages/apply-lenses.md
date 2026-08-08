@@ -11,7 +11,7 @@ Run each lens module against the current target, in this order:
 Read one module, act in that lens only, then the next. Shared rules for every lens:
 
 - **Autonomy gate.** Safe, reversible edits to the target's RECIPE — its `main.md`, `stages/`,
-  `traits/`, `tuning.yaml` (and `state/`) — do them now and commit the target's dir with
+  `tuning.yaml` (and `state/`) — do them now and commit the target's dir with
   `git-sync`. `tuning.yaml` holds the machine-tunable behavior knobs (today: `deliberation` —
   terse | standard | deliberate | think-on-paper, how much of the model's thinking lands on paper;
   it words the say contract): tune it only on run evidence (see the efficiency lens) and log

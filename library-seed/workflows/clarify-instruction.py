@@ -106,10 +106,10 @@ def write_result():
     by TRAITS (practice modules adapted into the routine at creation: asking policy, LEDGER
     and web-research discipline, git checkpoints) and capabilities by user-set
     PERMISSIONS (communication channels, util authoring, previous-run access): the
-    refined_instruction must contain NONE of it, and must not assume any trait or permission is
+    refined_instruction must contain NONE of it, and must not assume any rule or permission is
     present. If the user's draft mixes conduct into the task ("message me on discord when...",
     "improve your own prompt after each run"), do not copy it into the instruction — flag it in
-    `notes` as a trait/permission choice for the wizard. Conduct text baked into the instruction
+    `notes` as a rule/permission choice for the wizard. Conduct text baked into the instruction
     would keep acting after the user changes the routine's setup, which breaks their control
     surface."""
 

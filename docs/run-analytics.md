@@ -8,7 +8,7 @@ run-dir retention because they ride the durable workflow-usage stream
 
 ## Recipe versions
 
-A routine's recipe is `main.md` + `stages/` + `traits/` + `tuning.yaml` — exactly the
+A routine's recipe is `main.md` + `stages/` + `tuning.yaml` — exactly the
 file set runs may never write (the routine-improver's fs_write_root is the one unlock).
 Its **version** is the last git commit that touched any of those files, NOT the dir's
 HEAD: the engine autocommits state and outputs at the end of every run, so HEAD moves

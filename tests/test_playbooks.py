@@ -26,7 +26,7 @@ TOKEN = "test-token"
 def server(tmp_path):
     """A ServerConfig with tmp homes and the REAL library-seed copied in (playbooks included)."""
     lib = tmp_path / "library"
-    for kind in ("workflows", "traits", "permissions", "playbooks"):
+    for kind in ("workflows", "rules", "permissions", "playbooks"):
         shutil.copytree(SEED / kind, lib / kind)
     return make_test_server(tmp_path, conversations_home=str(tmp_path / "conversations"),
                             libraries_home=str(lib))
@@ -150,7 +150,7 @@ def test_sync_installs_playbook_subfolders(tmp_path):
     from rsched.bootstrap import sync_seed_library_docs
     lib = tmp_path / "lib"
     (lib / "workflows").mkdir(parents=True)
-    (lib / "traits").mkdir()
+    (lib / "rules").mkdir()
     sync_seed_library_docs(lib)
     assert (lib / "playbooks" / "research-and-report" / "MAIN.md").exists()
     assert sync_seed_library_docs(lib) == 0                       # idempotent — never re-copies

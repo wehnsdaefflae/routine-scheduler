@@ -56,7 +56,7 @@ def _save_yaml(path: Path, raw: dict) -> None:
 
 
 def apply_file(routine_dir: Path, payload: dict) -> dict:
-    """Write one of the routine's own files (main.md, a stage/trait module, state, or
+    """Write one of the routine's own files (main.md, a stage module, state, or
     routine.yaml) and commit it — the replay of put_routine_file.
     """
     rel = str(payload["path"])

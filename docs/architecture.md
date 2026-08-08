@@ -6,7 +6,7 @@ needs before touching anything; everything below is here to be looked up when th
 actually reaches a subsystem.
 
 Deeper single-topic guides live beside this one: subtasks, background tasks, triggers,
-schedule-once, conversations, playbooks, traits & permissions, sandboxing, OAuth
+schedule-once, conversations, playbooks, rules & permissions, sandboxing, OAuth
 connections, remote machines, notifications, search, run analytics, prompt anatomy,
 endpoints, authoring.
 
@@ -36,7 +36,7 @@ the limits (single-writer status.json preserved).
   may do — adapters, UI, and the CLI event renderer all key off it. A workflow's `tools:` allowlist AND
   the routine's **capabilities** (`grants.py`) are enforced there too: allowed kinds = workflow tools
   ∩ (base ∪ enabled capabilities), plus path gates (runs/ needs the previous-runs depth; a run NEVER
-  writes its own recipe — main.md / stages/ / traits/ / **tuning.yaml** — a fixed rule unlocked only
+  writes its own recipe — main.md / stages/ / **tuning.yaml** — a fixed rule unlocked only
   by a user-granted fs_write_root covering the routine dir (the routine-improver's case) OR a
   per-leg **revise marker** (`engine/revise.py`: the run-view "revise recipe" mode drops one, the
   loop reads it ONCE and grants recipe self-write + the file-edit kinds for that leg only);
@@ -50,15 +50,15 @@ the limits (single-writer status.json preserved).
   section in `engine/capabilities.py`, observation rendering in `engine/observations.py`):
   harness contract → action schema
   + example → workflow body (the routine's own `main.md`, ending in a `## Standing practices` tail that
-  references `traits/*.md` — practice prose is NEVER inlined; a SUBRUN inserts its INSTRUCTION brief
+  names the general rules it holds — their prose is NEVER inlined; a SUBRUN inserts its INSTRUCTION brief
   here, a top-level routine does NOT — its task is baked into the recipe) → **capabilities** (model +
   context window, the action kinds usable this run, enabled capabilities + held permissions' short
   conduct notes,
   spawnable workflow patterns, the util catalog at name+summary altitude — ONE util's usage on demand via
-  `util name=list args=["<name>"]`) → **state digest** (phase, `state/`, stage + trait modules, last result,
+  `util name=list args=["<name>"]`) → **state digest** (phase, `state/`, stage modules, held rules, last result,
   LEDGER tail, open/answered questions, inbox messages). Effect actions (`util`/`read_file`/`write_file`/
   `edit_file`/`llm`) run through `engine/executor.py`. A default routine's composed prompt is ~25k chars;
-  everything else is reachable on demand (read_file stages/traits/history, util name=list, memory_read).
+  everything else is reachable on demand (read_file stages/history, read_rule, util name=list, memory_read).
 - **The message list is a prompt-caching contract**: composed once, appended-to only, never mutated —
   so providers serve each turn's prefix from cache (~0.1x). Per-turn boilerplate is banned: the util
   reminder is ONE-SHOT on the kickoff/resume note, the history pointer re-appears only every 10th turn,
@@ -235,7 +235,7 @@ connect (paramiko `RejectPolicy` — no TOFU in a headless run). Pieces:
 
 A routine dir (`~/routines/<slug>`) owns its recipe — a run NEVER follows library prose directly
 (the recipe is materialized in at creation; deliberate, narrow exceptions read the library AS DATA
-mid-run: subtask/spawn materialization, gated in-run workflow generation, `read_trait` consults,
+mid-run: subtask/spawn materialization, gated in-run workflow generation, `read_rule` reads,
 and the capabilities digest's catalog listing):
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
@@ -262,10 +262,10 @@ and the capabilities digest's catalog listing):
   are the one reader/writer pair; future machine-tunable knobs land here, never in routine.yaml.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
   routes to `stages/<name>.md` modules, read on demand, and ends with a Standing practices tail
-  referencing `traits/`). The clarified instruction is only a transient compile SEED — decomposed into
-  the stages at creation and NOT persisted (a routine carries no `instruction.md`); the stages are the
-  sole source of truth. `traits/*.md` — the routine's OWN practice modules, ADAPTED from library traits
-  at creation (self-refined afterwards; no post-creation toggle).
+  naming the general rules it holds). The clarified instruction is only a transient compile SEED —
+  decomposed into the stages at creation and NOT persisted (a routine carries no `instruction.md`);
+  the stages are the sole source of truth. The rules themselves are NOT here: they live once in the
+  library and the run reads them with `read_rule`.
 - `.util_outputs/<run-ts>/t<turn>-<util>.out|.err` (`engine/outputs.py`) — util output too large for
   the observation that carried it, saved in full instead of destroyed. A util's stdout is captured up
   to 1 MB (`utils_lib.OUTPUT_CAP`) and then head+tail truncated to 8k for the observation, and the
@@ -347,7 +347,7 @@ and the capabilities digest's catalog listing):
 - **ask_user** is `blocking` (poll `inbox/answer-<qid>.json` up to `ask_timeout_min`, then the run
   CONTINUES on the action's stated `default` and the record stays open as deferred) or `deferred`
   (filed to `questions/pending/`, surfaced in a later run's state digest). An ask may carry
-  `request: "<entity-id>"` — a typed ACCESS REQUEST (entities.py; docs/traits-permissions.md's
+  `request: "<entity-id>"` — a typed ACCESS REQUEST (entities.py; docs/rules-permissions.md's
   grant model): the record then settles ONLY on one of the typed allow/deny × now/forever
   decisions (plus *allow once* for turn-action classes, spent by the next dispatched matching
   action and then revoked — D65; the Decisions page's buttons; free text is held, D38),
@@ -447,22 +447,22 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
 - Defaults: routine default permissions+capabilities PLUS **`background-tasks`** (the `detach` action —
   conversation-shaped, since a finished task reports back into the chat), tuning.yaml
   `deliberation: deliberate` (chat is judgment-heavy; slider in the header panel), shell OFF (one-click grant;
-  run-history + the previous-runs depth greyed — routine-only); traits = ask-policy/global-utils/web-research/ledger-discipline/**git-checkpoint**
+  run-history + the previous-runs depth greyed — routine-only); rules = ask-policy/web-research/decision-record/intent-inference/**git-checkpoint**
   (checkpoint commits in external project repos — the conversation dir itself is unversioned).
   Conversations feed workflow-usage + health events; they are EXCLUDED from the dashboard,
   scheduler, and instance-export. `bootstrap.sync_seed_library_docs` (every boot) lands new seed
-  workflows/traits/permissions + playbooks (subfolder-aware) — how `converse`/`git-checkpoint` and
+  workflows/rules/permissions + playbooks (subfolder-aware) — how `converse`/`git-checkpoint` and
   seed playbooks reach existing instances.
 
 ## Libraries & seeds
 
 ONE git-backed library repo (`libraries_home`, default `~/.local/share/routine-scheduler-libraries`),
 seedable from the repo and syncable to a remote, holding **workflows/** (control-flow patterns),
-**traits/** (reusable practice prose, adapted per routine at creation), **permissions/** (conduct
+**rules/** (the general rules — ONE copy each, held by slug), **permissions/** (conduct
 docs whose `requires:` frontmatter names the capabilities they presume), **playbooks/** (reusable
 one-shot conversation briefs — the save/use-instruction analog), and **utils/** (the ONLY way
 routines run code, with the `gu` dispatcher at the root). Repo seeds: `library-seed/` (workflows +
-traits + permissions + playbooks),
+rules + permissions + playbooks),
 `util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `routine-improver`,
 `token-lab` — installed **disabled**; the dashboard shows a notice until
 enabled; a seed added after first boot reaches existing instances via
@@ -487,7 +487,7 @@ failed pull). `bootstrap.py` seeds on
 first boot; `deploy/install.sh` for host installs. Everything in the library is user-EDITABLE from
 the Library tab, and DELETABLE except permission docs (the capability layer's conduct surface) and
 the `clarify-instruction` workflow (the new-routine wizard runs it) — both guards are server-side.
-A deleted seed workflow/trait returns at the next daemon boot (sync_seed_library_docs); a deleted
+A deleted seed workflow/rule returns at the next daemon boot (sync_seed_library_docs); a deleted
 util stays deleted (git-recoverable — seed utils only land at repo creation).
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
   never executed, parsed statically with `ast` (`workflows/pyworkflow.py`). Each has a `META = {...}` dict
@@ -504,40 +504,46 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   SUGGESTS a pattern, or asks to generate one, and MARRIES the task to it), then emits the **`create_routine`**
   action (`engine/create_routine.py`) — valid ONLY from a root conversation — which materializes the routine
   SYNCHRONOUSLY through the SAME `workflows.scaffold` path the wizard build once called (decompose the chosen
-  workflow into main.md + stages/, adapt its traits, write routine.yaml, init the auto-push git repo; the
+  workflow into main.md + stages/, record its held rules, write routine.yaml, init the auto-push git repo; the
   daemon's `registry_rescan_s` timer picks the new dir up). The protected `clarification` template routine
   still backs the clarify flow and its questions/decisions surface through `/api/questions`; `wizard_store.py`
   now retains only the on-disk helpers for that template.
-- **Traits** (`library-seed/traits/`, `# trait:` heading, NO requires — lint-enforced): reusable practice
-  prose. Selected at creation (scaffold preselects via `suggest_traits_permissions` — which also
-  suggests the routine's `deliberation` level — from the refined
-  instruction + chosen pattern), ADAPTED to the task by `adapt.decompose` (schema carries a `traits`
-  array), written to `<routine>/traits/`, referenced from main.md's Standing practices tail
-  (`scaffold.with_practices_tail` guarantees it; `scaffold.copy_traits` is the one trait-copy
-  path routines and conversations share) — the routine's own files from then on. The USER may
-  add/remove one AFTER creation (`traits.py`, `POST /{routines,conversations}/{slug}/traits` —
-  one shared impl): the traits/ DIR is the state, the Standing practices tail is DERIVED and
-  rebuilt from it, and a later add copies the library text VERBATIM (only creation adapts).
-  Deliberately not 409-guarded — a run may never write its own traits/, so the web layer is
-  the sole writer; an add even reaches a LIVE run via control.json `add_traits` →
-  `control.apply_trait_additions` (an engine note, since the prompt is immutable), while a
-  remove lands next run. A RUN never changes its own set — it may only CONSULT an unheld
-  module for the current run (`read_trait`, gated by the `practice-library` permission,
-  default-ON for conversations; writes nothing).
-  The routine defaults (`DEFAULT_TRAITS`): `ask-policy / global-utils / web-research / ledger-discipline`;
-  plus `git-checkpoint` (external-repo undo points — a conversations default, scaffold-preselected for
-  repo-editing routines, NOT a routine default). Beside them the **curated practice set** —
-  `evidence-discipline / decision-commitment / error-recovery / change-restraint /
-  independent-verification / review-recall / teaching-insights / interface-design /
-  interface-copy / test-design / failure-visibility` — distilled from external
+- **Rules** (`library-seed/rules/`, `# rule:` heading, NO requires — lint-enforced): GENERAL
+  rules — principle prose a run applies to its own case. ONE copy each, in the library: a routine
+  holds SLUGS (`routine.yaml` `rules:`), named in main.md's Standing practices tail
+  (`rules.with_practices_tail` guarantees it) and read on demand with `read_rule`, so revising the
+  library text reaches every holder at its next run with no migration and no fork to drift. Nothing
+  is copied into a routine dir and no LLM adapts anything at creation — a rule is general by
+  construction, so the decompose pipeline only receives the held slugs as an index.
+  The SET is preselected at creation (`suggest_rules_permissions` — which also suggests the
+  routine's `deliberation` level — from the refined instruction + chosen pattern) and changed
+  afterwards ONLY by the user (`rules.py`, `POST /{routines,conversations}/{slug}/rules` — one
+  shared impl): the config list is the state, the tail is DERIVED and rebuilt from it. Deliberately
+  not 409-guarded — no run writes routine.yaml, so the web layer is the sole writer; a newly bound
+  rule even reaches a LIVE run via control.json `add_rules` → `control.apply_rule_additions` (an
+  engine note read from the library, since the prompt is immutable), while an unbind lands next run.
+  The TEXT is a separate ownership: `read_rule` is UNGATED (a routine must be able to read what
+  binds it, and library prose has no side effect; reading one it does not hold applies for that run
+  only), while `write_rule` is gated by the **rule-authoring** permission under its own approval
+  dial `rule_confirm` — a revision lands on every holder, which is not the decision write_util's
+  `confirm` governs. There is deliberately no `remove_rule`: deleting a rule silently un-binds every
+  holder with nothing to catch it, so a run reports it and the user deletes it.
+  The routine defaults (`DEFAULT_RULES`): `ask-policy / web-research / decision-record /
+  intent-inference`; plus `git-checkpoint` (external-repo undo points — a conversations default,
+  scaffold-preselected for repo-editing routines, NOT a routine default). Beside them the **curated
+  set** — `evidence-discipline / decision-commitment / error-recovery / change-restraint /
+  root-cause-fix / problem-routing / independent-verification / review-recall /
+  teaching-insights / interface-design / interface-copy / test-design / failure-visibility` —
+  distilled from external
   prompt-engineering guidance and the self-correction literature; NONE is a default, each is opt-in
-  per routine (the trait IS the on/off switch — off contributes nothing), and
-  docs/curated-traits.md records each one's provenance, its evidence strength, and the candidates
+  per routine (holding it IS the on/off switch — an unheld rule contributes nothing), and
+  docs/curated-rules.md records each one's provenance, its evidence strength, and the candidates
   REJECTED on evidence (self-critique, anti-sycophancy prose, numeric confidence) so the set grows
-  on observed failures rather than folklore. The five **after-run improvement passes** (bugfix /
-  research / features / UI / efficiency) are NOT traits — the **routine-improver** meta routine owns
-  them and sweeps every routine (honoring `improve: false`). `DEFAULT_TRAITS` (config) is the no-LLM
-  fallback selection.
+  on observed failures rather than folklore. The **rules-review** meta routine owns the layer: it
+  reads how runs actually interpreted each rule and revises the shared text from that evidence.
+  The five **after-run improvement passes** (bugfix / research / features / UI / efficiency) are NOT
+  rules — the **routine-improver** meta routine owns them and sweeps every routine (honoring
+  `improve: false`). `DEFAULT_RULES` (config) is the no-LLM fallback selection.
 - **Permissions** (`library-seed/permissions/`, `# permission:` heading + machine-read `requires:` —
   {actions, utils, runs, workflows}, no confirm): CONDUCT docs of the two-layer permission set. The routine's
   enforced surface is its own routine.yaml `capabilities:` ({actions, utils, confirm, runs, workflows} —
@@ -556,9 +562,11 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   (requires `workflows: generate` — a subtask may DRAFT a new library pattern when none fits, folding
   the system-model spend into the run; off by default), `background-tasks` (requires the `detach`
   action — launch a long fire-and-forget task that outlives a reply and reports back; default-ON for
-  conversations, opt-in for routines), `practice-library` (requires `read_trait` — CONSULT a library
-  practice module for the CURRENT run when the work needs a discipline the recipe lacks; read-only,
-  so the routine's own traits/ set stays the user's; default-ON for conversations), `scheduling`
+  conversations, opt-in for routines), `global-utils` (requires NOTHING — `requires: {}`; the `util`
+  action is a base kind, so this doc is pure conduct: discovery, composition, never silently routing
+  around a broken util; default-ON), `rule-authoring` (requires `write_rule` — author or revise a
+  general rule in the shared library, under its own `rule_confirm` approval dial since a revision
+  reaches every holder; opt-in), `scheduling`
   (requires the `schedule_run` action — arm/cancel one-shot fires on any routine, self-target
   always allowed incl. conversations), and `remote-machines` (requires the reserved `remote`
   util — see Remote machines above). Reservable utils =
@@ -566,7 +574,7 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   (engine-defined); `runs`/`workflows` are level capabilities. Permission bodies are SHORT (≤14 lines reach the prompt's CAPABILITIES section
   when held); the Library tab's permission editor has a prefilled, authoritative `requires:` panel.
   Any future permission-ish lever becomes a capability + a `requires:` entry, not a new yaml key.
-  See docs/traits-permissions.md. `DEFAULT_PERMISSIONS`/`DEFAULT_CAPABILITIES` (config) are the
+  See docs/rules-permissions.md. `DEFAULT_PERMISSIONS`/`DEFAULT_CAPABILITIES` (config) are the
   source of truth; defaults added after routines exist reach them once via
   `bootstrap.adopt_permissions` at daemon boot. Historical data migrations are NOT kept:
   each runs once on the production instance and is deleted after convergence — a pre-0.8
@@ -632,8 +640,8 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   its routine dir. The **daemon** writes `inbox/` plus the closeout of orphaned runs, retention
   (delete/gzip old run dirs), detached-task delivery (artifacts + `state/background.json` on the
   owner), and the `.control/` spools/ledgers. The **web layer** edits routine config only when no
-  run is active (409 otherwise) — deliberate live-edit exceptions: conversation settings and trait
-  add/remove (control.json `add_traits` tells the live run); web-side routine-dir commits take the
+  run is active (409 otherwise) — deliberate live-edit exceptions: conversation settings and rule
+  bind/unbind (control.json `add_rules` tells the live run); web-side routine-dir commits take the
   engine's per-repo commit lock.
 - The daemon (`scheduler.py` + `runner.py`) fires cron via croniter and spawns one `engine-run` subprocess
   per routine (never two of the same at once) under `max_concurrent_runs`; a run that blocks on a user

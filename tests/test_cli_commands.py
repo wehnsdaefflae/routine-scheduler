@@ -21,7 +21,7 @@ def cli_server(tmp_path, monkeypatch):
     import shutil
 
     lib = tmp_path / "library"
-    for kind in ("workflows", "traits", "permissions"):
+    for kind in ("workflows", "rules", "permissions"):
         shutil.copytree(REPO_SEED / kind, lib / kind)
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(yaml.safe_dump({
@@ -119,7 +119,7 @@ def test_suggest_prints_ranking_and_none_fit(cli_server, capsys, monkeypatch):
 
 def test_scaffold_creates_a_runnable_routine(cli_server, capsys):
     """No endpoints configured → decompose falls back to the verbatim pattern; the routine
-    still lands complete: recipe, traits, config, tuning."""
+    still lands complete: recipe, rules, config, tuning."""
     rc = cli.cmd_scaffold(_args(slug="scaffed", name="", workflow="general-task",
                                 instruction_file=None, cron="0 7 * * *", tz="Europe/Berlin",
                                 description="a scaffold test", tag=["t1", "t2"],

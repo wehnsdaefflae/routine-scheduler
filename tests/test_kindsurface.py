@@ -69,9 +69,9 @@ def test_projection_drops_other_kinds_fields_and_prose():
     assert "schedule_run" not in props["target"]["description"]
     assert "report" in props["target"]["description"]
     assert props["kind"]["enum"] == ["util", "read_file", "report", "finish"]
-    # the shared `name` description sheds its memory_read / read_trait clauses
+    # the shared `name` description sheds its memory_read / read_rule clauses
     assert "memory_read" not in props["name"]["description"]
-    assert "read_trait" not in props["name"]["description"]
+    assert "read_rule" not in props["name"]["description"]
     assert "util" in props["name"]["description"]
 
 

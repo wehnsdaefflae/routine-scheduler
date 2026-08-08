@@ -134,17 +134,17 @@ def test_state_digest_inlines_background_tasks(make_routine):
     assert "convert" in digest and "still running" in digest
 
 
-def test_state_digest_lists_traits_without_lens_gating(make_routine):
-    # Improvement moved to the routine-improver meta routine: the digest lists the trait
-    # files plainly and carries NO improve-* lens/authorization block anymore.
+def test_state_digest_lists_held_rules(make_routine):
+    # The rules a routine holds come from its CONFIG, not from any directory — the digest
+    # names them so the run knows what to read, and carries no improve-* lens block.
     d = make_routine(slug="lens")
-    traits = d / "traits"
-    traits.mkdir()
-    (traits / "ask-policy.md").write_text("# ask", encoding="utf-8")
-    digest = state_digest(d, [], [])
-    assert "traits/ practice modules" in digest and "ask-policy.md" in digest
+    digest = state_digest(d, [], [], held_rules=["ask-policy", "decision-record"])
+    assert "General rules binding this routine" in digest
+    assert "ask-policy, decision-record" in digest
     assert "Active improve-* lenses" not in digest
     assert "report-only" not in digest
+    # no held rules → no section at all, rather than an empty heading
+    assert "General rules binding this routine" not in state_digest(d, [], [])
 
 
 def test_state_digest_surfaces_memory_index(make_routine):

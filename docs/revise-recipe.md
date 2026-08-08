@@ -13,14 +13,14 @@ On a finished routine run's page, the message box has a mode selector. Pick
 - *"add a step that emails me the summary at the end"*
 
 The run **resumes with its full transcript rehydrated** (it just executed, so it knows exactly what
-happened) and edits its OWN recipe files — `main.md`, the `stages/` modules, `traits/`, and
+happened) and edits its OWN recipe files — `main.md`, the `stages/` modules, and
 `tuning.yaml` — with its normal `read_file` / `edit_file` / `write_file` tools. It verifies the edit,
 notes it in `LEDGER.md`, and finishes. The engine commits the change; it takes effect on the
 routine's **next run**.
 
 ## What it can and can't change
 
-- **Recipe** (main.md / stages / traits / tuning.yaml) — edited directly. This is the routine's
+- **Recipe** (main.md / stages / tuning.yaml) — edited directly. This is the routine's
   *behaviour*: what it does, in what order, how it words things, how much it deliberates.
 - **Config** (`routine.yaml` — schedule, budgets, models, permissions/capabilities, filesystem
   roots) — a run can **never** edit this; config is yours. If your request is a config change, the

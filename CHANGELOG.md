@@ -19,6 +19,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.164.0] — 2026-08-08
+
+### Traits are now general RULES — one library copy, held by slug
+
+Practice **traits** (per-routine adapted copies under `<routine>/traits/`) became general
+**rules**: principle prose with exactly ONE copy, in `<library>/rules/`, that a run applies to
+its own particular case. A routine holds SLUGS (`routine.yaml` `rules:`) and reads the prose on
+demand with `read_rule`, so revising a rule reaches every routine holding it at its next run —
+with no migration and no per-routine fork to drift. The evidence for the change was on the
+instance: the live routines' trait copies were byte-identical to each other and differed from
+the library only by improvements made *after* they were created.
+
+- **Ownership split in two.** WHICH rules bind a routine is config — user-only, since no run
+  writes routine.yaml (*General rules* panel on the routine page; the conversation header). The
+  TEXT is the library's: yours on the Library tab, and writable by a routine holding the new
+  **rule-authoring** permission.
+- **`read_rule` (renamed from `read_trait`) is now UNGATED.** A routine must be able to read
+  what binds it, and reading library prose has no side effect. The `practice-library` permission
+  and the `read_trait` capability are retired.
+- **New `write_rule` action** behind `rule-authoring`, mirroring `write_util`: `content` to
+  author a new rule, `anchor`/`replacement` to revise one in place, library-linter gated before
+  the approval ask, committed to the library. It carries its OWN approval dial —
+  `capabilities.rule_confirm` — because a rule revision lands on every holder, which is not the
+  decision `confirm` (write_util) governs. There is deliberately **no `remove_rule`**: deleting
+  a rule silently un-binds every holder with nothing to catch it, so a run reports it instead.
+- **Creation no longer adapts.** The decompose pipeline lost its trait leg (one fewer LLM call
+  per routine); it now receives the held slugs as an index and main.md's *Standing practices*
+  tail names them.
+
+### New maintenance routine: `rules-review`
+
+Owns the rules layer. It reads how runs across all holders actually interpreted each rule —
+followed, misread, ignored, or a good interpretation the text never contained — and revises the
+shared text from that evidence, with `write_rule` under the user's approval level. Its
+`stages/route-elsewhere.md` carries what is genuinely instance-specific: the problem-class →
+owner table, and the boundary with routine-improver (one routine misreads a rule → that
+routine's problem; several read the same sentence differently → the sentence).
+
+### Rule-set changes
+
+- **`global-utils` became a permission.** It is mechanism prose (how to read a util's usage
+  line, what to do when one errors) and mechanism is exactly what a conduct doc is for — a rule
+  names no tool. Held by default; `requires: {}`, the first permission that presumes no
+  capability (the lint now accepts an explicitly empty `requires:`).
+- **`ledger-discipline` → `decision-record`**, generalized to its purpose: keep the reasoning
+  the artefacts cannot carry, read it before exploring, record what you rejected and why. The
+  filename, entry format and rotation threshold moved to the workflow patterns that own the
+  mechanism.
+- **New `intent-inference` rule** — read every user intervention as evidence of a standing
+  preference: name the intention behind it, record it as a falsifiable hypothesis, act on it,
+  correct it in the open. A routine default, and the highest-value rule in conversations.
+- `DEFAULT_RULES` is now `ask-policy / web-research / decision-record / intent-inference`.
+- **`maintenance-routing` split into its two independent halves.** The REPORTING discipline —
+  owner not operator, the artefact names the owner, work order not hint, close what you receive
+  — is now the general **`problem-routing`** rule, available to every routine. The instance's
+  ownership TABLE is not general at all and moved into `rules-review`'s recipe.
+- **New `root-cause-fix` rule**: repair the cause, never the symptom — trace back until the
+  answer names something changeable, install a GENERAL prevention at the level the cause lives
+  at, in the run that found it; the same class arriving twice means the prevention was too
+  weak. It pairs with `intent-inference` and is deliberately separate from it: one asks what
+  the user WANTED, the other why they had to say it at all.
+- **`change-restraint` extended** with a look-before-you-build clause: check for an existing
+  store/site/pipeline before standing up a second one.
+- Two routine-LOCAL modules the improver had authored (`correction-learning` on
+  nanogeofeld-stewardship, `anticipatory-stewardship` on fau-grant-application-prep) existed
+  nowhere else. Both conflated the same pair of principles; the migration maps each to
+  `root-cause-fix` + `intent-inference` rather than promoting a per-routine fork into the
+  library.
+
+### Migration
+
+`migrate_rules.py` (MIGRATION, expires 2026-09-30) converts the production instance at boot:
+library `traits/` → `rules/` with headings rewritten; each routine's/conversation's trait copies
+→ its `rules:` list (retired slugs mapped — one may expand to several rules — directory
+deleted); `practice-library` and `read_trait` stripped; `global-utils` added as a permission
+where the trait was held; every `## Standing practices` tail rebuilt.
+
+Two safety properties are tested. A routine-local module the library never carried is
+**promoted** into `rules/` before any `traits/` dir is deleted — dropping it, correct for an
+adapted fork, would be silent data loss for the only copy. And a RETIRED slug is never carried
+over under its new name: the replacement ships in the seed, already generalized by hand, so
+copying the old body would undo the generalization on the next boot.
+
 ## [0.163.0] — 2026-08-08
 
 ### Fixed

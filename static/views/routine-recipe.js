@@ -1,5 +1,5 @@
 // The recipe editor (split from routine.js): the navigable tree of the routine's OWN
-// workflow files (main.md + stage modules + traits), a per-file edit/preview pane with
+// workflow files (main.md + stage modules), a per-file edit/preview pane with
 // save+commit, and heading deep-links. mountRecipe fills the two columns and returns
 // { refreshTree } (recipe health's roll-back re-syncs the tree through it).
 

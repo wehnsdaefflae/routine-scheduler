@@ -125,9 +125,10 @@ def routine_detail(request: Request, slug: str) -> dict:
     if ledger.exists():
         lines = ledger.read_text(encoding="utf-8").splitlines()
         ledger_tail = "\n".join(lines[-100:])
-    # editable routine files by directory (stage modules + the routine's own trait copies + state)
+    # editable routine files by directory (stage modules + state). General rules are not
+    # here: they live in the library, edited on the Library tab, shared by every holder.
     files = {}
-    for sub in ("stages", "traits", "state"):
+    for sub in ("stages", "state"):
         subdir = d / sub
         files[sub] = ([p.name for p in sorted(subdir.iterdir())
                        if p.is_file() and p.suffix == ".md"]
@@ -180,9 +181,9 @@ def routine_detail(request: Request, slug: str) -> dict:
                              "host": m.host, "user": m.user, "tags": list(m.tags)}
                             for m in server.machines.values()],
         "deliberation": info.cfg.deliberation,
-        # Practice modules this routine holds — the traits/ dir IS the state (see traits.py);
-        # the picker's options come from GET /api/library (`traits`).
-        "traits": sorted(p.stem for p in (info.cfg.dir / "traits").glob("*.md")),
+        # The general rules binding this routine — routine.yaml's `rules:` IS the state
+        # (see rules.py); the picker's options come from GET /api/library (`rules`).
+        "rules": list(info.cfg.rules),
         # event triggers (webhook now): config rows + fire ledger + hook URL paths — the
         # Triggers card renders these; CRUD lives in api_hooks
         "triggers": triggers_mod.describe_triggers(server.routines_home, slug,
@@ -224,8 +225,8 @@ class RevertBody(BaseModel):
 
 @router.post("/routines/{slug}/recipe/revert")
 def revert_recipe(request: Request, slug: str, body: RevertBody) -> dict:
-    """One-click rollback of a recipe change: restore main.md / stages/ / traits/ /
-    tuning.yaml to their state just before `commit` and commit only those paths —
+    """One-click rollback of a recipe change: restore main.md / stages/ / tuning.yaml
+    to their state just before `commit` and commit only those paths —
     routine.yaml (the user's config) and state files are never touched. Guarded like
     every web-side routine edit: 409 while a run is active.
     """
@@ -259,9 +260,9 @@ def stategraph(request: Request, slug: str) -> dict:
 
 @router.get("/routines/{slug}/recipe")
 def recipe(request: Request, slug: str) -> dict:
-    """The routine's recipe as a navigable tree — main.md + stage modules (in Run-flow order) +
-    trait modules, each with its heading outline. Powers the routine page's file browser; edits
-    still go through the generic /file endpoint.
+    """The routine's recipe as a navigable tree — main.md + stage modules (in Run-flow order),
+    each with its heading outline. Powers the routine page's file browser; edits still go
+    through the generic /file endpoint.
     """
     from ..readmodels import statemap
 
@@ -304,8 +305,8 @@ class RoutineFileBody(BaseModel):
 
 @router.put("/routines/{slug}/file")
 def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict:
-    """Edit any of the routine's own files — main.md, stage modules, traits, state, or routine.yaml.
-    A routine owns its recipe (materialized in), so main.md, stages/ and traits/ ARE editable here.
+    """Edit any of the routine's own files — main.md, stage modules, state, or routine.yaml.
+    A routine owns its recipe (materialized in), so main.md and stages/ ARE editable here.
     This is the USER editing via the web (guarded while a run is active) — distinct from a run,
     which may never write its own recipe or config.
     """

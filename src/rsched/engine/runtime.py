@@ -39,9 +39,7 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
 
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8") \
         if (routine_dir / "instruction.md").exists() else ""
-    traits_dir = routine_dir / "traits"
-    traits = sorted(p.stem for p in traits_dir.glob("*.md")) if traits_dir.is_dir() else []
-    result = decompose(server, cfg.workflow_slug, instruction, traits=traits)
+    result = decompose(server, cfg.workflow_slug, instruction, rules=list(cfg.rules))
     try:
         meta, _ = library.read_workflow(server.libraries_home, cfg.workflow_slug)
     except FileNotFoundError:
@@ -64,9 +62,10 @@ def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:
     """Load the routine's OWN main.md body (the recipe was materialized into it at generation).
     Returns (main_body, provenance, allowed_tools).
 
-    A routine is self-contained: nothing is read from the workflow library at run time. The model
-    reads the stage modules under stages/ and the practice modules under traits/ on demand via
-    read_file (main.md routes to them).
+    A routine's RECIPE is self-contained: nothing is read from the workflow library at run time,
+    and the model reads the stage modules under stages/ on demand via read_file (main.md routes
+    to them). The general RULES it holds are the exception by design — they live once in the
+    library and are read with `read_rule`, so a revision reaches every holder at once.
     """
     main = routine_dir / "main.md"
     if not main.exists():

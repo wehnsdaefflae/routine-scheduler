@@ -784,11 +784,11 @@ def test_routine_page_permission_help_and_doc_expand(ui, ui_page):
     expect(row.locator(".doc-expand-body")).to_contain_text("notebook")
     assert box.is_checked() == checked_before
 
-    # practice-module rows expand the same way
-    trait_row = ui_page.locator(".trait-doc").first
-    trait_row.get_by_role("button", name="full description").click()
-    expect(trait_row.locator(".doc-expand-body")).to_be_visible()
-    expect(trait_row.locator(".doc-expand-body")).not_to_be_empty()
+    # general-rule rows expand the same way
+    rule_row = ui_page.locator(".rule-doc").first
+    rule_row.get_by_role("button", name="full description").click()
+    expect(rule_row.locator(".doc-expand-body")).to_be_visible()
+    expect(rule_row.locator(".doc-expand-body")).not_to_be_empty()
 
 
 # ---- 3b. Spend surfaces (dashboard card line + Stats monthly table) -----------------------
@@ -823,7 +823,7 @@ def test_spend_surfaces(ui, ui_page):
     expect(row.locator(".chip.partial", has_text="growing")).to_be_visible()
 
 
-# ---- 3c. Library deletes (traits/utils/workflows — permissions + clarify protected) -------
+# ---- 3c. Library deletes (rules/utils/workflows — permissions + clarify protected) -------
 
 
 def test_library_delete_flows(ui, ui_page):
@@ -831,13 +831,13 @@ def test_library_delete_flows(ui, ui_page):
     editor_panel = ui_page.locator(
         ".panel", has=ui_page.get_by_role("button", name="save + commit"))
 
-    # a trait deletes through the themed dialog; the reload lands on the bare list
+    # a rule deletes through the themed dialog; the reload lands on the bare list
     ui_page.get_by_role("link", name="ask-policy", exact=True).click()
     editor_panel.get_by_role("button", name="delete").click()
     _confirm_modal(ui_page, "delete")
     expect(ui_page.get_by_role("link", name="ask-policy", exact=True)).to_have_count(0)
-    assert not (ui.tmp / "library" / "traits" / "ask-policy.md").exists()
-    assert "#/library" in ui_page.url and "trait/" not in ui_page.url
+    assert not (ui.tmp / "library" / "rules" / "ask-policy.md").exists()
+    assert "#/library" in ui_page.url and "rule/" not in ui_page.url
 
     # a util deletes the same way (whole dir, git-recoverable)
     ui_page.get_by_role("link", name="dir-tree", exact=True).click()
@@ -1442,34 +1442,36 @@ def test_global_stream_remints_ticket_on_reconnect(ui, ui_page):
         f"client did not re-mint a fresh ticket after the stream dropped (saw {len(seen)})")
 
 
-def test_routine_page_trait_picker_adds_a_practice_module(ui, ui_page):
-    """The post-creation practice picker: ticking a library module and applying copies it
-    into the routine's own traits/ VERBATIM and rebuilds main.md's derived Standing-practices
-    tail. This is the user's switch — a run can never change its own set."""
+def test_routine_page_rule_picker_binds_a_general_rule(ui, ui_page):
+    """The post-creation rule picker: ticking a library rule and applying records the SLUG in
+    routine.yaml and rebuilds main.md's derived Standing-practices tail. Nothing is copied —
+    the prose stays in the library. This is the user's switch; a run never changes its set."""
+    import yaml
     rdir = ui.routines / "uir"
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    panel = ui_page.locator(".panel", has=ui_page.locator(".traitpicker"))
+    panel = ui_page.locator(".panel", has=ui_page.locator(".rulepicker"))
     expect(panel).to_be_visible()
     row = panel.locator("label.toggle-row", has_text="evidence-discipline")
     expect(row).to_be_visible()
     row.locator('input[type="checkbox"]').check()
     panel.get_by_role("button", name="apply").click()
-    expect(_toast(ui_page)).to_contain_text("practices updated")
-    written = (rdir / "traits" / "evidence-discipline.md").read_text(encoding="utf-8")
-    assert "# trait: evidence discipline" in written
-    assert "tags:" not in written                      # frontmatter stripped, body verbatim
-    assert "traits/evidence-discipline.md" in (rdir / "main.md").read_text(encoding="utf-8")
+    expect(_toast(ui_page)).to_contain_text("rules updated")
+    held = yaml.safe_load((rdir / "routine.yaml").read_text(encoding="utf-8"))["rules"]
+    assert "evidence-discipline" in held
+    assert not (rdir / "rules").exists()               # one copy only, and it is the library's
+    assert "`evidence-discipline`" in (rdir / "main.md").read_text(encoding="utf-8")
 
     ui_page.reload()                                   # the tick survives a fresh detail read
-    reloaded = ui_page.locator(".panel", has=ui_page.locator(".traitpicker"))
+    reloaded = ui_page.locator(".panel", has=ui_page.locator(".rulepicker"))
     expect(reloaded.locator("label.toggle-row", has_text="evidence-discipline")
            .locator('input[type="checkbox"]')).to_be_checked()
 
 
-def test_conversation_header_trait_picker(ui, ui_page):
+def test_conversation_header_rule_picker(ui, ui_page):
     """The same picker in the conversation header — the case that motivated it, since a
-    conversation shifts topic mid-thread. Adding a module writes it into the conversation's
-    own traits/ and the shared endpoint records it for every reply from here on."""
+    conversation shifts topic mid-thread. Binding a rule records the slug and the shared
+    endpoint applies it to every reply from here on."""
+    import yaml
     ui_page.goto(f"{ui.url}/#/conversations")
     ui_page.locator(".conv-new textarea").fill("Help me restyle the landing page.")
     ui_page.get_by_role("button", name="start conversation").click()
@@ -1477,7 +1479,7 @@ def test_conversation_header_trait_picker(ui, ui_page):
     conv_dir = ui.conversations / ui_page.url.rsplit("/", 1)[-1]
 
     ui_page.locator("details", has_text="⚙ capabilities & budgets").locator("summary").click()
-    picker = ui_page.locator(".traitpicker")
+    picker = ui_page.locator(".rulepicker")
     expect(picker).to_be_visible()
     # conversations start with their default set already ticked
     expect(picker.locator("label.toggle-row", has_text="ask-policy")
@@ -1486,8 +1488,9 @@ def test_conversation_header_trait_picker(ui, ui_page):
     expect(row.locator('input[type="checkbox"]')).not_to_be_checked()
     row.locator('input[type="checkbox"]').check()
     picker.get_by_role("button", name="apply").click()
-    expect(_toast(ui_page)).to_contain_text("practices updated")
-    assert (conv_dir / "traits" / "interface-design.md").is_file()
+    expect(_toast(ui_page)).to_contain_text("rules updated")
+    held = yaml.safe_load((conv_dir / "routine.yaml").read_text(encoding="utf-8"))["rules"]
+    assert "interface-design" in held
 
 
 def test_run_waiting_line_names_the_executing_action(ui, ui_page):

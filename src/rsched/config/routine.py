@@ -16,6 +16,7 @@ from .base import (
     DEFAULT_CAPABILITIES,
     DEFAULT_DELIBERATION,
     DEFAULT_PERMISSIONS,
+    DEFAULT_RULES,
     DELIBERATION_LEVELS,
     MODEL_KINDS,
     BlankableStr,
@@ -28,10 +29,10 @@ from .base import (
 
 class RoutineConfig(_Config):
     """One routine's `routine.yaml`: schedule, models (main/subroutine/tool_call/uncensored),
-    budgets, held permissions, filesystem roots, and retention. The routine's recipe lives
-    next to it as `main.md` + `stages/`; its adapted practice prose under `traits/`. (The
-    instruction is a transient compile seed — decomposed into the stages at creation,
-    never persisted.)
+    budgets, held permissions, held general rules, filesystem roots, and retention. The
+    routine's recipe lives next to it as `main.md` + `stages/`; the rules it practises are
+    library slugs in `rules:`. (The instruction is a transient compile seed — decomposed
+    into the stages at creation, never persisted.)
     """
 
     slug: str
@@ -80,9 +81,12 @@ class RoutineConfig(_Config):
     # The two permission layers (user-changeable only; explicit values win, otherwise a
     # new routine holds the defaults). `permissions` names the held CONDUCT docs (library
     # prose in the prompt); `capabilities` is the engine-enforced surface grants.py
-    # loads the run policy from — {actions, utils, confirm, runs}. Traits (practice
-    # prose) leave no yaml trace — they live as the routine's own files under traits/.
+    # loads the run policy from — {actions, utils, confirm, runs}.
     permissions: list[str] = Field(default_factory=lambda: list(DEFAULT_PERMISSIONS))
+    # The GENERAL RULES this routine practises: library slugs, never copies. The rule text
+    # lives once under <libraries_home>/rules/ and the run reads it on demand (`read_rule`),
+    # so a library revision reaches every holder at once. User-only, like everything here.
+    rules: list[str] = Field(default_factory=lambda: list(DEFAULT_RULES))
     capabilities: dict = Field(default_factory=lambda: {
         k: list(v) if isinstance(v, list) else v for k, v in DEFAULT_CAPABILITIES.items()})
     fs_read_roots: list[HomePath] = Field(default_factory=list)
@@ -148,6 +152,12 @@ class RoutineConfig(_Config):
     @classmethod
     def _default_unless_list(cls, v: object) -> object:
         return [str(f) for f in v] if isinstance(v, list) else list(DEFAULT_PERMISSIONS)
+
+    @field_validator("rules", mode="before")
+    @classmethod
+    def _rules_default_unless_list(cls, v: object) -> object:
+        # an explicit list wins ([] = practises nothing); absent/garbage → the defaults
+        return [str(f) for f in v] if isinstance(v, list) else list(DEFAULT_RULES)
 
     @field_validator("capabilities", mode="before")
     @classmethod

@@ -175,8 +175,8 @@ def test_routine_cards_and_detail(client):
     assert detail["workflow_ref"]["slug"] == "test-flow"   # workflow is REFERENCED, not a routine file
     assert isinstance(detail["permissions"], list)   # hermetic test library → may be empty
     assert all("requires" in p and "active" in p for p in detail["permissions"])
-    assert set(detail["capabilities"]["active"]) == {"actions", "utils", "confirm", "runs",
-                                                      "workflows"}
+    assert set(detail["capabilities"]["active"]) == {"actions", "utils", "confirm",
+                                                     "rule_confirm", "runs", "workflows"}
     assert detail["runs"][0]["state"] == "finished"
     assert c.get("/api/routines/nope").status_code == 404
 
@@ -214,7 +214,7 @@ def test_patch_routine_and_409_guard(client):
     _mk_run(tmp / "routines", "apir", "20260708-090000", "running")
     # config saves are allowed DURING a run (D35): the engine reads routine.yaml at run
     # START only, so the edit cleanly applies to the next run. Recipe/file edits keep
-    # their 409 — stages/traits ARE read mid-run.
+    # their 409 — stages/ ARE read mid-run.
     assert c.patch("/api/routines/apir", json={"enabled": True}).status_code == 200
     assert yaml.safe_load(
         (tmp / "routines" / "apir" / "routine.yaml").read_text())["enabled"] is True
@@ -1454,12 +1454,12 @@ def test_library_trait_delete_and_permission_guard(client):
     """Traits are deletable (committed; routines keep their adapted copies) — permission
     docs are NOT (the capability layer's conduct surface)."""
     c, tmp = client
-    traits = tmp / "library" / "traits"
-    traits.mkdir(parents=True, exist_ok=True)
-    (traits / "doomed.md").write_text("# trait: doomed — a goner\n\nbody\n")
-    assert c.delete("/api/library/traits/doomed").status_code == 200
-    assert not (traits / "doomed.md").exists()
-    assert c.delete("/api/library/traits/doomed").status_code == 404
+    rules = tmp / "library" / "rules"
+    rules.mkdir(parents=True, exist_ok=True)
+    (rules / "doomed.md").write_text("# rule: doomed — a goner\n\nbody\n")
+    assert c.delete("/api/library/rules/doomed").status_code == 200
+    assert not (rules / "doomed.md").exists()
+    assert c.delete("/api/library/rules/doomed").status_code == 404
 
     perms = tmp / "library" / "permissions"
     perms.mkdir(parents=True, exist_ok=True)
@@ -1503,16 +1503,16 @@ def test_first_run_setup_flag(client):
 
 
 def test_library_reports_defaults_and_both_doc_sets(client):
-    """/api/library carries DEFAULT_TRAITS + DEFAULT_PERMISSIONS so pickers pre-check from
-    config instead of a hard-coded frontend list — and lists traits and permissions apart."""
-    from rsched.config import DEFAULT_PERMISSIONS, DEFAULT_TRAITS
+    """/api/library carries DEFAULT_RULES + DEFAULT_PERMISSIONS so pickers pre-check from
+    config instead of a hard-coded frontend list — and lists rules and permissions apart."""
+    from rsched.config import DEFAULT_PERMISSIONS, DEFAULT_RULES
 
     c, tmp = client
     (tmp / "library" / "workflows").mkdir(parents=True, exist_ok=True)
     lib = c.get("/api/library").json()
-    assert lib["default_traits"] == list(DEFAULT_TRAITS)
+    assert lib["default_rules"] == list(DEFAULT_RULES)
     assert lib["default_permissions"] == list(DEFAULT_PERMISSIONS)
-    assert isinstance(lib["traits"], list) and isinstance(lib["permissions"], list)
+    assert isinstance(lib["rules"], list) and isinstance(lib["permissions"], list)
 
 
 
@@ -1813,32 +1813,32 @@ def test_items_page_reflects_answered_decision_after_consumption(client):
     assert c.get("/api/items").json()["answered_decisions"] == []
 
 
-def test_post_traits_adds_and_removes_practice_modules(client):
-    """The user's post-creation trait switch: the traits/ dir is the state, main.md's
-    Standing-practices tail is derived from it, and an unknown slug is a 400 rather than a
-    silent skip (the picker offers only real ones, so an unknown slug means a stale client).
+def test_post_rules_binds_and_unbinds_general_rules(client):
+    """The user's post-creation rule switch: routine.yaml's `rules:` is the state, main.md's
+    Standing-practices tail is derived from it, NOTHING is copied into the routine dir, and an
+    unknown slug is a 400 rather than a silent skip (the picker offers only real ones, so an
+    unknown slug means a stale client).
     """
     c, tmp = client
-    traits_home = tmp / "library" / "traits"
-    traits_home.mkdir(parents=True, exist_ok=True)
-    (traits_home / "alpha.md").write_text(
-        "---\ntags: [a, b, c]\n---\n# trait: alpha — the first practice\nbody\n",
+    rules_home = tmp / "library" / "rules"
+    rules_home.mkdir(parents=True, exist_ok=True)
+    (rules_home / "alpha.md").write_text(
+        "---\ntags: [a, b, c]\n---\n# rule: alpha — the first principle\nbody\n",
         encoding="utf-8")
     rdir = tmp / "routines" / "apir"
-    r = c.post("/api/routines/apir/traits", json={"add": ["alpha"], "remove": []})
+    r = c.post("/api/routines/apir/rules", json={"add": ["alpha"], "remove": []})
     assert r.status_code == 200, r.text
-    assert r.json()["added"] == ["alpha"] and "alpha" in r.json()["traits"]
-    assert (rdir / "traits" / "alpha.md").is_file()
-    assert "traits/alpha.md" in (rdir / "main.md").read_text(encoding="utf-8")
-    assert c.get("/api/routines/apir").json()["traits"] == ["alpha"]
-    # re-adding is a no-op, not a duplicate or an error
-    assert c.post("/api/routines/apir/traits", json={"add": ["alpha"]}).json()["added"] == []
-    # removal prunes the derived tail with it
-    out = c.post("/api/routines/apir/traits", json={"remove": ["alpha"]})
+    assert r.json()["added"] == ["alpha"] and "alpha" in r.json()["rules"]
+    assert not (rdir / "rules").exists()          # one copy only, and it is the library's
+    assert "- `alpha` — the first principle" in (rdir / "main.md").read_text(encoding="utf-8")
+    assert c.get("/api/routines/apir").json()["rules"] == ["alpha"]
+    # re-binding is a no-op, not a duplicate or an error
+    assert c.post("/api/routines/apir/rules", json={"add": ["alpha"]}).json()["added"] == []
+    # unbinding prunes the derived tail with it
+    out = c.post("/api/routines/apir/rules", json={"remove": ["alpha"]})
     assert out.json()["removed"] == ["alpha"]
-    assert not (rdir / "traits" / "alpha.md").exists()
-    assert "traits/alpha.md" not in (rdir / "main.md").read_text(encoding="utf-8")
-    bad = c.post("/api/routines/apir/traits", json={"add": ["ghost"]})
+    assert "`alpha`" not in (rdir / "main.md").read_text(encoding="utf-8")
+    bad = c.post("/api/routines/apir/rules", json={"add": ["ghost"]})
     assert bad.status_code == 400 and "ghost" in bad.text
 
 

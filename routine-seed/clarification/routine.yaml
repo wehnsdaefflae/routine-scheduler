@@ -1,6 +1,6 @@
 name: Routine clarification
 description: Template for "+ New routine" clarification sessions — every session copies
-  its budgets, models, and traits from here. Protected — never scheduled, never archived,
+  its budgets, models, and rules from here. Protected — never scheduled, never archived,
   never run directly.
 tags:
 - meta
@@ -14,7 +14,11 @@ schedule:
 workflow:
   library_slug: clarify-instruction
   library_commit: ''
-permissions: []
+permissions:
+- global-utils
+rules:
+- ask-policy
+- intent-inference
 capabilities:
   actions: []
   utils: []

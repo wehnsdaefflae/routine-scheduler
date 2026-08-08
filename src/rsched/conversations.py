@@ -6,7 +6,7 @@ routine — NEVER git-versioned (no `.git`, so the engine's autocommit no-ops; d
 gone). The user's first message IS instruction.md; every later message resumes the same
 run in place (converse semantics), so one conversation = one continuous run with a fresh
 budget window per reply. Creation is instant: the `converse` library workflow is
-materialized verbatim (no LLM in the path) and traits are copied stock; a title and
+materialized verbatim (no LLM in the path) and the standard rules are bound; a title and
 editable tags are generated off-path by `autolabel` via the system model.
 """
 
@@ -22,6 +22,7 @@ from .config import (
     CONVERSATION_DELIBERATION,
     DEFAULT_BUDGETS,
     DEFAULT_PERMISSIONS,
+    DEFAULT_RULES,
     ServerConfig,
     write_tuning,
 )
@@ -32,15 +33,14 @@ from .schedule import server_tz
 log = logging.getLogger("rsched.conversations")
 
 CONVERSE_WORKFLOW = "converse"
-# Stock practice set for a conversation: no improve-* passes (they are per-scheduled-run
-# refinement lenses) but git-checkpoint (undo points in external project repos the
-# conversation edits — the conversation dir itself is unversioned).
-CONVERSATION_TRAITS = ["ask-policy", "global-utils", "web-research", "ledger-discipline",
-                       "git-checkpoint"]
+# Stock rule set for a conversation: the routine defaults plus git-checkpoint (undo points
+# in external project repos the conversation edits — the conversation dir itself is
+# unversioned). intent-inference earns its place most here: a conversation is where the
+# user intervenes constantly, so every reply is evidence about what they actually want.
+CONVERSATION_RULES = [*DEFAULT_RULES, "git-checkpoint"]
 # Same default permission surface as routines, plus background-tasks (the `detach` action):
 # launching long fire-and-forget jobs that outlive a reply is a conversation-shaped capability
 # (the finished task reports back into the chat). Shell stays a one-click opt-in.
-# practice-library is no longer listed here — it is a DEFAULT_PERMISSIONS entry now.
 CONVERSATION_PERMISSIONS = [*DEFAULT_PERMISSIONS, "background-tasks"]
 # Per-REPLY ceilings (each user message resumes the run with a fresh window — turns, wall
 # clock, tokens and subruns all reset), and deliberately a BACKSTOP rather than a pace. The
@@ -143,7 +143,7 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
                         fs_read_roots: list[str] | None = None,
                         fs_write_roots: list[str] | None = None) -> Path:
     """Create <conversations_home>/<slug> ready to run: materialized converse main.md with
-    a Standing-practices tail, verbatim trait copies, instruction.md = the first message,
+    a Standing-practices tail naming the rules it holds, instruction.md = the first message,
     and a schedule-less routine.yaml marked `kind: conversation`. NO git init — a
     conversation is deliberately unversioned (the engine's autocommit no-ops without .git).
 
@@ -157,10 +157,11 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
     with the access (the workdir stays the first root: the project directory).
     """
     from . import library_docs, playbooks
+    from . import rules as rules_mod
+    from .rules import with_practices_tail
     from .workflows.adapt import dump_markdown
     from .workflows.library import head_commit, read_workflow
     from .workflows.pyworkflow import render_markdown
-    from .workflows.scaffold import copy_traits, with_practices_tail
 
     conv_dir = server.conversations_home / slug
     if conv_dir.exists():
@@ -170,17 +171,18 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
     title = fallback_title(first_message if first_message.strip()
                            else (str(pb["meta"].get("title")) if pb else "conversation"))
 
-    for sub in ("state", "inbox", "traits", "attachments", "artifacts"):
+    for sub in ("state", "inbox", "attachments", "artifacts"):
         (conv_dir / sub).mkdir(parents=True)
-    # trait copies: library text verbatim — the conversation's own files from here on
-    # (refined by the routine-improver meta routine, like any routine's).
-    trait_summaries = copy_traits(server.traits_home, conv_dir, list(CONVERSATION_TRAITS))
+    # the general rules a conversation holds: slugs only — the prose stays in the library.
+    active_rules = [r for r in CONVERSATION_RULES
+                    if r in set(library_docs.slugs(server.rules_home))]
+    rule_summaries = rules_mod.summaries(server.rules_home, active_rules)
     commit = head_commit(server.libraries_home)
     main_meta = {"name": title, "slug": slug,
                  "materialized_from": {"slug": CONVERSE_WORKFLOW, "commit": commit,
                                        "version": meta.get("version", 0)},
                  **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {})}
-    body = with_practices_tail(render_markdown(raw, meta), trait_summaries)
+    body = with_practices_tail(render_markdown(raw, meta), rule_summaries)
     (conv_dir / "main.md").write_text(dump_markdown(main_meta, body), encoding="utf-8")
     (conv_dir / "instruction.md").write_text(
         _seed_instruction(pb, first_message, conv_dir) + "\n", encoding="utf-8")
@@ -211,6 +213,7 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
         **({"playbook": {"slug": playbook_slug, "commit": commit}} if pb else {}),
         **({"models": models} if models else {}),
         "permissions": active_perms,
+        "rules": active_rules,
         "capabilities": capabilities,
         "budgets": {**CONVERSATION_BUDGETS,
                     **{k: int(v) for k, v in (budgets or {}).items() if k in DEFAULT_BUDGETS}},
@@ -274,14 +277,14 @@ def _seed_converse_into_library(libraries_home: Path) -> bool:
 def migrate_conversations(server: ServerConfig) -> int:
     """See the MIGRATION marker above. Re-renders each conversation's `main.md` from the
     current `converse` pattern and lifts per-reply budgets off the retired values. A
-    conversation's OWN traits/ are never touched — only their summaries are re-read, to
+    conversation's held rules are never touched — only their summaries are re-read, to
     rebuild the practices tail. Returns how many conversations changed.
     """
-    from . import library_docs
+    from . import rules as rules_mod
+    from .rules import with_practices_tail
     from .workflows.adapt import dump_markdown
     from .workflows.library import head_commit, read_workflow
     from .workflows.pyworkflow import render_markdown
-    from .workflows.scaffold import with_practices_tail
 
     _seed_converse_into_library(server.libraries_home)
     home = server.conversations_home
@@ -307,11 +310,8 @@ def migrate_conversations(server: ServerConfig) -> int:
         changed = False
         materialized = cfg.get("workflow") or {}
         if int(materialized.get("version") or 0) < int(meta.get("version", 0)):
-            summaries: dict[str, str] = {}
-            for trait in sorted((conv_dir / "traits").glob("*.md")):
-                body = trait.read_text(encoding="utf-8")
-                m = library_docs.DOC_RE.search(body)
-                summaries[trait.stem] = m.group("summary").strip() if m else ""
+            summaries = rules_mod.summaries(server.rules_home,
+                                            rules_mod.current_rules(conv_dir))
             main_meta = {"name": cfg.get("name") or conv_dir.name, "slug": conv_dir.name,
                          "materialized_from": {"slug": CONVERSE_WORKFLOW, "commit": commit,
                                                "version": meta.get("version", 0)},

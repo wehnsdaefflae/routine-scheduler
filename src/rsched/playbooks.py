@@ -1,4 +1,4 @@
-"""One-shot playbooks — a fourth library doc category, alongside workflows/traits/permissions.
+"""One-shot playbooks — a fourth library doc category, alongside workflows/rules/permissions.
 
 A **playbook** is a saved, generalized conversation BRIEF (NOT a control-flow workflow): the
 proven spec of a kind of work, captured from a finished conversation and reused to seed a new

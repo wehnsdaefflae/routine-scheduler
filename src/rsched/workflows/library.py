@@ -13,8 +13,8 @@ def workflows_dir(home: Path) -> Path:
     return home / "workflows"
 
 
-def traits_dir(home: Path) -> Path:
-    return home / "traits"
+def rules_dir(home: Path) -> Path:
+    return home / "rules"
 
 
 def permissions_dir(home: Path) -> Path:
@@ -50,8 +50,8 @@ def _read_meta(path: Path) -> dict:
         return {}
 
 
-def list_traits(home: Path) -> list[str]:
-    d = traits_dir(home)
+def list_rules(home: Path) -> list[str]:
+    d = rules_dir(home)
     return sorted(p.stem for p in d.glob("*.md")) if d.is_dir() else []
 
 

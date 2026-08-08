@@ -141,10 +141,10 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         from ..docs_build import ensure_docs
 
         # bootstrap the library repo (clone from remote if configured + absent, else init/leave),
-        # then make sure its traits/ + permissions/ subdirs exist.
+        # then make sure its rules/ + permissions/ subdirs exist.
         try:
             utils_lib.ensure_library(server.libraries_home, remote=server.libraries_remote)
-            library_docs.ensure_dir(server.traits_home)
+            library_docs.ensure_dir(server.rules_home)
             library_docs.ensure_dir(server.permissions_home)
         except Exception as exc:  # never block startup on a library hiccup
             log.warning("library bootstrap %s: %s", server.libraries_home, exc)

@@ -1,8 +1,8 @@
-"""Workflow/trait/permission conformance — the gu-lint equivalent for the library.
+"""Workflow/rule/permission conformance — the gu-lint equivalent for the library.
 
 Library workflows (Python patterns): META completeness, slug↔filename, resolvable includes,
 a main() entry, PHASES/COMPLETION. Materialized copies: provenance + no unresolved
-placeholders. Traits: titled practice prose, no capabilities. Permissions: titled, with a
+placeholders. Rules: titled principle prose, no capabilities. Permissions: titled, with a
 well-formed `requires:` key (the capabilities their instructions presume — see grants.py).
 """
 
@@ -14,10 +14,10 @@ import frontmatter
 import yaml
 
 from ..ids import is_slug
-from .library import permissions_dir, traits_dir, workflows_dir
+from .library import permissions_dir, rules_dir, workflows_dir
 
 
-def lint_workflow_py(source: str, *, filename: str, trait_slugs: list[str]) -> list[str]:
+def lint_workflow_py(source: str, *, filename: str, rule_slugs: list[str]) -> list[str]:
     """Validate a Python-workflow file: parseable, META completeness, slug↔filename, resolvable
     includes, a main() entry, and PHASES/COMPLETION (the Python equivalents of the required
     sections).
@@ -43,8 +43,8 @@ def lint_workflow_py(source: str, *, filename: str, trait_slugs: list[str]) -> l
         problems.append(f"{filename}: tags must be a list")
     elif len([t for t in (tags or []) if isinstance(t, str) and t.strip()]) < 3:
         problems.append(f"{filename}: needs at least 3 tags")
-    problems.extend(f"{filename}: include {trait!r} does not resolve to traits/{trait}.md"
-                    for trait in meta.get("includes") or [] if trait not in trait_slugs)
+    problems.extend(f"{filename}: include {rule!r} does not resolve to rules/{rule}.md"
+                    for rule in meta.get("includes") or [] if rule not in rule_slugs)
     if not meta.get("has_main"):
         problems.append(f"{filename}: no top-level main() function (the per-run control flow)")
     if not meta.get("phases"):
@@ -65,9 +65,9 @@ def lint_workflow_py(source: str, *, filename: str, trait_slugs: list[str]) -> l
     return problems
 
 
-def lint_trait_text(raw: str, *, filename: str) -> list[str]:
-    """A trait is pure practice prose: titled, tagged, non-trivial — and NEVER carries
-    capabilities (requires belongs to permissions; a trait carrying one would silently do
+def lint_rule_text(raw: str, *, filename: str) -> list[str]:
+    """A rule is pure principle prose: titled, tagged, non-trivial — and NEVER carries
+    capabilities (requires belongs to permissions; a rule carrying one would silently do
     nothing, which is worse than an error).
     """
     problems: list[str] = []
@@ -75,11 +75,11 @@ def lint_trait_text(raw: str, *, filename: str) -> list[str]:
         meta, body = frontmatter.parse(raw)
     except yaml.YAMLError as exc:
         return [f"{filename}: invalid YAML frontmatter: {exc}"]
-    if not body.strip().startswith("# trait:"):
-        problems.append(f"{filename}: body must start with '# trait: <name> — <summary>' "
+    if not body.strip().startswith("# rule:"):
+        problems.append(f"{filename}: body must start with '# rule: <name> — <summary>' "
                         "(after any frontmatter)")
     if "grants" in meta or "requires" in meta:
-        problems.append(f"{filename}: traits must not carry grants/requires — move the "
+        problems.append(f"{filename}: rules must not carry grants/requires — move the "
                         "capability to a permission doc under permissions/")
     tags = meta.get("tags")
     tag_list = tags if isinstance(tags, list) else []
@@ -88,7 +88,7 @@ def lint_trait_text(raw: str, *, filename: str) -> list[str]:
     elif len([t for t in tag_list if isinstance(t, str) and t.strip()]) < 3:
         problems.append(f"{filename}: needs at least 3 tags")
     if len(raw.strip().splitlines()) < 4:
-        problems.append(f"{filename}: suspiciously short for a practice module")
+        problems.append(f"{filename}: suspiciously short for a general rule")
     return problems
 
 
@@ -111,15 +111,18 @@ def lint_permission_text(raw: str, *, filename: str) -> list[str]:
         problems.append(f"{filename}: grants: was renamed — permissions declare requires: "
                         "(the capabilities their instructions presume); the capabilities "
                         "themselves are per-routine config now")
+    # The key must be PRESENT — declaring "this presumes nothing" is a decision, forgetting
+    # it is a bug. An explicitly EMPTY `requires: {}` is legitimate: a conduct doc may teach
+    # an UNGATED mechanism (global-utils covers the `util` base kind). Principle prose that
+    # names no mechanism at all belongs in a rule, not here.
     if "requires" not in meta:
         problems.append(f"{filename}: a permission must carry a requires: key naming the "
-                        "capabilities its instructions presume (pure prose belongs in a trait)")
+                        "capabilities its instructions presume (use `requires: {}` when it "
+                        "presumes none; pure principle prose belongs in a rule)")
     else:
-        req, req_problems = normalize_capabilities(meta["requires"], label="requires",
-                                                   requires=True)
+        _req, req_problems = normalize_capabilities(meta["requires"], label="requires",
+                                                    requires=True)
         problems += [f"{filename}: {p}" for p in req_problems]
-        if not req and not req_problems:
-            problems.append(f"{filename}: requires: is empty")
     return problems
 
 
@@ -150,21 +153,21 @@ def lint_playbook_text(raw: str, *, filename: str = "MAIN.md") -> list[str]:
 
 def lint_all(home: Path) -> dict[str, list[str]]:
     """path-relative-name → problems. Empty lists mean clean. `home` is the library repo root
-    (workflows/, traits/ and permissions/ subdirs).
+    (workflows/, rules/ and permissions/ subdirs).
     """
     from .. import library_docs
 
     results: dict[str, list[str]] = {}
-    tdir, pdir = traits_dir(home), permissions_dir(home)
-    traits = library_docs.slugs(tdir)
+    rdir, pdir = rules_dir(home), permissions_dir(home)
+    rules = library_docs.slugs(rdir)
     wdir = workflows_dir(home)
     if wdir.is_dir():
         for path in sorted(wdir.glob("*.py")):
             results[f"workflows/{path.name}"] = lint_workflow_py(
-                path.read_text(encoding="utf-8"), filename=path.name, trait_slugs=traits)
-    if tdir.is_dir():
-        for path in sorted(tdir.glob("*.md")):
-            results[f"traits/{path.name}"] = lint_trait_text(
+                path.read_text(encoding="utf-8"), filename=path.name, rule_slugs=rules)
+    if rdir.is_dir():
+        for path in sorted(rdir.glob("*.md")):
+            results[f"rules/{path.name}"] = lint_rule_text(
                 path.read_text(encoding="utf-8"), filename=path.name)
     if pdir.is_dir():
         for path in sorted(pdir.glob("*.md")):

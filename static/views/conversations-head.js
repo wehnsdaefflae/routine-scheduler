@@ -9,7 +9,7 @@ import { confirmDialog } from "/static/components/dialog.js";
 import { rootsEditor } from "/static/components/fsroots.js";
 import { permissionsPanel } from "/static/components/permissions.js";
 import { tagsEditor } from "/static/components/tags.js";
-import { traitPicker } from "/static/components/traitpicker.js";
+import { rulePicker } from "/static/components/rulepicker.js";
 import { navigate } from "/static/router.js";
 import { el, modelOption, toast } from "/static/util.js";
 
@@ -68,7 +68,7 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
     catch (err) { toast(err.message, 4000, { error: true }); }
   };
   // capabilities: budgets (per-reply ceilings) + permission toggles (routine-only ones
-  // greyed) + traits read-only
+  // greyed) + rules read-only
   const caps = el("details", { class: "small conv-caps" },
     el("summary", { style: "cursor:pointer;color:var(--muted)" },
       `⚙ capabilities & budgets${detail.workdir ? ` · project: ${detail.workdir}` : ""}`));
@@ -153,21 +153,21 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
       onSave: (connections) => api(`/api/conversations/${slug}`,
         { method: "PATCH", body: { connections } }),
     }));
-  // Practice modules: a conversation shifts topic mid-thread, so an addition is pushed to
-  // the reply in flight as well as saved for every reply after it (the server does both).
-  const traitHost = el("div", { class: "mt" });
-  const buildTraits = async () => {
-    const lib = await api("/api/library").catch(() => ({ traits: [] }));
-    return traitPicker(lib.traits || [], detail.traits || [], {
+  // General rules: a conversation shifts topic mid-thread, so a newly bound rule is pushed
+  // to the reply in flight as well as saved for every reply after it (the server does both).
+  const ruleHost = el("div", { class: "mt" });
+  const buildRules = async () => {
+    const lib = await api("/api/library").catch(() => ({ rules: [] }));
+    return rulePicker(lib.rules || [], detail.rules || [], {
       live: isLive(),
       onSave: async (payload) => {
-        await api(`/api/conversations/${slug}/traits`, { method: "POST", body: payload });
+        await api(`/api/conversations/${slug}/rules`, { method: "POST", body: payload });
       },
     }).node;
   };
-  capBody.append(el("div", { class: "faint small mt" }, "practice modules — its own standing "
-    + "practices; an addition applies from the current reply on"), traitHost);
-  buildTraits().then((n) => traitHost.replaceChildren(n));
+  capBody.append(el("div", { class: "faint small mt" }, "general rules — shared library prose "
+    + "it applies to this thread; binding one applies from the current reply on"), ruleHost);
+  buildRules().then((n) => ruleHost.replaceChildren(n));
   caps.append(capBody);
   head.replaceChildren(
     el("div", { class: "conv-head-row" }, stateChip, title,

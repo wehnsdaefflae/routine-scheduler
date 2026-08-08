@@ -17,7 +17,7 @@ One routine = one directory under `~/routines/<slug>`, holding:
 |---|---|---|
 | **Instruction** | *(consumed at creation)* | The TASK — goal, deliverable, constraints, done-criteria — you describe once. It seeds the workflow below and isn't kept as a separate file; no schedule or conduct rules live here. |
 | **Workflow** | `main.md` + `stages/*.md` | The control flow the agent follows, generated from a library *pattern* applied to your instruction — and the routine's sole source of truth once created. `main.md` is a small state machine; each stage's detail lives in a module read on demand. |
-| **Traits** | `traits/*.md` | Reusable practices (when to ask you, research discipline, LEDGER hygiene, git-checkpointing a project repo), **adapted to the task at creation**. The routine's own files from then on — refined over time by the routine-improver meta routine, never self-edited mid-run. |
+| **Rules** | `rules:` in `routine.yaml` | The general rules that bind it (when to ask you, research discipline, what to record, git-checkpointing a project repo). Each states a principle and the run applies it to its own case. The prose lives ONCE in the shared library, so revising it there reaches every routine holding it; the routine holds slugs, not copies. |
 | **Permissions & capabilities** | `routine.yaml` | What the routine is ALLOWED to do — writing utils, Discord, memory, reading previous runs, shell. *Capabilities* are the engine-enforced switches; *permissions* are the conduct docs that ride along (the Traits & permissions guide has the full model). Only you change either — a run can never grant itself anything, nor edit its own recipe. |
 | **Budgets** | `routine.yaml` | Hard per-run ceilings: turns, minutes, tokens (unlimited by default — turns and wall-clock are the effective bound), sub-workflows and their depth, and how long a blocking question waits for you. |
 | **State & memory** | `state/`, `LEDGER.md`, `.memory/` | What carries between runs: working files, the append-only change journal, and the notebook of hard-won surprises. |
@@ -50,7 +50,7 @@ Two design rules explain most of the system's shape:
   (default on for Anthropic/Claude models, a per-model toggle for OpenAI-compatible vision
   models), otherwise through the `vision` util.
 - **The library** (Library tab) is one git repo holding the shared building blocks:
-  workflow **patterns**, **traits**, **permissions**, **utils**, and **playbooks** (reusable
+  workflow **patterns**, **rules**, **permissions**, **utils**, and **playbooks** (reusable
   one-shot briefs for Conversations). Routines are built FROM it but never depend on it at
   run time.
 - **Decisions** (Decisions tab) is the one inbox for everything routines need from you:
@@ -88,13 +88,13 @@ scope, deliverable shape, hard constraints. The chat is a real run of the protec
 editable before anything is created:
 
 - the **workflow pattern** (or generate a new one when nothing fits),
-- the **traits** — the practice set that will be adapted into the routine,
+- the **rules** — the general rules that will bind the routine,
 - the **permissions** — granted conservatively; you can widen them any time later,
 - the **budgets** — the per-run ceilings,
 - slug, name, tags, and the **schedule** (or manual-only).
 
 **5 · Create.** The system decomposes the pattern against your instruction into the
-routine's own `main.md` + `stages/`, adapts each selected trait into `traits/`, writes the
+routine's own `main.md` + `stages/`, records the chosen rules in `routine.yaml`, writes the
 config, and git-inits the directory. The instruction was only the compile seed — from here
 on the stage modules are the routine's recipe, edited directly. Optionally the first run
 fires immediately.
@@ -108,7 +108,7 @@ shows it. Blocking questions pause their run and show when the run will continue
 you; deferred ones feed the next run. Everything is answerable inline.
 
 **8 · Tune.** On the routine's page: schedule, permissions, budgets, models, the **Recipe**
-file-tree (its `main.md`, every stage and trait file), the LEDGER, all runs with their
+file-tree (its `main.md` and every stage file), the LEDGER, all runs with their
 cost/turns/tokens/duration. The overview sorts and filters on those run stats — card grid or
 detail table, and both carry a **heartbeat strip**: the last ~15 runs as colored bars
 (green ok · amber partial · red failed · grey aborted, bar height tracking token spend) —

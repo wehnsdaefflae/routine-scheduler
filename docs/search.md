@@ -16,7 +16,7 @@ Model-authored and user-authored **prose**, never raw tool output:
 - **result.md** finish reports and the navigable `history/` archives compaction writes.
 - **LEDGER.md** per routine, and **`.memory/`** notes.
 - **Durable decision records** (`questions/pending/` — asks and util approvals).
-- **Recipe files**: `main.md`, `stages/`, `traits/`, and `instruction.md`.
+- **Recipe files**: `main.md`, `stages/`, and `instruction.md`.
 
 Deliberately NOT indexed: `routine.yaml` / `tuning.yaml` / server config, `state/`,
 `inbox/`, artifacts and attachments, and anything under `background_home` (transient by

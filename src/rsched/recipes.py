@@ -1,6 +1,6 @@
 """Recipe-version identity and rollback for a routine dir's git history.
 
-A routine's RECIPE is main.md + stages/ + traits/ + tuning.yaml (grants.RECIPE_PREFIXES —
+A routine's RECIPE is main.md + stages/ + tuning.yaml (grants.RECIPE_PREFIXES —
 the same set the write gates protect). Its "recipe version" is the last git commit that
 touched any of those files — NOT the dir's HEAD, which moves on every run because the
 engine autocommits state/outputs at run end. The engine stamps this commit into each run's
@@ -51,7 +51,7 @@ def _recipe_paths_dirty(routine_dir: Path) -> bool:
 def _matchable_specs(routine_dir: Path) -> list[str]:
     """The recipe pathspecs git add/commit may name without a fatal unmatched-pathspec
     error: those present in the worktree or known to HEAD (status/log tolerate unmatched
-    pathspecs, add/commit/checkout do not — a routine without traits/ or tuning.yaml is
+    pathspecs, add/commit/checkout do not — a routine without stages/ or tuning.yaml is
     the normal case, not an error).
     """
     return [spec for spec in RECIPE_PATHSPECS
@@ -108,7 +108,7 @@ def revert_recipe(routine_dir: Path, commit: str) -> dict:
     """Roll the recipe files back to their state just BEFORE `commit` (i.e. to
     `<commit>^`) and commit ONLY those paths. Raises RecipeError when the request can't
     be honored: no git, unknown commit, a commit that touched no recipe file, or the
-    routine's first commit (nothing before it). Only main.md / stages/ / traits/ /
+    routine's first commit (nothing before it). Only main.md / stages/ /
     tuning.yaml are staged and committed — routine.yaml and state files are untouched.
     """
     if not (routine_dir / ".git").is_dir():

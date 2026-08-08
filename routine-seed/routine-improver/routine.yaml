@@ -16,8 +16,17 @@ workflow:
   library_slug: ''
   library_commit: ''
 permissions:
-- util-authoring
+- global-utils
 - memory
+- util-authoring
+rules:
+- ask-policy
+- decision-record
+- change-restraint
+- evidence-discipline
+- intent-inference
+- problem-routing
+- root-cause-fix
 capabilities:
   actions:
   - write_util

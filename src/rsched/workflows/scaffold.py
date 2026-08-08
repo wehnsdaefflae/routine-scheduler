@@ -1,5 +1,5 @@
-"""Create a routine directory: workflow REFERENCE (edited in the library), adapted trait
-copies, stages/ modules; its own git repo with the auto-push hook.
+"""Create a routine directory: workflow REFERENCE (edited in the library), the held
+general-rule slugs, stages/ modules; its own git repo with the auto-push hook.
 """
 
 from __future__ import annotations
@@ -24,59 +24,6 @@ from ..ids import is_slug
 # (engine-owned and pruned, and it can carry whatever a util printed — never committed)
 GITIGNORE = "runs/\ninbox/\nquestions/\nmnt/\n.util_outputs/\n"
 
-PRACTICES_HEADING = "## Standing practices"
-TAIL_LEAD = ("These practice modules are this routine's own standards — read each with "
-             "read_file before the situation it governs (the routine-improver meta routine "
-             "refines them over time):")
-
-
-def render_practices_tail(trait_lines: list[str]) -> str:
-    """The Standing-practices section body — heading, lead, one line per trait. The ONE
-    place the tail's shape lives: scaffold/conversation creation appends it, traits.py's
-    post-creation resync rebuilds it (two drifted copies of the lead once disagreed).
-    """
-    return "\n".join([PRACTICES_HEADING, "", TAIL_LEAD, *trait_lines])
-
-
-def trait_line(slug: str, summary: str) -> str:
-    return f"- `traits/{slug}.md` — {summary or slug.replace('-', ' ')}"
-
-
-def with_practices_tail(main_body: str, trait_summaries: dict[str, str]) -> str:
-    """Guarantee main.md ends with a Standing practices section referencing every trait file —
-    the generator is asked to write one, but the reference must survive a forgetful LLM (and
-    the no-LLM fallback).
-    """
-    if not trait_summaries:
-        return main_body
-    if PRACTICES_HEADING.lower() in main_body.lower():
-        return main_body
-    lines = [trait_line(slug, summary) for slug, summary in trait_summaries.items()]
-    return main_body.rstrip() + "\n\n" + render_practices_tail(lines) + "\n"
-
-
-def copy_traits(traits_home, dest_dir, slugs: list[str],
-                adapted: dict[str, str] | None = None) -> dict[str, str]:
-    """Write each selected trait into dest_dir/traits/ — the decompose pass's ADAPTED body
-    when one exists, else the library text verbatim — and return {slug: summary} for the
-    practices tail. Either way the files are the routine's/conversation's OWN from here on
-    (self-refined, never toggled); a slug the library doesn't carry is skipped silently.
-    """
-    from .. import library_docs
-
-    summaries: dict[str, str] = {}
-    for slug in slugs:
-        body = (adapted or {}).get(slug)
-        if not body:
-            raw = library_docs.read_doc(traits_home, slug)
-            body = library_docs.doc_body(raw).strip() if raw else ""
-        if not body:
-            continue
-        (dest_dir / "traits" / f"{slug}.md").write_text(body.rstrip() + "\n", encoding="utf-8")
-        m = library_docs.DOC_RE.search(body)
-        summaries[slug] = m.group("summary").strip() if m else ""
-    return summaries
-
 POST_COMMIT_HOOK = """#!/usr/bin/env bash
 # rsched auto-backup — push every commit to origin (best-effort, never blocks the commit).
 branch="$(git symbolic-ref --short HEAD 2>/dev/null)" || exit 0
@@ -95,7 +42,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
              workflow_slug: str, cron: str = "", tz: str = "Europe/Berlin",
              description: str = "", models: dict[str, str] | None = None,
              params: dict | None = None, budgets: dict | None = None,
-             traits: list[str] | None = None,
+             rules: list[str] | None = None,
              permissions: list[str] | None = None,
              fs_read_roots: list[str] | None = None,
              fs_write_roots: list[str] | None = None,
@@ -103,8 +50,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
              tags: list[str] | None = None, deliberation: str = "",
              progress=None) -> Path:
     """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
-    the routine gets ADAPTED trait copies under traits/ (referenced from main.md's Standing
-    practices tail — the routine's own files from then on) + stages/ modules. The clarified
+    the routine holds general-rule SLUGS in routine.yaml (`rules:`, indexed by main.md's
+    Standing practices tail — the prose stays in the library) + stages/ modules. The clarified
     `instruction` is the compile SEED: it is decomposed into the stages and NOT persisted (the
     stages are the routine's sole source of truth from here on). `permissions` (engine-enforced,
     user-changeable) go into routine.yaml. A one-line `description` (for the UI) is always
@@ -112,7 +59,9 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     role falls back to the server system_model).
     """
     from .. import library_docs
-    from ..config import DEFAULT_TRAITS
+    from .. import rules as rules_mod
+    from ..config import DEFAULT_RULES
+    from ..rules import with_practices_tail
     from . import library
 
     if not is_slug(slug):
@@ -121,15 +70,15 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     if routine_dir.exists():
         raise ValueError(f"routine dir {routine_dir} already exists")
 
-    # traits default to the workflow's `includes` (its suggested practice set), else the
-    # standard set; validate against the library. Permissions validate against theirs.
+    # rules default to the workflow's `includes` (its suggested set), else the standard
+    # set; validate against the library. Permissions validate against theirs.
     try:
         meta, _ = library.read_workflow(server.libraries_home, workflow_slug)
     except FileNotFoundError as exc:
         raise ValueError(f"workflow {workflow_slug!r} not found in the library") from exc
-    available_traits = set(library_docs.slugs(server.traits_home))
-    active_traits = traits if traits is not None else (meta.get("includes") or DEFAULT_TRAITS)
-    active_traits = [t for t in active_traits if t in available_traits]
+    available_rules = set(library_docs.slugs(server.rules_home))
+    active_rules = rules if rules is not None else (meta.get("includes") or DEFAULT_RULES)
+    active_rules = [r for r in active_rules if r in available_rules]
     available_perms = set(library_docs.slugs(server.permissions_home))
     active_perms = permissions if permissions is not None else list(DEFAULT_PERMISSIONS)
     active_perms = [p for p in active_perms if p in available_perms]
@@ -145,15 +94,15 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
 
     from .adapt import decompose, dump_markdown
 
-    for sub in ("state", "stages", "inbox", "traits"):
+    for sub in ("state", "stages", "inbox"):
         (routine_dir / sub).mkdir(parents=True)
     # DECOMPOSE the single-file workflow (applied to the instruction) into the routine's OWN
-    # main.md (entry state machine) + one markdown stage per step/state, adapting the selected
-    # traits along the way. Self-contained: the library is never read at run time, and the
-    # instruction is consumed here (not persisted). Degrades to the whole workflow as main.md +
-    # verbatim trait copies if no endpoint is available.
+    # main.md (entry state machine) + one markdown stage per step/state. The instruction is
+    # consumed here (not persisted); rules are NOT part of the decomposition — they are
+    # general by construction and stay in the library. Degrades to the whole workflow as
+    # main.md if no endpoint is available.
     result = decompose(server, workflow_slug, instruction, params=params,
-                       traits=active_traits, progress=progress)
+                       rules=active_rules, progress=progress)
     main_meta = {
         "name": name, "slug": slug,
         "materialized_from": {"slug": workflow_slug, "commit": commit,
@@ -161,8 +110,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         # the workflow's `tools:` allowlist rides along — the engine enforces it per turn
         **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {}),
     }
-    trait_summaries = copy_traits(server.traits_home, routine_dir, active_traits,
-                                  adapted=result.get("traits"))
+    rule_summaries = rules_mod.summaries(server.rules_home, active_rules)
     for stage_name, stage_body in result["stages"].items():
         (routine_dir / "stages" / f"{stage_name}.md").write_text(stage_body.rstrip() + "\n",
                                                                  encoding="utf-8")
@@ -171,7 +119,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         safe = fname if fname.endswith(".md") else f"{fname}.md"
         (routine_dir / "stages" / Path(safe).name).write_text(fcontent, encoding="utf-8")
     # main.md last, over the now-complete stages/ — the stages are the sole source of truth
-    main_body = with_practices_tail(result["main"], trait_summaries)
+    main_body = with_practices_tail(result["main"], rule_summaries)
     (routine_dir / "main.md").write_text(dump_markdown(main_meta, main_body), encoding="utf-8")
     ledger = (f"# LEDGER — {name}\n\n"
               f"### seed — scaffolded from workflow '{workflow_slug}' @ {commit}\n")
@@ -201,6 +149,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         "workflow": {"library_slug": workflow_slug, "library_commit": commit},
         **({"models": models} if models else {}),
         "permissions": active_perms,
+        "rules": active_rules,
         "capabilities": capabilities,
         # unknown keys are dropped, not persisted — a caller typo must not seed junk
         # config that the strict loader then flags on every read

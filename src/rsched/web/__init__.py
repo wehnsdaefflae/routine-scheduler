@@ -9,7 +9,7 @@ the authoritative list.
 Ownership: the engine subprocess owns everything under a live run (run dirs,
 status.json, git commits in the routine dir). The web layer edits routine CONFIG only
 when no run is active (409 otherwise) — with two deliberate live-edit exceptions: a
-conversation's settings, and trait add/remove (the traits/ dir is web-owned; a live run
-is told via control.json `add_traits`). Web-side routine-dir commits take the same
+conversation's settings, and rule bind/unbind (routine.yaml's `rules:` is web-owned; a live
+run is told via control.json `add_rules`). Web-side routine-dir commits take the same
 per-repo lock the engine's autocommit does.
 """

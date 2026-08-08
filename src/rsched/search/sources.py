@@ -6,7 +6,7 @@ the indexer can fingerprint, reindex, and prune per file (registry.py's stat-mem
 Indexed surfaces: run transcripts (gz included, subrun trees included — model-authored
 say/note/finish prose, questions + answers, user messages), result.md, compaction
 history/ archives, LEDGER.md, .memory/ notes, durable decision records
-(questions/pending), and recipe files (main.md / stages / traits / instruction.md).
+(questions/pending), and recipe files (main.md / stages / instruction.md).
 NOT indexed: config (routine.yaml, tuning.yaml, server config), state/, inbox/
 (transient), artifacts/attachments (deliverables, often binary), `.util_outputs/`
 (spilled util output — bulk, and where a leaked secret would live), and secrets — the
@@ -84,7 +84,7 @@ def _routine_sources(home_kind: str, d: Path) -> Iterator[SourceFile]:
                        ("main.md", "recipe")):
         if (d / name).is_file():
             yield SourceFile(d / name, home_kind, slug, kind=kind)
-    for subdir in ("stages", "traits"):
+    for subdir in ("stages",):
         for p in _md_files(d / subdir):
             yield SourceFile(p, home_kind, slug, kind="recipe")
     for p in _md_files(d / ".memory"):

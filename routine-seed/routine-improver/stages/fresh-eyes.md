@@ -3,13 +3,13 @@
 Recipes rot by accretion: each revision made sense at the time, and the sum is a maze.
 Incremental eyes — the target's own, and yours after studying it — learn to ignore that
 accretion. This pass is the antidote. Read the target's recipe (`main.md`, every `stages/`
-and `traits/` file, the `state/` inventory — plus the seed `instruction.md` when the target
+module, the `state/` inventory — plus the seed `instruction.md` when the target
 is a conversation; routines carry none) **as if you had never seen it or its history**, and
 hunt specifically for what accumulated:
 
 - **Contradictions between eras** — a practice added in one revision that fights an older
   one; two steps that give different answers to the same question.
-- **Dead weight** — steps no transcript ever routes to; state keys nothing reads; trait
+- **Dead weight** — steps no transcript ever routes to; state keys nothing reads; rule
   advice about tools or paths that no longer exist; references to removed features.
 - **History narrated as instructions** — "previously…", "as of the last change…", counts
   and dates that were true once. Files must describe the current design; history lives in

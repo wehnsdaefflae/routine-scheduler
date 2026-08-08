@@ -31,7 +31,7 @@ from .control import (
     announce_finished_subruns,
     apply_deliberation_switch,
     apply_model_switch,
-    apply_trait_additions,
+    apply_rule_additions,
     drain_injections,
     pause_gate,
     request_abort,
@@ -153,7 +153,7 @@ class EngineLoop:
         self.util_reminder = self._build_util_reminder()
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
         self._last_deliberation_ts = ""   # edge-trigger for mid-run deliberation switches
-        self._last_traits_ts = ""   # edge-trigger for user-added practice modules
+        self._last_rules_ts = ""    # edge-trigger for user-bound general rules
         # A signal already applied by an earlier leg must not re-fire on this one —
         # the run's applied ledger (engine-owned) seeds the edge-triggers.
         from .control import load_applied_baselines
@@ -263,7 +263,7 @@ class EngineLoop:
                 pause_gate(self, poll_s=POLL_S)
                 apply_model_switch(self)
                 apply_deliberation_switch(self)
-                apply_trait_additions(self)
+                apply_rule_additions(self)
                 drain_injections(self)
                 announce_finished_subruns(self)
                 retries_before = ctx.schema_retries
@@ -376,6 +376,8 @@ class EngineLoop:
                     obs = interact.handle_write_util(self, action, poll_s=POLL_S)
                 elif action["kind"] == "remove_util":
                     obs = interact.handle_remove_util(self, action, poll_s=POLL_S)
+                elif action["kind"] == "write_rule":
+                    obs = interact.handle_write_rule(self, action, poll_s=POLL_S)
                 elif action["kind"] == "util":
                     # D39: per-routine secret exposure is decided at CALL time — the gate
                     # asks/refuses/passes; None means the call proceeds normally.

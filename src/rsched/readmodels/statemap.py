@@ -191,7 +191,7 @@ def outline(md_text: str) -> list[dict]:
 
 def recipe_tree(routine_dir: Path) -> dict:
     """The routine's recipe as a navigable tree for the routine page: main.md + its stage modules
-    (in main.md first-mention order, unmentioned extras appended alphabetically) + trait modules,
+    (in main.md first-mention order, unmentioned extras appended alphabetically),
     each with its heading outline. Purely a read-model over the routine's own files.
     """
     def _read(p: Path) -> str:
@@ -206,15 +206,10 @@ def recipe_tree(routine_dir: Path) -> dict:
         return {"path": str(p.relative_to(routine_dir)), "name": p.stem,
                 "outline": outline(_read(p))}
 
-    def _files(sub: str) -> list[Path]:
-        d = routine_dir / sub
-        return sorted(d.glob("*.md")) if d.is_dir() else []
-
     stages = module_dir(routine_dir)
     stage_files = sorted(stages.glob("*.md") if stages else [],
                          key=lambda p: (module_rank(main_md, p.stem), p.stem))
     return {
         "main": {"path": "main.md", "name": "main", "outline": outline(main_md)},
         "stages": [_entry(p) for p in stage_files],
-        "traits": [_entry(p) for p in _files("traits")],
     }

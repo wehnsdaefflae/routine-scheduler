@@ -15,12 +15,12 @@ UTIL_SEED = Path(__file__).resolve().parents[1] / "util-seed"
 
 
 def merged_library(tmp_path) -> Path:
-    """A library-repo layout (workflows/ + traits/ + permissions/ + utils/) built from the repo seeds."""
+    """A library-repo layout (workflows/ + rules/ + permissions/ + utils/) built from the repo seeds."""
     import shutil
 
     home = tmp_path / "libraries"
     shutil.copytree(SEED / "workflows", home / "workflows")
-    shutil.copytree(SEED / "traits", home / "traits")
+    shutil.copytree(SEED / "rules", home / "rules")
     shutil.copytree(SEED / "permissions", home / "permissions")
     shutil.copytree(UTIL_SEED / "utils", home / "utils")
     return home
@@ -38,7 +38,7 @@ def test_lint_catches_defects():
     bad = ('"""bad pattern"""\n'
            'META = {"name": "X", "slug": "mismatch", "description": "d", "when_to_use": "w",\n'
            '        "version": 1, "includes": ["nope"], "tags": ["a", "b", "c"]}\n')
-    problems = lint_workflow_py(bad, filename="bad.py", trait_slugs=traits)
+    problems = lint_workflow_py(bad, filename="bad.py", rule_slugs=traits)
     text = " | ".join(problems)
     for needle in ("filename does not match", "does not resolve",
                    "no top-level main()", "PHASES", "COMPLETION"):
@@ -67,13 +67,13 @@ def test_python_workflow_parse_and_lint():
     meta = parse_py(src)                                  # parsed statically — never executed
     assert meta["slug"] == "general-task" and meta["has_main"] and meta["format"] == "py"
     assert meta["phases"] == ["bootstrap", "steady", "wrap-up"] and meta["completion"]
-    traits = ["ask-policy", "global-utils", "web-research", "ledger-discipline"]
-    assert lint_workflow_py(src, filename="general-task.py", trait_slugs=traits) == []
+    rules = ["ask-policy", "web-research", "decision-record", "intent-inference"]
+    assert lint_workflow_py(src, filename="general-task.py", rule_slugs=rules) == []
     # defects: no META / no run()
-    probs = lint_workflow_py("x = 1\n", filename="paperbot.py", trait_slugs=[])
+    probs = lint_workflow_py("x = 1\n", filename="paperbot.py", rule_slugs=[])
     assert any("META" in p for p in probs)
     # a syntax error is reported, not raised
-    assert any("invalid Python" in p for p in lint_workflow_py("def (:\n", filename="x.py", trait_slugs=[]))
+    assert any("invalid Python" in p for p in lint_workflow_py("def (:\n", filename="x.py", rule_slugs=[]))
     # rendering carries the required routine sections
     md = render_markdown(src, meta)
     assert all(s in md for s in ("## Run flow", "## Phases", "## Completion criteria", "```python"))
@@ -93,20 +93,20 @@ def test_tags_on_library_elements():
     for w in wfs.values():
         assert len(w["tags"]) >= 3, (w["slug"], w["tags"])
 
-    traits = {d["slug"]: d for d in library_docs.list_docs(SEED / "traits")}
-    for d in traits.values():
+    rules = {d["slug"]: d for d in library_docs.list_docs(SEED / "rules")}
+    for d in rules.values():
         assert len(d["tags"]) >= 3, (d["slug"], d["tags"])
-    assert set(traits["web-research"]["tags"]) >= {"web", "research"}
+    assert set(rules["web-research"]["tags"]) >= {"web", "research"}
     perms = {d["slug"]: d for d in library_docs.list_docs(SEED / "permissions")}
     assert set(perms) == {"util-authoring", "memory", "communication", "run-history",
                           "shell", "workflow-generation", "background-tasks",
-                          "scheduling", "practice-library",
+                          "scheduling", "global-utils", "rule-authoring",
                           "remote-machines", "darknet",
                           "usenet"}  # variants collapsed: level = capability
     assert "self-modification" not in perms          # retired: a fixed engine rule now
     # a doc's frontmatter is stripped before its body is shown/inlined
-    raw = (SEED / "traits" / "web-research.md").read_text()
-    assert raw.startswith("---") and library_docs.doc_body(raw).lstrip().startswith("# trait:")
+    raw = (SEED / "rules" / "web-research.md").read_text()
+    assert raw.startswith("---") and library_docs.doc_body(raw).lstrip().startswith("# rule:")
 
     utils = {u["name"]: u for u in utils_lib.list_utils(SEED.parent / "util-seed")}
     for u in utils.values():
@@ -143,13 +143,13 @@ def test_bootstrap_seeds_meta_routines(tmp_path):
 
 
 def test_bootstrap_seeds_libraries(tmp_path):
-    """seed_libraries populates an empty library repo (workflows/ + traits/ + permissions/ +
+    """seed_libraries populates an empty library repo (workflows/ + rules/ + permissions/ +
     utils/) from the built-in defaults + git-inits it."""
     from rsched.bootstrap import seed_libraries
     home = tmp_path / "libraries"
     seed_libraries(home)
     assert (home / "workflows").is_dir() and list((home / "workflows").glob("*.py"))  # Python patterns
-    assert (home / "traits").is_dir() and list((home / "traits").glob("*.md"))
+    assert (home / "rules").is_dir() and list((home / "rules").glob("*.md"))
     assert (home / "permissions").is_dir() and list((home / "permissions").glob("*.md"))
     assert (home / "utils").is_dir() and any((home / "utils").iterdir())
     assert (home / ".git").is_dir()
@@ -179,13 +179,13 @@ def _py_workflow(tags: str) -> str:
 
 
 def test_lint_requires_three_tags():
-    from rsched.workflows.lint import lint_trait_text
+    from rsched.workflows.lint import lint_rule_text
     assert any("at least 3 tags" in p
-               for p in lint_workflow_py(_py_workflow('["a", "b"]'), filename="x.py", trait_slugs=[]))
+               for p in lint_workflow_py(_py_workflow('["a", "b"]'), filename="x.py", rule_slugs=[]))
     assert not any("tags" in p
-                   for p in lint_workflow_py(_py_workflow('["a", "b", "c"]'), filename="x.py", trait_slugs=[]))
-    two_tag_trait = "---\ntags: [a, b]\n---\n# trait: x — y\n\nbody line one\nbody line two\n"
-    assert any("at least 3 tags" in p for p in lint_trait_text(two_tag_trait, filename="x.md"))
+                   for p in lint_workflow_py(_py_workflow('["a", "b", "c"]'), filename="x.py", rule_slugs=[]))
+    two_tag_trait = "---\ntags: [a, b]\n---\n# rule: x — y\n\nbody line one\nbody line two\n"
+    assert any("at least 3 tags" in p for p in lint_rule_text(two_tag_trait, filename="x.md"))
 
 
 def test_tag_suggestion_helpers(tmp_path):
@@ -205,12 +205,12 @@ def test_tag_suggestion_helpers(tmp_path):
 
 
 def test_lint_rejects_non_list_tags():
-    from rsched.workflows.lint import lint_trait_text
+    from rsched.workflows.lint import lint_rule_text
 
     assert any("tags must be a list" in p
-               for p in lint_workflow_py(_py_workflow('"not-a-list"'), filename="x.py", trait_slugs=[]))
-    bad_trait = "---\ntags: nope\n---\n# trait: x — y\n\nbody line one\nbody line two\n"
-    assert any("tags must be a list" in p for p in lint_trait_text(bad_trait, filename="x.md"))
+               for p in lint_workflow_py(_py_workflow('"not-a-list"'), filename="x.py", rule_slugs=[]))
+    bad_trait = "---\ntags: nope\n---\n# rule: x — y\n\nbody line one\nbody line two\n"
+    assert any("tags must be a list" in p for p in lint_rule_text(bad_trait, filename="x.md"))
 
 
 def test_scaffold_writes_and_loads_tags(tmp_path):
@@ -292,14 +292,14 @@ def test_scaffold_creates_valid_routine(tmp_path):
     assert (d / "main.md").exists()
     raw = yaml.safe_load((d / "routine.yaml").read_text())
     assert raw["budgets"]["max_turns"] == 60
-    # traits = the workflow's includes, adapted (here: copied — no generator endpoint) into
-    # the routine's OWN traits/ and referenced from main.md's Standing practices tail.
-    # improve-* passes are NOT among them — the routine-improver meta routine owns those.
-    assert (d / "traits" / "web-research.md").exists()
-    assert (d / "traits" / "global-utils.md").exists()
-    assert not list((d / "traits").glob("improve-*.md"))
+    # rules = the workflow's includes, recorded as SLUGS in routine.yaml and referenced from
+    # main.md's Standing practices tail. Nothing is copied into the routine dir: one library
+    # copy is the whole point, so a revision reaches every holder.
+    assert set(raw["rules"]) >= {"web-research", "decision-record"}
+    assert not (d / "rules").exists()
+    assert "- `web-research` —" in (d / "main.md").read_text(encoding="utf-8")
     main_text = (d / "main.md").read_text()
-    assert "## Standing practices" in main_text and "traits/web-research.md" in main_text
+    assert "## Standing practices" in main_text
     assert "improve-" not in main_text
     # permissions default in and are pure config (no local copies)
     assert set(cfg.permissions) == set(raw["permissions"])
@@ -376,19 +376,19 @@ def test_lint_validates_meta_tools_vocabulary():
     # literals are last-wins)
     src = (SEED / "workflows" / "general-task.py").read_text()
     assert '"tools": None,' in src
-    traits = ["ask-policy", "global-utils", "web-research", "ledger-discipline"]
+    rules = ["ask-policy", "web-research", "decision-record", "intent-inference"]
     good = src.replace('"tools": None,', '"tools": ["read_file", "finish"],', 1)
-    assert lint_workflow_py(good, filename="general-task.py", trait_slugs=traits) == []
+    assert lint_workflow_py(good, filename="general-task.py", rule_slugs=rules) == []
     bad = src.replace('"tools": None,', '"tools": ["read_file", "reed_file"],', 1)
-    probs = lint_workflow_py(bad, filename="general-task.py", trait_slugs=[])
+    probs = lint_workflow_py(bad, filename="general-task.py", rule_slugs=[])
     assert any("unknown action kind" in p and "reed_file" in p for p in probs)
     notlist = src.replace('"tools": None,', '"tools": "read_file",', 1)
-    probs = lint_workflow_py(notlist, filename="general-task.py", trait_slugs=[])
+    probs = lint_workflow_py(notlist, filename="general-task.py", rule_slugs=[])
     assert any("tools must be a list" in p for p in probs)
 
 
 def test_merged_seed_library_is_clean(tmp_path):
-    """The seed linted the way a real instance is laid out — workflows/traits/permissions
+    """The seed linted the way a real instance is laid out — workflows/rules/permissions
     PLUS utils/. lint_all(SEED) alone cannot cover this: library-seed carries no utils/ dir."""
     results = lint_all(merged_library(tmp_path))
     problems = {k: v for k, v in results.items() if v}

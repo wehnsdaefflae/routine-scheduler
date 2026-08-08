@@ -6,7 +6,7 @@ standalone new-routine wizard page, the conversation agent (or a `/create_routin
 command) clarifies the task WITH the user in the normal chat, then emits this one action to
 materialize the routine. It reuses the SAME `workflows.scaffold` path the wizard's build half
 calls — decompose the chosen workflow into the routine's own main.md + stages/, adapt its
-traits, write routine.yaml, init the auto-push git repo — so there is exactly one materializer.
+rules, write routine.yaml, init the auto-push git repo — so there is exactly one materializer.
 
 Structural rule (mirrors `detach`): valid ONLY from a ROOT CONVERSATION (depth 0, dir directly
 under conversations_home). A scheduled routine has no user in the loop to design a new routine

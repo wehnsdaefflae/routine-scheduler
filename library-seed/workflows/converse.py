@@ -37,7 +37,7 @@ META = {
     # "meta" keeps it out of spawn-pattern lists and wizard suggestions — a conversation
     # harness assumes a present user; it is materialized ONLY by the Conversations tab.
     "tags": ["conversation", "interactive", "assistant", "meta"],
-    "includes": ["ask-policy", "global-utils", "web-research", "ledger-discipline",
+    "includes": ["ask-policy", "web-research", "decision-record", "intent-inference",
                  "git-checkpoint"],
     "tools": None,          # a conversation may use every action kind its permissions allow
 }
@@ -130,7 +130,7 @@ def work(plan, message):
       usually shown to you already); pick a fitting util for other binary formats. Never
       guess at an attachment's content.
     - Project edits: work under WORKDIR (your fs read/write roots). Follow
-      traits/git-checkpoint.md — a checkpoint commit BEFORE risky edits, one after coherent
+      the git-checkpoint rule — a checkpoint commit BEFORE risky edits, one after coherent
       work, named in your reply.
     - Verify what you produce: read it back, check exit codes, count results. A claimed but
       unverified outcome is the worst failure this system knows.

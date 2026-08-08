@@ -97,11 +97,11 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
     # routine-improver:20260723-112446 queued ITSELF (include-toggle on) and then skipped
     # every lens on the self target, citing this very sentence (F165).
     if g is not None and g.recipe_unlocked:
-        recipe_line = ("Your own recipe (main.md, stages/, traits/, tuning.yaml) IS WRITABLE "
+        recipe_line = ("Your own recipe (main.md, stages/, tuning.yaml) IS WRITABLE "
                        "to you this run — a user-granted write root covers your routine dir; "
                        "edit it as deliberately as any target's recipe and record why")
     else:
-        recipe_line = ("Your own recipe (main.md, stages/, traits/) is "
+        recipe_line = ("Your own recipe (main.md, stages/) is "
                        "READ-ONLY to you — the routine-improver meta routine refines recipes")
     # The say contract scales with the routine's deliberation level (the user's knob over
     # how much thinking lands on paper); think-on-paper adds a standing notes-file paragraph.
@@ -148,10 +148,13 @@ Working directory: {r.dir}. All relative paths resolve there.{extra}
 You have NO shell. The ONLY way to run code is a global util (the `util` action). {authoring} \
 You never run git yourself: the engine commits your working directory automatically at run end.
 
-{ownership}Cross-cutting conduct (when to ask the user, after-run improvement \
-passes, util and research discipline) lives in this routine's PRACTICE MODULES under \
-traits/ — your own adapted copies, referenced at the end of the workflow below; read the \
-relevant one before the situation it governs. {recipe_line}; routine.yaml config is \
+{ownership}Cross-cutting conduct (when to ask the user, research discipline, what to \
+record) is set by the GENERAL RULES that bind you — named at the end of the workflow below \
+and read with read_rule before the situation each one governs. A rule states a principle, \
+not a procedure: apply it to the case in front of you. The prose lives once in the shared \
+library, so a revision reaches every routine holding that rule; WHICH rules bind you is the \
+user's config, and rewriting one needs the rule-authoring capability. {recipe_line}; \
+routine.yaml config is \
 the user's — file a deferred ask_user for changes you believe are needed. What you are ALLOWED \
 to do (util authoring, reserved channels, memory, \
 previous runs) is a separate matter: CAPABILITIES, set only by the user and enforced by the \
@@ -194,7 +197,8 @@ def _plan_text(routine_dir: Path) -> str:
 
 
 def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict], *,
-                 routines_home: Path | None = None, slug: str = "") -> str:
+                 routines_home: Path | None = None, slug: str = "",
+                 held_rules: list[str] | None = None) -> str:
     from ..paths import read_json
 
     parts: list[str] = []
@@ -256,13 +260,10 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
             parts.append("artifacts/ delivered so far (the user sees these rendered in the side "
                          "panel; re-writing a filename UPDATES that artifact in place — extend "
                          "what is there instead of making report-2.md): " + ", ".join(arts))
-    traits_dir = routine_dir / "traits"
-    if traits_dir.is_dir():
-        names = [p.name for p in sorted(traits_dir.iterdir()) if p.is_file() and p.suffix == ".md"]
-        if names:
-            parts.append("traits/ practice modules (this routine's own adapted standards — read "
-                         "each before the situation it governs; the workflow's Standing practices "
-                         "section says when): " + ", ".join(names))
+    if held_rules:
+        parts.append("General rules binding this routine (read one with read_rule before the "
+                     "situation it governs; the workflow's Standing practices section says "
+                     "when): " + ", ".join(held_rules))
     runs_dir = routine_dir / "runs"
     runs = sorted(runs_dir.glob("*/result.md")) if runs_dir.is_dir() else []
     if runs:
@@ -311,8 +312,8 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
                         report_msgs: list[str] | None = None) -> str:
     # CAPABILITIES lists utils at name+summary altitude only — exact usage flags stay
     # on-demand via `util name=list`, so the prompt stays lean and never serves stale flags.
-    # Practice prose is NOT inlined: the routine's traits/ modules are its own files,
-    # referenced from the workflow and read on demand (the state digest lists them).
+    # Rule prose is NOT inlined: the library holds one copy, the workflow names the held
+    # slugs and the run reads what it needs (the state digest lists them).
     # The schema is PROJECTED onto the kinds this run may actually emit (kindsurface): a
     # restricted workflow never reads the fields and prose of channels it cannot use.
     kinds = effective_kinds(allowed_kinds, ctx.grants)

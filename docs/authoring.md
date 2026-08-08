@@ -1,7 +1,7 @@
 # Authoring library building blocks
 
 Everything routines are built from lives in **one git-backed library** (Library tab):
-workflow **patterns**, **traits**, **permissions**, **playbooks**, and **utils**. This
+workflow **patterns**, **rules**, **permissions**, **playbooks**, and **utils**. This
 guide shows how to write each one, with a working example per type. The general shape is
 always the same: a small file with a machine-read header and a human-read body, linted on
 save, versioned in the library repo.
@@ -87,7 +87,7 @@ META = {
     "when_to_use": "Most recurring instructions with no more specific pattern…",
     "version": 9,
     "tags": ["general", "research", "tool-use"],
-    "includes": ["ask-policy", "global-utils"],   # traits this pattern presumes
+    "includes": ["ask-policy", "decision-record"],  # general rules this pattern presumes
     "tools": None,   # or a list restricting action kinds ("finish" is always allowed)
 }
 
@@ -116,7 +116,7 @@ capability — drafts land in the same library, subject to the same lint.
 
 ## No named utils — a recipe says WHAT, never which tool
 
-A workflow pattern, a materialized recipe (`main.md` + `stages/`), a trait and a playbook all
+A workflow pattern, a materialized recipe (`main.md` + `stages/`), a rule and a playbook all
 describe the WORK. None of them may name a util or show a util's flags. They name the CAPABILITY
 a step needs — "fetch the page", "run the repo's test suite", "publish the site" — and the run
 picks the tool: it is shown the whole util catalog in its CAPABILITIES prompt section (name +
@@ -152,20 +152,34 @@ Two things a recipe may legitimately name, whoever is writing it:
 `state/` and `.memory/` are outside the rule entirely: naming the tool that worked is exactly
 what a routine's memory is for.
 
-## Traits — reusable practice prose
+## Rules — the general rules routines follow
 
-A trait (`traits/<slug>.md`) is conduct prose — *how* to work, never *what* task to do:
+A rule (`rules/<slug>.md` in the library) is principle prose — *how* to work, never *what*
+task to do:
 
 ```markdown
-# trait: ledger-discipline — record what changed and why
+# rule: decision-record — keep the reasoning the artefacts cannot carry
 
-After every increment, append one LEDGER.md line: what changed, why, what surprised you…
+Read the record before you explore. Append one entry per run: what changed, why, and the
+candidates you rejected with the reason…
 ```
 
-The heading form `# trait: <slug> — <summary>` is lint-enforced; traits carry **no**
-`requires:` (they grant nothing). At routine creation the selected traits are **adapted
-to the task** and written into the routine's own `traits/` — from then on they are the
-routine's files, refined by the routine-improver, never toggled.
+The heading form `# rule: <slug> — <summary>` is lint-enforced, three tags are the minimum,
+and rules carry **no** `requires:` (they grant nothing).
+
+A rule is GENERAL by construction and has exactly ONE copy. Routines hold slugs
+(`routine.yaml` `rules:`), read the prose on demand with `read_rule`, and apply it to their
+own case — so revising the library text reaches every holder at its next run, with no
+migration and no per-routine fork to drift. That leverage is also the hazard: write for the
+routines you did not have in mind. A rule that needs to name a util, a routine or a file has
+stopped being general — that mechanism belongs in a recipe or a permission doc.
+
+Two owners, deliberately split. WHICH rules bind a routine is config, so only the user
+changes it (the routine page's *General rules* panel). The TEXT is the library's: the user
+edits it on the Library tab, and a routine holding the **rule-authoring** permission may
+`write_rule` — under its own approval dial (`rule_confirm`), because a revision lands on every
+holder. Deletion is nobody's action: it would silently un-bind every holder, so a rule that
+should go is reported and the user removes it.
 
 ## Permissions — conduct docs over enforced capabilities
 
@@ -198,4 +212,4 @@ write one from scratch: finish a conversation that went well and click **Save as
 playbook** — the system distils it from the transcript. See the [Playbooks](playbooks.md)
 guide.
 
-See also: [Getting started](getting-started.md) · [Traits & permissions](traits-permissions.md) · [Playbooks](playbooks.md)
+See also: [Getting started](getting-started.md) · [Rules & permissions](rules-permissions.md) · [Playbooks](playbooks.md)

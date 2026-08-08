@@ -76,8 +76,8 @@ No container terminal, no PAT to mint. Skip only if all your repos are public an
 
 ## 5. Set up your library  (Settings → Library repository)
 
-Workflows, traits, permissions, playbooks, and utils live together in ONE git repo on your account
-(subdirs `workflows/`, `traits/`, `permissions/`, `playbooks/`, `utils/`). On a fresh deploy its row
+Workflows, rules, permissions, playbooks, and utils live together in ONE git repo on your account
+(subdirs `workflows/`, `rules/`, `permissions/`, `playbooks/`, `utils/`). On a fresh deploy its row
 offers two buttons (do §4 first — both need GitHub):
 
 - **Clone existing** — enter `owner/name` of a repo you already have → its content is pulled in.

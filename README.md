@@ -9,7 +9,7 @@ system as a whole.
 A **routine** = one **instruction** (a user prompt refined through clarifying questions in
 the wizard) + one **workflow** (a Python control-flow pattern from a git-synced library,
 decomposed into the routine's own markdown) + a schedule. Each routine lives in its own git
-repository under `~/routines/<slug>`, with reusable practice **traits** (adapted in at creation)
+repository under `~/routines/<slug>`, bound by shared general **rules** (one library copy each)
 and user-set **permissions** — the held set is per-routine config in `routine.yaml`.
 
 **The workflow is the harness.** Runs execute on a provider-agnostic engine: the
@@ -48,11 +48,11 @@ path: this scheduler is the only harness.
   `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, acting
   is lens-scoped and test-gated, with bigger decisions on the **Items** page) and `token-lab`
   (measures token usage and A/B-tests efficiency methods via `llm` subcalls only — never
-  integrating — and publishes a report). The shared library — workflow patterns, traits,
+  integrating — and publishes a report). The shared library — workflow patterns, rules,
   playbooks — is owned by `routine-improver`, which fixes them lint-gated and committed; you
   can edit or delete any of them on the Library tab. They ship **disabled**; the
   dashboard says so until you enable them, because self-improvement costs tokens. The
-  instance itself syncs to one GitHub repo — routines, workflows, traits, utils, sanitized
+  instance itself syncs to one GitHub repo — routines, workflows, rules, utils, sanitized
   config — via the scheduled **Library sync** job in Settings (a plain daemon job, no LLM).
 - **Across routines**: workflows and global utils live in one shared library repo, so what
   one routine learns transfers to all — and utils compose (`gu` utils may call other utils),
@@ -85,7 +85,7 @@ endpoints, the central Secrets store, GitHub, the library repo.
   and run history; drill into any run to watch its conversation live. Its activity section
   is the live cross-routine run feed — filterable, and expanding a row tails that run's
   transcript inline.
-- **Library** — browse and edit the shared workflows, traits, permissions, playbooks, and global utils; every
+- **Library** — browse and edit the shared workflows, rules, permissions, playbooks, and global utils; every
   save is lint/selftest-gated.
 - **Settings** — LLM endpoints (live test call + a credential-source indicator: which of
   inline key / secret / env file is in use, warning when an inline key shadows a set
@@ -110,7 +110,7 @@ real run of the protected `clarification` routine, living on the **standard run 
 (`#/run/clarification:<ts>`, resumable from the setup banner). When the chat finishes, the
 same page becomes the create form: it suggests a library workflow (or generates a draft
 one) and scaffolds the routine — its own git repo, materialized workflow with the standard
-traits adapted in, seeded LEDGER, chosen cron. Or from the shell:
+rules bound, seeded LEDGER, chosen cron. Or from the shell:
 
 ```bash
 uv run rsched scaffold my-routine --workflow general-task --cron "0 7 * * 1" \
@@ -220,10 +220,10 @@ user-facing here.
 - `static/` — no-build vanilla-JS frontend; `docs/` — hand-written guides, rendered into
   the Help tab next to the pdoc-generated API reference (`docs_build.py`, at boot)
 - `library-seed/` + `util-seed/` — seeded to `~/.local/share/routine-scheduler-libraries`,
-  ONE git repo holding `workflows/`, `traits/`, `permissions/`, `playbooks/` and `utils/` (with the `gu` dispatcher at
-  the root); `routine-seed/` — the four meta routines, installed disabled
+  ONE git repo holding `workflows/`, `rules/`, `permissions/`, `playbooks/` and `utils/` (with the `gu` dispatcher at
+  the root); `routine-seed/` — the five meta routines, installed disabled
 - Routine dirs: `routine.yaml`, `main.md` (the workflow, materialized) + `stages/` modules
-  (the routine's sole source of truth — no persisted instruction, no recompile), `traits/`,
+  (the routine's sole source of truth — no persisted instruction, no recompile),
   `state/`, `LEDGER.md`, `inbox/`, `questions/`, `runs/<ts>/` (transcripts, gitignored,
   keep-last-N with gzip)
 

@@ -1,5 +1,5 @@
 """File-shaped effect handlers: read_file / view_image / write_file / edit_file, the
-memory actions, and read_trait — plus the path gates they share (the runs/ read depth,
+memory actions, and read_rule — plus the path gates they share (the runs/ read depth,
 the write-grounding rule, the recipe/config seal). Split from executor.py, which keeps
 dispatch, the util runner, and the llm subcall (and routes the file kinds here).
 """
@@ -238,7 +238,7 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
         except ValueError:
             return None
         if is_recipe_path(str(rel)):
-            return ("a run never edits its own recipe (main.md / stages/ / traits/ / "
+            return ("a run never edits its own recipe (main.md / stages/ / "
                     "tuning.yaml) — the routine-improver refines it; file a deferred "
                     "ask_user instead")
     return None
@@ -378,34 +378,35 @@ def do_memory_read(action: dict, ctx: RunContext) -> dict:
             "lines": len(content.splitlines()), "truncated": truncated}
 
 
-def do_read_trait(action: dict, ctx: RunContext) -> dict:
-    """CONSULT a practice module from the shared library — read-only, for THIS run only.
+def do_read_rule(action: dict, ctx: RunContext) -> dict:
+    """Read a general RULE from the shared library — the only way a run sees rule prose.
 
-    Nothing is written: the recipe invariant holds (a run never adds to its own traits/), and
-    the prose reaches the model as an ordinary observation rather than a permanent standing
-    practice. Making a trait permanent stays the user's call, from the routine page or the
-    conversation header. `name: "list"` returns the catalog, mirroring `util name=list` — the
-    trait catalog is deliberately NOT in the composed prompt, so discovery costs one turn
-    rather than every turn's cache.
+    Rules live in ONE place and are read-only to every run: this action never writes, and the
+    held set is routine.yaml config the user owns. The prose is deliberately NOT in the
+    composed prompt — main.md's Standing practices tail names the held slugs and the run
+    fetches the one it needs, so an unread rule costs nothing every turn. `name: "list"`
+    returns the catalog (mirroring `util name=list`), which is how a run reaches a rule it
+    does not hold: it applies for this run only, and asking the user to make it permanent is
+    a finish-summary or deferred-ask_user matter.
     """
     from .. import library_docs
 
     name = action["name"]
-    home = ctx.server.traits_home
+    home = ctx.server.rules_home
     catalog = library_docs.list_docs(home)
-    # "held" = already one of this routine's own standing practices, so the model can tell a
-    # module it should ALREADY be following from one it is consulting for the first time.
-    held = {p.stem for p in ctx.routine.dir.joinpath("traits").glob("*.md")}
+    # "held" = bound by this routine's own config, so the model can tell a rule it should
+    # ALREADY be applying from one it is consulting for the first time.
+    held = set(ctx.routine.rules)
     if name == "list":
-        return {"kind": "read_trait", "name": "list",
-                "traits": [{"slug": d["slug"], "summary": d["summary"],
-                            "held": d["slug"] in held} for d in catalog]}
+        return {"kind": "read_rule", "name": "list",
+                "rules": [{"slug": d["slug"], "summary": d["summary"],
+                           "held": d["slug"] in held} for d in catalog]}
     raw = library_docs.read_doc(home, name)
     if raw is None:
-        return {"kind": "read_trait", "name": name, "missing": True,
+        return {"kind": "read_rule", "name": name, "missing": True,
                 "available": [d["slug"] for d in catalog]}
     body = library_docs.doc_body(raw).strip()
-    return {"kind": "read_trait", "name": name, "content": body,
+    return {"kind": "read_rule", "name": name, "content": body,
             "lines": len(body.splitlines()), "held": name in held}
 
 

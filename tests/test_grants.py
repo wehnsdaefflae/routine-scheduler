@@ -133,8 +133,8 @@ def test_capabilities_for_raises_the_base_to_cover_active_docs(tmp_path):
                            "run-history": RUN_HISTORY})
     lib = read_library_requires(home)
     caps = capabilities_for(["util-authoring", "communication", "run-history"], lib)
-    assert caps == {"actions": ["write_util"], "utils": ["discord"],
-                    "confirm": "always", "runs": "last", "workflows": "catalog"}
+    assert caps == {"actions": ["write_util"], "utils": ["discord"], "confirm": "always",
+                    "rule_confirm": "always", "runs": "last", "workflows": "catalog"}
     # base values survive and only rise: runs stays at the deeper level, confirm untouched
     base = {"actions": ["memory_read"], "utils": [], "confirm": "never", "runs": "all"}
     caps2 = capabilities_for(["run-history"], lib, base)
@@ -153,19 +153,20 @@ def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_pat
     orphan = {"actions": ["write_util"], "utils": ["discord"], "confirm": "never", "runs": "all"}
     # nothing held → every gated capability is floored away (confirm dial preserved)
     assert floor_capabilities([], lib, orphan) == {
-        "actions": [], "utils": [], "confirm": "never", "runs": "none", "workflows": "catalog"}
+        "actions": [], "utils": [], "confirm": "never", "rule_confirm": "always",
+        "runs": "none", "workflows": "catalog"}
     # util-authoring held → write_util survives (with its policy); discord + runs still floored
     assert floor_capabilities(["util-authoring"], lib, orphan) == {
-        "actions": ["write_util"], "utils": [], "confirm": "never", "runs": "none",
-        "workflows": "catalog"}
+        "actions": ["write_util"], "utils": [], "confirm": "never", "rule_confirm": "always",
+        "runs": "none", "workflows": "catalog"}
     # run-history held → run DEPTH (a user dial) is kept above none; actions/utils floored
     kept = floor_capabilities(["run-history"], lib, orphan)
     assert kept["runs"] == "all" and kept["actions"] == [] and kept["utils"] == []
     # raise THEN floor == exactly the held docs' requires + policy dials, no contradiction
     active = ["util-authoring", "communication", "run-history"]
     assert floor_capabilities(active, lib, capabilities_for(active, lib)) == {
-        "actions": ["write_util"], "utils": ["discord"], "confirm": "always", "runs": "last",
-        "workflows": "catalog"}
+        "actions": ["write_util"], "utils": ["discord"], "confirm": "always",
+        "rule_confirm": "always", "runs": "last", "workflows": "catalog"}
 
 
 def test_floor_keeps_gated_kind_via_default_source_when_doc_predates_it(tmp_path):
@@ -325,7 +326,7 @@ def test_deny_blocks_own_recipe_and_config_writes():
     only via recipe_unlocked (a user fs_write_root covering the dir). routine.yaml is
     config: denied for EVERYONE — the denial routes machine-tunable knobs to tuning.yaml."""
     none = GrantPolicy()
-    for path in ("main.md", "stages/collect.md", "traits/ask-policy.md", "./main.md",
+    for path in ("main.md", "stages/collect.md", "./main.md",
                  "tuning.yaml", "routine.yaml"):
         denial = none.deny({"kind": "write_file", "path": path, "content": "x"})
         assert denial and "routine-improver" in denial, path
@@ -364,7 +365,7 @@ def test_validate_action_carries_capability_denials():
 
 
 def test_lint_flags_bad_requires():
-    from rsched.workflows.lint import lint_permission_text, lint_trait_text
+    from rsched.workflows.lint import lint_permission_text, lint_rule_text
 
     bad = ("---\ntags: [a, b, c]\nrequires:\n  actions: [dance]\n  runs: maybe\n---\n"
            "# permission: x — y\n\nlong enough body\nmore\n")
@@ -382,9 +383,9 @@ def test_lint_flags_bad_requires():
               "# permission: x — y\n\nbody\nmore\nlines\n")
     assert any("renamed" in p for p in lint_permission_text(legacy, filename="x.md"))
     trait_with_req = ("---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
-                      "# trait: x — y\n\nbody\nmore\nlines\n")
+                      "# rule: x — y\n\nbody\nmore\nlines\n")
     assert any("must not carry" in p
-               for p in lint_trait_text(trait_with_req, filename="x.md"))
+               for p in lint_rule_text(trait_with_req, filename="x.md"))
 
 
 def test_memory_kinds_are_gated_and_denials_name_the_permission():
