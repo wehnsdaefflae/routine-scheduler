@@ -1389,6 +1389,38 @@ def test_schema_forcefail_telemetry(make_routine, scripted):
     assert st["schema_forcefails"] == 1
 
 
+def test_schema_storm_fails_early_with_a_clear_outcome(make_routine, scripted):
+    """D87-A: four CONSECUTIVE turns each needing schema-rejection retries fail the run
+    early with a capability-naming outcome — even though every turn eventually landed a
+    valid action (the F297 limp: full-prompt retry prices until the budget dies)."""
+    seq = []
+    for n in range(4):
+        # distinct targets: the REPEAT guard must never be the one that fires here
+        seq += [f"nope {n}", write_file(f"state/r{n}.txt", content="x", say="recovered")]
+    seq += [finish(summary="never reached")]
+    _d, _ep, status, run_dir, events = _run(make_routine, scripted, seq)
+    assert status == "failed"
+    st = read_json(run_dir / "status.json")
+    assert st["schema_retries"] == 4
+    fin = [e for e in events if e["type"] == "finish"][-1]
+    assert "cannot reliably hold the action schema" in fin["payload"]["summary"]
+
+
+def test_schema_storm_streak_resets_on_a_clean_turn(make_routine, scripted):
+    """The storm streak measures CONSECUTIVE retry-burdened turns: a clean turn resets
+    it, so ordinary occasional retries never trip the D87 guard."""
+    seq = []
+    for n in range(3):
+        seq += [f"nope {n}", write_file(f"state/r{n}.txt", content="x", say="recovered")]
+    seq += [write_file("state/clean.txt", content="x", say="clean turn"),
+            "nope again", write_file("state/again.txt", content="x", say="recovered"),
+            finish(summary="made it")]
+    _d, _ep, status, run_dir, _events = _run(make_routine, scripted, seq)
+    assert status == "ok"
+    st = read_json(run_dir / "status.json")
+    assert st["schema_retries"] == 4
+
+
 def test_own_recipe_writes_blocked_unless_write_root_covers_dir(make_routine, scripted):
     """write_file into own main.md/stages/traits is rejected for every routine (inside the
     schema-retry cycle) — no permission unlocks it. A user-granted fs_write_root covering the

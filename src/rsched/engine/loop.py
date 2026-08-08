@@ -44,6 +44,11 @@ from .subruns import SubrunManager
 POLL_S = 2.0
 REPEAT_WARN = 3
 REPEAT_FAIL = 5
+# D87-A: consecutive TURNS that each needed schema-rejection retries before landing an
+# action — a model that reliably cannot hold the action schema. Fail early and clearly
+# instead of limping through the budget at full-prompt retry prices (F297/R255:
+# c-20260806-150112 burned 12 retries / 477K input tokens before dying late).
+SCHEMA_STORM_TURNS = 4
 
 __all__ = [
     "MAX_SCHEMA_ATTEMPTS",
@@ -84,6 +89,7 @@ class EngineLoop:
         self.dialog_qid: str | None = None   # open ask_user record a dialog reply left behind
         self.executed_actions = 0  # actions that produced an observation this run
         self._referred_turn = False  # the uncensored model produced the CURRENT turn's action
+        self._schema_storm_streak = 0   # consecutive retry-burdened turns (D87, SCHEMA_STORM_TURNS)
         # This leg's wake, set in boot. The speaker turn is the USER's after the model hands
         # it back with an authored finish (`leg_after_authored`); a message that resumes then
         # keeps the turn with the user if it only EXECUTES commands (`leg_commands`, no
@@ -260,6 +266,7 @@ class EngineLoop:
                 apply_trait_additions(self)
                 drain_injections(self)
                 announce_finished_subruns(self)
+                retries_before = ctx.schema_retries
                 action, usage = next_action(self)
                 # Book the spend IMMEDIATELY: tokens burned by failed schema attempts or a
                 # turn preempted by abort are real spend even when no action lands.
@@ -268,8 +275,12 @@ class EngineLoop:
                     raise RunAborted  # a kill during the completion preempts the action
                 if action is None:
                     return self._finish_run(
-                        "failed", "Orchestrator failed to produce a valid action "
-                                  f"after {MAX_SCHEMA_ATTEMPTS} attempts.")
+                        "failed",
+                        f"The model ({ctx.main_model}) could not produce a schema-valid "
+                        f"action in {MAX_SCHEMA_ATTEMPTS} attempts ({ctx.schema_retries} "
+                        f"schema rejections this run, {ctx.turn} completed turns) — it "
+                        "cannot hold the action schema. Pick a stronger model for "
+                        "schema-driven work (D87).")
                 ctx.turn += 1
                 ctx.transcript.event("assistant_action", dict(action), turn=ctx.turn, usage=usage,
                                      **({"phase": ctx.phase} if ctx.phase else {}),
@@ -278,6 +289,23 @@ class EngineLoop:
                 self.messages.append({"role": "assistant",
                                       "content": json.dumps(action, ensure_ascii=False)})
                 self._record_turn(action)
+                # D87-A: a turn that needed schema-rejection retries extends the storm
+                # streak; a clean turn resets it. At SCHEMA_STORM_TURNS consecutive
+                # retry-burdened turns the run fails early — cheaper and clearer than
+                # limping to the budget wall at full-prompt retry prices.
+                if ctx.schema_retries > retries_before:
+                    self._schema_storm_streak += 1
+                    if self._schema_storm_streak >= SCHEMA_STORM_TURNS:
+                        return self._finish_run(
+                            "failed",
+                            f"Schema storm: every one of the last {SCHEMA_STORM_TURNS} "
+                            f"turns needed schema-rejection retries ({ctx.schema_retries} "
+                            f"rejections so far from {ctx.main_model}) — the model cannot "
+                            "reliably hold the action schema; failing early instead of "
+                            "burning the budget on retries (D87). Pick a stronger model "
+                            "for schema-driven work.")
+                else:
+                    self._schema_storm_streak = 0
                 repeat_streak = self._repeat_streak(action)
                 if repeat_streak >= REPEAT_FAIL:
                     return self._finish_run(

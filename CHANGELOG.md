@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.162.0] — 2026-08-08
+
+### Added
+- **Schema-storm fast-fail (D87-A, F297, R255).** A run whose last 4 CONSECUTIVE turns
+  each needed schema-rejection retries now fails early with a capability-naming outcome
+  ("the model cannot reliably hold the action schema — pick a stronger model") instead of
+  limping to the budget wall at full-prompt retry prices (c-20260806-150112: 12 retries,
+  477K input tokens). A clean turn resets the streak, so occasional retries never trip
+  it; the per-turn force-fail outcome now names the model and the same capability
+  diagnosis instead of a generic "failed after 3 attempts".
+
 ## [0.161.0] — 2026-08-08
 
 ### Added
