@@ -24,14 +24,16 @@ Per routine / conversation / background dir:
   4. `practice-library` dropped from `permissions:` and `read_trait` from
      `capabilities.actions` (the action is ungated now); `global-utils` added to
      `permissions:` for any routine that held the trait, since its prose became a
-     conduct doc. The retired permission DOC is deleted from the library too — dropping
-     it from the seed does not touch a live instance, and a doc whose `requires:` names a
-     kind the engine no longer has sits permanently lint-red on the Library tab.
+     conduct doc. The retired permission DOC is deleted from the library too, and every
+     library WORKFLOW's `includes:` is rewritten through the same slug map — editing the
+     seed does not touch a live instance (the sync only installs what is missing), so both
+     would otherwise stay lint-red forever and keep seeding new routines with dead slugs.
   5. main.md's `## Standing practices` tail rebuilt from the new held set.
 """
 
 from __future__ import annotations
 
+import ast
 import logging
 import shutil
 from pathlib import Path
@@ -108,6 +110,65 @@ def _drop_retired_permissions(server: ServerConfig) -> int:
         libgit.commit(server.libraries_home,
                       f"migrate: drop {dropped} retired permission doc(s)")
     return dropped
+
+
+def _migrate_workflow_includes(server: ServerConfig) -> int:
+    """Rewrite every LIBRARY workflow's `includes:` through the slug map.
+
+    Same trap as the retired permission doc, one layer up and wider: editing a pattern in
+    `library-seed/` does not reach a live instance (the seed sync only installs what is
+    MISSING), and the library also carries patterns that were never in the seed at all —
+    curator-drafted ones. Left alone, every one of them lints red ("include 'ledger-discipline'
+    does not resolve") and, worse, seeds new routines with rule slugs that no longer exist.
+
+    The list is located via the AST — these files are parsed, never executed — so the edit
+    lands on the real literal regardless of how the pattern happens to be formatted.
+    """
+    from .workflows.library import workflows_dir
+
+    wdir = workflows_dir(server.libraries_home)
+    if not wdir.is_dir():
+        return 0
+    touched = 0
+    for path in sorted(wdir.glob("*.py")):
+        src = path.read_text(encoding="utf-8")
+        node = _includes_node(src)
+        if node is None:
+            continue
+        old = [e.value for e in node.elts
+               if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+        new: list[str] = []
+        for slug in old:
+            new.extend(s for s in _SLUG_MAP.get(slug, (slug,)) if s not in new)
+        if new == old:
+            continue
+        segment = ast.get_source_segment(src, node)
+        if segment is None:
+            continue
+        rendered = "[" + ", ".join(f'"{s}"' for s in new) + "]"
+        atomic_write(path, src.replace(segment, rendered, 1))
+        log.warning("rules migration: %s includes %s -> %s", path.name, old, new)
+        touched += 1
+    if touched:
+        libgit.commit(server.libraries_home,
+                      f"migrate: retire mapped rule slugs from {touched} workflow include(s)")
+    return touched
+
+
+def _includes_node(src: str) -> ast.List | None:
+    """The `includes:` list literal inside a pattern's META dict, or None."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return None
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        for key, value in zip(node.keys, node.values, strict=False):
+            if (isinstance(key, ast.Constant) and key.value == "includes"
+                    and isinstance(value, ast.List)):
+                return value
+    return None
 
 
 def _promote_orphans(server: ServerConfig, homes: tuple[Path, ...]) -> int:
@@ -188,6 +249,7 @@ def migrate_rules(server: ServerConfig) -> int:
     try:
         _migrate_library(server)
         _drop_retired_permissions(server)
+        _migrate_workflow_includes(server)
         # BEFORE the per-dir conversion, which deletes traits/ — an orphan must be lifted
         # out while its only copy still exists.
         _promote_orphans(server, homes)

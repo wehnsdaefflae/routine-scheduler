@@ -325,3 +325,47 @@ def test_migration_drops_the_retired_permission_doc_from_a_live_library(tmp_path
     assert not doomed.exists()
     assert keeper.is_file()                   # only the named docs go
     migrate_rules(server)                     # idempotent
+
+
+def test_migration_rewrites_library_workflow_includes(tmp_path):
+    """The same trap as the retired permission doc, one layer up and wider. Editing a pattern
+    in library-seed/ does not reach a live instance, and the library also carries patterns the
+    seed never had (curator-drafted). Left alone each lints red AND seeds new routines with
+    rule slugs that no longer exist. Found on the running instance after the 0.165.0 deploy.
+    """
+    from rsched.config import ServerConfig
+    from rsched.migrate_rules import migrate_rules
+    from rsched.workflows.lint import lint_workflow_py
+
+    lib = tmp_path / "lib"
+    (lib / "workflows").mkdir(parents=True)
+    (lib / "rules").mkdir()
+    for slug in ("ask-policy", "web-research", "decision-record", "problem-routing",
+                 "root-cause-fix", "intent-inference"):
+        (lib / "rules" / f"{slug}.md").write_text(
+            f"---\ntags: [a, b, c]\n---\n# rule: {slug} — x\n\nbody\n", encoding="utf-8")
+
+    # a multi-line literal, so the AST edit has to survive formatting it cannot predict
+    wf = lib / "workflows" / "curator-drafted.py"
+    wf.write_text(
+        'META = {\n    "slug": "curator-drafted",\n'
+        '    "includes": ["ask-policy", "global-utils", "ledger-discipline",\n'
+        '                 "maintenance-routing"],\n}\n\n\ndef main():\n    pass\n',
+        encoding="utf-8")
+
+    server = ServerConfig(libraries_home=lib, routines_home=tmp_path / "routines",
+                          conversations_home=tmp_path / "conv", background_home=tmp_path / "bg")
+    migrate_rules(server)
+
+    after = wf.read_text(encoding="utf-8")
+    assert '"includes": ["ask-policy", "decision-record", "problem-routing"]' in after
+    assert "global-utils" not in after        # became a permission — not a rule any more
+    assert "ledger-discipline" not in after
+    assert "def main():" in after            # only the literal was touched
+    # the defect this fixes: every include now resolves to a real rule (the fixture's META
+    # is minimal, so other lint complaints are expected and not what is under test)
+    known = [p.stem for p in (lib / "rules").glob("*.md")]
+    problems = lint_workflow_py(after, filename=wf.name, rule_slugs=known)
+    assert not [p for p in problems if "does not resolve" in p], problems
+    migrate_rules(server)                    # idempotent
+    assert wf.read_text(encoding="utf-8") == after

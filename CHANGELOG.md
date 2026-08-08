@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.165.2] — 2026-08-08
+
+### Fixed
+
+- Every LIBRARY workflow pattern still declared the retired rule slugs in `includes:`
+  (`global-utils`, `ledger-discipline`) — including `converse` and `general-task`, whose seed
+  copies were updated in 0.164.0. Same trap as the permission doc below, one layer up and
+  wider: the seed sync only installs what is MISSING, so an edit in `library-seed/` never
+  reaches a live instance, and the library also carries curator-drafted patterns the seed
+  never had. Left alone they lint red and keep seeding new routines with dead slugs.
+  `migrate_rules` now rewrites every library workflow's `includes:` through the slug map,
+  locating the literal via the AST so the edit survives whatever formatting the pattern uses.
+
 ## [0.165.1] — 2026-08-08
 
 ### Fixed
