@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.166.1] — 2026-08-08
+
+### Fixed
+
+- `git-sync --continue` stalled a held rebase in the engine's container: `rebase --continue`
+  opens an EDITOR to let a human amend the replayed commit's message, and there is none
+  ("Terminal is dumb, but EDITOR unset"), leaving the rebase half-finished. It now runs with
+  `core.editor=true`, which accepts the existing message — which is what a machine wants, since
+  the message belongs to the commit being replayed.
+- Caught by the migration's own selftest gate: the 0.166.0 deploy installed `instance-export`
+  and `remote` and **rolled `git-sync` back**, because the selftest passes in a dev shell (which
+  has an EDITOR) and fails where it actually runs. The gate did exactly its job.
+
 ## [0.166.0] — 2026-08-08
 
 ### The library-sync routine resolves divergence instead of reporting it

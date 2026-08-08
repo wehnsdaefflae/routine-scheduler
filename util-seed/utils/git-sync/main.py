@@ -43,6 +43,11 @@ from contextlib import contextmanager
 from pathlib import Path
 
 IDENTITY = ["-c", "user.name=routine-scheduler", "-c", "user.email=noreply@routine-scheduler.local"]
+# `rebase --continue` opens an EDITOR to let a human amend the replayed commit's message.
+# There is no editor in the engine's container ("Terminal is dumb, but EDITOR unset"), so the
+# rebase would stall half-finished. `core.editor=true` accepts the existing message unchanged,
+# which is what a machine wants: the message came from the commit being replayed.
+NO_EDITOR = ["-c", "core.editor=true"]
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
@@ -146,7 +151,7 @@ def finish_rebase(repo_path: str, push: bool = True) -> dict:
               or _git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() or "main")
     with _repo_lock(repo):
         _git(repo, "add", "-A")
-        r = _git(repo, *IDENTITY, "rebase", "--continue")
+        r = _git(repo, *IDENTITY, *NO_EDITOR, "rebase", "--continue")
         if r.returncode != 0:
             return {"repo": str(repo), "ok": False, "rebase_in_progress": True,
                     "conflicts": _conflicts(repo),
