@@ -42,8 +42,19 @@ NO_FOREVER_CLASSES = frozenset({"recreate"})
 # operator decision 2026-08-05: turn-action classes ONLY). secret:/fs-read:/fs-write:
 # are consumed inside a util SUBPROCESS the engine never sees as a turn — "once" for
 # them could only mean "the next util call that touches it", a coarser promise than the
-# button makes — so those classes stay four-state.
+# button makes — so they stayed four-state until D76
+# (below) accepted the coarser promise.
 TURN_ACTION_CLASSES = frozenset({"action", "util", "runs", "workflows"})
+# D76 (operator, 2026-08-06, revisiting the D65 scope choice): secret:/fs-read:/fs-write:
+# ARE once-grantable, under the explicitly COARSER spend the operator approved ("spent at
+# the next requesting util invocation"). Their use happens inside a util subprocess
+# (declared-env injection, sandbox-mounted roots), so the engine spends them at the next
+# successfully-dispatched action that RECEIVES the entity: a secret at the next util call
+# whose script (or its `calls:` tree — utils_lib.util_needs) declares the var; an fs root
+# at the next file action under it OR the next util invocation (every util's sandbox
+# mounts the granted roots wholesale). connection:/machine: stay four-state — binding
+# carries an account/host no single action "uses up"; recreate: is a per-run unlock.
+ONCE_CLASSES = TURN_ACTION_CLASSES | frozenset({"secret", "fs-read", "fs-write"})
 # grants: TRUE rows are legal only where no native routine.yaml switch exists.
 TRUE_ROW_CLASSES = frozenset({"secret"})
 # fs paths that are never grantable, whatever the user clicks: the instance's credential

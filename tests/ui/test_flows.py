@@ -1547,7 +1547,9 @@ def test_decisions_page_access_request_offers_the_four_decisions(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/questions")
     panel = ui_page.locator(".question-item", has_text="May I read the FOO_TOKEN")
     expect(panel.locator("code", has_text="secret:FOO_TOKEN")).to_be_visible()
-    for label in ("allow now", "allow forever", "deny now", "never"):
+    # a secret request offers "allow once" too since D76 (spent at the next util
+    # invocation that receives the var)
+    for label in ("allow now", "allow once", "allow forever", "deny now", "never"):
         expect(panel.get_by_role("button", name=label, exact=True)).to_be_visible()
     panel.get_by_role("button", name="allow forever", exact=True).click()
     _wait_until((ui.routine_dir("uir") / "inbox" / "answer-q-req.json").exists)

@@ -257,9 +257,13 @@ def test_a_missing_util_does_not_spend_a_once_grant(make_routine, scripted):
     assert all(c["payload"].get("missing") for c in calls)
 
 
-def _once_loop(granted):
+def _once_loop(granted, home=None, rdir=None):
+    from pathlib import Path
     ctx = SimpleNamespace(granted_now=set(granted), denied_now=set(),
-                          granted_once=set(granted), grant_args={}, run_ts=TS)
+                          granted_once=set(granted), grant_args={}, run_ts=TS,
+                          routine=SimpleNamespace(dir=rdir or Path("/nonexistent-routine")),
+                          server=SimpleNamespace(
+                              libraries_home=home or Path("/nonexistent-lib")))
     return SimpleNamespace(ctx=ctx, base_grants=GrantPolicy(), allowed_tools=None,
                            grants=GrantPolicy(), _finish_reserved=False,
                            action_schema=None)
@@ -287,34 +291,92 @@ def test_consume_once_spends_on_use_and_survives_gate_refusals():
 def test_once_match_covers_each_turn_action_class():
     from rsched.engine.requests import _once_match
 
-    assert _once_match("action:memory_read", {"kind": "memory_read", "name": "x"}, TS)
-    assert not _once_match("action:memory_read", {"kind": "memory_write", "name": "x"}, TS)
-    assert _once_match("util:discord", {"kind": "util", "name": "discord"}, TS)
-    assert not _once_match("util:discord", {"kind": "util", "name": "other"}, TS)
+    ctx = _once_loop(set()).ctx
+    assert _once_match("action:memory_read", {"kind": "memory_read", "name": "x"}, ctx)
+    assert not _once_match("action:memory_read", {"kind": "memory_write", "name": "x"}, ctx)
+    assert _once_match("util:discord", {"kind": "util", "name": "discord"}, ctx)
+    assert not _once_match("util:discord", {"kind": "util", "name": "other"}, ctx)
     # runs: spent by reading ANOTHER run's tree — never by the run's own
     assert _once_match("runs:last",
-                       {"kind": "read_file", "path": "runs/20260101-000000/result.md"}, TS)
+                       {"kind": "read_file", "path": "runs/20260101-000000/result.md"}, ctx)
     assert not _once_match("runs:last",
-                           {"kind": "read_file", "path": f"runs/{TS}/state.json"}, TS)
-    assert not _once_match("runs:last", {"kind": "read_file", "path": "state/notes.md"}, TS)
+                           {"kind": "read_file", "path": f"runs/{TS}/state.json"}, ctx)
+    assert not _once_match("runs:last", {"kind": "read_file", "path": "state/notes.md"}, ctx)
     assert _once_match("workflows:generate",
-                       {"kind": "subtask", "workflow": "generate", "prompt": "p"}, TS)
+                       {"kind": "subtask", "workflow": "generate", "prompt": "p"}, ctx)
     assert not _once_match("workflows:generate",
-                           {"kind": "subtask", "workflow": "general-task", "prompt": "p"}, TS)
+                           {"kind": "subtask", "workflow": "general-task", "prompt": "p"}, ctx)
 
 
-def test_apply_decision_allow_once_arms_only_turn_action_classes():
-    """Engine fail-closed mirror of the web guard: allow_once on a non-turn-action class
-    grants NOTHING (never a silent widening to allow_now — an unconsumable once-grant
-    would revoke nothing all run)."""
+def test_apply_decision_allow_once_arms_once_classes_only():
+    """Engine fail-closed mirror of the web guard: allow_once on a class outside
+    entities.ONCE_CLASSES grants NOTHING (never a silent widening to allow_now — an
+    unconsumable once-grant would revoke nothing all run). secret:/fs-*: ARE
+    once-grantable since D76."""
     from rsched.engine.requests import apply_decision
 
     loop = _once_loop(set())
-    apply_decision(loop, ["secret:FOO_KEY"], "allow_once")
+    apply_decision(loop, ["connection:google"], "allow_once")
     assert loop.ctx.granted_now == set() and loop.ctx.granted_once == set()
     apply_decision(loop, ["util:discord"], "allow_once")
     assert loop.ctx.granted_now == {"util:discord"}
     assert loop.ctx.granted_once == {"util:discord"}
+    apply_decision(loop, ["secret:FOO_KEY", "fs-write:/tmp/somewhere"], "allow_once")
+    assert {"secret:FOO_KEY", "fs-write:/tmp/somewhere"} <= loop.ctx.granted_once
+
+
+def _seed_util(home, name, docstring):
+    d = home / "utils" / name
+    d.mkdir(parents=True)
+    (d / "main.py").write_text(f'"""{docstring}"""\n', encoding="utf-8")
+
+
+def test_consume_once_secret_spent_only_by_a_declaring_util(tmp_path):
+    """D76: a once-granted secret is spent by the next util call whose script declares
+    it (the injection surface — utils_lib.util_needs, calls: tree included); an
+    undeclaring util neither receives nor spends it."""
+    from rsched.engine.requests import consume_once_grants
+
+    _seed_util(tmp_path, "withsec", "withsec — x\nusage: gu withsec\nsecrets: FOO_KEY\n")
+    _seed_util(tmp_path, "nosec", "nosec — x\nusage: gu nosec\n")
+    loop = _once_loop({"secret:FOO_KEY"}, home=tmp_path)
+    obs = {"kind": "util", "exit": 0}
+    assert consume_once_grants(loop, {"kind": "util", "name": "nosec"}, obs) == set()
+    assert "secret:FOO_KEY" in loop.ctx.granted_once
+    spent = consume_once_grants(loop, {"kind": "util", "name": "withsec"}, obs)
+    assert spent == {"secret:FOO_KEY"}
+    assert loop.ctx.granted_now == set() and loop.ctx.granted_once == set()
+
+
+def test_consume_once_fs_spent_by_file_action_under_root_or_any_util(tmp_path):
+    """D76: a once-granted fs root is spent by a file action under it (relative paths
+    resolve to the routine dir and do NOT touch it) or by ANY util invocation — the
+    sandbox mounts granted roots wholesale; the approved coarser promise."""
+    from rsched.engine.requests import consume_once_grants
+
+    root = tmp_path / "proj"
+    eid = f"fs-write:{root}"
+    loop = _once_loop({eid}, rdir=tmp_path / "routine")
+    assert consume_once_grants(loop, {"kind": "read_file", "path": "state/x"}, {}) == set()
+    assert eid in loop.ctx.granted_once
+    spent = consume_once_grants(loop, {"kind": "edit_file", "path": f"{root}/notes.md",
+                                       "anchor": "a", "replacement": "b"}, {})
+    assert spent == {eid}
+    # any util invocation receives the mounted root, so it spends the grant too
+    loop2 = _once_loop({eid}, rdir=tmp_path / "routine")
+    spent2 = consume_once_grants(loop2, {"kind": "util", "name": "whatever"},
+                                 {"kind": "util", "exit": 0})
+    assert spent2 == {eid}
+
+
+def test_child_inheritance_excludes_once_armed_resources():
+    """A once-armed grant is narrower than the run, so it never flows to a child run
+    (which would spend 'one action' many times over) — D76."""
+    from rsched.engine.childrun import inheritable_resources
+
+    granted = {"secret:FOO_KEY", "fs-read:/tmp/x", "util:discord"}
+    assert inheritable_resources(granted, set()) == {"secret:FOO_KEY", "fs-read:/tmp/x"}
+    assert inheritable_resources(granted, {"secret:FOO_KEY"}) == {"fs-read:/tmp/x"}
 
 
 def test_blocking_request_deny_now_keeps_the_gate_shut(make_routine, scripted):

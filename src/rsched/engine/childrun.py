@@ -38,6 +38,15 @@ FALLBACK_SUB_BODY = """## Run flow
   result, key facts, and file paths into it."""
 
 
+def inheritable_resources(granted_now: set[str], granted_once: set[str]) -> set[str]:
+    """The parent grants a child run inherits: RESOURCE entities only (sub-workflows run
+    with capabilities off; entities.is_resource is that line) — and never a once-armed
+    one (D76): "one action" must not become a child's whole-run grant.
+    """
+    return {e for e in granted_now
+            if entities.is_resource(e) and e not in granted_once}
+
+
 @dataclass
 class Subrun:
     """One spawned child: its own RunContext + EngineLoop running in a thread, tracked until
@@ -118,7 +127,8 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
         # secrets, connections, machines) — but never its capability-class grants: sub-
         # workflows run with capabilities off, and entities.is_resource is that line.
         # The group shared store (D67) is a resource root, so it flows down too.
-        granted_now={e for e in parent_ctx.granted_now if entities.is_resource(e)},
+        granted_now=inheritable_resources(parent_ctx.granted_now,
+                                          parent_ctx.granted_once),
         grant_args={e: v for e, v in parent_ctx.grant_args.items()
                     if entities.is_resource(e)},
         group_store_roots=list(parent_ctx.group_store_roots),

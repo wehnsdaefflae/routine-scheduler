@@ -846,11 +846,11 @@ def test_routine_detail_reports_group_managed_state(client):
     assert gm == {"id": grp["id"], "name": "Morning"}
 
 
-def test_allow_once_is_turn_action_only_at_the_endpoint(client):
-    """D65: allow_once settles a turn-action request like allow_now (nothing persists);
-    on a secret/fs request the endpoint refuses with 400 — a secret is consumed inside a
-    util subprocess the engine never observes as a turn, so the button would promise a
-    precision the engine cannot keep."""
+def test_allow_once_gates_on_once_grantable_classes_at_the_endpoint(client):
+    """D65/D76: allow_once settles a once-grantable request like allow_now (nothing
+    persists) — turn-action classes AND, since D76, secret/fs (spent at the next util
+    invocation that receives them, engine/requests._once_match); a connection request
+    still refuses with 400 (a binding, not a spendable use)."""
     c, tmp = client
     routines = tmp / "routines"
     pending = routines / "apir" / "questions" / "pending"
@@ -871,11 +871,20 @@ def test_allow_once_is_turn_action_only_at_the_endpoint(client):
     assert "util:discord" not in (raw.get("grants") or {})       # nothing persisted
     assert not (raw.get("capabilities") or {}).get("utils")
 
+    # D76: secret/fs requests take allow_once too — settled like allow_now, nothing persists
     for qid, req in (("q-o2", ["secret:FOO_KEY"]), ("q-o3", ["fs-write:~/somewhere"])):
         seed(qid, req)
         r = c.post(f"/api/questions/{qid}/answer", json={"decision": "allow_once"})
-        assert r.status_code == 400
-        assert "turn-action" in r.json()["detail"]
+        assert r.status_code == 200
+        ans = read_json(routines / "apir" / "inbox" / f"answer-{qid}.json")
+        assert ans["decision"] == "allow_once" and "ONE action" in ans["text"]
+        raw = yaml.safe_load((routines / "apir" / "routine.yaml").read_text())
+        assert req[0] not in (raw.get("grants") or {})           # nothing persisted
+    # a connection grant is a BINDING (account choice), not a spendable use — still 400
+    seed("q-o4", ["connection:google"])
+    r = c.post("/api/questions/q-o4/answer", json={"decision": "allow_once"})
+    assert r.status_code == 400
+    assert "once-grantable" in r.json()["detail"]
 
 
 def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):

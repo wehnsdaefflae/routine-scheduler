@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.161.0] — 2026-08-08
+
+### Added
+- **"Allow once" now covers secret and filesystem grants (D76, operator-selected opt A).**
+  D65 scoped the fifth decision to turn-action classes; the operator chose the explicitly
+  coarser promise for the rest: a once-granted `secret:` is spent by the next util call
+  whose script (or its `calls:` tree) DECLARES the var — the injection surface — and a
+  once-granted `fs-read:`/`fs-write:` root by the next file action under it or the next
+  util invocation (every util's sandbox mounts the run's granted roots wholesale).
+  `entities.ONCE_CLASSES` is the new vocabulary; the Decisions page offers the button for
+  those requests; `connection:`/`machine:` stay four-state (a binding, not a spendable
+  use). Once-armed grants no longer flow to child runs at all — "one action" must not
+  become a child's whole-run grant (`childrun.inheritable_resources`).
+
 ## [0.160.5] — 2026-08-07
 
 ### Fixed

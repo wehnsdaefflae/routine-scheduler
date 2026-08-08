@@ -2,7 +2,8 @@
 
 An `ask_user` carrying `request: "<class>:<name>"` asks the user for an entity grant;
 the Decisions page answers it with one of four decisions (allow/deny × now/forever) —
-five for turn-action classes, which also offer `allow once (this action only)` (D65).
+five for once-grantable classes (entities.ONCE_CLASSES), which also offer `allow once`
+(D65; D76 extends it to secret:/fs-*: with the coarser util-invocation-level spend).
 This module owns the run-side mechanics:
 
 - `request_denial` validates the request INSIDE the schema-retry cycle (a malformed,
@@ -218,14 +219,14 @@ def rebuild_policy(loop) -> None:
 def _seed(ctx, eid: str, decision: str, *, account: str = "") -> None:
     """One decision, one entity, into the run overlay — the shared kernel of the live
     (apply_decision) and deferred (apply_deferred_decisions) seams. `allow_once` arms the
-    consume tracker beside the grant; the web layer refuses it for non-turn-action
+    consume tracker beside the grant; the web layer refuses it for non-once-grantable
     classes, and this seam mirrors that fail-CLOSED (skip, never a silent widening to
     allow_now: an unconsumable once-grant would revoke nothing all run).
     """
     if decision in ("allow_now", "allow_once", "allow_forever"):
         if decision == "allow_once":
             cls = eid.partition(":")[0]
-            if cls not in entities.TURN_ACTION_CLASSES:
+            if cls not in entities.ONCE_CLASSES:
                 return
             ctx.granted_once.add(eid)
         ctx.granted_now.add(eid)
@@ -261,9 +262,11 @@ _UNDISPATCHED_KEYS = ("declined", "declined_secrets", "pending_secrets",
                       "unknown_target", "self_target", "bad_fire_at", "error", "missing")
 
 
-def _once_match(eid: str, action: dict, current_run_ts: str) -> bool:
+def _once_match(eid: str, action: dict, ctx) -> bool:  # noqa: PLR0911 — one exit per grant class
     """Does this successfully-dispatched action USE the once-granted entity? One clause
-    per TURN_ACTION_CLASSES member — the classes whose use IS a turn action.
+    per entities.ONCE_CLASSES member. Turn-action classes match exactly (their use IS
+    the turn); secret:/fs-*: match the action that RECEIVES the entity — the coarser
+    D76 promise entities.py documents.
     """
     from ..grants import is_runs_path
     cls, _, name = eid.partition(":")
@@ -272,16 +275,51 @@ def _once_match(eid: str, action: dict, current_run_ts: str) -> bool:
         return kind == name
     if cls == "util":
         return kind == "util" and str(action.get("name") or "") == name
+    if cls == "secret":     # spent by the util call the var is actually injected into:
+        if kind != "util":  # only utils DECLARING it (calls: tree included) receive it
+            return False
+        needed, _net = utils_lib.util_needs(ctx.server.libraries_home,
+                                            str(action.get("name") or ""))
+        return name in needed
+    if cls in ("fs-read", "fs-write"):
+        return _fs_once_match(name, action, ctx)
     if cls == "runs":                      # spent by reading ANOTHER run's tree
         if kind not in ("read_file", "view_image"):
             return False
-        own = f"runs/{current_run_ts}/"
+        own = f"runs/{ctx.run_ts}/"
         paths = [str(action.get("path") or ""),
                  *(str(p) for p in action.get("paths") or [])]
         return any(p and is_runs_path(p) and not p.removeprefix("./").startswith(own)
                    for p in paths)
     if cls == "workflows":
         return kind == "subtask" and str(action.get("workflow") or "") == name
+    return False
+
+
+def _fs_once_match(root_name: str, action: dict, ctx) -> bool:
+    """An fs once-grant is RECEIVED by (a) ANY util invocation — the sandbox mounts the
+    run's granted roots wholesale and the engine cannot see which paths the subprocess
+    touched (the coarseness D76's option text states) — and (b) a file action on a path
+    under the root (a read under a write root is a real use too: write implies read,
+    F294).
+    """
+    kind = action.get("kind")
+    if kind == "util":
+        return True
+    if kind not in ("read_file", "view_image", "write_file", "edit_file"):
+        return False
+    from pathlib import Path
+
+    from ..paths import expand, within
+    root = Path(root_name)
+    for raw in [action.get("path"), *(action.get("paths") or [])]:
+        if not raw:
+            continue
+        target = expand(str(raw))
+        if not target.is_absolute():
+            target = ctx.routine.dir / target
+        if within(root, target):
+            return True
     return False
 
 
@@ -297,7 +335,7 @@ def consume_once_grants(loop, action: dict, obs: dict) -> set[str]:
     ctx = loop.ctx
     if not ctx.granted_once or any(obs.get(k) for k in _UNDISPATCHED_KEYS):
         return set()
-    spent = {eid for eid in ctx.granted_once if _once_match(eid, action, ctx.run_ts)}
+    spent = {eid for eid in ctx.granted_once if _once_match(eid, action, ctx)}
     if spent:
         ctx.granted_once -= spent
         ctx.granted_now -= spent

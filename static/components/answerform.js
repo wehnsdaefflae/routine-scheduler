@@ -33,15 +33,17 @@ export function answerForm(q, {
   const options = q.options || [];
   // An ACCESS REQUEST (the record carries grant-entity ids): the typed decisions replace
   // free-form options. `recreate:` entities never offer "allow forever" — a fresh
-  // deletion must always outrank an old grant, so that class is per-run only. Turn-action
-  // classes (action/util/runs/workflows) also offer "allow once" (D65): the engine
-  // observes their consuming use as a turn, so it can revoke after exactly one matching
-  // action — a secret/fs grant is consumed inside a util subprocess it never sees, so
-  // those stay four-state.
+  // deletion must always outrank an old grant, so that class is per-run only. Once-
+  // grantable classes also offer "allow once": turn-action ones (action/util/runs/
+  // workflows, D65) are revoked after exactly one matching action; secret/fs ones (D76)
+  // are spent — coarser, as approved — by the next util invocation that receives them
+  // (declared-env injection / mounted roots) or a file action under the fs root.
+  // connection/machine grants stay four-state (a binding, not a spendable use).
   const request = Array.isArray(q.request) ? q.request : [];
-  const TURN_ACTION = ["action:", "util:", "runs:", "workflows:"];
+  const ONCE_CLASSES = ["action:", "util:", "runs:", "workflows:",
+    "secret:", "fs-read:", "fs-write:"];
   const onceOk = request.length > 0
-    && request.every((e) => TURN_ACTION.some((p) => e.startsWith(p)));
+    && request.every((e) => ONCE_CLASSES.some((p) => e.startsWith(p)));
   const DECISIONS = [
     ["allow_now", "allow now", "grant it for the asking run only — nothing persists"],
     ["allow_once", "allow once", "grant exactly ONE matching action — the engine revokes it the moment it is used"],

@@ -249,7 +249,7 @@ class Answer(BaseModel):
     text: str = ""
     intermediate: bool = False   # dialog reply to a BLOCKING question — it stays open
     # Access requests only: one of the typed decisions (allow/deny × now/forever,
-    # plus allow_once for turn-action classes — D65).
+    # plus allow_once for once-grantable classes — D65, widened to secret/fs by D76).
     # A forever-decision is APPLIED to routine.yaml right here, at click time — the
     # engine only bridges it into a live run's overlay and never writes config.
     decision: str | None = None
@@ -345,18 +345,19 @@ def _decide_request(request: Request, match: dict, routine_dir,
             if eid.startswith("connection:"):
                 out["account"] = grants_apply.resolve_account(eid.partition(":")[2])
     elif decision == "allow_once":
-        # D65: `allow once (this action only)` exists ONLY for turn-action classes — the
-        # engine observes their consuming use as a turn, so consume-once is exact. A
-        # secret/fs grant is consumed inside a util subprocess the engine never sees, so
-        # for those the button would promise more than the engine can keep.
+        # D65 scoped `allow once` to turn-action classes (exact spend). D76 (operator,
+        # 2026-08-06) widened it to secret:/fs-*: with an explicitly coarser spend: the
+        # next util invocation that RECEIVES the entity (declared-env injection, mounted
+        # roots) or a file action under the fs root — engine/requests._once_match.
+        # connection:/machine:/recreate: still cannot be once-granted.
         from .. import entities
         bad = [e for e in req_ids
                if (p := entities.parse_entity(e)) is None
-               or p[0] not in entities.TURN_ACTION_CLASSES]
+               or p[0] not in entities.ONCE_CLASSES]
         if bad:
             raise HTTPException(
-                400, f"allow_once applies only to turn-action grants "
-                     f"({', '.join(sorted(entities.TURN_ACTION_CLASSES))}:*) — not to "
+                400, f"allow_once applies only to once-grantable classes "
+                     f"({', '.join(sorted(entities.ONCE_CLASSES))}:*) — not to "
                      f"{', '.join(bad)}; use allow now / allow forever for those")
     return out
 
