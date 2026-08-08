@@ -232,6 +232,11 @@ def cmd_daemon(_args) -> int:
     # new default permissions reach existing routines once, at boot
     adopt_permissions(server.routines_home, server.permissions_home)
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap
+    from .migrate_seed_utils import migrate_seed_utils
+
+    # MIGRATION(expires=2026-09-30): sync_seed_utils never overwrites, so a util FIXED in the
+    # seed cannot reach a live library on its own — three have to this release
+    migrate_seed_utils(server)
     sync_seed_library_docs(server.libraries_home)  # workflows/rules/permissions added since, too
     migrate_util_headers(server.libraries_home)  # MIGRATION(expires=2026-08-17): sandbox rollout
     from .migrate_rules import migrate_rules

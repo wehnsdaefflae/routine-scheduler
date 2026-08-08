@@ -19,6 +19,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.166.0] — 2026-08-08
+
+### The library-sync routine resolves divergence instead of reporting it
+
+`git-sync` aborted every rebase conflict, so the routine had no mechanism a recipe could
+instruct — the conflict was gone before the model saw it.
+
+- **`git-sync --on-conflict hold`** leaves the rebase IN PROGRESS and returns
+  `conflicts: [{path, kind}]` — `both-modified` / `modify-delete` / `add-add`, classified from
+  the index's unmerged stages rather than by parsing git's (localized) prose. A shell-less
+  caller can then read the conflicted files, write resolutions, and finish with `--continue`,
+  or walk away with `--abort-rebase`. Default stays `abort`, so other callers are unaffected.
+- **The remote tip is tagged before any rebase** (`git-sync-pre-rebase/<branch>/<utc>`).
+  Nothing the util does can put a remote commit permanently out of reach.
+- **The recipe bounds "reasonable".** The routine resolves same-file conflicts and takes the
+  local side under the exported instance trees (they are a mirror it writes). It refuses
+  `modify-delete` and `add-add` outright — neither answer is in the diff, so both destroy
+  work — and it must re-verify the library's conformance checks after any resolution, or
+  abandon the rebase. Exactly the case that came up by hand today: one side had deleted a
+  util, the other improved it, and both mechanical answers were wrong.
+- The selftest builds two clones of one bare remote and exercises the whole path: hold,
+  classify, rescue-tag, abort-restores, then resolve → continue → push → verify from a fresh
+  clone that the remote's commit is still reachable.
+
+### Migration
+
+`migrate_seed_utils.py` (MIGRATION, expires 2026-09-30) installs three seed utils over their
+live copies, selftest-gated with rollback: `git-sync` (the above), `instance-export` (whose
+live copy still documented and selftested `steps/`, `fragments/` and `instruction.md`) and
+`remote` (whose live copy lacked the host_key parse fix). A NAMED list, not "seed wins" —
+five other utils are newer in production, and a blanket seed→live would have reset
+`net: outbound` to `net: none` on two of them, costing them TCP inside the Landlock jail.
+
 ## [0.165.3] — 2026-08-08
 
 ### Fixed
