@@ -5,7 +5,7 @@
 // Tier 2 (tab closed): Web Push through the service worker at /sw.js — this module only
 //   manages the per-browser subscription; the daemon sends the pushes (web/push.py).
 
-import { api } from "/static/api.js";
+import { api, syncWorkerToken } from "/static/api.js";
 import { storage } from "/static/util.js";
 
 const ENABLED_KEY = "rsched_notify";        // "on" | anything else = off (opt-in)
@@ -92,7 +92,21 @@ export async function pushSubscribe() {
     applicationServerKey: b64ToBytes(public_key),
   });
   await api("/api/push/subscribe", { method: "POST", body: { subscription: sub.toJSON() } });
+  await syncWorkerToken();      // sw.js re-registers on rotation, and needs a credential to do it
   return sub;
+}
+
+export async function pushReconcile() {
+  // The belt to sw.js's braces: Chrome has not always fired pushsubscriptionchange, so a
+  // rotated subscription can leave the server holding a dead endpoint while the browser
+  // reports itself subscribed. Re-POSTing the live one is an upsert keyed on the endpoint
+  // (push.add_subscription), so this is a no-op whenever nothing drifted.
+  const reg = await navigator.serviceWorker.getRegistration("/");
+  const sub = reg && await reg.pushManager.getSubscription();
+  if (!sub) return;
+  await api("/api/push/subscribe", { method: "POST", body: { subscription: sub.toJSON() } })
+    .catch(() => {});           // a read-only tier or an offline console heals on the next open
+  await syncWorkerToken();
 }
 
 export async function pushUnsubscribe() {

@@ -13,6 +13,29 @@ export function getToken() {
 
 export function clearToken() {
   storage.remove(KEY);
+  dropWorkerToken();
+}
+
+// ---- the service worker's copy of the token --------------------------------------------------
+// A service worker cannot read localStorage, and sw.js has exactly one request to authenticate
+// on its own: re-registering the push subscription when the browser rotates it. The Cache API is
+// the only store both sides reach. THESE TWO LITERALS ARE PAIRED WITH static/sw.js — change them
+// in one file only and push healing goes silently dead. Absent a secure context there is no
+// `caches` at all; healing then waits for the next visit to Settings → Notifications.
+const AUTH_CACHE = "rsched-auth";
+const AUTH_ENTRY = "/__auth_token";
+
+export async function syncWorkerToken() {
+  const token = getToken();
+  if (!token) return;
+  try {
+    const cache = await caches.open(AUTH_CACHE);
+    await cache.put(AUTH_ENTRY, new Response(token));
+  } catch { /* no Cache API here — the worker just cannot self-heal */ }
+}
+
+async function dropWorkerToken() {
+  try { await caches.delete(AUTH_CACHE); } catch { /* nothing cached */ }
 }
 
 // ---- token gate: one overlay shared by every concurrent 401 --------------------------------
@@ -52,6 +75,7 @@ function requestToken(message) {
       const t = input.value.trim();
       if (!t) { err.textContent = "enter the token first"; return; }
       storage.set(KEY, t);
+      syncWorkerToken();
       wrap.remove();
       gatePromise = null;
       resolve(t);
@@ -72,9 +96,19 @@ async function authedJson(path, makeInit) {
     let token = getToken();
     if (!token) token = await requestToken("This console is token-protected. Sign in to continue.");
     const resp = await fetch(path, makeInit(token));
-    if (resp.status === 401 && attempt === 0) {
+    // 401 = no/garbage credential. 403 + insufficient_scope (app.py, RFC 6750) = a VALID
+    // token of the wrong TIER: the routine bearer reads everything, so the console renders
+    // whole and only the first mutation fails — without re-gating here that browser can
+    // never reach the token field again (no devtools on a phone). Other 403s are ordinary
+    // refusals of an authorized caller and must fall through to the toast.
+    const wrongToken = resp.status === 401
+      || (resp.status === 403
+          && (resp.headers.get("WWW-Authenticate") || "").includes("insufficient_scope"));
+    if (wrongToken && attempt === 0) {
       clearToken();
-      await requestToken("Token rejected — enter the current one.");
+      await requestToken(resp.status === 403
+        ? "That is the routine token — read-only. Enter the operator's primary token."
+        : "Token rejected — enter the current one.");
       continue;
     }
     const data = await resp.json().catch(() => ({}));

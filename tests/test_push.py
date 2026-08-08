@@ -3,6 +3,8 @@ diff-and-dedupe behavior. Actual webpush sends are mocked — no network."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from rsched.config import ServerConfig
@@ -100,6 +102,21 @@ def test_dead_subscription_is_dropped(tmp_path, monkeypatch):
     assert push.subscriptions(server) == []      # 410 → removed on the spot
 
 
+def test_send_asks_the_push_service_to_hold_the_message(tmp_path, monkeypatch):
+    """pywebpush defaults ttl=0 — deliver to a currently-connected device or DISCARD. That
+    silently throws away exactly the notification an away operator needs (phone asleep), and
+    the send still looks successful. Every send must carry a real TTL."""
+    server = _server(tmp_path)
+    push.vapid_public_key(server)
+    push.add_subscription(server, SUB_A)
+    seen: dict = {}
+
+    import pywebpush
+    monkeypatch.setattr(pywebpush, "webpush", lambda **kw: seen.update(kw))
+    assert push.send_to_all(server, {"title": "t"}) == 1
+    assert seen["ttl"] >= 3600, seen.get("ttl")
+
+
 def test_push_api_routes(client):
     c, _tmp = client
     info = c.get("/api/push").json()
@@ -122,3 +139,16 @@ def test_push_api_routes(client):
     home = c.get("/").text
     assert "/manifest.webmanifest" in home and "apple-mobile-web-app-capable" in home
     assert c.get("/static/icon.svg").status_code == 200
+
+
+def test_worker_auth_cache_literals_stay_paired():
+    """sw.js is a CLASSIC worker (no bundler, no import) and cannot read localStorage, so the
+    Cache API name/key carrying the operator token to it is spelled out in both files. Drift
+    there kills subscription healing SILENTLY — the worker finds no credential, returns, and
+    the only symptom is notifications that stop arriving weeks later."""
+    static = Path(__file__).resolve().parent.parent / "static"
+    api_js = (static / "api.js").read_text(encoding="utf-8")
+    sw_js = (static / "sw.js").read_text(encoding="utf-8")
+    for literal in ('"rsched-auth"', '"/__auth_token"'):
+        assert literal in api_js, literal
+        assert literal in sw_js, literal

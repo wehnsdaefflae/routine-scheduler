@@ -25,6 +25,12 @@ _NOTIFIED_FILE = "push-notified.json"
 _VAPID_FILE = "vapid-private.pem"
 _NOTIFIED_CAP = 500
 _VAPID_SUB = "mailto:ops@routine-scheduler.local"
+# pywebpush defaults ttl=0, which tells the push service to deliver ONLY to a device
+# connected at that instant and otherwise DISCARD — no queue, no retry. A phone asleep in a
+# pocket is exactly that device, so the notification an away operator most needs is the one
+# most reliably thrown away, invisibly (the send still returns 201). A decision waiting on a
+# human stays worth reading a day later, so ask the service to hold it that long instead.
+_TTL_SECONDS = 24 * 60 * 60
 _lock = threading.Lock()   # subscriptions + notified state are read-modify-write files
 
 
@@ -102,7 +108,8 @@ def _send_one(server, subscription: dict, payload: dict) -> bool:
         webpush(subscription_info=subscription,
                 data=json.dumps(payload, ensure_ascii=False),
                 vapid_private_key=str(push_dir(server) / _VAPID_FILE),
-                vapid_claims={"sub": _VAPID_SUB})
+                vapid_claims={"sub": _VAPID_SUB},
+                ttl=_TTL_SECONDS)
         return True
     except WebPushException as exc:
         code = getattr(getattr(exc, "response", None), "status_code", None)

@@ -108,11 +108,16 @@ def require_auth(request: Request) -> None:
     if routine_token and header == f"Bearer {routine_token}":
         if _routine_token_allowed(request):
             return
+        # RFC 6750 §3.1: the console tells a TIER refusal apart from an ordinary 403
+        # (a protected template, the credentials dir, a denied path) by this header alone
+        # — on seeing it, static/api.js drops the stored token and re-opens the gate, so a
+        # browser holding the routine token is never stranded with an unactionable toast.
         raise HTTPException(
             status_code=403,
             detail="the routine API token is read-only — config-mutating endpoints "
                    "take the operator's primary token (R94). A run that needs a config "
-                   "change proposes it via ask_user with config_patch instead.")
+                   "change proposes it via ask_user with config_patch instead.",
+            headers={"WWW-Authenticate": 'Bearer error="insufficient_scope"'})
     # EventSource cannot send headers, and the bearer token in a query string would leak
     # into access logs — a SHORT-LIVED ticket (POST /api/sse-ticket) rides there instead,
     # valid ONLY for the SSE GET endpoints themselves (never a general API credential).

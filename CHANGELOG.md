@@ -19,6 +19,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.163.0] — 2026-08-08
+
+### Fixed
+- **Web Push notifications were discarded whenever the device was asleep.** `pywebpush`
+  defaults to `ttl=0`, which instructs the push service to deliver only to a device
+  connected at that instant and otherwise drop the message — no queue, no retry — and the
+  send still returns success, so nothing anywhere reported a loss. The notification an away
+  operator most needs (phone in a pocket, screen off, radio dozing) was therefore the one
+  most reliably thrown away. Sends now carry a 24h TTL, so the service holds the decision
+  until the device reconnects.
+- **A browser holding the routine token is no longer stranded.** The R94 tier refusal now
+  carries `WWW-Authenticate: Bearer error="insufficient_scope"` (RFC 6750 §3.1), and
+  `static/api.js` re-opens the token gate on that marker as it already does on a 401. The
+  routine bearer reads everything, so the console renders whole and only the first
+  mutation fails — previously an unactionable toast with no route back to the token field,
+  and on a phone no devtools to clear localStorage by hand: the only exit was clearing
+  site data. Ordinary 403s (protected template, credentials dir, denied path) omit the
+  marker and leave the session alone — asserted in both directions.
+- **Web Push no longer dies silently when a subscription rotates.** A browser may retire a
+  subscription on its own; the server learned only on the next send's 404/410, by which
+  time that notification was lost and every later one too — while Settings still read
+  "subscribed", because the BROWSER had a subscription, just not the stored one.
+  `static/sw.js` now re-registers on `pushsubscriptionchange` (re-subscribing itself when
+  the event carries no subscription, as Chrome's does not), and Settings → Notifications
+  re-POSTs the live subscription on open for browsers that never fire the event. Both are
+  endpoint-keyed upserts, so they no-op when nothing drifted. A worker cannot read
+  localStorage, so the console mirrors the token into a Cache entry; the two literals
+  naming it are spelled out in both files and a test keeps them paired.
+
 ## [0.162.0] — 2026-08-08
 
 ### Added

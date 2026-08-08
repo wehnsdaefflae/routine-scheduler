@@ -87,6 +87,9 @@ def test_routine_token_tier_reads_but_never_mutates_config(tmp_path, make_routin
             r = c.request(method, path, json=body, headers=rt)
             assert r.status_code == 403, (method, path, r.status_code, r.text)
             assert "config_patch" in r.json()["detail"]
+            # the tier refusal is machine-distinguishable from an ordinary 403 (RFC 6750) —
+            # static/api.js re-opens the token gate on THIS header and nothing else
+            assert 'error="insufficient_scope"' in r.headers["www-authenticate"]
         # a garbage bearer stays 401; the primary passes the sealed routes
         assert c.get("/api/routines",
                      headers={"Authorization": "Bearer nope"}).status_code == 401

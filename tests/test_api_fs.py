@@ -57,6 +57,9 @@ def test_credential_stores_are_not_browsable(api_client, monkeypatch):
     monkeypatch.setattr("rsched.paths.config_file", lambda: cfg_dir / "config.yaml")
     r = client.get("/api/fs/list", params={"path": str(cfg_dir)})
     assert r.status_code == 403 and "credentials" in r.json()["detail"]
+    # an ORDINARY 403 — an authorized caller refused a specific resource. It must NOT carry
+    # the tier marker, or the console would drop a perfectly good token and re-gate on it
+    assert "www-authenticate" not in r.headers
     assert client.get("/api/fs/list",
                       params={"path": str(cfg_dir / ".mounts")}).status_code == 403
 

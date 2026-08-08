@@ -26,6 +26,7 @@ from rsched.paths import atomic_write_json
 from rsched.web.app import create_app
 
 TOKEN = "ui-test-token"
+ROUTINE_TOKEN = "ui-test-routine-token"      # the read-only tier, for the token-gate tier test
 
 _UI_DIR = Path(__file__).parent
 
@@ -144,6 +145,7 @@ def ui(tmp_path, make_routine) -> UiHarness:
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(yaml.safe_dump({
         "token": TOKEN,
+        "routine_token": ROUTINE_TOKEN,
         "routines_home": str(tmp_path / "routines"),
         "conversations_home": str(tmp_path / "conversations"),
         "background_home": str(tmp_path / "background"),

@@ -52,6 +52,41 @@ expires}`). Answering on any surface resolves the record everywhere.
    records can also be **snoozed** from the Decisions page: hidden there until a
    timestamp, still open to the routine.
 
+## Web Push: what it needs, and what it does not
+
+Subscribing is the only step that needs the console reachable. Once a browser is
+subscribed, the server pushes to that browser's push service (Google's for Chrome,
+Mozilla's for Firefox) over the public internet, and `static/sw.js` makes **no network
+call at all** — the routine name and question text ride in the payload. So a phone off
+your LAN, off your VPN, on mobile data still gets the notification; only *tapping* it,
+which opens the Decisions page, needs to reach the console again.
+
+Sends carry a **24h TTL**, so a push service holds the decision for a device that is
+asleep or out of coverage rather than dropping it. (The library default is `ttl=0` —
+deliver now to a connected device or discard — which loses precisely the notifications an
+away operator needs, and reports success while doing it.)
+
+Two consequences worth knowing:
+
+- **Subscribing takes the operator's primary token.** `POST /api/push/subscribe` is
+  sealed like every other mutation (see the two tiers below). That is deliberate and must
+  stay: `send_to_all` fans every decision's text to every stored endpoint, so a caller who
+  could register a subscription would have every future decision delivered to a URL of its
+  choosing — an exfiltration channel around the grant model with no transcript entry.
+- **Subscriptions rotate, and a browser does not tell you.** When one is retired, the
+  server only learns on the next push (404/410) — that notification is already lost. The
+  service worker re-registers on `pushsubscriptionchange`, authenticating with a token the
+  console leaves in a Cache entry (a worker cannot read localStorage); Settings →
+  Notifications re-POSTs the live subscription on open as the fallback for browsers that
+  never fire the event. Both paths are upserts keyed on the endpoint, so they are no-ops
+  when nothing drifted.
+
+A browser holding the **routine** token renders the whole console — every tab is a read —
+and fails only on the first mutation. That 403 carries `WWW-Authenticate: Bearer
+error="insufficient_scope"`, on which `static/api.js` drops the token and re-opens the
+gate; ordinary 403s (a protected template, the credentials dir, a denied path) omit the
+marker and are left alone.
+
 ## For developers: one seam in the code
 
 All implicit outbound sends go through **`rsched/notify.py`** — the engine's decision

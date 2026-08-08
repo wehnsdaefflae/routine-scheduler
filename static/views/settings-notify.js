@@ -44,6 +44,7 @@ export function renderNotifications() {
       return;
     }
     const st = await notify.pushStatus();
+    if (st.subscribed) await notify.pushReconcile();   // silent heal if the browser rotated it
     if (!st.supported) {
       pushRow.append(el("div", { class: "muted small" }, "this browser does not support Web Push"));
       // On iPhone/iPad, Web Push only works once the console is installed to the Home Screen
