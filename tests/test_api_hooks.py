@@ -179,7 +179,7 @@ def test_create_and_delete_trigger(api_client, make_routine):
 def test_trigger_crud_guards(api_client, make_routine):
     c, tmp = api_client
     make_routine(slug="testr")
-    make_routine(slug="clarification")   # the protected wizard template
+    make_routine(slug="clarification", kind="template")   # the protected wizard template
     _mk_active_run(tmp, "testr")
     # D78-A: an active run no longer bounces trigger create with a 409 — it is QUEUED and
     # applied at run end (the webhook's URL is still returned; the config is untouched).

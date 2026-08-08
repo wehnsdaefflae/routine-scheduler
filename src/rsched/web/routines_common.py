@@ -11,17 +11,34 @@ from pathlib import Path
 from fastapi import HTTPException, Request
 
 from .. import registry
+from ..config import RoutineConfig
 from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
 from ..ids import parse_run_id
-from .wizard_store import TEMPLATE_SLUG
 
 
-def guard_template(slug: str, refusal: str) -> None:
-    """The 'clarification' routine is the wizard's protected template — configuration the
-    user edits, never a runnable/removable routine. 403 keeps it on the page regardless.
+def guard_template(cfg: RoutineConfig, refusal: str) -> None:
+    """A `kind: template` routine is configuration the user edits, never a runnable or
+    removable job — today that is the wizard's clarification template, whose budgets, models
+    and rules every clarify session copies. 403 keeps it on the page regardless.
+
+    Keyed off the DECLARED kind rather than the slug: the slug was hardcoded across the web
+    layer, so a second template would have silently been runnable.
     """
-    if slug == TEMPLATE_SLUG:
-        raise HTTPException(403, f"{slug!r} is the protected clarification template — {refusal}")
+    if cfg.kind == "template":
+        raise HTTPException(403, f"{cfg.slug!r} is a protected template — {refusal}")
+
+
+def guard_template_dir(routine_dir: Path, refusal: str) -> None:
+    """The same guard where only the on-disk dir is in hand. The run routes resolve a RUN ID
+    to a directory rather than a registry entry, and that directory may live under either home
+    — a conversation is not in the routine registry at all — so the kind is read from the
+    config on disk. An unreadable config is simply not a template.
+    """
+    from ..config import load_routine
+
+    cfg, _problems = load_routine(routine_dir)
+    if cfg is not None:
+        guard_template(cfg, refusal)
 
 
 def _state(request: Request):

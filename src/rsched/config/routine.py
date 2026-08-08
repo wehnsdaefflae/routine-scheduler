@@ -56,6 +56,12 @@ class RoutineConfig(_Config):
     # normal routine/conversation (a declared field, so it survives the extra="ignore" drop).
     owner: dict | None = None
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
+    # What this dir IS, when it is not an ordinary scheduled routine: "conversation" (an
+    # interactive session under conversations_home) or "template" (the wizard's protected
+    # clarification config, which never fires and cannot be run/archived/messaged). Empty for
+    # a normal routine. A DECLARED marker so the guards key off the kind instead of a slug
+    # hardcoded across the web layer.
+    kind: BlankableStr = ""
     # Role → catalog model NAME (main/subroutine/tool_call/uncensored). A role left unset
     # falls back to the server system_model. Resolved live via EndpointRegistry, so editing
     # a catalog model updates every routine that names it.
@@ -257,13 +263,12 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
         problems.append("schedule: expected a mapping")
 
     # aliased fields load from their CONTAINER key (schedule.cron, workflow.library_slug,
-    # playbook.slug); `kind: conversation` is a deliberate marker pydantic drops. Any other
-    # top-level key is a typo whose real field silently reverted to defaults (a misspelled
-    # `permisions:` = a permission reset with zero problems reported).
+    # playbook.slug). Any other top-level key is a typo whose real field silently reverted to
+    # defaults (a misspelled `permisions:` = a permission reset with zero problems reported).
     aliased = {"cron", "tz", "catchup", "workflow_slug", "workflow_commit",
                "playbook_slug", "keep_runs"}
     known = (set(RoutineConfig.model_fields) - aliased) | {"schedule", "workflow",
-                                                           "playbook", "retention", "kind"}
+                                                           "playbook", "retention"}
     problems.extend(f"{key}: unknown routine.yaml key — check the spelling (ignored)"
                     for key in sorted(set(raw) - known))
     cfg = _validate_lenient(RoutineConfig, {**raw, "slug": slug, "dir": routine_dir}, problems) \

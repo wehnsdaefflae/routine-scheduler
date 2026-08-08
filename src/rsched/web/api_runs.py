@@ -226,10 +226,11 @@ async def converse(request: Request, run_id: str, text: Annotated[str, Form()],
     if recipe_edit:
         # Validate BEFORE the message is filed, so a rejected unlock delivers nothing.
         from ..paths import within
-        from .routines_common import guard_template
+        from .routines_common import guard_template_dir
         if not within(request.app.state.server.routines_home, routine_dir):
             raise HTTPException(400, "recipe editing applies to routine runs only")
-        guard_template(slug, "the clarification template's recipe is fixed")
+        guard_template_dir(run_dir.parent.parent,
+                       "the clarification template's recipe is fixed")
         st0 = read_json(run_dir / "status.json")
         if (st0.get("state") if isinstance(st0, dict) else None) not in TERMINAL_STATES:
             raise HTTPException(409, "recipe editing unlocks when a FINISHED run is "
@@ -252,8 +253,9 @@ async def converse(request: Request, run_id: str, text: Annotated[str, Form()],
     if state not in TERMINAL_STATES:
         return {"ok": True, "delivery": "mid-run"}
     from ..config import load_routine
-    from .routines_common import guard_template
-    guard_template(slug, "clarify sessions are driven by the wizard, never resumed directly")
+    from .routines_common import guard_template_dir
+    guard_template_dir(run_dir.parent.parent,
+                       "clarify sessions are driven by the wizard, never resumed directly")
     cfg, _ = load_routine(routine_dir)
     if cfg is None:
         raise HTTPException(404, f"routine {slug!r} not found")
@@ -346,8 +348,9 @@ async def resume_run(request: Request, run_id: str) -> dict:
     transcript so it continues where it left off (fresh budget window). Only terminal runs.
     """
     slug, run_dir = _run_dir(request, run_id)
-    from .routines_common import guard_template
-    guard_template(slug, "clarify sessions are driven by the wizard, never resumed directly")
+    from .routines_common import guard_template_dir
+    guard_template_dir(run_dir.parent.parent,
+                       "clarify sessions are driven by the wizard, never resumed directly")
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:
         raise HTTPException(409,
@@ -375,8 +378,9 @@ async def rewind_run(request: Request, run_id: str) -> dict:
     same run dir, so the replay continues from the kept point with a fresh budget window.
     """
     slug, run_dir = _run_dir(request, run_id)
-    from .routines_common import guard_template
-    guard_template(slug, "clarify sessions are driven by the wizard, never rewound directly")
+    from .routines_common import guard_template_dir
+    guard_template_dir(run_dir.parent.parent,
+                       "clarify sessions are driven by the wizard, never rewound directly")
     body = Rewind(**(await request.json()))
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:

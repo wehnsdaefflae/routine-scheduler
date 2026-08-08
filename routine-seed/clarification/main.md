@@ -11,7 +11,7 @@ against the user's draft in its own hidden session directory.
 What is configurable here:
 - **Budgets** — turn/wall-clock/token caps each clarify session runs under.
 - **Models** — the model roles a session resolves (falls back to the system model).
-- **Traits** — practice modules copied into every session.
+- **Rules** — the general rules every session is bound by (the prose lives in the library).
 
 ## Standing practices
 

@@ -211,7 +211,7 @@ def api_client(tmp_path):
 @pytest.fixture
 def make_routine(tmp_path):
     def _make(slug: str = "testr", *, budgets: dict | None = None,
-              workflow_md: str = WORKFLOW_MD,
+              workflow_md: str = WORKFLOW_MD, kind: str = "",
               instruction: str | None = None) -> Path:
         d = tmp_path / "routines" / slug
         (d / "state").mkdir(parents=True)
@@ -219,6 +219,7 @@ def make_routine(tmp_path):
         cfg = {
             "name": f"Test {slug}", "slug": slug, "enabled": True,
             "description": "A test routine.",
+            **({"kind": kind} if kind else {}),
             "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin", "catchup": "skip"},
             "workflow": {"library_slug": "test-flow", "library_commit": "abc123"},
             "budgets": {"max_turns": 10, "max_wall_clock_min": 5, "max_total_tokens": 100_000,

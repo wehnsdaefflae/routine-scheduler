@@ -2,6 +2,7 @@ name: Routine clarification
 description: Template for "+ New routine" clarification sessions — every session copies
   its budgets, models, and rules from here. Protected — never scheduled, never archived,
   never run directly.
+kind: template
 tags:
 - meta
 - template

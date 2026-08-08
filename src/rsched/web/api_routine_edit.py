@@ -71,7 +71,7 @@ def set_routine_rules(request: Request, slug: str, body: RulesBody) -> dict:
     apply_rule_edit); otherwise it lands at the next run.
     """
     info = _info(request, slug)
-    guard_template(slug, "the clarification template's rules are fixed")
+    guard_template(info.cfg, "the clarification template's rules are fixed")
     return apply_rule_edit(request, info.cfg.dir, body, active_run_dir(info))
 
 
@@ -278,7 +278,7 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
 @router.post("/routines/{slug}/run")
 async def run_now(request: Request, slug: str) -> dict:
     info = _info(request, slug)
-    guard_template(slug, "it never runs directly (the wizard starts sessions from it)")
+    guard_template(info.cfg, "it never runs directly (the wizard starts sessions from it)")
     run_id = await _state(request).runner.fire(info.cfg, reason="manual")
     if run_id is None:
         raise HTTPException(409, f"routine {slug!r} already has an active run")
@@ -300,7 +300,7 @@ def queue_message(request: Request, slug: str, body: MessageBody) -> dict:
     from ..engine import inbox
 
     info = _info(request, slug)
-    guard_template(slug, "the clarification template is driven by the wizard, not messaged")
+    guard_template(info.cfg, "the clarification template is driven by the wizard, not messaged")
     text = body.text.replace("\r\n", "\n").strip()
     if not text:
         raise HTTPException(400, "empty message")
@@ -311,7 +311,7 @@ def queue_message(request: Request, slug: str, body: MessageBody) -> dict:
 @router.post("/routines/{slug}/archive")
 def archive_routine(request: Request, slug: str) -> dict:
     info = _info(request, slug)
-    guard_template(slug, "it cannot be archived (sessions copy their config from it)")
+    guard_template(info.cfg, "it cannot be archived (sessions copy their config from it)")
     guard_not_active(request, info)
     home = _state(request).server.routines_home
     target = home / ".archive" / f"{slug}-{run_ts()}"

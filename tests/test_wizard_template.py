@@ -19,7 +19,7 @@ TOKEN = "test-token"
 
 @pytest.fixture
 def client(tmp_path, make_routine):
-    make_routine(slug=wizard_store.TEMPLATE_SLUG)
+    make_routine(slug=wizard_store.TEMPLATE_SLUG, kind="template")
     make_routine(slug="plain")
     server = make_test_server(tmp_path)
     app = create_app(server, with_scheduler=False)
@@ -35,6 +35,21 @@ def test_template_cannot_be_fired_or_archived(client):
     assert r.status_code == 403 and "template" in r.json()["detail"]
     # the guard is template-only — an ordinary routine still archives
     assert client.post("/api/routines/plain/archive").status_code == 200
+
+
+def test_protection_follows_the_declared_kind_not_the_slug(tmp_path, make_routine):
+    """The guards used to compare against a hardcoded slug in five places, so a second
+    template would have been silently runnable. They read `kind: template` now: a routine
+    merely NAMED clarification is ordinary, and any routine declaring the kind is protected.
+    """
+    make_routine(slug=wizard_store.TEMPLATE_SLUG)          # the name, WITHOUT the marker
+    make_routine(slug="other-template", kind="template")   # the marker, under another name
+    server = make_test_server(tmp_path)
+    app = create_app(server, with_scheduler=False)
+    with TestClient(app) as c:
+        c.headers["Authorization"] = f"Bearer {TOKEN}"
+        assert c.post(f"/api/routines/{wizard_store.TEMPLATE_SLUG}/archive").status_code == 200
+        assert c.post("/api/routines/other-template/run").status_code == 403
 
 
 def test_template_flagged_protected_in_payloads(client):

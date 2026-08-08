@@ -19,6 +19,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.167.0] — 2026-08-09
+
+### A template is what it declares, not what it is called
+
+The wizard's clarification template was identifiable only by its SLUG, compared against a
+hardcoded string in **nine** places across the web layer — every guard (cannot run, cannot
+archive, cannot be messaged, rules fixed, no triggers, no recipe edit, no resume, no rewind)
+plus the routine card's `protected` flag. A second template would have been silently runnable.
+
+- `kind` is now a **declared field** on RoutineConfig rather than a known key pydantic dropped,
+  so `conversation` and `template` are both readable. `guard_template(cfg, …)` reads it, with
+  `guard_template_dir(…)` for the run routes, which resolve a run id to a directory and may be
+  looking at a conversation (not in the routine registry at all).
+- Typing that parameter is what made the change safe: it immediately surfaced **five** stale
+  call sites — one in `api_hooks`, four in `api_runs` — that had type-checked fine while the
+  parameter was untyped.
+- A template no longer appears in `/api/status`'s `meta_routines`. It never fires, so listing
+  it as an enabled meta routine read as "self-improvement is on" when nothing was scheduled.
+
+### Fixed
+
+- The clarification template's `main.md` still described "**Traits** — practice modules copied
+  into every session", a line the 0.164.0 rules rename missed.
+
+### Migration
+
+`migrate_template_kind.py` (MIGRATION, expires 2026-09-30) writes the marker into the live
+template's routine.yaml — `adopt_seed_routine` only installs a routine that is MISSING, so
+nothing else would ever add it, and without it the live template becomes runnable and
+archivable. It also repairs that one stale line by targeted replace, never by rewriting from
+the seed: the recipe editor does not guard that file, so a rewrite could discard the user's own
+edits.
+
 ## [0.166.1] — 2026-08-08
 
 ### Fixed

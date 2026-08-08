@@ -27,7 +27,6 @@ from .routines_common import (  # noqa: F401 — re-exported: siblings historica
     permission_layers_detail,
     queue_or_apply,
 )
-from .wizard_store import TEMPLATE_SLUG
 
 router = APIRouter(tags=["routines"])
 
@@ -72,8 +71,8 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None 
     last = info.last_run
     return {
         "slug": info.slug,
-        # the clarification template renders with run/archive hidden (wizard config, not a job)
-        "protected": info.slug == TEMPLATE_SLUG,
+        # a template renders with run/archive hidden (config the user edits, not a job)
+        "protected": info.cfg.kind == "template",
         "name": info.cfg.name,
         "description": info.cfg.description,
         "enabled": info.cfg.enabled,
