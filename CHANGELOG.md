@@ -19,6 +19,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.165.0] — 2026-08-08
+
+### Publishing the instance is a routine again, not a Settings job
+
+`library-sync` was a routine until 0.29.0, when it became a plain daemon job on the reasoning
+that it is "the exact same commands every time, no LLM in the path". That argument was about
+the wrong half of the work. The two git operations are trivial; noticing that a push has
+stopped landing, and getting that in front of someone, is not — and the daemon job's only
+outcome surface was a status file nobody opens. It had let **94 commits accumulate unpushed**.
+
+- **New bundled `library-sync` routine** (disabled, daily 06:00): stage the instance's routines
+  and redacted config into the library repo's working tree, then commit / pull / push. It is
+  deliberately barred from repairing anything — no conflict resolution, no force-push, no
+  re-authentication — because that repo is the only off-box copy of the instance. A conflict,
+  a rejected push or a refused credential is a `report`, and a run that exported cleanly but
+  did not push finishes **failed**, not ok.
+- **Removed**: `library_sync.py`, `web/settings/library_sync.py`, `LibrarySyncConfig` and the
+  `library_sync:` config block, the scheduler's sync timer / fire path / `library_sync_next`
+  status field, the Settings → Library sync card and nav entry, and the failure toast.
+- The `instance-export` and `git-sync` utils are unchanged — they were always where the actual
+  work lived, and the routine drives them the same way the retired one did.
+
+### Migration
+
+`migrate_library_sync.py` (MIGRATION, expires 2026-09-30) clears two pieces of daemon-era state
+that would each fail SILENTLY:
+
+- `library_sync:` in config.yaml — now an unknown key, so it would warn on every boot forever.
+- `<routines>/.archive/library-sync-retired/` — `adopt_seed_routine` treats an archived copy as
+  a deliberate removal and matches by slug PREFIX, so this tombstone would have blocked the new
+  routine from ever installing, with nothing in the logs saying why. Renamed rather than
+  deleted: it holds real run history from July 2026.
+
 ## [0.164.0] — 2026-08-08
 
 ### Traits are now general RULES — one library copy, held by slug

@@ -30,7 +30,7 @@ from .base import (
 )
 from .modelconf import EndpointConfig, MachineConfig, ModelConfig, ModelRef
 from .routine import RoutineConfig, load_routine, load_tuning, write_tuning
-from .server import LibrarySyncConfig, ServerConfig, load_server_config
+from .server import ServerConfig, load_server_config
 
 __all__ = [
     "CONVERSATION_DELIBERATION",
@@ -50,7 +50,6 @@ __all__ = [
     "EndpointConfig",
     "EndpointKind",
     "HomePath",
-    "LibrarySyncConfig",
     "MachineConfig",
     "ModelConfig",
     "ModelRef",

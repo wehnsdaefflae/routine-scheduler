@@ -250,7 +250,6 @@ function globalStream() {
       if (ev.event === "run_finished") toast(`run ${ev.state}: ${ev.run_id}`);
       if (ev.event === "routine_created") toast(`routine ${ev.slug} is ready`, 5000);
       if (ev.event === "routine_failed") toast(`routine ${ev.slug} build failed`, 7000, { error: true });
-      if (ev.event === "library_sync" && ev.status !== "ok") toast(`library sync ${ev.status}`, 7000, { error: true });
       if (ev.event !== "llm_task") scheduleBadgeRefresh();
       window.dispatchEvent(new CustomEvent("rsched-bus", { detail: ev }));
     },

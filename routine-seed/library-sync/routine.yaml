@@ -1,0 +1,45 @@
+name: Library sync
+description: Publishes this instance to its library repo and keeps that repo in step with
+  its GitHub remote — stage routines + redacted config, then commit and push.
+tags:
+- meta
+- maintenance
+- sync
+slug: library-sync
+enabled: false
+schedule:
+  cron: 0 6 * * *
+  tz: Europe/Berlin
+  catchup: skip
+permissions:
+- global-utils
+- memory
+rules:
+- ask-policy
+- decision-record
+- evidence-discipline
+- problem-routing
+- root-cause-fix
+capabilities:
+  actions:
+  - memory_read
+  - memory_write
+  utils: []
+  confirm: always
+  rule_confirm: always
+  runs: last
+  workflows: catalog
+budgets:
+  max_turns: 20
+  max_wall_clock_min: 20
+  max_total_tokens: -1
+  max_subruns: 0
+  max_subrun_depth: 0
+  ask_timeout_min: 480
+retention:
+  keep_runs: 30
+fs_read_roots:
+- ~/routines
+- ~/.config/routine-scheduler
+fs_write_roots:
+- ~/.local/share/routine-scheduler-libraries

@@ -1,4 +1,4 @@
-"""The instance config: ServerConfig (+ the library-sync job schedule) and its loader."""
+"""The instance config: ServerConfig and its loader."""
 
 from __future__ import annotations
 
@@ -6,36 +6,11 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from ..paths import config_file, expand
-from .base import BlankableStr, HomePath, _Config, _known_tz, _validate_lenient
+from .base import BlankableStr, HomePath, _Config, _validate_lenient
 from .modelconf import EndpointConfig, MachineConfig, ModelConfig
-
-
-class LibrarySyncConfig(_Config):
-    """The daemon-scheduled library sync (`library_sync:` in config.yaml): mirror the
-    instance into the ONE library repo and git-sync it. Deliberately NOT a routine —
-    the exact same commands every time, no LLM in the path (see library_sync.py).
-    """
-
-    enabled: bool = False
-    cron: BlankableStr = "0 6 * * *"   # friendly-representable (daily 06:00) for the UI editor
-    tz: str = "Europe/Berlin"
-
-    _tz_known = field_validator("tz")(_known_tz)
-
-    @field_validator("cron")
-    @classmethod
-    def _croniter_accepts(cls, v: str) -> str:
-        if v:
-            from croniter import croniter
-
-            try:
-                croniter(v)
-            except (ValueError, KeyError) as exc:
-                raise ValueError(str(exc)) from exc
-        return v
 
 
 class ServerConfig(_Config):
@@ -97,8 +72,6 @@ class ServerConfig(_Config):
     # generation/suggestion and the new-routine clarify wizard. A catalog model NAME;
     # routines set their own (also by name), falling back to this when a role is unset.
     system_model: str = ""
-    # The scheduled instance→library sync job (Settings → Library sync).
-    library_sync: LibrarySyncConfig = Field(default_factory=LibrarySyncConfig)
     source: Path | None = None
 
     @property

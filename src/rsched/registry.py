@@ -225,8 +225,8 @@ def all_homes(server: ServerConfig) -> tuple[Path, Path, Path]:
 
 
 class Schedulable(Protocol):
-    """What next_fire needs — RoutineConfig and LibrarySyncConfig both satisfy it, so
-    the library-sync job rides the same cron math without duck-typed type:ignores.
+    """What next_fire needs. RoutineConfig satisfies it directly, and a GROUP's cron/tz is
+    adapted to this shape, so both ride the same cron math without duck-typed type:ignores.
     """
 
     cron: str

@@ -73,7 +73,7 @@ the payload.
   and at most 32 events may wait unprocessed (`429`). Combined with the cooldown below, a
   leaked URL can at most cause one run per cooldown window — it cannot burn budget or fill
   the disk.
-- **Tokens never leave the instance.** The library sync's instance export redacts
+- **Tokens never leave the instance.** The library-sync routine's export redacts
   `token` values in routine.yaml exactly like the server config's secrets.
 
 ## The report trigger

@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from .. import group_runs as group_runs_store
-from .. import groups, library_sync, registry
+from .. import groups, registry
 from ..config import ServerConfig
 from ..ids import now_iso
 from ..schedule import server_tz
@@ -79,9 +79,6 @@ class Scheduler:
         self.scheduled_groups: list[dict] = []
         self.suppressed_members: set[str] = set()
         self.group_next_fires: dict[str, datetime] = {}
-        # the library-sync job (plain, not a routine) rides the same cron machinery
-        self.sync_next: datetime | None = None
-        self._sync_task: asyncio.Task | None = None
         self._last_scan = 0.0
         self._shutting_down = False
         self._deferred_logged = False
@@ -116,10 +113,6 @@ class Scheduler:
             prev = self.group_next_fires.get(g["id"])
             gfires[g["id"]] = prev if (prev is not None and prev <= now) else nf
         self.group_next_fires = gfires
-        # library sync: LibrarySyncConfig carries the same enabled/cron/tz trio next_fire reads
-        nf = registry.next_fire(self.server.library_sync, now)
-        self.sync_next = self.sync_next if (nf is not None and self.sync_next is not None
-                                            and self.sync_next <= now) else nf
 
     @staticmethod
     def _group_schedulable(g: dict) -> SimpleNamespace:
@@ -208,9 +201,6 @@ class Scheduler:
                     else:
                         log.info("group fire armed group=%s members=%d", gid,
                                  len(rec.get("members") or []))
-                if self.sync_next is not None and now >= self.sync_next:
-                    self.sync_next = registry.next_fire(self.server.library_sync, now)
-                    self._fire_library_sync()
                 # detached background tasks: intake requests, deliver results, wake owners
                 await self.detached.tick(now)
                 if not is_paused:
@@ -244,20 +234,6 @@ class Scheduler:
         if loop.time() - self._last_scan >= self.server.registry_rescan_s:
             self.rescan()
             self._last_scan = loop.time()
-
-    def _fire_library_sync(self) -> None:
-        """Run the sync off-loop (git talks to the network); one at a time — an overrun
-        skips the fire like a still-running routine does.
-        """
-        if self._sync_task is not None and not self._sync_task.done():
-            log.info("library sync still running — skipping this fire")
-            return
-
-        async def _job() -> None:
-            result = await asyncio.to_thread(library_sync.run_sync, self.server)
-            self.bus.publish({"event": "library_sync", "status": result.get("status", "error")})
-
-        self._sync_task = asyncio.create_task(_job())
 
     def _maybe_restart(self) -> bool:
         """Drive the graceful self-restart state machine. Returns True when the scheduler
@@ -304,5 +280,4 @@ class Scheduler:
             "started": self.started,
             "restart_requested": restart.restart_requested(self.server),
             "paused": pause.paused(self.server),
-            "library_sync_next": self.sync_next.isoformat() if self.sync_next else None,
         }

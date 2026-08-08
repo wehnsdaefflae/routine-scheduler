@@ -1,6 +1,6 @@
 // Friendly schedule builder. `initial` is a friendly spec {frequency, time, weekday, ...};
 // returns { node, value(), catchup() }. Pass opts.catchup (a string) to also offer a
-// missed-run policy select — routines want it, the library-sync editor does not.
+// missed-run policy select — routines want it, other schedule editors do not.
 // Pass opts.groupManaged ({id, name} — D71) when the routine belongs to a SCHEDULED group:
 // the dropdown locks on a selected, disabled "Group managed" state linking to the group
 // (the routine's own cron is suppressed by the daemon; value() returns the stored spec

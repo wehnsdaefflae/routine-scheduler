@@ -53,7 +53,8 @@ path: this scheduler is the only harness.
   can edit or delete any of them on the Library tab. They ship **disabled**; the
   dashboard says so until you enable them, because self-improvement costs tokens. The
   instance itself syncs to one GitHub repo — routines, workflows, rules, utils, sanitized
-  config — via the scheduled **Library sync** job in Settings (a plain daemon job, no LLM).
+  config — via the bundled **library-sync** routine (daily; it reports a failed push instead
+  of burying it in a status file).
 - **Across routines**: workflows and global utils live in one shared library repo, so what
   one routine learns transfers to all — and utils compose (`gu` utils may call other utils),
   so capability compounds.

@@ -219,10 +219,16 @@ def cmd_daemon(_args) -> int:
     )
     ensure_config()   # fresh deploy: generate config+token so the API isn't open
     server, problems = load_server_config()
+    # MIGRATION(expires=2026-09-30): BEFORE seed adoption — it clears the archive tombstone
+    # that would otherwise block the library-sync routine from installing
+    from .migrate_library_sync import migrate_library_sync
+
+    migrate_library_sync(server)
     seed_routines(server.routines_home)   # fresh deploy: install bundled meta routines (off)
     adopt_seed_routine(server.routines_home, "token-lab")  # seeds added after first boot land once
     adopt_seed_routine(server.routines_home, "clarification")  # the wizard's template (D10)
     adopt_seed_routine(server.routines_home, "rules-review")    # owns the general-rule library
+    adopt_seed_routine(server.routines_home, "library-sync")    # publishes the instance off-box
     # new default permissions reach existing routines once, at boot
     adopt_permissions(server.routines_home, server.permissions_home)
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap

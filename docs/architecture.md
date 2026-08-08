@@ -252,7 +252,7 @@ and the capabilities digest's catalog listing):
   alongside cron (docs/triggers.md): one canonical list of `{id, type, cooldown_s, …}` entries
   (`webhook` implemented — server-generated URL token IS the auth; `imap`/`watch_path` reserved
   in the same shape), validated in `rsched/triggers.py`, created/deleted on the routine page's
-  Triggers card (never by a run; the library-sync export REDACTS trigger tokens).
+  Triggers card (never by a run; the library-sync routine's export REDACTS trigger tokens).
 - `tuning.yaml` — the routine's machine-tunable BEHAVIOR parameters, classed with the RECIPE
   (improver-editable under its fs_write_root; config stays sealed — the file boundary IS the
   permission boundary). Today: `deliberation:` (terse|standard|deliberate|think-on-paper — how
@@ -477,8 +477,10 @@ gate, `diff` as a scoped per-symbol old→new review with signature-impact notes
 a syntax pre-gate before pytest) and `run-digest` (one-observation triage of every new
 routine run; raw transcripts opened only on anomaly). `token-lab` is
 the token-efficiency R&D loop: measures real usage, tests methods via llm subcalls ONLY (never
-integrates), publishes `artifacts/report.html`. The **library sync**
-(`library_sync.py`, a scheduled DAEMON job — Settings → Library sync, deliberately not a routine)
+integrates), publishes `artifacts/report.html`. The **library-sync** ROUTINE
+(0.165.0; it was a daemon job from 0.29.0 and is a routine again — the two git operations were
+never the work, noticing and REPORTING that a push stopped landing is, and a job whose only
+outcome surface was a status file let 94 commits pile up unpushed)
 syncs the WHOLE instance into that one repo: each routine's working tree (minus `runs/`, `.git`,
 transient inbox/question state) into `routines/<slug>/` and the server config — token/api_key
 values AND URL-embedded credentials redacted — into `config/`; then commit (scoped to

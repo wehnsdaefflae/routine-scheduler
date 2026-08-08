@@ -12,7 +12,7 @@ import { el, toast } from "/static/util.js";
 import { renderConnections } from "/static/views/settings-connections.js";
 import { renderEndpoints } from "/static/views/settings-endpoints.js";
 import { renderGithub } from "/static/views/settings-github.js";
-import { renderLibraries, renderLibrarySync } from "/static/views/settings-library.js";
+import { renderLibraries } from "/static/views/settings-library.js";
 import { renderMachines } from "/static/views/settings-machines.js";
 import { renderNotifications } from "/static/views/settings-notify.js";
 import { renderSecrets } from "/static/views/settings-secrets.js";
@@ -59,11 +59,8 @@ export async function render(view, query = {}) {
           desc: "The scheduler's own code — the fork the self-audit routine commits and pushes its changes to.",
           fill: (v) => renderSource(v) },
         { id: "libraries", nav: "Library", title: "Library repository",
-          desc: "The shared workflow patterns, practice modules and permissions every routine draws on.",
+          desc: "The general rules, workflow patterns and permissions every routine draws on.",
           fill: (v) => renderLibraries(v) },
-        { id: "library-sync", nav: "Library sync", title: "Library sync",
-          desc: "When the library repository is pulled and pushed automatically.",
-          fill: (v) => renderLibrarySync(v, st.server_tz || "") },
       ] },
     { label: "This instance",
       blurb: "The secret store, this server process, and how the console reaches you.",

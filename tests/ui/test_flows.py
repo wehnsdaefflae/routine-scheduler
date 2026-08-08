@@ -969,7 +969,8 @@ def test_settings_grouped_layout(ui, ui_page):
         expect(groups.nth(i)).to_have_text(label)
 
     # every section carries a plain reader-side description, and a group carries a why-blurb
-    expect(ui_page.locator(".set-desc")).to_have_count(10)
+    # (9 since 0.165.0: the Library-sync card left — publishing the instance is a routine now)
+    expect(ui_page.locator(".set-desc")).to_have_count(9)
     expect(ui_page.locator("p.set-desc").first).not_to_be_empty()
     expect(ui_page.locator(".set-groupblurb").first).to_contain_text("reasoning")
 
