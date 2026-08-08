@@ -7,7 +7,7 @@ usage: gu service-logs [--since "24 hours ago"] [--lines N] [--grep PATTERN] [--
 calls: (none)
 secrets: (none)
 tags: logs, daemon, health
-net: none
+net: outbound
 
 Wraps `journalctl --user -u routine-scheduler.service` for routine consumption: entries since
 --since (default the last 24 hours), capped at --lines (default 500), optionally filtered with

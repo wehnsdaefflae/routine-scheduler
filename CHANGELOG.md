@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.165.3] — 2026-08-08
+
+### Fixed
+
+- **Six of ten seeded utils had drifted from the live library** — revised in production by
+  routines and never back-ported, so `util-seed/` no longer described what the instance runs.
+  Back-ported the newer live version for `git-sync` (75 lines behind), `dir-tree`, `pytest-run`,
+  `git-restore` and `service-logs`; every one re-selftested.
+- The drift is **not** one-directional, so a blanket sync either way would have destroyed work:
+  `instance-export`'s live copy still documents and selftests `steps/`, `fragments/` and
+  `instruction.md` — terminology retired in 0.49.0 and 0.8.0 — while `remote`'s live copy lacks
+  the host_key parse fix the seed records. Both keep the seed as canonical; `instance-export`
+  additionally adopts the live `net: outbound` header the sandbox rollout set deliberately.
+  Those two now need pushing the other way, which a blanket live→seed copy would have silently
+  reverted (and a blanket seed→live would have reverted `net: outbound` on two utils, costing
+  them network access inside the sandbox).
+
 ## [0.165.2] — 2026-08-08
 
 ### Fixed

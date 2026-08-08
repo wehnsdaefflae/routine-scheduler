@@ -6,7 +6,7 @@
 usage: gu git-restore REPO_PATH [FILE ...] [--json]
 calls: (none)
 tags: git, dev, code
-net: none
+net: outbound
 
 The revert a self-modifying routine runs when its edit fails the test gate: put the working tree
 back exactly as HEAD has it, so a bad edit is never left behind or committed. With FILEs, only
