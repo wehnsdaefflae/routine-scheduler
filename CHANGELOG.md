@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.168.1] — 2026-08-09
+
+### Fixed
+- **Rules-migration completion pass for stage prose** (R297, from routine-improver's
+  sweep-32). The 0.164.0 traits→rules conversion rewrote routine.yaml and main.md's
+  Standing-practices tail but left every INLINE `traits/<slug>.md` reference in
+  stages/*.md / instruction.md / main.md body text dangling — ~83 such references across
+  17 deployed routines. `migrate_rules` now has step 6: per dir, each reference is
+  rewritten through the SAME slug map the rest of the migration used (`ledger-discipline`
+  → "the `decision-record` rule", `maintenance-routing` → `problem-routing`,
+  `correction-learning`/`anticipatory-stewardship` → `root-cause-fix` + `intent-inference`,
+  `global-utils` → "your global-utils permission notes"), enclosing backticks consumed so
+  nothing nests; an UNKNOWN slug is logged and left in place — a loud dangling pointer
+  beats a silently wrong rewrite. Runs on every boot while the migration module lives and
+  is idempotent, so instances converted before this step existed still converge.
+
 ## [0.168.0] — 2026-08-09
 
 ### Added

@@ -29,12 +29,19 @@ Per routine / conversation / background dir:
      seed does not touch a live instance (the sync only installs what is missing), so both
      would otherwise stay lint-red forever and keep seeding new routines with dead slugs.
   5. main.md's `## Standing practices` tail rebuilt from the new held set.
+  6. PROSE COMPLETION (R297): any `traits/<slug>.md` reference left INLINE in main.md /
+     instruction.md / stages/*.md — step 3 rewrote only routine.yaml and the Standing-practices
+     tail, so those dangled — is rewritten to the mapped rule(s) or the permission notes, via
+     the same slug map. Runs per dir on every boot while this module lives (idempotent: a
+     rewritten file has nothing left to match), so instances converted BEFORE this step
+     existed still converge.
 """
 
 from __future__ import annotations
 
 import ast
 import logging
+import re
 import shutil
 from pathlib import Path
 
@@ -242,9 +249,63 @@ def _migrate_dir(server: ServerConfig, routine_dir: Path) -> bool:
     return True
 
 
+# A `traits/<slug>.md` reference in prose, with any enclosing backticks consumed so the
+# replacement phrase never nests inside a leftover code span.
+_TRAIT_REF = re.compile(r"`?traits/([a-z][a-z0-9-]*)\.md`?")
+# The recipe-prose surface the per-dir conversion did NOT rewrite (it only rebuilt main.md's
+# Standing-practices tail): stage modules, the instruction, and main.md body text.
+_PROSE_GLOBS = ("main.md", "instruction.md", "stages/*.md")
+
+
+def _rule_phrase(slug: str, known: set[str]) -> str | None:
+    """The prose that replaces a `traits/<slug>.md` reference, or None for an unknown slug."""
+    if slug == "global-utils":
+        # mechanism prose became a PERMISSION — its notes ride in the prompt, not the library
+        return "your global-utils permission notes"
+    targets = [s for s in _SLUG_MAP.get(slug, (slug,)) if s in known]
+    if not targets:
+        return None
+    if len(targets) == 1:
+        return f"the `{targets[0]}` rule"
+    return "the " + " + ".join(f"`{s}`" for s in targets) + " rules"
+
+
+def _migrate_stage_prose(server: ServerConfig, routine_dir: Path) -> int:
+    """Complete the conversion in PROSE (R297): the per-dir pass rewrote routine.yaml and
+    main.md's Standing-practices tail, but any stage module (or instruction.md, or main.md
+    body text) that referenced `traits/<slug>.md` inline was left pointing at a deleted
+    file. Rewrite each reference to the rule(s) that carry the principle now — the same
+    `_SLUG_MAP` every other step used — or to the permission notes for mechanism prose.
+    An unknown slug is left in place and logged: a loud dangling pointer beats a silently
+    wrong rewrite. Idempotent: a rewritten file has no `traits/…` left to match.
+    """
+    known = set(library_docs.slugs(server.rules_home))
+    touched = 0
+    for pattern in _PROSE_GLOBS:
+        for path in sorted(routine_dir.glob(pattern)):
+            src = path.read_text(encoding="utf-8")
+
+            def _sub(m: re.Match[str], *, _rel: str = str(path.relative_to(routine_dir))) -> str:
+                phrase = _rule_phrase(m.group(1), known)
+                if phrase is None:
+                    log.warning("rules migration: %s/%s references retired trait %r with no "
+                                "mapped rule — left as-is", routine_dir.name, _rel, m.group(1))
+                    return m.group(0)
+                return phrase
+
+            out = _TRAIT_REF.sub(_sub, src)
+            if out != src:
+                atomic_write(path, out)
+                touched += 1
+    if touched:
+        libgit.commit(routine_dir, "migrate: de-reference retired traits/*.md in stage prose")
+    return touched
+
+
 def migrate_rules(server: ServerConfig) -> int:
     """Run the whole migration. Returns how many routine-shaped dirs were converted."""
     touched = 0
+    prose = 0
     homes = (server.routines_home, server.conversations_home, server.background_home)
     try:
         _migrate_library(server)
@@ -262,8 +323,15 @@ def migrate_rules(server: ServerConfig) -> int:
         for d in sorted(p for p in home.iterdir() if p.is_dir() and not p.name.startswith(".")):
             try:
                 touched += _migrate_dir(server, d)
+                # prose completion runs even where traits/ is ALREADY gone — the deployed
+                # instances converted before this pass existed are exactly the ones with
+                # dangling references (R297)
+                prose += _migrate_stage_prose(server, d)
             except OSError as exc:
                 log.warning("rules migration: %s failed: %s", d.name, exc)
     if touched:
         log.warning("migrated %d routine(s)/conversation(s) to library-global rules", touched)
+    if prose:
+        log.warning("rules migration: de-referenced retired traits/*.md in %d prose file "
+                    "set(s) (R297)", prose)
     return touched

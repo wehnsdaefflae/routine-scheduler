@@ -369,3 +369,51 @@ def test_migration_rewrites_library_workflow_includes(tmp_path):
     assert not [p for p in problems if "does not resolve" in p], problems
     migrate_rules(server)                    # idempotent
     assert wf.read_text(encoding="utf-8") == after
+
+
+def test_migration_dereferences_trait_paths_in_stage_prose(tmp_path):
+    """MIGRATION(expires=2026-09-30) guard for the R297 completion pass. An ALREADY-converted
+    routine (traits/ long gone) whose stage prose still says `traits/<slug>.md` gets every
+    reference rewritten through the same slug map the rest of the migration used — enclosing
+    backticks consumed so no code span nests, unknown slugs left in place (loudly) — and the
+    pass is idempotent.
+    """
+    from rsched.config import ServerConfig
+    from rsched.migrate_rules import migrate_rules
+
+    lib = tmp_path / "lib"
+    (lib / "rules").mkdir(parents=True)
+    for slug in ("decision-record", "problem-routing", "root-cause-fix", "intent-inference",
+                 "web-research"):
+        (lib / "rules" / f"{slug}.md").write_text(
+            f"---\ntags: [a, b, c]\n---\n# rule: {slug} — seeded\n\nbody\n", encoding="utf-8")
+
+    routines = tmp_path / "routines"
+    d = routines / "demo"
+    (d / "stages").mkdir(parents=True)
+    (d / "routine.yaml").write_text("slug: demo\nrules: [web-research]\n", encoding="utf-8")
+    (d / "main.md").write_text(
+        "# Demo\n\nVerify facts (see `traits/web-research.md`).\n", encoding="utf-8")
+    (d / "stages" / "record.md").write_text(
+        "Append ONE entry (consult traits/ledger-discipline.md). Route problems via\n"
+        "traits/maintenance-routing.md; tools per traits/global-utils.md.\n"
+        "After corrections read traits/correction-learning.md.\n"
+        "Custom: traits/home-grown-notion.md stays.\n", encoding="utf-8")
+
+    server = ServerConfig(libraries_home=lib, routines_home=routines,
+                          conversations_home=tmp_path / "conv",
+                          background_home=tmp_path / "bg")
+    assert migrate_rules(server) == 0          # nothing traits/-dir-shaped left to convert
+
+    main = (d / "main.md").read_text(encoding="utf-8")
+    assert "traits/" not in main
+    assert "(see the `web-research` rule)" in main       # backticks consumed, nothing nests
+    stage = (d / "stages" / "record.md").read_text(encoding="utf-8")
+    assert "(consult the `decision-record` rule)" in stage
+    assert "via\nthe `problem-routing` rule" in stage
+    assert "tools per your global-utils permission notes" in stage
+    assert "read the `root-cause-fix` + `intent-inference` rules" in stage
+    assert "Custom: traits/home-grown-notion.md stays" in stage   # unknown slug: untouched
+    before = stage
+    assert migrate_rules(server) == 0                    # idempotent…
+    assert (d / "stages" / "record.md").read_text(encoding="utf-8") == before   # …and stable
