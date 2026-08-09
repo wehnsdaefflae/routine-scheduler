@@ -464,6 +464,18 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 }
 .bg-cancel:hover { color: var(--err); border-color: rgba(230, 90, 90, 0.4); }
 .bg-cancel:disabled { opacity: 0.5; cursor: default; }
+/* the live browser session (D86): screenshot + close control in the conversation rail */
+.browser-sess { display: flex; flex-direction: column; gap: 4px; font-family: var(--sans); }
+.browser-line { display: flex; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
+.browser-url {
+  color: var(--muted); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.browser-shot { width: 100%; border: 1px solid var(--line-2); border-radius: 6px; cursor: zoom-in; }
+/* F296: in the conversation rail the caps double as per-section collapse toggles */
+.conv-view .rail-cap { cursor: pointer; user-select: none; }
+.conv-view .rail-cap::before { content: "▾ "; color: var(--faint); }
+.conv-view .rail-cap.closed::before { content: "▸ "; }
 .stategraph { display: flex; flex-direction: column; font-family: var(--sans); }
 .sg-node {
   display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted);

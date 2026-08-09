@@ -11,7 +11,7 @@ import { referChip } from "/static/components/referchip.js";
 import { filePicker } from "/static/components/filepicker.js";
 import { mountComposerOnly, PREFILL_KEY } from "/static/views/conversations-new.js";
 import { renderHead } from "/static/views/conversations-head.js";
-import { api, apiUpload } from "/static/api.js";
+import { api, apiBlobUrl, apiUpload } from "/static/api.js";
 import { questionPanel } from "/static/components/answerform.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
@@ -181,15 +181,45 @@ export async function render(view, slug, _query = {}) {
     const graphBody = el("div", {});
     const treeBody = el("div", {});
     const filesBody = el("div", {});
-    artBody.append(el("div", { class: "rail-cap" }, "state"), graphBody);
-    if (detail.run_id) artBody.append(el("div", { class: "rail-cap" }, "tasks"), treeBody,
-                                      el("div", { class: "rail-cap" }, "files"), filesBody);
+    // F296 (R262 pt1): every rail section is individually collapsible, remembered per
+    // browser (localStorage) — the cap is the toggle; the outer <details> stays the
+    // whole-rail switch it always was.
+    const sectClosed = (name) => localStorage.getItem(`convrail:${name}`) === "closed";
+    function railCap(name, ...bodies) {
+      const cap = el("div", { class: "rail-cap", role: "button", tabindex: "0",
+                              title: "collapse / expand" }, name);
+      const apply = () => {
+        cap.classList.toggle("closed", sectClosed(name));
+        for (const b of bodies) b.hidden = sectClosed(name);
+      };
+      const flip = () => {
+        localStorage.setItem(`convrail:${name}`, sectClosed(name) ? "open" : "closed");
+        apply();
+      };
+      cap.onclick = flip;
+      cap.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); }
+      };
+      apply();
+      return cap;
+    }
+    artBody.append(railCap("state", graphBody), graphBody);
+    if (detail.run_id) artBody.append(railCap("tasks", treeBody), treeBody,
+                                      railCap("files", filesBody), filesBody);
+    // the live browser session (D86, R262 pt2): the browser-session util's persisted handle
+    // + latest screenshot view, with a close control. Hidden until a session exists.
+    const brBody = el("div", { class: "browser-sess" });
+    const brCap = railCap("browser", brBody);
+    brCap.hidden = true;
+    artBody.append(brCap, brBody);
     // detached background tasks the assistant launched (the `detach` action): a flat cross-run
     // list with a cancel affordance. Hidden until there is at least one.
-    const bgCap = el("div", { class: "rail-cap", hidden: true }, "background");
     const bgBody = el("div", { class: "bg-tasks" });
+    const bgCap = railCap("background", bgBody);
+    bgCap.hidden = true;
     artBody.append(bgCap, bgBody);
-    artBody.append(el("div", { class: "rail-cap" }, "artifacts"));
+    const artsBody = el("div", {});
+    artBody.append(railCap("artifacts", artsBody), artsBody);
     const stateGraph = createStateGraph(graphBody, {
       graphUrl: `/api/conversations/${slug}/stategraph`,
       ...(detail.run_id ? { statsUrl: `/api/runs/${detail.run_id}/phases` } : {}) });
@@ -197,7 +227,7 @@ export async function render(view, slug, _query = {}) {
       treeUrl: `/api/runs/${detail.run_id}/tree`, isLive: () => !TERMINAL.has(curState) }) : null;
     const fileActivity = detail.run_id
       ? createFileActivity(filesBody, { url: `/api/runs/${detail.run_id}/files` }) : null;
-    const artifacts = createArtifacts(artBody, { slug });
+    const artifacts = createArtifacts(artsBody, { slug });
 
     const BG_LIVE = new Set(["queued", "starting", "running", "waiting_user", "paused"]);
     function paintBackground(rows) {
@@ -226,7 +256,55 @@ export async function render(view, slug, _query = {}) {
     }
     paintBackground(detail.background || []);
     const bgTimer = setInterval(refreshBackground, 15000);
-    cleanup.push(() => { clearInterval(bgTimer); artifacts.destroy(); taskTree?.stop(); });
+
+    // ---- the browser section (D86): rows from the persisted session handles; the view PNG
+    // is fetched WITH the auth header and blob-rendered (an <img src> can't carry the bearer)
+    let brBlobs = [];
+    let brLast = "";
+    const freeBrBlobs = () => { for (const u of brBlobs.splice(0)) URL.revokeObjectURL(u); };
+    function paintBrowser(rows) {
+      freeBrBlobs();
+      brCap.hidden = !rows.length;
+      brBody.replaceChildren();
+      for (const s of rows) {
+        const line = el("div", { class: "browser-line" },
+          chip(s.alive ? "running" : "finished", s.alive ? "live" : "dead"),
+          el("span", { class: "browser-url", title: s.cdp }, s.url || s.name));
+        if (s.alive) {
+          const btn = el("button", { class: "bg-cancel", title: "close this browser session" }, "✕");
+          btn.onclick = async () => {
+            btn.disabled = true;
+            try { await api(`/api/conversations/${slug}/browser/${encodeURIComponent(s.name)}/stop`, { method: "POST" }); }
+            catch (e) { toast(e.message); btn.disabled = false; return; }
+            toast("browser session closed");
+            brLast = "";
+            refreshBrowser();
+          };
+          line.append(btn);
+        }
+        brBody.append(line);
+        if (s.view) {
+          const img = el("img", { class: "browser-shot", alt: "latest browser view",
+                                  title: "latest screenshot — click to open full-size" });
+          apiBlobUrl(`/api/conversations/${slug}/browser/view?name=${encodeURIComponent(s.name)}&t=${s.view.mtime}`)
+            .then(({ url }) => { brBlobs.push(url); img.src = url;
+                                 img.onclick = () => window.open(url, "_blank"); })
+            .catch(() => img.remove());
+          brBody.append(img);
+        }
+      }
+    }
+    async function refreshBrowser() {
+      try {
+        const rows = await api(`/api/conversations/${slug}/browser`);
+        const key = JSON.stringify(rows);
+        if (key !== brLast) { brLast = key; paintBrowser(rows); }
+      } catch { /* transient */ }
+    }
+    refreshBrowser();
+    const brTimer = setInterval(refreshBrowser, 8000);
+    cleanup.push(() => { clearInterval(bgTimer); clearInterval(brTimer); freeBrBlobs();
+                         artifacts.destroy(); taskTree?.stop(); });
 
     const chat = createChat(chatBox, {
       answer: (qid, text, decision) => api(`/api/questions/${qid}/answer`, { method: "POST", body: decision ? { decision } : { text } }),

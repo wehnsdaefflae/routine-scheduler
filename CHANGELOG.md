@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.168.0] — 2026-08-09
+
+### Added
+- **A live "browser" section in the conversation right rail** (D86 selected A / R262 pt2).
+  When a run holds a persistent browser via the `browser-session` util, the rail shows the
+  session (url, live/dead from a TCP probe of the recorded CDP port), its latest screenshot
+  view — fetched with the auth header and blob-rendered, like every artifact — and a ✕ that
+  closes the session server-side. New `web/api_browser.py` (the api_background pattern):
+  `GET /api/conversations/{slug}/browser` (rows from the persisted
+  `state/browser-session*.json` handles), `GET …/browser/view` (the PNG; a model-written
+  view path that escapes the conversation dir is rejected 400), and
+  `POST …/browser/{name}/stop` — the server-side twin of `gu browser-session stop`
+  (SIGTERM→SIGKILL on the recorded process GROUP, refusing a pid that resolves into the
+  daemon's own group, then dropping the handle). The UI could never do this itself — that
+  endpoint is the reason D86 existed.
+- **Conversation rail sections are individually collapsible** (F296 / R262 pt1): each cap
+  (state / tasks / files / browser / background / artifacts) is now a toggle with a chevron;
+  the choice persists per browser in localStorage (`convrail:<section>`) across reloads.
+  The whole-rail `<details>` switch is unchanged.
+
+### Tests
+- `tests/test_api_browser.py` (6): rows + liveness, view serving byte-for-byte, escape
+  rejection, named handles, stop-clears-handle without a live process, garbage handle skipped.
+- `tests/ui/test_conversation_rail.py` (2): the browser section renders against a really
+  listening port and the ✕ clears the session; caps collapse, persist across reload, reopen.
+
 ## [0.167.0] — 2026-08-09
 
 ### A template is what it declares, not what it is called
