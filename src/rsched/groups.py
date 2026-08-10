@@ -23,6 +23,8 @@ Shape (single document, atomic-written):
                  "on_failure": null,          # null = inherit default_on_failure
                  "cron": "0 7 * * *",         # "" = unscheduled (fire only when armed)
                  "tz": "Europe/Berlin",       # written beside cron by the web layer
+                 "paused": false,             # true = the cron never auto-arms (whole-group
+                                              # pause; an explicit Run now still fires)
                  "created": "2026-07-31T…"}]}
 
 This module owns the shared vocabulary and the file IO. It validates SHAPE only (types,
@@ -121,6 +123,7 @@ def _normalize(g: dict) -> dict:
         "on_failure": on_failure,
         "cron": cron,
         "tz": str(g.get("tz") or ""),
+        "paused": bool(g.get("paused")),
         "created": str(g.get("created") or ""),
     }
 
@@ -201,6 +204,7 @@ def create(routines_home: Path, *, name: str, members: list[str] | None = None,
         "on_failure": on_failure,
         "cron": _check_cron(cron),
         "tz": str(tz or ""),
+        "paused": False,
         "created": now_iso(),
     }
     data = load(routines_home)
@@ -211,7 +215,8 @@ def create(routines_home: Path, *, name: str, members: list[str] | None = None,
 
 def update(routines_home: Path, gid: str, *, name: str | None = None,
            members: list[str] | None = None, on_failure: object = _UNSET,
-           cron: str | None = None, tz: str | None = None) -> dict | None:
+           cron: str | None = None, tz: str | None = None,
+           paused: bool | None = None) -> dict | None:
     """Patch a group in place (only the fields passed are touched). `on_failure` is a
     tri-state: omit it to leave unchanged, pass None to inherit the default, pass a value in
     ON_FAILURE to override. `cron` "" clears the schedule (members fire on their own crons
@@ -238,6 +243,8 @@ def update(routines_home: Path, gid: str, *, name: str | None = None,
             g["cron"] = _check_cron(cron)
         if tz is not None:
             g["tz"] = str(tz)
+        if paused is not None:
+            g["paused"] = bool(paused)
         _save(routines_home, data)
         return g
     return None

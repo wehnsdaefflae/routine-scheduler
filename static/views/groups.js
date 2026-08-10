@@ -140,6 +140,22 @@ export async function render(view) {
 
     // Run now — arm a sequential fire; disabled (with a progress line) while a chain is in flight.
     const flight = (d.in_flight || {})[g.id];
+    // Whole-group pause: gates the cron auto-arm only — members stay group-managed (so
+    // NOTHING in the group fires on a schedule while paused), and Run now still works.
+    // Only a scheduled group shows it: an unscheduled group has no cron to pause.
+    const pausedBadge = g.paused
+      ? el("span", { class: "muted small", "data-group-paused": "" }, "⏸ paused") : null;
+    const pauseBtn = g.cron
+      ? el("button", { class: "btn small", "data-group-pause-toggle": "",
+          title: g.paused ? "resume this group's schedule"
+            : "stop the schedule from firing this group — Run now still works" },
+          g.paused ? "▶ resume" : "⏸ pause")
+      : null;
+    if (pauseBtn) pauseBtn.onclick = async () => {
+      try { await api(`/api/groups/${g.id}`, { method: "PATCH", body: { paused: !g.paused } });
+        toast(g.paused ? `group “${g.name}” resumed` : `group “${g.name}” paused`); load(); }
+      catch (err) { toast(err.message, 4000, { error: true }); load(); }
+    };
     const runBtn = el("button", { class: "btn small primary", "data-group-run": "",
       ...(flight || !g.members.length ? { disabled: "" } : {}) }, "Run now");
     runBtn.onclick = async () => {
@@ -155,7 +171,10 @@ export async function render(view) {
 
     card.append(
       el("div", { class: "row", style: "justify-content:space-between;align-items:center" },
-        nameLabel, el("div", { class: "row", style: "gap:6px" }, runBtn, del)),
+        el("div", { class: "row", style: "gap:8px;align-items:center" },
+          nameLabel, ...(pausedBadge ? [pausedBadge] : [])),
+        el("div", { class: "row", style: "gap:6px" },
+          ...(pauseBtn ? [pauseBtn] : []), runBtn, del)),
       el("div", { class: "muted small mt", "data-group-effective": "" }, `on failure: ${effective}`),
       ...(progress ? [progress] : []),
       el("div", { class: "mt" }, rows),

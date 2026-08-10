@@ -61,6 +61,10 @@ class GroupPatch(BaseModel):
     on_failure: str | None = None
     set_on_failure: bool = False
     schedule: dict | None = None
+    # Whole-group pause: true stops the group's cron from auto-arming its chain (members
+    # stay group-managed, so NOTHING in the group fires on a schedule); an explicit
+    # "Run now" still works. None = leave unchanged.
+    paused: bool | None = None
 
 
 def _schedule_to_cron(spec: dict | None) -> tuple[str, str] | None:
@@ -148,13 +152,14 @@ def update_group(request: Request, gid: str, body: GroupPatch) -> dict:
         rec = groups.update(_routines_home(request), gid, name=body.name,
                            members=members, on_failure=on_failure,
                            cron=sched[0] if sched else None,
-                           tz=sched[1] if sched else None)
+                           tz=sched[1] if sched else None,
+                           paused=body.paused)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     if rec is None:
         raise HTTPException(404, f"no group {gid!r}")
-    if sched is not None or members is not None:
-        _rescan(request)   # membership changes move the suppression set too
+    if sched is not None or members is not None or body.paused is not None:
+        _rescan(request)   # membership + pause changes move the fire/suppression tables too
     return {"ok": True, "group": rec}
 
 

@@ -67,3 +67,34 @@ def test_groups_page_crud(ui, ui_page):
     raw = json.loads(groups.groups_file(ui.routines).read_text(encoding="utf-8"))
     assert set(raw) == {"default_on_failure", "groups"}
     assert gid not in json.dumps(raw)
+
+
+def test_groups_page_pause_toggle(ui, ui_page):
+    """Whole-group pause: a SCHEDULED group's card offers ⏸ pause — clicking persists
+    paused=true to the store and shows the badge; resume clears both. An unscheduled
+    group shows no toggle (there is no cron to pause; Run now is its only fire path)."""
+    rec = groups.create(ui.routines, name="Sched", members=["uir"], cron="0 7 * * *",
+                        tz="UTC")
+    plain = groups.create(ui.routines, name="Plain", members=["uir"])
+    ui_page.goto(f"{ui.url}/#/groups")
+    sched_card = ui_page.locator(f'[data-group="{rec["id"]}"]')
+    sched_card.wait_for(timeout=10_000)
+
+    # only the scheduled card offers the toggle
+    expect(sched_card.locator("[data-group-pause-toggle]")).to_have_text("⏸ pause")
+    expect(ui_page.locator(
+        f'[data-group="{plain["id"]}"] [data-group-pause-toggle]')).to_have_count(0)
+
+    # pause → badge appears, store carries paused=true
+    sched_card.locator("[data-group-pause-toggle]").click()
+    expect(ui_page.locator(
+        f'[data-group="{rec["id"]}"] [data-group-paused]')).to_contain_text(
+        "paused", timeout=10_000)
+    assert groups.get(ui.routines, rec["id"])["paused"] is True
+
+    # resume → badge gone, store cleared (the card re-renders, so re-locate)
+    ui_page.locator(f'[data-group="{rec["id"]}"] [data-group-pause-toggle]').click()
+    expect(ui_page.locator(
+        f'[data-group="{rec["id"]}"] [data-group-paused]')).to_have_count(0, timeout=10_000)
+    ui_page.wait_for_timeout(300)   # give the PATCH a beat, as the CRUD test does
+    assert groups.get(ui.routines, rec["id"])["paused"] is False

@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.169.0] — 2026-08-10
+
+### Added
+- **Whole-group pause** (user order 2026-08-10). A scheduled routine group can now be
+  paused: `paused: true` on the group record stops its cron from auto-arming the
+  sequential chain, while its members stay group-managed — so the entire set goes quiet
+  with one switch instead of pausing the whole instance (the only lever until now). A
+  paused group's schedulable reads as *disabled* to the daemon, so it simply leaves the
+  fire table; resuming recomputes the next FUTURE fire (never a backlog of missed ones).
+  An explicit fire — the page's **Run now** or a run's `manage_group run` — still works:
+  pause gates the cron only. Groups page: a ⏸ pause / ▶ resume toggle on scheduled
+  groups' cards plus a "⏸ paused" badge; `PATCH /api/groups/{gid}` accepts `paused`.
+  The chain semantics themselves (member 0 at the set time, the rest in order as each
+  predecessor finishes) already shipped as D71 — nothing changed there.
+
 ## [0.168.1] — 2026-08-09
 
 ### Fixed

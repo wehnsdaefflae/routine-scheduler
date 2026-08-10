@@ -257,6 +257,60 @@ def test_api_group_schedule_roundtrip(api_client):
     assert client.get("/api/groups").json()["groups"][0]["cron"] == ""
 
 
+# -- whole-group pause -----------------------------------------------------------------
+# Pausing a group stops its cron from auto-arming the chain while its members STAY
+# group-managed (their own crons remain suppressed), so the whole set goes quiet with one
+# switch; an explicit run (UI "Run now" / manage_group run) still fires. Resuming must
+# yield a FUTURE fire, never a backlog of the fires missed while paused.
+
+
+def test_store_paused_roundtrip(tmp_path):
+    home = tmp_path
+    rec = groups.create(home, name="G", cron="0 7 * * *", tz="UTC")
+    assert rec["paused"] is False                       # born unpaused
+    groups.update(home, rec["id"], paused=True)
+    assert groups.get(home, rec["id"])["paused"] is True
+    groups.update(home, rec["id"], name="G2")           # untouched fields stay put
+    assert groups.get(home, rec["id"])["paused"] is True
+    groups.update(home, rec["id"], paused=False)
+    assert groups.get(home, rec["id"])["paused"] is False
+    # a hand-edited truthy value normalizes to a real bool on load
+    from rsched.paths import atomic_write_json
+    atomic_write_json(groups.groups_file(home),
+                      {"groups": [{"id": "grp-x", "name": "G", "paused": "yes"}]})
+    assert groups.load(home)["groups"][0]["paused"] is True
+
+
+def test_paused_group_leaves_the_daemon_fire_table():
+    """The daemon half: a paused group's schedulable reads as DISABLED, so next_fire is
+    None — the cron never auto-arms and nothing needs skipping in the fire loop; resuming
+    reads as enabled again and yields the next future fire."""
+    from datetime import UTC, datetime
+
+    from rsched import registry
+    from rsched.daemon.scheduler import Scheduler
+    g = {"cron": "0 7 * * *", "tz": "UTC", "paused": True}
+    now = datetime(2026, 8, 10, 6, 0, tzinfo=UTC)
+    assert registry.next_fire(Scheduler._group_schedulable(g), now) is None
+    g["paused"] = False
+    nf = registry.next_fire(Scheduler._group_schedulable(g), now)
+    assert nf is not None and nf.hour == 7
+
+
+def test_api_group_pause_toggle(api_client):
+    client, tmp_path = api_client
+    _mk(tmp_path, "alpha")
+    gid = client.post("/api/groups",
+                      json={"name": "P", "members": ["alpha"]}).json()["group"]["id"]
+    r = client.patch(f"/api/groups/{gid}", json={"paused": True})
+    assert r.status_code == 200, r.text
+    assert r.json()["group"]["paused"] is True
+    assert client.get("/api/groups").json()["groups"][0]["paused"] is True
+    r = client.patch(f"/api/groups/{gid}", json={"paused": False})
+    assert r.status_code == 200
+    assert r.json()["group"]["paused"] is False
+
+
 # -- the shared group store (D67, option B-i) ----------------------------------------------
 
 

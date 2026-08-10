@@ -120,7 +120,12 @@ class Scheduler:
         the server zone — groups are saved with the server tz by the web layer, but an
         older or hand-edited row must still fire somewhere sensible.
         """
-        return SimpleNamespace(cron=g["cron"], tz=g.get("tz") or server_tz(), enabled=True)
+        # A PAUSED group reads as a disabled schedulable: next_fire yields None, so the
+        # group simply leaves the fire table — nothing to skip in the loop, and resuming
+        # recomputes a FUTURE fire on rescan (never a backlog of missed ones). An explicit
+        # "Run now" / manage_group run still arms the chain: pause gates the cron only.
+        return SimpleNamespace(cron=g["cron"], tz=g.get("tz") or server_tz(),
+                               enabled=not g.get("paused"))
 
     async def boot_catchup(self) -> None:
         for slug, info in self.catalog.items():
