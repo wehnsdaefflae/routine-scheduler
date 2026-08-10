@@ -34,5 +34,28 @@ def test_summary_shows_latest_message_and_marks_read(ui, ui_page):
     expect(ui_page.locator(".summary-item")).to_have_count(0, timeout=10_000)
 
     # switch to All → the read item is still there, now showing "mark unread"
-    ui_page.get_by_role("button", name="All").click()
+    ui_page.get_by_role("button", name="All", exact=True).click()
     expect(ui_page.get_by_role("button", name="mark unread")).to_be_visible(timeout=10_000)
+
+
+def test_summary_mark_all_read(ui, ui_page):
+    """F303: the toolbar's bulk button sweeps every unread row read in one click (the UI
+    traces showed the operator doing this 6-9 rapid per-row clicks at a time), the state
+    persists across a reload, and the button disables itself once nothing is unread."""
+    ui.seed_run("uir", "20260714-080000", "finished", summary="sweep me")
+    ui_page.goto(f"{ui.url}/#/summary")
+    ui_page.wait_for_selector("h1:has-text('Summary')", timeout=10_000)
+
+    btn = ui_page.locator("[data-summary-mark-all]")
+    expect(btn).to_be_enabled(timeout=10_000)
+    btn.click()
+
+    # the row leaves the (default) Unread view and the button goes quiet
+    expect(ui_page.locator(".summary-item")).to_have_count(0, timeout=10_000)
+    expect(btn).to_be_disabled()
+
+    # persisted: a reload still shows nothing unread and the button stays disabled
+    ui_page.reload()
+    ui_page.wait_for_selector("h1:has-text('Summary')", timeout=10_000)
+    expect(ui_page.locator(".summary-item")).to_have_count(0, timeout=10_000)
+    expect(ui_page.locator("[data-summary-mark-all]")).to_be_disabled()

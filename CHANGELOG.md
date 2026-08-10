@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.170.0] — 2026-08-10
+
+### Added
+- **Summary: "✓ mark all read"** (F303). The UI traces showed the inbox being cleared one
+  click per row — 6–9 rapid "mark read" clicks in a burst, twice in two days. The Summary
+  toolbar now carries a bulk button that sweeps every unread row through the same
+  per-routine read-marker endpoint and disables itself when nothing is unread.
+
 ## [0.169.0] — 2026-08-10
 
 ### Added

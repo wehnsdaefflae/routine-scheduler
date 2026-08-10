@@ -30,7 +30,25 @@ export async function render(view, query = {}) {
     filterChips.set(key, b);
     chipRow.append(b);
   }
-  view.append(el("div", { class: "row mt toolbar", style: "gap:10px" }, chipRow));
+  // Bulk dismiss (F303): the traces showed the operator clearing the inbox one click per
+  // row (6–9 rapid "mark read" clicks in a burst) — one button does the sweep. It reuses
+  // the per-routine endpoint row-by-row, so read-marker semantics stay identical.
+  const allReadBtn = el("button", { class: "btn small", "data-summary-mark-all": "" },
+    "✓ mark all read");
+  allReadBtn.onclick = async () => {
+    const unread = state.items.filter((r) => !r.read);
+    if (!unread.length) return;
+    allReadBtn.disabled = true;
+    try {
+      await Promise.all(unread.map((r) =>
+        api(`/api/summary/${r.slug}/read`, { method: "POST",
+          body: { run_id: r.run_id, read: true } })));
+      for (const r of unread) r.read = true;
+      toast(`${unread.length} marked read`);
+    } catch (err) { toast(err.message, 4000, { error: true }); }
+    syncToolbar(); renderList();
+  };
+  view.append(el("div", { class: "row mt toolbar", style: "gap:10px" }, chipRow, allReadBtn));
 
   const list = el("div", { class: "mt" });
   list.append(skeleton(), skeleton());
@@ -38,6 +56,7 @@ export async function render(view, query = {}) {
 
   function syncToolbar() {
     for (const [key, b] of filterChips) b.classList.toggle("active", key === state.filter);
+    allReadBtn.disabled = !state.items.some((r) => !r.read);
   }
 
   function visible() {
@@ -85,7 +104,7 @@ export async function render(view, query = {}) {
   async function load() {
     try { state.items = await api("/api/summary"); }
     catch (err) { list.replaceChildren(emptyState("✕", "Couldn't load summary", err.message)); return; }
-    renderList();
+    syncToolbar(); renderList();
   }
 
   syncToolbar();
