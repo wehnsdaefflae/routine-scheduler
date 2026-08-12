@@ -93,7 +93,8 @@ endpoints, the central Secrets store, GitHub, the library repo.
   secret) and the model catalog (per-model window, output `max_tokens` with an audit flag
   for unset/implausible values, ordered failover chains with provider cooldowns), the
   write-only Secrets store
-  every util reads, GitHub device flow, library/source remotes, graceful server restart.
+  every util reads, GitHub device flow, the source remote (the library repo has no
+  settings surface — the library-sync routine manages it), graceful server restart.
 - **Messages** — the system-maintenance index: every self-audit finding (`F7`) and decision
   (`D14`), and every report (`R3`) a run filed — addressed to the routine that owns the
   problem, or left for triage — with its status, purpose, origin and the

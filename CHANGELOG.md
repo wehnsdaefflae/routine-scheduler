@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.192.0] — 2026-08-13
+
+### Removed
+- **The library repository has no settings surface** (operator decision): the Settings
+  page's Library section, `GET/PUT /api/settings/libraries` and the provision flow are
+  gone — the library-sync routine manages the library repo exclusively. The "Code &
+  library" settings group becomes "Code" (the source repository only); `libraries_home`
+  / `libraries_remote` remain config.yaml keys read at boot.
+
 ## [0.191.0] — 2026-08-12
 
 ### Added

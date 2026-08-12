@@ -965,12 +965,12 @@ def test_settings_grouped_layout(ui, ui_page):
     # the four cognitive-model group eyebrows are present, in order
     groups = ui_page.locator(".set-group .kicker")
     expect(groups).to_have_count(4)
-    for i, label in enumerate(["Intelligence", "Connections", "Code & library", "This instance"]):
+    for i, label in enumerate(["Intelligence", "Connections", "Code", "This instance"]):
         expect(groups.nth(i)).to_have_text(label)
 
     # every section carries a plain reader-side description, and a group carries a why-blurb
-    # (9 since 0.165.0: the Library-sync card left — publishing the instance is a routine now)
-    expect(ui_page.locator(".set-desc")).to_have_count(9)
+    # (8 since 0.192.0: the library repo has no settings surface — library-sync owns it)
+    expect(ui_page.locator(".set-desc")).to_have_count(8)
     expect(ui_page.locator("p.set-desc").first).not_to_be_empty()
     expect(ui_page.locator(".set-groupblurb").first).to_contain_text("reasoning")
 

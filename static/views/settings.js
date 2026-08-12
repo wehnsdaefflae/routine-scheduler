@@ -1,5 +1,5 @@
 // Settings view - grouped by WHAT you're configuring, so the page teaches a cognitive model:
-// Intelligence (models) · Connections (accounts + machines) · Code & library (the repos) ·
+// Intelligence (models) · Connections (accounts + machines) · Code (the source repo) ·
 // This instance (secrets, server, notifications). Each section keeps its stable id="sec-<id>"
 // (deep links #/settings?section=<id> AND the side-TOC depend on it); every section BODY lives
 // in its own settings-*.js module (renderX(view, ...) appends its panel and returns the fill
@@ -12,7 +12,6 @@ import { el, toast } from "/static/util.js";
 import { renderConnections } from "/static/views/settings-connections.js";
 import { renderEndpoints } from "/static/views/settings-endpoints.js";
 import { renderGithub } from "/static/views/settings-github.js";
-import { renderLibraries } from "/static/views/settings-library.js";
 import { renderMachines } from "/static/views/settings-machines.js";
 import { renderNotifications } from "/static/views/settings-notify.js";
 import { renderSecrets } from "/static/views/settings-secrets.js";
@@ -52,15 +51,12 @@ export async function render(view, query = {}) {
           desc: "Remote hosts routines can reach over SSH for work that must run on another machine.",
           fill: (v) => renderMachines(v) },
       ] },
-    { label: "Code & library",
-      blurb: "The Git repositories that define the scheduler itself and its shared workflow library.",
+    { label: "Code",
+      blurb: "The Git repository that defines the scheduler itself. (The shared library repo has no settings surface — the library-sync routine manages it.)",
       sections: [
         { id: "source", nav: "Source", title: "Source repository",
           desc: "The scheduler's own code — the fork the self-audit routine commits and pushes its changes to.",
           fill: (v) => renderSource(v) },
-        { id: "libraries", nav: "Library", title: "Library repository",
-          desc: "The general rules, workflow patterns and permissions every routine draws on.",
-          fill: (v) => renderLibraries(v) },
       ] },
     { label: "This instance",
       blurb: "The secret store, this server process, and how the console reaches you.",
