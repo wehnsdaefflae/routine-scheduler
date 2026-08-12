@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.172.0] — 2026-08-12
+
+### Fixed
+- **Routines overview no longer renders vestigial member crons** (R313): a member of a
+  scheduled group shows `⛓ <group> — <the group's schedule>` in both the table's schedule
+  column and the card meta line (its own cron is suppressed by the daemon and would fire
+  never); the group header row carries the same sentence, `paused` when the group is
+  paused. `/api/groups` now ships a human `schedule_desc` per group.
+
 ## [0.171.0] — 2026-08-12
 
 ### Changed

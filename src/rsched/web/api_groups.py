@@ -99,7 +99,10 @@ def list_groups(request: Request) -> dict:
                                       "members": r.get("members", []), "log": r.get("log", [])}
                  for r in group_runs.in_flight(home)}
     # each group rides out with its schedule prefill (the editor speaks friendly specs)
-    recs = [{**g, "schedule_friendly": schedule.cron_to_friendly(g["cron"])}
+    # plus the human sentence, so list surfaces (R313: the routines overview) can show a
+    # member's REAL schedule — the group's — without a client-side cron parser
+    recs = [{**g, "schedule_friendly": schedule.cron_to_friendly(g["cron"]),
+             "schedule_desc": schedule.describe(g["cron"]) if g["cron"] else ""}
             for g in groups.list_groups(home)]
     return {"default_on_failure": groups.default_on_failure(home),
             "on_failure_vocab": list(groups.ON_FAILURE),

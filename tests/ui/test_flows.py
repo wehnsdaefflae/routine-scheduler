@@ -1351,6 +1351,29 @@ def test_dashboard_list_default_group_rows_and_inline_pause(ui, ui_page):
            .get_by_role("button", name="⏸ pause")).to_be_visible(timeout=10_000)
 
 
+def test_dashboard_group_managed_schedule_shown(ui, ui_page):
+    """R313: a member of a SCHEDULED group must not render its vestigial own cron — the
+    daemon suppresses it, so the row shows the group's schedule (⛓ name — sentence) and
+    the group header row carries the same sentence."""
+    from rsched import groups
+
+    # the member keeps a vestigial cron of its own — exactly the lying state R313 reported
+    cfg_path = ui.routines / "uir" / "routine.yaml"
+    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    cfg["cron"] = "0 11 * * *"
+    cfg_path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    groups.create(ui.routines, name="Sched", members=["uir"], on_failure="stop",
+                  cron="0 10 * * *", tz="Europe/Berlin")
+
+    ui_page.goto(f"{ui.url}/#/routines")
+    grow = ui_page.locator("tr.group-row", has_text="Sched")
+    expect(grow).to_contain_text("Every day at 10:00")     # header names the group cron
+    grow.locator("td").click()                             # expand the member row
+    cell = ui_page.locator("tr.group-member", has_text="Test uir").locator("td").nth(3)
+    expect(cell).to_contain_text("⛓ Sched — Every day at 10:00")
+    expect(cell).not_to_contain_text("11:00")              # the vestigial cron is gone
+
+
 def test_dashboard_table_sort_reverses_on_reclick(ui, ui_page):
     """F208: clicking a sortable column header sorts by it; re-clicking the ACTIVE column
     reverses the direction (was a no-op) — the header arrow shows ▴ asc / ▾ desc."""

@@ -106,7 +106,8 @@ export async function render(view) {
 
   let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();
   let groupsBySlug = new Map();   // slug -> [group names] (R107/F269 — group badges on the list)
-  let groupsOrdered = [];   // [{name, members:[slug…]}] in fire order (F271 — merged week rows)
+  let groupsOrdered = [];   // [{name, members, schedule_desc, cron, paused}] in fire order (F271)
+  let groupSchedBySlug = new Map();   // slug -> its scheduled group (cron suppressed, R313)
   let lastTagSig = null;   // F229: only rebuild the filter bar when the tag set changes
   const active = new Set(JSON.parse(storage.get(FILTER_KEY) || "[]"));
   const states = new Set();
@@ -224,7 +225,18 @@ export async function render(view) {
     // groups are discoverable from the Routines page, not only the separate /groups page.
     groupsBySlug = new Map();
     groupsOrdered = (groupData?.groups || [])
-      .map((g) => ({ name: g.name, members: g.members || [] }));
+      .map((g) => ({ name: g.name, members: g.members || [],
+                     schedule_desc: g.schedule_desc || "", cron: g.cron || "",
+                     paused: !!g.paused }));
+    // slug -> its SCHEDULED group (the first, matching the server's group_managed rule):
+    // that group's cron suppresses the member's own, so the member's real schedule is the
+    // group's — rendering the vestigial member cron would be a lie (R313)
+    groupSchedBySlug = new Map();
+    for (const g of groupsOrdered) {
+      for (const slug of g.members) {
+        if (g.cron && !groupSchedBySlug.has(slug)) groupSchedBySlug.set(slug, g);
+      }
+    }
     for (const g of groupData?.groups || []) {
       for (const slug of g.members || []) {
         if (!groupsBySlug.has(slug)) groupsBySlug.set(slug, []);
@@ -301,6 +313,15 @@ export async function render(view) {
     }, on ? "⏸ pause" : "▶ resume");
   }
 
+  // The schedule a routine will ACTUALLY fire on. A member of a scheduled group has its
+  // own cron suppressed by the daemon — showing that vestigial cron here read as a lie
+  // (R313), so group-managed rows show the group's schedule instead.
+  function schedText(c) {
+    const g = groupSchedBySlug.get(c.slug);
+    if (g) return `⛓ ${g.name} — ${g.paused ? "group paused" : (g.schedule_desc || "scheduled")}`;
+    return null;   // not group-managed → the caller renders the routine's own desc
+  }
+
   // Group membership as a chip row — each group a link to the Groups page, so groups are
   // discoverable straight from the routines list (R107/F269). null when in no group.
   function groupChips(slug) {
@@ -331,7 +352,8 @@ export async function render(view) {
         el("span", {}, "waiting on your answer"),
         el("a", { class: "btn small primary", href: "#/questions", style: "margin-left:auto" }, "decide")) : null,
       el("div", { class: "meta" },
-        el("span", {}, `⏱ ${c.schedule_desc || "Manual"}`),
+        el("span", schedText(c) ? { title: "group-managed — the group's schedule fires this routine; its own cron is suppressed" } : {},
+          `⏱ ${schedText(c) || c.schedule_desc || "Manual"}`),
         c.next_fire ? el("span", { title: "next scheduled fire" }, "next ", when(c.next_fire, { mode: "rel" })) : null,
         c.open_questions ? el("a", { href: "#/questions", class: "chip blocking",
           title: "open questions waiting for you" }, `${c.open_questions} open question${c.open_questions > 1 ? "s" : ""}`) : null,
@@ -394,7 +416,10 @@ export async function render(view) {
           : c.enabled ? (last ? chip(last.state, last.state) : chip("idle", "idle")) : chip("disabled", "disabled")),
         el("td", { class: "hb-cell" }, c.recent_runs?.length
           ? heartbeat(c.recent_runs) : el("span", { class: "faint" }, "—")),
-        el("td", { class: "muted small" }, c.schedule_desc || "manual"),
+        el("td", { class: "muted small" },
+          schedText(c)
+            ? el("span", { title: "group-managed — the group's schedule fires this routine; its own cron is suppressed" }, schedText(c))
+            : (c.schedule_desc || "manual")),
         el("td", { class: "muted small" }, c.next_fire ? when(c.next_fire, { mode: "rel" }) : "—"),
         el("td", {}, last ? el("a", { href: `#/run/${last.run_id}` }, when(last.ts)) : el("span", { class: "faint" }, "never")),
         el("td", { class: "num" }, last?.turns ? String(last.turns) : "—"),
@@ -432,7 +457,8 @@ export async function render(view) {
           el("span", { class: "tri" }, open ? "▾ " : "▸ "),
           `⛓ ${g.name}`,
           el("span", { class: "faint small", style: "margin-left:8px" },
-            `${members.length} routine${members.length === 1 ? "" : "s"} · fire order`))));
+            `${members.length} routine${members.length === 1 ? "" : "s"} · fire order`
+            + (g.cron ? ` · ${g.paused ? "paused" : g.schedule_desc}` : "")))));
       if (open) for (const m of members) rows.push(rowFor(m, "group-member"));
     }
     const grouped = new Set(groupsOrdered.flatMap((g) => g.members));

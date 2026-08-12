@@ -678,7 +678,9 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
     web RECORDS, daemon FIRES). The scheduler arms the chain on the group's cron — member 0 fires,
     the rest chain on completion — and while a routine belongs to a SCHEDULED group its OWN cron is
     SUPPRESSED from the fire table and boot catch-up (one fire path, no double-firing); its
-    Schedule dropdown renders a locked "group managed" state linking to the group, and clearing the
+    Schedule dropdown renders a locked "group managed" state linking to the group, the routines
+    overview shows the GROUP's schedule on the member's row instead of the suppressed cron
+    (R313 — `/api/groups` ships each group's `schedule_desc` for it), and clearing the
     group's schedule (or leaving the group) restores the member's own cron at the next rescan.
     A group fire due while its chain is still in flight is SKIPPED (the chain analog of
     `overrun_skipped`); there is no group catch-up. Manual "Run now" on a member is unaffected.
