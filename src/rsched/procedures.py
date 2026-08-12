@@ -1,31 +1,40 @@
-"""Per-routine PROCEDURES — the deterministic half of a routine (D88 phase 1).
+"""Per-routine PROCEDURES — the deterministic half of a routine (D88).
 
-A routine is a prose RECIPE the model interprets plus, where a responsibility is
-deterministic (mail/feed polling, calculations on updated data, termination signaling),
-PROCEDURE the Python interpreter runs. A procedure is ONE PEP 723 script
-`procedures/<name>.py` inside the routine's OWN dir — private to the routine, versioned
-by its repo's autocommit, authored by the run itself (`write_file` — an own-dir write
-needs no grounding) or by the user.
+A routine is ONE thing with TWO interpreters (operator symmetry rule 2026-08-12): the
+RECIPE is prose directing an LLM, a PROCEDURE is Python directing the interpreter — and
+everything in the routine's settings applies to BOTH, identically: filesystem roots,
+secret grants, OAuth connections, machine bindings, the util library, permissions and
+rules. A procedure is ONE PEP 723 script `procedures/<name>.py` inside the routine's own
+dir — private to the routine, versioned by its repo's autocommit, authored by the run
+itself (`write_file`) or by the user — executed in a persistent venv in the routine's
+workdir (`<routine>/.venv`, deps installed on first use, gitignored).
 
-Execution (operator-specified 2026-08-12): a procedure runs in a persistent **venv
-inside the routine's workdir** (`<routine>/.venv`, created on first use, the script's
-PEP 723 dependencies installed into it — gitignored, since autocommit is `git add -A`)
-with **the routine's own filesystem permissions**: the jail is exactly the run's fs
-roots (`sandbox.wrap_routine` — no library root, no `gu` on PATH), so the recipe's file
-actions and the procedure read and write the SAME files. NOT the util sandbox: a util
-sees the shared library and its ephemeral uv script env; a procedure sees the routine.
+The shared envelope, layer by layer:
+
+- FILESYSTEM: the jail is the run's own fs roots (`sandbox.wrap`, the same policy the
+  recipe's file actions honor) — recipe and procedure read and write the SAME files.
+- SECRETS / CONNECTIONS / MACHINES: the env carries every secret the routine is GRANTED
+  (four-state `secret:` rows + the run overlay), its bound OAuth connection tokens, its
+  bound machines, and the read-only RSCHED_API_TOKEN — the routine's standing settings,
+  exactly what the recipe's tool calls can reach. The header `secrets:` line remains the
+  ESCALATION hook: a declared, present, still-undecided secret files the same blocking
+  exposure ask a util call would (interact.gate_procedure_secrets).
+- UTILS: the shared library rides the jail read-only with `gu` on PATH — util access is
+  part of the routine's permission surface, so both interpreters have it. A util invoked
+  from a procedure runs inside the procedure's jail and env (it cannot widen either).
+- RULES: prose is interpreted by the LLM, so rules reach a procedure through its
+  rule-bound author — authoring or invoking a procedure never routes around a rule (the
+  `procedures` permission doc carries the clause).
+- ASKS: mid-run escalation (`ask_user`, blocking approvals) is inherently the LLM's
+  channel — a procedure gets the routine's STANDING grants; anything more is requested
+  recipe-side, exactly once, through the normal decision flow.
 
 The `procedure` action is GATED by the `procedure` capability (the `procedures`
-permission doc carries the conduct). Secrets stay declared-only behind the four-state
-`secret:<NAME>` grants, `NAME?` optionals withheld rather than prompted (F290). There is
-deliberately NO approval dial: a procedure's blast radius is the routine's own
-permissions, and the sandbox enforces those regardless of what the script says.
-
-The header contract is the util docstring standard minus the catalog lines: first line
-`<name> — <summary>`, optional `usage:`, `net: outbound|none` (undeclared = none → no
-TCP at exec time; the dependency-install phase is a build step and runs net-open, like
-the util prewarm), `secrets:` naming every credential env var read. There is no `calls:`
-graph: a step that needs a util's capability belongs in the recipe, not in a procedure.
+permission doc). There is deliberately NO approval dial: a procedure's blast radius is
+the routine's own permissions, and the sandbox enforces those regardless of the code.
+Header contract: first line `<name> — <summary>`, optional `usage:`, `net: outbound|none`
+(undeclared = none → no TCP at exec; the dependency install is a net-open build step,
+R40), `secrets:` for the escalation hook above.
 """
 
 from __future__ import annotations
@@ -132,7 +141,7 @@ def _ensure_venv_ignored(routine_dir: Path) -> None:
 
 
 def ensure_env(routine_dir: Path, name: str, *,
-               policy: sandbox.SandboxPolicy) -> str | None:
+               policy: sandbox.SandboxPolicy, libraries_home: Path) -> str | None:
     """Create `<routine>/.venv` if missing and install the script's PEP 723 dependencies
     into it (a fast no-op when already satisfied). Returns an error line, or None. The
     install is a BUILD step: it runs net-open inside the routine jail (the util prewarm's
@@ -148,7 +157,8 @@ def ensure_env(routine_dir: Path, name: str, *,
         steps.append(["uv", "pip", "install", "--quiet", "--python", str(py), *deps])
     for step in steps:
         try:
-            cmd = sandbox.wrap_routine(step, policy=policy, net=True)
+            cmd = sandbox.wrap(step, policy=policy, libraries_home=libraries_home,
+                               net=True)
             r = subprocess.run(cmd, capture_output=True, text=True,
                                timeout=_INSTALL_TIMEOUT_S, stdin=subprocess.DEVNULL,
                                cwd=str(routine_dir), check=False)
@@ -163,27 +173,32 @@ def ensure_env(routine_dir: Path, name: str, *,
 
 
 def run_procedure(routine_dir: Path, name: str, args: list[str], *,
-                  policy: sandbox.SandboxPolicy,
-                  timeout: int = PROC_TIMEOUT_S,
-                  extra_secrets: dict[str, str] | None = None,
-                  withhold_secrets: set[str] | None = None) -> tuple[int, str, str]:
-    """Controlled runner: the routine's own venv python on the script, scoped env
-    (declared secrets only, minus withheld optionals), the ROUTINE jail
-    (`sandbox.wrap_routine` — the run's fs roots, no library root), working directory =
-    the routine dir so relative paths resolve like read_file/write_file. Returns
-    (exit, out, err).
+                  policy: sandbox.SandboxPolicy, libraries_home: Path,
+                  env_secrets: dict[str, str] | None = None,
+                  timeout: int = PROC_TIMEOUT_S) -> tuple[int, str, str]:
+    """Controlled runner: the routine's own venv python on the script, the routine's
+    settings as the env (`env_secrets` — the caller composes granted store secrets +
+    connection tokens + machine bindings + the routine API token; every other store key
+    is scrubbed), the shared jail (`sandbox.wrap` — run fs roots + library RO), `gu` on
+    PATH, working directory = the routine dir so relative paths resolve like
+    read_file/write_file. Returns (exit, out, err).
     """
     if not exists(routine_dir, name):
         have = ", ".join(p["name"] for p in list_procedures(routine_dir)) or "(none yet)"
         return 2, "", f"no procedure {name!r} (available: {have})"
-    declared, net, _opt = needs(routine_dir, name)
-    if problem := ensure_env(routine_dir, name, policy=policy):
+    _declared, net, _opt = needs(routine_dir, name)
+    if problem := ensure_env(routine_dir, name, policy=policy,
+                             libraries_home=libraries_home):
         return 2, "", problem
-    env = utils_lib.scoped_env(declared, extra_secrets, withhold_secrets)
+    env_secrets = dict(env_secrets or {})
+    env = utils_lib.scoped_env(set(env_secrets), env_secrets)
+    env["PATH"] = f"{libraries_home}:{env.get('PATH', '')}"
+    env["GLOBAL_UTILS_HOME"] = str(libraries_home)
     try:
-        cmd = sandbox.wrap_routine(
+        cmd = sandbox.wrap(
             [str(venv_python(routine_dir)), str(script_path(routine_dir, name)),
-             *[str(a) for a in args]], policy=policy, net=net)
+             *[str(a) for a in args]], policy=policy, libraries_home=libraries_home,
+            net=net)
     except sandbox.SandboxRefusal as exc:
         return 2, "", str(exc)
     try:

@@ -302,11 +302,15 @@ def withheld_optional_secrets(ctx, name: str) -> list[str]:
     return withheld_optional(ctx, optional)
 
 
-def withheld_procedure_secrets(ctx, name: str) -> list[str]:
-    """`withheld_optional` over a PROCEDURE's own-header declarations (D88)."""
-    from .. import procedures
-    _needed, _net, optional = procedures.needs(ctx.routine.dir, name)
-    return withheld_optional(ctx, optional)
+def granted_store_secrets(ctx) -> dict[str, str]:
+    """Every store secret the routine is GRANTED (four-state rows + the run overlay) —
+    the procedure env's secret half (operator symmetry rule 2026-08-12): a procedure
+    carries the routine's standing settings, exactly what the recipe's tool calls can
+    reach, and never an undecided or denied name.
+    """
+    from ..secrets import load_secrets
+    return {k: v for k, v in load_secrets().items()
+            if secret_state(ctx, k) == "granted"}
 
 
 def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:

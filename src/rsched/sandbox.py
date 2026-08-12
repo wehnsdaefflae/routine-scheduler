@@ -150,26 +150,12 @@ def _ensure_write_roots(policy: SandboxPolicy) -> None:
 
 def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
          net: bool) -> list[str]:
-    """A UTIL's jail: the run policy plus the shared library as a read root (a util calls
-    siblings via `gu`, so the whole library must be visible). See _wrap for the contract.
-    """
-    return _wrap(cmd, policy=policy, net=net, extra_ro=(str(libraries_home),))
-
-
-def wrap_routine(cmd: list[str], *, policy: SandboxPolicy, net: bool) -> list[str]:
-    """A run-owned subprocess's jail (per-routine procedures, D88): EXACTLY the run's own
-    filesystem permissions — the routine dir + its granted fs roots + the exec toolchain —
-    with NO library root. Recipe and procedure see the same files, nothing more.
-    """
-    return _wrap(cmd, policy=policy, net=net, extra_ro=())
-
-
-def _wrap(cmd: list[str], *, policy: SandboxPolicy, net: bool,
-          extra_ro: tuple[str, ...]) -> list[str]:
     """The command that actually runs: `cmd` wrapped in the landlock.py child wrapper when
     the sandbox engages, `cmd` itself when the mode says (or allows) running bare. Raises
     SandboxRefusal when mode=strict and the jail can't close as specified — the caller
-    turns that into the call's error observation.
+    turns that into the call's error observation. ONE jail composition for both callable
+    kinds (operator symmetry rule 2026-08-12): utils AND per-routine procedures get the
+    run's fs roots + the shared library read-only + the exec toolchain.
     """
     _ensure_write_roots(policy)   # mode-independent: the grant implies the directory
     if policy.mode == "off":
@@ -192,7 +178,7 @@ def _wrap(cmd: list[str], *, policy: SandboxPolicy, net: bool,
         _warn_once("net", f"{msg} — sandbox mode 'permissive': filesystem jail only")
         net = True
     ro, rw = _toolchain()
-    ro += extra_ro
+    ro.append(str(libraries_home))
     ro += [str(p) for p in policy.read_roots]
     rw += [str(p) for p in policy.write_roots]
     spec = {"ro": sorted(set(ro)), "rw": sorted(set(rw)), "net": bool(net)}
