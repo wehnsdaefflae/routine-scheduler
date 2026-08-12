@@ -5,6 +5,11 @@
 // the dropdown locks on a selected, disabled "Group managed" state linking to the group
 // (the routine's own cron is suppressed by the daemon; value() returns the stored spec
 // unchanged so a page save never clobbers it).
+//
+// Also home to the client half of the friendly vocabulary: cronToFriendly mirrors the
+// server's rsched.schedule.cron_to_friendly (same shapes, same custom fallback), and
+// specAtInstant re-times a spec to a dropped instant — what the week strip's drag-to-
+// reschedule sends back through the schedule.friendly PATCH both routines and groups take.
 
 import { el } from "/static/util.js";
 
@@ -78,4 +83,45 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
       return catchupSel ? catchupSel.value : "skip";
     },
   };
+}
+
+// Cron string → friendly spec, mirroring rsched.schedule.cron_to_friendly: the four simple
+// cadences round-trip, anything else comes back {frequency: "custom", cron} (read-only in
+// every editor, and not drag-reschedulable).
+export function cronToFriendly(cron) {
+  const c = (cron || "").trim();
+  if (!c) return { frequency: "manual" };
+  const p = c.split(/\s+/);
+  if (p.length !== 5) return { frequency: "custom", cron: c };
+  const [mn, hr, dom, mon, dow] = p;
+  const d = (v) => /^\d+$/.test(v);
+  if (mon === "*" && dom === "*" && dow === "*" && hr === "*" && d(mn))
+    return { frequency: "hourly", minute: +mn };
+  if (mon === "*" && d(mn) && d(hr)) {
+    const time = `${String(+hr).padStart(2, "0")}:${String(+mn).padStart(2, "0")}`;
+    if (dom === "*" && dow === "*") return { frequency: "daily", time };
+    if (dom === "*" && d(dow)) return { frequency: "weekly", time, weekday: +dow };
+    if (dow === "*" && d(dom)) return { frequency: "monthly", time, day: +dom };
+  }
+  return { frequency: "custom", cron: c };
+}
+
+// Re-time a friendly spec to fire at `date`, keeping its cadence: daily keeps daily but takes
+// the drop's time-of-day, weekly also takes the drop's weekday, monthly its day-of-month,
+// hourly its minute. Times are read in the SERVER's timezone (`tz`) — that is the zone the
+// cron is stored in — falling back to the browser's when unknown. Returns null for manual and
+// custom specs: those have no draggable shape.
+export function specAtInstant(spec, date, tz = "") {
+  const freq = spec?.frequency;
+  if (!freq || freq === "manual" || freq === "custom") return null;
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: tz || undefined, hourCycle: "h23",
+    hour: "2-digit", minute: "2-digit", weekday: "short", day: "numeric" }).formatToParts(date);
+  const get = (t) => parts.find((x) => x.type === t)?.value || "";
+  const time = `${get("hour")}:${get("minute")}`;
+  if (freq === "hourly") return { frequency: "hourly", minute: +get("minute") };
+  if (freq === "daily") return { frequency: "daily", time };
+  if (freq === "weekly")
+    return { frequency: "weekly", time,
+             weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(get("weekday")) };
+  return { frequency: "monthly", time, day: +get("day") };
 }

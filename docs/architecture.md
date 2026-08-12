@@ -730,6 +730,16 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
     group's schedule (or leaving the group) restores the member's own cron at the next rescan.
     A group fire due while its chain is still in flight is SKIPPED (the chain analog of
     `overrun_skipped`); there is no group catch-up. Manual "Run now" on a member is unaffected.
+    The dashboard's week strip renders the same rule: `/api/schedule/week` withholds a
+    suppressed member's cron fires (drawing them would show runs the daemon never fires) and
+    ships the group's own fire times under `groups` instead; the strip draws a scheduled group
+    as ONE labelled lane whose members chain end-to-end at each group fire (member order, split
+    members again as the outbound pass), each segment sized by that member's average runtime.
+    The strip's bars also DRAG (weekgrid-drag.js): onto a sibling bar to reorder the group,
+    onto another group's lane to join it, onto the remove strip to leave it, and along their
+    own lane to re-time the schedule — the group's cron on a scheduled-group lane, the
+    routine's own otherwise, both through the same `schedule.friendly` PATCH the editors use
+    (custom crons have no draggable shape and are refused with a pointer to their editor).
   - **The shared group store (D67)**: every run of a grouped routine gets
     `.control/group-stores/<group-id>/` injected into its effective fs read+write roots at boot
     (`RunContext.group_store_roots`, created lazily engine-side — run data, not config; children

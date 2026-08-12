@@ -57,17 +57,34 @@ td.hb-cell { min-width: 155px; }
   color: var(--faint); user-select: none;
 }
 .weekpanel summary:hover { color: var(--muted); }
-.weekgrid { margin-top: 8px; }
+.weekgrid { margin-top: 8px; position: relative; }
 .weekgrid svg.wg { width: 100%; height: auto; display: block; }
 .weekgrid .wg-grid { stroke: var(--line); }
 .weekgrid .wg-today { fill: rgba(255, 180, 84, 0.05); }
 .weekgrid .wg-day { fill: var(--faint); font-size: 10px; letter-spacing: 0.12em; }
 .weekgrid .wg-rowbg { fill: transparent; }
 .weekgrid .wg-row:hover .wg-rowbg { fill: rgba(133, 152, 169, 0.07); }
-.weekgrid .wg-bar { transition: opacity 0.15s; }
+.weekgrid .wg-bar { transition: opacity 0.15s; touch-action: none; }
 .weekgrid .wg-bar.past { opacity: 0.4; }
 .weekgrid .wg-row:hover .wg-bar.past { opacity: 0.7; }
 .weekgrid .wg-now { stroke: var(--live); stroke-width: 1.2; opacity: 0.8; }
+/* lane name at the row's left edge: haloed so it stays legible over bars, display-only */
+.weekgrid .wg-lane-label { fill: var(--muted); font-size: 10px; pointer-events: none;
+  paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.weekgrid .wg-lane-label.group { fill: #b48ce8; }
+/* drag-and-drop (weekgrid-drag.js) */
+.weekgrid.wg-dragging { cursor: grabbing; user-select: none; }
+.weekgrid .wg-ghost { opacity: 0.55; pointer-events: none; stroke: var(--text); stroke-width: 0.6; }
+.weekgrid .wg-rowbg.wg-drop-ok { fill: rgba(180, 140, 232, 0.12); }
+.weekgrid .wg-dragtip { position: absolute; z-index: 5; pointer-events: none;
+  background: var(--raised); border: 1px solid var(--line); border-radius: 6px;
+  padding: 3px 8px; font-size: 11px; color: var(--text); white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
+.weekgrid .wg-dropzone { position: absolute; left: 0; right: 0; z-index: 4;
+  display: flex; align-items: center; justify-content: center; font-size: 11px;
+  color: var(--muted); background: color-mix(in srgb, var(--raised) 88%, transparent);
+  border: 1px dashed var(--line); border-radius: 6px; }
+.weekgrid .wg-dropzone.armed { color: var(--err); border-color: var(--err); }
 /* routine legend below the strip — identity lives here so the timeline keeps the full width */
 .weekgrid .wg-legend { display: flex; flex-wrap: wrap; gap: 5px 16px; margin-top: 10px;
   padding-top: 9px; border-top: 1px solid var(--line); }

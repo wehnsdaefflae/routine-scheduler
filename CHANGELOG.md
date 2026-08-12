@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.185.0] — 2026-08-12
+
+### Fixed
+- **Week strip: scheduled groups render their real fire path** (D71/R313). `/api/schedule/week`
+  no longer enumerates a scheduled-group member's own (daemon-suppressed) cron — those bars
+  showed runs that would never fire — and instead ships each unpaused scheduled group's own
+  cron fires under a new `groups` key. The strip draws such a group as ONE lane whose members
+  chain end-to-end at every group fire (member order, split members again as the outbound
+  pass, F292), each segment sized by the member's average runtime; estimated starts are
+  marked `~` in the tooltip. A suppressed member's armed one-shots stay visible; the members'
+  legend rows show the GROUP's schedule instead of the vestigial member cron.
+
+### Added
+- **Week-strip lane labels.** Every lane names itself at the row's left edge (haloed over the
+  timeline — no label column): the group name on group lanes, the routine name otherwise.
+- **Week-strip drag-and-drop** (`weekgrid-drag.js`). Bars drag: onto a sibling bar to reorder
+  the group (before/after by bar half), onto another group's lane to join it (leaving the
+  current group, split flags preserved), onto the remove strip below to leave the group, and
+  along their own lane to reschedule — the GROUP's cron on a scheduled-group lane, the
+  routine's own cron otherwise — snapped to 5 minutes and applied through the same
+  `schedule.friendly` PATCH the editors use (custom crons are refused with a pointer to their
+  editor). A live tip narrates the pending drop; Escape cancels; a drag never triggers the
+  bar's navigation click, and live refreshes hold while a gesture is in flight.
+
 ## [0.184.1] — 2026-08-12
 
 ### Fixed

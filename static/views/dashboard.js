@@ -7,6 +7,7 @@ import { api } from "/static/api.js";
 import { activityFeed } from "/static/components/activityfeed.js";
 import { groupControls, groupProgress, groupsToolbar, openGroupEditor } from "/static/components/groupmanage.js";
 import { heartbeat } from "/static/components/heartbeat.js";
+import { cronToFriendly, specAtInstant } from "/static/components/schedule.js";
 import { weekGrid } from "/static/components/weekgrid.js";
 import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, fmtCost, fmtDur, fmtNum, skeleton, storage, tagChip, toast, when } from "/static/util.js";
@@ -83,7 +84,49 @@ export async function render(view) {
         el("h1", {}, "Routines")),
       pauseBtn));
   const banner = el("div", {});
-  const week = weekGrid();
+  // Week-strip drag ops (weekgrid-drag.js): every drop PATCHes config, then reloads so the
+  // strip redraws from truth. Group-membership PATCHes always carry the FULL member records —
+  // split flags (F292) survive a reorder. Reschedules ride the same schedule.friendly PATCH
+  // the editors use; a custom cron has no draggable shape and is refused with a pointer to
+  // its editor. `cards`/`serverTz` bind lazily — drops only happen after load() filled them.
+  const fmtFireAt = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  const nameOf = (slug) => cards.find((c) => c.slug === slug)?.name || slug;
+  const memberRecords = (g, order) => order.map((s) => ({ slug: s, split: g.splitSet.has(s) }));
+  async function dropOp(fn, okMsg) {
+    try { await fn(); toast(okMsg); } catch (err) { toast(err.message, 4000, { error: true }); }
+    await load();
+  }
+  const dragHandlers = {
+    reorder: (g, slug, target, after) => {
+      const order = g.members.filter((s) => s !== slug);
+      order.splice(order.indexOf(target) + (after ? 1 : 0), 0, slug);
+      return dropOp(() => api(`/api/groups/${g.id}`, { method: "PATCH",
+        body: { members: memberRecords(g, order) } }),
+        `${nameOf(slug)} → position ${order.indexOf(slug) + 1} in ${g.name}`);
+    },
+    join: (g, slug, from) => dropOp(async () => {
+      if (from) await api(`/api/groups/${from.id}`, { method: "PATCH",
+        body: { members: memberRecords(from, from.members.filter((s) => s !== slug)) } });
+      await api(`/api/groups/${g.id}`, { method: "PATCH",
+        body: { members: [...memberRecords(g, g.members), { slug, split: false }] } });
+    }, `${nameOf(slug)} joined ${g.name}`),
+    leave: (g, slug) => dropOp(() => api(`/api/groups/${g.id}`, { method: "PATCH",
+      body: { members: memberRecords(g, g.members.filter((s) => s !== slug)) } }),
+      `${nameOf(slug)} left ${g.name}`),
+    reschedule: (slug, when) => {
+      const spec = specAtInstant(cronToFriendly(cards.find((c) => c.slug === slug)?.cron), when, serverTz);
+      if (!spec) { toast("custom schedule — edit it on the routine page", 4000, { error: true }); return; }
+      return dropOp(() => api(`/api/routines/${slug}`, { method: "PATCH",
+        body: { schedule: { friendly: spec } } }), `${nameOf(slug)} → ${fmtFireAt.format(when)}`);
+    },
+    rescheduleGroup: (g, when) => {
+      const spec = specAtInstant(cronToFriendly(g.cron), when, serverTz);
+      if (!spec) { toast("custom group schedule — edit it in the group editor", 4000, { error: true }); return; }
+      return dropOp(() => api(`/api/groups/${g.id}`, { method: "PATCH",
+        body: { schedule: { friendly: spec } } }), `group ${g.name} → ${fmtFireAt.format(when)}`);
+    },
+  };
+  const week = weekGrid(dragHandlers);
   const weekPanel = el("details", { class: "panel weekpanel",
     ...(storage.get(WEEK_KEY) !== "closed" ? { open: true } : {}) },
     el("summary", {}, "this week"), week.node);
@@ -111,6 +154,7 @@ export async function render(view) {
   body.append(skeleton(), skeleton(), skeleton());
 
   let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();
+  let serverTz = "";   // the zone crons are stored in — drag-reschedules re-time specs in it
   let groupData = null;   // the raw /api/groups payload — the group-management surface's input
   let groupsBySlug = new Map();   // slug -> [group records] (R107/F269 — group badges on the list)
   let groupsOrdered = [];   // [{id, name, members(slugs), splitSet, …}] in fire order (F271)
@@ -229,17 +273,22 @@ export async function render(view) {
       return;
     }
     cards = routines;
+    serverTz = groupData?.server_tz || "";
     // slug -> [group records]: each routine card/row shows which group(s) it belongs to —
     // the chips open the group editor (D80: this page IS the group-management surface).
     groupsBySlug = new Map();
     // members are RECORDS {slug, split} in the store (F292); the display list keeps plain
     // slugs (what the week grid + rows consume) plus the split set for the ⇄ badges.
+    // `fires` are the GROUP's cron fire times from the week payload (D71) — a scheduled
+    // group's members carry no fires of their own, the chain is drawn from these.
+    const groupFires = new Map((sched?.groups || [])
+      .map((g) => [g.id, g.fires.map((t) => +new Date(t))]));
     groupsOrdered = (groupData?.groups || [])
       .map((g) => ({ id: g.id, name: g.name,
                      members: (g.members || []).map((m) => m.slug),
                      splitSet: new Set((g.members || []).filter((m) => m.split).map((m) => m.slug)),
                      schedule_desc: g.schedule_desc || "", cron: g.cron || "",
-                     paused: !!g.paused }));
+                     paused: !!g.paused, fires: groupFires.get(g.id) || [] }));
     // slug -> its SCHEDULED group (the first, matching the server's group_managed rule):
     // that group's cron suppresses the member's own, so the member's real schedule is the
     // group's — rendering the vestigial member cron would be a lie (R313)

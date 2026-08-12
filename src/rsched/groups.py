@@ -145,8 +145,9 @@ def _check_cron(cron: str) -> str:
 
 def scheduled_member_slugs(routines_home: Path) -> set[str]:
     """Every routine slug whose OWN cron is suppressed because it belongs to a group WITH a
-    schedule (D71) — the daemon's cron-fire loop and boot catch-up skip these, and the
-    routine page renders their Schedule dropdown as "group managed".
+    schedule (D71) — the daemon's cron-fire loop and boot catch-up skip these, the week
+    endpoint (api_schedule) withholds their fires, and the routine page renders their
+    Schedule dropdown as "group managed".
     """
     return {m for g in list_groups(routines_home) if g["cron"] for m in member_slugs(g)}
 
