@@ -437,14 +437,17 @@ def remove_util_file(home: Path, name: str) -> None:
     shutil.rmtree(aside, ignore_errors=True)
 
 
-def util_needs(home: Path, name: str) -> tuple[set[str], bool]:
-    """(declared secret env vars, net-outbound?) for one util, resolved TRANSITIVELY across
-    its docstring `calls:` siblings — the whole call tree runs inside ONE jail and ONE env,
-    so a caller inherits what its callees declared (gmail-body-dump calls gmail → gets the
-    GMAIL_* secrets; anything calling a net: outbound sibling needs the network open too).
-    Undeclared = not granted: an unknown net line (or none at all) contributes nothing.
+def util_needs(home: Path, name: str) -> tuple[set[str], bool, set[str]]:
+    """(declared secret env vars, net-outbound?, the OPTIONAL subset) for one util, resolved
+    TRANSITIVELY across its docstring `calls:` siblings — the whole call tree runs inside ONE
+    jail and ONE env, so a caller inherits what its callees declared (gmail-body-dump calls
+    gmail → gets the GMAIL_* secrets; anything calling a net: outbound sibling needs the
+    network open too). Undeclared = not granted: an unknown net line (or none at all)
+    contributes nothing. A name is optional only if EVERY declarer marks it `?` — one
+    required declaration anywhere in the tree makes it required.
     """
     secrets: set[str] = set()
+    required: set[str] = set()
     net = False
     seen: set[str] = set()
     stack = [name]
@@ -457,13 +460,17 @@ def util_needs(home: Path, name: str) -> tuple[set[str], bool]:
         if src is None:
             continue
         header = parse_header(src)
-        secrets.update(s.upper() for s in header["secrets"])
+        opt = {s.upper() for s in header["optional_secrets"]}
+        declared = {s.upper() for s in header["secrets"]}
+        secrets.update(declared)
+        required.update(declared - opt)
         net = net or header["net"] == "outbound"
         stack += header["calls"]
-    return secrets, net
+    return secrets, net, secrets - required
 
 
-def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = None) -> dict:
+def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = None,
+               withhold: set[str] | None = None) -> dict:
     """A util subprocess's environment: the central secrets store injects ONLY the vars the
     util (or a `calls:` sibling) declares; every other store key is scrubbed even when the
     daemon's own environment carries it — an undeclared secret must not reach the child by
@@ -472,12 +479,17 @@ def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = Non
     `extra_secrets` are non-store secrets the engine resolves per run — today a routine's OAuth
     connection access tokens (<PROVIDER>_ACCESS_TOKEN). They obey the SAME rule: injected only if
     the util declares the var, scrubbed otherwise — the declared-only invariant covers them too.
+
+    `withhold` names DECLARED vars to scrub anyway — the engine passes a run's not-granted
+    OPTIONAL secrets (F290) so a public call runs without prompting; grant-free callers
+    (CLI, selftest, notify, settings) pass nothing and inject every declared var as before.
     """
     from .secrets import load_secrets
-    declared, _ = util_needs(home, name)
+    declared, _, _ = util_needs(home, name)
+    inject = declared - {w.upper() for w in (withhold or set())}
     env = {**os.environ}
     for key, value in {**load_secrets(), **(extra_secrets or {})}.items():
-        if key.upper() in declared:
+        if key.upper() in inject:
             env[key] = value
         else:
             env.pop(key, None)
@@ -508,6 +520,7 @@ def _prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path)
 def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
              policy: sandbox.SandboxPolicy,
              extra_secrets: dict[str, str] | None = None,
+             withhold_secrets: set[str] | None = None,
              cwd: Path | None = None) -> tuple[int, str, str]:
     """Controlled runner: only a named util from THIS library, uv-run, scoped env (declared
     secrets only, plus any `extra_secrets` the engine resolved for this run — same declared-only
@@ -524,12 +537,12 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
         return 2, "", f"no util named {name!r} (available: {[u['name'] for u in list_utils(home)]})"
     if not shutil.which("uv"):
         return 2, "", "uv is required to run utils but is not on PATH"
-    env = _child_env(home, name, extra_secrets)
+    env = _child_env(home, name, extra_secrets, withhold_secrets)
     env["PATH"] = f"{home}:{env.get('PATH', '')}"
     # Point the `gu` dispatcher (on PATH, for sibling calls) at THIS library, so a util that
     # shells out to `gu <sibling>` always resolves siblings here.
     env["GLOBAL_UTILS_HOME"] = str(home)
-    _, net = util_needs(home, name)
+    _, net, _ = util_needs(home, name)
     script = str(util_dir(home, name) / "main.py")
     # Build-time dependency install is a SEPARATE phase from the util's own execution: a
     # `net: none` util still needs PyPI to fetch its (non-cached) PEP 723 deps the first
@@ -597,7 +610,7 @@ def selftest(home: Path, name: str, *, timeout: int = 120,
     # timeout on the toolchain and fail a correct util. Prewarm here (same best-effort
     # jail as the run path) so the timed window below covers the selftest, never the
     # install.
-    _, net = util_needs(home, name)
+    _, net, _ = util_needs(home, name)
     if net:
         _prewarm_script_deps(str(util_dir(home, name) / "main.py"), policy, home)
     code, out, err = run_util(home, name, ["--selftest"], timeout=timeout, policy=policy)

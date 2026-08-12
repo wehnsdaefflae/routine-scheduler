@@ -284,7 +284,10 @@ of four states (a once-grant passes through *allowed now* and back out):
   through the permission cascade (allow-forever activates a covering conduct doc and
   runs the same raise-then-floor the permissions editor uses), a connection/machine
   binding, an fs root. `secret:` is the one class with no native switch — its
-  allow-forever is a `grants:` true row.
+  allow-forever is a `grants:` true row. Only a REQUIRED secret declaration triggers the
+  engine's own blocking request; an OPTIONAL one (`NAME?` in the util header, D51/F290)
+  is withheld from the call instead of prompting — the run requests it explicitly when a
+  call really needs it.
 - **denied forever** — a `grants: {<entity-id>: false}` tombstone. The run stops asking:
   denials switch to "the user has PERMANENTLY declined … do not request it again", the
   request itself is corrected in-cycle, and the catalog badges a tombstoned reserved

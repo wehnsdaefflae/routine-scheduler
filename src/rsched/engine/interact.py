@@ -268,6 +268,35 @@ def recreate_denial(loop, action: dict) -> list[str]:
             f"summary."]
 
 
+def secret_state(ctx, secret: str) -> str:
+    """One secret's four-state grant standing for this run: granted | denied | undecided.
+    `grants:` rows are the forever states, the run overlay (granted_now/denied_now) the
+    once states.
+    """
+    eid = f"secret:{secret}"
+    grants = dict(ctx.routine.grants or {})
+    if eid in ctx.granted_now:
+        return "granted"
+    if eid in ctx.denied_now or grants.get(eid) is False:
+        return "denied"
+    return "granted" if grants.get(eid) is True else "undecided"
+
+
+def withheld_optional_secrets(ctx, name: str) -> list[str]:
+    """The OPTIONAL (`?`-declared, F290) secrets present in the store that this run may NOT
+    see — not granted to the routine. They never block a call or file an ask: the executor
+    withholds them from the child env and the observation says so, so a public call runs
+    prompt-free and an auth-needing one learns to request exposure explicitly.
+    """
+    home = ctx.server.libraries_home
+    if not utils_lib.exists(home, name):
+        return []
+    _needed, _net, optional = utils_lib.util_needs(home, name)
+    from ..secrets import load_secrets
+    return sorted(s for s in optional & set(load_secrets())
+                  if secret_state(ctx, s) != "granted")
+
+
 def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
     """D39: per-routine secret exposure, decided at CALL time through the FOUR-STATE grant
     model. A util call whose transitive `secrets:` declarations name secrets PRESENT in
@@ -276,26 +305,26 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
     name files ONE blocking access request covering every undecided secret (the D38 hold
     semantics apply; the web persists a forever-decision, an allow-now covers this run).
     Returns None to let the call proceed, or the refusing/pending observation.
+
+    OPTIONAL secrets (`?`-declared, D51/F290) never reach this gate's ask or refusal: an
+    optional secret the routine may not see is silently WITHHELD from the child env
+    instead (withheld_optional_secrets), so a call that does not need it — a public
+    page fetch — runs without prompting anyone.
     """
     ctx = loop.ctx
     name = str(action.get("name") or "")
     home = ctx.server.libraries_home
     if name in ("list", "show") or not utils_lib.exists(home, name):
         return None                     # discovery / missing-util paths expose no secrets
-    needed, _net = utils_lib.util_needs(home, name)
+    needed, _net, optional = utils_lib.util_needs(home, name)
     from ..secrets import load_secrets
-    present = sorted(needed & set(load_secrets())) if needed else []
+    required = needed - optional
+    present = sorted(required & set(load_secrets())) if required else []
     if not present:
         return None   # nothing exposable — a declared-but-unset secret fails visibly inside
-    grants = dict(ctx.routine.grants or {})
 
     def _state(secret: str) -> str:
-        eid = f"secret:{secret}"
-        if eid in ctx.granted_now:
-            return "granted"
-        if eid in ctx.denied_now or grants.get(eid) is False:
-            return "denied"
-        return "granted" if grants.get(eid) is True else "undecided"
+        return secret_state(ctx, secret)
 
     denied = [s for s in present if _state(s) == "denied"]
     if denied:

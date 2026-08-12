@@ -85,6 +85,18 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
             body += "\n[full output] " + outputs.pointer_line(full)
         if obs.get("usage"):
             body += f"\n[usage] {obs['usage']}"
+        if wo := obs.get("withheld_optional"):
+            # F290: the call RAN, but optional secrets it declares were not injected.
+            # Undecided names are requestable; denied ones stay a count (R17).
+            bits = []
+            if wo.get("undecided"):
+                bits.append(f"{', '.join(wo['undecided'])} (not yet granted — if this call "
+                            "actually needed it, request exposure via ask_user with "
+                            f"request 'secret:{wo['undecided'][0]}')")
+            if wo.get("denied"):
+                bits.append(f"{wo['denied']} declined by the user")
+            body += ("\n[note] optional secret(s) withheld from this call: "
+                     + "; ".join(bits))
         if obs.get("hint"):
             body += f"\n[hint] {obs['hint']}"
         return f"{head}:\n{body}"

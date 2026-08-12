@@ -182,7 +182,7 @@ command results only on the NEXT prose reply, replayed like any other turn.
 Every assistant message is the raw action JSON. Every action gets exactly one user message
 back — `format_observation(obs)`, always starting `OBSERVATION (<kind>…)`:
 
-- `OBSERVATION (util websearch, exit 0):\n<stdout>` — on failure plus `[stderr]`, `[usage]`, and a `[hint]` that teaches the call shape and the grant-aware repair route
+- `OBSERVATION (util websearch, exit 0):\n<stdout>` — on failure plus `[stderr]`, `[usage]`, and a `[hint]` that teaches the call shape and the grant-aware repair route. When the util declares OPTIONAL secrets (`NAME?`, D51/F290) the routine may not see, the call still runs and the observation appends `[note] optional secret(s) withheld from this call: <undecided names, with the ask_user request route> / <N> declined by the user` — required secrets keep the blocking exposure ask, optional ones never prompt
 - `OBSERVATION (read_file state/hits.json, lines 1-200 of 412):\n<content>`
 - `OBSERVATION (read_file, 3 files):\n--- state/a.md (lines 1-40 of 40) ---\n<content>\n\n--- state/b.md …` — a `paths` batch: one section per file, failures inline (`--- x FAILED: …`)
 - `OBSERVATION (view_image — image(s) attached below for you to see):\n--- attachments/shot.png (image/png) — shown to you below; look at it now.` — when the run's model is multimodal the file rides the message as a `media` block; otherwise it is `described by the vision util` and the text comes back inline

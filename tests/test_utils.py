@@ -361,14 +361,20 @@ def test_util_needs_transitive_closure(tmp_path):
     _write_header_util(tmp_path, "middle", calls="leaf")
     _write_header_util(tmp_path, "top", calls="middle", secrets="TOP_KEY")
     _write_header_util(tmp_path, "loner")
-    secrets, net = utils_lib.util_needs(tmp_path, "top")
-    assert secrets == {"TOP_KEY", "LEAF_TOKEN"} and net is True
-    secrets, net = utils_lib.util_needs(tmp_path, "loner")
+    secrets, net, optional = utils_lib.util_needs(tmp_path, "top")
+    assert secrets == {"TOP_KEY", "LEAF_TOKEN"} and net is True and optional == set()
+    secrets, net, optional = utils_lib.util_needs(tmp_path, "loner")
     assert secrets == set() and net is False
     # cycles terminate; a missing callee contributes nothing
     _write_header_util(tmp_path, "a", calls="b")
     _write_header_util(tmp_path, "b", calls="a, ghost")
-    assert utils_lib.util_needs(tmp_path, "a") == (set(), False)
+    assert utils_lib.util_needs(tmp_path, "a") == (set(), False, set())
+    # `?`-marked names resolve as OPTIONAL across the tree — unless ANY declarer
+    # requires them (one required declaration wins, F290)
+    _write_header_util(tmp_path, "opt-leaf", secrets="SHARED?, ONLY_OPT?")
+    _write_header_util(tmp_path, "opt-top", calls="opt-leaf", secrets="SHARED")
+    secrets, _, optional = utils_lib.util_needs(tmp_path, "opt-top")
+    assert secrets == {"SHARED", "ONLY_OPT"} and optional == {"ONLY_OPT"}
 
 
 def test_child_env_scopes_secrets(tmp_path, monkeypatch):
@@ -402,6 +408,12 @@ def test_optional_secret_injected_when_present_absent_otherwise(tmp_path, monkey
     monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {"REQ_KEY": "r-2"})
     env = utils_lib._child_env(tmp_path, "optu")
     assert env["REQ_KEY"] == "r-2" and "OPT_KEY" not in env
+    # F290: a withheld declared secret is scrubbed even when the store has it — the
+    # engine's not-granted OPTIONAL secrets ride this; grant-free callers pass nothing
+    monkeypatch.setattr("rsched.secrets.load_secrets",
+                        lambda: {"REQ_KEY": "r-3", "OPT_KEY": "o-3"})
+    env = utils_lib._child_env(tmp_path, "optu", withhold={"OPT_KEY"})
+    assert env["REQ_KEY"] == "r-3" and "OPT_KEY" not in env
 
 
 def test_was_deleted_reads_git_history(tmp_path):

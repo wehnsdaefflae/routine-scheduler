@@ -483,7 +483,7 @@ def test_web_decision_mid_run_bridges_into_the_live_overlay(make_routine, script
                         **_kw: (policies.append(policy) or (0, "ran", "")))
     monkeypatch.setattr(executor_mod.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(executor_mod.utils_lib, "util_needs",
-                        lambda home, name: (set(), False))
+                        lambda home, name: (set(), False, set()))
     d = make_routine(slug="livegrant")
     qid = f"q-{TS}-2"
     scripted([

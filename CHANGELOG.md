@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.176.0] — 2026-08-12
+
+### Fixed
+- **Optional secrets no longer prompt on every call** (F290 engine half + R314, the
+  "very old bug"): a `?`-declared secret (D51 — page-fetch's `WEB_AUTH_SOURCES?` backs
+  its rarely-used Basic auth) never files the blocking exposure ask and never refuses
+  the call. Not granted → the engine WITHHOLDS it from the child env; the observation
+  appends a `[note]` naming withheld undecided secrets (with the explicit `ask_user`
+  request route) and counting declined ones (R17). Required secrets keep the full
+  four-state flow. A public page fetch now runs prompt-free. `util_needs` returns the
+  optional subset; a name is optional only when every declarer in the `calls:` tree
+  marks it so.
+
 ## [0.175.0] — 2026-08-12
 
 ### Added

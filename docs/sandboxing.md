@@ -78,9 +78,14 @@ per-run secrets through this SAME gate — a routine's OAuth connection tokens
 `RSCHED_MACHINE_KEYS`) — each reaching a util only if the util declares the var. This layer
 needs no kernel support and applies even with `sandbox: off`. WHICH store secrets a
 routine's calls may receive at all is the user's per-routine decision (the four-state
-grant rows `secret:<NAME>` in routine.yaml `grants:` — an undecided name files a blocking
-access request on first use; docs/rules-permissions.md). Blast radius after both layers:
-a prompt-injected util can leak at most its own declared secrets, not the store.
+grant rows `secret:<NAME>` in routine.yaml `grants:` — an undecided REQUIRED name files a
+blocking access request on first use; docs/rules-permissions.md). An **OPTIONAL** secret
+(declared `NAME?`, D51/F290 — it backs a feature most calls don't use, like page-fetch's
+Basic auth) never files that request: not granted → it is WITHHELD from the child env and
+the util observation says so, so a public call runs prompt-free and an auth-needing one
+requests exposure explicitly (`ask_user` with `request: "secret:NAME"`). Blast radius
+after both layers: a prompt-injected util can leak at most its own declared secrets, not
+the store.
 
 ## The mode — config.yaml `sandbox:`
 

@@ -171,10 +171,17 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         ctx.count_util(name, "missing")
         return {"kind": "util", "name": name, "missing": True,
                 "available": [u["name"] for u in utils_lib.list_utils(home)]}
+    # F290: optional (`?`-declared) secrets the routine may not see are WITHHELD from the
+    # child env instead of blocking the call with an exposure ask — a public call runs
+    # prompt-free; the observation names the withheld undecided ones so an auth-needing
+    # call learns to request exposure explicitly (denied ones stay unenumerated, R17).
+    from .interact import secret_state, withheld_optional_secrets
+    withheld = withheld_optional_secrets(ctx, name)
     code, out, err = utils_lib.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
         policy=sandbox.policy_for_ctx(ctx),
-        extra_secrets=_extra_secrets(ctx), cwd=ctx.routine.dir)
+        extra_secrets=_extra_secrets(ctx), withhold_secrets=set(withheld),
+        cwd=ctx.routine.dir)
     # Per-util reliability telemetry (util_stats → the Stats tab).
     ctx.count_util(name, "ok" if code == 0
                    else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
@@ -187,6 +194,12 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
     stderr, trunc_err = truncate(err, cap=8000 if code != 0 else 2000)
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
            "stdout": stdout, "stderr": stderr, "truncated": trunc_out or trunc_err}
+    if withheld:
+        # undecided names are requestable and may be enumerated; denied ones are a count
+        # only (R17 — a denial enumerates nothing)
+        undecided = [s for s in withheld if secret_state(ctx, s) == "undecided"]
+        n_denied = len(withheld) - len(undecided)
+        obs["withheld_optional"] = {"undecided": undecided, "denied": n_denied}
     # What the observation could not carry is spilled to .util_outputs/ rather than lost:
     # the transcript records THIS (truncated) payload, so the band between the capture cap
     # and the observation cap has no other survivor. Only truncated output is kept.

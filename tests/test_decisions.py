@@ -360,7 +360,7 @@ def test_util_secret_gate_files_one_request_covering_the_run(make_routine, scrip
                         **_kw: (ran.append((name, list(args))) or (0, "ran", "")))
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(notify.utils_lib, "util_needs",
-                        lambda home, name: ({"FOO_KEY"}, False))
+                        lambda home, name: ({"FOO_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secgate", budgets={"ask_timeout_min": 1})
 
@@ -397,6 +397,39 @@ def test_util_secret_gate_files_one_request_covering_the_run(make_routine, scrip
     assert not persisted.get("grants")                # allow_now persists NOTHING
 
 
+def test_optional_secret_never_asks_and_is_withheld(make_routine, scripted, monkeypatch):
+    """F290/R314: an OPTIONAL (`?`-declared) secret files NO exposure ask and never blocks
+    the call — the engine withholds it from the child env instead, and the observation
+    names the undecided withheld secret so an auth-needing call can request it. The
+    page-fetch case: a public fetch runs prompt-free."""
+    from rsched import secrets as secrets_mod
+
+    seen_withhold = []
+    monkeypatch.setattr(notify.utils_lib, "run_util",
+                        lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
+                        withhold_secrets=None,
+                        **_kw: (seen_withhold.append(set(withhold_secrets or set()))
+                                or (0, "fetched", "")))
+    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(notify.utils_lib, "util_needs",
+                        lambda home, name: ({"WEB_AUTH_SOURCES"}, True, {"WEB_AUTH_SOURCES"}))
+    monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"WEB_AUTH_SOURCES": "x"})
+    d = make_routine(slug="optsec")
+    scripted([
+        {"say": "public fetch", "kind": "util", "name": "page-fetch", "args": ["https://x"]},
+        finish(),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    events = _events(run_dir)
+    assert not [e for e in events if e["type"] == "question"]      # nobody was asked
+    assert seen_withhold == [{"WEB_AUTH_SOURCES"}]                 # env withheld instead
+    obs = next(e for e in events if e["type"] == "observation"
+               and e["payload"].get("kind") == "util")
+    assert obs["payload"]["withheld_optional"] == {"undecided": ["WEB_AUTH_SOURCES"],
+                                                   "denied": 0}
+
+
 def test_secret_grant_row_covers_runs_without_asking(make_routine, scripted, monkeypatch):
     """A persisted `grants: {secret:<NAME>: true}` row — written by the WEB when the user
     clicked allow-forever (or set on the routine page) — runs the util with NO question
@@ -408,7 +441,7 @@ def test_secret_grant_row_covers_runs_without_asking(make_routine, scripted, mon
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (ran.append((name, list(args))) or (0, "ran", "")))
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(notify.utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False))
+    monkeypatch.setattr(notify.utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secgate2", budgets={"ask_timeout_min": 1})
     import yaml as _yaml
@@ -436,7 +469,7 @@ def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, 
                         (ran.append((name, list(args))) or (0, "ran", "")))
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(notify.utils_lib, "util_needs",
-                        lambda home, name: ({"FOO_KEY"}, False))
+                        lambda home, name: ({"FOO_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secdeny")
     import yaml as _yaml
@@ -473,7 +506,7 @@ def test_secret_decline_observation_names_no_secrets(make_routine, scripted, mon
                         **_kw: (ran.append(name) or (0, "ran", "")))
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(notify.utils_lib, "util_needs",
-                        lambda home, name: ({"FOO_KEY", "BAR_KEY"}, False))
+                        lambda home, name: ({"FOO_KEY", "BAR_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x", "BAR_KEY": "y"})
     d = make_routine(slug="secmute")
     import yaml as _yaml
@@ -506,7 +539,7 @@ def test_secret_decline_after_ask_stays_generic(make_routine, scripted, monkeypa
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (0, "ran", ""))
     monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(notify.utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False))
+    monkeypatch.setattr(notify.utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secmute2", budgets={"ask_timeout_min": 1})
 
