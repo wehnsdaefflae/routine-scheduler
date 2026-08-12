@@ -5,6 +5,7 @@
 
 import { api } from "/static/api.js";
 import { activityFeed } from "/static/components/activityfeed.js";
+import { groupControls, groupProgress, groupsToolbar, openGroupEditor } from "/static/components/groupmanage.js";
 import { heartbeat } from "/static/components/heartbeat.js";
 import { weekGrid } from "/static/components/weekgrid.js";
 import { mdInline } from "/static/md.js";
@@ -88,6 +89,11 @@ export async function render(view) {
     el("summary", {}, "this week"), week.node);
   weekPanel.addEventListener("toggle", () => storage.set(WEEK_KEY, weekPanel.open ? "open" : "closed"));
   const filterBar = el("div", { class: "filterbar" });
+  // D80: group management lives HERE (the /groups subpage is retired) — this bar carries
+  // "+ new group" + the instance default; per-group controls sit on the group rows below.
+  // Rebuilt only when the groups payload changes (its select must survive live refreshes,
+  // the F229 rule), and the editors are overlays for the same reason.
+  const groupsBar = el("div", { class: "panel mt", style: "padding:8px 12px" });
   const body = el("div", { class: "mt" });
   // The cross-routine activity feed (the former Log page): every run, filterable, with the
   // transcript tailing inline. Collapsed by default and lazily started — a closed section
@@ -101,14 +107,16 @@ export async function render(view) {
     if (activityPanel.open) feed.start();
   });
   if (activityPanel.open) feed.start();
-  view.append(banner, weekPanel, filterBar, body, activityPanel);
+  view.append(banner, weekPanel, filterBar, groupsBar, body, activityPanel);
   body.append(skeleton(), skeleton(), skeleton());
 
   let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();
-  let groupsBySlug = new Map();   // slug -> [group names] (R107/F269 — group badges on the list)
-  let groupsOrdered = [];   // [{name, members, schedule_desc, cron, paused}] in fire order (F271)
+  let groupData = null;   // the raw /api/groups payload — the group-management surface's input
+  let groupsBySlug = new Map();   // slug -> [group records] (R107/F269 — group badges on the list)
+  let groupsOrdered = [];   // [{id, name, members(slugs), splitSet, …}] in fire order (F271)
   let groupSchedBySlug = new Map();   // slug -> its scheduled group (cron suppressed, R313)
   let lastTagSig = null;   // F229: only rebuild the filter bar when the tag set changes
+  let lastGroupSig = null; // same rule for the groups bar: its select must survive refreshes
   const active = new Set(JSON.parse(storage.get(FILTER_KEY) || "[]"));
   const states = new Set();
   // D72: the table IS the default (operator, 2026-08-05) — denser, sortable, and where the
@@ -207,7 +215,7 @@ export async function render(view) {
   }
 
   async function load() {
-    let routines, status, sched, groupData;
+    let routines, status, sched;
     try {
       [routines, status, sched, groupData] = await Promise.all([
         api("/api/routines"), api("/api/status").catch(() => ({})),
@@ -221,11 +229,15 @@ export async function render(view) {
       return;
     }
     cards = routines;
-    // slug -> [group names]: each routine card/row shows which group(s) it belongs to, so
-    // groups are discoverable from the Routines page, not only the separate /groups page.
+    // slug -> [group records]: each routine card/row shows which group(s) it belongs to —
+    // the chips open the group editor (D80: this page IS the group-management surface).
     groupsBySlug = new Map();
+    // members are RECORDS {slug, split} in the store (F292); the display list keeps plain
+    // slugs (what the week grid + rows consume) plus the split set for the ⇄ badges.
     groupsOrdered = (groupData?.groups || [])
-      .map((g) => ({ name: g.name, members: g.members || [],
+      .map((g) => ({ id: g.id, name: g.name,
+                     members: (g.members || []).map((m) => m.slug),
+                     splitSet: new Set((g.members || []).filter((m) => m.split).map((m) => m.slug)),
                      schedule_desc: g.schedule_desc || "", cron: g.cron || "",
                      paused: !!g.paused }));
     // slug -> its SCHEDULED group (the first, matching the server's group_managed rule):
@@ -238,9 +250,9 @@ export async function render(view) {
       }
     }
     for (const g of groupData?.groups || []) {
-      for (const slug of g.members || []) {
-        if (!groupsBySlug.has(slug)) groupsBySlug.set(slug, []);
-        groupsBySlug.get(slug).push(g.name);
+      for (const m of g.members || []) {
+        if (!groupsBySlug.has(m.slug)) groupsBySlug.set(m.slug, []);
+        groupsBySlug.get(m.slug).push(g);
       }
     }
     firesBySlug = new Map((sched?.routines || []).map((r) => [r.slug, r.fires.map((t) => +new Date(t))]));
@@ -271,6 +283,18 @@ export async function render(view) {
     if (tagSig !== lastTagSig) {
       lastTagSig = tagSig;
       renderFilterBar();
+    }
+    // The groups bar follows the same only-on-change rule (its select must survive live
+    // refreshes); in_flight is deliberately OUT of the signature — chain progress renders
+    // on the group rows, not here.
+    const groupSig = groupData
+      ? JSON.stringify([groupData.default_on_failure, groupData.known_routines])
+      : null;
+    if (groupSig !== lastGroupSig) {
+      lastGroupSig = groupSig;
+      groupsBar.replaceChildren();
+      groupsBar.hidden = !groupData;
+      if (groupData) groupsBar.append(groupsToolbar(groupData, { reload: load }));
     }
     renderBody();
   }
@@ -322,15 +346,17 @@ export async function render(view) {
     return null;   // not group-managed → the caller renders the routine's own desc
   }
 
-  // Group membership as a chip row — each group a link to the Groups page, so groups are
-  // discoverable straight from the routines list (R107/F269). null when in no group.
+  // Group membership as a chip row — each chip opens the group's editor right here (D80:
+  // this page is the group-management surface). null when in no group.
   function groupChips(slug) {
-    const names = groupsBySlug.get(slug) || [];
-    if (!names.length) return null;
+    const gs = groupsBySlug.get(slug) || [];
+    if (!gs.length) return null;
     return el("div", { class: "groups-row" },
       el("span", { class: "lbl small" }, "⛓"),
-      ...names.map((n) => el("a", { class: "chip group-chip", href: "#/groups",
-        title: `in group “${n}” — open the Groups page` }, n)));
+      ...gs.map((g) => el("button", { class: "chip group-chip",
+        title: `in group “${g.name}” — edit the group`,
+        onclick: (e) => { e.stopPropagation(); openGroupEditor(g, groupData, { reload: load }); },
+      }, g.name)));
   }
 
   function card(c) {
@@ -402,14 +428,20 @@ export async function render(view) {
       label + (key === sortKey
         ? ((sortDir || (SORTS[key]?.[2] ? "desc" : "asc")) === "desc" ? " ▾" : " ▴")
         : ""))));
-    const rowFor = (c, extraCls = "") => {
+    const rowFor = (c, extraCls = "", group = null) => {
       const last = c.last_run;
       const tok = tokensOf(c);
       const rowCls = [RUNNING.has(c.active_state) ? "live" : "",
         c.active_state === "waiting_user" ? "attention" : "", extraCls]
         .filter(Boolean).join(" ");
+      // F292: a split member (of the group row this one sits under) fires once per pass
+      const split = group?.splitSet?.has(c.slug)
+        ? el("span", { class: "chip", "data-member-split-badge": "",
+            title: "split member — fires twice per group run: ingest pass, then outbound pass" },
+            "⇄ split")
+        : null;
       return el("tr", { class: rowCls },
-        el("td", {}, el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
+        el("td", {}, el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug), split,
           c.description ? el("div", { class: "faint small", style: "max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, c.description) : null,
           groupChips(c.slug)),
         el("td", {}, c.active_state ? chip(c.active_state, c.active_state)
@@ -446,7 +478,13 @@ export async function render(view) {
       const members = g.members.map((s) => bySlug.get(s)).filter(Boolean);
       if (!members.length) continue;                 // fully filtered out → no header either
       const open = openGroups.has(g.name);
-      rows.push(el("tr", { class: "group-row" },
+      const raw = (groupData?.groups || []).find((r) => r.id === g.id);
+      // D80: the group row carries its management — run now / pause / edit (the buttons
+      // stopPropagation so the row's expand toggle keeps working), plus the in-flight
+      // chain's per-pass progress (F292).
+      const controls = raw ? groupControls(raw, groupData, { reload: load }) : [];
+      const progress = raw ? groupProgress(raw, groupData) : null;
+      rows.push(el("tr", { class: "group-row", "data-group-row": g.id },
         el("td", { colSpan: COLS.length,
           title: open ? "collapse this group's rows" : "expand this group's member rows",
           onclick: () => {
@@ -454,12 +492,18 @@ export async function render(view) {
             storage.set(GROUPS_OPEN_KEY, JSON.stringify([...openGroups]));
             renderBody();
           } },
-          el("span", { class: "tri" }, open ? "▾ " : "▸ "),
-          `⛓ ${g.name}`,
-          el("span", { class: "faint small", style: "margin-left:8px" },
-            `${members.length} routine${members.length === 1 ? "" : "s"} · fire order`
-            + (g.cron ? ` · ${g.paused ? "paused" : g.schedule_desc}` : "")))));
-      if (open) for (const m of members) rows.push(rowFor(m, "group-member"));
+          el("div", { class: "row", style: "justify-content:space-between;align-items:center;gap:8px" },
+            el("span", {},
+              el("span", { class: "tri" }, open ? "▾ " : "▸ "),
+              `⛓ ${g.name}`,
+              g.paused ? el("span", { class: "muted small", "data-group-paused": "",
+                style: "margin-left:8px" }, "⏸ paused") : null,
+              el("span", { class: "faint small", style: "margin-left:8px" },
+                `${members.length} routine${members.length === 1 ? "" : "s"} · fire order`
+                + (g.cron ? ` · ${g.paused ? "paused" : g.schedule_desc}` : "")),
+              progress ? el("span", { style: "margin-left:8px" }, progress) : null),
+            el("span", { class: "row", style: "gap:6px" }, ...controls)))));
+      if (open) for (const m of members) rows.push(rowFor(m, "group-member", g));
     }
     const grouped = new Set(groupsOrdered.flatMap((g) => g.members));
     for (const c of shown) if (!grouped.has(c.slug)) rows.push(rowFor(c));

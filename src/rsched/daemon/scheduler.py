@@ -93,7 +93,8 @@ class Scheduler:
         # nothing. Read fresh each rescan, like the catalog.
         self.scheduled_groups = [g for g in groups.list_groups(self.server.routines_home)
                                  if g["cron"]]
-        self.suppressed_members = {m for g in self.scheduled_groups for m in g["members"]}
+        self.suppressed_members = {m for g in self.scheduled_groups
+                                   for m in groups.member_slugs(g)}
         fires: dict[str, datetime] = {}
         for slug, info in self.catalog.items():
             if slug in self.suppressed_members:

@@ -44,6 +44,21 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
                   "files with your group members there. Writes are whole-file and last "
                   "write wins per file, so prefer per-routine filenames "
                   "(<your-slug>-<topic>.md) and treat shared files as read-mostly.")
+    if ctx.group_phase == "ingest":
+        # F292: a split group member is fired once per pass and must do only this pass's
+        # half — the whole point of the two-phase fire is that NO outbound communication
+        # happens before every member's ingest has landed.
+        extra += ("\nGROUP FIRE PHASE: ingest — your group fires in two passes and this run "
+                  "is the INGEST pass. Do your ingestion and processing only: read sources, "
+                  "compute, and stage what the outbound half needs (state/ or the group "
+                  "store), then finish WITHOUT any outbound communication (no sending, "
+                  "publishing, or messaging). A second run of this routine follows with "
+                  "phase=outbound once every group member's ingest pass is done.")
+    elif ctx.group_phase == "outbound":
+        extra += ("\nGROUP FIRE PHASE: outbound — your group fires in two passes and this "
+                  "run is the OUTBOUND pass: every member's ingest pass has already "
+                  "finished. Read what your ingest run staged and do the outbound half "
+                  "(send, publish, deliver); do not redo the ingestion.")
     # write_util is a user-set capability; the confirm level is its approval policy.
     # ctx.grants None (direct construction) = ungated.
     g = ctx.grants

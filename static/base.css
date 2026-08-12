@@ -217,7 +217,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 18px 22px 110px; }
 .chip.bare::before { display: none; }
 /* Group-membership chips on the routines list (R107/F269): a cool accent distinct from the
    amber tag/meta chips and the status colours, with the status dot suppressed (a group is
-   not a run-state). Each links to the Groups page. */
+   not a run-state). Each is a button that opens the group's editor in place (D80). */
 .groups-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
 .groups-row .lbl { color: var(--faint); }
 .chip.group-chip {
@@ -226,6 +226,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 18px 22px 110px; }
 }
 .chip.group-chip::before { display: none; }
 .chip.group-chip:hover { border-color: rgba(138, 180, 248, 0.7); }
+/* the chip is a BUTTON since D80 (it opens the group editor in place) */
+button.chip.group-chip { cursor: pointer; }
 
 .tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .tag {

@@ -1,11 +1,18 @@
 """Routine groups — the durable store for named, ordered collections of routines (D53).
 
-A group is an ORDERED list of routine slugs plus a mid-chain-failure policy, and optionally
+A group is an ORDERED list of member records plus a mid-chain-failure policy, and optionally
 a CRON SCHEDULE (D71): a scheduled group auto-arms its sequential chain on the group's cron
-(member 0 fires, the rest chain on completion — daemon/group_runs.py), and every member's
-OWN cron is SUPPRESSED while it belongs to a scheduled group — one fire path, no
-double-firing. The routine page's Schedule dropdown shows such a member as "group managed".
-An UNSCHEDULED group changes nothing about its members' own schedules.
+(the chain runs member by member — daemon/group_runs.py), and every member's OWN cron is
+SUPPRESSED while it belongs to a scheduled group — one fire path, no double-firing. The
+routine page's Schedule dropdown shows such a member as "group managed". An UNSCHEDULED
+group changes nothing about its members' own schedules.
+
+A membership record carries a per-member `split` flag (F292): a chain fires in TWO passes —
+an ingest pass over every member in order, then an outbound pass over the SPLIT members in
+the same order. A split member therefore runs once per pass, told which half it is in via a
+run-scoped `phase=ingest|outbound` boot param its recipe branches on (ingest/process and
+stage state, or read the staged state and communicate); a non-split member runs once, in the
+ingest pass, with no param. A group with no split members chains once, exactly as before.
 
 Ownership mirrors rsched.triggers / rsched.schedule_once: a group is instance-level operator
 state that the WEB layer writes and the daemon reads (web RECORDS, daemon FIRES), so it
@@ -19,7 +26,8 @@ Shape (single document, atomic-written):
 
     {"default_on_failure": "stop",
      "groups": [{"id": "grp-1a2b3c4d", "name": "Morning jobs",
-                 "members": ["weight-coach", "news-digest"],
+                 "members": [{"slug": "weight-coach", "split": false},
+                             {"slug": "news-digest", "split": true}],
                  "on_failure": null,          # null = inherit default_on_failure
                  "cron": "0 7 * * *",         # "" = unscheduled (fire only when armed)
                  "tz": "Europe/Berlin",       # written beside cron by the web layer
@@ -87,7 +95,7 @@ def member_store_roots(routines_home: Path, slug: str, *, create: bool = False) 
     """
     out: list[Path] = []
     for g in list_groups(routines_home):
-        if slug in g["members"]:
+        if slug in member_slugs(g):
             d = store_dir(routines_home, g["id"])
             if create:
                 d.mkdir(parents=True, exist_ok=True)
@@ -140,19 +148,36 @@ def scheduled_member_slugs(routines_home: Path) -> set[str]:
     schedule (D71) — the daemon's cron-fire loop and boot catch-up skip these, and the
     routine page renders their Schedule dropdown as "group managed".
     """
-    return {m for g in list_groups(routines_home) if g["cron"] for m in g["members"]}
+    return {m for g in list_groups(routines_home) if g["cron"] for m in member_slugs(g)}
 
 
-def _clean_members(members: object) -> list[str]:
-    """Coerce to an ordered, de-duplicated list of non-empty slug strings (order preserved —
-    it is the fire order Phase B will use).
+def member_slugs(group: dict) -> list[str]:
+    """The group's ordered member slugs — for the many consumers that need the fire order
+    but not the per-member flags.
     """
-    out: list[str] = []
+    return [m["slug"] for m in group.get("members") or []]
+
+
+def split_slugs(group: dict) -> list[str]:
+    """The ordered subset of members flagged `split` (F292) — the outbound pass's fire list."""
+    return [m["slug"] for m in group.get("members") or [] if m.get("split")]
+
+
+def _clean_members(members: object) -> list[dict]:
+    """Coerce to an ordered, de-duplicated list of member RECORDS {"slug", "split"} (order
+    preserved — it is the fire order a chain uses; dedup is by slug, first record wins).
+    Junk entries — non-dicts, blank slugs — are dropped, never raised on.
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
     if isinstance(members, list):
         for m in members:
-            s = str(m or "").strip()
-            if s and s not in out:
-                out.append(s)
+            if not isinstance(m, dict):
+                continue
+            s = str(m.get("slug") or "").strip()
+            if s and s not in seen:
+                seen.add(s)
+                out.append({"slug": s, "split": bool(m.get("split"))})
     return out
 
 
@@ -185,12 +210,12 @@ def get(routines_home: Path, gid: str) -> dict | None:
     return None
 
 
-def create(routines_home: Path, *, name: str, members: list[str] | None = None,
+def create(routines_home: Path, *, name: str, members: list[dict] | None = None,
            on_failure: str | None = None, cron: str = "", tz: str = "") -> dict:
-    """Create a group. `name` must be non-empty; `members` is stored in order (deduped);
-    `on_failure` must be in ON_FAILURE or None (inherit); `cron` (optional, D71) must be a
-    valid cron expression — "" leaves the group unscheduled. Raises ValueError on a bad
-    value.
+    """Create a group. `name` must be non-empty; `members` is an ordered list of records
+    {"slug", "split"} stored in order (deduped by slug); `on_failure` must be in ON_FAILURE
+    or None (inherit); `cron` (optional, D71) must be a valid cron expression — "" leaves
+    the group unscheduled. Raises ValueError on a bad value.
     """
     name = str(name or "").strip()
     if not name:
@@ -214,14 +239,15 @@ def create(routines_home: Path, *, name: str, members: list[str] | None = None,
 
 
 def update(routines_home: Path, gid: str, *, name: str | None = None,
-           members: list[str] | None = None, on_failure: object = _UNSET,
+           members: list[dict] | None = None, on_failure: object = _UNSET,
            cron: str | None = None, tz: str | None = None,
            paused: bool | None = None) -> dict | None:
-    """Patch a group in place (only the fields passed are touched). `on_failure` is a
-    tri-state: omit it to leave unchanged, pass None to inherit the default, pass a value in
-    ON_FAILURE to override. `cron` "" clears the schedule (members fire on their own crons
-    again); a non-empty value must be valid cron. Returns the updated record, or None if no
-    group has that id. Raises ValueError on a bad value.
+    """Patch a group in place (only the fields passed are touched). `members` replaces the
+    whole record list ({"slug", "split"} each). `on_failure` is a tri-state: omit it to
+    leave unchanged, pass None to inherit the default, pass a value in ON_FAILURE to
+    override. `cron` "" clears the schedule (members fire on their own crons again); a
+    non-empty value must be valid cron. Returns the updated record, or None if no group has
+    that id. Raises ValueError on a bad value.
     """
     data = load(routines_home)
     for g in data["groups"]:

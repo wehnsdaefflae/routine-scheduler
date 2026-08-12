@@ -221,12 +221,14 @@ tell the user it exists and what to set next (its schedule). This is the ONLY wa
 created — it is available only inside a conversation."""),
     (("manage_group",), """- manage_group: manage routine GROUPS (ordered collections that fire \
 back-to-back) from THIS conversation via a `verb`: list (the whole store), create (`name` + \
-optional `members` + `on_failure`), update (`target` = the group id, plus any of name/members/\
-on_failure), delete (`target`), set-default (`on_failure` = stop|continue, the instance-wide \
-mid-chain-failure default), run (`target` — arm a sequential fire the daemon runs on its next \
-tick). `members` is the ORDERED routine slugs and each must name a real routine. The /groups \
-web page still works — this is the same store, reachable from chat. Available only inside a \
-conversation."""),
+optional `members` + `split` + `on_failure` + `cron`), update (`target` = the group id, plus any \
+of name/members/split/on_failure/cron/paused), delete (`target`), set-default (`on_failure` = \
+stop|continue, the instance-wide mid-chain-failure default), run (`target` — arm a sequential \
+fire the daemon runs on its next tick). `members` is the ORDERED routine slugs and each must \
+name a real routine; `split` is the subset that fires once per pass of the two-phase chain \
+(every member's ingest pass first, then the split members' outbound pass — each split run is \
+told its half via a `phase` boot param). The routines page manages the same store — this is it, \
+reachable from chat. Available only inside a conversation."""),
     (("subruns",), """- subruns: a status table of your sub-workflows (state, turns, \
 elapsed)."""),
     (("kill", "wait"), """- kill: terminate sub-workflow "n". wait: block until sub-workflow \

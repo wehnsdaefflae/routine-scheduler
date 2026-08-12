@@ -1,22 +1,31 @@
 """The `manage_group` action handler — a CONVERSATION manages routine GROUPS from chat (D61).
 
 The operator's rule (D61, option A): routine group management must be fully reachable via an
-ACTION, not only the `/groups` web subpage (which STAYS — this is additive). One compact action
-kind carries every operation through a `verb` field, mirroring the `/api/groups` surface the
-Groups page already uses:
+ACTION, not only the web surface (the routines page's group rows since D80 retired the
+/groups subpage). One compact action kind carries every operation through a `verb` field,
+mirroring the `/api/groups` surface the routines page uses:
 
     verb=list                                    → the whole store (default + every group)
-    verb=create   name=… [members=…] [on_failure=…] [cron=…]
-    verb=update   target=<group id> [name=…] [members=…] [on_failure=…] [cron=…]
+    verb=create   name=… [members=…] [split=…] [on_failure=…] [cron=…]
+    verb=update   target=<group id> [name=…] [members=…] [split=…] [on_failure=…] [cron=…]
+                  [paused=…]
     verb=delete   target=<group id>
     verb=set-default  on_failure=<stop|continue>
     verb=run      target=<group id>              → arm a sequential fire (Phase B)
 
-`cron` is the GROUP schedule (D71, R312): member 0 fires on it, the rest chain on
-completion, member crons are suppressed while it is set. The server tz is recorded beside
-it, exactly as the Groups page writes it; an empty string clears the schedule. This is how
-a user's group-scheduling request is completed by the conversation itself, with no
-operator round-trip to /groups (R312 — direct user requirement 2026-08-11).
+`cron` is the GROUP schedule (D71, R312): the chain fires on it, member crons are
+suppressed while it is set. The server tz is recorded beside it, exactly as the web layer
+writes it; an empty string clears the schedule. This is how a user's group-scheduling
+request is completed by the conversation itself, with no operator round-trip to the web
+(R312 — direct user requirement 2026-08-11). `paused` (update only) gates the cron without
+touching it — nothing in a paused group auto-fires, an explicit run still works.
+
+`split` (F292) names the subset of `members` that fire ONCE PER PASS of the two-phase
+group fire (ingest, then outbound — each run told its half via the `phase` boot param);
+the action keeps the flat slugs+subset shape (weak-model-friendly schema) and the handler
+folds it into the store's member records. On update: `members` without `split` keeps each
+kept member's existing flag; `split` without `members` re-flags the existing member list;
+both together are exact.
 
 It reuses the SAME `rsched.groups` store + `rsched.group_runs` the endpoints call — one source
 of truth, so a group created from chat and one created from the page are identical, and member
@@ -48,22 +57,51 @@ def _reject(reason: str) -> dict:
     return {"kind": "manage_group", "rejected": True, "reason": reason}
 
 
-def _members_or_error(ctx: RunContext, action: dict):
-    """Validate `members` against the live registry. Returns (members, None) or (None, reject).
-    A missing `members` field yields (None, None) — 'leave unchanged' for update, [] for create.
+def _slug_list_or_error(action: dict, field: str):
+    """The action's `field` as a list of strings, or a teaching rejection. (None, None)
+    when the field is absent — 'leave unchanged' for update, empty for create.
     """
-    if "members" not in action:
+    if field not in action:
         return None, None
-    raw = action.get("members")
+    raw = action.get(field)
     if not isinstance(raw, list) or not all(isinstance(m, str) for m in raw):
-        return None, _reject("manage_group: 'members' must be a list of routine-slug strings")
+        return None, _reject(f"manage_group: '{field}' must be a list of routine-slug strings")
+    return list(raw), None
+
+
+def _members_or_error(ctx: RunContext, action: dict, current: dict | None = None):
+    """Fold the action's flat `members` (ordered slugs) + `split` (the phase-split subset)
+    into the store's member RECORDS, validated against the live registry. Returns
+    (records, None) or (None, reject); (None, None) when neither field is present —
+    'leave unchanged' for update, [] for create. `current` (update only) supplies the
+    existing records, so a reorder keeps flags and a re-flag keeps the member list.
+    """
+    slugs, err = _slug_list_or_error(action, "members")
+    if err:
+        return None, err
+    split, err = _slug_list_or_error(action, "split")
+    if err:
+        return None, err
+    if slugs is None and split is None:
+        return None, None
+    existing = {m["slug"]: bool(m.get("split")) for m in (current or {}).get("members") or []}
+    if slugs is None:
+        slugs = list(existing)   # split-only update: re-flag the existing member list
     known = _known_slugs(ctx)
-    unknown = [m for m in raw if m not in known]
+    unknown = [m for m in slugs if m not in known]
     if unknown:
         return None, _reject(
             f"manage_group: unknown routine(s) {sorted(unknown)} — a group may only name "
             "routines that exist in the registry")
-    return list(raw), None
+    stray = [s for s in split or [] if s not in slugs]
+    if stray:
+        return None, _reject(
+            f"manage_group: 'split' names non-member(s) {sorted(stray)} — split is the "
+            "subset of `members` that fires once per pass of the two-phase group fire")
+    flags = set(split) if split is not None else None
+    return [{"slug": s,
+             "split": (s in flags) if flags is not None else existing.get(s, False)}
+            for s in slugs], None
 
 
 def handle_manage_group(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911 — a verb dispatcher: each verb's guard returns its own teaching rejection, one flat handler by design
@@ -76,7 +114,10 @@ def handle_manage_group(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911
       target      — the group id (required for update/delete/run)
       name        — the group's display name (required for create; optional for update)
       members     — ordered routine slugs (optional; create/update)
+      split       — the subset of members that fire once per two-phase pass (F292;
+                    optional; create/update)
       on_failure  — 'stop' | 'continue' (optional for create/update; required for set-default)
+      paused      — gate the group's cron without clearing it (optional; update)
     """
     if not _is_root_conversation(ctx):
         return _reject(
@@ -128,7 +169,10 @@ def handle_manage_group(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911
         return {"kind": "manage_group", "verb": "delete", "deleted": gid}
 
     if verb == "update":
-        members, err = _members_or_error(ctx, action)
+        current = groups.get(home, gid)
+        if current is None:
+            return _reject(f"manage_group update: no group {gid!r}")
+        members, err = _members_or_error(ctx, action, current)
         if err:
             return err
         on_failure = _normalize_on_failure(action) if "on_failure" in action else groups._UNSET
@@ -136,11 +180,12 @@ def handle_manage_group(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911
         # key-presence semantics like members/on_failure: absent = unchanged, "" = clear
         new_cron = str(action.get("cron") or "").strip() if "cron" in action else None
         tz = None if new_cron is None else (schedule.server_tz() if new_cron else "")
+        paused = bool(action.get("paused")) if "paused" in action else None
         try:
             updated = groups.update(home, gid,
                                     name=(str(name).strip() if name is not None else None),
                                     members=members, on_failure=on_failure,
-                                    cron=new_cron, tz=tz)
+                                    cron=new_cron, tz=tz, paused=paused)
         except ValueError as exc:
             return _reject(f"manage_group update: {exc}")
         if updated is None:

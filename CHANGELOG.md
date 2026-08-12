@@ -19,6 +19,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.183.0] — 2026-08-12
+
+### Added
+- **Two-phase group fire (F292; operator standing order R214.3b).** A routine group's chain
+  now runs in TWO passes: an INGEST pass over every member in order, then an OUTBOUND pass
+  over the members flagged `split` — same order — so all ingestion/processing lands before
+  any split member's outbound communication, and a later member's ingest can read an
+  earlier member's fresh state. Group membership records carry the per-member `split` flag
+  (`{"slug", "split"}`, the R254-confirmed shape): a split member fires once per pass and
+  reads its half from a run-scoped `phase=ingest|outbound` boot param — written into the
+  run dir's `boot.json` by `Runner.fire` (the file rides the dir, so a resume keeps it),
+  read at engine boot beside slug/run_ts (`RunContext.group_phase`, stamped into
+  `status.json` as `group_phase`), and surfaced as the harness contract's `GROUP FIRE
+  PHASE` marching orders (ingest: process and stage only, NO outbound; outbound: send from
+  the staged state, don't re-ingest). A non-split member runs once, in the ingest pass,
+  with no param; a group with no split members chains exactly as before. `stop` mid-ingest
+  halts the outbound pass too — outbound would read state the halted ingest never staged.
+  `rsched run-once <slug> --phase ingest|outbound` exercises a split routine's phase branch
+  by hand through the same boot.json channel. MIGRATION (one-shot at daemon boot, expires
+  2026-09-30): `.control/groups.json` members convert from slug strings to records;
+  pre-F292 in-flight chain files are dropped.
+- **`manage_group` speaks the new surface (D77).** `create`/`update` take `split` — the
+  subset of `members` that fire once per pass (on update, `members` without `split` keeps
+  each kept member's flag; `split` without `members` re-flags the existing list) — and
+  `update` takes `paused` (gate the group's cron without clearing it): action parity with
+  everything the routines page's group surface can do.
+
+### Changed
+- **Group management lives on the Routines page; the `/groups` subpage is retired (D80 —
+  closes R107).** The group rows in the routines table carry ▶ run now (with the in-flight
+  chain's per-pass progress), ⏸ pause/resume and ✎ edit; a toolbar above the list creates
+  groups and holds the instance default-on-failure; the editors are overlay panels
+  (`static/components/groupmanage.js`: member order, per-member split flags, on-failure,
+  the schedule editor, rename, delete) so they survive the page's live refresh (the F229
+  rule). Group chips on cards and rows open the editor in place; split members are badged
+  `⇄ split` under their expanded group row; `#/groups` and its nav entry are gone — an old
+  bookmark falls back to the landing page.
+
 ## [0.182.0] — 2026-08-12
 
 ### Added

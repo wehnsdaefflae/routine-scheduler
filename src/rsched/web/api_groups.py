@@ -1,13 +1,15 @@
-"""Routine-groups CRUD (D53): the Groups page's API over the instance-level
-`.control/groups.json` store (rsched.groups).
+"""Routine-groups CRUD (D53): the Routines page's group-surface API over the
+instance-level `.control/groups.json` store (rsched.groups). (D80: the former /groups
+subpage is retired — the routines page's group rows are the one management surface.)
 
-A group is an ORDERED list of routine slugs plus a mid-chain-failure policy, and
-optionally a cron schedule (D71) that auto-arms the chain — saved here as a friendly spec
-converted to cron + the server's tz, exactly like a routine's schedule. The WEB layer only
-RECORDS it; the daemon fires (the 0.62.0 split). While a group has a schedule, its
-members' own crons are suppressed by the daemon and their Schedule dropdowns read "group
-managed". Every member slug is validated against the live registry here (the store
-validates shape only), so a group can never name a routine that does not exist.
+A group is an ORDERED list of member records — {"slug", "split"}, where `split` opts the
+member into the two-phase fire (F292) — plus a mid-chain-failure policy, and optionally a
+cron schedule (D71) that auto-arms the chain — saved here as a friendly spec converted to
+cron + the server's tz, exactly like a routine's schedule. The WEB layer only RECORDS it;
+the daemon fires (the 0.62.0 split). While a group has a schedule, its members' own crons
+are suppressed by the daemon and their Schedule dropdowns read "group managed". Every
+member slug is validated against the live registry here (the store validates shape only),
+so a group can never name a routine that does not exist.
 
 `router` rides the normal authed include in app.py like every other api_* module.
 """
@@ -27,7 +29,14 @@ def _routines_home(request: Request):
     return _state(request).server.routines_home
 
 
-def _validate_members(request: Request, members: list[str] | None) -> list[str]:
+class MemberSpec(BaseModel):
+    """One membership record: the routine + its two-phase opt-in (F292)."""
+
+    slug: str = Field(min_length=1)
+    split: bool = False
+
+
+def _validate_members(request: Request, members: list[MemberSpec] | None) -> list[dict]:
     """Every member must name a real routine (the store keeps shape/order/dedup; existence
     is ours). A group of a template/disabled routine is allowed — only a NON-EXISTENT slug
     is rejected, with the offending slug named so the UI can point at it.
@@ -35,15 +44,15 @@ def _validate_members(request: Request, members: list[str] | None) -> list[str]:
     if not members:
         return []
     known = set(_catalog(request).keys())
-    unknown = [m for m in members if m not in known]
+    unknown = [m.slug for m in members if m.slug not in known]
     if unknown:
         raise HTTPException(400, f"unknown routine(s): {', '.join(sorted(unknown))}")
-    return list(members)
+    return [{"slug": m.slug, "split": m.split} for m in members]
 
 
 class GroupCreate(BaseModel):
     name: str = Field(min_length=1)
-    members: list[str] = Field(default_factory=list)
+    members: list[MemberSpec] = Field(default_factory=list)
     on_failure: str | None = None
     # D71: {"friendly": {…}} — the same spec shape the routine schedule editor sends;
     # cron is built server-side and the server tz recorded beside it.
@@ -55,7 +64,7 @@ class GroupPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = None
-    members: list[str] | None = None
+    members: list[MemberSpec] | None = None
     # Tri-state on_failure is expressed with a separate flag so JSON null (inherit) is
     # distinguishable from "field omitted" (leave unchanged) — Pydantic collapses both to None.
     on_failure: str | None = None
@@ -87,15 +96,16 @@ class DefaultBody(BaseModel):
 
 @router.get("/groups")
 def list_groups(request: Request) -> dict:
-    """The Groups page payload: the instance default + every group. `known_routines` is the
-    ordered slug/name list the group-member picker offers.
+    """The routines page's group payload: the instance default + every group.
+    `known_routines` is the ordered slug/name list the group-member picker offers.
     """
     home = _routines_home(request)
     catalog = _catalog(request)
     known = [{"slug": s, "name": info.cfg.name or s} for s, info in sorted(catalog.items())]
     # in-flight sequential fires (Phase B), keyed by group id, so the UI can show a running
-    # chain's progress and refuse a duplicate "Run now"
+    # chain's progress (per pass, F292) and refuse a duplicate "Run now"
     in_flight = {str(r["group_id"]): {"cursor": r.get("cursor", 0), "status": r.get("status"),
+                                      "phase": r.get("phase", "ingest"),
                                       "members": r.get("members", []), "log": r.get("log", [])}
                  for r in group_runs.in_flight(home)}
     # each group rides out with its schedule prefill (the editor speaks friendly specs)

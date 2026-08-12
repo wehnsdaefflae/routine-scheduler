@@ -43,7 +43,7 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
     detail.replaceChildren();
     if (gm) {
       detail.append(el("span", { class: "muted" }, "fires with group "),
-        el("a", { href: "#/groups" }, gm.name || gm.id),
+        el("a", { href: "#/routines" }, gm.name || gm.id),
         el("span", { class: "muted" }, " — this routine's own schedule is suppressed while the group is scheduled"));
     } else if (f === "hourly") detail.append(document.createTextNode("at minute"), minute);
     else if (f === "daily") detail.append(document.createTextNode("at"), time);

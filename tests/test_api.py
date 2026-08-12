@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from conftest import make_test_server, mk_run
 from rsched.config import load_server_config
 from rsched.paths import atomic_write_json, read_json
-from rsched.web.app import create_app
+from rsched.web.app import _routine_token_allowed, create_app
 
 TOKEN = "test-token"
 
@@ -90,6 +90,17 @@ def test_routine_token_tier_reads_but_never_mutates_config(tmp_path, make_routin
             # the tier refusal is machine-distinguishable from an ordinary 403 (RFC 6750) —
             # static/api.js re-opens the token gate on THIS header and nothing else
             assert 'error="insufficient_scope"' in r.headers["www-authenticate"]
+        # the ONE allowlisted routine-tier mutation (operator symmetry rule 2026-08-12):
+        # POST /api/llm passes the tier gate — a 502 here proves it reached the handler
+        # (no model endpoint in this test app) instead of the 403 seal; the boundary-aware
+        # matcher must not leak the allowance onto prefix-sharing sibling routes
+        r = c.post("/api/llm", json={"routine": "apir", "prompt": "p"}, headers=rt)
+        assert r.status_code == 502, (r.status_code, r.text)
+        from types import SimpleNamespace
+        fake = lambda path: SimpleNamespace(method="POST", url=SimpleNamespace(path=path))  # noqa: E731 — three probes, one shape
+        assert _routine_token_allowed(fake("/api/llm"))
+        assert not _routine_token_allowed(fake("/api/llm-tasks"))
+        assert not _routine_token_allowed(fake("/api/llmx"))
         # a garbage bearer stays 401; the primary passes the sealed routes
         assert c.get("/api/routines",
                      headers={"Authorization": "Bearer nope"}).status_code == 401
@@ -862,7 +873,7 @@ def test_routine_detail_reports_group_managed_state(client):
     c, tmp = client
     home = tmp / "routines"
     assert c.get("/api/routines/apir").json()["group_managed"] is None
-    grp = groups_mod.create(home, name="Morning", members=["apir"])
+    grp = groups_mod.create(home, name="Morning", members=[{"slug": "apir", "split": False}])
     assert c.get("/api/routines/apir").json()["group_managed"] is None    # no cron: no lock
     groups_mod.update(home, grp["id"], cron="0 7 * * *", tz="UTC")
     gm = c.get("/api/routines/apir").json()["group_managed"]

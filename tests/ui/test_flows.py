@@ -1286,27 +1286,30 @@ def test_dashboard_running_marker_in_both_views(ui, ui_page):
 def test_dashboard_shows_group_membership(ui, ui_page):
     """R107/F269: a routine's group membership is visible on the Routines list — a group
     chip on the card AND in the list-view row — so groups are discoverable from the routines
-    page, not only the separate /groups page. Clicking the chip goes to the Groups page."""
+    page. Clicking the chip opens the group's editor in place (D80: this page IS the
+    group-management surface; the /groups subpage is retired)."""
     from rsched import groups
 
-    groups.create(ui.routines, name="Maintenance", members=["uir"], on_failure="stop")
+    rec = groups.create(ui.routines, name="Maintenance",
+                        members=[{"slug": "uir", "split": False}], on_failure="stop")
 
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.get_by_role("button", name="▦ card view").click()   # list is the default (D72)
     card = ui_page.locator(".card", has_text="Test uir")
-    chip = card.locator("a.group-chip", has_text="Maintenance")
+    chip = card.locator("button.group-chip", has_text="Maintenance")
     expect(chip).to_be_visible()
     chip.click()
-    expect(ui_page).to_have_url(f"{ui.url}/#/groups")
+    expect(ui_page.locator(f'[data-group="{rec["id"]}"]')).to_be_visible(timeout=10_000)
+    ui_page.locator("[data-group-editor-close]").click()
 
     # list view: a grouped routine lives ONLY under its group row (F281) — expand it,
     # then the member row carries the same chip
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.get_by_role("button", name="☰ list view").click()
     expect(ui_page.locator("table.list tbody tr", has_text="Test uir")).to_have_count(0)
-    ui_page.locator("tr.group-row", has_text="Maintenance").locator("td").click()
+    ui_page.locator("tr.group-row", has_text="Maintenance").get_by_text("⛓ Maintenance").click()
     row = ui_page.locator("tr.group-member", has_text="Test uir")
-    expect(row.locator("a.group-chip", has_text="Maintenance")).to_be_visible()
+    expect(row.locator("button.group-chip", has_text="Maintenance")).to_be_visible()
 
 
 def test_dashboard_list_default_group_rows_and_inline_pause(ui, ui_page):
@@ -1316,7 +1319,8 @@ def test_dashboard_list_default_group_rows_and_inline_pause(ui, ui_page):
     PATCHes `enabled` without a trip to the config page."""
     from rsched import groups
 
-    groups.create(ui.routines, name="Nightly", members=["uir"], on_failure="stop")
+    groups.create(ui.routines, name="Nightly", members=[{"slug": "uir", "split": False}],
+                  on_failure="stop")
 
     ui_page.goto(f"{ui.url}/#/routines")
     expect(ui_page.locator("table.list")).to_be_visible()   # no toggle click — the default
@@ -1325,19 +1329,20 @@ def test_dashboard_list_default_group_rows_and_inline_pause(ui, ui_page):
     # the group row: present, collapsed by default, expands to member rows, collapses back.
     # F281 (reviewer order 2026-08-06): a grouped routine appears ONLY under its group row —
     # collapsed means NO row for it anywhere, expanded means exactly one member row.
+    # (D80 put the management buttons on the row, so the toggle clicks target the label.)
     grow = ui_page.locator("tr.group-row", has_text="Nightly")
     expect(grow).to_be_visible()
     expect(ui_page.locator("tr.group-member")).to_have_count(0)
     expect(ui_page.locator("table.list tbody tr", has_text="Test uir")).to_have_count(0)
-    grow.locator("td").click()
+    grow.get_by_text("⛓ Nightly").click()
     expect(ui_page.locator("tr.group-member", has_text="Test uir")).to_be_visible()
     expect(ui_page.locator("table.list tbody tr", has_text="Test uir")).to_have_count(1)
-    ui_page.locator("tr.group-row", has_text="Nightly").locator("td").click()
+    ui_page.locator("tr.group-row", has_text="Nightly").get_by_text("⛓ Nightly").click()
     expect(ui_page.locator("tr.group-member")).to_have_count(0)
 
     # inline pause on the expanded MEMBER row (the only row a grouped routine has, F281):
     # the toggle disables the routine on disk and re-renders…
-    ui_page.locator("tr.group-row", has_text="Nightly").locator("td").click()
+    ui_page.locator("tr.group-row", has_text="Nightly").get_by_text("⛓ Nightly").click()
     ui_page.locator("table.list tbody tr", has_text="Test uir").last \
         .get_by_role("button", name="⏸ pause").click()
     expect(ui_page.locator("table.list tbody tr", has_text="Test uir").last) \
@@ -1362,13 +1367,13 @@ def test_dashboard_group_managed_schedule_shown(ui, ui_page):
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     cfg["cron"] = "0 11 * * *"
     cfg_path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
-    groups.create(ui.routines, name="Sched", members=["uir"], on_failure="stop",
-                  cron="0 10 * * *", tz="Europe/Berlin")
+    groups.create(ui.routines, name="Sched", members=[{"slug": "uir", "split": False}],
+                  on_failure="stop", cron="0 10 * * *", tz="Europe/Berlin")
 
     ui_page.goto(f"{ui.url}/#/routines")
     grow = ui_page.locator("tr.group-row", has_text="Sched")
     expect(grow).to_contain_text("Every day at 10:00")     # header names the group cron
-    grow.locator("td").click()                             # expand the member row
+    grow.get_by_text("⛓ Sched").click()                    # expand the member row
     cell = ui_page.locator("tr.group-member", has_text="Test uir").locator("td").nth(3)
     expect(cell).to_contain_text("⛓ Sched — Every day at 10:00")
     expect(cell).not_to_contain_text("11:00")              # the vestigial cron is gone

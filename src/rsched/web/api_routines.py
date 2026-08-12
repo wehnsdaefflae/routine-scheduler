@@ -153,7 +153,7 @@ def routine_detail(request: Request, slug: str) -> dict:
         # linking to the group.
         "group_managed": next(({"id": g["id"], "name": g["name"]}
                                for g in groups.list_groups(server.routines_home)
-                               if g["cron"] and slug in g["members"]), None),
+                               if g["cron"] and slug in groups.member_slugs(g)), None),
         # Provenance is a CLAIM ("generated from") — in_library says whether the referenced
         # pattern actually exists in the current library, so the UI never implies a findable
         # workflow that isn't there (hand-authored recipes carry an empty slug).

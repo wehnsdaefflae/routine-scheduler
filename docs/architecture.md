@@ -684,19 +684,39 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   ONCE then CONSUMES the file (auto-deactivate = deletion). A conversation's self-armed one-shot
   is namespaced `conv--<slug>` and wakes the conversation by RESUMING its run ("remind me in 3
   days"). Cooldowns/expiry per request; corrupt requests are dropped, not rescanned.
-- **Routine groups (D53/D61/D67/D71)**: a group is an ORDERED list of routine slugs plus a
+- **Routine groups (D53/D61/D67/D71/F292/D80)**: a group is an ORDERED list of member records —
+  `{"slug", "split"}`, where `split` opts the member into the two-phase fire below — plus a
   mid-chain-failure policy, stored instance-level in `.control/groups.json` (`rsched/groups.py` —
-  web-written CRUD via `web/api_groups.py` and the Groups page, or the `manage_group` action from a
-  root conversation — including the group's cron schedule (R312), so group scheduling needs no
-  operator round-trip; a group is never routine config). "Run group now" — or the group's OWN cron
-  (below) — ARMS a sequential chain (`rsched/group_runs.py`, one in-flight chain per group,
-  snapshot of members + resolved policy at arm time); the scheduler-ticked **`GroupRunManager`**
-  (`daemon/group_runs.py`) advances it one transition per tick: fire member 0, wait for a terminal
-  state, then per the outcome and `on_failure` (`stop` aborts the rest — any non-`ok` outcome
-  counts as failure, a missing/disabled/crashed member too; `continue` fires on) fire the next.
+  web-written CRUD via `web/api_groups.py` and the Routines page's group rows (D80: the former
+  /groups subpage is retired — the group rows carry run-now/pause/edit, the toolbar above the list
+  creates groups and holds the instance default, and the editors are overlays in
+  `static/components/groupmanage.js`), or the `manage_group` action from a root conversation —
+  including the group's cron schedule (R312), so group scheduling needs no operator round-trip; a
+  group is never routine config). "Run group now" — or the group's OWN cron (below) — ARMS a
+  sequential chain (`rsched/group_runs.py`, one in-flight chain per group, snapshot of member
+  records + resolved policy at arm time); the scheduler-ticked **`GroupRunManager`**
+  (`daemon/group_runs.py`) advances it one transition per tick: fire the member at the cursor, wait
+  for a terminal state, then per the outcome and `on_failure` (`stop` aborts the rest — any
+  non-`ok` outcome counts as failure, a missing/disabled/crashed member too; `continue` fires on)
+  fire the next.
+  - **The two-phase fire (F292, operator standing order R214.3b)**: a chain runs in TWO PASSES —
+    the INGEST pass fires every member in group order; the OUTBOUND pass then fires the members
+    flagged `split` again, same order — so every member's ingestion/processing lands before any
+    split member's outbound communication, and a later member's ingest can read an earlier
+    member's fresh state. A SPLIT member is fired once per pass and told its half via a run-scoped
+    `phase=ingest|outbound` boot param: `Runner.fire` writes it into the run dir's `boot.json`
+    before the engine boots (so a resume keeps it — the file rides the dir), the engine reads it
+    at boot beside slug/run_ts (`RunContext.group_phase`, stamped into status.json as
+    `group_phase`), and the harness contract carries the pass's marching orders (`GROUP FIRE
+    PHASE: …` — ingest: process and stage only, NO outbound; outbound: read the staged state and
+    send, don't re-ingest; docs/prompt-anatomy.md). A NON-SPLIT member runs once, in the ingest
+    pass, with no param — its whole job in one run; a group with no split members chains once,
+    exactly as before. `stop` mid-ingest halts the outbound pass too (it would read state the
+    halted ingest never staged). `rsched run-once <slug> --phase ingest|outbound` exercises a
+    split routine's phase branch by hand through the same boot.json channel.
   Two group-wide facilities ride membership:
   - **The group schedule (D71)**: a group may carry its own `cron` (+ the server `tz`, written by
-    the web beside it — the Groups page has the same friendly editor a routine's schedule uses;
+    the web beside it — the group editor has the same friendly editor a routine's schedule uses;
     web RECORDS, daemon FIRES). The scheduler arms the chain on the group's cron — member 0 fires,
     the rest chain on completion — and while a routine belongs to a SCHEDULED group its OWN cron is
     SUPPRESSED from the fire table and boot catch-up (one fire path, no double-firing); its
@@ -712,6 +732,8 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
     inherit it like every resource). The harness contract names the root and its collision
     semantics: writes are whole-file atomic and LAST WRITE WINS PER FILE, so members exchange
     files under per-routine names (`<slug>-<topic>.md`) and treat shared files as read-mostly.
+    It is also the natural home for what a split member's ingest pass stages for its outbound
+    pass (its own `state/` works too — the phase prose names both).
 - **Event triggers fire through the same seam** (docs/triggers.md): the webhook route
   (`web/api_hooks.py`, POST `/api/hooks/<slug>/<token>` — the ONE unauthenticated API route:
   constant-time token compare, generic 404, 64 KiB cap, rate limit + spool cap, rejections logged,

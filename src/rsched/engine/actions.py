@@ -163,6 +163,19 @@ ACTION_SCHEMA: dict = {
                     "description": "manage_group create/update: the ORDERED routine slugs in the "
                                    "group (deduped; each must name a real routine) — the fire "
                                    "order a group run uses"},
+        "split": {"type": "array", "items": {"type": "string"},
+                  "description": "manage_group create/update: the subset of `members` that are "
+                                 "SPLIT — a group fires in two passes (every member's ingest "
+                                 "first, then the split members again for outbound), and a "
+                                 "split member runs once per pass, told its half via a "
+                                 "run-scoped `phase=ingest|outbound` boot param its recipe "
+                                 "branches on. Non-split members run once, in the ingest pass. "
+                                 "On update: omit to keep flags; with `members` absent it "
+                                 "re-flags the existing member list"},
+        "paused": {"type": "boolean",
+                   "description": "manage_group update: true pauses the GROUP's cron (nothing "
+                                  "in the group auto-fires; an explicit run still works, and "
+                                  "members stay group-managed), false resumes it"},
         "on_failure": {"type": "string", "enum": ["stop", "continue"],
                        "description": "manage_group: mid-chain-failure policy — 'stop' aborts the "
                                       "rest of the chain, 'continue' fires the remaining members. "
@@ -365,7 +378,8 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
     "create_routine": (("target", "name", "prompt"), ("workflow",)),
-    "manage_group": (("verb",), ("target", "name", "members", "on_failure", "cron")),
+    "manage_group": (("verb",), ("target", "name", "members", "split", "on_failure", "cron",
+                                 "paused")),
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
     "view_image": ((), ("path", "paths", "prompt")),
     "write_file": (("path", "content"), ("append",)),

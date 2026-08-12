@@ -204,9 +204,14 @@ class Runner:
             detail=f"scheduled fire refused ({cause}) — no run started this fire; "
                    f"a routine refused across several fires is going dark")
 
-    async def fire(self, cfg: RoutineConfig, *, reason: str = "schedule") -> str | None:
+    async def fire(self, cfg: RoutineConfig, *, reason: str = "schedule",
+                   group_phase: str = "") -> str | None:
         """Queue a run unless one is already active for this routine. The subprocess is
         spawned only once a concurrency slot is held. Returns the run_id.
+
+        `group_phase` (F292): a two-phase group fire passes "ingest"/"outbound" for a SPLIT
+        member — written into the run dir's boot.json before the engine boots, so the run
+        reads it as boot context (and a resume of the run keeps it; the file rides the dir).
         """
         if self.draining:
             log.info("fire_refused_draining routine=%s reason=%s", cfg.slug, reason)
@@ -222,6 +227,8 @@ class Runner:
         run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir,
                         sem=self._sem_for(cfg), background=self.is_background(cfg))
         atomic_write_json(run_dir / "status.json", _queued_status(run.run_id, ts))
+        if group_phase:
+            atomic_write_json(run_dir / "boot.json", {"phase": group_phase})
         self.active[cfg.slug] = run
         self._spawn_supervisor(run, cfg, reason)
         return run.run_id

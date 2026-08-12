@@ -1,11 +1,13 @@
 """The `manage_group` action (D61): registration + schema, the root-conversation gate, member
 validation against the live registry, and the full verb lifecycle (create/update/delete/
-set-default/run/list) against the real rsched.groups store.
+set-default/run/list) against the real rsched.groups store — including the flat `split`
+subset (F292) the handler folds into member records, and `paused` (D77/D80 parity with the
+routines page's group surface).
 
 Group management is initiated from a CONVERSATION only — the handler mirrors create_routine's
 root-conversation gate, and the engine only surfaces the kind to a root conversation
-(loop.allowed_tools injection), so a scheduled routine never sees it. The /groups web page
-stays; this is the same store reached from chat.
+(loop.allowed_tools injection), so a scheduled routine never sees it. The routines page
+manages the same store from the web.
 """
 
 from types import SimpleNamespace
@@ -77,12 +79,13 @@ def test_manage_group_lifecycle(tmp_path):
     ctx = _ctx(server, home="conversations_home")
     home = server.routines_home
 
-    # create
+    # create — flat slugs land as member records (split defaults false)
     obs = manage_group.handle_manage_group(
         ctx, {"kind": "manage_group", "verb": "create", "name": "Morning",
               "members": ["weight-coach", "news-digest"], "on_failure": "continue"})
     gid = obs["group"]["id"]
-    assert obs["group"]["members"] == ["weight-coach", "news-digest"]
+    assert obs["group"]["members"] == [{"slug": "weight-coach", "split": False},
+                                       {"slug": "news-digest", "split": False}]
     assert obs["group"]["on_failure"] == "continue"
 
     # list sees it
@@ -93,7 +96,7 @@ def test_manage_group_lifecycle(tmp_path):
     obs = manage_group.handle_manage_group(
         ctx, {"kind": "manage_group", "verb": "update", "target": gid,
               "members": ["news-digest", "weight-coach"]})
-    assert obs["group"]["members"] == ["news-digest", "weight-coach"]
+    assert [x["slug"] for x in obs["group"]["members"]] == ["news-digest", "weight-coach"]
 
     # set-default
     obs = manage_group.handle_manage_group(
@@ -168,3 +171,75 @@ def test_manage_group_run_empty_group_rejected(tmp_path):
     obs = manage_group.handle_manage_group(
         ctx, {"kind": "manage_group", "verb": "run", "target": gid})
     assert obs["rejected"] and "no members" in obs["reason"]
+
+
+def test_manage_group_split_subset(tmp_path):
+    """F292: `split` names the members that fire once per two-phase pass. Create takes it
+    beside `members`; update semantics — members without split keeps flags, split without
+    members re-flags the existing list, a non-member split slug is a teaching rejection."""
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "create", "name": "Pipe",
+              "members": ["weight-coach", "news-digest"], "split": ["news-digest"]})
+    gid = obs["group"]["id"]
+    assert obs["group"]["members"] == [{"slug": "weight-coach", "split": False},
+                                       {"slug": "news-digest", "split": True}]
+
+    # reorder WITHOUT split → each kept member keeps its flag
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "update", "target": gid,
+              "members": ["news-digest", "weight-coach"]})
+    assert obs["group"]["members"] == [{"slug": "news-digest", "split": True},
+                                       {"slug": "weight-coach", "split": False}]
+
+    # split WITHOUT members → re-flags the existing member list
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "update", "target": gid,
+              "split": ["weight-coach"]})
+    assert obs["group"]["members"] == [{"slug": "news-digest", "split": False},
+                                       {"slug": "weight-coach", "split": True}]
+
+    # a split slug that is not a member is a teaching rejection, nothing stored
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "update", "target": gid,
+              "split": ["ghost"]})
+    assert obs["rejected"] and "non-member" in obs["reason"]
+    assert groups.split_slugs(groups.get(server.routines_home, gid)) == ["weight-coach"]
+
+    # create rejects split ⊄ members too
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "create", "name": "Bad",
+              "members": ["weight-coach"], "split": ["news-digest"]})
+    assert obs["rejected"] and "non-member" in obs["reason"]
+
+    # the schema accepts the field
+    assert validate_action({"say": "s", "kind": "manage_group", "verb": "update",
+                            "target": gid, "split": ["weight-coach"]}) == []
+
+
+def test_manage_group_pause_toggle(tmp_path):
+    """D77 parity with the routines page's group surface: update carries `paused` (gate the
+    cron, keep it stored); absent = unchanged."""
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "create", "name": "P",
+              "members": ["weight-coach"], "cron": "0 7 * * *"})
+    gid = obs["group"]["id"]
+    assert obs["group"]["paused"] is False
+
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "update", "target": gid, "paused": True})
+    assert obs["group"]["paused"] is True and obs["group"]["cron"] == "0 7 * * *"
+
+    # absent key leaves it unchanged; explicit false resumes
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "update", "target": gid, "name": "P2"})
+    assert obs["group"]["paused"] is True
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "update", "target": gid, "paused": False})
+    assert obs["group"]["paused"] is False
+    assert validate_action({"say": "s", "kind": "manage_group", "verb": "update",
+                            "target": gid, "paused": True}) == []

@@ -1,10 +1,15 @@
 """Group runs — the in-flight state of a sequential group fire (D53 Phase B).
 
 Phase A (`rsched.groups`) is the group DEFINITION store. Phase B fires a group's members
-back-to-back: fire member 0, wait for it to reach a TERMINAL state, then — depending on its
-outcome and the group's on_failure policy — fire member 1, and so on. That takes CROSS-TICK
+back-to-back: fire a member, wait for it to reach a TERMINAL state, then — depending on its
+outcome and the group's on_failure policy — fire the next, and so on. That takes CROSS-TICK
 progress state (the daemon tick is 5s but a member run takes minutes), which is what this
 module stores, separately from the group definition it will outlive.
+
+A chain fires in TWO PASSES (F292): `phase` starts at "ingest" — every member in order —
+and, when any member is flagged `split`, flips once to "outbound" — the split members
+again, same order. `cursor` indexes into the CURRENT pass's fire list (the manager derives
+it from the member records + phase), so it resets to 0 at the flip.
 
 Ownership mirrors `rsched.triggers` / `rsched.schedule_once`: instance-level operator state
 the WEB layer arms and the DAEMON advances, in a dot-dir the registry scan ignores:
@@ -17,12 +22,14 @@ group id (the file path is the group id) — arming a group that is already runn
 by the caller, never coalesced into a second chain. Shape (single document, atomic-written):
 
     {"id": "gr-1a2b3c4d", "group_id": "grp-…", "name": "Morning jobs",
-     "members": ["weight-coach", "news-digest"],   # ordered, deduped, snapshot at arm
+     "members": [{"slug": "weight-coach", "split": false},  # ordered member records,
+                 {"slug": "news-digest", "split": true}],   # snapshot at arm
      "on_failure": "stop",                          # RESOLVED (override|default) at arm
-     "cursor": 0,                                   # index of the member to fire next
+     "phase": "ingest",                             # ingest | outbound (F292)
+     "cursor": 0,                                   # index into the CURRENT pass's fire list
      "current_run": null,                           # run_id of the member in flight, or null
      "status": "pending",                           # pending | running | done | stopped
-     "log": [{"slug","run_id","state","outcome"}],  # per-member results as they finish
+     "log": [{"slug","run_id","state","outcome","phase"}],  # per-member results as they finish
      "armed_by": "ui", "created": "…", "ended": null}
 
 This module owns the file IO and shape only; the DAEMON manager (`daemon/group_runs.py`)
@@ -103,8 +110,9 @@ def arm(routines_home: Path, group: dict, *, default_on_failure: str,
         "id": new_id(),
         "group_id": group_id,
         "name": str(group.get("name") or ""),
-        "members": list(group.get("members") or []),
+        "members": [dict(m) for m in group.get("members") or []],
         "on_failure": resolved,
+        "phase": "ingest",
         "cursor": 0,
         "current_run": None,
         "status": "pending",

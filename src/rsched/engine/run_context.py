@@ -127,6 +127,12 @@ class RunContext:
     # lazily there) and inherited by children like every resource; empty for ungrouped
     # routines and conversations.
     group_store_roots: list = field(default_factory=list)
+    # F292: which half of a two-phase group fire this run is — "ingest" | "outbound", read
+    # at boot from the run dir's boot.json (written by the daemon when it fires a SPLIT
+    # group member; the file rides the run dir, so a resume keeps the phase). "" for every
+    # other run. Surfaced in the harness contract and stamped into status.json; distinct
+    # from `phase` above, which is the recipe's stage-module position.
+    group_phase: str = ""
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
     # Spend recorded by EARLIER legs of this run (set on resume from the transcript).
     # Budgets deliberately ignore it — a resume gets a fresh window — but reporting must
@@ -336,6 +342,7 @@ class RunContext:
             # write at run end freezes it as the run's duration
             "elapsed_s": int(self.elapsed_total_s()),
             "phase": self.phase,
+            "group_phase": self.group_phase,
             "question": self.question,
             "usage": self.usage_total(),
             "model": self.main_model,
