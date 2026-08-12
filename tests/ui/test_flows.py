@@ -1341,19 +1341,20 @@ def test_dashboard_list_default_group_rows_and_inline_pause(ui, ui_page):
     expect(ui_page.locator("tr.group-member")).to_have_count(0)
 
     # inline pause on the expanded MEMBER row (the only row a grouped routine has, F281):
-    # the toggle disables the routine on disk and re-renders…
+    # the row controls are icon-only (⏸ pause / hollow ▷ resume — action text in the hover
+    # title); pausing disables the routine on disk, dims the row, and re-renders…
     ui_page.locator("tr.group-row", has_text="Nightly").get_by_text("⛓ Nightly").click()
     ui_page.locator("table.list tbody tr", has_text="Test uir").last \
-        .get_by_role("button", name="⏸ pause").click()
-    expect(ui_page.locator("table.list tbody tr", has_text="Test uir").last) \
-        .to_contain_text("disabled", timeout=10_000)
+        .get_by_role("button", name="⏸").click()
+    expect(ui_page.locator("table.list tbody tr.disabled-row", has_text="Test uir")) \
+        .to_be_visible(timeout=10_000)
     cfg = yaml.safe_load((ui.routines / "uir" / "routine.yaml").read_text(encoding="utf-8"))
     assert cfg["enabled"] is False
     # …and resumes from the same control
     ui_page.locator("table.list tbody tr", has_text="Test uir").last \
-        .get_by_role("button", name="▶ resume").click()
+        .get_by_role("button", name="▷").click()
     expect(ui_page.locator("table.list tbody tr", has_text="Test uir").last
-           .get_by_role("button", name="⏸ pause")).to_be_visible(timeout=10_000)
+           .get_by_role("button", name="⏸")).to_be_visible(timeout=10_000)
 
 
 def test_dashboard_group_managed_schedule_shown(ui, ui_page):
@@ -1374,7 +1375,8 @@ def test_dashboard_group_managed_schedule_shown(ui, ui_page):
     grow = ui_page.locator("tr.group-row", has_text="Sched")
     expect(grow).to_contain_text("Every day at 10:00")     # header names the group cron
     grow.get_by_text("⛓ Sched").click()                    # expand the member row
-    cell = ui_page.locator("tr.group-member", has_text="Test uir").locator("td").nth(3)
+    # the schedule·next cell (routine · history · schedule·next · last run · controls)
+    cell = ui_page.locator("tr.group-member", has_text="Test uir").locator("td").nth(2)
     expect(cell).to_contain_text("⛓ Sched — Every day at 10:00")
     expect(cell).not_to_contain_text("11:00")              # the vestigial cron is gone
 

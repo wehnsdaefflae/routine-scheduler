@@ -5,6 +5,7 @@
 
 import { api } from "/static/api.js";
 import { activityFeed } from "/static/components/activityfeed.js";
+import { slugColor } from "/static/components/charts.js";
 import { groupControls, groupProgress, groupsToolbar, openGroupEditor } from "/static/components/groupmanage.js";
 import { heartbeat } from "/static/components/heartbeat.js";
 import { cronToFriendly, specAtInstant } from "/static/components/schedule.js";
@@ -348,11 +349,14 @@ export async function render(view) {
     renderBody();
   }
 
-  function runNowBtn(c, cls = "btn small primary") {
+  // Table rows run ICON-ONLY controls (horizontal space, D72 follow-up); cards keep the
+  // labelled versions. The resume glyph is the HOLLOW ▷ so it can never be mistaken for
+  // the filled ▶ run-now sitting beside it — the action text lives in the hover title.
+  function runNowBtn(c, cls = "btn small primary", icon = false) {
     return el("button", {
       class: cls,
       disabled: !llmReady,
-      title: llmReady ? "" : "connect an LLM endpoint in Settings first",
+      title: llmReady ? (icon ? "run now" : "") : "connect an LLM endpoint in Settings first",
       onclick: async (e) => {
         e.target.disabled = true;
         try {
@@ -360,13 +364,13 @@ export async function render(view) {
           location.hash = `#/run/${r.run_id}`;
         } catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
       },
-    }, "▶ run now");
+    }, icon ? "▶" : "▶ run now");
   }
 
   // D72: start/pause without the config page — one PATCH on `enabled`, from both views.
   // While a run is active the web layer refuses config edits (409 guard_not_active), so the
   // control disables itself instead of letting the click bounce into an error toast.
-  function enableToggle(c, cls = "btn small ghost") {
+  function enableToggle(c, cls = "btn small ghost", icon = false) {
     const on = !!c.enabled;
     return el("button", {
       class: cls,
@@ -383,7 +387,14 @@ export async function render(view) {
           await load();
         } catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
       },
-    }, on ? "⏸ pause" : "▶ resume");
+    }, on ? (icon ? "⏸" : "⏸ pause") : (icon ? "▷" : "▷ resume"));
+  }
+
+  // The routine's identity color (charts.slugColor — the same hash the week strip's bars
+  // use): with the strip's legend gone, the swatch on the row/card IS the color mapping.
+  function swatch(slug) {
+    return el("span", { class: "id-swatch", style: `background:${slugColor(slug)}`,
+      title: "this routine's color in the week strip" });
   }
 
   // The schedule a routine will ACTUALLY fire on. A member of a scheduled group has its
@@ -418,6 +429,7 @@ export async function render(view) {
     const stats = statsLine(last);
     return el("div", { class: cls },
       el("div", { class: "title" },
+        swatch(c.slug),
         el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
         stateChip),
       (c.tags || []).length ? el("div", { class: "tags" }, c.tags.map((t) => tagChip(t))) : null,
@@ -454,10 +466,15 @@ export async function render(view) {
   }
 
   // ---- the detail table: same data, one row per routine, headers sort ------------------------
+  // Compressed to five columns (operator ask — the twelve-column layout outgrew the screen):
+  // state folds into the history strip (newest bar = last outcome, hover for detail; live/
+  // attention row styling and the dimmed disabled row carry the rest), schedule+next stack in
+  // one cell, the last run stacks its ts over the turns·duration·tokens·cost line, and open
+  // questions ride the routine cell as a chip. Every dropped header's sort key stays
+  // reachable in the filter bar's sort select.
   const COLS = [
-    ["routine", "name"], ["state", "state"], ["history", null], ["schedule", null],
-    ["next", "next"], ["last run", "activity"], ["turns", "turns"], ["tokens", "tokens"],
-    ["cost", "cost"], ["duration", "duration"], ["open ?", "questions"], ["", null],
+    ["routine", "name"], ["history", null], ["schedule · next", "next"],
+    ["last run", "activity"], ["", null],
   ];
   function table(shown) {
     const head = el("tr", {}, COLS.map(([label, key]) => el("th",
@@ -479,9 +496,9 @@ export async function render(view) {
         : ""))));
     const rowFor = (c, extraCls = "", group = null) => {
       const last = c.last_run;
-      const tok = tokensOf(c);
       const rowCls = [RUNNING.has(c.active_state) ? "live" : "",
-        c.active_state === "waiting_user" ? "attention" : "", extraCls]
+        c.active_state === "waiting_user" ? "attention" : "",
+        c.enabled ? "" : "disabled-row", extraCls]
         .filter(Boolean).join(" ");
       // F292: a split member (of the group row this one sits under) fires once per pass
       const split = group?.splitSet?.has(c.slug)
@@ -489,31 +506,30 @@ export async function render(view) {
             title: "split member — fires twice per group run: ingest pass, then outbound pass" },
             "⇄ split")
         : null;
+      const stats = statsLine(last);
       return el("tr", { class: rowCls },
-        el("td", {}, el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug), split,
+        el("td", {}, swatch(c.slug), el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug), split,
+          c.open_questions ? el("a", { href: "#/questions", class: "chip blocking",
+            title: "open questions waiting for you" }, `${c.open_questions} open ?`) : null,
           c.description ? el("div", { class: "faint small", style: "max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, c.description) : null,
           groupChips(c.slug)),
-        el("td", {}, c.active_state ? chip(c.active_state, c.active_state)
-          : c.enabled ? (last ? chip(last.state, last.state) : chip("idle", "idle")) : chip("disabled", "disabled")),
         el("td", { class: "hb-cell" }, c.recent_runs?.length
           ? heartbeat(c.recent_runs) : el("span", { class: "faint" }, "—")),
         el("td", { class: "muted small" },
-          schedText(c)
-            ? el("span", { title: "group-managed — the group's schedule fires this routine; its own cron is suppressed" }, schedText(c))
-            : (c.schedule_desc || "manual")),
-        el("td", { class: "muted small" }, c.next_fire ? when(c.next_fire, { mode: "rel" }) : "—"),
-        el("td", {}, last ? el("a", { href: `#/run/${last.run_id}` }, when(last.ts)) : el("span", { class: "faint" }, "never")),
-        el("td", { class: "num" }, last?.turns ? String(last.turns) : "—"),
-        el("td", { class: "num" }, tok ? fmtNum(tok) : "—"),
-        el("td", { class: "num" }, fmtCost(last?.usage) || "—"),
-        el("td", { class: "num" }, last?.elapsed_s != null ? fmtDur(last.elapsed_s) : "—"),
-        el("td", { class: "num" }, c.open_questions
-          ? el("a", { href: "#/questions", class: "chip blocking" }, String(c.open_questions)) : "—"),
+          el("div", schedText(c)
+            ? { title: "group-managed — the group's schedule fires this routine; its own cron is suppressed" }
+            : {}, schedText(c) || c.schedule_desc || "manual"),
+          c.next_fire ? el("div", { class: "faint" }, "next ", when(c.next_fire, { mode: "rel" })) : null),
+        el("td", {}, last
+          ? [el("a", { href: `#/run/${last.run_id}` }, when(last.ts)),
+             stats ? el("div", { class: "faint small",
+               title: "last run: turns · duration · tokens · cost" }, stats) : null]
+          : el("span", { class: "faint" }, "never")),
         el("td", { class: "row-actions" },
           c.active_run
-            ? el("a", { class: "btn small", href: `#/run/${c.active_run}` }, "◉ live")
-            : runNowBtn(c, "btn small"),
-          enableToggle(c)));
+            ? el("a", { class: "btn small", href: `#/run/${c.active_run}`, title: "watch the live run" }, "◉")
+            : runNowBtn(c, "btn small", true),
+          enableToggle(c, "btn small ghost", true)));
     };
     // D73 + F281: each group is its own collapsible row — expanding lists its members
     // right beneath it, in the group's FIRE order (not the table sort). A grouped routine

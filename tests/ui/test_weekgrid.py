@@ -5,6 +5,7 @@ reorder the group, onto another group's lane to join it, onto the remove strip t
 along the own lane to reschedule.
 """
 
+import re
 import time
 from datetime import datetime
 
@@ -107,9 +108,9 @@ def test_same_group_routines_share_one_week_row(ui, ui_page, make_routine):
                                 has=ui_page.locator("a[href='#/routine/uir2']")).first
     expect(group_row.locator("a[href='#/routine/uir'] .wg-bar")).to_have_count(1)
     expect(group_row.locator("a[href='#/routine/uir2'] .wg-bar")).to_have_count(1)
-    # The legend tags the grouped members with their group name.
-    legend = ui_page.locator(".weekpanel .wg-legend")
-    expect(legend.locator(".wg-leg-group", has_text="Nightly")).to_have_count(2)
+    # The lane names itself in the name column (the legend is retired — color identity
+    # lives on the routine rows/cards as swatches).
+    expect(ui_page.locator(".weekpanel .wg-lane-label.group", has_text="Nightly")).to_have_count(1)
 
 
 def _chained_group(ui, make_routine):
@@ -135,20 +136,21 @@ def test_scheduled_group_chains_on_one_labelled_lane(ui, ui_page, make_routine):
     """D71/R313: a group WITH a cron owns its members' schedule. The lane draws the GROUP's
     fires — each member once per fire, chained — so both members carry the SAME bar count,
     the daily count, not their own (suppressed) weekly crons' 1-2. Every lane names itself
-    at the left edge, and the legend shows the group's schedule as the members' real one."""
+    in the name column, and the group label's hover carries the group's schedule."""
     _chained_group(ui, make_routine)
 
     ui_page.goto(f"{ui.url}/#/routines")
     expect(ui_page.locator(".weekpanel svg.wg")).to_be_visible(timeout=10_000)
     # two lanes: the group's + the solo harness routine's — each labelled
     expect(ui_page.locator(".weekpanel .wg-row")).to_have_count(2, timeout=10_000)
-    expect(ui_page.locator(".weekpanel .wg-lane-label.group", has_text="Chained")).to_have_count(1)
     expect(ui_page.locator(".weekpanel .wg-lane-label", has_text="Test uir")).to_have_count(1)
+    group_label = ui_page.locator(".weekpanel .wg-lane-label.group", has_text="Chained")
+    expect(group_label).to_have_count(1)
+    # the lane's schedule is the GROUP's, not the vestigial member cron
+    expect(group_label).to_have_attribute("title", re.compile("09:30"))
     n1 = ui_page.locator(".weekpanel a[href='#/routine/gm1'] .wg-bar").count()
     n2 = ui_page.locator(".weekpanel a[href='#/routine/gm2'] .wg-bar").count()
     assert n1 == n2 and 6 <= n1 <= 8, f"expected the daily group fires on both members, got {n1}/{n2}"
-    # the members' legend schedule is the GROUP's, not the vestigial member cron
-    expect(ui_page.locator(".weekpanel .wg-leg-sched", has_text="09:30").first).to_be_visible()
 
 
 def test_drag_onto_sibling_reorders_group(ui, ui_page, make_routine):

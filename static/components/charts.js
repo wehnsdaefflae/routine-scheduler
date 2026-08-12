@@ -8,6 +8,15 @@ import { el, fmtNum, fmtUsd } from "/static/util.js";
 
 export const SERIES_COLORS = ["#cc7f1f", "#3d8fe0", "#219e8e", "#a86fd1", "#d16a92", "#7fa03f"];
 export const OTHER_COLOR = "#56697e";
+
+// Stable color IDENTITY for a routine: hash the slug into the palette so it keeps its color
+// across reorders / additions (an index-based pick reshuffles everyone). One color per routine
+// everywhere it appears — the week strip's bars and the swatch on its table row / card.
+export function slugColor(slug) {
+  let h = 0;
+  for (const ch of String(slug)) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return SERIES_COLORS[h % SERIES_COLORS.length];
+}
 const MAX_SERIES = 6;
 
 export const METRICS = {

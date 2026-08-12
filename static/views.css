@@ -87,20 +87,18 @@ td.hb-cell { min-width: 155px; }
   background: var(--raised); border: 1px solid var(--line); border-radius: 6px;
   padding: 3px 8px; font-size: 11px; color: var(--text); white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
-.weekgrid .wg-dropzone { position: absolute; left: 0; right: 0; z-index: 4;
+.weekgrid .wg-dropzone { position: absolute; left: 0; right: 0; z-index: 4; pointer-events: none;
   display: flex; align-items: center; justify-content: center; font-size: 11px;
   color: var(--muted); background: color-mix(in srgb, var(--raised) 88%, transparent);
   border: 1px dashed var(--line); border-radius: 6px; }
 .weekgrid .wg-dropzone.armed { color: var(--err); border-color: var(--err); }
-/* routine legend below the strip — identity lives here so the timeline keeps the full width */
-.weekgrid .wg-legend { display: flex; flex-wrap: wrap; gap: 5px 16px; margin-top: 10px;
-  padding-top: 9px; border-top: 1px solid var(--line); }
-.weekgrid .wg-leg { display: inline-flex; align-items: center; gap: 7px; text-decoration: none;
-  color: var(--muted); font-size: 12px; }
-.weekgrid .wg-leg:hover { color: var(--text); }
-.weekgrid .wg-swatch { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
-.weekgrid .wg-leg-sched { color: var(--faint); font-size: 11px; }
-.weekgrid .wg-leg-group { color: #b48ce8; font-size: 11px; }
+
+/* the routine's identity color (charts.slugColor) — the same hue its week-strip bars use;
+   with the strip's legend retired, this swatch on the row/card IS the color mapping */
+.id-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+  margin-right: 7px; flex: 0 0 auto; vertical-align: baseline; }
+/* a paused (disabled) routine reads dimmed — the state column folded into history/row styling */
+table.list tr.disabled-row td { opacity: 0.55; }
 
 /* ---------- log: stats strip + feed rows ---------- */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 14px 0 6px; }

@@ -5,7 +5,9 @@
 // fixed column LEFT of the scroll area, so they never overlap the timeline and stay put while
 // it scrolls. A bar starts at its fire time; its width is the routine's average runtime drawn
 // true to scale against a day's width, with a small minimum so a short run still shows and the
-// exact value in the hover tooltip. Colour + schedule + avg runtime live in the LEGEND below.
+// exact value (with its N-run provenance) in the hover tooltip. There is NO legend: a bar's
+// color is the routine's stable identity color (charts.slugColor), the same swatch its table
+// row and card carry — the color mapping lives on the routines themselves.
 // Times are in the browser's timezone; fires already behind us render dimmed; a live cursor
 // marks now. Rows follow the dashboard's own filters, ordered by next upcoming fire.
 //
@@ -22,16 +24,8 @@
 // onto the remove strip to leave the group, or along their own lane to reschedule.
 
 import { el, fmtDur } from "/static/util.js";
-import { SERIES_COLORS } from "/static/components/charts.js";
+import { slugColor } from "/static/components/charts.js";
 import { weekDrag } from "/static/components/weekgrid-drag.js";
-
-// Stable color identity: hash the slug into the palette so a routine keeps its
-// color across reorders / additions (an index-based pick reshuffles everyone).
-function slugColor(slug) {
-  let h = 0;
-  for (const ch of String(slug)) h = (h * 31 + ch.codePointAt(0)) >>> 0;
-  return SERIES_COLORS[h % SERIES_COLORS.length];
-}
 
 const NS = "http://www.w3.org/2000/svg";
 const DAY_MS = 86_400_000, DAY_SECONDS = 86_400;
@@ -172,7 +166,11 @@ export function weekGrid(dragHandlers = null) {
 
     // Bar width to scale against a day's width, floored; clamped so it never runs off the strip.
     const barWidth = (secs, xt) => Math.min(Math.max(MIN_BAR_W, (secs / DAY_SECONDS) * DAY_W), W - xt);
-    const legendItems = [];
+    // The tooltip's runtime note: the average AND its provenance (F210's 5-run moving window)
+    // — with the legend gone, the bar itself carries what its hover title used to.
+    const runNoteOf = (avg) => avg
+      ? ` · runs ~${fmtDur(avg.secs)} over ${avg.n} run${avg.n > 1 ? "s" : ""}`
+      : " · never run";
     const rowsMeta = [];   // per-lane geometry for the drag controller
     const hits = [];       // per-bar geometry: what a pointer can pick up
     // The name column: one entry per lane, row-aligned with the strip (HEAD_H spacer, then
@@ -191,16 +189,13 @@ export function weekGrid(dragHandlers = null) {
             title: lane.group.schedule_desc || lane.group.name }, `⛓ ${lane.group.name}`)
         : el("a", { class: "wg-lane-label", href: `#/routine/${lane.members[0].c.slug}` },
             lane.members[0].c.name || lane.members[0].c.slug));
-      // The group's REAL schedule stands in for a scheduled member's vestigial own one (R313).
-      const schedOf = (m) => (grouped && lane.group.cron)
-        ? (lane.group.schedule_desc || "") : (m.c.schedule_desc || "");
       // Every member's OWN bars (individual cron fires — none on scheduled-group lanes — plus
       // one-shots as hollow bars, not draggable: re-arming is the Schedule-once card's job).
       for (const m of lane.members) {
         const color = slugColor(m.c.slug);
         const name = m.c.name || m.c.slug;
         const avg = avgRuntime(m.c);
-        const runNote = avg ? ` · runs ~${fmtDur(avg.secs)}` : " · never run";
+        const runNote = runNoteOf(avg);
         const a = s("a", { href: `#/routine/${m.c.slug}` });   // a bar opens its routine
         for (const t of m.fires) {
           const r = s("rect", { x: x(t), y: cy - BAR_H / 2, width: barWidth(avg?.secs ?? 0, x(t)), height: BAR_H,
@@ -215,8 +210,6 @@ export function weekGrid(dragHandlers = null) {
             class: t < now ? "wg-bar one-shot past" : "wg-bar one-shot" },
             `${name}${grpNote} · one-shot · ${fmtAt.format(new Date(t))}${runNote}`));
         g.append(a);
-        legendItems.push({ slug: m.c.slug, name, color, sched: schedOf(m),
-          avg, group: lane.group?.name });
       }
       // The chain (D71): at each GROUP fire the visible members run back-to-back — ingest
       // pass in member order, then the split members again as the outbound pass (F292).
@@ -234,7 +227,7 @@ export function weekGrid(dragHandlers = null) {
             if (xt >= W) return;   // this chain's tail runs off the strip
             const avg = avgRuntime(m.c);
             const name = m.c.name || m.c.slug;
-            const runNote = avg ? ` · runs ~${fmtDur(avg.secs)}` : " · never run";
+            const runNote = runNoteOf(avg);
             const at = (si ? "~" : "") + fmtAt.format(new Date(cur));
             const a = s("a", { href: `#/routine/${m.c.slug}` });
             const r = s("rect", { x: xt, y: cy - BAR_H / 2, width: barWidth(avg?.secs ?? 0, xt),
@@ -255,20 +248,9 @@ export function weekGrid(dragHandlers = null) {
     if (now >= t0 && now < t0 + span)
       svg.append(s("line", { x1: x(now), y1: HEAD_H - 4, x2: x(now), y2: H - PAD_B, class: "wg-now" }, "now"));
 
-    // Legend below the strip: colour → routine, with schedule; exact average runtime on hover.
-    const legend = el("div", { class: "wg-legend" });
-    for (const it of legendItems)
-      legend.append(el("a", { class: "wg-leg", href: `#/routine/${it.slug}`,
-        title: it.avg ? `avg runtime ~${fmtDur(it.avg.secs)} over ${it.avg.n} run${it.avg.n > 1 ? "s" : ""}`
-                      : "no runs recorded yet" },
-        el("span", { class: "wg-swatch", style: `background:${it.color}` }),
-        el("span", { class: "wg-leg-name" }, it.name),
-        it.sched ? el("span", { class: "wg-leg-sched" }, it.sched) : null,
-        it.group ? el("span", { class: "wg-leg-group" }, `⛓ ${it.group}`) : null));
-
     const scroll = el("div", { class: "wg-scroll" });
     scroll.append(svg);
-    node.append(el("div", { class: "wg-wrap" }, names, scroll), legend);
+    node.append(el("div", { class: "wg-wrap" }, names, scroll));
     scroll.scrollLeft = prevScroll;   // a live re-render must not yank the strip back to today
     drag?.setLayout({ svg, rows: rowsMeta, hits, t0, span, W, headH: HEAD_H, rowH: ROW_H });
   }

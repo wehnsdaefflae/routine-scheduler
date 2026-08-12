@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.187.0] — 2026-08-12
+
+### Changed
+- **Week-strip legend retired; color identity moves to the routines** (operator ask). Every
+  routine's stable identity color (`charts.slugColor` — the hue its week-strip bars use) now
+  shows as a swatch on its table row and card title, so the strip needs no legend; the
+  avg-runtime provenance ("~30m over 5 runs") moved into each bar's own hover title, and a
+  group lane's schedule hovers on its name-column label.
+- **Routine table compressed to five columns** (routine · history · schedule+next · last run
+  · controls — the twelve-column layout outgrew the screen). The state column folds into the
+  history strip (newest bar = last outcome, hover for detail; running rows stay marked live,
+  a disabled routine's row dims); schedule and next fire stack in one cell; the last run
+  stacks its timestamp over the turns · duration · tokens · cost line; open questions ride
+  the routine cell as a chip. Row controls are icon-only with the action in the hover title —
+  ▶ run now, ◉ watch live, ⏸ pause, and the hollow ▷ for resume so it cannot be mistaken for
+  run-now. Every dropped column's sort key stays available in the filter bar's sort select;
+  cards keep their labelled buttons.
+
 ## [0.186.0] — 2026-08-12
 
 ### Changed
