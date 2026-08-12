@@ -135,7 +135,7 @@ def test_selftest_prewarms_deps_for_net_outbound(tmp_path, monkeypatch):
                              'usage: gu adder A B [--json]\nnet: outbound"""')
     utils_lib.write_util_file(home, "adder", outbound)
     prewarmed: list[str] = []
-    monkeypatch.setattr(utils_lib, "_prewarm_script_deps",
+    monkeypatch.setattr(utils_lib, "prewarm_script_deps",
                         lambda script, policy, _home: prewarmed.append(script))
     monkeypatch.setattr(utils_lib, "run_util", lambda *a, **k: (0, "", "selftest: ok"))
     ok, _out = utils_lib.selftest(home, "adder", policy=OFF)
@@ -152,7 +152,7 @@ def test_selftest_leaves_prewarm_to_run_util_for_net_none(tmp_path, monkeypatch)
                              'usage: gu adder A B [--json]\nnet: none"""')
     utils_lib.write_util_file(home, "adder", none_net)
     prewarmed: list[str] = []
-    monkeypatch.setattr(utils_lib, "_prewarm_script_deps",
+    monkeypatch.setattr(utils_lib, "prewarm_script_deps",
                         lambda script, policy, _home: prewarmed.append(script))
     monkeypatch.setattr(utils_lib, "run_util", lambda *a, **k: (0, "", "selftest: ok"))
     ok, _out = utils_lib.selftest(home, "adder", policy=OFF)

@@ -268,6 +268,17 @@ and the capabilities digest's catalog listing):
   decomposed into the stages at creation and NOT persisted (a routine carries no `instruction.md`);
   the stages are the sole source of truth. The rules themselves are NOT here: they live once in the
   library and the run reads them with `read_rule`.
+- `procedures/<name>.py` (D88 phase 1, `rsched/procedures.py`) — the routine's OWN deterministic
+  scripts, the PROCEDURE half of the recipe/procedure split: PEP 723 + the util docstring-header
+  standard minus the catalog lines (no `calls:` graph; `gu` is NOT on PATH — a step needing a
+  util's capability belongs in the recipe). Run via the `procedure` action (gated by the
+  `procedure` capability; conduct: the `procedures` permission doc) inside the SAME Landlock
+  jail and declared-only secrets injection a util gets, with the four-state `secret:` grants and
+  F290's optional-withholding applying identically. Authored by the run itself with `write_file`
+  (an own-dir write; the repo's autocommit versions it) or by the user; deliberately NO approval
+  dial — the blast radius is the routine's own sandboxed permissions. The capabilities digest
+  lists the routine's procedures when the capability is held; children run with capabilities off,
+  so a subrun never sees the kind.
 - `.util_outputs/<run-ts>/t<turn>-<util>.out|.err` (`engine/outputs.py`) — util output too large for
   the observation that carried it, saved in full instead of destroyed. A util's stdout is captured up
   to 1 MB (`utils_lib.OUTPUT_CAP`) and then head+tail truncated to 8k for the observation, and the

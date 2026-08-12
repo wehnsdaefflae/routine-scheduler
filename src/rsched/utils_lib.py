@@ -446,24 +446,23 @@ def util_needs(home: Path, name: str) -> tuple[set[str], bool, set[str]]:
     return secrets, net, secrets - required
 
 
-def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = None,
+def scoped_env(declared: set[str], extra_secrets: dict[str, str] | None = None,
                withhold: set[str] | None = None) -> dict:
-    """A util subprocess's environment: the central secrets store injects ONLY the vars the
-    util (or a `calls:` sibling) declares; every other store key is scrubbed even when the
-    daemon's own environment carries it — an undeclared secret must not reach the child by
-    any route. STRIP_VARS (LLM keys) are removed unconditionally, declared or not.
+    """A jailed subprocess's environment (utils AND per-routine procedures): the central
+    secrets store injects ONLY `declared` vars; every other store key is scrubbed even
+    when the daemon's own environment carries it — an undeclared secret must not reach
+    the child by any route. STRIP_VARS (LLM keys) are removed unconditionally.
 
     `extra_secrets` are non-store secrets the engine resolves per run — today a routine's OAuth
-    connection access tokens (<PROVIDER>_ACCESS_TOKEN). They obey the SAME rule: injected only if
-    the util declares the var, scrubbed otherwise — the declared-only invariant covers them too.
+    connection access tokens (<PROVIDER>_ACCESS_TOKEN). They obey the SAME rule: injected only
+    if declared, scrubbed otherwise — the declared-only invariant covers them too.
 
     `withhold` names DECLARED vars to scrub anyway — the engine passes a run's not-granted
     OPTIONAL secrets (F290) so a public call runs without prompting; grant-free callers
     (CLI, selftest, notify, settings) pass nothing and inject every declared var as before.
     """
     from .secrets import load_secrets
-    declared, _, _ = util_needs(home, name)
-    inject = declared - {w.upper() for w in (withhold or set())}
+    inject = {d.upper() for d in declared} - {w.upper() for w in (withhold or set())}
     env = {**os.environ}
     for key, value in {**load_secrets(), **(extra_secrets or {})}.items():
         if key.upper() in inject:
@@ -475,7 +474,16 @@ def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = Non
     return env
 
 
-def _prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path) -> None:
+def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = None,
+               withhold: set[str] | None = None) -> dict:
+    """A util subprocess's environment: `scoped_env` over the util's transitive
+    declarations (`calls:` siblings included — one jail, one env).
+    """
+    declared, _, _ = util_needs(home, name)
+    return scoped_env(declared, extra_secrets, withhold)
+
+
+def prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path) -> None:
     """Resolve + install a PEP 723 script's dependencies with the network OPEN, so a util
     whose runtime net policy is `none`/undeclared can still fetch its build-time deps (R40).
     Filesystem stays jailed (same policy); only this install phase gets TCP. Best-effort:
@@ -534,7 +542,7 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     # an outbound util installs inside its own net-open `uv run`, so it skips the pass here
     # and the selftest runner owns its warm-up instead (R20).
     if not net:
-        _prewarm_script_deps(script, policy, home)
+        prewarm_script_deps(script, policy, home)
     try:
         cmd = sandbox.wrap(["uv", "run", "--script", script, *args],
                            policy=policy, libraries_home=home, net=net)
@@ -589,7 +597,7 @@ def selftest(home: Path, name: str, *, timeout: int = 120,
     # install.
     _, net, _ = util_needs(home, name)
     if net:
-        _prewarm_script_deps(str(util_dir(home, name) / "main.py"), policy, home)
+        prewarm_script_deps(str(util_dir(home, name) / "main.py"), policy, home)
     code, out, err = run_util(home, name, ["--selftest"], timeout=timeout, policy=policy)
     if code == 0:
         return True, (err or out).strip()

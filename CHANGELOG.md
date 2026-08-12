@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.179.0] — 2026-08-12
+
+### Added
+- **Per-routine procedures** (D88 phase 1, option A — user order 2026-08-10): a routine
+  may carry `procedures/<name>.py` — PEP 723 scripts, private to the routine, versioned
+  by its repo, authored by the run itself via `write_file`. The new gated `procedure`
+  action (capability `procedure`; conduct: the `procedures` permission doc, seeded and
+  shipped to the live library) runs one inside the SAME Landlock jail and declared-only
+  secrets contract a util gets — four-state `secret:` grants, F290 optional withholding
+  — with the util's observation shape (truncation, spill pointer, teaching missing
+  route). No `calls:` graph, no `gu` on PATH (a step needing a util's capability belongs
+  in the recipe), and deliberately no approval dial: the blast radius is the routine's
+  own sandboxed permissions. The capabilities digest lists a routine's procedures; the
+  secret-exposure gate core is now shared by both callable-script kinds. Phase 2
+  (creation-flow split question in adapt.py/clarify-instruction) follows.
+
 ## [0.178.0] — 2026-08-12
 
 ### Changed

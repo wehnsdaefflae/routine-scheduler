@@ -44,6 +44,7 @@ def test_schema_compiles_and_example_passes():
         {"say": "s", "kind": "read_rule", "name": "evidence-discipline"},
         {"say": "s", "kind": "write_rule", "name": "evidence-discipline",
          "anchor": "old clause", "replacement": "new clause"},
+        {"say": "s", "kind": "procedure", "name": "poll-inbox", "args": ["--json"]},
         {"say": "s", "kind": "llm", "prompt": "p", "system": "sys", "response_schema": {"type": "object"}},
         {"say": "s", "kind": "spawn", "prompt": "do x", "label": "research", "workflow": "general-task"},
         {"say": "s", "kind": "subtask", "prompt": "do step x", "label": "step-1",

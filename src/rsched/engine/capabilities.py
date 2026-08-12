@@ -162,6 +162,20 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         if g.allows_kind("schedule_run"):
             cap_bits.append("schedule_run (arm/cancel a one-shot future run of a routine — "
                             "self-target always; other routines via the scheduling permission)")
+        if g.allows_kind("procedure"):
+            from .. import procedures
+            procs = procedures.list_procedures(ctx.routine.dir)
+            if procs:
+                cap_bits.append(
+                    "procedure — run this routine's OWN deterministic scripts (procedures/): "
+                    + "; ".join(f"{p['name']} ({p['summary']})" if p["summary"] else p["name"]
+                                for p in procs))
+            else:
+                cap_bits.append(
+                    "procedure — run this routine's own deterministic scripts from "
+                    "procedures/<name>.py (none exist yet; author one with write_file: a PEP "
+                    "723 script, docstring header '<name> — <summary>' + 'net:' + 'secrets:', "
+                    "then call it with the procedure action)")
         if "create_routine" in kinds:
             cap_bits.append("create_routine (graduate THIS conversation into a new scheduled "
                             "routine — the only way a routine is created)")

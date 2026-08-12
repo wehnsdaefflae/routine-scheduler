@@ -282,19 +282,31 @@ def secret_state(ctx, secret: str) -> str:
     return "granted" if grants.get(eid) is True else "undecided"
 
 
-def withheld_optional_secrets(ctx, name: str) -> list[str]:
+def withheld_optional(ctx, optional: set[str]) -> list[str]:
     """The OPTIONAL (`?`-declared, F290) secrets present in the store that this run may NOT
     see — not granted to the routine. They never block a call or file an ask: the executor
     withholds them from the child env and the observation says so, so a public call runs
     prompt-free and an auth-needing one learns to request exposure explicitly.
     """
+    from ..secrets import load_secrets
+    return sorted(s for s in optional & set(load_secrets())
+                  if secret_state(ctx, s) != "granted")
+
+
+def withheld_optional_secrets(ctx, name: str) -> list[str]:
+    """`withheld_optional` over a UTIL's transitive declarations."""
     home = ctx.server.libraries_home
     if not utils_lib.exists(home, name):
         return []
     _needed, _net, optional = utils_lib.util_needs(home, name)
-    from ..secrets import load_secrets
-    return sorted(s for s in optional & set(load_secrets())
-                  if secret_state(ctx, s) != "granted")
+    return withheld_optional(ctx, optional)
+
+
+def withheld_procedure_secrets(ctx, name: str) -> list[str]:
+    """`withheld_optional` over a PROCEDURE's own-header declarations (D88)."""
+    from .. import procedures
+    _needed, _net, optional = procedures.needs(ctx.routine.dir, name)
+    return withheld_optional(ctx, optional)
 
 
 def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
@@ -317,6 +329,30 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
     if name in ("list", "show") or not utils_lib.exists(home, name):
         return None                     # discovery / missing-util paths expose no secrets
     needed, _net, optional = utils_lib.util_needs(home, name)
+    return _gate_secrets(loop, kind="util", name=name, needed=needed, optional=optional,
+                         poll_s=poll_s)
+
+
+def gate_procedure_secrets(loop, action: dict, poll_s: float) -> dict | None:
+    """The SAME four-state exposure gate for a per-routine procedure (D88) — needs come
+    from the script's own header, no transitive graph.
+    """
+    from .. import procedures
+    ctx = loop.ctx
+    name = str(action.get("name") or "")
+    if not procedures.exists(ctx.routine.dir, name):
+        return None                     # the missing-procedure path exposes no secrets
+    needed, _net, optional = procedures.needs(ctx.routine.dir, name)
+    return _gate_secrets(loop, kind="procedure", name=name, needed=needed,
+                         optional=optional, poll_s=poll_s)
+
+
+def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
+                  poll_s: float) -> dict | None:
+    """The exposure core both callable-script gates share. `kind` is the action kind the
+    observation carries AND the noun the teaching prose uses ("util" / "procedure").
+    """
+    ctx = loop.ctx
     from ..secrets import load_secrets
     required = needed - optional
     present = sorted(required & set(load_secrets())) if required else []
@@ -332,33 +368,33 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
         # names it refused (the transcript event keeps them for the user's surfaces;
         # the model-facing reason and rendering carry a count only).
         n = len(denied)
-        return {"kind": "util", "name": name, "declined_secrets": denied,
+        return {"kind": kind, "name": name, "declined_secrets": denied,
                 "reason": f"the user has declined exposing {n} secret"
-                          f"{'s' if n != 1 else ''} this util call declares to this "
-                          "routine — the util was not run. The mapping is editable on the "
-                          "routine page (secret exposure); work without this util, or file "
+                          f"{'s' if n != 1 else ''} this {kind} call declares to this "
+                          f"routine — the {kind} was not run. The mapping is editable on the "
+                          f"routine page (secret exposure); work without this {kind}, or file "
                           "a deferred ask_user explaining why it is needed."}
     undecided = [s for s in present if _state(s) == "undecided"]
     if not undecided:
         return None
     if ctx.depth > 0:
-        return {"kind": "util", "name": name, "pending_secrets": undecided,
+        return {"kind": kind, "name": name, "pending_secrets": undecided,
                 "reason": "secret exposure to this routine is not yet granted, and a "
                           "sub-workflow cannot ask the user — the TOP-LEVEL run must call "
-                          f"util {name!r} once to trigger the approval."}
+                          f"{kind} {name!r} once to trigger the approval."}
     ask = handle_ask(loop, {
         "question": f"Expose secret{'s' if len(undecided) > 1 else ''} "
-                    f"{', '.join(undecided)} to routine '{ctx.routine.slug}'? Its util "
+                    f"{', '.join(undecided)} to routine '{ctx.routine.slug}'? Its {kind} "
                     f"call '{name}' declares them.",
         "mode": "blocking",
         "request": [f"secret:{s}" for s in undecided],
-        "default": "the util is NOT run and the secrets stay unexposed until allowed"},
+        "default": f"the {kind} is NOT run and the secrets stay unexposed until allowed"},
         poll_s)
     if not ask.get("answered"):
-        return {"kind": "util", "name": name, "pending_secrets": undecided,
+        return {"kind": kind, "name": name, "pending_secrets": undecided,
                 "pending_approval": True, "qid": ask.get("qid"),
                 "reason": "the secret-exposure request is still open — do other work and "
-                          "retry the util once it is settled."}
+                          f"retry the {kind} once it is settled."}
     decision = str(ask.get("decision") or "")
     if decision.startswith("allow"):
         return None
@@ -367,10 +403,10 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
     # is right for entities the model itself requested, and wrong for a refusal).
     n = len(undecided)
     phrase = requests.DECISION_PHRASES.get(decision, "declined")
-    return {"kind": "util", "name": name, "declined_secrets": undecided,
+    return {"kind": kind, "name": name, "declined_secrets": undecided,
             "decision": ask.get("decision"),
             "reason": f"the user declined exposing {n} secret{'s' if n != 1 else ''} "
-                      f"this util call declares to this routine — the util was not run "
+                      f"this {kind} call declares to this routine — the {kind} was not run "
                       f"({phrase})."}
 
 

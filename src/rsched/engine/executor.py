@@ -262,6 +262,38 @@ def _looks_like_refusal(text: str) -> bool:
     return bool(head) and any(m in head for m in _REFUSAL_MARKERS)
 
 
+def do_procedure(action: dict, ctx: RunContext) -> dict:
+    """Run one of the routine's OWN procedures/<name>.py scripts (D88) — the util call
+    path's private-sibling twin: same jail, same declared-only env, same truncation +
+    spill. The loop's secret gate ran before this; withheld optionals ride the obs.
+    """
+    from .. import procedures
+    from .interact import secret_state, withheld_procedure_secrets
+    name = str(action.get("name") or "")
+    args = [str(a) for a in action.get("args") or []]
+    if not procedures.exists(ctx.routine.dir, name):
+        return {"kind": "procedure", "name": name, "missing": True,
+                "available": [p["name"] for p in procedures.list_procedures(ctx.routine.dir)]}
+    withheld = withheld_procedure_secrets(ctx, name)
+    code, out, err = procedures.run_procedure(
+        ctx.routine.dir, name, args,
+        timeout=int(action.get("timeout_s") or procedures.PROC_TIMEOUT_S),
+        policy=sandbox.policy_for_ctx(ctx), libraries_home=ctx.server.libraries_home,
+        extra_secrets=_extra_secrets(ctx), withhold_secrets=set(withheld))
+    stdout, trunc_out = truncate(out, keep="head")
+    stderr, trunc_err = truncate(err, cap=8000 if code != 0 else 2000)
+    obs = {"kind": "procedure", "name": name, "args": args, "exit": code,
+           "stdout": stdout, "stderr": stderr, "truncated": trunc_out or trunc_err}
+    if withheld:
+        undecided = [s for s in withheld if secret_state(ctx, s) == "undecided"]
+        obs["withheld_optional"] = {"undecided": undecided,
+                                    "denied": len(withheld) - len(undecided)}
+    if spilled := outputs.spill(ctx, f"proc-{name}", out, err,
+                                out_truncated=trunc_out, err_truncated=trunc_err):
+        obs["full_output"] = spilled
+    return obs
+
+
 def do_llm(action: dict, ctx: RunContext) -> dict:
     messages = []
     if action.get("system"):

@@ -39,8 +39,8 @@ def truncate(text: str, cap: int = OBS_CAP_CHARS, keep: str = "head+tail") -> tu
 # and lives in ONE place per kind — a dispatch table would only scatter the strings.
 def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR0915
     kind = obs.get("kind")
-    if kind == "util":
-        if obs.get("name") == "search":
+    if kind in ("util", "procedure"):
+        if kind == "util" and obs.get("name") == "search":
             return (f"OBSERVATION (util search {obs.get('query')!r} — closest utils "
                     "by keyword; the full catalog is always in CAPABILITIES):\n"
                     + obs["listing"])
@@ -55,6 +55,11 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
             return out
         if obs.get("missing"):
             names = ", ".join(obs.get("available") or []) or "(none yet)"
+            if kind == "procedure":
+                return (f"OBSERVATION (procedure {obs['name']!r} does not exist). Available: "
+                        f"{names}. Author it first — write_file procedures/{obs['name']}.py, "
+                        "a PEP 723 script whose docstring header carries "
+                        "'<name> — <summary>', 'net:', 'secrets:' — then call it again.")
             return (f"OBSERVATION (util {(obs.get('target') or obs['name'])!r} does not exist). "
                     f"Available: {names}. Pick one of those (run `util name=list` for their "
                     "usage), or write it with write_util, then call it.")
@@ -71,11 +76,11 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
                         f"secret{'s' if len(declined) != 1 else ''} it declares")
             else:
                 head = f"secret exposure pending for {', '.join(obs['pending_secrets'])}"
-            text = f"OBSERVATION (util {obs['name']} NOT run — {head}): {obs['reason']}"
+            text = f"OBSERVATION ({kind} {obs['name']} NOT run — {head}): {obs['reason']}"
             if obs.get("answer"):
                 text += f"\nThe user's verbatim reply: {obs['answer']}"
             return text
-        head = f"OBSERVATION (util {obs['name']}, exit {obs['exit']})"
+        head = f"OBSERVATION ({kind} {obs['name']}, exit {obs['exit']})"
         body = obs.get("stdout") or "(no stdout)"
         if obs.get("stderr"):
             body += f"\n[stderr]\n{obs['stderr']}"

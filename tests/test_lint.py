@@ -102,7 +102,7 @@ def test_tags_on_library_elements():
                           "shell", "workflow-generation", "background-tasks",
                           "scheduling", "global-utils", "rule-authoring",
                           "remote-machines", "darknet",
-                          "usenet"}  # variants collapsed: level = capability
+                          "usenet", "procedures"}  # variants collapsed: level = capability
     assert "self-modification" not in perms          # retired: a fixed engine rule now
     # a doc's frontmatter is stripped before its body is shown/inlined
     raw = (SEED / "rules" / "web-research.md").read_text()
