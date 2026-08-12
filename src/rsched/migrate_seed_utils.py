@@ -24,8 +24,8 @@ from __future__ import annotations
 import logging
 
 from . import sandbox, utils_lib
-from .bootstrap import repo_root
 from .config import ServerConfig
+from .paths import repo_root
 
 log = logging.getLogger("rsched.migrate_seed_utils")
 

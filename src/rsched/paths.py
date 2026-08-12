@@ -27,6 +27,11 @@ def config_file() -> Path:
     return expand("~/.config/routine-scheduler/config.yaml")
 
 
+def repo_root() -> Path:
+    """The source checkout's root — where deploy/, library-seed/ and routine-seed/ live."""
+    return Path(__file__).resolve().parents[2]
+
+
 def atomic_write(path: str | Path, data: str | bytes, *, mode: int | None = None) -> Path:
     """Write via tmp file + rename in the target directory (same filesystem). A concurrent
     reader sees the old file or the new one, never a partial write. `mode` (permission bits,

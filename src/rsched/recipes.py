@@ -31,6 +31,7 @@ from .paths import file_lock, repo_lock_path
 # git pathspecs for the recipe set — RECIPE_PREFIXES minus the dir-prefix slashes
 RECIPE_PATHSPECS: tuple[str, ...] = tuple(p.rstrip("/") for p in RECIPE_PREFIXES)
 
+from . import libgit  # noqa: E402 — one git plumbing home
 from .libgit import IDENTITY_FLAGS as _GIT_IDENTITY  # noqa: E402 — one identity home
 
 
@@ -38,13 +39,8 @@ class RecipeError(Exception):
     """A revert request that cannot be honored (bad commit, no parent, no git)."""
 
 
-def _git(routine_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", "-C", str(routine_dir), *args],
-                          capture_output=True, text=True, timeout=30, check=False)
-
-
 def _recipe_paths_dirty(routine_dir: Path) -> bool:
-    r = _git(routine_dir, "status", "--porcelain", "--", *RECIPE_PATHSPECS)
+    r = libgit.git(routine_dir, "status", "--porcelain", "--", *RECIPE_PATHSPECS)
     return r.returncode == 0 and bool(r.stdout.strip())
 
 
@@ -56,7 +52,7 @@ def _matchable_specs(routine_dir: Path) -> list[str]:
     """
     return [spec for spec in RECIPE_PATHSPECS
             if (routine_dir / spec).exists()
-            or _git(routine_dir, "cat-file", "-e", f"HEAD:{spec}").returncode == 0]
+            or libgit.git(routine_dir, "cat-file", "-e", f"HEAD:{spec}").returncode == 0]
 
 
 def current_recipe_commit(routine_dir: Path) -> str | None:
@@ -73,10 +69,10 @@ def current_recipe_commit(routine_dir: Path) -> str | None:
             # Under the per-repo lock: the improver may be committing this same target dir
             # via git-sync at this instant (this snapshot runs at the target's run start).
             with file_lock(repo_lock_path(routine_dir)):
-                _git(routine_dir, "add", "-A", "--", *specs)
-                _git(routine_dir, *_GIT_IDENTITY, "commit", "-qm", "recipe: pre-run snapshot",
+                libgit.git(routine_dir, "add", "-A", "--", *specs)
+                libgit.git(routine_dir, *_GIT_IDENTITY, "commit", "-qm", "recipe: pre-run snapshot",
                      "--", *specs)
-        r = _git(routine_dir, "log", "-1", "--format=%H", "--", *RECIPE_PATHSPECS)
+        r = libgit.git(routine_dir, "log", "-1", "--format=%H", "--", *RECIPE_PATHSPECS)
     except (OSError, subprocess.TimeoutExpired):
         return None
     commit = r.stdout.strip()
@@ -91,7 +87,7 @@ def recipe_log(routine_dir: Path, limit: int = 50) -> list[dict]:
     if not (routine_dir / ".git").is_dir():
         return []
     try:
-        r = _git(routine_dir, "log", f"-{limit}", "--format=%H%x09%h%x09%cI%x09%s",
+        r = libgit.git(routine_dir, "log", f"-{limit}", "--format=%H%x09%h%x09%cI%x09%s",
                  "--", *RECIPE_PATHSPECS)
     except (OSError, subprocess.TimeoutExpired):
         return []
@@ -117,13 +113,13 @@ def revert_recipe(routine_dir: Path, commit: str) -> dict:
     if not ref or any(c not in "0123456789abcdef" for c in ref.lower()):
         raise RecipeError(f"not a commit hash: {commit!r}")
     try:
-        if _git(routine_dir, "cat-file", "-e", f"{ref}^{{commit}}").returncode != 0:
+        if libgit.git(routine_dir, "cat-file", "-e", f"{ref}^{{commit}}").returncode != 0:
             raise RecipeError(f"unknown commit {ref!r}")
-        touched = _git(routine_dir, "show", "--name-only", "--format=", ref,
+        touched = libgit.git(routine_dir, "show", "--name-only", "--format=", ref,
                        "--", *RECIPE_PATHSPECS)
         if not touched.stdout.strip():
             raise RecipeError(f"commit {ref!r} touched no recipe file — nothing to revert")
-        parent = _git(routine_dir, "rev-parse", "--short", f"{ref}^")
+        parent = libgit.git(routine_dir, "rev-parse", "--short", f"{ref}^")
         if parent.returncode != 0:
             raise RecipeError(f"commit {ref!r} is the first commit — no version before it")
         # Restore the recipe set as of the parent: remove what exists now (so files ADDED
@@ -133,19 +129,19 @@ def revert_recipe(routine_dir: Path, commit: str) -> dict:
         # Under the per-repo lock (like autocommit / the pre-run snapshot / the git-sync util),
         # so this multi-step restore is not interleaved with another writer of this dir.
         with file_lock(repo_lock_path(routine_dir)):
-            _git(routine_dir, "rm", "-rq", "--ignore-unmatch", "--", *RECIPE_PATHSPECS)
+            libgit.git(routine_dir, "rm", "-rq", "--ignore-unmatch", "--", *RECIPE_PATHSPECS)
             for spec in RECIPE_PATHSPECS:
-                _git(routine_dir, "checkout", f"{ref}^", "--", spec)
+                libgit.git(routine_dir, "checkout", f"{ref}^", "--", spec)
             # commit only pathspecs git can name post-restore (worktree or HEAD — HEAD still
             # holds a file the revert deletes, so its deletion is committed too)
             specs = _matchable_specs(routine_dir)
             msg = f"recipe: revert to pre-{parent.stdout.strip() or ref[:9]} (web)"
-            committed = _git(routine_dir, *_GIT_IDENTITY, "commit", "-qm", msg, "--", *specs)
+            committed = libgit.git(routine_dir, *_GIT_IDENTITY, "commit", "-qm", msg, "--", *specs)
             if committed.returncode != 0:
                 # nothing to commit — the working recipe already matches the pre-change state
-                _git(routine_dir, "checkout", "HEAD", "--", *specs)
+                libgit.git(routine_dir, "checkout", "HEAD", "--", *specs)
                 raise RecipeError("the recipe already matches the state before that commit")
-            new = _git(routine_dir, "log", "-1", "--format=%H", "--", *RECIPE_PATHSPECS)
+            new = libgit.git(routine_dir, "log", "-1", "--format=%H", "--", *RECIPE_PATHSPECS)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RecipeError(f"git failed: {exc}") from exc
     return {"reverted": ref, "restored_from": f"{ref}^",

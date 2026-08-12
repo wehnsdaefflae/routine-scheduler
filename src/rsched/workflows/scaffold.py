@@ -4,11 +4,11 @@ general-rule slugs, stages/ modules; its own git repo with the auto-push hook.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import yaml
 
+from .. import libgit
 from ..config import (
     DEFAULT_BUDGETS,
     DEFAULT_DELIBERATION,
@@ -24,16 +24,6 @@ from ..ids import is_slug
 # (engine-owned and pruned, and it can carry whatever a util printed — never committed)
 GITIGNORE = "runs/\ninbox/\nquestions/\nmnt/\n.util_outputs/\n"
 
-POST_COMMIT_HOOK = """#!/usr/bin/env bash
-# rsched auto-backup — push every commit to origin (best-effort, never blocks the commit).
-branch="$(git symbolic-ref --short HEAD 2>/dev/null)" || exit 0
-git remote get-url origin >/dev/null 2>&1 || exit 0
-out="$(timeout 20 git push --quiet origin "$branch" 2>&1)"; rc=$?
-if [ "$rc" -ne 0 ]; then
-  printf '[rsched backup] push to origin failed (exit %d)…\\n%s\\n' "$rc" "$out" >&2
-fi
-exit 0
-"""
 
 
 # The parameter list IS routine creation's config surface (creation flow + API both fill it);
@@ -179,26 +169,9 @@ def _tilde(path: str) -> str:
     return "~" + path[len(home):] if path.startswith(home) else path
 
 
-from ..libgit import IDENTITY_PAIRS as GIT_IDENTITY  # noqa: E402 — one identity home
-
-
 def init_repo(repo_dir: Path, message: str) -> None:
-    """Git init a managed repo with the neutral identity + best-effort push hook, then
-    make the first commit. Shared by routine and util-library scaffolding.
+    """Git init a managed repo with the neutral identity + push hook + first commit —
+    ONE implementation for every managed repo (libgit.init_repo, F285).
     """
-    try:
-        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo_dir,
-                       capture_output=True, timeout=30, check=False)
-        for key, val in GIT_IDENTITY:
-            subprocess.run(["git", "config", key, val], cwd=repo_dir,
-                           capture_output=True, timeout=15, check=False)
-        hook = repo_dir / ".git" / "hooks" / "post-commit"
-        hook.write_text(POST_COMMIT_HOOK, encoding="utf-8")
-        hook.chmod(0o755)  # git hooks must be executable
-        subprocess.run(["git", "add", "-A"], cwd=repo_dir,
-                       capture_output=True, timeout=30, check=False)
-        subprocess.run(["git", "commit", "-qm", message], cwd=repo_dir,
-                       capture_output=True, timeout=30, check=False)
-    except OSError:
-        pass  # a routine without git still runs; the workflow can init later
+    libgit.init_repo(repo_dir, first_commit=message)
 

@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.178.0] — 2026-08-12
+
+### Changed
+- **One git plumbing home** (F285): `libgit` now owns the single `git()` invoker, the
+  push-hook installer (source: `deploy/post-commit`, the same file install.sh uses —
+  the quiet per-module hook variants are gone, so every managed repo's hook reports
+  push failures), and `init_repo()` (init -b main + neutral identity + optional remote
+  + hook + first commit). recipes, utils_lib, bootstrap, scaffold and the library
+  settings endpoint all delegate; `repo_root()` moved to `paths`. Seed routines now
+  get the push hook at init like every other managed repo (no-op without an origin).
+
 ## [0.177.0] — 2026-08-12
 
 ### Added

@@ -71,7 +71,7 @@ class Provision(BaseModel):
 
 @router.post("/settings/libraries/{name}/provision")
 def provision_library(request: Request, name: str, body: Provision) -> dict:
-    from ... import bootstrap
+    from ... import bootstrap, libgit
     s = server_of(request)
     if name != LIBRARY_NAME:
         raise HTTPException(404, f"unknown library {name!r}")
@@ -92,12 +92,9 @@ def provision_library(request: Request, name: str, body: Provision) -> dict:
         if r.returncode != 0:
             raise HTTPException(
                 502, f"clone failed (connect GitHub first?): {r.stderr.strip()[:300]}")
-        for k, v in (("user.name", "routine-scheduler"),
-                     ("user.email", "noreply@routine-scheduler.local")):
-            # so later commits work
-            subprocess.run(["git", "-C", str(home), "config", k, v],
-                           capture_output=True, check=False)
-        bootstrap.install_push_hook(home)
+        for k, v in libgit.IDENTITY_PAIRS:   # so later commits work
+            libgit.git(home, "config", k, v)
+        libgit.install_push_hook(home)
     elif body.mode == "create":
         try:
             bootstrap.seed_libraries(home)          # copy defaults + git init + commit + hook

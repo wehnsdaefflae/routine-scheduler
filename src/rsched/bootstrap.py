@@ -10,19 +10,14 @@ import logging
 import re
 import secrets
 import shutil
-import subprocess
 from pathlib import Path
 
 import yaml
 
 from . import libgit
-from .paths import atomic_write, config_file
+from .paths import atomic_write, config_file, repo_root
 
 log = logging.getLogger("rsched.bootstrap")
-
-
-def repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
 
 
 def ensure_config() -> bool:
@@ -63,28 +58,12 @@ def ensure_config() -> bool:
     return True
 
 
-def _git(home: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(home), *args], capture_output=True, check=False)
-
-
-def install_push_hook(home: Path) -> None:
-    """Best-effort auto-push-on-commit hook, so generated library changes sync to the remote."""
-    src = repo_root() / "deploy" / "post-commit"
-    if src.exists() and (home / ".git").is_dir():
-        dst = home / ".git" / "hooks" / "post-commit"
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(src, dst)
-        dst.chmod(0o755)
-
-
 def _install_seed_routine(src: Path, dst: Path) -> None:
     shutil.copytree(src, dst)
     if not (dst / ".git").is_dir():
-        _git(dst, "init", "-q", "-b", "main")
-    from .libgit import IDENTITY_PAIRS
-    for key, val in IDENTITY_PAIRS:
-        _git(dst, "config", key, val)
-    libgit.commit(dst, f"seed {src.name} routine")
+        libgit.init_repo(dst, first_commit=f"seed {src.name} routine")
+    else:
+        libgit.commit(dst, f"seed {src.name} routine")
 
 
 def adopt_seed_routine(routines_home: Path, slug: str) -> bool:
@@ -238,12 +217,10 @@ def seed_libraries(home: Path) -> None:
     if (root / "util-seed" / "utils").is_dir():
         shutil.copytree(root / "util-seed" / "utils", home / "utils", dirs_exist_ok=True)
     if not (home / ".git").is_dir():
-        _git(home, "init", "-q", "-b", "main")
-    from .libgit import IDENTITY_PAIRS
-    for key, val in IDENTITY_PAIRS:
-        _git(home, "config", key, val)
-    libgit.commit(home, "seed library repo")
-    install_push_hook(home)
+        libgit.init_repo(home, first_commit="seed library repo")
+    else:
+        libgit.commit(home, "seed library repo")
+        libgit.install_push_hook(home)
 
 
 def sync_seed_library_docs(libraries_home: Path) -> int:

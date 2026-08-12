@@ -95,19 +95,8 @@ if __name__ == "__main__":
     sys.exit(main())
 '''
 
-POST_COMMIT_HOOK = """#!/usr/bin/env bash
-branch="$(git symbolic-ref --short HEAD 2>/dev/null)" || exit 0
-git remote get-url origin >/dev/null 2>&1 || exit 0
-timeout 20 git push --quiet origin "$branch" 2>&1 || true
-exit 0
-"""
 
 GITIGNORE = "__pycache__/\n*.pyc\n"
-
-
-def _git(home: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(home), *args], capture_output=True,
-                          text=True, timeout=30, check=check)
 
 
 def ensure_library(home: Path, *, remote: str = "") -> None:
@@ -122,7 +111,8 @@ def ensure_library(home: Path, *, remote: str = "") -> None:
         r = subprocess.run(["git", "clone", "--quiet", remote, str(home)],
                            capture_output=True, text=True, timeout=120, check=False)
         if r.returncode == 0:
-            _configure_repo(home)
+            for key, val in libgit.IDENTITY_PAIRS:
+                libgit.git(home, "config", key, val)
             _install_dispatcher(home)
             return
         # clone failed (e.g. empty/absent remote) → fall through to init
@@ -130,17 +120,7 @@ def ensure_library(home: Path, *, remote: str = "") -> None:
     (home / "utils").mkdir(exist_ok=True)
     (home / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
     _install_dispatcher(home)
-    _git(home, "init", "-q", "-b", "main")
-    _configure_repo(home)
-    if remote:
-        _git(home, "remote", "add", "origin", remote)
-    _git(home, "add", "-A")
-    _git(home, "commit", "-qm", "init util library")
-
-
-def _configure_repo(home: Path) -> None:
-    for key, val in libgit.IDENTITY_PAIRS:
-        _git(home, "config", key, val)
+    libgit.init_repo(home, remote=remote, first_commit="init util library")
 
 
 def _install_dispatcher(home: Path) -> None:
@@ -152,10 +132,7 @@ def _install_dispatcher(home: Path) -> None:
     if not gu.exists():
         gu.write_text(DISPATCHER, encoding="utf-8")
         gu.chmod(0o755)  # the dispatcher is a shared executable by design
-    hook = home / ".git" / "hooks" / "post-commit"
-    if (home / ".git").is_dir() and not hook.exists():
-        hook.write_text(POST_COMMIT_HOOK, encoding="utf-8")
-        hook.chmod(0o755)  # git hooks must be executable
+    libgit.install_push_hook(home)
 
 
 def util_dir(home: Path, name: str) -> Path:
@@ -636,7 +613,7 @@ def was_deleted(home: Path, name: str) -> bool:
     the safe reading. Fails open to False (no repo / git error = nothing to guard).
     """
     try:
-        r = _git(home, "log", "--diff-filter=D", "--format=%h", "--",
+        r = libgit.git(home, "log", "--diff-filter=D", "--format=%h", "--",
                  f"utils/{name}/main.py")
     except (OSError, subprocess.TimeoutExpired):
         return False

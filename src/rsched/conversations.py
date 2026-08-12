@@ -254,7 +254,7 @@ def _seed_converse_into_library(libraries_home: Path) -> bool:
     """Install the seed `converse` pattern over the library's copy when the seed's META
     version is newer. Returns True if it was replaced.
     """
-    from .bootstrap import repo_root
+    from .paths import repo_root
     from .workflows.library import read_workflow
 
     seed_home = repo_root() / "library-seed"

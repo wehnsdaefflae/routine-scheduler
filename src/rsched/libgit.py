@@ -20,7 +20,7 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
-from .paths import file_lock, repo_lock_path
+from .paths import file_lock, repo_lock_path, repo_root
 
 _TIMEOUT = 30
 
@@ -33,9 +33,49 @@ IDENTITY_PAIRS = (("user.name", GIT_USER), ("user.email", GIT_EMAIL))
 IDENTITY_FLAGS = ("-c", f"user.name={GIT_USER}", "-c", f"user.email={GIT_EMAIL}")
 
 
-def _git(home: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def git(home: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
+    """The one git invoker every module uses (F285) — five per-module `_git` copies once
+    drifted on timeout/check semantics; this is the only one.
+    """
     return subprocess.run(["git", "-C", str(home), *args], capture_output=True,
-                          text=True, timeout=_TIMEOUT, check=False)
+                          text=True, timeout=_TIMEOUT, check=check)
+
+
+def install_push_hook(home: Path, *, overwrite: bool = False) -> None:
+    """Install the auto-push-on-commit hook from `deploy/post-commit` — the ONE hook
+    source (deploy/install.sh installs the same file). Never overwrites an existing hook
+    unless asked (a library may carry its own richer one). Best-effort: no repo or no
+    source file is a silent no-op.
+    """
+    src = repo_root() / "deploy" / "post-commit"
+    hook = home / ".git" / "hooks" / "post-commit"
+    if not src.exists() or not (home / ".git").is_dir():
+        return
+    if hook.exists() and not overwrite:
+        return
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    hook.chmod(0o755)  # git hooks must be executable
+
+
+def init_repo(home: Path, *, remote: str = "", first_commit: str = "",
+              push_hook: bool = True) -> None:
+    """Initialize a managed repo the ONE way (F285): `init -b main`, the neutral identity,
+    an optional origin remote, the shared push hook, an optional first commit. Best-effort
+    like every helper here — a dir without git still works, callers proceed regardless.
+    """
+    try:
+        git(home, "init", "-q", "-b", "main")
+        for key, val in IDENTITY_PAIRS:
+            git(home, "config", key, val)
+        if remote:
+            git(home, "remote", "add", "origin", remote)
+        if push_hook:
+            install_push_hook(home)
+        if first_commit:
+            commit(home, first_commit)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
 
 
 def git_log(home: Path, rel_path: str | None = None, limit: int = 20) -> list[dict]:
@@ -67,9 +107,9 @@ def commit(home: Path, message: str, *, paths: Sequence[str] | None = None) -> b
     try:
         with file_lock(repo_lock_path(home)):
             if paths:
-                _git(home, "add", "-A", "--", *paths)
+                git(home, "add", "-A", "--", *paths)
             else:
-                _git(home, "add", "-A")
-            return _git(home, "commit", "-qm", message).returncode == 0
+                git(home, "add", "-A")
+            return git(home, "commit", "-qm", message).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
