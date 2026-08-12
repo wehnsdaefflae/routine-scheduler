@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.186.0] — 2026-08-12
+
+### Changed
+- **Week strip: two-day zoom + scroll** (operator ask — seven days across one panel width was
+  unreadably dense). The strip now renders at true pixel scale with TWO day columns filling
+  the visible width; the rest of the week scrolls horizontally, and the scroll position
+  survives live re-renders. Lane names move out of the timeline into a fixed column on the
+  left (they overlapped day one's bars as overlays), stay visible while the strip scrolls,
+  and link to their routine; a ResizeObserver re-fits the day width when the panel's size
+  changes. Drag-and-drop is unchanged — coordinates were already geometry-based, so drops
+  beyond the visible edge still resolve correctly.
+
 ## [0.185.0] — 2026-08-12
 
 ### Fixed

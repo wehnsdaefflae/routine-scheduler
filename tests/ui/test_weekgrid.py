@@ -37,6 +37,14 @@ def _poll(check, timeout_s=8.0):
     return False
 
 
+def _scroll_strip_to(ui_page, bar, margin=60):
+    """Scroll the two-day week strip so `bar` sits near the visible left edge — a fire later
+    in the week is laid out but outside the viewport until scrolled to."""
+    scroll = ui_page.locator(".weekpanel .wg-scroll")
+    delta = bar.bounding_box()["x"] - scroll.bounding_box()["x"] - margin
+    scroll.evaluate("(el, dx) => { el.scrollLeft += dx }", delta)
+
+
 def test_now_cursor_advances_on_its_own(ui, ui_page):
     """With no data refresh, the wg-now cursor re-positions itself on the component's internal
     timer. Driven by Playwright's fake clock so it is deterministic (no 30s real wait): capture
@@ -179,9 +187,13 @@ def test_drag_onto_group_lane_joins(ui, ui_page, make_routine):
     solo_bar = ui_page.locator(".weekpanel a[href='#/routine/uir'] .wg-bar").first
     expect(solo_bar).to_be_visible(timeout=10_000)
 
-    group_row = ui_page.locator(".weekpanel .wg-row") \
-        .filter(has=ui_page.locator(".wg-lane-label.group", has_text="Chained"))
-    _drag(ui_page, _center(solo_bar), _center(group_row.locator(".wg-rowbg")))
+    # the group lane's y from its row; the drop x must be INSIDE the visible strip (the row
+    # rect spans all seven laid-out days, so its center x sits scrolled out of view)
+    _scroll_strip_to(ui_page, solo_bar)
+    chained_bar = ui_page.locator(".weekpanel a[href='#/routine/gm1'] .wg-bar").first
+    row_y = _center(chained_bar)[1]
+    sc = ui_page.locator(".weekpanel .wg-scroll").bounding_box()
+    _drag(ui_page, _center(solo_bar), (sc["x"] + sc["width"] / 2, row_y))
     assert _poll(lambda: _members(ui, g["id"]) == ["gm1", "gm2", "uir"]), \
         f"join did not land: {_members(ui, g['id'])}"
 
@@ -195,6 +207,9 @@ def test_drag_along_own_lane_reschedules(ui, ui_page, make_routine):
     bar = ui_page.locator(".weekpanel a[href='#/routine/uir'] .wg-bar").first
     expect(bar).to_be_visible(timeout=10_000)
 
+    # a weekly fire can sit days away — bring it to the viewport's left edge so the +1 day
+    # drop (half the visible two-day strip) still lands inside the window
+    _scroll_strip_to(ui_page, bar)
     day_w = ui_page.locator(".weekpanel svg.wg").bounding_box()["width"] / 7
     src = _center(bar)
     _drag(ui_page, src, (src[0] + day_w, src[1]))

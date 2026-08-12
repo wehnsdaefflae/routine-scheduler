@@ -58,7 +58,18 @@ td.hb-cell { min-width: 155px; }
 }
 .weekpanel summary:hover { color: var(--muted); }
 .weekgrid { margin-top: 8px; position: relative; }
-.weekgrid svg.wg { width: 100%; height: auto; display: block; }
+/* two-day zoom: the name column sits OUTSIDE the scroll area; the seven-day SVG is laid out
+   at true pixel scale inside it, two day columns per visible width */
+.weekgrid .wg-wrap { display: flex; align-items: flex-start; }
+.weekgrid .wg-names { flex: 0 0 120px; max-width: 120px; min-width: 0; }
+.weekgrid .wg-names-head { height: 22px; }
+.weekgrid .wg-lane-label { display: block; height: 22px; line-height: 22px; font-size: 11px;
+  color: var(--muted); text-decoration: none; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; padding-right: 8px; }
+.weekgrid a.wg-lane-label:hover { color: var(--text); }
+.weekgrid .wg-lane-label.group { color: #b48ce8; }
+.weekgrid .wg-scroll { flex: 1; min-width: 0; overflow-x: auto; }
+.weekgrid svg.wg { display: block; }
 .weekgrid .wg-grid { stroke: var(--line); }
 .weekgrid .wg-today { fill: rgba(255, 180, 84, 0.05); }
 .weekgrid .wg-day { fill: var(--faint); font-size: 10px; letter-spacing: 0.12em; }
@@ -68,10 +79,6 @@ td.hb-cell { min-width: 155px; }
 .weekgrid .wg-bar.past { opacity: 0.4; }
 .weekgrid .wg-row:hover .wg-bar.past { opacity: 0.7; }
 .weekgrid .wg-now { stroke: var(--live); stroke-width: 1.2; opacity: 0.8; }
-/* lane name at the row's left edge: haloed so it stays legible over bars, display-only */
-.weekgrid .wg-lane-label { fill: var(--muted); font-size: 10px; pointer-events: none;
-  paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
-.weekgrid .wg-lane-label.group { fill: #b48ce8; }
 /* drag-and-drop (weekgrid-drag.js) */
 .weekgrid.wg-dragging { cursor: grabbing; user-select: none; }
 .weekgrid .wg-ghost { opacity: 0.55; pointer-events: none; stroke: var(--text); stroke-width: 0.6; }

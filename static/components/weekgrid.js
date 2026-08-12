@@ -1,11 +1,13 @@
-// Week strip for the dashboard: one row per scheduled routine, seven day columns starting today,
-// every cron fire in view as a duration BAR on a shared timeline. The bar starts at the fire time
-// and its width is the routine's average runtime drawn TRUE TO SCALE against a day's width
-// (DAY_W px = 24h) — with a small minimum so a short run still shows and the exact value in the
-// hover tooltip. Every lane carries its NAME at the left edge — a haloed overlay on the timeline,
-// not a label column, so the strip keeps its full width; colour + schedule + avg runtime live in
-// the LEGEND below. Times are in the browser's timezone; fires already behind us render dimmed;
-// a live cursor marks now. Rows follow the dashboard's own filters, ordered by next upcoming fire.
+// Week strip for the dashboard: one row per scheduled routine, seven day columns starting
+// today, every cron fire in view as a duration BAR on a shared timeline. The strip renders at
+// TRUE PIXEL SCALE with TWO days filling the visible width and the rest of the week reachable
+// by horizontal scroll (the scroll position survives live re-renders); lane names live in a
+// fixed column LEFT of the scroll area, so they never overlap the timeline and stay put while
+// it scrolls. A bar starts at its fire time; its width is the routine's average runtime drawn
+// true to scale against a day's width, with a small minimum so a short run still shows and the
+// exact value in the hover tooltip. Colour + schedule + avg runtime live in the LEGEND below.
+// Times are in the browser's timezone; fires already behind us render dimmed; a live cursor
+// marks now. Rows follow the dashboard's own filters, ordered by next upcoming fire.
 //
 // Groups: an UNSCHEDULED group merges its members' own fires onto one shared lane (F271). A
 // SCHEDULED group (one with a cron, D71) goes further — its members' own crons are
@@ -33,14 +35,15 @@ function slugColor(slug) {
 
 const NS = "http://www.w3.org/2000/svg";
 const DAY_MS = 86_400_000, DAY_SECONDS = 86_400;
-const DAYS = 7, DAY_W = 144, HEAD_H = 22, ROW_H = 22, PAD_B = 8;
-// A fire's bar width = its average runtime as a fraction of a day × DAY_W (true to scale), floored
-// at MIN_BAR_W so a short run is still a visible mark; the exact value lives in the hover tooltip.
+const DAYS = 7, HEAD_H = 22, ROW_H = 22, PAD_B = 8;
+// The zoom: how many day columns share the visible strip width — the other days scroll.
+// A day is never narrower than MIN_DAY_W (a collapsed/unmeasured panel falls back to it).
+const VISIBLE_DAYS = 2, MIN_DAY_W = 160;
+// The name column's fixed width (mirrored by .wg-names in views.css).
+const NAMES_W = 120;
+// A fire's bar width = its average runtime as a fraction of a day × the day width (true to
+// scale), floored at MIN_BAR_W so a short run is still a visible mark.
 const BAR_H = 8, MIN_BAR_W = 2;
-// A chain segment advances the next member's start by at least the time MIN_BAR_W spans, so a
-// never-run member still occupies a visible slot and segments stay adjacent, never stacked.
-const MIN_STEP_S = (MIN_BAR_W / DAY_W) * DAY_SECONDS;
-const W = DAYS * DAY_W;
 
 const fmtDay = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric" });
 const fmtAt = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
@@ -87,6 +90,7 @@ export function weekGrid(dragHandlers = null) {
   const node = el("div", { class: "weekgrid" });
   const drag = dragHandlers ? weekDrag(node, dragHandlers) : null;
   let lastArgs = null;
+  let lastMeasuredW = 0;
 
   // cards: the dashboard's currently visible routines; firesBySlug: Map slug → [ms, …] of
   // recurring cron fires; oneShotsBySlug: Map slug → [ms, …] of armed one-shot fires (rendered
@@ -97,6 +101,12 @@ export function weekGrid(dragHandlers = null) {
     // A live refresh mid-gesture would tear the dragged bar out from under the pointer —
     // hold this render; the drop's own reload (or the next tick) redraws from fresh truth.
     if (drag?.active()) return;
+    // Pixel-true geometry: two day columns fill the strip beside the name column; the SVG is
+    // laid out at the full seven-day width inside the scroll container.
+    lastMeasuredW = node.clientWidth;
+    const DAY_W = Math.max(MIN_DAY_W, (lastMeasuredW - NAMES_W) / VISIBLE_DAYS);
+    const W = DAYS * DAY_W;
+    const MIN_STEP_S = (MIN_BAR_W / DAY_W) * DAY_SECONDS;
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const t0 = start.getTime(), span = DAYS * DAY_MS;
@@ -139,6 +149,7 @@ export function weekGrid(dragHandlers = null) {
       ...lane.members.map((m) => Math.min(nextOf(m.fires), nextOf(m.oneShots))));
     lanes.sort((a, b) => laneUpcoming(a) - laneUpcoming(b));
     const rows = lanes;
+    const prevScroll = node.querySelector(".wg-scroll")?.scrollLeft || 0;
     node.replaceChildren();
     if (!rows.length) {
       node.append(el("div", { class: "faint small", style: "padding:4px 2px" },
@@ -146,7 +157,8 @@ export function weekGrid(dragHandlers = null) {
       return;
     }
     const H = HEAD_H + rows.length * ROW_H + PAD_B;
-    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, class: "wg", role: "img",
+    const svg = s("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, class: "wg",
+                           role: "img",
                            "aria-label": "scheduled fire times over the coming week" });
     const x = (t) => ((t - t0) / span) * W;
 
@@ -163,6 +175,9 @@ export function weekGrid(dragHandlers = null) {
     const legendItems = [];
     const rowsMeta = [];   // per-lane geometry for the drag controller
     const hits = [];       // per-bar geometry: what a pointer can pick up
+    // The name column: one entry per lane, row-aligned with the strip (HEAD_H spacer, then
+    // ROW_H per lane) — outside the scroll area, so names never overlap bars or scroll away.
+    const names = el("div", { class: "wg-names" }, el("div", { class: "wg-names-head" }));
     rows.forEach((lane, i) => {
       const y = HEAD_H + i * ROW_H, cy = y + ROW_H / 2;
       const g = s("g", { class: "wg-row" });
@@ -171,6 +186,11 @@ export function weekGrid(dragHandlers = null) {
       rowsMeta.push({ lane, y, rowbg });
       const grouped = lane.group != null;
       const grpNote = grouped ? ` · group ${lane.group.name}` : "";
+      names.append(grouped
+        ? el("span", { class: "wg-lane-label group",
+            title: lane.group.schedule_desc || lane.group.name }, `⛓ ${lane.group.name}`)
+        : el("a", { class: "wg-lane-label", href: `#/routine/${lane.members[0].c.slug}` },
+            lane.members[0].c.name || lane.members[0].c.slug));
       // The group's REAL schedule stands in for a scheduled member's vestigial own one (R313).
       const schedOf = (m) => (grouped && lane.group.cron)
         ? (lane.group.schedule_desc || "") : (m.c.schedule_desc || "");
@@ -229,10 +249,6 @@ export function weekGrid(dragHandlers = null) {
           });
         }
       }
-      // The lane's name, haloed over the timeline (labels are display-only — pointer events
-      // pass through to the bars beneath; navigation lives on the bars and in the legend).
-      const label = grouped ? `⛓ ${lane.group.name}` : (lane.members[0].c.name || lane.members[0].c.slug);
-      g.append(text(4, cy + 3.5, label, grouped ? "wg-lane-label group" : "wg-lane-label"));
       svg.append(g);
     });
 
@@ -250,15 +266,30 @@ export function weekGrid(dragHandlers = null) {
         it.sched ? el("span", { class: "wg-leg-sched" }, it.sched) : null,
         it.group ? el("span", { class: "wg-leg-group" }, `⛓ ${it.group}`) : null));
 
-    node.append(svg, legend);
+    const scroll = el("div", { class: "wg-scroll" });
+    scroll.append(svg);
+    node.append(el("div", { class: "wg-wrap" }, names, scroll), legend);
+    scroll.scrollLeft = prevScroll;   // a live re-render must not yank the strip back to today
     drag?.setLayout({ svg, rows: rowsMeta, hits, t0, span, W, headH: HEAD_H, rowH: ROW_H });
   }
 
   // Advance the live "now" cursor between data refreshes; self-clears when the grid unmounts.
   const tick = setInterval(() => {
-    if (!document.body.contains(node)) return void clearInterval(tick);
+    if (!document.body.contains(node)) {
+      clearInterval(tick);
+      ro.disconnect();
+      return;
+    }
     if (lastArgs) update(...lastArgs);
   }, NOW_REFRESH_MS);
+  // Re-fit the day width when the panel's width actually changes (open/close, viewport
+  // resize) — the pixel-true strip cannot rely on SVG's own scaling any more.
+  const ro = new ResizeObserver(() => {
+    if (!lastArgs || drag?.active()) return;
+    if (Math.abs(node.clientWidth - lastMeasuredW) < 2) return;
+    update(...lastArgs);
+  });
+  ro.observe(node);
 
   return { node, update };
 }
