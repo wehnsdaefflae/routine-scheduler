@@ -79,14 +79,24 @@ one you are about to touch, not all of them.
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, edit_file,
   memory_read, memory_write, read_rule, write_rule, procedure, llm, spawn, subtask, detach, schedule_run,
   create_routine, manage_group, subruns, kill, wait, ask_user, report, finish` (25). **`procedure` (D88) runs the routine's OWN
-  `procedures/<name>.py`** — the deterministic half of the recipe/procedure split: PEP 723 + the util
-  docstring-header standard minus the catalog lines (no `calls:` graph, no `gu` on PATH). It runs in a
-  persistent VENV inside the routine's workdir (`<routine>/.venv`, deps installed on demand,
-  gitignored) with the ROUTINE'S OWN filesystem permissions (`sandbox.wrap_routine` — the run's fs
-  roots, NO library root: recipe and procedure see the same files), NOT the util sandbox. Secrets stay
-  declared-only; gated by the `procedure` capability (`procedures` permission doc), deliberately
-  WITHOUT an approval dial — the blast radius is the routine's own sandboxed permissions, and the
-  routine repo versions every revision.
+  `procedures/<name>.py`** under the SYMMETRY rule (operator, 2026-08-12): a routine is ONE thing
+  with TWO interpreters — the recipe is prose directing an LLM, a procedure is Python directing the
+  interpreter — and everything in the routine's settings applies to BOTH. Execution: a persistent
+  venv in the routine's workdir (`<routine>/.venv`, PEP 723 deps installed on demand, gitignored);
+  jail = the run's fs roots + the util library read-only (recipe and procedure see the SAME files);
+  env = the routine's STANDING settings (every GRANTED secret, bound connection tokens, machines,
+  the routine API token — `granted_store_secrets`); `gu` on PATH (util access is part of the
+  permission surface), and `gu llm` is the judgment mirror — a procedure asks the routine's own
+  default model via POST /api/llm (the one routine-token mutation; transport and keys stay
+  server-side, spend recorded under the routine). The header `secrets:` line is the ESCALATION
+  hook (declared+present+undecided files the same blocking ask a util call would); mid-run asks
+  remain the recipe's channel. procedures/ serves TWO roles: THE procedure (the recipe's co-equal,
+  owning deterministic responsibilities) and the recipe's own persistent helper scripts (written
+  once when a sub-step repeats, invoked at the recipe's judgment). Gated by the `procedure`
+  capability (`procedures` permission doc), deliberately WITHOUT an approval dial — the blast
+  radius is the routine's own sandboxed permissions, and the routine repo versions every revision.
+  Rules bind procedures through their rule-bound author (the no-rule-routing clause);
+  routine-improver keeps every responsibility in its best home, both directions.
   `finish` and `report` are ALWAYS_KINDS — available on every
   turn regardless of the workflow's `tools:` allowlist or the capability set. **The engine never ends a run
   the model could have ended itself**: the FIRST budget violation spends a one-time RESERVED FINISH TURN

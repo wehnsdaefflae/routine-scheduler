@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.184.0] — 2026-08-12
+
+### Changed
+- **Full recipe/procedure symmetry, wired live** (operator rule 2026-08-12; completes
+  the 8c1bfe5/72a49c0/fab03a5 series): a routine is ONE thing with TWO interpreters, and
+  everything in its settings applies to both. A procedure's env is the routine's
+  STANDING settings — every granted store secret, bound connection tokens, machine
+  bindings, the routine API token — with the util library in the jail read-only and `gu`
+  on PATH (one jail composition; `wrap_routine` removed). `procedures/` serves two
+  roles: THE procedure (the recipe's co-equal) and the recipe's persistent helper
+  scripts; the capabilities digest, permission doc and routine-improver's lens carry the
+  incentive plus the no-rule-routing clause.
+- **`gu llm` routed**: `POST /api/llm` joins the app (the FIRST `ROUTINE_TOKEN_MUTATIONS`
+  entry, with a boundary-aware matcher so the allowance can never leak onto
+  prefix-sharing sibling routes) — a procedure asks the calling routine's own default
+  model; provider keys stay server-side and the spend lands in the durable usage stream
+  as `(procedure-llm)` rows under the routine. New library util `llm`.
+
 ## [0.183.0] — 2026-08-12
 
 ### Added

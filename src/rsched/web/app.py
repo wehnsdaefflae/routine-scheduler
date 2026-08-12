@@ -82,17 +82,22 @@ def _is_sse_path(path: str) -> bool:
 # through the HTTP API around the engine's "config is the user's" seal. Mutating routes
 # are therefore primary-only BY DEFAULT: a new endpoint is born sealed, and opening one to
 # routines is an explicit allowlist entry here, with its reason.
-# ("METHOD", "/api/path-prefix") pairs. EMPTY today — the wild rsched-api usage survey
-# (2026-08-05) found only reads plus the config mutations this seal exists to stop (the
-# one historical non-config mutation, self-audit's DELETE /api/wizard/<wid> orphan-session
-# archive, targeted a route the wizard unification removed). Add a pair here — with its
-# reason — the day a run legitimately needs a non-config mutation.
-ROUTINE_TOKEN_MUTATIONS: tuple[tuple[str, str], ...] = ()
+# ("METHOD", "/api/path-prefix") pairs — add a pair here, with its reason, the day a run
+# legitimately needs a non-config mutation. The wild rsched-api usage survey (2026-08-05)
+# found only reads plus the config mutations this seal exists to stop.
+# POST /api/llm (operator symmetry rule 2026-08-12): the procedure-side model call — it
+# mutates no config, resolves only the CALLING routine's own configured model, and its
+# spend is recorded in the durable usage stream; sealing it would break recipe/procedure
+# symmetry for the one action a procedure legitimately mirrors.
+ROUTINE_TOKEN_MUTATIONS: tuple[tuple[str, str], ...] = (("POST", "/api/llm"),)
 
 
 def _routine_token_allowed(request: Request) -> bool:
+    # exact path or a real subtree — a bare startswith would let "/api/llm" swallow
+    # "/api/llm-tasks", silently opening any future sibling route that shares the prefix
     return request.method in ("GET", "HEAD", "OPTIONS") or any(
-        request.method == method and request.url.path.startswith(prefix)
+        request.method == method
+        and (request.url.path == prefix or request.url.path.startswith(prefix + "/"))
         for method, prefix in ROUTINE_TOKEN_MUTATIONS)
 
 
@@ -201,6 +206,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_groups,
         api_hooks,
         api_items,
+        api_llm,
         api_llm_tasks,
         api_messages,
         api_playbooks,
@@ -225,7 +231,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
                    api_items, api_messages,
                    api_traces,
                    settings,
-                   api_workflows, api_playbooks, api_llm_tasks, api_hooks,
+                   api_workflows, api_playbooks, api_llm, api_llm_tasks, api_hooks,
                    api_groups, api_search, api_fs):
         app.include_router(module.router, prefix="/api", dependencies=deps)
     # The ONE deliberately unauthenticated API route: webhook trigger ingest. Third

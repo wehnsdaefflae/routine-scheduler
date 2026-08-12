@@ -45,22 +45,24 @@ def complete(request: Request, body: LlmBody) -> dict:
     if body.role not in MODEL_KINDS:
         raise HTTPException(400, f"role must be one of {list(MODEL_KINDS)}")
     reg = EndpointRegistry(_state(request).server)
-    if body.role == "uncensored":
-        target = reg.for_uncensored(info.cfg.models)
-        if target is None:
-            raise HTTPException(400, "model role 'uncensored' is not configured for "
-                                     f"routine {body.routine!r}")
-        endpoint, ref = target
-    else:
-        endpoint, ref = reg.for_model(body.role, info.cfg.models)
     messages = ([{"role": "system", "content": body.system}] if body.system else []) \
         + [{"role": "user", "content": body.prompt}]
     try:
+        if body.role == "uncensored":
+            target = reg.for_uncensored(info.cfg.models)
+            if target is None:
+                raise HTTPException(400, "model role 'uncensored' is not configured for "
+                                         f"routine {body.routine!r}")
+            endpoint, ref = target
+        else:
+            endpoint, ref = reg.for_model(body.role, info.cfg.models)
         completion = endpoint.complete(
             messages, model=ref.model, schema=body.response_schema, effort=ref.effort,
             temperature=ref.temperature, max_tokens=ref.max_tokens,
             purpose=f"procedure-llm · {body.routine}"[:80], kind="procedure_llm")
-    except EndpointError as exc:
+    except (EndpointError, LookupError, IndexError) as exc:
+        # resolution failures (no endpoints configured / unknown catalog name) and
+        # transport failures alike: the caller gets a 502 with the reason, never a 500
         raise HTTPException(502, str(exc)) from exc
     usage = completion.usage or {}
     log_workflow_usage(

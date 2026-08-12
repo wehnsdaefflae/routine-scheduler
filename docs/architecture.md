@@ -275,11 +275,15 @@ and the capabilities digest's catalog listing):
   `procedure` capability; conduct: the `procedures` permission doc) in a persistent VENV inside
   the routine's workdir — `<routine>/.venv`, created on first use, the script's PEP 723 deps
   installed into it (net-open build step, R40's prewarm rationale), gitignored against the
-  `git add -A` autocommit — executing with the ROUTINE'S OWN filesystem permissions
-  (`sandbox.wrap_routine`: exactly the run's fs roots + the exec toolchain, NO library root), so
-  the recipe's file actions and the procedure read and write the SAME files (operator spec
-  2026-08-12; NOT the util sandbox). Declared-only secrets with the four-state `secret:` grants
-  and F290's optional-withholding apply identically to utils. Authored by the run itself with
+  `git add -A` autocommit — under the operator's SYMMETRY rule (2026-08-12): everything in the
+  routine's settings applies to BOTH interpreters. The jail is the run's fs roots + the util
+  library read-only (recipe and procedure read and write the SAME files); the env is the
+  routine's STANDING settings — every GRANTED store secret (`granted_store_secrets`), bound
+  connection tokens, machines, the routine API token — with `gu` on PATH; `gu llm` (POST
+  /api/llm, the one ROUTINE_TOKEN_MUTATIONS entry) asks the routine's OWN default model, keys
+  server-side, spend recorded as `(procedure-llm)` usage rows. The header `secrets:` line is
+  the escalation hook (declared+present+undecided files the util call's blocking ask); mid-run
+  asks remain the recipe's channel, and rules bind a procedure through its rule-bound author. Authored by the run itself with
   `write_file` (an own-dir write; the repo's autocommit versions it) or by the user; deliberately
   NO approval dial — the blast radius is the routine's own sandboxed permissions. The
   capabilities digest lists the routine's procedures when the capability is held; children run
