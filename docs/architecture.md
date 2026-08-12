@@ -139,7 +139,9 @@ references models BY NAME** (`routine.yaml` `models:` maps a role → catalog na
 loop), `subroutine` (a spawned child's main), `tool_call` (the `llm` action), optional
 `uncensored`. A role left unset falls back to the server's single `system_model` (also a catalog
 name) — the ONE model for pre-routine machine work (the clarify flow + workflow
-generation/suggestion). `EndpointRegistry.resolve(name)` /
+generation/suggestion). A single `llm`/`subtask` call may override its role per call
+(`model: main|subroutine|tool_call|uncensored`, D81 — role names, never catalog names; an
+unconfigured `uncensored` is rejected with a teaching note). `EndpointRegistry.resolve(name)` /
 `.for_model(kind, routine.models)` / `.for_system()` produce a RESOLVED `ModelRef` (endpoint,
 model id, effort + the filled-in multimodal/context_chars/temperature/max_tokens) — the runtime
 handle, no longer parsed from yaml. `supports_media(mime, *, multimodal)` and compaction

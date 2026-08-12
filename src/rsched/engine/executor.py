@@ -269,8 +269,20 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
     messages.append({"role": "user", "content": action["prompt"]})
     schema = action.get("response_schema")
     purpose = ("llm · " + str(action.get("say") or "sub-call"))[:80]
+    # D81: the optional `model` field names a ROLE (not a catalog model) — the call runs
+    # on that role's configured model instead of the tool_call default.
+    role = str(action.get("model") or "tool_call")
     try:
-        endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models)
+        if role == "uncensored":
+            target = ctx.registry.for_uncensored(ctx.routine.models)
+            if target is None:
+                return {"kind": "llm",
+                        "error": "model role 'uncensored' is not configured for this routine "
+                                 "— it needs a models.uncensored catalog entry (routine page "
+                                 "→ Models). Use the default role, or ask the user to set one."}
+            endpoint, ref = target
+        else:
+            endpoint, ref = ctx.registry.for_model(role, ctx.routine.models)
         completion = endpoint.complete(messages, model=ref.model, schema=schema,
                                        effort=ref.effort, temperature=ref.temperature,
                                        max_tokens=ref.max_tokens, purpose=purpose,
@@ -284,7 +296,9 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
     # free-text replies (parsed is None) are considered; a schema'd/structured reply is an
     # answer, not a refusal. Referral is silent for routines that leave the role unset.
     endpoint_name, model_name, referred = ref.endpoint, ref.model, False
-    if completion.parsed is None and _looks_like_refusal(completion.text):
+    # an explicit `model: uncensored` call already ran there — nothing to refer to
+    if role != "uncensored" and completion.parsed is None \
+            and _looks_like_refusal(completion.text):
         target = ctx.registry.for_uncensored(ctx.routine.models)
         if target is not None:
             u_endpoint, u_ref = target

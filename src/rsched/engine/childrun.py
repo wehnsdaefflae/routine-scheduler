@@ -114,7 +114,15 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
     recipe_slug, note = materialize_to_disk(parent_ctx.server, recipe_slug, sub_dir,
                                             action["prompt"])
     transcript = Transcript(sub_dir / "transcript.jsonl")
-    _, sub_ref = parent_ctx.registry.for_model("subroutine", parent_ctx.routine.models)
+    # D81: an optional `model` ROLE override on the action (subtask) — the caller rejects
+    # an unconfigured 'uncensored' before building, so the None fallback never fires live
+    role = str(action.get("model") or "subroutine")
+    if role == "uncensored":
+        target = parent_ctx.registry.for_uncensored(parent_ctx.routine.models)
+        _, sub_ref = target if target is not None else \
+            parent_ctx.registry.for_model("subroutine", parent_ctx.routine.models)
+    else:
+        _, sub_ref = parent_ctx.registry.for_model(role, parent_ctx.routine.models)
     child_budgets = parent_ctx.child_budgets(overrides=alloc_overrides)
     child_ctx = RunContext(
         routine=_sub_routine(parent_ctx.routine, sub_dir, sub_ref,

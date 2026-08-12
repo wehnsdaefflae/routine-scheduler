@@ -124,6 +124,14 @@ class SubrunManager:
         if reason := self._cap_reason(noun="child-task"):
             return {"kind": "subtask", "rejected": True,
                     "label": action.get("label") or default_label, "reason": reason}
+        # D81: a `model: uncensored` override needs the role configured — teach, don't build
+        if str(action.get("model") or "") == "uncensored" \
+                and ctx.registry.for_uncensored(ctx.routine.models) is None:
+            return {"kind": "subtask", "rejected": True,
+                    "label": action.get("label") or default_label,
+                    "reason": "model role 'uncensored' is not configured for this routine — "
+                              "it needs a models.uncensored catalog entry (routine page → "
+                              "Models). Drop the override, or ask the user to set one."}
         action, gen_note = self._maybe_generate(dict(action))
         turns = action.get("turns")
         overrides = {"turns": int(turns)} if isinstance(turns, int) and turns > 0 else None

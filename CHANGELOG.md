@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.177.0] — 2026-08-12
+
+### Added
+- **Per-call model-role override on `llm` and `subtask`** (D81): the optional `model`
+  field names a ROLE (`main|subroutine|tool_call|uncensored`) — the call runs on that
+  role's configured model instead of the default (llm → tool_call, subtask →
+  subroutine). Naming `uncensored` without a configured `models.uncensored` is a
+  teaching rejection; an explicit uncensored llm call is never re-referred. The
+  `uncensored-llm` wrapper util is retired from the library (its job moved into the
+  engine), per the standing rule that model steps parametrize the ACTION, not wrap a
+  util.
+
 ## [0.176.0] — 2026-08-12
 
 ### Fixed

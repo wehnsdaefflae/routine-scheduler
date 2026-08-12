@@ -193,6 +193,13 @@ ACTION_SCHEMA: dict = {
         "system": {"type": "string", "description": "llm: optional system prompt"},
         "response_schema": {"type": "object",
                             "description": "llm: optional JSON schema constraining the reply"},
+        "model": {"type": "string",
+                  "enum": ["main", "subroutine", "tool_call", "uncensored"],
+                  "description": "llm/subtask: OPTIONAL model-ROLE override — run this call on "
+                                 "the named role's configured model instead of the default "
+                                 "(llm → tool_call, subtask → subroutine). 'uncensored' targets "
+                                 "the routine's uncensored model for a step the default model "
+                                 "refuses (rejected if that role is unconfigured)"},
         "workflow": {"type": "string",
                      "description": "spawn/subtask/detach: library workflow slug for the child "
                                     "(default general-task) — pick the pattern matching its "
@@ -362,9 +369,9 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "memory_write": (("name",), ("content", "about", "delete")),
     "read_rule": (("name",), ()),
     "write_rule": (("name",), ("content", "anchor", "replacement", "all")),
-    "llm": (("prompt",), ("system", "response_schema")),
+    "llm": (("prompt",), ("system", "response_schema", "model")),
     "spawn": (("prompt",), ("workflow", "label")),
-    "subtask": (("prompt",), ("workflow", "label", "turns")),
+    "subtask": (("prompt",), ("workflow", "label", "turns", "model")),
     "detach": (("prompt",), ("workflow", "label")),
     "subruns": ((), ()),
     "kill": (("n",), ()),
@@ -496,6 +503,12 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     if kind == "create_routine" and not is_slug(str(obj.get("target") or "")):
         problems.append("kind=create_routine requires 'target' to be a kebab-case slug for the "
                         "new routine")
+    if kind in ("llm", "subtask") and obj.get("model") is not None:
+        roles = ("main", "subroutine", "tool_call", "uncensored")
+        if str(obj["model"]) not in roles:
+            problems.append(f"kind={kind}: 'model' names a model ROLE — one of "
+                            f"{list(roles)} — never a catalog model name; the role's "
+                            "configured model is what runs")
     if kind == "manage_group":
         verb = str(obj.get("verb") or "").strip()
         verbs = ("list", "create", "update", "delete", "set-default", "run")
