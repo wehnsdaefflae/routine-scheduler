@@ -110,12 +110,13 @@ def boot(loop) -> None:
                 "text": "the user continued the conversation after the run ended",
                 "source": "engine"})
             loop.messages.append({"role": "user", "content":
-                f"ENGINE NOTE: this run already ENDED (status {status}) — the user is "
-                "continuing the conversation; their message follows. This is a follow-up, "
+                f"ENGINE NOTE: this run already ENDED (status {status}) — the conversation "
+                "continues in place; the user's message follows. This is a follow-up, "
                 "NOT a new run: do not restart the workflow and do not redo work that is "
                 "already done. Respond to the user's message — do new work only if it asks "
                 "for some — then finish again with an updated summary (the previous result "
-                "plus what this follow-up changed)."})
+                "plus what this follow-up changed). Anything left open waits for the user's "
+                "next reply in this same conversation — never hand it to a 'next run'."})
         else:
             ctx.transcript.event("user_injection", {"text": "run resumed after interruption",
                                                     "source": "engine"})

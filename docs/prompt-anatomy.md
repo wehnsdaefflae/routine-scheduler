@@ -159,11 +159,12 @@ observations count for the fabrication guard, so answering with an immediate re-
 allowed):
 
 ```
-ENGINE NOTE: this run already ENDED (status ok) — the user is continuing the conversation;
-their message follows. This is a follow-up, NOT a new run: do not restart the workflow and
-do not redo work that is already done. Respond to the user's message — do new work only if
-it asks for some — then finish again with an updated summary (the previous result plus
-what this follow-up changed).
+ENGINE NOTE: this run already ENDED (status ok) — the conversation continues in place;
+the user's message follows. This is a follow-up, NOT a new run: do not restart the workflow
+and do not redo work that is already done. Respond to the user's message — do new work only
+if it asks for some — then finish again with an updated summary (the previous result plus
+what this follow-up changed). Anything left open waits for the user's next reply in this
+same conversation — never hand it to a 'next run'.
 ```
 
 When the resuming message ONLY runs slash commands (the speaker turn is the user's after an

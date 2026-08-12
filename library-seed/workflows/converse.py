@@ -84,7 +84,11 @@ def triage(message):
 def answer(message):
     """Answer a follow-up from the conversation's own context: your earlier observations,
     state/plan.md, LEDGER.md, state/, artifacts/. Re-read a file only if the answer depends
-    on its current content. One or two turns, then reply."""
+    on its current content. One or two turns, then reply.
+
+    Verify the FULL enumeration: when the answer lists N records (routines, schedules,
+    files), fetch or verify ALL N before replying — two of three establishing a pattern is
+    not evidence for the third, and an empty cell in your own table is an ungrounded claim."""
 
 
 def working_plan(message):
@@ -170,7 +174,11 @@ def reply(result, new_topic=False):
     plan now stands if there is one, and open questions. If new_topic, make the summary's
     FIRST line exactly `[new-topic] <a short title for the suggested new conversation>` and
     answer on the lines below — the UI turns that marker into a one-click fork button. Do NOT
-    ask 'anything else?' filler — end when answered."""
+    ask 'anything else?' filler — end when answered.
+
+    The conversation CONTINUES in place: phrase remaining work as picked up in THIS
+    conversation when the user next writes — never as what 'the next run picks up'. A
+    conversation has no next run, only your next reply."""
     return finish("ok", "the reply the user reads")
 
 

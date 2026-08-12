@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.171.0] — 2026-08-12
+
+### Changed
+- **Continued-conversation note says the conversation continues in place** (R307): the
+  engine's follow-up boot note now tells the model that anything left open waits for the
+  user's next reply in the same conversation — never a "next run" — and the converse
+  pattern's `reply()` carries the matching wording rule (library + seed). The pattern's
+  `answer()` additionally requires verifying ALL N enumerated records before replying
+  (R310).
+
 ## [0.170.0] — 2026-08-10
 
 ### Added
