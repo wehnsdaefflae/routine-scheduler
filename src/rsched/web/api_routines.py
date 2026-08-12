@@ -269,6 +269,18 @@ def recipe(request: Request, slug: str) -> dict:
     return statemap.recipe_tree(info.cfg.dir)
 
 
+@router.get("/routines/{slug}/messages")
+def list_messages(request: Request, slug: str) -> dict:
+    """The four-folder MESSAGES view of one routine (D74 phase 1): inbox (waiting,
+    user-editable) · outbox (addressed reports the recipient has not consumed) · read
+    (consumed by this routine) · received (consumed by the recipient). A read model —
+    writing still goes through the existing inbox/feedback endpoints.
+    """
+    from ..readmodels import messages
+    info = _info(request, slug)
+    return messages.build(info.cfg.dir, request.app.state.server.routines_home)
+
+
 @router.get("/routines/{slug}/artifacts")
 def list_artifacts(request: Request, slug: str) -> list[dict]:
     """Everything under <routine>/artifacts/ — the routine's deliverables, newest first

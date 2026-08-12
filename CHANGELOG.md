@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.180.0] — 2026-08-12
+
+### Added
+- **Messages read model** (D74 phase 1 — operator order 2026-08-05): the four-folder
+  per-routine view (`rsched/readmodels/messages.py`, `GET /api/routines/{slug}/messages`)
+  folding the existing stores — inbox `msg-*` files (waiting, user-editable), the
+  reports ledger's addressed rows (outbox until the recipient consumes, received after),
+  and `runs/*/consumed/` (read, capped 50). `answer-*` files stay on the Decisions
+  surface by design. Next phases: the routine-page folder UI, the Items→Messages page
+  rename, the note-for-next-run migration.
+
 ## [0.179.0] — 2026-08-12
 
 ### Added

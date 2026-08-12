@@ -1,5 +1,13 @@
 # Items — the system-maintenance index
 
+> **Direction (D74, operator order 2026-08-05):** this page is being restructured into
+> **Messages** — every text is for or from an individual routine, and each routine page
+> gets four folders: *inbox* (waiting; user-creatable/editable/deletable), *outbox*
+> (addressed reports the recipient has not consumed), *read* (consumed by this routine),
+> *received* (consumed by the recipient) — the last two read-only. Phase 1 shipped the
+> read model + API: `rsched/readmodels/messages.py`, `GET /api/routines/{slug}/messages`.
+> The folder UI, the page rename and the note-for-next-run migration are the next phases.
+
 An **item** is one unit of maintenance work on the scheduler itself: a self-audit
 **finding** (`F<n>`), a self-audit **decision** (`D<n>`), or a **report** (`R<n>`) filed by
 any run through the ungated `report` action — addressed to the routine that owns the problem,

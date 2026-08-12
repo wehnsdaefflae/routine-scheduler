@@ -368,6 +368,43 @@ def test_recipe_endpoint(client):
     assert [s["name"] for s in r["stages"]] == ["gather", "write"]   # run-flow order, not alphabetical
 
 
+def test_routine_messages_four_folders(client):
+    """D74 phase 1 (operator order 2026-08-05): the routine's MESSAGES read model folds
+    the existing stores into inbox (waiting, editable) · outbox (addressed, recipient
+    has not consumed) · read (consumed by this routine) · received (recipient consumed)."""
+    from rsched import reports
+
+    c, tmp = client
+    d = tmp / "routines" / "apir"
+    (d / "inbox").mkdir(exist_ok=True)
+    (d / "inbox" / "msg-1.json").write_text(
+        json.dumps({"text": "waiting msg", "ts": "2026-08-12T08:00:00", "source": "web"}),
+        encoding="utf-8")
+    consumed = d / "runs" / "20260101-000000" / "consumed"
+    consumed.mkdir(parents=True)
+    (consumed / "msg-0.json").write_text(
+        json.dumps({"text": "old msg", "ts": "2025-12-31T00:00:00"}), encoding="utf-8")
+    other = tmp / "routines" / "other"
+    (other / "inbox").mkdir(parents=True)
+    reports.file_report(tmp / "routines", routine="apir", run_id="apir:1",
+                        title="pending hand-off", detail="d1", target="other",
+                        target_dir=other)
+    _, rid2 = reports.file_report(tmp / "routines", routine="apir", run_id="apir:1",
+                                  title="picked-up hand-off", detail="d2", target="other",
+                                  target_dir=other)
+    reports.stamp_delivered(tmp / "routines", [{"report": rid2}], run_id="other:2")
+
+    data = c.get("/api/routines/apir/messages").json()
+    assert [m["text"] for m in data["inbox"]] == ["waiting msg"]
+    assert data["inbox"][0]["editable"] is True
+    assert [m["text"] for m in data["read"]] == ["old msg"]
+    assert data["read"][0]["editable"] is False
+    assert data["read"][0]["run_ts"] == "20260101-000000"
+    assert [m["title"] for m in data["outbox"]] == ["pending hand-off"]
+    assert [m["title"] for m in data["received"]] == ["picked-up hand-off"]
+    assert data["received"][0]["delivered"]["run_id"] == "other:2"
+
+
 def test_routine_artifacts_listed_and_served(client):
     """Routine artifacts get the conversations treatment: listed newest-first, served raw
     — but ONLY artifacts/ (recipe/config stays on the JSON /file endpoint)."""
