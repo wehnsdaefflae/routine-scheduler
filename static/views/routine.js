@@ -47,7 +47,7 @@ export async function render(view, slug, query = {}) {
       el("div", { class: "kicker" }, "routine"),
       titleH1),
     el("div", { class: "row" }, chipHost,
-      // the clarification template is wizard configuration: no run, no archive — the
+      // the clarification template is clarify-flow configuration: no run, no archive — the
       // server 403s both anyway; hiding the buttons says so up front
       ...(d.protected
         ? [chip("protected template", "disabled")]

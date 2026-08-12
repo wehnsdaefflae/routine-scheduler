@@ -23,7 +23,7 @@ the gate for anything irreversible** — but each stresses a different feature:
 scored against your profile — and, for the ones you pick, a drafted application that goes
 out only after your explicit go.
 
-### The draft you type into the wizard
+### The draft you give the creation conversation
 
 > Scan the freelance platforms (freelancermap, freelance.de, GULP, LinkedIn/Indeed via
 > jobs-scrape) and my inboxes (gmail, fau-mail) for new AI/ML/LLM project postings.

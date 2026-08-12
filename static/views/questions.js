@@ -177,7 +177,7 @@ export async function render(view, query = {}) {
     if (q.answered) {
       return el("div", { class: "panel question-item answered" },
         el("div", { class: "q-meta" },
-          q.wizard ? chip("wizard", "meta") : q.meta ? chip("meta", "meta") : null,
+          q.wizard ? chip("clarify", "meta") : q.meta ? chip("meta", "meta") : null,
           q.type === "util-approval" ? chip("util approval", "partial") : null,
           q.type === "request" ? chip("access request", "partial") : null,
           chip(`answered${q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : ""} · queued`, "ok"),
@@ -320,7 +320,7 @@ export async function render(view, query = {}) {
     const panel = el("div", { class: `panel question-item${q.mode === "blocking" ? " warn" : ""}` },
       el("div", { class: "q-meta" },
         expiringSoon(q) ? chip("expiring", "failed") : null,
-        q.wizard ? chip("wizard", "meta") : q.meta ? chip("meta", "meta") : null,
+        q.wizard ? chip("clarify", "meta") : q.meta ? chip("meta", "meta") : null,
         q.type === "util-approval" ? chip("util approval", "partial") : null,
         q.type === "request" ? chip("access request", "partial") : null,
         chip(q.mode, q.mode),

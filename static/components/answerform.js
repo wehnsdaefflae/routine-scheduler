@@ -1,5 +1,5 @@
 // The ONE answer form — every surface that lets the user answer a question (Decisions
-// page, run view, conversation, wizard, transcript inline, chat inline) builds its form
+// page, run view, conversation, clarify session, transcript inline, chat inline) builds its form
 // here instead of hand-rolling a copy. The component owns the core: input + option
 // buttons + default line + ask-back + submit + keyboard + draft persistence + error
 // toast. Page chrome (meta chips, expires notes, lifecycle controls, settled states)

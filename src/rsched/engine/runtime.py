@@ -26,7 +26,7 @@ log = logging.getLogger("rsched.runtime")
 
 
 def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
-    """A routine created as (workflow + instruction) but not yet turned into files — the wizard's
+    """A routine created as (workflow + instruction) but not yet turned into files — the
     clarify session is exactly this — has no main.md. Decompose its workflow against its
     instruction now (the SAME operation scaffold does at creation), so the run follows tailored
     MARKDOWN, never a raw pattern. Degrades to the whole workflow rendered as main.md if no
@@ -92,7 +92,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     on_event(obj) is called for every transcript event (used by `rsched run-once`). When
     resume_from is a prior run's ts, that run dir is reused and its transcript is rehydrated
     into the prompt so the run continues where it left off (with a fresh budget window).
-    run_dir overrides the default `<routine_dir>/runs/<ts>` artifact location — the wizard's
+    run_dir overrides the default `<routine_dir>/runs/<ts>` artifact location — the clarify flow's
     clarify sessions run their hidden throwaway workspace but land the run itself under the
     real `clarification` routine, so it has a valid run id and the standard run surfaces.
     """
@@ -130,7 +130,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     if not resume_from:
         _ensure_decomposed(routine_dir, cfg, server)   # workflow + instruction → main.md, if needed
     body, prov, allowed_tools = load_workflow(routine_dir, cfg)
-    # instruction.md is only a transient compile seed (real routines don't persist it; the wizard's
+    # instruction.md is only a transient compile seed (real routines don't persist it; the
     # throwaway clarify dir does). A top-level run never puts it in the prompt — main.md + stages/
     # are self-contained — so a missing seed is normal.
     instruction = ((routine_dir / "instruction.md").read_text(encoding="utf-8")

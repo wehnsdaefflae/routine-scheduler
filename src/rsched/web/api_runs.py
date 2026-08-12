@@ -255,7 +255,7 @@ async def converse(request: Request, run_id: str, text: Annotated[str, Form()],
     from ..config import load_routine
     from .routines_common import guard_template_dir
     guard_template_dir(run_dir.parent.parent,
-                       "clarify sessions are driven by the wizard, never resumed directly")
+                       "clarify sessions are driven by the creation flow, never resumed directly")
     cfg, _ = load_routine(routine_dir)
     if cfg is None:
         raise HTTPException(404, f"routine {slug!r} not found")
@@ -350,7 +350,7 @@ async def resume_run(request: Request, run_id: str) -> dict:
     slug, run_dir = _run_dir(request, run_id)
     from .routines_common import guard_template_dir
     guard_template_dir(run_dir.parent.parent,
-                       "clarify sessions are driven by the wizard, never resumed directly")
+                       "clarify sessions are driven by the creation flow, never resumed directly")
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:
         raise HTTPException(409,
@@ -380,7 +380,7 @@ async def rewind_run(request: Request, run_id: str) -> dict:
     slug, run_dir = _run_dir(request, run_id)
     from .routines_common import guard_template_dir
     guard_template_dir(run_dir.parent.parent,
-                       "clarify sessions are driven by the wizard, never rewound directly")
+                       "clarify sessions are driven by the creation flow, never rewound directly")
     body = Rewind(**(await request.json()))
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:

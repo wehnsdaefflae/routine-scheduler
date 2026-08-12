@@ -26,7 +26,7 @@ from .paths import read_json
 
 GZIP_AFTER_RUNS = 5  # transcripts older than the N most recent runs get gzipped
 
-# THE run-state vocabulary (status.json `state`) — every consumer (SSE, wizard, detached
+# THE run-state vocabulary (status.json `state`) — every consumer (SSE, clarify flow, detached
 # manager, retention) imports these rather than inlining its own tuple.
 TERMINAL_STATES = ("finished", "failed", "aborted")   # past these a run never changes again
 ACTIVE_STATES = ("queued", "starting", "running", "waiting_user", "paused")

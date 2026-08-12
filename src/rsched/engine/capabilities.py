@@ -127,7 +127,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
     """What this run can ACTUALLY do, stated up front: model + context window, the action
     kinds usable this run (workflow tools ∩ grants), the held permissions with their
     capability notes, and the util catalog at one line per util. Every run — including the
-    wizard's clarify session, whose tools allowlist can't even call `util name=list` —
+    clarify session, whose tools allowlist can't even call `util name=list` —
     plans against this instead of guessing. Exact usage flags still come from
     `util name=list` (live, never stale).
     """

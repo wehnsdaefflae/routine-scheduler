@@ -18,7 +18,7 @@ from ..ids import parse_run_id
 
 def guard_template(cfg: RoutineConfig, refusal: str) -> None:
     """A `kind: template` routine is configuration the user edits, never a runnable or
-    removable job — today that is the wizard's clarification template, whose budgets, models
+    removable job — today that is the clarify flow's clarification template, whose budgets, models
     and rules every clarify session copies. 403 keeps it on the page regardless.
 
     Keyed off the DECLARED kind rather than the slug: the slug was hardcoded across the web

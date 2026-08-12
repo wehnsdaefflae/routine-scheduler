@@ -92,7 +92,7 @@ class RunContext:
     phase: str = ""
     # The recipe version (last recipe-touching commit — recipes.current_recipe_commit)
     # that produced this run, stamped at run start; None for unversioned dirs
-    # (conversations, wizard workspaces). Lands in status.json and the run's
+    # (conversations, clarify workspaces). Lands in status.json and the run's
     # workflow-usage record so outcomes stay attributable after retention.
     recipe_commit: str | None = None
     # Live deliberation level (see config.DELIBERATION_LEVELS): initialized from the

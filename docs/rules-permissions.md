@@ -92,7 +92,7 @@ carrying one is a lint error). One copy each; routines hold slugs. The shipped s
 | `failure-visibility` | error handling *written into code* — never catch without a reaction, enumerate what a broad catch would swallow, fallbacks are features not safety nets, stubs never ship |
 
 `ask-policy`, `web-research`, `decision-record` and `intent-inference` are the routine
-`DEFAULT_RULES`. `git-checkpoint` is **not** a routine default — the wizard preselects it for
+`DEFAULT_RULES`. `git-checkpoint` is **not** a routine default — creation preselects it for
 repo-editing tasks, and it is a standing default for **conversations** (see the Conversations
 guide).
 
@@ -150,7 +150,7 @@ effect. Reading one it does not hold applies it for that run only; `name: "list"
 catalog with each entry flagged when it binds. A rule that keeps proving necessary belongs in
 the run's finish summary or a deferred `ask_user`.
 
-At creation the wizard **preselects** rules from the refined instruction + chosen workflow
+At creation the clarify flow **preselects** rules from the refined instruction + chosen workflow
 (editable before creating), and `main.md` ends with a *Standing practices* section naming each
 ("read it before the situation it governs"). The prompt never inlines the prose — the state
 digest lists the held slugs and the run reads what it needs, which keeps every turn lean.

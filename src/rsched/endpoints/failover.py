@@ -10,7 +10,7 @@ Two cooperating levels, so a flapping provider is never hammered:
 - RESOLVE-TIME AVOIDANCE — `EndpointRegistry.for_model`/`for_uncensored`/`for_system`
   resolve the whole chain and `pick()` the first member whose (endpoint, model id) is not
   cooling down. Every resolution site in the engine benefits without changing: the `llm`
-  action, compaction's tool_call archival, subroutine spawns, the wizard.
+  action, compaction's tool_call archival, subroutine spawns, clarify sessions.
 - CALL-TIME FAILOVER — the engine's turn completion (engine/completion.py) advances down
   the chain in place when the picked model still fails mid-turn, logging the switch as a
   transcript `error` event with a `failover` payload.

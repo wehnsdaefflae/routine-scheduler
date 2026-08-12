@@ -59,7 +59,7 @@ def suggest(server: ServerConfig, instruction: str) -> dict:
                                            kind="suggest")
         except Exception:
             # same graceful discipline as the sibling suggesters: creation flows degrade
-            # to manual picking, they never 500 the wizard
+            # to manual picking, they never 500 the creation flow
             return {"suggestions": [], "none_fit": True,
                     "new_workflow_hint": "suggester unavailable; pick manually"}
         try:
@@ -131,7 +131,7 @@ def suggest_rules_permissions(server: ServerConfig, instruction: str,
     (engine-enforced capabilities), and its deliberation level, from its
     instruction + chosen workflow. Returns {'rules': [...], 'permissions': [...],
     'deliberation': <level>}, validated against the library; falls back to the defaults
-    when no endpoint answers. The wizard shows the result as an editable preselection —
+    when no endpoint answers. The creation flow shows the result as an editable preselection —
     this is a first pass, not a decision.
     """
     from .. import library_docs

@@ -168,7 +168,7 @@ def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
             continue
         for rdir in sorted(routines_home.iterdir()):
             if rdir.name.startswith(".") or not (rdir / "routine.yaml").is_file():
-                continue                            # wizard sessions and strays stay untouched
+                continue                            # clarify workspaces and strays stay untouched
             try:
                 raw = yaml.safe_load((rdir / "routine.yaml").read_text(encoding="utf-8")) or {}
             except yaml.YAMLError:

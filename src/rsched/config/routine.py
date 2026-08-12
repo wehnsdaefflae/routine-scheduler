@@ -57,7 +57,7 @@ class RoutineConfig(_Config):
     owner: dict | None = None
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
     # What this dir IS, when it is not an ordinary scheduled routine: "conversation" (an
-    # interactive session under conversations_home) or "template" (the wizard's protected
+    # interactive session under conversations_home) or "template" (the clarify flow's protected
     # clarification config, which never fires and cannot be run/archived/messaged). Empty for
     # a normal routine. A DECLARED marker so the guards key off the kind instead of a slug
     # hardcoded across the web layer.

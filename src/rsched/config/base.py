@@ -54,7 +54,7 @@ DEFAULT_PERMISSIONS = ["util-authoring", "memory", "global-utils"]
 DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write"],
                         "utils": [], "confirm": "always", "runs": "none",
                         "workflows": "catalog"}
-# RULES a new routine gets when creation picks none explicitly (the wizard normally
+# RULES a new routine gets when creation picks none explicitly (creation normally
 # preselects per task). A rule is a GENERAL rule — principle prose the run applies to its
 # own particular case — and it lives in ONE place, the library. A routine holds slugs, not
 # copies: `rules:` in routine.yaml, listed at the end of its main.md and fetched on demand
@@ -76,7 +76,7 @@ MODEL_KINDS = ("main", "subroutine", "tool_call", "uncensored")
 # thrown away between turns); deliberation is ink, effort is scratch paper. The value
 # lives in TUNING (tuning.yaml, recipe-classed: the improver may edit it under its
 # fs_write_root; routine.yaml stays the user's sealed authority config). User-set via
-# the routine page / wizard / conversation panel; mid-run via control.json.
+# the routine page / creation flow / conversation panel; mid-run via control.json.
 DELIBERATION_LEVELS = ("terse", "standard", "deliberate", "think-on-paper")
 DEFAULT_DELIBERATION = "standard"
 CONVERSATION_DELIBERATION = "deliberate"  # chat is judgment-heavy — context on paper by default

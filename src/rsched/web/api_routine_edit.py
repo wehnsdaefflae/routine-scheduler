@@ -278,7 +278,7 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
 @router.post("/routines/{slug}/run")
 async def run_now(request: Request, slug: str) -> dict:
     info = _info(request, slug)
-    guard_template(info.cfg, "it never runs directly (the wizard starts sessions from it)")
+    guard_template(info.cfg, "it never runs directly (clarify sessions start from it)")
     run_id = await _state(request).runner.fire(info.cfg, reason="manual")
     if run_id is None:
         raise HTTPException(409, f"routine {slug!r} already has an active run")
@@ -300,7 +300,7 @@ def queue_message(request: Request, slug: str, body: MessageBody) -> dict:
     from ..engine import inbox
 
     info = _info(request, slug)
-    guard_template(info.cfg, "the clarification template is driven by the wizard, not messaged")
+    guard_template(info.cfg, "the clarification template backs clarify sessions, never messaged")
     text = body.text.replace("\r\n", "\n").strip()
     if not text:
         raise HTTPException(400, "empty message")

@@ -140,7 +140,7 @@ class EndpointRegistry:
 
     def for_system(self) -> tuple[InstrumentedEndpoint, ModelRef]:
         """The one model for pre-routine machine work (workflow generation/suggestion, the
-        clarify wizard) — the server system_model catalog name. Cooldown-aware like for_model.
+        clarify flow) — the server system_model catalog name. Cooldown-aware like for_model.
         """
         if not self.server.system_model:
             raise EndpointError("no system_model configured")

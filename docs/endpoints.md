@@ -42,7 +42,7 @@ OpenAI chat-completions dialect, cloud or local.
    the endpoint kind), **context window**, **effort**, **temperature**. One endpoint can serve
    many models with different windows and vision support — add one catalog entry per model.
 5. **Point roles at models.** Set the server-wide **system model** (used only for setup-time
-   work: the new-routine wizard and workflow generation) by picking a catalog model, and per
+   work: routine creation and workflow generation) by picking a catalog model, and per
    routine the model roles — **main** (the orchestrator loop), **subroutine** (spawned
    children), **tool_call** (the `llm` action), and the optional **uncensored** (a refused
    `llm` tool-call is re-referred here) — on the routine's page, each a catalog model name.

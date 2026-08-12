@@ -36,7 +36,7 @@ exit 0
 """
 
 
-# The parameter list IS routine creation's config surface (wizard + API both fill it);
+# The parameter list IS routine creation's config surface (creation flow + API both fill it);
 # bundling it into an object would only relocate the same list.
 def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  # noqa: PLR0913
              workflow_slug: str, cron: str = "", tz: str = "Europe/Berlin",
@@ -114,7 +114,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     for stage_name, stage_body in result["stages"].items():
         (routine_dir / "stages" / f"{stage_name}.md").write_text(stage_body.rstrip() + "\n",
                                                                  encoding="utf-8")
-    # extra purpose-specific stage modules from the wizard also land in stages/
+    # extra purpose-specific stage modules from the creation flow also land in stages/
     for fname, fcontent in (stages or {}).items():
         safe = fname if fname.endswith(".md") else f"{fname}.md"
         (routine_dir / "stages" / Path(safe).name).write_text(fcontent, encoding="utf-8")
@@ -163,7 +163,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         cfg["fs_write_roots"] = [_tilde(p) for p in fs_write_roots]
     (routine_dir / "routine.yaml").write_text(
         yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    # tuning.yaml (recipe-classed, improver-editable): the deliberation level, wizard-
+    # tuning.yaml (recipe-classed, improver-editable): the deliberation level, creation-
     # suggested per task. Always written, so the file exists for later tuning edits.
     write_tuning(routine_dir, {"deliberation": deliberation
                                if deliberation in DELIBERATION_LEVELS

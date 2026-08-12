@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.174.0] — 2026-08-12
+
+### Changed
+- **Wizard vocabulary retired from prose and labels** (F282/D59): ~50 comments, docs
+  passages and UI strings that described the retired standalone wizard page in the present
+  tense now name the real surfaces (routine creation from a conversation, the clarify
+  flow); the Decisions-page badge for clarify asks reads `clarify`. DECISION recorded
+  here: the on-disk `.wizard-<ts>` workspace prefix, the `wizard_build_degraded` health
+  event kind, the `q.wizard` API field and the `wizard_store.py` module name stay — they
+  are live machinery / durable vocabulary, and renaming them is a data migration with no
+  user value. Their docstrings say the naming is historical.
+
 ## [0.173.0] — 2026-08-12
 
 ### Changed

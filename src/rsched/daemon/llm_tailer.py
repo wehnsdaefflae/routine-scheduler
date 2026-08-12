@@ -4,7 +4,7 @@ Engine subprocesses can't reach the in-process bus, so each appends per-call lif
 to `runs/<ts>/llm-tasks.jsonl` (via endpoints.instrument.FileSink). This coroutine tails that
 file with the transcript's partial-line-safe reader and hands each new record to a callback
 (which stamps run/process attribution and forwards it to the TaskCenter). The Runner runs one
-per active run; the wizard runs one for its clarify subprocess.
+per active run; a clarify session runs one for its subprocess.
 
 Cancel the task to stop it — a final drain in the `finally` catches records the engine wrote
 just before exiting, so the last calls land before the run's process is closed.

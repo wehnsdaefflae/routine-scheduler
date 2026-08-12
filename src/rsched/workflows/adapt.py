@@ -197,7 +197,7 @@ def _pipeline(resolve, raw: str, instruction: str, *, params: dict, pins: list[s
               rule_lines: str, slug: str, progress=None) -> dict:
     """Outline → main → one call per stage. Raises on any hard failure (the caller falls
     back to materialize). `progress(step: str, done: int, total: int)` — best-effort
-    live reporting (F192: the wizard shows WHICH step the build is on); total grows once
+    live reporting (F192: the creation surface shows WHICH step the build is on); total grows once
     the outline fixes the stage count.
 
     `resolve() -> (endpoint, ref)` is called for the initial pick AND again after every
@@ -353,7 +353,7 @@ def decompose(server, slug: str, instruction: str, *, params: dict | None = None
     meta, raw = read_workflow(server.libraries_home, slug)
     # A pattern may PIN deliverable paths (META["pin"]: str | list) that MUST survive
     # decomposition — the tailored files must still name them. The observed failure mode:
-    # applied to a draft that itself describes a routine (the wizard's clarify-instruction),
+    # applied to a draft that itself describes a routine (clarify-instruction),
     # the generator sometimes builds THAT routine and silently drops the pattern's real
     # deliverable. A dropped pin falls back to the verbatim pattern, which always keeps it.
     pins = [meta["pin"]] if isinstance(meta.get("pin"), str) else list(meta.get("pin") or [])

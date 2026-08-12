@@ -237,11 +237,11 @@ def delete_workflow(request: Request, slug: str) -> dict:
     """Delete a workflow pattern (committed). Routines materialized from it are untouched —
     they own their recipes. A deleted SEED pattern reappears at the next daemon boot
     (sync_seed_library_docs restores missing seed docs). `clarify-instruction` is
-    undeletable: the new-routine wizard runs it to create every routine.
+    undeletable: routine creation runs it for every routine.
     """
     if slug == "clarify-instruction":
         raise HTTPException(400, "clarify-instruction cannot be deleted — the new-routine "
-                                 "wizard runs it to create every routine")
+                                 "routine creation runs it for every routine")
     home = _home(request)
     path = _workflow_file(home, slug)
     if path is None:

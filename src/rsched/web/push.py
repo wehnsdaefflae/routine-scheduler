@@ -163,7 +163,7 @@ def notify_new_decisions(server) -> int:
 
 async def bus_listener(server, bus) -> None:
     """Daemon-side subscriber: any bus event may mean a new decision exists (a run parked
-    on a blocking ask, a finished run that filed deferred ones, a wizard asking) — debounce
+    on a blocking ask, a finished run that filed deferred ones, a clarify session asking) — debounce
     briefly, then diff-and-push off the event loop. Runs for the daemon's lifetime.
     """
     import asyncio

@@ -1412,14 +1412,14 @@ def test_workflow_delete_and_no_proposals_flow(client):
 
 
 def test_clarify_instruction_workflow_is_undeletable(client):
-    """The new-routine wizard runs clarify-instruction to create every routine — the API
-    refuses to delete it even though every other workflow is deletable."""
+    """Routine creation runs clarify-instruction for every routine — the API refuses to
+    delete it even though every other workflow is deletable."""
     c, tmp = client
     wf_dir = tmp / "library" / "workflows"
     wf_dir.mkdir(parents=True, exist_ok=True)
     (wf_dir / "clarify-instruction.py").write_text("META = {}\n")
     r = c.delete("/api/workflows/clarify-instruction")
-    assert r.status_code == 400 and "wizard" in r.json()["detail"]
+    assert r.status_code == 400 and "creation" in r.json()["detail"]
     assert (wf_dir / "clarify-instruction.py").exists()
 
 

@@ -111,7 +111,7 @@ export async function render(view, sub, query = {}) {
   async function openWorkflow(slug) {
     openSub = `workflow/${slug}`; updateURL();
     const d = await api(`/api/workflows/${slug}`);
-    // clarify-instruction is undeletable (the new-routine wizard runs it) — no button
+    // clarify-instruction is undeletable (routine creation runs it) — no button
     const wfDelete = slug === "clarify-instruction" ? undefined : async () => {
       if (!(await confirmDialog(`Delete workflow "${slug}"? Routines born from it keep their own `
                    + "recipes. A seed pattern returns at the next daemon boot.",

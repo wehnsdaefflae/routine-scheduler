@@ -178,7 +178,7 @@ export async function renderEndpoints(view) {
   }
 
   // The ONE fallback model for machine work that isn't a routine yet (the new-routine clarify
-  // wizard + workflow generation). Setting it is what makes the instance "llm_ready". Pick a
+  // creation flow + workflow generation). Setting it is what makes the instance "llm_ready". Pick a
   // catalog model by NAME; each routine then picks its own roles on its own page.
   function systemModelEditor(models, systemModel) {
     const box = el("div", { class: "panel mt" });
@@ -186,7 +186,7 @@ export async function renderEndpoints(view) {
       el("div", { class: "small", style: "font-weight:600" }, "System model"),
       el("div", { class: "muted small", style: "margin:2px 0 6px" },
         "The one fallback model for setup-time work that isn't a routine yet — the new-routine ",
-        "clarify wizard and workflow generation. Required before you can create routines. ",
+        "clarify flow and workflow generation. Required before you can create routines. ",
         "Each routine then picks its own ", el("strong", {}, "main"), " / ",
         el("strong", {}, "subroutine"), " / ", el("strong", {}, "tool-call"), " models on its page — ",
         "any role a routine leaves unset falls back to this system model. (A model may also name its ",

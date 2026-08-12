@@ -61,7 +61,7 @@ def _matchable_specs(routine_dir: Path) -> list[str]:
 
 def current_recipe_commit(routine_dir: Path) -> str | None:
     """The commit hash of the routine's current recipe version, or None (no git — a
-    conversation, a wizard workspace — or no recipe-touching commit yet). Dirty recipe
+    conversation, a clarify workspace — or no recipe-touching commit yet). Dirty recipe
     files are snapshotted into a recipe-only commit first (see the module docstring),
     so the returned commit always matches what is on disk. Best-effort: any git failure
     returns None rather than blocking a run start.

@@ -226,7 +226,7 @@ def cmd_daemon(_args) -> int:
     migrate_library_sync(server)
     seed_routines(server.routines_home)   # fresh deploy: install bundled meta routines (off)
     adopt_seed_routine(server.routines_home, "token-lab")  # seeds added after first boot land once
-    adopt_seed_routine(server.routines_home, "clarification")  # the wizard's template (D10)
+    adopt_seed_routine(server.routines_home, "clarification")  # the clarify template (D10)
     adopt_seed_routine(server.routines_home, "rules-review")    # owns the general-rule library
     adopt_seed_routine(server.routines_home, "library-sync")    # publishes the instance off-box
     from .migrate_template_kind import migrate_template_kind

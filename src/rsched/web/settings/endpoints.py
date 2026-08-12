@@ -259,7 +259,7 @@ class SystemModelBody(BaseModel):
 @router.put("/settings/system-model")
 def set_system_model(request: Request, body: SystemModelBody) -> dict:
     """Set the ONE fallback model for machine work that isn't a routine yet — workflow
-    generation/suggestion and the new-routine clarify wizard. Setting it is what makes the
+    generation/suggestion and the new-routine clarify flow. Setting it is what makes the
     instance 'llm_ready'; routines otherwise pick their own (also by catalog name).
     """
     s = server_of(request)

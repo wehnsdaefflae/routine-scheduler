@@ -138,7 +138,7 @@ endpoint serves many models with different windows and vision support). Each **r
 references models BY NAME** (`routine.yaml` `models:` maps a role → catalog name): `main` (the
 loop), `subroutine` (a spawned child's main), `tool_call` (the `llm` action), optional
 `uncensored`. A role left unset falls back to the server's single `system_model` (also a catalog
-name) — the ONE model for pre-routine machine work (the clarify wizard + workflow
+name) — the ONE model for pre-routine machine work (the clarify flow + workflow
 generation/suggestion). `EndpointRegistry.resolve(name)` /
 `.for_model(kind, routine.models)` / `.for_system()` produce a RESOLVED `ModelRef` (endpoint,
 model id, effort + the filled-in multimodal/context_chars/temperature/max_tokens) — the runtime
@@ -246,7 +246,7 @@ and the capabilities digest's catalog listing):
   them; `workflows: catalog|generate` gates in-run pattern drafting for subtasks),
   `budgets:` (max_turns / max_total_turns (cumulative across resume windows) / wall_clock_min /
   total_tokens / max_cost (whole-$ ceiling) — the last four honor -1 = unlimited — / subruns /
-  subrun_depth / ask_timeout_min — all editable in the UI, wizard + routine page), `fs_read_roots` / `fs_write_roots`, retention —
+  subrun_depth / ask_timeout_min — all editable in the UI, creation flow + routine page), `fs_read_roots` / `fs_write_roots`, retention —
   budgets/fs-roots/schedules are resources, never capabilities; `improve: false` opts the routine
   out of the routine-improver's passes (default: included); `triggers:` — event-driven fires
   alongside cron (docs/triggers.md): one canonical list of `{id, type, cooldown_s, …}` entries
@@ -256,7 +256,7 @@ and the capabilities digest's catalog listing):
 - `tuning.yaml` — the routine's machine-tunable BEHAVIOR parameters, classed with the RECIPE
   (improver-editable under its fs_write_root; config stays sealed — the file boundary IS the
   permission boundary). Today: `deliberation:` (terse|standard|deliberate|think-on-paper — how
-  much thinking lands on paper: words the say contract, `engine/deliberation.py`; wizard-suggested
+  much thinking lands on paper: words the say contract, `engine/deliberation.py`; creation-suggested
   per task, slider on the routine page / conversation header, mid-run via control.json
   `set_deliberation` from the run view). Absent file = defaults; `config.load_tuning`/`write_tuning`
   are the one reader/writer pair; future machine-tunable knobs land here, never in routine.yaml.
@@ -488,7 +488,7 @@ values AND URL-embedded credentials redacted — into `config/`; then commit (sc
 failed pull). `bootstrap.py` seeds on
 first boot; `deploy/install.sh` for host installs. Everything in the library is user-EDITABLE from
 the Library tab, and DELETABLE except permission docs (the capability layer's conduct surface) and
-the `clarify-instruction` workflow (the new-routine wizard runs it) — both guards are server-side.
+the `clarify-instruction` workflow (routine creation runs it) — both guards are server-side.
 A deleted seed workflow/rule returns at the next daemon boot (sync_seed_library_docs); a deleted
 util stays deleted (git-recoverable — seed utils only land at repo creation).
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
@@ -505,7 +505,7 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   wizard page. The conversation agent clarifies the task WITH the user in normal chat (`clarify-instruction`
   SUGGESTS a pattern, or asks to generate one, and MARRIES the task to it), then emits the **`create_routine`**
   action (`engine/create_routine.py`) — valid ONLY from a root conversation — which materializes the routine
-  SYNCHRONOUSLY through the SAME `workflows.scaffold` path the wizard build once called (decompose the chosen
+  SYNCHRONOUSLY through the SAME `workflows.scaffold` path the retired wizard build once called (decompose the chosen
   workflow into main.md + stages/, record its held rules, write routine.yaml, init the auto-push git repo; the
   daemon's `registry_rescan_s` timer picks the new dir up). The protected `clarification` template routine
   still backs the clarify flow and its questions/decisions surface through `/api/questions`; `wizard_store.py`
@@ -731,7 +731,7 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
 - **Self-update restart** (`restart.py`): a sentinel triggers a drain, then a clean exit; systemd
   `Restart=always` relaunches on the committed code (`uv run` re-syncs deps). A parked run
   (`waiting_user`/`paused`) DEFERS the drain's start (never freeze scheduling on a human); once
-  draining, active runs are waited out. In-flight wizard builds AND live clarify runs (spawned by
+  draining, active runs are waited out. In-flight creation builds AND live clarify runs (spawned by
   the web layer, invisible to the runner — `restart.clarify_states` reads
   `clarification/runs/*`) hold the drain the same way. Orphaned runs claiming to be alive are
   closed out at boot.

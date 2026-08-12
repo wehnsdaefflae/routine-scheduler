@@ -2,11 +2,11 @@
 clarified with the user into a real scheduled routine (D58).
 
 The operator's rule: routine creation is initiated from a conversation ONLY. Instead of a
-standalone new-routine wizard page, the conversation agent (or a `/create_routine` slash
+retired standalone wizard page, the conversation agent (or a `/create_routine` slash
 command) clarifies the task WITH the user in the normal chat, then emits this one action to
-materialize the routine. It reuses the SAME `workflows.scaffold` path the wizard's build half
-calls — decompose the chosen workflow into the routine's own main.md + stages/, adapt its
-rules, write routine.yaml, init the auto-push git repo — so there is exactly one materializer.
+materialize the routine. It reuses the SAME `workflows.scaffold` path the retired wizard's
+build half called — decompose the chosen workflow into the routine's own main.md + stages/,
+adapt its rules, write routine.yaml, init the auto-push git repo — one materializer only.
 
 Structural rule (mirrors `detach`): valid ONLY from a ROOT CONVERSATION (depth 0, dir directly
 under conversations_home). A scheduled routine has no user in the loop to design a new routine

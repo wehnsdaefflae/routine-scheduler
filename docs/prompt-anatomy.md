@@ -84,7 +84,7 @@ whatever is not in the prompt is reachable by an action (`util name=list`,
 
 **Deliberation levels** — the `say` contract sentence is picked by the routine's
 `deliberation` tuning key (`tuning.yaml`; `engine/deliberation.py` owns the wording; the
-slider lives on the routine page, the wizard, the conversation header, and — mid-run,
+slider lives on the routine page, the creation flow, the conversation header, and — mid-run,
 control.json-scoped — the run view). Prose the model does not write down does not exist for
 later turns (thinking tokens are ephemeral, the message list append-only), so this knob
 decides how much of its thinking lands ON PAPER:

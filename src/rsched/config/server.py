@@ -69,7 +69,7 @@ class ServerConfig(_Config):
     # lives in the Secrets store (per-entry key_var), never here. See docs/remote-machines.md.
     machines: dict[str, MachineConfig] = Field(default_factory=dict)
     # The ONE fallback model for machine work that isn't a routine yet: workflow
-    # generation/suggestion and the new-routine clarify wizard. A catalog model NAME;
+    # generation/suggestion and the new-routine clarify flow. A catalog model NAME;
     # routines set their own (also by name), falling back to this when a role is unset.
     system_model: str = ""
     source: Path | None = None
