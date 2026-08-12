@@ -1,9 +1,9 @@
-"""User-flagged item priorities: the Items page's "work this first" channel (D75).
+"""User-flagged item priorities: the Messages page's "work this first" channel (D75).
 
 The Items index (readmodels/items.py) merges findings (`F<n>`), decisions (`D<n>`) and
 reports (`R<n>`) into one maintenance backlog, but the ORDER a routine worked it in was
 the routine's own guess. The priority flag is the user's counter-signal: one ⚑ toggle on
-an item card, stored here, that (a) floats the item to the top of the Items page and
+an item card, stored here, that (a) floats the item to the top of the Messages page and
 (b) reaches the OWNING routine's next run — `composer.state_digest` appends a "PRIORITY
 items" section listing the flagged items that routine owns, so its orient stage reads
 them before it plans.
@@ -73,7 +73,7 @@ def owned_priority_items(routines_home: Path, routine_slug: str) -> list[dict]:
     A flagged `R<n>` that no longer exists in the ledger resolves to no owner and is
     skipped (the flag stays until the user clears it — silently dropping it would hide
     the user's signal). Titles are best-effort: an id is always enough to look the item
-    up on the Items page.
+    up on the Messages page.
     """
     flagged = read_priorities(routines_home)
     if not flagged:
@@ -113,6 +113,6 @@ def digest_section(routines_home: Path, routine_slug: str) -> str:
         return ""
     lines = "\n".join(f"- {i['id']}" + (f" — {i['title']}" if i["title"] else "")
                       for i in items)
-    return ("PRIORITY items the user flagged for THIS routine (⚑ on the Items page — "
+    return ("PRIORITY items the user flagged for THIS routine (⚑ on the Messages page — "
             "address these ahead of other backlog this run, and cite each id in what you "
             "ship, route or report):\n" + lines)

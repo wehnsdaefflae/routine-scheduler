@@ -1,7 +1,8 @@
-"""The Items page (#/items): the system-maintenance index that absorbed the Audit page in
-0.106.0 — findings, decisions and reports as one filterable list, each card carrying its
-status, origin and the changelog rows that addressed it, plus the reviewer-feedback composer
-whose messages land in the self-audit routine's inbox.
+"""The Messages page (#/messages, the Items page renamed in D74): the system-maintenance
+index — findings, decisions and reports as one filterable list, each card carrying its
+status, origin and the changelog rows that addressed it, plus the whole self-audit inbox
+queue ("waiting for the next run") and the note composer, whose message is a PLAIN user
+message in the routine's inbox since D74 (no [AUDIT …] tag).
 """
 
 import json
@@ -33,10 +34,12 @@ BUG = {"id": "R1", "ts": "2026-07-14T08:00:00+00:00", "routine": "uir",
        "detail": "exit 2 creating its output dir"}
 
 
-def _seed(ui, *, report=True):
+def _seed(ui, make_routine, *, report=True):
+    # a REAL self-audit routine: the page's generic message endpoints (create / edit /
+    # withdraw, D74) resolve the slug through the registry, which needs routine.yaml
+    make_routine(slug="self-audit")
     audit = ui.routines / "self-audit" / "audit"
     audit.mkdir(parents=True, exist_ok=True)
-    (ui.routines / "self-audit" / "inbox").mkdir(parents=True, exist_ok=True)
     if report:
         (audit / "report.json").write_text(json.dumps(REPORT), encoding="utf-8")
     (audit / "changelog.jsonl").write_text(CHANGELOG, encoding="utf-8")
@@ -45,14 +48,14 @@ def _seed(ui, *, report=True):
     (control / "reports.jsonl").write_text(json.dumps(BUG) + "\n", encoding="utf-8")
 
 
-def test_items_page_lists_every_type_with_status_and_history(ui, ui_page):
+def test_messages_page_lists_every_type_with_status_and_history(ui, ui_page, make_routine):
     """All three item types land on one page: the report's finding and decision, the bug
     report from the .control stream, and the archive-only item that survives solely through
     the changelog. Each card shows a status; an archive-only card says so instead of
     inventing prose, and a prose-matched changelog link is labelled best-effort."""
-    _seed(ui)
-    ui_page.goto(f"{ui.url}/#/items?status=all")
-    ui_page.wait_for_selector("h1:has-text('Items')", timeout=10_000)
+    _seed(ui, make_routine)
+    ui_page.goto(f"{ui.url}/#/messages?status=all")
+    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
 
     # the report header rides along (window + since-commit), the arrays are items now
     expect(ui_page.locator(".sub")).to_contain_text("findings, decisions and reports")
@@ -75,11 +78,11 @@ def test_items_page_lists_every_type_with_status_and_history(ui, ui_page):
     expect(ui_page.locator("#ref-F7")).to_contain_text("best-effort")
 
 
-def test_items_filters_narrow_the_list_and_counts_stay_whole(ui, ui_page):
+def test_messages_filters_narrow_the_list_and_counts_stay_whole(ui, ui_page, make_routine):
     """Type / status / search filters run server-side; the chip counts stay over the
     UNFILTERED set so a chip never counts only what the current filter already shows."""
-    _seed(ui)
-    ui_page.goto(f"{ui.url}/#/items?status=all")
+    _seed(ui, make_routine)
+    ui_page.goto(f"{ui.url}/#/messages?status=all")
     ui_page.wait_for_selector("#ref-F1", timeout=10_000)
 
     ui_page.locator(".filterbar .tag", has_text="reports").click()
@@ -97,13 +100,14 @@ def test_items_filters_narrow_the_list_and_counts_stay_whole(ui, ui_page):
     expect(ui_page.locator("#ref-F1")).to_have_count(0)
 
 
-def test_items_composer_queues_edits_and_withdraws_feedback(ui, ui_page):
-    """The reviewer-feedback loop, unchanged from the Audit page: a comment on a finding
-    lands in the self-audit inbox as a tagged message, shows up in "waiting for the next
-    run", stays editable in place (same message file), and can be withdrawn."""
-    _seed(ui)
+def test_messages_composer_queues_edits_and_withdraws_feedback(ui, ui_page, make_routine):
+    """The reviewer-feedback loop: a comment on a finding lands in the self-audit inbox as
+    a tagged message, shows up in "waiting for the next run", stays editable in place (same
+    message file, structured audit channel), and withdraws through the generic messages
+    endpoint (D74)."""
+    _seed(ui, make_routine)
     inbox = ui.routines / "self-audit" / "inbox"
-    ui_page.goto(f"{ui.url}/#/items?status=all")
+    ui_page.goto(f"{ui.url}/#/messages?status=all")
     ui_page.wait_for_selector("#ref-F1", timeout=10_000)
 
     ui_page.locator("#ref-F1 textarea").fill("please fix this first")
@@ -129,43 +133,64 @@ def test_items_composer_queues_edits_and_withdraws_feedback(ui, ui_page):
     assert list(inbox.glob("msg-*.json")) == []
 
 
-def test_items_general_note_reaches_the_inbox(ui, ui_page):
-    """The free note for the next run — the page's other write path — lands in the same
-    inbox as a tagged message."""
-    _seed(ui)
-    ui_page.goto(f"{ui.url}/#/items?status=all")
-    ui_page.wait_for_selector("h2:has-text('Note for the next run')", timeout=10_000)
+def test_messages_note_is_a_plain_inbox_message(ui, ui_page, make_routine):
+    """The note for the next run (D74 phase 4): the composer creates a PLAIN user message
+    in self-audit's inbox — no [AUDIT note] wrapper — through the same generic endpoint
+    every routine page uses; it queues on the waiting list, is editable there in place
+    (same file), and withdrawable."""
+    _seed(ui, make_routine)
+    inbox = ui.routines / "self-audit" / "inbox"
+    ui_page.goto(f"{ui.url}/#/messages?status=all")
+    ui_page.wait_for_selector("h2:has-text('Message the next run')", timeout=10_000)
     ui_page.locator("textarea.code").fill("focus on the daemon logging")
     ui_page.locator("button", has_text="send to the next run").click()
-    expect(ui_page.locator(".pending-item", has_text="focus on the daemon logging")).to_be_visible(
-        timeout=10_000)
-    texts = [json.loads(p.read_text())["text"]
-             for p in (ui.routines / "self-audit" / "inbox").glob("msg-*.json")]
-    assert texts == ["[AUDIT note] focus on the daemon logging"]
+
+    row = ui_page.locator(".pending-item", has_text="focus on the daemon logging")
+    expect(row).to_be_visible(timeout=10_000)
+    msgs = list(inbox.glob("msg-*.json"))
+    assert len(msgs) == 1
+    assert json.loads(msgs[0].read_text())["text"] == "focus on the daemon logging"
+
+    # a plain queued message is editable right on the waiting list — same file, new text
+    row.locator("button", has_text="edit").click()
+    edit_box = ui_page.locator(".pending-item textarea")
+    expect(edit_box).to_have_value("focus on the daemon logging")
+    edit_box.fill("focus on the scheduler instead")
+    ui_page.locator(".pending-item button", has_text="save").click()
+    expect(ui_page.locator(".pending-item", has_text="focus on the scheduler instead")
+           ).to_be_visible(timeout=10_000)
+    msgs = list(inbox.glob("msg-*.json"))
+    assert len(msgs) == 1
+    assert json.loads(msgs[0].read_text())["text"] == "focus on the scheduler instead"
+
+    ui_page.locator(".pending-item button", has_text="withdraw").click()
+    expect(ui_page.locator(".pending-item")).to_have_count(0, timeout=10_000)
+    assert list(inbox.glob("msg-*.json")) == []
 
 
-def test_items_without_a_report_still_lists_the_archive(ui, ui_page):
+def test_messages_without_a_report_still_lists_the_archive(ui, ui_page, make_routine):
     """A routine that never produced a report is not an empty page: the changelog archive and
     the bug stream are items in their own right, and the note box stays available."""
-    _seed(ui, report=False)
-    ui_page.goto(f"{ui.url}/#/items?status=all")
-    ui_page.wait_for_selector("h1:has-text('Items')", timeout=10_000)
+    _seed(ui, make_routine, report=False)
+    ui_page.goto(f"{ui.url}/#/messages?status=all")
+    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
     expect(ui_page.locator("#ref-R1")).to_be_visible(timeout=10_000)
     expect(ui_page.locator("#ref-F7")).to_be_visible()
-    expect(ui_page.locator("h2", has_text="Note for the next run")).to_be_visible()
+    expect(ui_page.locator("h2", has_text="Message the next run")).to_be_visible()
 
 
-def test_items_empty_state_without_the_self_audit_routine(ui, ui_page):
-    ui_page.goto(f"{ui.url}/#/items?status=all")
+def test_messages_empty_state_without_the_self_audit_routine(ui, ui_page):
+    ui_page.goto(f"{ui.url}/#/messages?status=all")
     expect(ui_page.locator(".empty .t")).to_contain_text("isn't set up yet", timeout=10_000)
 
 
-def test_items_defaults_to_the_active_backlog(ui, ui_page):
-    """A bare #/items shows only open + in_progress (the worklist), with the `active` chip
-    lit — the archive (addressed/settled/unknown) needs the explicit ?status=all (D75)."""
-    _seed(ui)
-    ui_page.goto(f"{ui.url}/#/items")
-    ui_page.wait_for_selector("h1:has-text('Items')", timeout=10_000)
+def test_messages_defaults_to_the_active_backlog(ui, ui_page, make_routine):
+    """A bare #/messages shows only open + in_progress (the worklist), with the `active`
+    chip lit — the archive (addressed/settled/unknown) needs the explicit ?status=all
+    (D75)."""
+    _seed(ui, make_routine)
+    ui_page.goto(f"{ui.url}/#/messages")
+    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
     expect(ui_page.locator("#ref-D1")).to_be_visible(timeout=10_000)   # open → shown
     expect(ui_page.locator("#ref-R1")).to_have_count(0)                # addressed → hidden
     expect(ui_page.locator("#ref-F1")).to_have_count(0)                # unknown → hidden
@@ -176,12 +201,12 @@ def test_items_defaults_to_the_active_backlog(ui, ui_page):
     expect(ui_page).to_have_url(re.compile(r"status=all"))
 
 
-def test_items_priority_flag_round_trips(ui, ui_page):
+def test_messages_priority_flag_round_trips(ui, ui_page, make_routine):
     """The ⚑ toggle (D75): flagging a card floats it, badges it, and lands in the
     .control/item-priorities.json store the owning routine's next run reads; unflagging
     clears the store again."""
-    _seed(ui)
-    ui_page.goto(f"{ui.url}/#/items")
+    _seed(ui, make_routine)
+    ui_page.goto(f"{ui.url}/#/messages")
     ui_page.wait_for_selector("#ref-D1", timeout=10_000)
     ui_page.locator("#ref-D1 button[title*='flag as priority']").click()
     expect(ui_page.locator("#ref-D1")).to_contain_text("⚑ priority", timeout=10_000)

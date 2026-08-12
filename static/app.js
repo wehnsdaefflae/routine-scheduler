@@ -21,7 +21,7 @@ const routes = [
   // #/routines. One pattern keeps the render arg shape (box, slug, query) correct at root.
   [/^(?:#?\/?|#\/conversations(?:\/([a-z0-9-]+))?)$/, () => import("/static/views/conversations.js")],
   [/^#\/routines$/, () => import("/static/views/dashboard.js")],
-  [/^#\/items$/, () => import("/static/views/items.js")],
+  [/^#\/messages$/, () => import("/static/views/messages.js")],
   [/^#\/stats$/, () => import("/static/views/stats.js")],
   [/^#\/groups$/, () => import("/static/views/groups.js")],
   [/^#\/routine\/([a-z0-9-]+)$/, () => import("/static/views/routine.js")],
@@ -86,7 +86,7 @@ function updateLocation(path) {
       || path.startsWith("#/run/") ? "dashboard"
     : path.startsWith("#/summary") ? "summary"
     : path.startsWith("#/questions") ? "questions"
-    : path.startsWith("#/items") ? "items"
+    : path.startsWith("#/messages") ? "messages"
     : path.startsWith("#/stats") ? "stats"
     : path.startsWith("#/groups") ? "groups"
     : path.startsWith("#/library") ? "library"
@@ -107,7 +107,7 @@ function crumbsFor(path) {
     case "routines": return [{ label: "Routines" }];
     case "summary": return [{ label: "Summary" }];
     case "questions": return [{ label: "Decisions" }];
-    case "items": return [{ label: "Items" }];
+    case "messages": return [{ label: "Messages" }];
     case "stats": return [{ label: "Stats" }];
     case "groups": return [{ label: "Groups" }];
     case "settings": return [{ label: "Settings" }];

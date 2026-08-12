@@ -1035,9 +1035,9 @@ def test_item_refs_link_and_flash(ui, ui_page):
     }
     (rdir / "audit" / "report.json").write_text(json.dumps(report), encoding="utf-8")
 
-    ui_page.goto(f"{ui.url}/#/items")
+    ui_page.goto(f"{ui.url}/#/messages")
     link = ui_page.locator(".panel.prose a.ref-link", has_text="D1")
-    expect(link).to_have_attribute("href", "#/items?focus=D1")
+    expect(link).to_have_attribute("href", "#/messages?focus=D1")
     expect(ui_page.locator("#ref-F1")).to_be_visible()      # findings AND decisions get cards
     expect(ui_page.locator("#ref-D1")).to_contain_text("Pick a path")
     link.click()                                            # follow the ref → land + flash
@@ -1046,7 +1046,7 @@ def test_item_refs_link_and_flash(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/questions")                   # the same ids link from the inbox
     card = ui_page.locator(".question-item", has_text="Pick a path")
     flink = card.locator("a.ref-link", has_text="F1")
-    expect(flink).to_have_attribute("href", "#/items?focus=F1")
+    expect(flink).to_have_attribute("href", "#/messages?focus=F1")
 
 
 def test_decision_detail_renders_markdown(ui, ui_page):
@@ -1081,7 +1081,7 @@ def test_decision_detail_renders_markdown(ui, ui_page):
 
 
 def test_item_detail_renders_markdown(ui, ui_page):
-    """The Items page (#/items) renders an item's own prose — finding/decision `detail` and
+    """The Messages page (#/messages) renders an item's own prose — finding/decision `detail` and
     the report summary — as real markdown DOM, not literal textContent. Regression (F105,
     2026-07-18): the audit view Items replaced never imported md.js, so block markdown
     (lists, `code`, tables) showed as raw text — the same gap F104 fixed on the Decisions
@@ -1107,7 +1107,7 @@ def test_item_detail_renders_markdown(ui, ui_page):
     }
     (rdir / "audit" / "report.json").write_text(json.dumps(report), encoding="utf-8")
 
-    ui_page.goto(f"{ui.url}/#/items")
+    ui_page.goto(f"{ui.url}/#/messages")
     fcard = ui_page.locator("#ref-F2")
     # the finding's bullet list renders as real <li>, not literal "- lists become …"
     expect(fcard.locator("li", has_text="lists become real")).to_be_visible()
@@ -1119,7 +1119,7 @@ def test_item_detail_renders_markdown(ui, ui_page):
     expect(dcard.locator("code", has_text="md()")).to_be_visible()
     # (scoped to .md: the card also carries a compact "refers to" index of the same ids)
     expect(dcard.locator(".md a.ref-link", has_text="F2")).to_have_attribute(
-        "href", "#/items?focus=F2")
+        "href", "#/messages?focus=F2")
 
 
 # ---- 8. md.js block rendering: GFM pipe tables + blockquotes -------------------------------

@@ -1,25 +1,96 @@
-"""Routine detail page: the sections side-TOC (like Settings) and the filesystem-root
-directory picker (browse the server FS, pick a real path — no more free-text textarea)."""
+"""Routine detail page: the four MESSAGE folders (D74), the sections side-TOC (like
+Settings) and the filesystem-root directory picker (browse the server FS, pick a real
+path — no more free-text textarea)."""
 
 import json
 
 from playwright.sync_api import expect
 
+from rsched import reports
 
-def test_message_the_next_run(ui, ui_page):
-    """F233: the routine page carries a "Message the next run" composer — the routine-bound
-    home for a note the next run reads at boot (the run page's end-of-run input now only
-    continues THAT run). Sending it lands a msg-* file in the routine's inbox."""
+
+def test_messages_inbox_compose_edit_withdraw(ui, ui_page):
+    """The Messages section's inbox folder is the routine-bound home for a note the next
+    run reads at boot (F233/D74): queueing lands a msg-* file in the routine's inbox, an
+    edit rewrites the SAME file in place, withdraw removes it."""
     ui_page.goto(f"{ui.url}#/routine/uir")
-    ui_page.wait_for_selector("h2:has-text('Message the next run')", timeout=10_000)
+    ui_page.wait_for_selector("h2:has-text('Messages')", timeout=10_000)
     box = ui_page.locator('textarea[data-persist="nextrun-msg-uir"]')
     expect(box).to_be_visible()
     box.fill("re-check the freelance portals after the login fix")
-    ui_page.get_by_role("button", name="send to the next run").click()
+    ui_page.get_by_role("button", name="queue for the next run").click()
     expect(_toast(ui_page)).to_contain_text("next run reads it")
+
     inbox = ui.routine_dir("uir") / "inbox"
-    sent = [json.loads(m.read_text(encoding="utf-8")) for m in inbox.glob("msg-*.json")]
-    assert any("re-check the freelance portals" in d["text"] for d in sent)
+    card = ui_page.locator(".msg-item.inbox", has_text="re-check the freelance portals")
+    expect(card).to_be_visible(timeout=10_000)
+    expect(card).to_contain_text("you")            # web-queued → labelled as the user's own
+    msgs = list(inbox.glob("msg-*.json"))
+    assert len(msgs) == 1
+    assert "re-check the freelance portals" in json.loads(msgs[0].read_text())["text"]
+
+    # edit in place: the SAME file is rewritten, never a second message
+    card.locator("button", has_text="edit").click()
+    ta = ui_page.locator(".msg-item.inbox textarea")
+    expect(ta).to_have_value("re-check the freelance portals after the login fix")
+    ta.fill("only the login fix, portals can wait")
+    ui_page.locator(".msg-item.inbox button", has_text="save").click()
+    expect(ui_page.locator(".msg-item.inbox", has_text="portals can wait")).to_be_visible(
+        timeout=10_000)
+    msgs = list(inbox.glob("msg-*.json"))
+    assert len(msgs) == 1
+    assert json.loads(msgs[0].read_text())["text"] == "only the login fix, portals can wait"
+
+    ui_page.locator(".msg-item.inbox button", has_text="withdraw").click()
+    expect(ui_page.locator(".msg-item.inbox")).to_have_count(0, timeout=10_000)
+    expect(ui_page.locator(".msg-empty")).to_be_visible()
+    assert list(inbox.glob("msg-*.json")) == []
+
+
+def test_messages_folders_and_outbox_retract(ui, ui_page, make_routine):
+    """The other three folders: read shows what runs consumed (read-only, linked to the
+    consuming run), received shows picked-up hand-offs, and outbox carries the ONE write —
+    retracting a not-yet-consumed addressed report removes the delivery from the target's
+    inbox and the ledger records it (docs/messages.md)."""
+    peer = make_routine(slug="peer")
+    consumed = ui.routine_dir("uir") / "runs" / "20260101-000000" / "consumed"
+    consumed.mkdir(parents=True, exist_ok=True)
+    (consumed / "msg-0.json").write_text(
+        json.dumps({"text": "old note", "ts": "2025-12-31T00:00:00"}), encoding="utf-8")
+    _, rid = reports.file_report(ui.routines, routine="uir", run_id="uir:1",
+                                 title="pending hand-off", detail="please fix it",
+                                 target="peer", target_dir=peer)
+    _, rid2 = reports.file_report(ui.routines, routine="uir", run_id="uir:1",
+                                  title="landed hand-off", target="peer", target_dir=peer)
+    reports.stamp_delivered(ui.routines, [{"report": rid2}], run_id="peer:20260102-000000")
+
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    ui_page.wait_for_selector("h2:has-text('Messages')", timeout=10_000)
+    expect(ui_page.locator(".msg-tabs .tag", has_text="outbox · 1")).to_be_visible()
+
+    ui_page.locator(".msg-tabs .tag", has_text="read · 1").click()
+    read_card = ui_page.locator(".msg-item.read", has_text="old note")
+    expect(read_card).to_be_visible()
+    expect(read_card.locator("a", has_text="consumed by run")).to_have_attribute(
+        "href", "#/run/uir:20260101-000000")
+    expect(read_card.locator("button")).to_have_count(0)          # history is read-only
+
+    ui_page.locator(".msg-tabs .tag", has_text="received · 1").click()
+    received = ui_page.locator(".msg-item.received", has_text="landed hand-off")
+    expect(received).to_contain_text("→ peer")
+    expect(received.locator("a", has_text="picked up")).to_be_visible()
+
+    ui_page.locator(".msg-tabs .tag", has_text="outbox · 1").click()
+    out = ui_page.locator(".msg-item.outbox", has_text="pending hand-off")
+    expect(out).to_contain_text("please fix it")
+    out.locator("button", has_text="retract").click()
+    ui_page.locator(".modal-overlay button", has_text="retract").click()
+    expect(_toast(ui_page)).to_contain_text("retracted")
+    expect(ui_page.locator(".msg-item.outbox")).to_have_count(0, timeout=10_000)
+    expect(ui_page.locator(".msg-tabs .tag", has_text="outbox · 0")).to_be_visible()
+    assert not (peer / "inbox" / f"msg-rep-{rid}.json").exists()
+    rows = {r["id"]: r for r in reports.read_reports(reports.reports_path(ui.routines))}
+    assert rows[rid]["retracted"]["ts"]
 
 
 def _toast(page):

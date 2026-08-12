@@ -1,4 +1,4 @@
-// One item card on the Items page: a finding, decision or bug report with its status,
+// One item card on the Messages page: a finding, decision or bug report with its status,
 // prose, origin, and the changelog rows that addressed it. The card's DOM id is
 // `ref-<ID>`, which is what reflinks.js focusRef lands on — every F/D/R mention anywhere
 // in the console scrolls to (and flashes) the card built here.
@@ -60,6 +60,9 @@ function routingLine(item) {
   if (d.run_id) {
     bits.push(el("a", { href: `#/run/${d.run_id}`, title: "the run that picked it up" }, "picked up ↗"));
     if (d.ts) bits.push(when(d.ts));
+  } else if (item.retracted?.ts) {
+    // the outbox's one write (docs/messages.md): withdrawn before delivery, never arrived
+    bits.push(el("span", {}, "retracted — the target never saw it"), when(item.retracted.ts));
   } else {
     bits.push(el("span", { class: "faint" }, "not picked up yet — waits for the target's next run"));
   }
@@ -76,7 +79,7 @@ function refsLine(item) {
   if (!(item.refs || []).length) return null;
   return el("div", { class: "row mt", style: "gap:6px" },
     el("span", { class: "faint small" }, "refers to"),
-    ...item.refs.map((r) => el("a", { class: "ref-link", href: `#/items?focus=${r}` }, r)));
+    ...item.refs.map((r) => el("a", { class: "ref-link", href: `#/messages?focus=${r}` }, r)));
 }
 
 // `queued` is this finding's not-yet-consumed comment (if any): it persists in the box across

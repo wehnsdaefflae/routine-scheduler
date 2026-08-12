@@ -46,7 +46,7 @@ path: this scheduler is the only harness.
   clearly worse — and one click rolls the recipe back (the improver never auto-reverts).
 - **As a whole**: two more bundled meta routines use the exact same building blocks —
   `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, acting
-  is lens-scoped and test-gated, with bigger decisions on the **Items** page) and `token-lab`
+  is lens-scoped and test-gated, with bigger decisions on the **Messages** page) and `token-lab`
   (measures token usage and A/B-tests efficiency methods via `llm` subcalls only — never
   integrating — and publishes a report). The shared library — workflow patterns, rules,
   playbooks — is owned by `routine-improver`, which fixes them lint-gated and committed; you
@@ -94,12 +94,15 @@ endpoints, the central Secrets store, GitHub, the library repo.
   for unset/implausible values, ordered failover chains with provider cooldowns), the
   write-only Secrets store
   every util reads, GitHub device flow, library/source remotes, graceful server restart.
-- **Items** — the system-maintenance index: every self-audit finding (`F7`) and decision
+- **Messages** — the system-maintenance index: every self-audit finding (`F7`) and decision
   (`D14`), and every report (`R3`) a run filed — addressed to the routine that owns the
   problem, or left for triage — with its status, purpose, origin and the
   commits that addressed it — filterable by type, status, routine and free text, with the
   self-audit report header, its changelog, and the feedback loop into its next run. Every
-  `F`/`D`/`R` mention anywhere in the console is a link to the item card it names.
+  `F`/`D`/`R` mention anywhere in the console is a link to the item card it names, and
+  each routine's own page carries its four message folders (inbox · outbox · read ·
+  received) — inbox messages are yours to write, edit and withdraw until a run drains
+  them; an undelivered hand-off can be retracted from the outbox.
 - **Help** — documentation generated from this very source at every boot: hand-written
   guides (`docs/*.md`, e.g. endpoint setup) plus an API reference rendered from the
   code's docstrings by pdoc.

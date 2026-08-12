@@ -1,12 +1,13 @@
-"""Items tab: the system-maintenance index — every finding, decision and bug report with
-its status, purpose, origin and the changelog rows that addressed it (docs/items.md).
+"""The Messages page's item index (`GET /api/items`): every finding, decision and report
+with its status, purpose, origin and the changelog rows that addressed it (docs/items.md;
+the page rename is D74 — the ids and the endpoint keep the item vocabulary).
 
-Mostly the READ half; `api_audit` keeps the page's prose write channel (reviewer feedback
-into the self-audit routine's inbox), while the one write that lives HERE is the ⚑
-priority toggle — UI state about an item, not a message to a run (priorities.py).
-The GET also carries the report header the page shows — the current window, the summary,
-the last self-audit run — which is why the old `GET /api/audit` is gone rather than kept
-beside it.
+Mostly the READ half; `api_audit` keeps the page's structured write channel (reviewer
+feedback into the self-audit routine's inbox) and `api_messages` the free-form one, while
+the one write that lives HERE is the ⚑ priority toggle — UI state about an item, not a
+message to a run (priorities.py). The GET also carries the report header the page shows —
+the current window, the summary, the last self-audit run — which is why the old
+`GET /api/audit` is gone rather than kept beside it.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from .. import priorities, registry
 from ..paths import read_json
 from ..readmodels import items as items_model
 from ..readmodels.items import SELF_AUDIT_SLUG
-from .api_audit import _routine_dir, answered_decisions, pending_feedback
+from .api_audit import _routine_dir, answered_decisions, queued_messages
 
 router = APIRouter(tags=["items"])
 
@@ -50,7 +51,7 @@ def items(request: Request,
     if not exists:
         return {"exists": False, "routine": SELF_AUDIT_SLUG, "items": [],
                 "counts": {"type": {}, "status": {}}, "report": None, "last_run": None,
-                "pending_feedback": [], "answered_decisions": []}
+                "queued": [], "answered_decisions": []}
 
     merged = items_model.build(routine_dir, server.routines_home)
     shown = items_model.filter_items(merged["items"], type_=type_, status=status,
@@ -68,7 +69,7 @@ def items(request: Request,
             "items": shown[:max(1, limit)], "total": len(shown), "counts": merged["counts"],
             "changelog": list(reversed(changelog))[:60],
             "report": report, "last_run": last_run,
-            "pending_feedback": pending_feedback(routine_dir),
+            "queued": queued_messages(routine_dir),
             "answered_decisions": answered_decisions(routine_dir, report)}
 
 

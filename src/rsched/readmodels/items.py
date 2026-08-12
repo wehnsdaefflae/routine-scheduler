@@ -181,17 +181,21 @@ def _report_row_item(row: dict, addressed: list[dict], closed_by: dict[str, str]
     An UNADDRESSED report waits in the stream for triage, so its status comes from the
     changelog alone. An ADDRESSED one has a delivery lifecycle the ledger records, and that
     progression is the reason the ledger exists — it separates a hand-off that carried from
-    one that silently never arrived. Precedence: `settled` when the row itself carries
-    `closes: true` (a terminal acknowledgment, born settled — it asks nothing back) or when
-    a later report carries `answers: "<this id>"` (the target replied, having acted or said
-    why not; answering a closure works and changes nothing — it is already settled);
-    `addressed` when a changelog row names the id; `in_progress` once the target's run
-    drained it; otherwise `open`.
+    one that silently never arrived. Precedence: `dropped` when the user RETRACTED it before
+    the target consumed it (the recipient never saw it, so no other state can apply);
+    `settled` when the row itself carries `closes: true` (a terminal acknowledgment, born
+    settled — it asks nothing back) or when a later report carries `answers: "<this id>"`
+    (the target replied, having acted or said why not; answering a closure works and changes
+    nothing — it is already settled); `addressed` when a changelog row names the id;
+    `in_progress` once the target's run drained it; otherwise `open`.
     """
     item_id = str(row.get("id") or "").strip().upper()
     title, detail = str(row.get("title") or ""), str(row.get("detail") or "")
     delivered = row.get("delivered") if isinstance(row.get("delivered"), dict) else {}
-    if row.get("closes") or item_id in closed_by:
+    retracted = row.get("retracted") if isinstance(row.get("retracted"), dict) else {}
+    if retracted:
+        status = "dropped"
+    elif row.get("closes") or item_id in closed_by:
         status = "settled"
     elif addressed:
         status = "addressed"
@@ -210,6 +214,7 @@ def _report_row_item(row: dict, addressed: list[dict], closed_by: dict[str, str]
         "archive_only": False,
         "to": str(row.get("target") or ""),
         "delivered": delivered,
+        "retracted": retracted,
         "answers": str(row.get("answers") or ""),
         "closes": bool(row.get("closes")),
         "answered_by": closed_by.get(item_id, ""),
@@ -240,7 +245,7 @@ def _archive_item(item_id: str, addressed: list[dict], answered: dict) -> dict:
     elif kind == "decision":
         item["options"], item["resolution"] = [], ""
     elif kind == "report":
-        item["to"], item["delivered"] = "", {}
+        item["to"], item["delivered"], item["retracted"] = "", {}, {}
         item["answers"], item["answered_by"] = "", ""
         item["closes"] = False
     return item
@@ -278,9 +283,11 @@ def _build(report_path: Path, changelog_path: Path,
                                               addressed.get(item_id, []), answered)
     rows = read_reports(reports_path)
     # A report that names another in `answers` CLOSES it — the reply is the closure record,
-    # so the map is built over the whole stream before any item is shaped.
+    # so the map is built over the whole stream before any item is shaped. A RETRACTED reply
+    # settles nothing: the target's question never got its answer delivered.
     closed_by = {str(r.get("answers")).strip().upper(): str(r.get("id") or "")
-                 for r in rows if str(r.get("answers") or "").strip()}
+                 for r in rows
+                 if str(r.get("answers") or "").strip() and not r.get("retracted")}
     for row in rows:
         item_id = str(row.get("id") or "").strip().upper()
         if item_id:

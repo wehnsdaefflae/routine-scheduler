@@ -35,6 +35,12 @@ it every answer is itself a new open report and a closed exchange ratchets forev
 settled itself, asking nothing back. A closure is still delivered when addressed — the filer
 learns the outcome — but the message says no reply is needed. Only a NEW report that names
 the closure reopens the thread.
+
+The user's ONE write on this stream is RETRACTION (`retract_report`, D74): an addressed
+report whose delivery still waits in the target's inbox can be withdrawn — the delivery file
+is unlinked (the recipient never sees it) and a `retracted` event row records it. The report
+row itself is never rewritten or edited: it is the RUN's utterance, and a correction is a new
+message the user writes to the target's inbox in their own voice (docs/messages.md).
 """
 
 from __future__ import annotations
@@ -157,10 +163,47 @@ def stamp_delivered(routines_home: Path, msgs: list[dict], *, run_id: str) -> No
         return
 
 
+def retract_report(routines_home: Path, report_id: str) -> dict:
+    """Withdraw an addressed report the recipient has NOT yet consumed — the outbox's one
+    write (D74). Unlinks the pending `msg-rep-*.json` from the target's inbox and appends a
+    `retracted` event row under the same ledger lock as every append; the report row itself
+    stays untouched. Returns the folded row as it was before retraction.
+
+    Raises LookupError for an unknown id and ValueError for a row that cannot be retracted
+    (unaddressed, already consumed, already retracted) — the web layer maps them to 404/409.
+    """
+    path = reports_path(routines_home)
+    with file_lock(path.with_suffix(".lock")):
+        row = next((r for r in read_reports(path) if str(r.get("id")) == report_id), None)
+        if row is None:
+            raise LookupError(f"no report {report_id!r}")
+        if not row.get("target"):
+            raise ValueError(f"{report_id} is unaddressed — there is no pending delivery "
+                             "to retract")
+        if row.get("retracted"):
+            raise ValueError(f"{report_id} is already retracted")
+        if row.get("delivered"):
+            raise ValueError(f"{report_id} was already picked up by the target — a consumed "
+                             "message cannot be retracted")
+        inbox = Path(routines_home) / str(row["target"]) / "inbox"
+        try:
+            (inbox / f"msg-rep-{report_id}.json").unlink()
+        except FileNotFoundError:
+            # No delivered stamp, yet the file is gone: an existing inbox means a drain got
+            # there first (the stamp lags the rename by an instant) — refuse. A target whose
+            # inbox no longer exists can never consume it, so the retraction stands.
+            if inbox.is_dir():
+                raise ValueError(f"{report_id} was already picked up by the target — a "
+                                 "consumed message cannot be retracted") from None
+        _append(path, {"id": report_id, "event": "retracted", "ts": now_iso()})
+    return row
+
+
 def read_reports(path: Path) -> list[dict]:
-    """The stream folded into one row per report, in filing order. A `delivered` event row is
-    merged into its report as a `delivered: {ts, run_id}` key; an event with no matching report
-    (a truncated or hand-trimmed file) is dropped rather than becoming a phantom item.
+    """The stream folded into one row per report, in filing order. A `delivered` or
+    `retracted` event row is merged into its report as a `delivered: {ts, run_id}` /
+    `retracted: {ts}` key; an event with no matching report (a truncated or hand-trimmed
+    file) is dropped rather than becoming a phantom item.
     """
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -180,6 +223,9 @@ def read_reports(path: Path) -> list[dict]:
             if item_id in reports:
                 reports[item_id]["delivered"] = {"ts": row.get("ts", ""),
                                                  "run_id": row.get("run_id", "")}
+        elif row.get("event") == "retracted":
+            if item_id in reports:
+                reports[item_id]["retracted"] = {"ts": row.get("ts", "")}
         else:
             reports.setdefault(item_id, dict(row))
     return list(reports.values())

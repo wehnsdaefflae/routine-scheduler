@@ -8,7 +8,9 @@ page — a READ MODEL: nothing here writes a message.
                 (user-filed, engine-filed, or a delivered report — the inbox file IS the
                 delivery vehicle). User-creatable/editable/deletable while it waits.
     outbox    — reports THIS routine addressed to another that the recipient has NOT yet
-                consumed: ledger order rows with `target` and no `delivered` stamp.
+                consumed: ledger order rows with `target` and no `delivered` stamp. A
+                retracted row (`reports.retract_report`) leaves the folder — it is neither
+                waiting nor consumed; the Messages page still lists it, status `dropped`.
     read      — already consumed by THIS routine: `runs/<ts>/consumed/msg-*.json`,
                 newest first. Read-only — history, not a work queue.
     received  — reports THIS routine addressed to another that the recipient HAS
@@ -16,8 +18,8 @@ page — a READ MODEL: nothing here writes a message.
 
 `answer-*` files (question answers) stay OFF this surface on purpose: they belong to the
 Decisions page's record, and rendering them as messages would fork that vocabulary.
-Phase 1 is this model + its API; the routine-page folder UI, the Items→Messages page
-rename and the note-for-next-run migration are the later phases.
+The write half lives in `web/api_messages.py`; the decision record for what is and is not
+writable per folder is docs/messages.md.
 """
 
 from __future__ import annotations
@@ -67,8 +69,10 @@ def build(routine_dir: Path, routines_home: Path) -> dict:
     for row in read_reports(reports_path(routines_home)):
         if row.get("routine") != slug or not row.get("target"):
             continue
-        (received if row.get("delivered") else outbox).append(
-            _report_row(row, folder="received" if row.get("delivered") else "outbox"))
+        if row.get("delivered"):
+            received.append(_report_row(row, folder="received"))
+        elif not row.get("retracted"):
+            outbox.append(_report_row(row, folder="outbox"))
     inbox.reverse()
     outbox.reverse()
     received.reverse()

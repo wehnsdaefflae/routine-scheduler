@@ -1,14 +1,19 @@
-// Items: the system-maintenance index — every self-audit finding (F) and decision (D), and
-// every report (R) a run filed (addressed to the routine that owns it, or left for triage),
-// with its status, purpose, origin and when it was addressed.
-// It absorbed the Audit page in 0.106.0: the report header, the reviewer-feedback composer
-// and the changelog all live here now, and every F/D/R reference anywhere in the console
-// lands on a card built by itemcard.js.
+// Messages: the system-maintenance index (the Items page renamed, D74) — every self-audit
+// finding (F) and decision (D), and every report (R) a run filed (addressed to the routine
+// that owns it, or left for triage), with its status, purpose, origin and when it was
+// addressed. It absorbed the Audit page in 0.106.0: the report header, the reviewer-feedback
+// composer and the changelog all live here, and every F/D/R reference anywhere in the
+// console lands on a card built by itemcard.js.
 //
-// The feedback loop is explicit and unchanged: everything submitted lands in the self-audit
-// routine's inbox and is consumed by its next run — the "waiting for the next run" list shows
-// exactly what is queued, editable and withdrawable until then. Decisions are still ANSWERED
-// on the Decisions page (one inbox, meta-badged); here they are read-only cards.
+// The feedback loop is explicit: everything submitted lands in the self-audit routine's
+// inbox and is consumed by its next run — the "waiting for the next run" list shows the
+// WHOLE queue (structured feedback, plain notes, engine deliveries), editable and
+// withdrawable until then. A free note is a plain user message since D74 (created through
+// the same generic endpoint every routine page uses); only the structured feedback kinds
+// (finding comments, decision answers) keep their tagged channel, because their text is
+// re-formatted from fields. Decisions are still ANSWERED on the Decisions page (one inbox,
+// meta-badged); here they are read-only cards. Per-routine message folders live on each
+// routine's own page (routine-messages.js).
 
 import { api } from "/static/api.js";
 import { md } from "/static/md.js";
@@ -40,7 +45,7 @@ export async function render(view, query = {}) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
       el("div", { class: "kicker" }, "console / maintenance"),
-      el("h1", {}, "Items"),
+      el("h1", {}, "Messages"),
       el("div", { class: "sub" },
         "findings, decisions and reports — what it is, where it came from, when it was addressed")),
     el("div", { class: "row" },
@@ -53,6 +58,10 @@ export async function render(view, query = {}) {
   view.append(header, filterBar, body);
 
   // ---- feedback → the routine's inbox → consumed by the next (or current) run -----------
+  // Structured feedback (finding comments, decision answers) keeps the tagged audit
+  // channel — its text is re-formatted from fields. Plain messages (the free note, or any
+  // other queued message) go through the generic per-routine message endpoints (D74).
+  let routineSlug = "self-audit";   // overwritten from the API response on every load
   async function submit(payload, okMsg) {
     const r = await api("/api/audit/feedback", { method: "POST", body: payload });
     toast(r.delivery === "mid-run"
@@ -60,13 +69,28 @@ export async function render(view, query = {}) {
       : `${okMsg} → inbox → consumed by the next self-audit run`, 4200);
     await load();
   }
+  async function submitNote(text) {
+    const r = await api(`/api/routines/${routineSlug}/messages`,
+      { method: "POST", body: { text } });
+    toast(r.delivery === "mid-run"
+      ? "message sent → inbox → the RUNNING self-audit picks it up this run"
+      : "message sent → inbox → consumed by the next self-audit run", 4200);
+    await load();
+  }
   async function updateFeedback(id, payload, okMsg) {
     await api(`/api/audit/feedback/${encodeURIComponent(id)}`, { method: "PUT", body: payload });
     toast(`${okMsg} — still queued for the next run`);
     await load();
   }
-  async function withdrawFeedback(id) {
-    await api(`/api/audit/feedback/${encodeURIComponent(id)}`, { method: "DELETE" });
+  async function updateMessage(id, text) {
+    await api(`/api/routines/${routineSlug}/messages/${encodeURIComponent(id)}`,
+      { method: "PUT", body: { text } });
+    toast("updated — still queued for the next run");
+    await load();
+  }
+  async function withdrawMessage(id) {
+    await api(`/api/routines/${routineSlug}/messages/${encodeURIComponent(id)}`,
+      { method: "DELETE" });
     toast("withdrawn — the run won't see it");
     await load();
   }
@@ -78,19 +102,21 @@ export async function render(view, query = {}) {
       title: "remove from the inbox — the run never sees it" }, "withdraw");
     drop.onclick = async () => {
       drop.disabled = true;
-      try { await withdrawFeedback(p.id); }
+      try { await withdrawMessage(p.id); }
       catch (err) { toast(err.message, 4000, { error: true }); drop.disabled = false; }
     };
-    const edit = p.kind ? el("button", { class: "btn small ghost" }, "edit") : null;
-    if (edit) edit.onclick = () => {
+    const edit = el("button", { class: "btn small ghost" }, "edit");
+    edit.onclick = () => {
       const ta = el("textarea", { rows: 2, style: "min-height:auto;flex:1" });
-      ta.value = p.raw || "";
+      ta.value = p.kind ? (p.raw || "") : (p.text || "");
       const save = el("button", { class: "btn small primary" }, "save");
       save.onclick = async () => {
         if (!ta.value.trim() && !p.choice) return;   // a decision may stand on its choice alone
         save.disabled = true;
-        try { await updateFeedback(p.id, { kind: p.kind, target: p.target, choice: p.choice, text: ta.value }, "updated"); }
-        catch (err) { toast(err.message, 4000, { error: true }); save.disabled = false; }
+        try {
+          if (p.kind) await updateFeedback(p.id, { kind: p.kind, target: p.target, choice: p.choice, text: ta.value }, "updated");
+          else await updateMessage(p.id, ta.value);
+        } catch (err) { toast(err.message, 4000, { error: true }); save.disabled = false; }
       };
       const cancel = el("button", { class: "btn small ghost", onclick: () => load() }, "cancel");
       row.replaceChildren(chip("queued", "waiting_user"), ta, save, cancel, drop);
@@ -107,7 +133,7 @@ export async function render(view, query = {}) {
       el("h2", {}, `Waiting for the next run · ${pending.length}`),
       el("div", { class: "panel" },
         el("div", { class: "muted small", style: "margin-bottom:4px" },
-          "feedback already in the routine's inbox — editable and withdrawable right here until a self-audit run consumes it (then it disappears from this list)"),
+          "the self-audit routine's whole inbox — every queued message stays editable and withdrawable right here until a run consumes it (then it disappears from this list)"),
         ...pending.map(pendingRow)));
   }
 
@@ -126,7 +152,9 @@ export async function render(view, query = {}) {
         c.detail ? md(c.detail, "md muted mt prose") : null)));
   }
 
-  function generalSection(routineSlug) {
+  function generalSection() {
+    // A plain user message in self-audit's inbox (D74) — the same generic channel every
+    // routine page's Messages section uses, no [AUDIT …] tag wrapper.
     // data-persist gives the draft an explicit storage key; discard clears a stale draft.
     const box = el("textarea", { class: "code", "data-persist": "audit-note",
       placeholder: "e.g. “add structured logging to the daemon runner”, or a priority/direction — a free-text prompt for the next self-audit run to act on" });
@@ -137,10 +165,10 @@ export async function render(view, query = {}) {
       const text = box.value;
       if (!text.trim()) return;
       send.disabled = true;
-      // Clear the draft BEFORE submit()'s reload re-mounts the box — otherwise formpersist
+      // Clear the draft BEFORE the reload re-mounts the box — otherwise formpersist
       // refills the fresh (empty) box from the not-yet-forgotten draft and it looks unsent.
       box.value = ""; forgetField(box);
-      try { await submit({ kind: "general", text }, "prompt sent"); }
+      try { await submitNote(text); }
       catch (err) { box.value = text; toast(err.message, 4000, { error: true }); }
       finally { send.disabled = false; }
     };
@@ -153,8 +181,8 @@ export async function render(view, query = {}) {
       try {
         if (text.trim()) {
           box.value = "";
-          forgetField(box);   // clear BEFORE submit()'s reload re-mounts the box (else it refills)
-          await submit({ kind: "general", text }, "prompt sent");
+          forgetField(box);   // clear BEFORE the reload re-mounts the box (else it refills)
+          await submitNote(text);
         }
         const r = await api(`/api/routines/${routineSlug}/run`, { method: "POST" });
         toast("self-audit started");
@@ -162,10 +190,10 @@ export async function render(view, query = {}) {
       } catch (err) { toast(err.message, 5000, { error: true }); }
       finally { runNow.disabled = send.disabled = false; }
     };
-    return el("div", {}, el("h2", {}, "Note for the next run"),
+    return el("div", {}, el("h2", {}, "Message the next run"),
       el("div", { class: "panel" },
         el("div", { class: "muted small", style: "margin-bottom:8px" },
-          "a prompt the self-audit routine reads on its next run — code changes to make, priorities, or anything not tied to an item above"),
+          "a message the self-audit routine reads on its next run — code changes to make, priorities, or anything not tied to an item above; it lands in the routine's inbox like any other message"),
         box, el("div", { class: "row", style: "gap:8px" }, send, runNow, discard),
         el("div", { class: "flow-note" },
           el("span", {}, "submit"), el("span", { class: "arrow" }, "→"),
@@ -251,7 +279,8 @@ export async function render(view, query = {}) {
 
     renderFilterBar(data);
 
-    const pending = data.pending_feedback || [];
+    routineSlug = data.routine || routineSlug;
+    const pending = data.queued || [];
     // which decision ids already have an answer queued, and which findings a comment —
     // structured fields when present, text parse for messages queued before they existed
     const queuedDecisions = new Map();
@@ -296,7 +325,7 @@ export async function render(view, query = {}) {
             } catch (err) { toast(err.message, 4000, { error: true }); }
           } : null,
           onWithdraw: async (q, btn) => {
-            try { await withdrawFeedback(q.id); }
+            try { await withdrawMessage(q.id); }
             catch (err) { toast(err.message, 4000, { error: true }); if (btn) btn.disabled = false; }
           },
         }));
@@ -305,13 +334,13 @@ export async function render(view, query = {}) {
 
     const changelog = changelogSection(data.changelog);
     if (changelog) body.append(changelog);
-    body.append(generalSection(data.routine));
+    body.append(generalSection());
     // every F63/D14/R7 mention in the report's prose becomes a link to its card above
     linkifyRefs(body);
     linkifyRefs(header);
   }
 
   await load();
-  // arriving via a ref link (#/items?focus=F63): land on the named card and flash it
+  // arriving via a ref link (#/messages?focus=F63): land on the named card and flash it
   if (query.focus) focusRef(String(query.focus));
 }

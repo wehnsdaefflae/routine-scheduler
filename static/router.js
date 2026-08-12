@@ -1,5 +1,5 @@
 // Hash routing helpers. The hash carries BOTH the path and query state, e.g.
-//   #/items?type=finding&status=open   or   #/run/slug:ts?sub=2
+//   #/messages?type=finding&status=open   or   #/run/slug:ts?sub=2
 // The route table matches the PATH; views read their state from the query and write it back
 // with setQuery() (history.replaceState — no hashchange, no re-render), so filters / selection
 // survive reload and are shareable, without tearing the view down. Real navigation between

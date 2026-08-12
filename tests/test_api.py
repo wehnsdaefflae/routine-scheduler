@@ -486,23 +486,6 @@ def test_intervention_endpoints(client):
     assert c.post(f"/api/runs/{rid}/pause").status_code == 409
 
 
-def test_queue_message_for_next_run(client):
-    """F233: POST /routines/{slug}/message queues a free-text note in the routine's inbox
-    for its NEXT run (scheduled or manual) — the routine-details home for the affordance the
-    run page's end-of-run input no longer carries. Empty text is rejected."""
-    c, tmp = client
-    r = c.post("/api/routines/apir/message", json={"text": "check the new dashboard sort"})
-    assert r.status_code == 200 and r.json()["ok"] is True
-    msgs = list((tmp / "routines" / "apir" / "inbox").glob("msg-*.json"))
-    assert len(msgs) == 1
-    rec = read_json(msgs[0])
-    assert rec["text"] == "check the new dashboard sort" and rec["source"] == "web-routine-queue"
-    # empty / whitespace-only text is rejected, nothing queued
-    assert c.post("/api/routines/apir/message", json={"text": "   "}).status_code == 400
-    assert len(list((tmp / "routines" / "apir" / "inbox").glob("msg-*.json"))) == 1
-    assert c.post("/api/routines/nope/message", json={"text": "x"}).status_code == 404
-
-
 def test_inject_carries_attachments(client):
     """A run-page message can carry file attachments (F202): uploads land under the
     routine dir's attachments/ (the run's working dir, so the recorded rels resolve for
@@ -1030,15 +1013,16 @@ def test_subrun_transcript_nested_path(client):
 
 
 def test_items_report_and_feedback(client):
-    """The Items page's read endpoint (report header + items + changelog) and the reviewer
-    feedback channel it writes through (POST /api/audit/feedback → the routine's inbox)."""
+    """The Messages page's item endpoint (report header + items + changelog) and the
+    structured reviewer-feedback channel it writes through (POST /api/audit/feedback →
+    the routine's inbox)."""
     c, tmp = client
     routines = tmp / "routines"
     # no self-audit routine yet → friendly empty payload
     assert c.get("/api/items").json() == {"exists": False, "routine": "self-audit",
                                           "items": [], "counts": {"type": {}, "status": {}},
                                           "report": None, "last_run": None,
-                                          "pending_feedback": [], "answered_decisions": []}
+                                          "queued": [], "answered_decisions": []}
 
     adir = routines / "self-audit" / "audit"
     adir.mkdir(parents=True)
@@ -1072,8 +1056,8 @@ def test_items_report_and_feedback(client):
     assert "[AUDIT decision · D1] selected: a — do it" in texts
     assert "[AUDIT note] focus on speed" in texts
 
-    # unconsumed web feedback is surfaced back (the "waiting for the next run" list)
-    pend = c.get("/api/items").json()["pending_feedback"]
+    # unconsumed messages are surfaced back (the "waiting for the next run" list)
+    pend = c.get("/api/items").json()["queued"]
     assert {p["text"] for p in pend} == set(texts) and all(p["ts"] for p in pend)
 
     # validation + missing-routine guard
@@ -1081,17 +1065,17 @@ def test_items_report_and_feedback(client):
     assert c.post("/api/audit/feedback", json={"kind": "bogus", "text": "x"}).status_code == 400
 
 
-def test_audit_feedback_editable_until_consumed(client):
+def test_audit_feedback_editable_until_consumed(client, make_routine):
     """Queued feedback is live: pending items carry their structured fields + id, edits
-    rewrite the same inbox file in place, withdraw removes it — and once the file is gone
-    (= a run consumed it) both mutations answer 404."""
+    rewrite the same inbox file in place, withdrawing goes through the generic messages
+    endpoint (D74) — and once the file is gone (= a run consumed it) both mutations 404."""
     c, tmp = client
+    make_routine(slug="self-audit")     # the generic messages endpoints resolve the registry
     inbox = tmp / "routines" / "self-audit" / "inbox"
-    inbox.mkdir(parents=True)
 
     mid = c.post("/api/audit/feedback",
                  json={"kind": "comment", "target": "F1", "text": "first take"}).json()["id"]
-    p = c.get("/api/items").json()["pending_feedback"][0]
+    p = c.get("/api/items").json()["queued"][0]
     assert (p["id"], p["kind"], p["target"], p["raw"]) == (mid, "comment", "F1", "first take")
 
     # edit in place: same file (same id), re-formatted text, original ts kept + edited stamped
@@ -1099,7 +1083,7 @@ def test_audit_feedback_editable_until_consumed(client):
     r = c.put(f"/api/audit/feedback/{mid}",
               json={"kind": "comment", "target": "F1", "text": "second take"})
     assert r.status_code == 200 and r.json()["id"] == mid
-    pend = c.get("/api/items").json()["pending_feedback"]
+    pend = c.get("/api/items").json()["queued"]
     assert len(pend) == 1 and pend[0]["raw"] == "second take" and pend[0]["ts"] == ts0
     assert pend[0]["text"] == "[AUDIT feedback · finding F1] second take"
     assert read_json(inbox / f"{mid}.json")["edited"]
@@ -1110,21 +1094,29 @@ def test_audit_feedback_editable_until_consumed(client):
     # a pre-editability message (formatted text only) still surfaces its fields for editing
     (inbox / "msg-legacy.json").write_text(json.dumps(
         {"text": "[AUDIT note] old style", "ts": "2026-07-01T09:00:00+02:00", "via": "web-audit"}))
-    legacy = next(p for p in c.get("/api/items").json()["pending_feedback"] if p["id"] == "msg-legacy")
+    legacy = next(p for p in c.get("/api/items").json()["queued"] if p["id"] == "msg-legacy")
     assert legacy["kind"] == "general" and legacy["raw"] == "old style"
+    (inbox / "msg-legacy.json").unlink()
 
-    # non-web-audit inbox files are invisible to this channel — never editable or removable
+    # a plain injected message is on the queue too (kind "" = free text, D74): invisible
+    # to the structured audit channel, editable/removable via the generic endpoint
     (inbox / "msg-injected.json").write_text(json.dumps({"text": "hi", "ts": "t"}))
-    assert c.delete("/api/audit/feedback/msg-injected").status_code == 404
-    assert (inbox / "msg-injected.json").exists()
+    assert c.put("/api/audit/feedback/msg-injected",
+                 json={"kind": "general", "text": "x"}).status_code == 404
+    assert any(q["id"] == "msg-injected" and q["kind"] == ""
+               for q in c.get("/api/items").json()["queued"])
+    assert c.delete("/api/routines/self-audit/messages/msg-injected").status_code == 200
+    assert not (inbox / "msg-injected.json").exists()
 
-    # withdraw; afterwards the id behaves exactly like a consumed message
-    assert c.delete(f"/api/audit/feedback/{mid}").status_code == 200
+    # withdraw (the generic endpoint serves every queued message, tagged feedback included);
+    # afterwards the id behaves exactly like a consumed message
+    assert c.delete(f"/api/routines/self-audit/messages/{mid}").status_code == 200
     assert not (inbox / f"{mid}.json").exists()
     assert c.put(f"/api/audit/feedback/{mid}",
                  json={"kind": "comment", "target": "F1", "text": "x"}).status_code == 404
-    assert c.delete(f"/api/audit/feedback/{mid}").status_code == 404
-    assert c.delete("/api/audit/feedback/msg-..%2Fescape").status_code == 404  # malformed id
+    assert c.delete(f"/api/routines/self-audit/messages/{mid}").status_code == 404
+    assert c.delete(
+        "/api/routines/self-audit/messages/msg-..%2Fescape").status_code == 404  # malformed id
 
 
 def test_settings_restart_sentinel(client):
@@ -1781,12 +1773,12 @@ def test_audit_decision_answer_survives_inbox_consumption(client):
 
 
 def test_items_page_reflects_answered_decision_after_consumption(client):
-    """The Items page and the Decisions page must AGREE (reviewer note: responses to
+    """The Messages page and the Decisions page must AGREE (reviewer note: responses to
     decisions were not synced everywhere): a decision answered on the Decisions page reads
-    as answered on the Items page too (`answered_decisions`), even after a run consumes its
-    inbox message. The page previously reconstructed answered-state from pending_feedback
-    ALONE, so the decision re-presented as open the moment a run drained the queued
-    message."""
+    as answered on the Messages page too (`answered_decisions`), even after a run consumes
+    its inbox message. The page previously reconstructed answered-state from the queued
+    messages ALONE, so the decision re-presented as open the moment a run drained the
+    queued message."""
     c, tmp = client
     rdir = tmp / "routines" / "self-audit"
     adir = rdir / "audit"
@@ -1797,16 +1789,16 @@ def test_items_page_reflects_answered_decision_after_consumption(client):
         "findings": [],
         "decisions": [{"id": "D2", "title": "Pick a path", "detail": "context",
                        "status": "open", "options": ["A", "B"]}]})
-    # not yet answered → the Items page carries no answered marker for it
+    # not yet answered → the Messages page carries no answered marker for it
     assert c.get("/api/items").json()["answered_decisions"] == []
 
     # answer it, then a run consumes the queued feedback message (mid-run delivery)
     assert c.post("/api/questions/audit:D2/answer", json={"text": "A"}).status_code == 200
     for p in (rdir / "inbox").glob("msg-*.json"):
         p.unlink()
-    # pending_feedback is now empty, yet the Items page still knows D2 is answered
+    # the queue is now empty, yet the Messages page still knows D2 is answered
     items = c.get("/api/items").json()
-    assert items["pending_feedback"] == []
+    assert items["queued"] == []
     assert items["answered_decisions"] == ["D2"]
     # the item's own status still comes from the report (which says open) — the answered
     # marker is what the card overlays on top, exactly as the Decisions page does

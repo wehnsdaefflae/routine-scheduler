@@ -285,29 +285,6 @@ async def run_now(request: Request, slug: str) -> dict:
     return {"run_id": run_id}
 
 
-class MessageBody(BaseModel):
-    text: str = ""
-
-
-@router.post("/routines/{slug}/message")
-def queue_message(request: Request, slug: str, body: MessageBody) -> dict:
-    """Queue a free-text message for the routine's NEXT run (F233). It lands in the
-    routine's inbox (`<routine>/inbox/msg-*.json`) and is drained at the start of the next
-    run — scheduled or manual. This is the routine-details home for the "note for the next
-    run" affordance: the run page's end-of-run input is now solely for continuing THIS run,
-    so the deferred/next-run queue lives here where it is bound to the routine, not a run.
-    """
-    from ..engine import inbox
-
-    info = _info(request, slug)
-    guard_template(info.cfg, "the clarification template backs clarify sessions, never messaged")
-    text = body.text.replace("\r\n", "\n").strip()
-    if not text:
-        raise HTTPException(400, "empty message")
-    inbox.file_message(info.cfg.dir, text, source="web-routine-queue")
-    return {"ok": True}
-
-
 @router.post("/routines/{slug}/archive")
 def archive_routine(request: Request, slug: str) -> dict:
     info = _info(request, slug)

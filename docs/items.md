@@ -1,19 +1,19 @@
-# Items — the system-maintenance index
+# Items — the maintenance-item model behind the Messages page
 
-> **Direction (D74, operator order 2026-08-05):** this page is being restructured into
-> **Messages** — every text is for or from an individual routine, and each routine page
-> gets four folders: *inbox* (waiting; user-creatable/editable/deletable), *outbox*
-> (addressed reports the recipient has not consumed), *read* (consumed by this routine),
-> *received* (consumed by the recipient) — the last two read-only. Phase 1 shipped the
-> read model + API: `rsched/readmodels/messages.py`, `GET /api/routines/{slug}/messages`.
-> The folder UI, the page rename and the note-for-next-run migration are the next phases.
+D74 (operator order 2026-08-05) landed in full: every text is for or from an individual
+routine, each routine page carries the four message folders (docs/messages.md — the folder
+model, the write surface and the retraction decision live there), and the page this model
+feeds is named **Messages** (`#/messages`). The ITEM vocabulary below — ids, statuses,
+`GET /api/items` — is unchanged by the rename: an item is not a message, it is the
+maintenance record a message may carry or answer.
 
 An **item** is one unit of maintenance work on the scheduler itself: a self-audit
 **finding** (`F<n>`), a self-audit **decision** (`D<n>`), or a **report** (`R<n>`) filed by
 any run through the ungated `report` action — addressed to the routine that owns the problem,
-or left unaddressed for triage. The Items page (`#/items`) is the one
+or left unaddressed for triage. The Messages page (`#/messages`) is the one
 place where every item is listed with its status, what it is for, where it came from, and
-when it was addressed. It replaced the old Log and Audit pages in 0.106.0.
+when it was addressed. It replaced the old Log and Audit pages in 0.106.0 (as Items, renamed
+in D74).
 
 Items are a READ MODEL (`rsched/readmodels/items.py`): four files on disk are merged into
 one shape on demand. Nothing in this path writes an item — the self-audit routine owns
@@ -118,7 +118,10 @@ does not translate synonyms.
 ### Reports
 
 An `R<n>` derives its status from its OWN ledger, which is the authority for it the way
-`report.json` is for an `F<n>`. In precedence order: **`settled`** when the row itself carries
+`report.json` is for an `F<n>`. In precedence order: **`dropped`** when the user RETRACTED
+it before the target consumed it (`reports.retract_report`, docs/messages.md — the
+recipient never saw it, so no other state can apply, and a retracted reply settles
+nothing); **`settled`** when the row itself carries
 `closes: true` (see below) or when a later report carries `answers: "<this id>"` — the target
 replied, having acted or having said why not; **`addressed`** when a changelog row names the
 id; **`in_progress`** once an ADDRESSED report's target drained the message from its inbox and
@@ -140,7 +143,7 @@ anyway is harmless — it is already settled — and only a NEW report that name
 reopens the discussion, as its own open item.
 
 The stream is append-only. The report row is written by the `report` action; the `delivered`
-event is a second row, folded onto it by `reports.read_reports`.
+and `retracted` events are further rows, folded onto it by `reports.read_reports`.
 
 A closure (`closes: true`) is delivered like any other addressed report but never WAKES its
 target: the receiving routine's `report` trigger skips a closure-only inbox, so an
@@ -175,7 +178,8 @@ counts{type,status}  totals across the UNFILTERED set, for the filter chips
 report{…}            the current report's meta: run_id, generated, since{commit,window}, summary
 changelog[]          the 60 newest changelog rows, including ones that name no item
 last_run{…}          the self-audit routine's most recent run
-pending_feedback[]   reviewer feedback queued in the routine's inbox (editable/withdrawable)
+queued[]             EVERY message waiting in the routine's inbox (editable/withdrawable);
+                     tagged reviewer feedback carries its structured fields (kind/target/…)
 answered_decisions[] decision ids answered at-or-after the report's `generated`
 exists               false when the self-audit routine is not set up yet
 ```
@@ -187,11 +191,13 @@ item would otherwise be unreachable.
 Filters (all optional, combinable): `type`, `status`, `routine` (matches `origin.routine`),
 `search` (substring over id, title, detail, and the addressed summaries), `limit`.
 
-The reviewer-feedback composer keeps its own channel: `POST`/`PUT`/`DELETE
-/api/audit/feedback` (`rsched/web/api_audit.py`) write, edit and withdraw tagged messages in
-the self-audit routine's inbox, where the next run drains them. Items is a read surface; the
-feedback endpoints are the only write path on the page, and answering a *decision* still
-happens on the Decisions page, through the same inbox.
+The STRUCTURED reviewer feedback (finding comments, decision answers) keeps its tagged
+channel: `POST`/`PUT /api/audit/feedback` (`rsched/web/api_audit.py`) write and edit tagged
+messages in the self-audit routine's inbox, where the next run drains them — their text is
+re-formatted from fields, which is why they cannot ride the generic endpoint. Everything
+else — the free note for the next run, and withdrawing ANY queued message — goes through
+the generic per-routine message endpoints (docs/messages.md, D74). Answering a *decision*
+still happens on the Decisions page, through the same inbox.
 
 ## Report ids
 

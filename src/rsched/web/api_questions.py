@@ -47,16 +47,16 @@ def _audit_decisions(server) -> list[dict]:
     a read and a click for no choice, and it is the shape self-audit reaches for whenever
     it wants an acknowledgment. Zero options stays open on purpose — that is a free-text
     ask, which the answer POST accepts. Nothing is hidden by this: every decision, at every
-    status, is still listed on the Items page (`readmodels.items`) with its status.
+    status, is still listed on the Messages page (`readmodels.items`) with its status.
     """
     from ..readmodels.items import SELF_AUDIT_SLUG
-    from .api_audit import pending_feedback
+    from .api_audit import queued_messages
 
     rdir = server.routines_home / SELF_AUDIT_SLUG
     report = read_json(rdir / "audit" / "report.json")
     if not isinstance(report, dict):
         return []
-    queued = {m.group(1).strip() for p in pending_feedback(rdir)
+    queued = {m.group(1).strip() for p in queued_messages(rdir)
               if (m := _DECISION_RE.match(p.get("text") or ""))}
     # Durable answered markers: a mid-run delivery consumes the inbox message instantly,
     # so `queued` alone cannot keep an answered decision out of the inbox while the report

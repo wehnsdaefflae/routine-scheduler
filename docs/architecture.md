@@ -387,10 +387,12 @@ and the capabilities digest's catalog listing):
   unanswered deferred asks gets a `decision_backlog` flag on its dashboard card.
   `~/routines/.control/reports.jsonl` is the append-only REPORT ledger every routine writes
   through the ungated `report` action (`R<n>` id, routine, title, detail, an optional `target`
-  when the reporter can name the owner, plus a `delivered` event row stamped when an addressed
-  target's run drains the message). Unaddressed rows are self-audit's triage queue; addressed
+  when the reporter can name the owner, plus event rows folded onto it: `delivered`, stamped
+  when an addressed target's run drains the message, and `retracted`, appended when the user
+  withdraws a not-yet-consumed delivery — the outbox's one write, docs/messages.md).
+  Unaddressed rows are self-audit's triage queue; addressed
   ones are also delivered into the target's inbox for its next scheduled run — no run is
-  started. The Items page reads it, so a hand-off that carried is distinguishable from one that
+  started. The Messages page reads it, so a hand-off that carried is distinguishable from one that
   silently never arrived (docs/items.md). Every finished
   (sub)run appends to
   `~/routines/.control/workflow-usage.jsonl` — the routine-improver routine's evidence stream
@@ -671,7 +673,8 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   (inode+mtime+size, so atomic rewrites always miss), pruned for deleted dirs, copies returned —
   the disk stays the source of truth on every lookup. Every other derived view lives in
   **`rsched/readmodels/`** (stats, run_health, util_stats, statemap, fileactivity, tasktree,
-  items — the maintenance index of findings/decisions/bug reports, docs/items.md) on the
+  items — the maintenance index of findings/decisions/bug reports, docs/items.md — and
+  messages — a routine's four message folders, docs/messages.md) on the
   same discipline: `readmodels/memo` fingerprint-caches per input file, `readmodels/usage_stream`
   is the ONE parser of workflow-usage.jsonl — a read-model is a pure derivation, deletable state,
   never a writer.

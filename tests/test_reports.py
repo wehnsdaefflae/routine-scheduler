@@ -10,8 +10,11 @@ The load-bearing property, asserted directly below: an addressed report NEVER st
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from rsched.engine.actions import ALWAYS_KINDS, KIND_EXAMPLES, KINDS, validate_action
 from rsched.engine.inbox import drain_messages
@@ -19,7 +22,13 @@ from rsched.engine.interact import handle_report
 from rsched.engine.observations import format_observation
 from rsched.grants import GATED_KINDS, GrantPolicy
 from rsched.readmodels import items
-from rsched.reports import next_id, read_reports, reports_path, stamp_delivered
+from rsched.reports import (
+    next_id,
+    read_reports,
+    reports_path,
+    retract_report,
+    stamp_delivered,
+)
 
 
 def _routine(home: Path, slug: str) -> Path:
@@ -186,6 +195,78 @@ def test_a_plain_user_message_carries_no_report_keys(tmp_path):
     assert msgs == [{"text": "hi", "attachments": []}]
     stamp_delivered(home, msgs, run_id="r:1")    # a no-op that must not create the ledger
     assert not reports_path(home).exists()
+
+
+# -- retraction: the outbox's one write (D74) ---------------------------------------------------
+
+
+def test_retract_report_withdraws_the_pending_delivery(tmp_path):
+    """Retracting an undelivered addressed report unlinks the delivery file (the recipient
+    never sees it), appends a `retracted` event the fold carries, and the item reads
+    `dropped`. The row itself is never rewritten — the ledger stays append-only."""
+    loop, home = _loop(tmp_path, slug="self-audit")
+    target = _routine(home, "routine-improver")
+    handle_report(loop, {"target": "routine-improver", "title": "t", "detail": "d"})
+    assert (target / "inbox" / "msg-rep-R1.json").exists()
+
+    row = retract_report(home, "R1")
+    assert row["title"] == "t"
+    assert not (target / "inbox" / "msg-rep-R1.json").exists()
+    assert _rows(home)[0]["retracted"]["ts"]
+    assert drain_messages(target, tmp_path / "consumed") == []   # nothing ever arrives
+    assert _items(home, home / "self-audit")["R1"]["status"] == "dropped"
+    with pytest.raises(ValueError, match="already retracted"):
+        retract_report(home, "R1")
+
+
+def test_retract_refusals(tmp_path):
+    """No phantom retractions: unknown id, unaddressed row, an already-consumed delivery
+    (stamped or not) all refuse — only a target whose inbox is GONE (it can never consume)
+    lets the retraction stand on a missing file."""
+    loop, home = _loop(tmp_path, slug="self-audit")
+    target = _routine(home, "routine-improver")
+    with pytest.raises(LookupError):
+        retract_report(home, "R99")
+    handle_report(loop, {"title": "unaddressed — triage"})
+    with pytest.raises(ValueError, match="unaddressed"):
+        retract_report(home, "R1")
+    handle_report(loop, {"target": "routine-improver", "title": "landed"})
+    stamp_delivered(home, drain_messages(target, tmp_path / "consumed"),
+                    run_id="routine-improver:20260726-010000")
+    with pytest.raises(ValueError, match="picked up"):
+        retract_report(home, "R2")
+    # consumed but not yet stamped (the drain's instant between rename and append)
+    handle_report(loop, {"target": "routine-improver", "title": "in flight"})
+    (target / "inbox" / "msg-rep-R3.json").unlink()
+    with pytest.raises(ValueError, match="picked up"):
+        retract_report(home, "R3")
+    # a target whose inbox no longer exists can never consume — the retraction stands
+    handle_report(loop, {"target": "routine-improver", "title": "orphaned"})
+    shutil.rmtree(target)
+    retract_report(home, "R4")
+    assert {r["id"]: bool(r.get("retracted")) for r in _rows(home)} == {
+        "R1": False, "R2": False, "R3": False, "R4": True}
+
+
+def test_a_retracted_answer_settles_nothing(tmp_path):
+    """A reply that was retracted before the asker consumed it must not settle its target —
+    the answer never arrived, so the exchange is still open."""
+    loop, home = _loop(tmp_path, slug="self-audit")
+    target = _routine(home, "routine-improver")
+    handle_report(loop, {"target": "routine-improver", "title": "fix the pattern"})
+    stamp_delivered(home, drain_messages(target, tmp_path / "consumed"),
+                    run_id="routine-improver:20260726-010000")
+    back = SimpleNamespace(ctx=SimpleNamespace(
+        server=SimpleNamespace(routines_home=home),
+        routine=SimpleNamespace(slug="routine-improver"),
+        run_id="routine-improver:20260726-010000"))
+    handle_report(back, {"target": "self-audit", "title": "fixed it", "answers": "R1"})
+    assert _items(home, home / "self-audit")["R1"]["status"] == "settled"
+
+    retract_report(home, "R2")
+    after = _items(home, home / "self-audit")
+    assert after["R1"]["status"] == "in_progress"    # delivered, but the answer never came
+    assert after["R2"]["status"] == "dropped"
 
 
 # -- the Items read model ----------------------------------------------------------------------

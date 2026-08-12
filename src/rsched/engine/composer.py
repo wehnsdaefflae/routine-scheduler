@@ -202,7 +202,7 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     from ..paths import read_json
 
     parts: list[str] = []
-    # The user's ⚑ flags from the Items page, resolved to the items THIS routine owns —
+    # The user's ⚑ flags from the Messages page, resolved to the items THIS routine owns —
     # placed first so orient reads the user's "work this first" before any planning.
     # Optional inputs: a subrun/conversation digest (and most unit fixtures) has no
     # routines_home context, and a digest without the section is simply unflagged.

@@ -37,7 +37,9 @@ one you are about to touch, not all of them.
   reply by `state_digest`) where a routine gets `stages/` + `phase.json` compiled at creation —
   don't "fix" a conversation by giving it a compiled workflow
 - `docs/items.md` — the maintenance-item index (findings, decisions, bug reports): the
-  item shape, the status vocabulary and its precedence, and the changelog join
+  item shape, the status vocabulary and its precedence, and the changelog join;
+  `docs/messages.md` — a routine's four message folders (the Messages page/D74), the
+  per-folder write surface, and the outbox-retraction decision
 - `docs/sandboxing.md`, `docs/endpoints.md`, `docs/oauth-connections.md`,
   `docs/remote-machines.md`, `docs/darknet.md`, `docs/usenet.md`, `docs/notifications.md` — the outward-facing
   surfaces

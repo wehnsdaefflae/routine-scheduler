@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.182.0] — 2026-08-12
+
+### Added
+- **D74 phases 2–4 — Messages everywhere** (operator order 2026-08-05, completing 0.180.0's
+  read model). Every routine page carries its four message folders (inbox · outbox · read ·
+  received) as a tabbed section with counts (`static/views/routine-messages.js`),
+  live-refreshed on the routine's run lifecycle. The INBOX is fully writable — compose for
+  the next run, edit a queued message in place (same file, queue position holds), withdraw —
+  via the new generic endpoints (`rsched/web/api_messages.py`: `POST`/`PUT`/`DELETE
+  /api/routines/{slug}/messages[/{msg_id}]`; the old singular `POST …/message` route is
+  gone). The OUTBOX's one write is **retraction** (`DELETE /api/routines/{slug}/outbox/{id}`,
+  `reports.retract_report`): an addressed report the recipient has NOT yet consumed can be
+  withdrawn — the delivery file is unlinked, a `retracted` event row is appended to the
+  append-only ledger, and the item reads `dropped`; a retracted reply settles nothing. The
+  report row itself is never edited or user-authored — the decision record is
+  docs/messages.md. `read`/`received` are history, no write endpoints.
+
+### Changed
+- **The Items page is the Messages page** (`#/messages`, nav "Messages") — the item model,
+  ids and `GET /api/items` keep the item vocabulary. Its "waiting for the next run" list now
+  shows the routine's WHOLE inbox queue (`queued[]` replaces `pending_feedback[]`,
+  `api_audit.queued_messages`), every row editable/withdrawable; withdrawal goes through the
+  generic messages endpoint (the audit channel's DELETE route is gone). The **note for the
+  next run is a plain user message** in self-audit's inbox (phase 4) — no `[AUDIT note]` tag;
+  only structured feedback (finding comments, decision answers) keeps the tagged channel.
+
 ## [0.181.0] — 2026-08-12
 
 ### Changed

@@ -4,12 +4,12 @@
 import { api } from "/static/api.js";
 import { renderConfigSections } from "/static/views/routine-config.js";
 import { mountHealth } from "/static/views/routine-health.js";
+import { mountMessages } from "/static/views/routine-messages.js";
 import { mountRecipe } from "/static/views/routine-recipe.js";
 import { groupSections, routineHero } from "/static/views/routine-overview.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, fmtDur, fmtNum, fmtTokens, skeleton, toast, when } from "/static/util.js";
-import { forgetField } from "/static/formpersist.js";
 
 // The config sections (rendered flat by routine-config.js + the recipe/state blocks below)
 // are regrouped into these labeled, collapsible groups — an operator scans the group they
@@ -96,35 +96,16 @@ export async function render(view, slug, query = {}) {
   view.append(runsBox);
   renderRuns(d);
 
-  // -- message the next run (F233): the routine-bound home for a "note for the next run".
-  // The end-of-run input on the run page only ever CONTINUES that run; a message meant for
-  // the NEXT run lands here and is drained at the start of the routine's next run (scheduled
-  // or manual). Hidden for the protected clarification template (it never runs directly).
+  // -- messages (D74): the four folders — inbox (write/edit/withdraw until a run drains
+  // it; this is where a "note for the next run" lives), outbox (retractable hand-offs),
+  // read + received (history). Hidden for the protected clarification template (it never
+  // runs directly, so nothing is ever for or from it).
+  let messagesPane = null;
   if (!d.protected) {
-    const msgBox = el("textarea", { class: "code", "data-persist": `nextrun-msg-${slug}`,
-      placeholder: "a message the routine reads at the start of its next run — a priority, a "
-        + "correction, something to do or check" });
-    const msgSend = el("button", { class: "btn primary mt" }, "send to the next run");
-    msgSend.onclick = async () => {
-      const text = msgBox.value;
-      if (!text.trim()) return;
-      msgSend.disabled = true;
-      msgBox.value = ""; forgetField(msgBox);   // clear before any reload re-mounts the box
-      try { await api(`/api/routines/${slug}/message`, { method: "POST", body: { text } });
-        toast("queued — the next run reads it at boot"); }
-      catch (err) { msgBox.value = text; toast(err.message, 4000, { error: true }); }
-      finally { msgSend.disabled = false; }
-    };
-    view.append(el("h2", {}, "Message the next run"),
-      el("div", { class: "panel" },
-        el("div", { class: "muted small", style: "margin-bottom:8px" },
-          "queued in the routine's inbox and consumed at the start of its next run — "
-          + "scheduled or fired with ▶ run now"),
-        msgBox, el("div", { class: "row mt" }, msgSend),
-        el("div", { class: "flow-note" },
-          el("span", {}, "submit"), el("span", { class: "arrow" }, "→"),
-          el("span", {}, "routine inbox"), el("span", { class: "arrow" }, "→"),
-          el("span", {}, "drained at the start of the next run"))));
+    view.append(el("h2", {}, "Messages"));
+    const msgHost = el("div", {});
+    view.append(msgHost);
+    messagesPane = mountMessages(msgHost, slug);
   }
 
   // -- config + recipe: rendered flat into a DETACHED host, then regrouped by groupSections
@@ -173,6 +154,7 @@ export async function render(view, slug, query = {}) {
     if (!["run_started", "run_finished"].includes(ev.event)) return;
     if (!String(ev.run_id || "").startsWith(`${slug}:`)) return;
     refreshHead();
+    messagesPane?.reload();   // a run drains the inbox at boot and files reports as it works
     if (ev.event === "run_finished") {
       health.reload();
       try { renderRuns(await api(`/api/routines/${slug}`)); } catch { /* keep the old table */ }

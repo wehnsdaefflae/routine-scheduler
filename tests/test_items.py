@@ -263,7 +263,7 @@ def test_api_items_without_the_self_audit_routine(api_client):
     assert c.get("/api/items").json() == {
         "exists": False, "routine": "self-audit", "items": [],
         "counts": {"type": {}, "status": {}}, "report": None,
-        "last_run": None, "pending_feedback": [], "answered_decisions": []}
+        "last_run": None, "queued": [], "answered_decisions": []}
 
 
 # ---- priorities (D75): the user's ⚑ reaches the owner's next run -------------------------

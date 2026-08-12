@@ -1,13 +1,15 @@
-"""The reviewer-feedback channel: comments, decision answers and free notes written into the
-self-audit routine's inbox as tagged messages. The Items page (`api_items`) is the READ half
-— every finding, decision and bug report with its status; this module is the one write path
-that page has.
+"""The reviewer-feedback channel: comments on findings and decision answers written into
+the self-audit routine's inbox as tagged messages. The Messages page (`api_items`) is the
+READ half — every finding, decision and report with its status; this module is the page's
+STRUCTURED write path. Free-form text (the note for the next run) is a plain user message
+since D74 and goes through `api_messages` like on any routine page, which also owns
+withdrawing ANY queued message — only the tagged-feedback create/edit live here, because
+only they re-format text from structured fields.
 
 Feedback reuses the standard inbox message channel (`msg-*.json`, drained as a user message),
 so the routine consumes it on its next/current run with no engine changes. Until a run drains
-it, a queued message stays editable and withdrawable (PUT/DELETE by its id) — the message file
-keeps the structured fields (kind/target/choice/raw) alongside the formatted text so an edit
-can re-format cleanly.
+it, a queued message stays editable (PUT by its id) — the message file keeps the structured
+fields (kind/target/choice/raw) alongside the formatted text so an edit can re-format cleanly.
 """
 
 from __future__ import annotations
@@ -37,10 +39,12 @@ _LEGACY_COMMENT_RE = re.compile(r"^\[AUDIT feedback · finding ([^\]]+)\]\s*(.*)
 _LEGACY_NOTE_RE = re.compile(r"^\[AUDIT note\]\s*(.*)$", re.DOTALL)
 
 
-def pending_feedback(routine_dir: Path) -> list[dict]:
-    """Web-submitted feedback still sitting in the inbox (not yet consumed by a run) — the UI
-    shows these so a reviewer can see exactly what the next self-audit run will pick up, and
-    edit or withdraw any of it (by `id`) until then.
+def queued_messages(routine_dir: Path) -> list[dict]:
+    """EVERY message still sitting in the inbox (not yet consumed by a run) — the Messages
+    page shows these so a reviewer sees exactly what the next self-audit run will pick up,
+    and can edit or withdraw any of it (by `id`) until then. Tagged reviewer feedback
+    carries its structured fields (`kind`/…) so the page re-opens the right editor; a plain
+    user message, an engine-filed one, or a delivered report is listed by its text alone.
     """
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
@@ -48,12 +52,14 @@ def pending_feedback(routine_dir: Path) -> list[dict]:
     out = []
     for path in sorted(inbox.glob("msg-*.json")):
         obj = read_json(path)
-        if not (isinstance(obj, dict) and obj.get("via") == "web-audit"):
+        if not isinstance(obj, dict):
             continue
         item = {"id": path.stem, "text": str(obj.get("text") or ""), "ts": str(obj.get("ts") or ""),
                 "kind": str(obj.get("kind") or ""), "target": str(obj.get("target") or ""),
-                "choice": str(obj.get("choice") or ""), "raw": str(obj.get("raw") or "")}
-        if not item["kind"]:
+                "choice": str(obj.get("choice") or ""), "raw": str(obj.get("raw") or ""),
+                "from": str(obj.get("from") or obj.get("source") or obj.get("via") or "user"),
+                **({"report": str(obj["report"])} if obj.get("report") else {})}
+        if not item["kind"] and obj.get("via") == "web-audit":
             if m := _LEGACY_COMMENT_RE.match(item["text"]):
                 item.update(kind="comment", target=m.group(1).strip(), raw=m.group(2))
             elif m := _LEGACY_NOTE_RE.match(item["text"]):
@@ -65,10 +71,10 @@ def pending_feedback(routine_dir: Path) -> list[dict]:
 def answered_decisions(routine_dir: Path, report: object) -> list[str]:
     """Decision ids the user DURABLY answered at-or-after this report's `generated` — the
     exact rule the Decisions page (`_audit_decisions`) uses to keep an answered decision
-    hidden. The Items page reads this so an answered decision reads as answered HERE too,
+    hidden. The Messages page reads this so an answered decision reads as answered HERE too,
     even after a run has consumed its inbox feedback message. Without it the page
-    reconstructs answered-state from `pending_feedback` alone, so a decision re-presents as
-    open the moment a run drains its message — the "not synced everywhere" bug.
+    reconstructs answered-state from the queued messages alone, so a decision re-presents
+    as open the moment a run drains its message — the "not synced everywhere" bug.
     """
     if not isinstance(report, dict):
         return []
@@ -189,12 +195,3 @@ def audit_feedback_edit(request: Request, msg_id: str, body: Feedback) -> dict:
     return {"ok": True, "id": msg_id, "delivery": "mid-run" if active else "next-run"}
 
 
-@router.delete("/audit/feedback/{msg_id}")
-def audit_feedback_withdraw(request: Request, msg_id: str) -> dict:
-    path, _ = _queued_message(request, msg_id)
-    try:
-        path.unlink()
-    except FileNotFoundError:  # a run consumed it between the check and now — same outcome
-        raise HTTPException(
-            404, "this feedback is no longer queued — a run already consumed it") from None
-    return {"ok": True, "id": msg_id}
