@@ -20,7 +20,9 @@ stderr, meaningful exit codes, `--json` for structured output. Verify a new or r
 procedure by RUNNING it before relying on it, and name it in the finish summary.
 
 A procedure is private to this routine (versioned by its repo — revisions are cheap and
-reversible) and runs inside the routine's own sandbox: its blast radius is this
-routine's permissions, nothing more. Keep each one single-purpose; do not call global
+reversible) and runs in the routine's OWN venv (`<routine>/.venv`, dependencies installed
+on demand) with the routine's own filesystem permissions — the recipe's file actions and
+the procedure read and write the SAME files, and the blast radius is this routine's
+permissions, nothing more. Keep each one single-purpose; do not call global
 utils from inside a procedure — a step needing a util's capability belongs in the
 recipe, where its own gates apply.

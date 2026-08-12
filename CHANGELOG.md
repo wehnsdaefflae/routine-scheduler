@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.181.0] — 2026-08-12
+
+### Changed
+- **Procedures run in the routine's own venv with the routine's own filesystem
+  permissions** (operator correction of 0.179.0): a procedure executes via
+  `<routine>/.venv` — created on first use in the routine's workdir, its PEP 723 deps
+  installed into it (net-open build step), gitignored against the autocommit — inside a
+  jail of EXACTLY the run's fs roots (`sandbox.wrap_routine`: no library root), so the
+  recipe's file actions and the procedure read and write the same files. NOT the util
+  sandbox (0.179.0's ephemeral uv script env + library-visible jail is gone). Secrets,
+  gating and the observation shape are unchanged.
+
 ## [0.180.0] — 2026-08-12
 
 ### Added

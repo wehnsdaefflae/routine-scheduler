@@ -278,7 +278,7 @@ def do_procedure(action: dict, ctx: RunContext) -> dict:
     code, out, err = procedures.run_procedure(
         ctx.routine.dir, name, args,
         timeout=int(action.get("timeout_s") or procedures.PROC_TIMEOUT_S),
-        policy=sandbox.policy_for_ctx(ctx), libraries_home=ctx.server.libraries_home,
+        policy=sandbox.policy_for_ctx(ctx),
         extra_secrets=_extra_secrets(ctx), withhold_secrets=set(withheld))
     stdout, trunc_out = truncate(out, keep="head")
     stderr, trunc_err = truncate(err, cap=8000 if code != 0 else 2000)

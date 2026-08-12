@@ -78,10 +78,13 @@ one you are about to touch, not all of them.
   memory_read, memory_write, read_rule, write_rule, procedure, llm, spawn, subtask, detach, schedule_run,
   create_routine, manage_group, subruns, kill, wait, ask_user, report, finish` (25). **`procedure` (D88) runs the routine's OWN
   `procedures/<name>.py`** — the deterministic half of the recipe/procedure split: PEP 723 + the util
-  docstring-header standard minus the catalog lines (no `calls:` graph, no `gu` on PATH), the same
-  Landlock jail + declared-only secrets a util gets, gated by the `procedure` capability (`procedures`
-  permission doc) and deliberately WITHOUT an approval dial — the blast radius is the routine's own
-  sandboxed permissions, and the routine repo versions every revision.
+  docstring-header standard minus the catalog lines (no `calls:` graph, no `gu` on PATH). It runs in a
+  persistent VENV inside the routine's workdir (`<routine>/.venv`, deps installed on demand,
+  gitignored) with the ROUTINE'S OWN filesystem permissions (`sandbox.wrap_routine` — the run's fs
+  roots, NO library root: recipe and procedure see the same files), NOT the util sandbox. Secrets stay
+  declared-only; gated by the `procedure` capability (`procedures` permission doc), deliberately
+  WITHOUT an approval dial — the blast radius is the routine's own sandboxed permissions, and the
+  routine repo versions every revision.
   `finish` and `report` are ALWAYS_KINDS — available on every
   turn regardless of the workflow's `tools:` allowlist or the capability set. **The engine never ends a run
   the model could have ended itself**: the FIRST budget violation spends a one-time RESERVED FINISH TURN

@@ -1,7 +1,7 @@
 """D88 phase 1: per-routine procedures — the deterministic half of a routine. A
 `procedures/<name>.py` PEP 723 script, private to the routine, run by the gated
-`procedure` action inside the util sandbox/env contract (declared-only secrets, F290
-optional withholding).
+`procedure` action in a persistent venv inside the routine's workdir, with the
+routine's OWN filesystem permissions (declared-only secrets, F290 withholding).
 """
 
 from __future__ import annotations
@@ -64,25 +64,35 @@ def test_run_procedure_scoped_env_and_withholding(tmp_path, monkeypatch):
                         lambda: {"PROC_TOKEN": "t-1", "OPT_TOKEN": "o-1", "OTHER_KEY": "x"})
     monkeypatch.setenv("OTHER_KEY", "leaked-via-daemon-env")
     policy = sandbox.SandboxPolicy(mode="off")
-    code, out, err = procedures.run_procedure(d, "probe", ["a", "b"], policy=policy,
-                                              libraries_home=tmp_path / "lib")
+    code, out, err = procedures.run_procedure(d, "probe", ["a", "b"], policy=policy)
     assert code == 0, err
     data = json.loads(out)
     # declared secrets injected, the undeclared store key scrubbed, args pass through
     assert data == {"args": ["a", "b"], "token": "t-1", "opt": "o-1", "other": None}
+    # operator spec 2026-08-12: the run created a persistent venv in the routine's
+    # workdir (gitignored — autocommit is `git add -A`) and executed with ITS python
+    assert procedures.venv_python(d).exists()
+    assert ".venv/" in (d / ".gitignore").read_text(encoding="utf-8")
     # a withheld optional (F290) is scrubbed even though the store has it
     code, out, err = procedures.run_procedure(d, "probe", [], policy=policy,
-                                              libraries_home=tmp_path / "lib",
                                               withhold_secrets={"OPT_TOKEN"})
     assert code == 0, err
     assert json.loads(out)["opt"] is None
 
 
+def test_script_deps_parses_pep723(tmp_path):
+    d = _routine(tmp_path)
+    assert procedures.script_deps(d, "probe") == []
+    withdeps = SCRIPT.replace("# dependencies = []",
+                              '# dependencies = ["requests>=2", "lxml"]')
+    (d / "procedures" / "fetcher.py").write_text(withdeps, encoding="utf-8")
+    assert procedures.script_deps(d, "fetcher") == ["requests>=2", "lxml"]
+
+
 def test_missing_procedure_names_the_available_ones(tmp_path):
     d = _routine(tmp_path)
     code, _out, err = procedures.run_procedure(
-        d, "nope", [], policy=sandbox.SandboxPolicy(mode="off"),
-        libraries_home=tmp_path / "lib")
+        d, "nope", [], policy=sandbox.SandboxPolicy(mode="off"))
     assert code == 2 and "probe" in err
 
 
