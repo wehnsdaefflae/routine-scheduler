@@ -166,6 +166,12 @@ ACTION_SCHEMA: dict = {
                                       "rest of the chain, 'continue' fires the remaining members. "
                                       "Required for set-default; optional on create/update (omit "
                                       "to inherit the instance default)"},
+        "cron": {"type": "string",
+                 "description": "manage_group create/update: the GROUP's cron schedule (server "
+                                "tz), e.g. '0 10 * * *' — member 0 fires on it, the rest chain "
+                                "on completion, and every member's own cron is suppressed while "
+                                "it is set. Empty string clears it (members fire on their own "
+                                "crons again); omit to leave unchanged"},
         "append": {"type": "boolean",
                    "description": "write_file: append instead of overwrite (default false)"},
         # memory_write (memory_read needs only `name`)
@@ -347,7 +353,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
     "create_routine": (("target", "name", "prompt"), ("workflow",)),
-    "manage_group": (("verb",), ("target", "name", "members", "on_failure")),
+    "manage_group": (("verb",), ("target", "name", "members", "on_failure", "cron")),
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
     "view_image": ((), ("path", "paths", "prompt")),
     "write_file": (("path", "content"), ("append",)),

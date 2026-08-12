@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.175.0] — 2026-08-12
+
+### Added
+- **A conversation can schedule a group** (R311/R312 — direct user requirement):
+  `manage_group create/update` take a flat `cron` field — the group schedule, server tz
+  recorded beside it exactly as the Groups page writes it; `""` clears it, absent leaves
+  it unchanged; member-cron suppression (D71) applies as always. The observation names
+  the resulting schedule. A user's group-scheduling request is now completed by the run
+  itself — no operator round-trip to `/groups`.
+
 ## [0.174.0] — 2026-08-12
 
 ### Changed

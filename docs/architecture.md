@@ -666,7 +666,8 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
 - **Routine groups (D53/D61/D67/D71)**: a group is an ORDERED list of routine slugs plus a
   mid-chain-failure policy, stored instance-level in `.control/groups.json` (`rsched/groups.py` —
   web-written CRUD via `web/api_groups.py` and the Groups page, or the `manage_group` action from a
-  root conversation; a group is never routine config). "Run group now" — or the group's OWN cron
+  root conversation — including the group's cron schedule (R312), so group scheduling needs no
+  operator round-trip; a group is never routine config). "Run group now" — or the group's OWN cron
   (below) — ARMS a sequential chain (`rsched/group_runs.py`, one in-flight chain per group,
   snapshot of members + resolved policy at arm time); the scheduler-ticked **`GroupRunManager`**
   (`daemon/group_runs.py`) advances it one transition per tick: fire member 0, wait for a terminal

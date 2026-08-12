@@ -120,6 +120,45 @@ def test_manage_group_lifecycle(tmp_path):
     assert obs["rejected"]
 
 
+def test_manage_group_schedules_a_group(tmp_path):
+    """R311/R312: a root conversation sets, changes and clears the GROUP's cron itself —
+    the user's scheduling request needs no operator round-trip to /groups. The server tz
+    is recorded beside a set cron, exactly as the Groups page writes it."""
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "create", "name": "FAU",
+              "members": ["weight-coach"], "cron": "0 10 * * *"})
+    gid = obs["group"]["id"]
+    assert obs["group"]["cron"] == "0 10 * * *" and obs["group"]["tz"]
+
+    # update changes the schedule; an absent cron key leaves it unchanged
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "update", "target": gid, "cron": "30 9 * * 1"})
+    assert obs["group"]["cron"] == "30 9 * * 1"
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "update", "target": gid, "name": "FAU jobs"})
+    assert obs["group"]["cron"] == "30 9 * * 1"
+
+    # empty string clears it (members fire on their own crons again), tz cleared with it
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "update", "target": gid, "cron": ""})
+    assert obs["group"]["cron"] == "" and obs["group"]["tz"] == ""
+
+    # a bad cron is a teaching rejection, not a crash
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "update", "target": gid, "cron": "not a cron"})
+    assert obs["rejected"] and "cron" in obs["reason"]
+    obs = manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "create", "name": "Bad", "cron": "nope"})
+    assert obs["rejected"] and "cron" in obs["reason"]
+
+    # the schema accepts the field
+    assert validate_action({"say": "s", "kind": "manage_group", "verb": "update",
+                            "target": gid, "cron": "0 10 * * *"}) == []
+
+
 def test_manage_group_run_empty_group_rejected(tmp_path):
     server = _server(tmp_path)
     ctx = _ctx(server, home="conversations_home")

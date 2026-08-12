@@ -166,8 +166,9 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             cap_bits.append("create_routine (graduate THIS conversation into a new scheduled "
                             "routine — the only way a routine is created)")
         if "manage_group" in kinds:
-            cap_bits.append("manage_group (create/update/delete/order/fire routine GROUPS from "
-                            "this conversation — the /groups page's surface as an action)")
+            cap_bits.append("manage_group (create/update/delete/order/schedule/fire routine "
+                            "GROUPS from this conversation — the /groups page's surface as an "
+                            "action; `cron` sets the group schedule, no operator needed)")
         cap_bits += [f"reserved util {u!r}" for u in sorted(g.utils)]
         if g.run_history != "none":
             cap_bits.append("read previous runs under runs/ "

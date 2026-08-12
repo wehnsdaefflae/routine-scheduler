@@ -179,8 +179,10 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
                     f"{obs.get('group_id')!r} ({len(obs.get('members') or [])} member(s)) — "
                     "the daemon fires the members in order on its next tick).")
         g = obs.get("group") or {}
+        sched = (f" and schedule cron={g['cron']!r} ({g.get('tz')})" if g.get("cron")
+                 else " and no schedule (members fire on their own crons)")
         return (f"OBSERVATION (manage_group {verb}: group {g.get('name')!r} ({g.get('id')}) now "
-                f"has members {g.get('members')} and on_failure={g.get('on_failure')!r}).")
+                f"has members {g.get('members')}, on_failure={g.get('on_failure')!r}{sched}).")
     if kind == "report":
         if obs.get("self_target"):
             return ("OBSERVATION (report: a routine cannot address a report to itself — drop "
