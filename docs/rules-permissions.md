@@ -235,6 +235,7 @@ The shipped set:
 | `global-utils` | nothing (`requires: {}`) — the `util` action is a base kind; this doc is pure conduct: discovery, composition, never silently routing around a broken util | ✅ |
 | `rule-authoring` | the `write_rule` action — author or revise a general rule in the shared library (the approval level is `rule_confirm`) | opt-in |
 | `scheduling` | the `schedule_run` action — arm/cancel a one-shot future run of a routine | opt-in |
+| `scripts` | the `script` action — run the routine's OWN persistent `scripts/<name>.py` helpers (tooling, not a second interpreter; declared secrets only, no util/model access inside) | opt-in |
 
 ### What enforcement looks like
 

@@ -16,6 +16,7 @@ from ..ids import is_slug
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "edit_file",
          "memory_read", "memory_write", "read_rule", "write_rule",
+         "script",
          "llm", "spawn", "subtask", "detach",
          "schedule_run", "create_routine", "manage_group",
          "subruns", "kill", "wait", "ask_user", "report", "finish")
@@ -59,6 +60,7 @@ ACTION_SCHEMA: dict = {
         "name": {
             "type": "string",
             "description": "util/write_util/remove_util: the global util's name (kebab-case) · "
+                           "script: this routine's own scripts/<name>.py helper · "
                            "memory_read/memory_write: the note's topic (kebab-case) · "
                            "read_rule/write_rule: a general rule in the shared library "
                            '(read_rule "list" = the catalog) · '
@@ -66,12 +68,12 @@ ACTION_SCHEMA: dict = {
         },
         "args": {
             "type": "array", "items": {"type": "string"},
-            "description": "util: command-line arguments passed to the script "
+            "description": "util/script: command-line arguments passed to the script "
                            "(append '--json' for structured output)",
         },
         "timeout_s": {
             "type": "integer", "minimum": 1, "maximum": 600,
-            "description": "util: seconds before the script is killed "
+            "description": "util/script: seconds before the script is killed "
                            "(default 300) · wait: max seconds to block (default 600)",
         },
         # read_file / view_image / write_file / edit_file
@@ -310,6 +312,8 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
 # level); an abstract error alone often doesn't correct them — a concrete shape does.
 KIND_EXAMPLES: dict[str, dict] = {
     "util": {"say": "<why this util now>", "kind": "util", "name": "list"},
+    "script": {"say": "<why this deterministic step now>", "kind": "script",
+               "name": "poll-inbox", "args": ["--json"]},
     "write_util": {"say": "<why a new util>", "kind": "write_util", "name": "my-util",
                    "content": "<the complete PEP 723 script as ONE string>"},
     "remove_util": {"say": "<why remove this util>", "kind": "remove_util",
@@ -369,6 +373,7 @@ KIND_EXAMPLES: dict[str, dict] = {
 # kind → (required fields, allowed extra fields beyond say/kind)
 KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s")),
+    "script": (("name",), ("args", "timeout_s")),
     "write_util": (("name",), ("content", "path", "anchor", "replacement", "all")),
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),

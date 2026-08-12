@@ -77,11 +77,19 @@ one you are about to touch, not all of them.
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, edit_file,
-  memory_read, memory_write, read_rule, write_rule, llm, spawn, subtask, detach, schedule_run,
-  create_routine, manage_group, subruns, kill, wait, ask_user, report, finish` (24). There is
-  deliberately NO per-routine script runner (a `procedure` action existed briefly and was removed,
-  2026-08-12): the only way a run executes code is a GLOBAL util — shared, header-linted,
-  selftest-gated, approval-dialed — never a private script it authored for itself.
+  memory_read, memory_write, read_rule, write_rule, script, llm, spawn, subtask, detach, schedule_run,
+  create_routine, manage_group, subruns, kill, wait, ask_user, report, finish` (25). **`script` runs
+  the routine's OWN `scripts/<name>.py`** — persistent helper TOOLING, deliberately NOT a co-equal
+  interpreter of the routine (the "procedure" symmetry doctrine was reversed 2026-08-12): the recipe
+  stays the single interpreter of the task and delegates only judgment-free sub-steps. A repeating
+  deterministic step (poll, parse, compute, render) is written ONCE via `write_file` and called
+  thereafter — versioned by the routine repo, run in a persistent workdir venv (`<routine>/.venv`,
+  PEP 723 deps on demand, gitignored) inside the run's fs jail, with ONLY the granted secrets its
+  docstring header declares (the util model — `rsched/scripts.py`), and NO util or model access
+  inside (`gu` off PATH; a step needing a util's capability belongs in the recipe). Gated by the
+  `script` capability (`scripts` permission doc), no approval dial — the blast radius is a subset of
+  the routine's own sandboxed permissions. routine-improver scouts recipes for deterministic prose
+  responsibilities and nudges them into scripts.
   `finish` and `report` are ALWAYS_KINDS — available on every
   turn regardless of the workflow's `tools:` allowlist or the capability set. **The engine never ends a run
   the model could have ended itself**: the FIRST budget violation spends a one-time RESERVED FINISH TURN
@@ -234,4 +242,5 @@ first boot by `bootstrap.ensure_config`, so a fresh deploy is never an open API)
 two-tier bearer auth (the operator token, plus a generated `routine_token` — what runs get injected
 as `RSCHED_API_TOKEN` — which is refused on config-mutating routes); `RSCHED_BIND` / `RSCHED_PORT`
 override for containers. First launch redirects to
-Settings until setup (secrets, endpoints + system model, GitHub device-flow, the library) is finished.
+Settings until setup (secrets, endpoints + system model, GitHub device-flow) is finished; the
+library repo has NO settings surface — the library-sync routine manages it exclusively.

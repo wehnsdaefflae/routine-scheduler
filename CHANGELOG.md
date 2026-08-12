@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.191.0] — 2026-08-12
+
+### Added
+- **Per-routine `scripts/` return — as tooling, not as a second interpreter** (operator
+  clarification of the 0.189.0 removal: the SYMMETRY doctrine was the mistake, the
+  persistent-script mechanism was not). The new `script` action (capability `script`,
+  conduct: the `scripts` permission doc; `rsched/scripts.py`) runs the routine's OWN
+  `scripts/<name>.py` — PEP 723, authored by the run via `write_file`, versioned by the
+  routine repo, executed in the persistent workdir venv inside the run's fs jail. The
+  envelope is the UTIL model, not the retired standing-settings model: ONLY granted
+  secrets the script's header declares are injected (`NAME?` optional = withheld), the
+  same four-state exposure gate asks for undecided ones, and there is NO util or model
+  access inside (`gu` off PATH, no LLM channel) — a step needing a util's capability or
+  a judgment call belongs in the recipe. The capabilities digest keeps the nudge: a
+  repeating deterministic sub-step is written once into `scripts/` and called thereafter.
+- **The util/script boundary is taught on every surface**: the `write_util` and `script`
+  digest bullets and both permission docs carry the placement test (reusable across
+  routines → shared-library util; one routine's own pipeline work → its script).
+  routine-improver's efficiency lens gains the prose→code pass (spot deterministic prose
+  responsibilities, direct the target to script them, propose the capability grant when
+  absent) plus the both-ways home check; global-utils-review gains the **demote** verdict
+  (a single-caller pipeline util is routed to its owner to become a script).
+
 ## [0.190.0] — 2026-08-12
 
 ### Changed

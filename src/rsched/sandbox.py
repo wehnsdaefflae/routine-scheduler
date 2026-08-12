@@ -153,7 +153,8 @@ def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
     """The command that actually runs: `cmd` wrapped in the landlock.py child wrapper when
     the sandbox engages, `cmd` itself when the mode says (or allows) running bare. Raises
     SandboxRefusal when mode=strict and the jail can't close as specified — the caller
-    turns that into the call's error observation: the run's fs roots + the shared library
+    turns that into the call's error observation. ONE jail composition for both callable
+    kinds: utils AND per-routine scripts get the run's fs roots + the shared library
     read-only + the exec toolchain.
     """
     _ensure_write_roots(policy)   # mode-independent: the grant implies the directory

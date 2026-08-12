@@ -262,6 +262,40 @@ def _looks_like_refusal(text: str) -> bool:
     return bool(head) and any(m in head for m in _REFUSAL_MARKERS)
 
 
+def do_script(action: dict, ctx: RunContext) -> dict:
+    """Run one of the routine's OWN scripts/<name>.py helpers: declared-only secrets
+    (the util model — only header-declared AND granted names reach the env, engine
+    extras like connection tokens included only if declared), the recipe's fs jail, no
+    `gu` on PATH. Same truncation + spill as a util call. The loop's secret gate
+    (declared-required-undecided → the blocking ask) ran before this.
+    """
+    from .. import scripts
+    from ..secrets import load_secrets
+    from .interact import secret_state
+    name = str(action.get("name") or "")
+    args = [str(a) for a in action.get("args") or []]
+    if not scripts.exists(ctx.routine.dir, name):
+        return {"kind": "script", "name": name, "missing": True,
+                "available": [s["name"] for s in scripts.list_scripts(ctx.routine.dir)]}
+    declared, _net, _opt = scripts.needs(ctx.routine.dir, name)
+    env_secrets = {k: v for k, v in load_secrets().items()
+                   if k in declared and secret_state(ctx, k) == "granted"}
+    env_secrets |= {k: v for k, v in _extra_secrets(ctx).items() if k in declared}
+    code, out, err = scripts.run_script(
+        ctx.routine.dir, name, args,
+        timeout=int(action.get("timeout_s") or scripts.SCRIPT_TIMEOUT_S),
+        policy=sandbox.policy_for_ctx(ctx), libraries_home=ctx.server.libraries_home,
+        env_secrets=env_secrets)
+    stdout, trunc_out = truncate(out, keep="head")
+    stderr, trunc_err = truncate(err, cap=8000 if code != 0 else 2000)
+    obs = {"kind": "script", "name": name, "args": args, "exit": code,
+           "stdout": stdout, "stderr": stderr, "truncated": trunc_out or trunc_err}
+    if spilled := outputs.spill(ctx, f"script-{name}", out, err,
+                                out_truncated=trunc_out, err_truncated=trunc_err):
+        obs["full_output"] = spilled
+    return obs
+
+
 def do_llm(action: dict, ctx: RunContext) -> dict:
     messages = []
     if action.get("system"):

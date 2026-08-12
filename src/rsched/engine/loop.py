@@ -383,6 +383,10 @@ class EngineLoop:
                     # asks/refuses/passes; None means the call proceeds normally.
                     obs = interact.gate_util_secrets(self, action, poll_s=POLL_S) \
                         or executor.dispatch(action, ctx)
+                elif action["kind"] == "script":
+                    # the routine's own deterministic helper — same call-time secret gate
+                    obs = interact.gate_script_secrets(self, action, poll_s=POLL_S) \
+                        or executor.do_script(action, ctx)
                 elif action["kind"] == "schedule_run":
                     obs = interact.handle_schedule_run(self, action)
                 elif action["kind"] == "report":

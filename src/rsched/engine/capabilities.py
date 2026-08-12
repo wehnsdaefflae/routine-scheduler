@@ -150,18 +150,49 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
     if g is not None:
         cap_bits = []
         if g.allows_kind("write_util"):
+            placement = (" A util is GLOBAL, for every routine — a helper only THIS "
+                         "routine will ever call belongs in its own scripts/, not the "
+                         "shared library.")
             cap_bits.append({
-                "always": "write_util (every create/revise needs the user's approval)",
+                "always": "write_util (every create/revise needs the user's approval).",
                 "creations": "write_util (NEW utils need approval; revisions are autonomous "
-                             "once the selftest passes)",
-                "never": "write_util (autonomous, selftest-gated)",
-            }[g.confirm])
+                             "once the selftest passes).",
+                "never": "write_util (autonomous, selftest-gated).",
+            }[g.confirm] + placement)
         if g.allows_kind("remove_util"):
             cap_bits.append("remove_util (delete a global util the library no longer needs; "
                             "refused while another util still calls it)")
         if g.allows_kind("schedule_run"):
             cap_bits.append("schedule_run (arm/cancel a one-shot future run of a routine — "
                             "self-target always; other routines via the scheduling permission)")
+        if g.allows_kind("script"):
+            from .. import scripts
+            have = scripts.list_scripts(ctx.routine.dir)
+            if have:
+                cap_bits.append(
+                    "script — run this routine's OWN persistent helper scripts (scripts/, "
+                    "your venv, deterministic work only — no util or model access inside): "
+                    + "; ".join(f"{s['name']} ({s['summary']})" if s["summary"] else s["name"]
+                                for s in have)
+                    + ". When you notice a repeating deterministic sub-step (fetch, parse, "
+                      "compute, render), STOP redoing it by hand: write_file a new "
+                      "scripts/<name>.py once and call it every time after — it persists "
+                      "across runs, costs no model work, and stays under your control. "
+                      "Placement test: a script is for THIS routine only — capability "
+                      "another routine could plausibly reuse belongs in the shared "
+                      "library as a util instead")
+            else:
+                cap_bits.append(
+                    "script — run this routine's own Python helpers from scripts/<name>.py "
+                    "(none exist yet; author one with write_file: a PEP 723 script, "
+                    "docstring header '<name> — <summary>' + 'net:' + 'secrets:', then "
+                    "call it with the script action). When you notice a repeating "
+                    "deterministic sub-step (fetch, parse, compute, render), write a "
+                    "PERSISTENT script for it instead of redoing it by hand — it runs in "
+                    "your venv inside your sandbox, survives this run, and future runs "
+                    "call it for free. Placement test: a script is for THIS routine only "
+                    "— capability another routine could plausibly reuse belongs in the "
+                    "shared library as a util instead")
         if "create_routine" in kinds:
             cap_bits.append("create_routine (graduate THIS conversation into a new scheduled "
                             "routine — the only way a routine is created)")
