@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.184.1] — 2026-08-12
+
+### Fixed
+- **Message folder cards rendered a literal "null"** for absent optional fields (an
+  outbox/received row with no detail, a consumed message with no report id): the ternary
+  nulls went to the native DOM `append`, which stringifies them — children now go through
+  the null-dropping `el()` helper (`static/views/routine-messages.js`; caught on the
+  0.182.0 screenshot pass, pinned by a UI-test assertion).
+
 ## [0.184.0] — 2026-08-12
 
 ### Changed

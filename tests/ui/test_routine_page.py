@@ -74,11 +74,15 @@ def test_messages_folders_and_outbox_retract(ui, ui_page, make_routine):
     expect(read_card.locator("a", has_text="consumed by run")).to_have_attribute(
         "href", "#/run/uir:20260101-000000")
     expect(read_card.locator("button")).to_have_count(0)          # history is read-only
+    # an absent optional (this row has no report id) must render NOTHING — a ternary null
+    # fed to the native DOM append stringifies to a literal "null" (regression, 2026-08-12)
+    assert "null" not in read_card.inner_text()
 
     ui_page.locator(".msg-tabs .tag", has_text="received · 1").click()
     received = ui_page.locator(".msg-item.received", has_text="landed hand-off")
     expect(received).to_contain_text("→ peer")
     expect(received.locator("a", has_text="picked up")).to_be_visible()
+    assert "null" not in received.inner_text()                    # detail is empty here
 
     ui_page.locator(".msg-tabs .tag", has_text="outbox · 1").click()
     out = ui_page.locator(".msg-item.outbox", has_text="pending hand-off")

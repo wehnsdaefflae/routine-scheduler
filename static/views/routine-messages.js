@@ -138,20 +138,23 @@ export function mountMessages(host, slug) {
   }
 
   // ---- outbox / read / received: ledger rows and consumed history -----------------------
+  // Children go THROUGH el() (it drops null/undefined) — the native DOM append would
+  // stringify a ternary's null into a literal "null" text node.
   function reportish(m) {
     const card = el("div", { class: `msg-item ${folder}` });
-    const head = el("div", { class: "msg-head" });
     if (folder === "read") {
-      head.append(el("span", { class: "msg-src" }, fromLabel(m)),
+      card.append(el("div", { class: "msg-head" },
+        el("span", { class: "msg-src" }, fromLabel(m)),
         m.report ? el("a", { class: "ref-link", href: `#/messages?focus=${m.report}` }, m.report) : null,
         m.ts ? when(m.ts) : null,
         m.run_ts ? el("a", { href: `#/run/${slug}:${m.run_ts}`,
-          title: "the run that consumed it" }, "consumed by run ↗") : null);
-      card.append(head, el("div", { class: "msg-text" }, m.text || ""));
+          title: "the run that consumed it" }, "consumed by run ↗") : null),
+        el("div", { class: "msg-text" }, m.text || ""));
       return card;
     }
     // outbox + received: an addressed report row (title + detail, ledger-derived)
-    head.append(el("span", { class: "msg-src" }, `→ ${m.to || "?"}`),
+    const head = el("div", { class: "msg-head" },
+      el("span", { class: "msg-src" }, `→ ${m.to || "?"}`),
       m.report ? el("a", { class: "ref-link", href: `#/messages?focus=${m.report}` }, m.report) : null,
       m.ts ? when(m.ts) : null);
     if (folder === "outbox") {
@@ -173,12 +176,12 @@ export function mountMessages(host, slug) {
       head.append(el("span", { class: "msg-ops" }, retract));
     } else if (m.delivered) {
       head.append(el("a", { href: `#/run/${m.delivered.run_id}`,
-        title: "the recipient's run that picked it up" }, "picked up ↗"),
-        m.delivered.ts ? when(m.delivered.ts) : null);
+        title: "the recipient's run that picked it up" }, "picked up ↗"));
+      if (m.delivered.ts) head.append(when(m.delivered.ts));
     }
-    card.append(head,
-      m.title ? el("div", { class: "msg-title" }, m.title) : null,
-      m.text ? el("div", { class: "msg-detail" }, m.text) : null);
+    card.append(head);
+    if (m.title) card.append(el("div", { class: "msg-title" }, m.title));
+    if (m.text) card.append(el("div", { class: "msg-detail" }, m.text));
     return card;
   }
 
