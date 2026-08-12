@@ -268,12 +268,6 @@ button.chip.group-chip { cursor: pointer; }
 .panel.err { border-color: rgba(242, 105, 92, 0.45); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
 .tablewrap { overflow-x: auto; }
-/* D72: a full-width escape from the 1180px shell column — the routines detail table wants
-   the screen. Centered: shift left by half the difference between viewport and column. */
-.breakout {
-  width: min(100vw - 44px, 1800px);
-  margin-left: calc((100% - min(100vw - 44px, 1800px)) / 2);
-}
 table.list { width: 100%; border-collapse: collapse; }
 /* D73: a group's collapsible header row + its indented member rows */
 table.list tr.group-row td { cursor: pointer; font-weight: 600; background: rgba(255, 255, 255, 0.03); }

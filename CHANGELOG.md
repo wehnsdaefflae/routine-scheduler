@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.188.0] — 2026-08-12
+
+### Changed
+- **Disabled routines wear an "off" tag** in the table's schedule cell — the 0.187.0 row dim
+  alone was too subtle as the only always-visible disabled marker.
+- **The table returns to the normal shell column.** The D72 full-width breakout existed for
+  the twelve-column layout; five compressed columns fit the 1180px shell, so the breakout
+  CSS is retired.
+
 ## [0.187.0] — 2026-08-12
 
 ### Changed

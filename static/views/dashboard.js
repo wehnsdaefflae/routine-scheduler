@@ -518,7 +518,11 @@ export async function render(view) {
         el("td", { class: "muted small" },
           el("div", schedText(c)
             ? { title: "group-managed — the group's schedule fires this routine; its own cron is suppressed" }
-            : {}, schedText(c) || c.schedule_desc || "manual"),
+            : {},
+            // a disabled routine's always-visible marker: the row dim alone was too subtle
+            c.enabled ? null : el("span", { class: "chip disabled", style: "margin-right:6px",
+              title: "paused — nothing fires until resumed" }, "off"),
+            schedText(c) || c.schedule_desc || "manual"),
           c.next_fire ? el("div", { class: "faint" }, "next ", when(c.next_fire, { mode: "rel" })) : null),
         el("td", {}, last
           ? [el("a", { href: `#/run/${last.run_id}` }, when(last.ts)),
@@ -572,8 +576,9 @@ export async function render(view) {
     }
     const grouped = new Set(groupsOrdered.flatMap((g) => g.members));
     for (const c of shown) if (!grouped.has(c.slug)) rows.push(rowFor(c));
-    // D72: the table breaks out of the 1180px shell column and fits the screen width.
-    return el("div", { class: "panel breakout", style: "padding:0" },
+    // Five compressed columns fit the normal shell column — the D72 full-width breakout
+    // existed for the old twelve-column layout and is retired with it.
+    return el("div", { class: "panel", style: "padding:0" },
       el("div", { class: "tablewrap" },
         el("table", { class: "list" }, el("thead", {}, head), el("tbody", {}, rows))));
   }

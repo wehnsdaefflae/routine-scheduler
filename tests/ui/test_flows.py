@@ -1313,10 +1313,11 @@ def test_dashboard_shows_group_membership(ui, ui_page):
 
 
 def test_dashboard_list_default_group_rows_and_inline_pause(ui, ui_page):
-    """D72+D73 (operator-selected 2026-08-05): the TABLE is the default routines view and
-    breaks out of the shell column to fit the screen; a group is a collapsible row whose
-    expansion lists its members; and every row carries an inline ⏸ pause / ▶ resume that
-    PATCHes `enabled` without a trip to the config page."""
+    """D72+D73 (operator-selected 2026-08-05): the TABLE is the default routines view (the
+    five compressed columns fit the normal shell column — the full-width breakout is
+    retired); a group is a collapsible row whose expansion lists its members; and every row
+    carries an inline ⏸ pause / ▷ resume that PATCHes `enabled` without a trip to the
+    config page."""
     from rsched import groups
 
     groups.create(ui.routines, name="Nightly", members=[{"slug": "uir", "split": False}],
@@ -1324,7 +1325,6 @@ def test_dashboard_list_default_group_rows_and_inline_pause(ui, ui_page):
 
     ui_page.goto(f"{ui.url}/#/routines")
     expect(ui_page.locator("table.list")).to_be_visible()   # no toggle click — the default
-    expect(ui_page.locator(".panel.breakout")).to_be_visible()
 
     # the group row: present, collapsed by default, expands to member rows, collapses back.
     # F281 (reviewer order 2026-08-06): a grouped routine appears ONLY under its group row —
@@ -1346,8 +1346,9 @@ def test_dashboard_list_default_group_rows_and_inline_pause(ui, ui_page):
     ui_page.locator("tr.group-row", has_text="Nightly").get_by_text("⛓ Nightly").click()
     ui_page.locator("table.list tbody tr", has_text="Test uir").last \
         .get_by_role("button", name="⏸").click()
-    expect(ui_page.locator("table.list tbody tr.disabled-row", has_text="Test uir")) \
-        .to_be_visible(timeout=10_000)
+    row = ui_page.locator("table.list tbody tr.disabled-row", has_text="Test uir")
+    expect(row).to_be_visible(timeout=10_000)          # the dimmed row…
+    expect(row.locator(".chip.disabled", has_text="off")).to_be_visible()   # …and the off tag
     cfg = yaml.safe_load((ui.routines / "uir" / "routine.yaml").read_text(encoding="utf-8"))
     assert cfg["enabled"] is False
     # …and resumes from the same control
