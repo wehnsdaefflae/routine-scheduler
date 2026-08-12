@@ -167,15 +167,24 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             procs = procedures.list_procedures(ctx.routine.dir)
             if procs:
                 cap_bits.append(
-                    "procedure — run this routine's OWN deterministic scripts (procedures/): "
+                    "procedure — run this routine's OWN Python scripts (procedures/, your "
+                    "persistent venv, your settings): "
                     + "; ".join(f"{p['name']} ({p['summary']})" if p["summary"] else p["name"]
-                                for p in procs))
+                                for p in procs)
+                    + ". When you notice a repeating deterministic sub-step (fetch, parse, "
+                      "compute, render), STOP redoing it by hand: write_file a new "
+                      "procedures/<name>.py once and call it every time after — it persists "
+                      "across runs, costs no model work, and stays under your control")
             else:
                 cap_bits.append(
-                    "procedure — run this routine's own deterministic scripts from "
+                    "procedure — run this routine's own Python scripts from "
                     "procedures/<name>.py (none exist yet; author one with write_file: a PEP "
                     "723 script, docstring header '<name> — <summary>' + 'net:' + 'secrets:', "
-                    "then call it with the procedure action)")
+                    "then call it with the procedure action). When you notice a repeating "
+                    "deterministic sub-step (fetch, parse, compute, render), write a "
+                    "PERSISTENT script for it instead of redoing it by hand — it runs in "
+                    "your venv with your settings, survives this run, and future runs call "
+                    "it for free")
         if "create_routine" in kinds:
             cap_bits.append("create_routine (graduate THIS conversation into a new scheduled "
                             "routine — the only way a routine is created)")
