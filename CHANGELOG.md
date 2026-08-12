@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.173.0] — 2026-08-12
+
+### Changed
+- **One spool mechanic** (F286): the durable request-spool file IO (dir layout, atomic
+  write, chrono naming, listing) lives once in `rsched/spool.py`; triggers, schedule-once
+  and pending-edits delegate to it. Trigger events thereby gain F298's strict queue-order
+  naming — a same-second webhook burst previously replayed in shuffled order (random-hex
+  tiebreak). Schedule-once entries stay id-addressed (consumption picks by `fire_at`).
+
 ## [0.172.0] — 2026-08-12
 
 ### Fixed

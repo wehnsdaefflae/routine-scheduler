@@ -30,7 +30,8 @@ import uuid
 from collections import Counter
 from pathlib import Path
 
-from .ids import now_iso, run_ts
+from . import spool
+from .ids import now_iso
 from .paths import atomic_write_json, read_json
 
 TRIGGER_TYPES = ("webhook", "report", "imap", "watch_path")
@@ -148,24 +149,22 @@ def validate_triggers(raw: object) -> tuple[list[dict], list[str]]:
 
 
 def spool_dir(routines_home: Path, slug: str) -> Path:
-    return routines_home / ".control" / "triggers" / slug
+    return spool.spool_dir(routines_home, "triggers", slug)
 
 
 def write_event(routines_home: Path, slug: str, *, trigger_id: str, payload: str,
                 content_type: str = "", client: str = "") -> Path:
-    """Record one trigger event durably (atomic). The filename sorts chronologically;
-    the random suffix keeps same-second events distinct.
+    """Record one trigger event durably (atomic). The chrono name (rsched.spool) keeps a
+    same-second burst in queue order — F298's contract, shared across every spool.
     """
-    name = f"evt-{run_ts()}-{uuid.uuid4().hex[:6]}.json"
-    return atomic_write_json(spool_dir(routines_home, slug) / name,
-                             {"trigger": trigger_id, "ts": now_iso(), "payload": payload,
-                              "content_type": content_type, "client": client})
+    return spool.write(routines_home, "triggers", slug,
+                       {"trigger": trigger_id, "ts": now_iso(), "payload": payload,
+                        "content_type": content_type, "client": client}, prefix="evt")
 
 
 def pending_events(routines_home: Path, slug: str) -> list[Path]:
     """Unconsumed event files, oldest first."""
-    d = spool_dir(routines_home, slug)
-    return sorted(d.glob("evt-*.json")) if d.is_dir() else []
+    return spool.pending(routines_home, "triggers", slug, "evt")
 
 
 def slugs_with_events(routines_home: Path) -> list[str]:

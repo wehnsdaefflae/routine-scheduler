@@ -26,17 +26,15 @@ module (web imports daemon, never the reverse).
 
 from __future__ import annotations
 
-import time
-import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from . import libgit, recipes
-from .ids import now_iso, run_ts
-from .paths import atomic_write, atomic_write_json, read_json, resolve_rel
+from . import libgit, recipes, spool
+from .ids import now_iso
+from .paths import atomic_write, read_json, resolve_rel
 
 # Edit kinds that may be queued. Keep in sync with APPLIERS below and the web endpoints
 # that queue them; a kind with no applier is rejected at queue time (fail closed).
@@ -136,13 +134,12 @@ APPLIERS: dict[str, Callable[[Path, dict], dict]] = {
 # -- the spool --------------------------------------------------------------------------
 
 def spool_dir(routines_home: Path, slug: str) -> Path:
-    return routines_home / ".control" / "pending-edits" / slug
+    return spool.spool_dir(routines_home, "pending-edits", slug)
 
 
 def pending(routines_home: Path, slug: str) -> list[Path]:
     """Unapplied edit files, oldest first (filename sorts chronologically)."""
-    d = spool_dir(routines_home, slug)
-    return sorted(d.glob("pe-*.json")) if d.is_dir() else []
+    return spool.pending(routines_home, "pending-edits", slug, "pe")
 
 
 def pending_count(routines_home: Path, slug: str) -> int:
@@ -155,14 +152,9 @@ def queue(routines_home: Path, slug: str, kind: str, payload: dict[str, Any]) ->
     """
     if kind not in QUEUEABLE_KINDS:
         raise ValueError(f"not a queueable edit kind: {kind!r}")
-    # F298: the name must sort in QUEUE order. The old second-resolution timestamp broke
-    # ties with RANDOM hex, so a same-second burst of edits replayed shuffled. A single
-    # nanosecond sample (zero-padded, taken after run_ts so both fields order together)
-    # makes the sort strict; the hex suffix only de-collides parallel writers.
-    stamp = run_ts()
-    name = f"pe-{stamp}-{time.time_ns():020d}-{uuid.uuid4().hex[:6]}.json"
-    return atomic_write_json(spool_dir(routines_home, slug) / name,
-                             {"kind": kind, "payload": payload, "ts": now_iso()})
+    # F298: the name must sort in QUEUE order — spool.chrono_name carries the contract.
+    return spool.write(routines_home, "pending-edits", slug,
+                       {"kind": kind, "payload": payload, "ts": now_iso()}, prefix="pe")
 
 
 def apply_pending(routine_dir: Path, routines_home: Path, slug: str) -> list[dict]:

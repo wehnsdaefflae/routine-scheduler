@@ -31,6 +31,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from . import spool
 from .ids import now_iso
 from .paths import atomic_write_json, read_json
 
@@ -79,7 +80,7 @@ def parse_fire_at(value: str, now: datetime | None = None) -> datetime:
 
 
 def spool_dir(routines_home: Path, slug: str) -> Path:
-    return routines_home / ".control" / "schedule-once" / slug
+    return spool.spool_dir(routines_home, "schedule-once", slug)
 
 
 def arm(routines_home: Path, slug: str, *, fire_at: datetime, reason: str,
@@ -95,14 +96,15 @@ def arm(routines_home: Path, slug: str, *, fire_at: datetime, reason: str,
         "created": now_iso(),
         "expires_at": expires_at.astimezone(UTC).isoformat() if expires_at else None,
     }
-    atomic_write_json(spool_dir(routines_home, slug) / f"req-{rec['id']}.json", rec)
+    spool.write(routines_home, "schedule-once", slug, rec, name=f"req-{rec['id']}.json")
     return rec
 
 
 def pending_requests(routines_home: Path, slug: str) -> list[Path]:
-    """Armed request files, oldest-created first (the id suffix keeps them distinct)."""
-    d = spool_dir(routines_home, slug)
-    return sorted(d.glob("req-*.json")) if d.is_dir() else []
+    """Armed request files, in stable (id) order — consumption picks by `fire_at`, so the
+    listing order carries no semantics.
+    """
+    return spool.pending(routines_home, "schedule-once", slug, "req")
 
 
 def read_request(path: Path) -> dict:
