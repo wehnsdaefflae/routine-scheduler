@@ -162,34 +162,6 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         if g.allows_kind("schedule_run"):
             cap_bits.append("schedule_run (arm/cancel a one-shot future run of a routine — "
                             "self-target always; other routines via the scheduling permission)")
-        if g.allows_kind("procedure"):
-            from .. import procedures
-            procs = procedures.list_procedures(ctx.routine.dir)
-            if procs:
-                cap_bits.append(
-                    "procedure — run this routine's OWN Python scripts (procedures/, your "
-                    "persistent venv, your settings): "
-                    + "; ".join(f"{p['name']} ({p['summary']})" if p["summary"] else p["name"]
-                                for p in procs)
-                    + ". When you notice a repeating deterministic sub-step (fetch, parse, "
-                      "compute, render), STOP redoing it by hand: write_file a new "
-                      "procedures/<name>.py once and call it every time after — it persists "
-                      "across runs, costs no model work, and stays under your control. "
-                      'Inside a procedure, `gu llm "<prompt>"` asks THIS routine\'s own '
-                      "default model — code dropping into judgment, the mirror of you "
-                      "dropping into code")
-            else:
-                cap_bits.append(
-                    "procedure — run this routine's own Python scripts from "
-                    "procedures/<name>.py (none exist yet; author one with write_file: a PEP "
-                    "723 script, docstring header '<name> — <summary>' + 'net:' + 'secrets:', "
-                    "then call it with the procedure action). When you notice a repeating "
-                    "deterministic sub-step (fetch, parse, compute, render), write a "
-                    "PERSISTENT script for it instead of redoing it by hand — it runs in "
-                    "your venv with your settings, survives this run, and future runs call "
-                    'it for free. Inside a procedure, `gu llm "<prompt>"` asks THIS '
-                    "routine's own default model — code dropping into judgment, the mirror "
-                    "of you dropping into code")
         if "create_routine" in kinds:
             cap_bits.append("create_routine (graduate THIS conversation into a new scheduled "
                             "routine — the only way a routine is created)")

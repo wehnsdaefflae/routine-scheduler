@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.189.0] — 2026-08-12
+
+### Removed
+- **The per-routine `procedure` feature, in full** (operator reversal of the 2026-08-12
+  symmetry rule): the `procedure` action, `rsched/procedures.py`, the `procedures`
+  permission doc, the capabilities-digest bullet that coached runs to accumulate private
+  scripts, `POST /api/llm` (the `gu llm` judgment mirror — `ROUTINE_TOKEN_MUTATIONS` is
+  empty again), the procedure secret-exposure gate, and the per-routine `.venv`. The
+  incentive was wrong: a run nudged to write and reuse persisting Python with util access
+  in its own venv grows an unreviewed private tool layer beside the shared, header-linted,
+  approval-dialed util library. The only way a run executes code is a GLOBAL util again.
+  Live-instance migration in the same change: the `procedures` permission doc and `llm`
+  util removed from the library repo, `procedure` capability grants stripped from
+  routine configs, stray `procedures/`/`.venv` dirs cleared.
+
 ## [0.188.0] — 2026-08-12
 
 ### Changed

@@ -302,17 +302,6 @@ def withheld_optional_secrets(ctx, name: str) -> list[str]:
     return withheld_optional(ctx, optional)
 
 
-def granted_store_secrets(ctx) -> dict[str, str]:
-    """Every store secret the routine is GRANTED (four-state rows + the run overlay) —
-    the procedure env's secret half (operator symmetry rule 2026-08-12): a procedure
-    carries the routine's standing settings, exactly what the recipe's tool calls can
-    reach, and never an undecided or denied name.
-    """
-    from ..secrets import load_secrets
-    return {k: v for k, v in load_secrets().items()
-            if secret_state(ctx, k) == "granted"}
-
-
 def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
     """D39: per-routine secret exposure, decided at CALL time through the FOUR-STATE grant
     model. A util call whose transitive `secrets:` declarations name secrets PRESENT in
@@ -333,30 +322,6 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
     if name in ("list", "show") or not utils_lib.exists(home, name):
         return None                     # discovery / missing-util paths expose no secrets
     needed, _net, optional = utils_lib.util_needs(home, name)
-    return _gate_secrets(loop, kind="util", name=name, needed=needed, optional=optional,
-                         poll_s=poll_s)
-
-
-def gate_procedure_secrets(loop, action: dict, poll_s: float) -> dict | None:
-    """The SAME four-state exposure gate for a per-routine procedure (D88) — needs come
-    from the script's own header, no transitive graph.
-    """
-    from .. import procedures
-    ctx = loop.ctx
-    name = str(action.get("name") or "")
-    if not procedures.exists(ctx.routine.dir, name):
-        return None                     # the missing-procedure path exposes no secrets
-    needed, _net, optional = procedures.needs(ctx.routine.dir, name)
-    return _gate_secrets(loop, kind="procedure", name=name, needed=needed,
-                         optional=optional, poll_s=poll_s)
-
-
-def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
-                  poll_s: float) -> dict | None:
-    """The exposure core both callable-script gates share. `kind` is the action kind the
-    observation carries AND the noun the teaching prose uses ("util" / "procedure").
-    """
-    ctx = loop.ctx
     from ..secrets import load_secrets
     required = needed - optional
     present = sorted(required & set(load_secrets())) if required else []
@@ -372,33 +337,33 @@ def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
         # names it refused (the transcript event keeps them for the user's surfaces;
         # the model-facing reason and rendering carry a count only).
         n = len(denied)
-        return {"kind": kind, "name": name, "declined_secrets": denied,
+        return {"kind": "util", "name": name, "declined_secrets": denied,
                 "reason": f"the user has declined exposing {n} secret"
-                          f"{'s' if n != 1 else ''} this {kind} call declares to this "
-                          f"routine — the {kind} was not run. The mapping is editable on the "
-                          f"routine page (secret exposure); work without this {kind}, or file "
+                          f"{'s' if n != 1 else ''} this util call declares to this "
+                          "routine — the util was not run. The mapping is editable on the "
+                          "routine page (secret exposure); work without this util, or file "
                           "a deferred ask_user explaining why it is needed."}
     undecided = [s for s in present if _state(s) == "undecided"]
     if not undecided:
         return None
     if ctx.depth > 0:
-        return {"kind": kind, "name": name, "pending_secrets": undecided,
+        return {"kind": "util", "name": name, "pending_secrets": undecided,
                 "reason": "secret exposure to this routine is not yet granted, and a "
                           "sub-workflow cannot ask the user — the TOP-LEVEL run must call "
-                          f"{kind} {name!r} once to trigger the approval."}
+                          f"util {name!r} once to trigger the approval."}
     ask = handle_ask(loop, {
         "question": f"Expose secret{'s' if len(undecided) > 1 else ''} "
-                    f"{', '.join(undecided)} to routine '{ctx.routine.slug}'? Its {kind} "
+                    f"{', '.join(undecided)} to routine '{ctx.routine.slug}'? Its util "
                     f"call '{name}' declares them.",
         "mode": "blocking",
         "request": [f"secret:{s}" for s in undecided],
-        "default": f"the {kind} is NOT run and the secrets stay unexposed until allowed"},
+        "default": "the util is NOT run and the secrets stay unexposed until allowed"},
         poll_s)
     if not ask.get("answered"):
-        return {"kind": kind, "name": name, "pending_secrets": undecided,
+        return {"kind": "util", "name": name, "pending_secrets": undecided,
                 "pending_approval": True, "qid": ask.get("qid"),
                 "reason": "the secret-exposure request is still open — do other work and "
-                          f"retry the {kind} once it is settled."}
+                          "retry the util once it is settled."}
     decision = str(ask.get("decision") or "")
     if decision.startswith("allow"):
         return None
@@ -407,10 +372,10 @@ def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
     # is right for entities the model itself requested, and wrong for a refusal).
     n = len(undecided)
     phrase = requests.DECISION_PHRASES.get(decision, "declined")
-    return {"kind": kind, "name": name, "declined_secrets": undecided,
+    return {"kind": "util", "name": name, "declined_secrets": undecided,
             "decision": ask.get("decision"),
             "reason": f"the user declined exposing {n} secret{'s' if n != 1 else ''} "
-                      f"this {kind} call declares to this routine — the {kind} was not run "
+                      f"this util call declares to this routine — the util was not run "
                       f"({phrase})."}
 
 

@@ -448,7 +448,7 @@ def util_needs(home: Path, name: str) -> tuple[set[str], bool, set[str]]:
 
 def scoped_env(declared: set[str], extra_secrets: dict[str, str] | None = None,
                withhold: set[str] | None = None) -> dict:
-    """A jailed subprocess's environment (utils AND per-routine procedures): the central
+    """A jailed util subprocess's environment: the central
     secrets store injects ONLY `declared` vars; every other store key is scrubbed even
     when the daemon's own environment carries it — an undeclared secret must not reach
     the child by any route. STRIP_VARS (LLM keys) are removed unconditionally.
