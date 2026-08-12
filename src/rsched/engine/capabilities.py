@@ -174,7 +174,10 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                     + ". When you notice a repeating deterministic sub-step (fetch, parse, "
                       "compute, render), STOP redoing it by hand: write_file a new "
                       "procedures/<name>.py once and call it every time after — it persists "
-                      "across runs, costs no model work, and stays under your control")
+                      "across runs, costs no model work, and stays under your control. "
+                      'Inside a procedure, `gu llm "<prompt>"` asks THIS routine\'s own '
+                      "default model — code dropping into judgment, the mirror of you "
+                      "dropping into code")
             else:
                 cap_bits.append(
                     "procedure — run this routine's own Python scripts from "
@@ -184,14 +187,17 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                     "deterministic sub-step (fetch, parse, compute, render), write a "
                     "PERSISTENT script for it instead of redoing it by hand — it runs in "
                     "your venv with your settings, survives this run, and future runs call "
-                    "it for free")
+                    'it for free. Inside a procedure, `gu llm "<prompt>"` asks THIS '
+                    "routine's own default model — code dropping into judgment, the mirror "
+                    "of you dropping into code")
         if "create_routine" in kinds:
             cap_bits.append("create_routine (graduate THIS conversation into a new scheduled "
                             "routine — the only way a routine is created)")
         if "manage_group" in kinds:
             cap_bits.append("manage_group (create/update/delete/order/schedule/fire routine "
-                            "GROUPS from this conversation — the /groups page's surface as an "
-                            "action; `cron` sets the group schedule, no operator needed)")
+                            "GROUPS from this conversation — the routines page's group "
+                            "surface as an action; `cron` sets the group schedule, `split` "
+                            "marks two-phase members, no operator needed)")
         cap_bits += [f"reserved util {u!r}" for u in sorted(g.utils)]
         if g.run_history != "none":
             cap_bits.append("read previous runs under runs/ "

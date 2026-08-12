@@ -13,7 +13,10 @@ the routine's persistent venv. The dir serves TWO roles, same machinery:
   updated data, assembling a fixed artifact, termination signaling) belongs here, so the
   model does only genuine judgment; it runs faster, cheaper and reproducibly, every run.
 - **The recipe's own tooling** — persistent helper scripts under the recipe's direct
-  control. The moment you notice yourself repeating a deterministic sub-step across
+  control. Symmetry runs BOTH ways: inside a procedure, `gu llm "<prompt>"` asks this
+  routine's OWN default model (the daemon resolves the recipe's configured model and
+  bills it under the routine) — code drops into judgment exactly the way the recipe
+  drops into code. The moment you notice yourself repeating a deterministic sub-step across
   turns or runs, write it into `procedures/` ONCE and call it thereafter: it persists in
   the routine repo, shares the venv, and runs at exactly the moment your judgment says —
   never a throwaway you re-derive next run.
