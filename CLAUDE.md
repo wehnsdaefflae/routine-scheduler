@@ -52,7 +52,7 @@ one you are about to touch, not all of them.
 
 - `uv sync` — install/refresh the venv
 - `uv run pytest -q` — full suite (fast, no network; PARALLEL by default via pytest-xdist
-  `-n auto` in addopts — pass `-n0` for a serial run / debugging with `-s`). Two conftest
+  `-n auto --dist worksteal` in addopts — pass `-n0` for a serial run / debugging with `-s`). Two conftest
   env knobs keep it honest AND fast: `RSCHED_SKIP_DOCS_BUILD` (the app lifespan's pdoc build
   — a to_thread task shutdown can only await) and `RSCHED_RETRY_BASE_DELAY` (endpoint retry
   LOGIC runs, the 1s/2s backoff clock doesn't); test_docs_build / test_with_retries_backoff

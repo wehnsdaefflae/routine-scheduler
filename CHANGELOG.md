@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.190.0] — 2026-08-12
+
+### Changed
+- **Test suite wall clock cut** on the 4-core instance, no coverage change. Two causes
+  fixed: pytest-xdist now runs `--dist worksteal` (the suite is ~1530 fast unit tests +
+  ~110 slow browser tests, and the default `load` scheduler's pre-assigned chunks left
+  workers idle at the tail), and the UI harness seeds the library repo ONCE per worker
+  (session-scoped template, tree-copied per test) instead of paying `seed_libraries`'
+  git init + add + commit subprocesses inside every browser test — the load those
+  spawns added is what starved setups and fed the flaky-rerun shield (F261).
+
 ## [0.189.0] — 2026-08-12
 
 ### Removed

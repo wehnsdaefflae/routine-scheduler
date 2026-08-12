@@ -10,6 +10,7 @@ collector — a page that renders but throws is a broken page.
 
 from __future__ import annotations
 
+import shutil
 import socket
 import threading
 import time
@@ -133,15 +134,27 @@ def _listening_socket() -> socket.socket:
     return s
 
 
+@pytest.fixture(scope="session")
+def library_template(tmp_path_factory) -> Path:
+    """The seeded library, built ONCE per xdist worker and copied per test. seed_libraries
+    git-inits and commits the repo, and paying those subprocess spawns per UI test fed the
+    4-core contention the flaky shield (F261) exists to absorb; a tree copy carries the
+    same files AND the same .git, so per-test library commits keep working.
+    """
+    template = tmp_path_factory.mktemp("library-template") / "library"
+    seed_libraries(template)
+    return template
+
+
 @pytest.fixture
-def ui(tmp_path, make_routine) -> UiHarness:
+def ui(tmp_path, make_routine, library_template) -> UiHarness:
     """A live console over fixture state: one routine ('uir'), the seed library
     (so conversations can materialize `converse`), a stub runner, uvicorn on an
     ephemeral port. Tears the server down after the test.
     """
     make_routine(slug="uir")
     library = tmp_path / "library"
-    seed_libraries(library)
+    shutil.copytree(library_template, library)
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(yaml.safe_dump({
         "token": TOKEN,
