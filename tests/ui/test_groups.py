@@ -139,3 +139,33 @@ def test_retired_groups_route_falls_back_home(ui, ui_page):
     Conversations landing), never a broken view."""
     ui_page.goto(f"{ui.url}/#/groups")
     ui_page.wait_for_url(f"{ui.url}/#/", timeout=10_000)
+
+
+def test_group_editor_shared_config_section(ui, ui_page):
+    """D82: the group editor's "Shared config" section is where the block every member
+    inherits is edited. Exercises the real panel end to end — it mounts the ROUTINE page's own
+    permissions control, and a save lands in .control/groups.json as the group's config."""
+    g = groups.create(ui.routines, name="Nightly", members=[{"slug": "uir", "split": False}])
+    ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.wait_for_selector("tr[data-group-row]", timeout=10_000)
+    ui_page.locator("tr[data-group-row] [data-group-edit]").click()
+    editor = ui_page.locator(f'[data-group="{g["id"]}"]')
+    editor.wait_for(timeout=10_000)
+
+    # the section is present, collapsed, and says what inheritance means
+    section = editor.locator("[data-group-config-section]")
+    expect(section).to_be_visible(timeout=10_000)
+    expect(section).to_contain_text("Shared config")
+    section.locator("summary").click()
+    panel = editor.locator(f'[data-group-config="{g["id"]}"]')
+    expect(panel).to_be_visible(timeout=10_000)
+    expect(panel).to_contain_text("Every member inherits this")
+    # the blocks that make the shared half editable are all mounted
+    for title in ("Permissions & capabilities", "General rules", "Secrets", "Connections",
+                  "Filesystem — readable", "Filesystem — writable"):
+        expect(panel.locator(f'[data-gcfg-block="{title}"]')).to_be_visible()
+
+    # a save writes the group's config (fs roots are the simplest control to drive headlessly)
+    panel.locator("[data-group-fs_read_roots-save]").click()
+    ui_page.wait_for_timeout(300)
+    assert "config" in groups.load(ui.routines)["groups"][0]

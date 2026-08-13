@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.198.1] — 2026-08-13
+
+### Added
+- **UI coverage for the group editor's Shared config section (D82)** — it had shipped without
+  one, which the house rule requires for every UI change. Drives the real panel: the section
+  renders and expands, all six blocks mount (permissions & capabilities, general rules,
+  secrets, connections, both fs-root editors), and a save lands in `.control/groups.json`.
+
 ## [0.198.0] — 2026-08-13
 
 ### Added
