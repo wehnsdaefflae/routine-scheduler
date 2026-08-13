@@ -603,3 +603,29 @@ def test_saving_a_members_permissions_keeps_what_the_group_covers(tmp_path):
     # … counting the group's keeps it, while the raise still comes from the member alone
     assert floor_capabilities([*own, *group], lib,
                               capabilities_for(own, lib, base))["runs"] == "last"
+
+
+def test_a_dial_matching_the_group_is_not_recorded_on_the_member(tmp_path):
+    """The raise/floor pair always emits a concrete dial, so without stripping, a saved member
+    records e.g. `runs: none` it never chose — and that copy shadows the group forever, since
+    a member's own key wins. List members are NOT stripped: they union, so a redundant entry
+    is harmless and keeping it preserves what the user ticked.
+    """
+    from rsched.config.routine import strip_group_dials
+
+    group = {"runs": "last", "workflows": "generate", "confirm": "never",
+             "actions": ["memory_read"]}
+    # what the raise/floor pair emits — a concrete value for every dial
+    caps = {"runs": "none", "workflows": "catalog", "confirm": "always",
+            "actions": ["memory_read", "detach"]}
+    # the client never touched runs (so the group decides it) but DID choose workflows+confirm
+    submitted = {"workflows": "catalog", "confirm": "always"}
+    assert strip_group_dials(caps, group, submitted) == {
+        "workflows": "catalog", "confirm": "always",
+        "actions": ["memory_read", "detach"]}
+    # a dial submitted with exactly the group's value is redundant → also dropped
+    assert "runs" not in strip_group_dials({"runs": "last"}, group, {"runs": "last"})
+    # …but an explicit DIFFERENT value is the member overriding, and must survive
+    assert strip_group_dials({"runs": "all"}, group, {"runs": "all"}) == {"runs": "all"}
+    # with no group there is nothing to strip
+    assert strip_group_dials(caps, {}, submitted) == caps

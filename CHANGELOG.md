@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.197.2] — 2026-08-13
+
+### Fixed
+- **A group member recorded capability dials it never chose, shadowing its group.** The
+  raise/floor pair cannot express "unset" — it emits a concrete value for every dial — so
+  saving a member wrote `runs: none` / `workflows: catalog` even when the user had not touched
+  them, and because a member's own key always wins that copy shadowed the group permanently:
+  no later group change could reach the routine. The save path now drops a dial the group
+  supplies when the client either omitted it or sent exactly the group's value, keyed off what
+  was actually SUBMITTED (the only signal separating "turned it off" from "never touched it").
+  List members are untouched — they union with the group's, so a redundant entry there cannot
+  shadow anything and keeping it preserves what the user ticked. Completes the 0.197.1 fix,
+  which addressed the floor but not the default.
+
 ## [0.197.1] — 2026-08-13
 
 ### Fixed

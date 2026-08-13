@@ -294,6 +294,31 @@ def apply_group_config(raw: dict, group_config: dict) -> tuple[dict, dict[str, s
     return merged, provenance
 
 
+# The capability DIALS — single-valued, so a member's own copy SHADOWS the group's (its key
+# wins) rather than unioning with it the way the list members do.
+CAPABILITY_DIALS = ("confirm", "rule_confirm", "runs", "workflows")
+
+
+def strip_group_dials(caps: dict, group_caps: dict, submitted: dict) -> dict:
+    """Drop a member's own capability DIAL that its group already decides — the inverse of
+    `apply_group_config`, applied on the save path.
+
+    The raise/floor pair cannot express "unset": it emits a concrete value for EVERY dial, so
+    a saved mapping otherwise records `runs: none` the member never chose. That copy then
+    shadows the group forever, because a member's own key always wins, and no later group
+    change could reach the routine. `submitted` is what the client actually sent, which is the
+    only way to tell "the user turned this off" from "the user never touched it".
+
+    A dial is dropped when the group supplies it AND the client either omitted it or sent
+    exactly the group's value. Only dials: the list members (actions/utils/util_tags) UNION
+    with the group's, so a redundant entry there cannot shadow anything, and keeping it
+    preserves what the user actually ticked.
+    """
+    return {k: v for k, v in caps.items()
+            if not (k in CAPABILITY_DIALS and k in group_caps
+                    and (k not in submitted or submitted[k] == group_caps[k]))}
+
+
 def _merge_capabilities(own: dict, shared: dict) -> tuple[dict, int]:
     """capabilities: union the list members, member wins on the dials. Returns (merged, n)
     where n counts what the group actually contributed — a dial the member already set is

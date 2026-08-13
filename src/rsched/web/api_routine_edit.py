@@ -134,10 +134,13 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     # D82: permissions this routine holds through its GROUP count for the floor, or saving
     # here would strip every capability the group supplies and write an explicit "off" that
     # then shadows it (a member's own key always wins over the group's).
-    from ..config.routine import group_config_for
+    from ..config.routine import group_config_for, strip_group_dials
     group_cfg, _ = group_config_for(info.cfg.dir, slug)
     active, caps = resolve_permission_layers(server, body, info.cfg.capabilities or {},
                                              inherited=list(group_cfg.get("permissions") or []))
+    # …and record only what DIFFERS from the group, or the concrete dial the floor always emits
+    # would shadow the group's value and no later group change could reach this routine.
+    caps = strip_group_dials(caps, group_cfg.get("capabilities") or {}, body.capabilities or {})
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     raw["permissions"] = active
