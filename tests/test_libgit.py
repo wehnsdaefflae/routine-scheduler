@@ -116,3 +116,18 @@ def test_atomic_write_mode(tmp_path):
     assert p.stat().st_mode & 0o777 == 0o750
     atomic_write(tmp_path / "h", "z\n")                       # no mode → mkstemp 0600
     assert (tmp_path / "h").stat().st_mode & 0o777 == 0o600
+
+
+def test_commit_supplies_neutral_identity_without_repo_config(tmp_path, monkeypatch):
+    """F318: libgit.commit carries the neutral identity as -c flags, so a repo that never
+    persisted user.name/email (e.g. a routine dir the run-end autocommit adopts) still
+    commits — and never as the host user."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+    home = tmp_path / "no-identity"
+    home.mkdir()
+    libgit.git(home, "init", "-q", "-b", "main")     # deliberately NO identity config
+    (home / "f.txt").write_text("x", encoding="utf-8")
+    assert libgit.commit(home, "first") is True
+    r = libgit.git(home, "log", "-1", "--format=%an <%ae>")
+    assert r.stdout.strip() == "routine-scheduler <noreply@routine-scheduler.local>"

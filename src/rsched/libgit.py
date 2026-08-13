@@ -110,6 +110,6 @@ def commit(home: Path, message: str, *, paths: Sequence[str] | None = None) -> b
                 git(home, "add", "-A", "--", *paths)
             else:
                 git(home, "add", "-A")
-            return git(home, "commit", "-qm", message).returncode == 0
+            return git(home, *IDENTITY_FLAGS, "commit", "-qm", message).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False

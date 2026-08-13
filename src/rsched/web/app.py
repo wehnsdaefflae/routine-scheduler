@@ -36,10 +36,9 @@ def build_stamp(repo: Path | None) -> str:
     if not repo:
         return ""
     try:
-        import subprocess
+        from ..libgit import git
 
-        out = subprocess.run(["git", "-C", str(repo), "log", "-1", "--format=%h %cs"],
-                             capture_output=True, text=True, timeout=5, check=False)
+        out = git(repo, "log", "-1", "--format=%h %cs")
         return out.stdout.strip() if out.returncode == 0 else ""
     except Exception:
         return ""

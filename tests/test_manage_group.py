@@ -126,7 +126,7 @@ def test_manage_group_lifecycle(tmp_path):
 def test_manage_group_schedules_a_group(tmp_path):
     """R311/R312: a root conversation sets, changes and clears the GROUP's cron itself —
     the user's scheduling request needs no operator round-trip to /groups. The server tz
-    is recorded beside a set cron, exactly as the Groups page writes it."""
+    is recorded beside a set cron, exactly as the routines page's group surface writes it."""
     server = _server(tmp_path)
     ctx = _ctx(server, home="conversations_home")
 

@@ -9,6 +9,7 @@ import subprocess
 
 from fastapi import APIRouter, Request
 
+from ... import libgit
 from .common import RemoteBody, remote_of, server_of, update_config
 
 router = APIRouter()
@@ -21,8 +22,7 @@ def get_source_repo(request: Request) -> dict:
     is_git = (home / ".git").is_dir()
     branch = ""
     if is_git:
-        r = subprocess.run(["git", "-C", str(home), "rev-parse", "--abbrev-ref", "HEAD"],
-                           capture_output=True, text=True, check=False)
+        r = libgit.git(home, "rev-parse", "--abbrev-ref", "HEAD")
         branch = r.stdout.strip() if r.returncode == 0 else ""
     return {"home": str(home), "remote": remote_of(home) or s.source_remote,
             "exists": is_git, "branch": branch or "main"}
@@ -37,12 +37,9 @@ def set_source_remote(request: Request, body: RemoteBody) -> dict:
     # point origin at it — SAFE: set-url (add if absent), never remove; this is the live code repo
     result: dict = {"ok": True, "pushed": False}
     if body.remote and (home / ".git").is_dir():
-        set_url = subprocess.run(
-            ["git", "-C", str(home), "remote", "set-url", "origin", body.remote],
-            capture_output=True, text=True, check=False)
+        set_url = libgit.git(home, "remote", "set-url", "origin", body.remote)
         if set_url.returncode != 0:                     # no origin yet → add it
-            subprocess.run(["git", "-C", str(home), "remote", "add", "origin", body.remote],
-                           capture_output=True, check=False)
+            libgit.git(home, "remote", "add", "origin", body.remote)
         push = subprocess.run(["git", "-C", str(home), "push", "-u", "origin", "HEAD"],
                               capture_output=True, text=True, timeout=60, check=False)
         result["pushed"] = push.returncode == 0

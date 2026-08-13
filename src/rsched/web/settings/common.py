@@ -4,12 +4,13 @@ read-modify-write persistence, and git-remote helpers.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import yaml
 from fastapi import HTTPException, Request
 from pydantic import BaseModel
+
+from ... import libgit
 
 
 class RemoteBody(BaseModel):
@@ -42,6 +43,5 @@ def update_config(request: Request, mutate) -> Path:
 
 
 def remote_of(home: Path) -> str:
-    r = subprocess.run(["git", "-C", str(home), "remote", "get-url", "origin"],
-                       capture_output=True, text=True, check=False)
+    r = libgit.git(home, "remote", "get-url", "origin")
     return r.stdout.strip() if r.returncode == 0 else ""

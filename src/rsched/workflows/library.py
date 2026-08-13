@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -66,8 +65,7 @@ def read_workflow(home: Path, slug: str) -> tuple[dict, str]:
 
 def head_commit(home: Path) -> str:
     try:
-        r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=home, check=False,
-                           capture_output=True, text=True, timeout=15)
+        r = libgit.git(home, "rev-parse", "--short", "HEAD")
         return r.stdout.strip() if r.returncode == 0 else ""
     except OSError:
         return ""

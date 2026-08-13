@@ -31,7 +31,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from .. import utils_lib
+from .. import libgit, utils_lib
 from ..config import ServerConfig
 from ..engine.transcript import read_events
 from ..ids import now_iso
@@ -74,9 +74,7 @@ def _git_dates(home: Path) -> dict[str, dict]:
     if hit is not None and hit[0] == head:
         return {k: dict(v) for k, v in hit[1].items()}
     try:
-        r = subprocess.run(["git", "-C", str(home), "log", "--format=%x01%cI",
-                            "--name-only", "--", "utils"],
-                           capture_output=True, text=True, timeout=30, check=False)
+        r = libgit.git(home, "log", "--format=%x01%cI", "--name-only", "--", "utils")
     except (OSError, subprocess.TimeoutExpired):
         return {}
     dates: dict[str, dict] = {}

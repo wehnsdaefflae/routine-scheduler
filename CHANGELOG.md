@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.195.2] — 2026-08-13
+
+### Changed
+- **libgit holdouts folded in (F318, completing F285).** The six remaining hand-rolled git
+  call sites now go through `libgit.git`: `engine/autocommit.py` (was a verbatim
+  re-implementation of `libgit.commit`, identity strings included — now a thin wrapper),
+  `workflows/library.head_commit`, `readmodels/util_stats` (utils log), `web/app.build_stamp`,
+  `web/settings/common.remote_of`, and `web/settings/source` (branch probe, remote
+  set-url/add). `libgit.commit` now carries the neutral-identity `-c` flags itself, so a
+  repo that never persisted git config (a routine dir) still commits as
+  `routine-scheduler` — new regression test. Deliberate exceptions kept raw: the source
+  push (60s timeout) and the `ls-remote` reachability probe (custom env), plus
+  `utils_lib`'s clone. Also: a stale "Groups page" docstring reference updated.
+
 ## [0.195.1] — 2026-08-13
 
 ### Removed
