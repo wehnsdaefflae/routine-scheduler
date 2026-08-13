@@ -107,6 +107,26 @@ def test_missing_script_names_the_available_ones(tmp_path):
     assert code == 2 and "probe" in err
 
 
+def test_snake_case_script_name_is_reachable(tmp_path):
+    """R336/R337: a run that authors scripts/gen_random_strings.py must be able to CALL
+    it. The old kebab-only name check reported the very file the miss message told the
+    model to write as nonexistent — while listing its stem as available — forever.
+    """
+    d = _routine(tmp_path)
+    (d / "scripts" / "gen_random_strings.py").write_text(
+        SCRIPT.replace("probe —", "gen_random_strings —"), encoding="utf-8")
+    assert scripts.exists(d, "gen_random_strings")
+    code, out, err = scripts.run_script(
+        d, "gen_random_strings", ["x"], policy=sandbox.SandboxPolicy(mode="off"),
+        libraries_home=tmp_path / "lib", env_secrets={})
+    assert code == 0, err
+    assert json.loads(out)["args"] == ["x"]
+    # traversal-shaped or cased names stay invalid regardless of what is on disk
+    assert not scripts.exists(d, "../evil")
+    assert not scripts.exists(d, "Probe")
+    assert not scripts.exists(d, "a.b")
+
+
 def test_script_kind_is_gated_and_validated():
     assert "script" in GATED_KINDS
     assert not GrantPolicy().allows_kind("script")          # default OFF

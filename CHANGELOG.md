@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.198.2] — 2026-08-13
+
+### Fixed
+- **Snake_case script names are callable (R336/R337).** `scripts.exists` required a
+  kebab-case slug while `list_scripts` advertised every `scripts/*.py` stem, so a run that
+  authored `scripts/gen_random_strings.py` got *"does not exist. Available:
+  gen_random_strings"* — and the miss message told it to write that very filename again, an
+  infinite loop two conversations actually ran. Script names now accept lowercase
+  letters/digits with `-` or `_` (dots and path separators stay rejected — the name is
+  interpolated into a path), and the miss message states the rule.
+
 ## [0.198.1] — 2026-08-13
 
 ### Added

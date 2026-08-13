@@ -59,7 +59,8 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
                 return (f"OBSERVATION (script {obs['name']!r} does not exist). Available: "
                         f"{names}. Author it first — write_file scripts/{obs['name']}.py, "
                         "a PEP 723 script whose docstring header carries "
-                        "'<name> — <summary>', 'net:', 'secrets:' — then call it again.")
+                        "'<name> — <summary>', 'net:', 'secrets:' — then call it again. "
+                        "Script names are lowercase letters/digits with '-' or '_'.")
             return (f"OBSERVATION (util {(obs.get('target') or obs['name'])!r} does not exist). "
                     f"Available: {names}. Pick one of those (run `util name=list` for their "
                     "usage), or write it with write_util, then call it.")

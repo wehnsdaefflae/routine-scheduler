@@ -33,12 +33,12 @@ R40), `secrets:` for the exposure gate above.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import tomllib
 from pathlib import Path
 
 from . import sandbox, utils_lib
-from .ids import is_slug
 from .paths import atomic_write
 
 SCRIPT_TIMEOUT_S = 300
@@ -62,8 +62,18 @@ def venv_python(routine_dir: Path) -> Path:
     return venv_dir(routine_dir) / "bin" / "python"
 
 
+# A script's name is the ROUTINE'S own choice: kebab-case like a util, or the snake_case a
+# Python author writes reflexively. The old kebab-only (ids.is_slug) check made
+# `scripts/gen_random_strings.py` unreachable while list_scripts still ADVERTISED its stem —
+# "does not exist. Available: gen_random_strings" — and the miss message then taught
+# re-writing that very filename: an infinite loop two conversations actually ran
+# (R336/R337). Dots and path separators stay rejected — the name is interpolated into
+# `scripts/<name>.py`.
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
 def exists(routine_dir: Path, name: str) -> bool:
-    return is_slug(name) and script_path(routine_dir, name).is_file()
+    return bool(NAME_RE.match(name)) and script_path(routine_dir, name).is_file()
 
 
 def list_scripts(routine_dir: Path) -> list[dict]:
