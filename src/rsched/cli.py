@@ -210,6 +210,7 @@ def cmd_daemon(_args) -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     from .bootstrap import (
+        adopt_library_edits,
         adopt_permissions,
         adopt_seed_routine,
         ensure_config,
@@ -243,6 +244,7 @@ def cmd_daemon(_args) -> int:
     # seed cannot reach a live library on its own — three have to this release
     migrate_seed_utils(server)
     sync_seed_library_docs(server.libraries_home)  # workflows/rules/permissions added since, too
+    adopt_library_edits(server.libraries_home)  # out-of-band writes (user/conversation) get history
     from .migrate_rules import migrate_rules
 
     migrate_rules(server)  # MIGRATION(expires=2026-09-30): traits -> library-global rules

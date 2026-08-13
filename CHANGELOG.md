@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.198.3] — 2026-08-13
+
+### Fixed
+- **Out-of-band library edits get committed at boot (R332/R335).** Every managed write path
+  commits what it writes, but a conversation editing library files through a filesystem
+  grant (or the user in an editor) has no committing writer — on 2026-08-13 the live
+  library accumulated six loose rule/permission files across one working day, invisible to
+  the history the repo exists to keep. `adopt_library_edits` now runs at every daemon boot
+  after the seed syncs and commits whatever the repo is carrying, verbatim; the linter
+  still reports nonconforming content on its own channel.
+
 ## [0.198.2] — 2026-08-13
 
 ### Fixed

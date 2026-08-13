@@ -145,3 +145,23 @@ def test_adopt_seed_routine_installs_once_and_respects_archive(tmp_path):
 
     # unknown seed slug → no-op
     assert adopt_seed_routine(routines, "no-such-seed") is False
+
+
+def test_adopt_library_edits_commits_out_of_band_writes(tmp_path):
+    """R332/R335: files written into the live library by a conversation's fs grant (or
+    the user's editor) have no committing writer — boot adopts them so they get history.
+    """
+    from rsched import libgit
+    from rsched.bootstrap import adopt_library_edits
+
+    home = tmp_path / "libraries"
+    (home / "rules").mkdir(parents=True)
+    (home / "rules" / "seeded.md").write_text("# rule: seeded — x\n", encoding="utf-8")
+    libgit.init_repo(home, first_commit="seed library repo")
+    assert adopt_library_edits(home) is False           # clean repo → nothing to adopt
+    (home / "rules" / "loose.md").write_text("# rule: loose — y\n", encoding="utf-8")
+    (home / "rules" / "seeded.md").write_text("# rule: seeded — edited\n", encoding="utf-8")
+    assert adopt_library_edits(home) is True            # untracked + modified both adopted
+    assert libgit.git(home, "status", "--porcelain").stdout.strip() == ""
+    assert adopt_library_edits(home) is False           # idempotent on the next boot
+    assert adopt_library_edits(tmp_path / "nogit") is False   # no repo → no-op

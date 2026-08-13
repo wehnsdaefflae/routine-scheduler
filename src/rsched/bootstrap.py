@@ -10,6 +10,7 @@ import logging
 import re
 import secrets
 import shutil
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -257,6 +258,28 @@ def sync_seed_library_docs(libraries_home: Path) -> int:
                       f"seed-sync: install new library doc(s): {', '.join(installed)}",
                       paths=installed)
     return len(installed)
+
+
+def adopt_library_edits(libraries_home: Path) -> bool:
+    """Commit whatever OUT-OF-BAND edits the live library repo is carrying (runs at every
+    daemon boot, after the seed syncs). Every managed write path commits what it writes
+    (write_util / write_rule, the web save endpoints, seed-sync) — but a conversation
+    editing library files through a filesystem grant, or the user in an editor, writes
+    directly and nothing ever commits it: on 2026-08-13 the repo accumulated six loose
+    rule/permission files across one working day (R332/R335), invisible to history — the
+    one thing the repo exists to keep. Adopting the edits verbatim beats leaving them
+    loose; the linter still reports nonconforming content on its own channel.
+    """
+    if not (libraries_home / ".git").is_dir():
+        return False
+    try:
+        r = libgit.git(libraries_home, "status", "--porcelain")
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if r.returncode != 0 or not r.stdout.strip():
+        return False
+    log.warning("boot: adopting out-of-band library edit(s):\n%s", r.stdout.strip())
+    return libgit.commit(libraries_home, "boot: adopt out-of-band library edits")
 
 
 def sync_seed_utils(libraries_home: Path) -> int:
