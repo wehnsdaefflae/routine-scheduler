@@ -185,6 +185,9 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
         return 2, "", problem
     env_secrets = dict(env_secrets or {})
     env = utils_lib.scoped_env(set(env_secrets), env_secrets)
+    # scoped_env serves util calls too, where the util library handle must survive —
+    # a SCRIPT is pure code, not a tool-user, so no such handle may reach the child.
+    env.pop("GLOBAL_UTILS_HOME", None)
     try:
         cmd = sandbox.wrap(
             [str(venv_python(routine_dir)), str(script_path(routine_dir, name)),

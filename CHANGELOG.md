@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.192.1] — 2026-08-13
+
+### Fixed
+- **Script children no longer see the util library** (F308): `run_script` reused
+  `utils_lib.scoped_env`, which serves util calls too and therefore kept
+  `GLOBAL_UTILS_HOME` — breaking 0.191.0's "a script is pure code, not a tool-user"
+  isolation contract on any host where the daemon env carries the handle
+  (`tests/test_scripts.py` was red at HEAD on such hosts). The runner now scrubs it.
+
 ## [0.192.0] — 2026-08-13
 
 ### Removed
