@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.197.1] — 2026-08-13
+
+### Fixed
+- **Saving a group member's permissions floored away every capability the group supplied.**
+  The two-layer floor ran against the routine's OWN `permissions:` only, so once the shared
+  half moved up to the group (D82), saving a member dropped `runs` to `none` and `workflows`
+  to `catalog` — and because the floor writes the mapping explicitly, that "off" then SHADOWED
+  the group's value, since a member's own key always wins. Group permissions now count for the
+  FLOOR (they still RAISE nothing, so holding one never silently adds a capability to a
+  member's own file). Found migrating the FAU group; all four members were affected.
+
 ## [0.197.0] — 2026-08-13
 
 ### Added

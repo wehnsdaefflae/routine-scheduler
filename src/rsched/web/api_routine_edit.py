@@ -80,12 +80,20 @@ class PermissionsBody(BaseModel):
     capabilities: dict | None = None   # omitted → keep the routine's current mapping as base
 
 
-def resolve_permission_layers(server, body: PermissionsBody, current: dict) -> tuple[list, dict]:
+def resolve_permission_layers(server, body: PermissionsBody, current: dict,
+                              inherited: list[str] | None = None) -> tuple[list, dict]:
     """Validate + cascade one permissions update (shared with conversations): unknown doc
     slugs are dropped, the capabilities mapping is normalized (422 on junk), then RAISED
     until every active doc's requires are covered — so the invariant 'held docs' needs
     are on' holds regardless of what the client sent. Deactivation cascades live in the
     UI (dropping a capability there also unticks the docs requiring it).
+
+    `inherited` names permissions the routine holds through its GROUP (D82). They RAISE
+    nothing — a group permission must not silently add a capability to this routine's own
+    file — but they DO count for the floor, because a capability they legitimately cover is
+    not an orphan. Without this, saving a member's permissions floors away every capability
+    its group supplies (`runs`/`workflows` back to none/catalog), and the explicit "off" it
+    writes then SHADOWS the group's value, since a member's own key always wins.
     """
     from .. import library_docs
     from ..grants import (
@@ -107,7 +115,8 @@ def resolve_permission_layers(server, body: PermissionsBody, current: dict) -> t
     # the means of a HELD permission. The permission is the switch; the confirm level and
     # run depth stay as user policy under it. So the saved mapping can never contradict the
     # held permissions (a write_util capability with util-authoring off, etc.).
-    caps = floor_capabilities(active, lib, capabilities_for(active, lib, base))
+    caps = floor_capabilities([*active, *(inherited or [])], lib,
+                              capabilities_for(active, lib, base))
     return active, caps
 
 
@@ -122,7 +131,13 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     # No busy-guard (D35): the engine reads routine.yaml exactly ONCE, at run boot
     # (runtime.run_routine); a save during a live run cleanly applies to the NEXT run.
     server = _state(request).server
-    active, caps = resolve_permission_layers(server, body, info.cfg.capabilities or {})
+    # D82: permissions this routine holds through its GROUP count for the floor, or saving
+    # here would strip every capability the group supplies and write an explicit "off" that
+    # then shadows it (a member's own key always wins over the group's).
+    from ..config.routine import group_config_for
+    group_cfg, _ = group_config_for(info.cfg.dir, slug)
+    active, caps = resolve_permission_layers(server, body, info.cfg.capabilities or {},
+                                             inherited=list(group_cfg.get("permissions") or []))
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     raw["permissions"] = active

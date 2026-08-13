@@ -579,3 +579,27 @@ def test_identity_keys_are_never_inherited(tmp_path):
     cfg, _ = load_routine(d)
     assert cfg.enabled is True and cfg.name == "Mine"
     assert "enabled" not in cfg.inherited and "name" not in cfg.inherited
+
+
+def test_saving_a_members_permissions_keeps_what_the_group_covers(tmp_path):
+    """Regression (found migrating the FAU group): the two-layer floor ran against the
+    routine's OWN permissions only, so saving a member stripped every capability its group
+    supplied — and the explicit "off" it wrote then shadowed the group, because a member's
+    own key always wins. Group permissions must count for the FLOOR (they still raise
+    nothing).
+    """
+    from rsched.grants import capabilities_for, floor_capabilities, read_library_requires
+
+    home = tmp_path / "library" / "permissions"
+    home.mkdir(parents=True)
+    (home / "run-history.md").write_text(
+        "---\nrequires:\n  runs: last\n---\n# permission: run history — read previous runs\nb\n",
+        encoding="utf-8")
+    lib = read_library_requires(home)
+    own, group = [], ["run-history"]
+    base = {"runs": "last"}
+    # own-only floor loses the depth the GROUP's permission covers …
+    assert floor_capabilities(own, lib, capabilities_for(own, lib, base))["runs"] == "none"
+    # … counting the group's keeps it, while the raise still comes from the member alone
+    assert floor_capabilities([*own, *group], lib,
+                              capabilities_for(own, lib, base))["runs"] == "last"
