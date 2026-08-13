@@ -36,19 +36,35 @@ export async function render(view, sub, query = {}) {
     { tags: [...active].join(",") });
   const matches = (tags) => !active.size || (tags || []).some((t) => active.has(t));
 
+  // One autosuggest input instead of the former wall of every tag as a chip (user order
+  // 2026-08-13 — the library outgrew it). Active tags stay visible as removable chips;
+  // the datalist offers only the not-yet-active rest.
   function renderFilterBar() {
     const all = [...new Set([...data.workflows, ...data.rules, ...data.permissions,
       ...data.playbooks, ...data.utils]
       .flatMap((x) => x.tags || []))].sort((a, b) => a.localeCompare(b));
     filterBar.replaceChildren();
     if (!all.length) return;
+    const rerender = () => { updateURL(); renderFilterBar(); renderSections(); };
     filterBar.append(el("span", { class: "lbl" }, "filter"));
-    for (const t of all) filterBar.append(tagChip(t, {
-      active: active.has(t),
-      onClick: () => { active.has(t) ? active.delete(t) : active.add(t); updateURL(); renderFilterBar(); renderSections(); },
-    }));
+    for (const t of [...active]) filterBar.append(tagChip(t, {
+      active: true, onClick: () => { active.delete(t); rerender(); } }));
+    const input = el("input", { type: "search", list: "lib-tag-suggest",
+      placeholder: active.size ? "add tag…" : "filter by tag…",
+      style: "width:170px", "data-tag-filter": "", "data-nopersist": true });
+    const commit = () => {
+      const v = input.value.trim().toLowerCase();
+      const hit = all.find((t) => t.toLowerCase() === v);
+      if (!hit) return;                       // only real tags filter — free text is a typo
+      active.add(hit); input.value = ""; rerender();
+    };
+    input.onchange = commit;                  // a datalist pick fires change
+    input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } };
+    filterBar.append(input,
+      el("datalist", { id: "lib-tag-suggest" },
+        ...all.filter((t) => !active.has(t)).map((t) => el("option", { value: t }))));
     if (active.size) filterBar.append(el("button", { class: "btn ghost small",
-      onclick: () => { active.clear(); updateURL(); renderFilterBar(); renderSections(); } }, "clear"));
+      onclick: () => { active.clear(); rerender(); } }, "clear"));
   }
 
   function renderSections() {

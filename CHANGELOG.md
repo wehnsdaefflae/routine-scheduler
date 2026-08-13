@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.200.0] — 2026-08-14
+
+### Changed
+- **Library filter is one autosuggest input (user order).** The filter bar rendered every
+  tag in the library as a chip — a wall that outgrew the page. Now: active tags as
+  removable chips + a single search input whose datalist suggests the not-yet-active
+  tags; committing a suggestion narrows the sections, free text that matches no tag never
+  filters. URL/deep-link behaviour (`?tags=…`) is unchanged.
+
 ## [0.199.0] — 2026-08-14
 
 ### Added

@@ -836,6 +836,33 @@ def test_spend_surfaces(ui, ui_page):
 # ---- 3c. Library deletes (rules/utils/workflows — permissions + clarify protected) -------
 
 
+def test_library_tag_autosuggest_filters(ui, ui_page):
+    """User order 2026-08-13: the every-tag chip wall is retired — ONE autosuggest input
+    filters the library. Committing a suggested tag narrows the sections, shows it as a
+    removable chip, and keeps the filter in the URL; removing the chip restores the list."""
+    ui_page.goto(f"{ui.url}/#/library")
+    inp = ui_page.locator("[data-tag-filter]")
+    expect(inp).to_be_visible(timeout=10_000)
+    total = ui_page.locator("table.list tr").count()
+    tag = ui_page.locator("#lib-tag-suggest option").first.get_attribute("value")
+    inp.fill(tag)
+    inp.press("Enter")
+    expect(ui_page.locator(".filterbar .tag.on", has_text=tag)).to_be_visible(
+        timeout=10_000)
+    assert f"tags={tag}" in ui_page.url
+    assert ui_page.locator("table.list tr").count() < total, \
+        "committing a tag should narrow the sections"
+    # free text that is no tag never filters
+    inp.fill("no-such-tag-xyz")
+    inp.press("Enter")
+    assert "no-such-tag-xyz" not in ui_page.url
+    # removing the chip restores the full list
+    ui_page.locator(".filterbar .tag.on", has_text=tag).click()
+    deadline = total
+    expect(inp).to_have_attribute("placeholder", "filter by tag…", timeout=10_000)
+    assert ui_page.locator("table.list tr").count() == deadline
+
+
 def test_library_delete_flows(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/library")
     editor_panel = ui_page.locator(
