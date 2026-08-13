@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.198.0] — 2026-08-13
+
+### Added
+- **`personal-messaging` permission** — `signal`, `telegram`, `whatsapp`, `zulip` plus the
+  `chat`/`messaging` tag gate, so a new util in that class is fail-closed.
+
+### Changed
+- **`communication` is Discord-only again.** 0.196.0 folded every chat channel into it, which
+  meant a routine holding it for Discord silently GAINED the personal messengers the next time
+  its permissions were saved (`self-audit` did, and was reverted). A Discord ping waits in a
+  room the user chooses to visit; a message on a personal messenger arrives on their phone next
+  to messages from their family. Different act, different permission — holding one never grants
+  the other. The tag gate that makes new utils fail-closed moved to `personal-messaging`, so
+  0.196.0's guarantee is kept without the widening.
+
 ## [0.197.2] — 2026-08-13
 
 ### Fixed

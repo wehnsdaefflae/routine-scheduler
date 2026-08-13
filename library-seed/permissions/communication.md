@@ -1,18 +1,15 @@
 ---
 tags: [communication, policy, notification]
 requires:
-  utils: [discord, signal, telegram, whatsapp, zulip]
-  util_tags: [chat, messaging]
+  utils: [discord]
 ---
-# permission: communication — chat channels as a second decision surface
+# permission: communication — Discord as a second decision surface
 
-Unlocks the chat-channel utils: `discord`, plus every util tagged `chat` or `messaging`
-(`signal`, `telegram`, `whatsapp`, `zulip`, and any the library gains later). These are ONE
-channel beside the web UI, for decisions the user must see promptly. Discord is the
-engine-integrated one; the others are reached only by calling their util deliberately, and
-landing in someone's personal messenger is a far bigger interruption than a Discord ping — so
-hold a channel only if the routine's task truly needs it, and apply everything below to
-whichever one you use. The engine mirrors blocking questions to Discord automatically when
+Unlocks the reserved `discord` util: ONE channel beside the web UI, for decisions the user
+must see promptly. It covers Discord ONLY. Reaching someone on a personal messenger is a far
+bigger interruption than a Discord ping, so those channels live behind their own permission
+(`personal-messaging`) and are never granted as a side effect of holding this one. The engine
+mirrors blocking questions to Discord automatically when
 this permission is held — you normally do NOT message Discord yourself. Use the util
 directly only when the workflow explicitly calls for an outbound notification, and then:
 batch everything into ONE self-contained message (readable with zero run context,
