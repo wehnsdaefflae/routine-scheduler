@@ -140,7 +140,46 @@ def run_files(request: Request, run_id: str) -> dict:
     from ..readmodels.fileactivity import file_activity
 
     _, run_dir = _run_dir(request, run_id)
-    return {"files": file_activity(run_dir)}
+    hist = run_dir / "history"
+    history = (sorted(p.name for p in hist.iterdir() if p.is_file())
+               if hist.is_dir() else [])
+    return {"files": file_activity(run_dir), "history": history}
+
+
+@router.get("/runs/{run_id}/file")
+def run_file(request: Request, run_id: str, path: str):
+    """Serve ONE file from the files card / history list raw — the rail fetches it with
+    the auth header and renders/downloads from a blob URL (the artifact panels' pattern).
+    Scope: the RUN dir (history/, sub/, result.md) and its owning routine/conversation
+    dir — the two trees a card row's relative path can resolve against. A row naming a
+    path outside both (files a run touched under an fs-root grant) is listed but not
+    served: the 400 names the boundary instead of opening an arbitrary-file read
+    through the web tier.
+    """
+    import mimetypes
+
+    from fastapi.responses import FileResponse
+
+    from ..paths import within
+
+    _, run_dir = _run_dir(request, run_id)
+    routine_dir = run_dir.parent.parent
+    rel = Path(path)
+    candidates = [rel] if rel.is_absolute() else [routine_dir / rel, run_dir / rel]
+    for cand in candidates:
+        try:
+            resolved = cand.resolve()
+        except OSError:
+            continue
+        if not (within(run_dir, resolved) or within(routine_dir, resolved)):
+            continue
+        if resolved.is_file():
+            media = mimetypes.guess_type(resolved.name)[0] or "text/plain"
+            return FileResponse(resolved, media_type=media, filename=resolved.name)
+    if rel.is_absolute():
+        raise HTTPException(400, "only files under the run and its routine directory "
+                                 f"are served — {path!r} is outside both")
+    raise HTTPException(404, f"no file {path!r} under the run or its routine directory")
 
 
 @router.get("/runs/{run_id}/tree")

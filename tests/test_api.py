@@ -460,6 +460,36 @@ def test_run_files_endpoint(client):
     assert c.get("/api/runs/apir:20990101-000000/files").status_code == 404
 
 
+def test_run_file_endpoint(client):
+    """/runs/{id}/file serves ONE row of the files card raw — scoped to the run dir and
+    its owning routine dir (history/ included); paths outside both (fs-root grants) are
+    named, never served (user order 2026-08-12: sidebar files must be downloadable)."""
+    c, tmp = client
+    run_dir = _mk_run(tmp / "routines", "apir", "20260707-081500", "finished")
+    routine_dir = run_dir.parent.parent
+    (routine_dir / "artifacts").mkdir(exist_ok=True)
+    (routine_dir / "artifacts" / "out.md").write_text("# hi", encoding="utf-8")
+    (run_dir / "history").mkdir()
+    (run_dir / "history" / "turn-001.md").write_text("archived", encoding="utf-8")
+    # a routine-dir-relative path (how actions record them) and a run-dir file both serve
+    r = c.get("/api/runs/apir:20260707-081500/file", params={"path": "artifacts/out.md"})
+    assert r.status_code == 200 and r.text == "# hi"
+    r = c.get("/api/runs/apir:20260707-081500/file",
+              params={"path": "history/turn-001.md"})
+    assert r.status_code == 200 and r.text == "archived"
+    # the files listing names the archive files for the rail's history section
+    assert (c.get("/api/runs/apir:20260707-081500/files").json()["history"]
+            == ["turn-001.md"])
+    # escapes and out-of-scope absolute paths are refused, the boundary named
+    assert c.get("/api/runs/apir:20260707-081500/file",
+                 params={"path": "../../../etc/passwd"}).status_code == 404
+    outside = c.get("/api/runs/apir:20260707-081500/file",
+                    params={"path": "/etc/passwd"})
+    assert outside.status_code == 400 and "outside" in outside.json()["detail"]
+    assert c.get("/api/runs/apir:20260707-081500/file",
+                 params={"path": "nope.md"}).status_code == 404
+
+
 def test_run_plan_endpoint(client):
     """D54: /runs/{id}/plan serves the run's WORKING PLAN (state/plan.md) — the same store the
     engine inlines into the prompt — for the run view's plan strip. Empty when there is no plan;

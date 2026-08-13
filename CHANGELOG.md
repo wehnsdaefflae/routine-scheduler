@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.193.0] — 2026-08-13
+
+### Added
+- **Every row of the run/conversation rail's files card is viewable and downloadable**
+  (user order, twice-asked; F311, absorbs D83/R238): new `GET /api/runs/{run_id}/file`
+  serves one file raw — scoped to the run dir and its owning routine/conversation dir,
+  resolved-path guarded; rows outside that scope (fs-root grants) say so inline instead
+  of opening a dead tab. The card gains per-row ⧉ open / ⭳ download buttons (auth'd
+  blob fetch, the artifact panels' pattern) in BOTH the run view and the conversation
+  rail — one shared component.
+- **Compacted conversation history is browsable** (user order; F310): `GET
+  /api/runs/{run_id}/files` now also lists `history/` — the on-disk archive
+  `compact_to_history` writes — and the files card shows those under a "compacted
+  history" sub-head, servable like any row. What the model no longer carries verbatim,
+  the operator can now read.
+
 ## [0.192.1] — 2026-08-13
 
 ### Fixed
