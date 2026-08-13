@@ -198,6 +198,19 @@ A new routine's default: `write_util` (confirm `always`) + the memory pair, no r
 no run history, no rule authoring — matching the default permission set below. `read_rule` is
 not listed because it is not gated.
 
+### A group can hold the shared half (D82)
+
+Routines that belong to a **group** inherit its `config:` block — permissions, capabilities,
+rules, machines, connections, secret grants, models, budgets and fs roots set once for all its
+members (`groups.CONFIG_KEYS`). The group is a **default, not an override**: list keys union
+with the member's own, mapping keys merge per key with the member's value winning, and a key
+the group does not set is left entirely to each member.
+
+Nothing is copied into routine.yaml — the merge happens at load — so removing a routine from
+the group returns it to exactly what its own file says. The routine page marks each inherited
+value with the group it came from; edit the shared half in the group's editor on the Routines
+page, and a routine's own file to override it there.
+
 ### Names gate one util; TAGS gate a class
 
 `utils:` names individual utils. `util_tags:` switches on a whole class — every util whose

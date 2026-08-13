@@ -50,6 +50,54 @@ def _validate_members(request: Request, members: list[MemberSpec] | None) -> lis
     return [{"slug": m.slug, "split": m.split} for m in members]
 
 
+def _config_layers(request: Request, config: dict) -> dict:
+    """The group's shared permissions/capabilities in the routine-detail shape. A tiny stand-in
+    carrying just the two fields `permission_layers_detail` reads keeps ONE implementation of
+    that shape for both surfaces.
+    """
+    from types import SimpleNamespace
+
+    from .routines_common import permission_layers_detail
+
+    shared = SimpleNamespace(permissions=list(config.get("permissions") or []),
+                             capabilities=dict(config.get("capabilities") or {}))
+    perms, caps = permission_layers_detail(_state(request).server, shared)
+    return {"permissions": perms, "capabilities": caps}
+
+
+def _validate_config(request: Request, config: dict | None) -> dict | None:
+    """Validate the group's SHARED routine config (D82) exactly as the routine save path
+    validates a member's own: unknown permission/rule slugs and unknown machines are
+    rejected by name, and the capability mapping is normalized. `groups._clean_config` keeps
+    shape; existence is ours, because we hold the library and the machine catalog.
+
+    Deliberately NOT floored against the group's permissions here. The floor binds a
+    ROUTINE's two layers, and it can only be applied once the member's own permissions are
+    merged in — which `load_routine` does. Flooring the group document in isolation would
+    delete a capability whose covering permission the member holds.
+    """
+    if config is None:
+        return None
+    from .. import library_docs
+    from ..grants import normalize_capabilities
+
+    server = _state(request).server
+    unknown: list[str] = []
+    for key, home in (("permissions", server.permissions_home), ("rules", server.rules_home)):
+        known = set(library_docs.slugs(home))
+        unknown += [f"{key[:-1]} {s!r}" for s in config.get(key) or [] if s not in known]
+    catalog = _state(request).server.machines
+    unknown += [f"machine {m!r}" for m in config.get("machines") or [] if m not in catalog]
+    if unknown:
+        raise HTTPException(400, f"unknown {', '.join(sorted(unknown))}")
+    if "capabilities" in config:
+        caps, problems = normalize_capabilities(config["capabilities"], label="config.capabilities")
+        if problems:
+            raise HTTPException(422, "; ".join(problems))
+        config = {**config, "capabilities": caps}
+    return config
+
+
 class GroupCreate(BaseModel):
     name: str = Field(min_length=1)
     members: list[MemberSpec] = Field(default_factory=list)
@@ -74,6 +122,10 @@ class GroupPatch(BaseModel):
     # stay group-managed, so NOTHING in the group fires on a schedule); an explicit
     # "Run now" still works. None = leave unchanged.
     paused: bool | None = None
+    # Shared routine config every member INHERITS (D82). REPLACES wholesale, like models/
+    # machines on a routine: dropping a key here returns that setting to each member's own
+    # routine.yaml. None = leave unchanged.
+    config: dict | None = None
 
 
 def _schedule_to_cron(spec: dict | None) -> tuple[str, str] | None:
@@ -112,7 +164,11 @@ def list_groups(request: Request) -> dict:
     # plus the human sentence, so list surfaces (R313: the routines overview) can show a
     # member's REAL schedule — the group's — without a client-side cron parser
     recs = [{**g, "schedule_friendly": schedule.cron_to_friendly(g["cron"]),
-             "schedule_desc": schedule.describe(g["cron"]) if g["cron"] else ""}
+             "schedule_desc": schedule.describe(g["cron"]) if g["cron"] else "",
+             # D82: the group's SHARED config rendered in the same two-layer shape the routine
+             # page uses, so the group editor mounts the very same permissions control rather
+             # than a lookalike that drifts from it.
+             "config_layers": _config_layers(request, g.get("config") or {})}
             for g in groups.list_groups(home)]
     return {"default_on_failure": groups.default_on_failure(home),
             "on_failure_vocab": list(groups.ON_FAILURE),
@@ -166,7 +222,8 @@ def update_group(request: Request, gid: str, body: GroupPatch) -> dict:
                            members=members, on_failure=on_failure,
                            cron=sched[0] if sched else None,
                            tz=sched[1] if sched else None,
-                           paused=body.paused)
+                           paused=body.paused,
+                           config=_validate_config(request, body.config))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     if rec is None:

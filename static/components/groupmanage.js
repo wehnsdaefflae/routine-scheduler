@@ -12,6 +12,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
+import { groupConfigPanel } from "/static/components/groupconfig.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { el, toast } from "/static/util.js";
 
@@ -234,6 +235,14 @@ export function openGroupEditor(group, data, { reload }) {
         + "members' outbound pass); each member's own schedule is suppressed while this is set"),
       sched.node,
       el("div", { class: "row mt" }, schedBtn)));
+
+    // D82: the shared routine config every member inherits. Collapsed by default — it is the
+    // occasional edit, while membership and schedule are the frequent ones.
+    const cfgKeys = Object.keys(g.config || {}).length;
+    body.append(el("details", { class: "mt", "data-group-config-section": "" },
+      el("summary", { class: "small", style: "font-weight:600;cursor:pointer" },
+        `Shared config${cfgKeys ? ` (${cfgKeys} set)` : ""}`),
+      groupConfigPanel(g, { save: (config) => patch({ config }) })));
 
     // delete — closes the editor; the dashboard reloads via onClose
     const del = el("button", { class: "btn small danger" }, "delete group");

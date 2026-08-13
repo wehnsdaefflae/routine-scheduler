@@ -28,6 +28,7 @@ Shape (single document, atomic-written):
      "groups": [{"id": "grp-1a2b3c4d", "name": "Morning jobs",
                  "members": [{"slug": "weight-coach", "split": false},
                              {"slug": "news-digest", "split": true}],
+                 "config": {"permissions": […], "capabilities": {…}, …},  # D82, see below
                  "on_failure": null,          # null = inherit default_on_failure
                  "cron": "0 7 * * *",         # "" = unscheduled (fire only when armed)
                  "tz": "Europe/Berlin",       # written beside cron by the web layer
@@ -35,10 +36,21 @@ Shape (single document, atomic-written):
                                               # pause; an explicit Run now still fires)
                  "created": "2026-07-31T…"}]}
 
+A group also carries `config:` — routine.yaml keys its members INHERIT (D82). Related routines
+share a policy surface (the same permissions, rules, machines, secret grants, fs roots), and
+maintaining N copies of it is how they drift apart. The group holds one copy; a member's own
+routine.yaml still wins wherever it sets a key, so the group is a DEFAULT, not an override.
+The merge happens once, in `config.routine.apply_group_config`, against the RAW yaml before
+validation — so "the routine set it" means the key is present in its file, not merely that the
+model has a default. CONFIG_KEYS lists what may be shared and, just as deliberately, what may
+not: slug/name/description/enabled/schedule/workflow/retention/triggers/improve say WHICH
+routine this is and when it runs, and are meaningless or destructive shared.
+
 This module owns the shared vocabulary and the file IO. It validates SHAPE only (types,
-dedup, the on_failure vocabulary, cron syntax); validating that each member slug names a
-REAL routine is the API layer's job (it holds the registry), exactly as api_hooks validates
-against registry.
+dedup, the on_failure vocabulary, cron syntax, the config key set); validating that each
+member slug names a REAL routine — or that a shared permission slug names a real library doc —
+is the API layer's job (it holds the registry), exactly as api_hooks validates against
+registry. One group document must never be the place a stale reference takes the store down.
 """
 
 from __future__ import annotations
@@ -128,6 +140,7 @@ def _normalize(g: dict) -> dict:
         "id": str(g.get("id") or ""),
         "name": str(g.get("name") or ""),
         "members": _clean_members(g.get("members")),
+        "config": _clean_config(g.get("config")),
         "on_failure": on_failure,
         "cron": cron,
         "tz": str(g.get("tz") or ""),
@@ -182,6 +195,41 @@ def _clean_members(members: object) -> list[dict]:
     return out
 
 
+# The routine.yaml keys a group may set for its members (D82). Deliberately EXCLUDES the
+# per-routine identity and lifecycle keys — slug/name/description/enabled/schedule/workflow/
+# playbook/retention/triggers/improve — which say WHICH routine this is and when it runs, and
+# would be meaningless (or destructive) shared. What is left is the policy surface a group of
+# related routines genuinely shares: what they may do, what they know, and where they may look.
+CONFIG_KEYS = ("permissions", "capabilities", "rules", "machines", "tags",
+               "models", "connections", "grants", "budgets",
+               "fs_read_roots", "fs_write_roots")
+# Merged as a UNION with the member's own (the group is a floor a routine adds to); every other
+# key merges per-key with the member's value winning (config.py `apply_group_config`).
+CONFIG_LIST_KEYS = ("permissions", "rules", "machines", "tags",
+                    "fs_read_roots", "fs_write_roots")
+
+
+def _clean_config(config: object) -> dict:
+    """Keep only the known keys, each with the shape routine.yaml uses. SHAPE only — that a
+    permission slug names a real library doc, or a machine a real catalog entry, is validated
+    where the member's own config is (the API layer, which holds the registry): one group
+    document must never be the place a stale reference takes the whole store down.
+    """
+    if not isinstance(config, dict):
+        return {}
+    out: dict = {}
+    for key in CONFIG_KEYS:
+        if key not in config:
+            continue
+        val = config[key]
+        if key in CONFIG_LIST_KEYS:
+            if isinstance(val, list):
+                out[key] = [str(v) for v in val if isinstance(v, str) and str(v).strip()]
+        elif isinstance(val, dict):
+            out[key] = val
+    return {k: v for k, v in out.items() if v or v == {}}
+
+
 def _save(routines_home: Path, data: dict) -> None:
     atomic_write_json(groups_file(routines_home), data)
 
@@ -223,10 +271,11 @@ def create(routines_home: Path, *, name: str, members: list[dict] | None = None,
         raise ValueError("group name is required")
     if on_failure is not None and on_failure not in ON_FAILURE:
         raise ValueError(f"on_failure must be one of {ON_FAILURE} or null, got {on_failure!r}")
-    rec = {
+    rec: dict = {
         "id": new_id(),
         "name": name,
         "members": _clean_members(members),
+        "config": {},
         "on_failure": on_failure,
         "cron": _check_cron(cron),
         "tz": str(tz or ""),
@@ -239,16 +288,20 @@ def create(routines_home: Path, *, name: str, members: list[dict] | None = None,
     return rec
 
 
+# The patchable group surface IS this parameter list; an options object would only relocate it
+# (the same reason scaffold() takes its fields flat).
 def update(routines_home: Path, gid: str, *, name: str | None = None,
            members: list[dict] | None = None, on_failure: object = _UNSET,
            cron: str | None = None, tz: str | None = None,
-           paused: bool | None = None) -> dict | None:
+           paused: bool | None = None, config: dict | None = None) -> dict | None:
     """Patch a group in place (only the fields passed are touched). `members` replaces the
     whole record list ({"slug", "split"} each). `on_failure` is a tri-state: omit it to
     leave unchanged, pass None to inherit the default, pass a value in ON_FAILURE to
     override. `cron` "" clears the schedule (members fire on their own crons again); a
-    non-empty value must be valid cron. Returns the updated record, or None if no group has
-    that id. Raises ValueError on a bad value.
+    non-empty value must be valid cron. `config` REPLACES the group-level routine config
+    wholesale (D82) — dropping a key there returns that setting to each member's own.
+    Returns the updated record, or None if no group has that id. Raises ValueError on a bad
+    value.
     """
     data = load(routines_home)
     for g in data["groups"]:
@@ -261,6 +314,8 @@ def update(routines_home: Path, gid: str, *, name: str | None = None,
             g["name"] = nm
         if members is not None:
             g["members"] = _clean_members(members)
+        if config is not None:
+            g["config"] = _clean_config(config)
         if on_failure is not _UNSET:
             if on_failure is not None and on_failure not in ON_FAILURE:
                 raise ValueError(

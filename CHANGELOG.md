@@ -19,6 +19,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.197.0] — 2026-08-13
+
+### Added
+- **Group-level routine config, inherited by members (D82).** A group now carries a `config:`
+  block — the routine.yaml keys its members share: `permissions`, `capabilities`, `rules`,
+  `machines`, `tags`, `models`, `connections`, `grants`, `budgets` and both fs-root lists.
+  Related routines have a common policy surface, and keeping N copies of it in step is how they
+  drift apart; the group holds one copy. The group is a **default, never an override**: list
+  keys UNION with the member's own (the group is a floor a member adds to), mapping keys merge
+  per key with the member's value winning, and `capabilities` does both — its lists union, its
+  dials (`confirm`/`rule_confirm`/`runs`/`workflows`) take the member's value when it sets one.
+  What may NOT be shared is fixed just as deliberately: slug/name/description/enabled/schedule/
+  workflow/retention/triggers/improve say WHICH routine this is and when it runs.
+
+  The merge happens in `config.routine.apply_group_config` against the RAW routine.yaml
+  **before validation**, which is what makes "the member set it" mean *the key is present in its
+  file* rather than *the model has a default* — every field here has a non-empty default
+  (budgets especially), so a post-validation merge could never tell the two apart and the
+  group's value would be silently shadowed. Nothing is written back to routine.yaml, so removing
+  a routine from a group returns it to exactly what its own file says.
+
+  Edited in the group editor on the Routines page (`static/components/groupconfig.js`), which
+  mounts the ROUTINE page's own permissions/rules/roots/connections controls rather than
+  lookalikes that would drift from them. `load_routine` records `inherited`/`inherited_from`,
+  and the routine page banners which of its settings came from the group — an inherited value
+  must never read as one set on that routine.
+
 ## [0.196.0] — 2026-08-13
 
 ### Added

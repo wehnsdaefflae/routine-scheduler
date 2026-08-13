@@ -495,3 +495,87 @@ def test_ungrouped_run_context_has_no_store_root(tmp_path):
                                      max_subrun_depth=1, ask_timeout_min=1))
     assert ctx.group_store_roots == []
     assert ctx.read_roots() == [] and ctx.write_roots() == []
+
+
+# -- shared routine config (D82) ------------------------------------------------------------
+
+def _member_home(tmp_path: Path, own: dict, shared: dict | None) -> Path:
+    """A routines home with one member routine and (optionally) a group sharing config."""
+    import json
+
+    import yaml
+    home = tmp_path / "routines"
+    (home / ".control").mkdir(parents=True)
+    d = home / "demo"
+    d.mkdir()
+    (d / "routine.yaml").write_text(
+        yaml.safe_dump({"slug": "demo", "description": "d", **own}), encoding="utf-8")
+    if shared is not None:
+        (home / ".control" / "groups.json").write_text(json.dumps(
+            {"default_on_failure": "stop",
+             "groups": [{"id": "grp-1", "name": "FAU", "members": [m("demo")],
+                         "config": shared, "cron": "", "tz": "", "on_failure": None,
+                         "paused": False, "created": ""}]}), encoding="utf-8")
+    return d
+
+
+def test_config_keeps_known_keys_and_drops_the_rest(tmp_path):
+    rec = groups.create(tmp_path, name="G")
+    assert rec["config"] == {}
+    out = groups.update(tmp_path, rec["id"], config={
+        "permissions": ["memory", "", 7], "grants": {"secret:X": True},
+        "enabled": False, "schedule": {"cron": "0 7 * * *"}, "slug": "nope"})
+    # identity/lifecycle keys are NOT shareable; junk inside a list is dropped
+    assert out["config"] == {"permissions": ["memory"], "grants": {"secret:X": True}}
+    # config REPLACES wholesale — dropping a key hands it back to the members
+    assert groups.update(tmp_path, rec["id"], config={})["config"] == {}
+
+
+def test_member_inherits_group_config_and_its_own_keys_win(tmp_path):
+    from rsched.config.routine import load_routine
+
+    d = _member_home(
+        tmp_path,
+        {"permissions": ["memory"], "capabilities": {"actions": ["memory_read"],
+                                                     "confirm": "never"},
+         "budgets": {"max_turns": 5}},
+        {"permissions": ["global-utils"],
+         "capabilities": {"actions": ["memory_write"], "utils": ["shell"], "confirm": "always"},
+         "budgets": {"max_turns": 99, "max_wall_clock_min": 60},
+         "grants": {"secret:FAU_USER": True},
+         "fs_read_roots": ["/srv/shared"]})
+    cfg, _ = load_routine(d)
+    assert cfg.permissions == ["memory", "global-utils"]          # lists UNION
+    assert cfg.capabilities["actions"] == ["memory_read", "memory_write"]
+    assert cfg.capabilities["utils"] == ["shell"]                 # only the group set it
+    assert cfg.capabilities["confirm"] == "never"                 # the member's dial wins
+    assert cfg.budgets["max_turns"] == 5                          # member wins per key
+    assert cfg.budgets["max_wall_clock_min"] == 60                # …and inherits the rest
+    assert cfg.grants == {"secret:FAU_USER": True}
+    assert [str(p) for p in cfg.fs_read_roots] == ["/srv/shared"]
+    assert cfg.inherited_from == "FAU"
+    assert set(cfg.inherited) == {"permissions", "capabilities", "budgets", "grants",
+                                  "fs_read_roots"}
+
+
+def test_without_a_group_the_routine_is_exactly_its_own_file(tmp_path):
+    """Leaving a group must return every setting to routine.yaml — nothing is written back."""
+    from rsched.config.routine import load_routine
+
+    own = {"permissions": ["memory"], "budgets": {"max_turns": 5}}
+    d = _member_home(tmp_path, own, None)
+    cfg, _ = load_routine(d)
+    assert cfg.permissions == ["memory"] and not cfg.inherited and cfg.inherited_from == ""
+    # the group never rewrote the member's file
+    import yaml
+    assert yaml.safe_load((d / "routine.yaml").read_text())["permissions"] == ["memory"]
+
+
+def test_identity_keys_are_never_inherited(tmp_path):
+    from rsched.config.routine import load_routine
+
+    d = _member_home(tmp_path, {"enabled": True, "name": "Mine"},
+                     {"permissions": ["memory"]})
+    cfg, _ = load_routine(d)
+    assert cfg.enabled is True and cfg.name == "Mine"
+    assert "enabled" not in cfg.inherited and "name" not in cfg.inherited

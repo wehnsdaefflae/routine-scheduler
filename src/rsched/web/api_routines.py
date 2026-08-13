@@ -145,6 +145,10 @@ def routine_detail(request: Request, slug: str) -> dict:
     return {
         **_card(request, info, monthly=monthly),
         "referrals_total": referrals_total,
+        # D82: which config fields this routine got from its group, and which group — the
+        # page marks them so an inherited value never reads as one set on this routine.
+        "inherited": dict(info.cfg.inherited),
+        "inherited_from": info.cfg.inherited_from,
         "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
         "server_tz": schedule.server_tz(),
         "catchup": info.cfg.catchup,   # skip | run_once when a scheduled fire was missed

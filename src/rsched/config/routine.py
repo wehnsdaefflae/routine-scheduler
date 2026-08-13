@@ -107,6 +107,13 @@ class RoutineConfig(_Config):
     # Whether the routine-improver meta routine visits this routine (default: yes; the
     # toggle on the routine page opts out with `improve: false`).
     improve: bool = True
+    # What this routine INHERITED from its group's shared config (D82): {field: "<n> from the
+    # group"} plus the group's name. Runtime handles like `deliberation` — computed at load,
+    # never written to routine.yaml (the file stays the routine's OWN authority, so removing
+    # it from a group cleanly returns it to what its file says). The routine page reads these
+    # to mark a value as coming from the group rather than from this routine.
+    inherited: dict[str, str] = Field(default_factory=dict)
+    inherited_from: str = ""
     # How much thinking lands on paper (see DELIBERATION_LEVELS). The runtime handle
     # only: load_routine fills it from TUNING (tuning.yaml) — routine.yaml never carries
     # it (config = authority, tuning = machine-tunable behavior).
@@ -239,9 +246,104 @@ def record_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
     atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
 
 
+def apply_group_config(raw: dict, group_config: dict) -> tuple[dict, dict[str, str]]:
+    """Merge ONE group's shared config into a member's raw routine.yaml (D82), returning
+    (merged, provenance) where provenance maps each key the group contributed to a short note
+    for the UI ("permissions" → "3 from the group", "grants" → "2 from the group").
+
+    The group is a DEFAULT, never an override:
+
+    - LIST keys (permissions, rules, machines, tags, fs roots) UNION — the group is a floor a
+      member adds to, member order first so its own choices read first.
+    - MAPPING keys (models, connections, grants, budgets) merge PER KEY, the member's value
+      winning. A member overrides one budget without losing the rest.
+    - `capabilities` is both at once: its list members (actions/utils/util_tags) union, its
+      dials (confirm/rule_confirm/runs/workflows) take the member's value when it sets one.
+
+    Merging against the RAW mapping — before validation — is what makes "the member set it"
+    mean *the key is in its file*, not *the model has a default*. Every field here has a
+    non-empty default (budgets especially), so a merge over the validated model could never
+    tell the two apart and the group's value would be silently shadowed forever.
+    """
+    from ..groups import CONFIG_KEYS, CONFIG_LIST_KEYS
+
+    merged = dict(raw)
+    provenance: dict[str, str] = {}
+    for key in CONFIG_KEYS:
+        shared = group_config.get(key)
+        if not shared:
+            continue
+        own = raw.get(key)
+        if key in CONFIG_LIST_KEYS:
+            own_list = list(own) if isinstance(own, list) else []
+            added = [v for v in shared if v not in own_list]
+            if not added:
+                continue
+            merged[key] = own_list + added
+            provenance[key] = f"{len(added)} from the group"
+        elif isinstance(shared, dict):
+            own_map = dict(own) if isinstance(own, dict) else {}
+            if key == "capabilities":
+                merged[key], count = _merge_capabilities(own_map, shared)
+            else:
+                added_keys = [k for k in shared if k not in own_map]
+                merged[key] = {**shared, **own_map}
+                count = len(added_keys)
+            if count:
+                provenance[key] = f"{count} from the group"
+    return merged, provenance
+
+
+def _merge_capabilities(own: dict, shared: dict) -> tuple[dict, int]:
+    """capabilities: union the list members, member wins on the dials. Returns (merged, n)
+    where n counts what the group actually contributed — a dial the member already set is
+    not inherited and must not be reported as such.
+    """
+    out = dict(own)
+    count = 0
+    for key, val in shared.items():
+        if isinstance(val, list):
+            own_list = list(own.get(key) or [])
+            added = [v for v in val if v not in own_list]
+            if added:
+                out[key] = own_list + added
+                count += len(added)
+        elif key not in own:
+            out[key] = val
+            count += 1
+    return out, count
+
+
+def group_config_for(routine_dir: Path, slug: str) -> tuple[dict, str]:
+    """The shared config a routine inherits, plus the name of the group it came from.
+
+    Groups live under `<routines_home>/.control/`, and a routine dir sits directly in that
+    home — so the home is the parent. A conversation or background task passes through here
+    too; their homes hold no groups.json, so the lookup is empty and nothing is inherited.
+    Membership of several groups merges in listed order, first group's value winning.
+    """
+    from .. import groups
+
+    home = Path(routine_dir).parent
+    if not groups.groups_file(home).is_file():
+        return {}, ""
+    merged: dict = {}
+    names: list[str] = []
+    for g in groups.list_groups(home):
+        if slug not in groups.member_slugs(g) or not g.get("config"):
+            continue
+        names.append(g.get("name") or g.get("id") or "")
+        for key, val in g["config"].items():
+            if key not in merged:
+                merged[key] = val
+    return merged, ", ".join(n for n in names if n)
+
+
 def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
-    """Parse <dir>/routine.yaml. Returns (config, problems); config is None only when the
-    file is missing/unreadable — otherwise problems may be non-empty but best-effort applies.
+    """Parse <dir>/routine.yaml, then layer the shared config of any group the routine belongs
+    to underneath it (D82 — the group is a default, the routine's own keys win). Returns
+    (config, problems); config is None only when the file is missing/unreadable — otherwise
+    problems may be non-empty but best-effort applies.
     """
     path = routine_dir / "routine.yaml"
     problems: list[str] = []
@@ -271,8 +373,15 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
                                                            "playbook", "retention"}
     problems.extend(f"{key}: unknown routine.yaml key — check the spelling (ignored)"
                     for key in sorted(set(raw) - known))
+    # The group's shared config goes UNDER the routine's own (D82) — after the unknown-key
+    # check, which must judge the file the user actually wrote, not the merge result.
+    group_config, group_name = group_config_for(routine_dir, slug)
+    inherited: dict[str, str] = {}
+    if group_config:
+        raw, inherited = apply_group_config(raw, group_config)
     cfg = _validate_lenient(RoutineConfig, {**raw, "slug": slug, "dir": routine_dir}, problems) \
         or RoutineConfig(slug=slug, dir=routine_dir)
+    cfg.inherited, cfg.inherited_from = inherited, (group_name if inherited else "")
     cfg.name = cfg.name or slug
     if not cfg.description:
         problems.append("description is empty — every routine needs a one-line "

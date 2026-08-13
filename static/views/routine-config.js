@@ -18,7 +18,34 @@ import { tagsEditor } from "/static/components/tags.js";
 import { rulePicker } from "/static/components/rulepicker.js";
 import { triggersCard } from "/static/components/triggers.js";
 
+const INHERIT_LABEL = {
+  permissions: "permissions", capabilities: "capabilities", rules: "general rules",
+  machines: "machines", tags: "tags", models: "models", connections: "connections",
+  grants: "secret grants", budgets: "budgets",
+  fs_read_roots: "readable roots", fs_write_roots: "writable roots",
+};
+
+/** D82: a banner naming what this routine got from its group, so an inherited value is never
+ *  mistaken for one set here. The panels below stay as they are — they show the EFFECTIVE
+ *  config, which is what the run actually gets. */
+function inheritedNote(d) {
+  const fields = Object.keys(d.inherited || {});
+  if (!fields.length) return null;
+  return el("div", { class: "panel mt", "data-inherited-note": "" },
+    el("div", { class: "small" },
+      el("b", {}, "Some settings below come from the group"),
+      d.inherited_from ? ` “${d.inherited_from}”` : "", "."),
+    el("div", { class: "muted small", style: "margin-top:4px" },
+      fields.map((f) => `${INHERIT_LABEL[f] || f} (${d.inherited[f]})`).join(" · ")),
+    el("div", { class: "muted small", style: "margin-top:4px" },
+      "The panels show the EFFECTIVE config — what this routine actually runs with. Editing "
+      + "here changes only this routine's own value, which always wins; change the shared part "
+      + "in the group's editor on the Routines page."));
+}
+
 export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip }) {
+  const note = inheritedNote(d);
+  if (note) view.append(note);
   // -- name (rename; the header + dashboard show it — slug stays the identity) ------
   const nameInput = el("input", { type: "text", value: d.name || slug, placeholder: "routine name",
     style: "width:100%;max-width:420px" });

@@ -694,7 +694,23 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   creates groups and holds the instance default, and the editors are overlays in
   `static/components/groupmanage.js`), or the `manage_group` action from a root conversation —
   including the group's cron schedule (R312), so group scheduling needs no operator round-trip; a
-  group is never routine config). "Run group now" — or the group's OWN cron (below) — ARMS a
+  group is never routine config).
+  - **Shared routine config (D82)**: a group also carries `config:` — routine.yaml keys its
+    members INHERIT. Related routines share a policy surface (the same permissions, capabilities,
+    rules, machines, connections, secret grants, models, budgets, fs roots, tags), and keeping N
+    copies of it in step is how they drift apart; the group holds one copy. The group is a
+    **default, never an override**: `config/routine.apply_group_config` merges it into the
+    member's RAW routine.yaml *before validation* — list keys UNION (the group is a floor a member
+    adds to), mapping keys merge per key with the member's value winning, and `capabilities` does
+    both (its lists union, its dials take the member's when set). Merging pre-validation is what
+    makes "the member set it" mean *the key is in its file* rather than *the model has a default*
+    — every field here has a non-empty default, so a post-validation merge could never tell the
+    two apart. `groups.CONFIG_KEYS` also fixes what may NOT be shared: slug/name/description/
+    enabled/schedule/workflow/retention/triggers/improve say which routine this is and when it
+    runs. Nothing is written back to routine.yaml, so leaving a group returns the routine to
+    exactly what its own file says; `load_routine` records `inherited`/`inherited_from` so the
+    routine page marks an inherited value instead of letting it read as one set there.
+  "Run group now" — or the group's OWN cron (below) — ARMS a
   sequential chain (`rsched/group_runs.py`, one in-flight chain per group, snapshot of member
   records + resolved policy at arm time); the scheduler-ticked **`GroupRunManager`**
   (`daemon/group_runs.py`) advances it one transition per tick: fire the member at the cursor, wait
