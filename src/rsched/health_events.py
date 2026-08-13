@@ -2,7 +2,9 @@
 
 Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON object:
 {"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"orphaned_run"|"run_canceled"
-        |"wizard_build_degraded"|"fire_refused"|"model_window_corrected",
+        |"wizard_build_degraded"|"fire_refused"|"model_window_corrected"
+        |"group_chain_done"|"group_chain_stopped"|"group_chain_member_skipped"
+        |"group_fire_refused"|"scheduler_tick_error",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 model_window_corrected: a completion 400'd with a context-overflow whose provider-stated
@@ -21,6 +23,21 @@ reasons visible to audit consumers instead of only a log.info line. Only the sch
 path logs this; resume/trigger/manual overruns are expected and stay quiet. A deliberate
 global PAUSE is NOT this event: it is skipped earlier, in the scheduler, and is the
 operator's own intentional action — never logged as a refusal.
+
+group_chain_done / group_chain_stopped: a sequential group chain ended (daemon/group_runs,
+F316). routine = the GROUP id (grp-...), run_id = the chain record id (gr-...), detail
+counts member runs and not-ok outcomes. The in-flight file is consumed at that moment, so
+this event is the chain's durable record - and a scheduled group's periodic done event is
+a HEARTBEAT: its absence across a schedule period means the group starved (F316's defect
+class: a week of missed fires with zero signal).
+
+group_chain_member_skipped: a chain reached a member that is missing or disabled -
+routine = the member slug, detail names the group and whether the chain stopped or
+continued past it.
+
+group_fire_refused: a DUE scheduled group fire armed nothing because the previous chain
+is still in flight (the group analog of fire_refused; routine = the group id, run_id
+empty). One-off overlap is benign; a run of these is a wedged chain starving the group.
 
 wizard_build_degraded: a new-routine build's stage-generation pipeline failed hard and
 the routine was scaffolded from the verbatim pattern (run_id empty — builds happen in

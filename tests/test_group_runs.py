@@ -349,3 +349,84 @@ async def test_draining_defers_the_next_fire(tmp_path):
     await mgr.tick(registry.scan(server))
     assert runner.fired == []                                   # drain → nothing fires
     assert group_runs.read(server.routines_home, g["id"])["current_run"] is None
+
+
+# -- F316: chain health events -------------------------------------------------------------
+
+
+def _health_events(server):
+    import json
+    p = server.routines_home / ".control" / "health-events.jsonl"
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
+
+
+async def test_chain_end_emits_a_done_health_event(tmp_path):
+    """F316: a chain's end writes group_chain_done — the periodic heartbeat whose ABSENCE
+    is how an audit detects a silently starved group (the in-flight file is consumed at
+    finalize, so this event is the chain's only durable record)."""
+    from rsched.daemon.group_runs import GroupRunManager
+    server = _server(tmp_path)
+    da = _routine(server, "a")
+    db = _routine(server, "b")
+    g = groups.create(server.routines_home, name="Nightly", members=[m("a"), m("b")],
+                      on_failure="continue")
+    group_runs.arm(server.routines_home, g, default_on_failure="continue")
+    runner = FakeRunner()
+    mgr = GroupRunManager(server, runner)
+    catalog = registry.scan(server)
+    await mgr.tick(catalog)                                     # fires a
+    mk_run(da, "20260717-120000", "finished", outcome="ok")
+    runner.active.clear()
+    await mgr.tick(catalog)                                     # collects a
+    await mgr.tick(catalog)                                     # fires b
+    mk_run(db, "20260717-120000", "finished", outcome="failed")
+    runner.active.clear()
+    await mgr.tick(catalog)                                     # collects b → chain done
+    evs = [e for e in _health_events(server) if e["event"] == "group_chain_done"]
+    assert len(evs) == 1
+    ev = evs[0]
+    assert ev["routine"] == g["id"] and ev["run_id"].startswith("gr-")
+    assert "Nightly: 2 member runs, 1 not-ok (b)" in ev["detail"]
+    assert "armed_by=ui" in ev["detail"]
+
+
+async def test_stop_emits_a_stopped_health_event(tmp_path):
+    """A policy stop is group_chain_stopped, never group_chain_done."""
+    from rsched.daemon.group_runs import GroupRunManager
+    server = _server(tmp_path)
+    da = _routine(server, "a")
+    _routine(server, "b")
+    g = groups.create(server.routines_home, name="G", members=[m("a"), m("b")],
+                      on_failure="stop")
+    group_runs.arm(server.routines_home, g, default_on_failure="continue")
+    runner = FakeRunner()
+    mgr = GroupRunManager(server, runner)
+    catalog = registry.scan(server)
+    await mgr.tick(catalog)                                     # fires a
+    mk_run(da, "20260717-120000", "finished", outcome="failed")
+    runner.active.clear()
+    await mgr.tick(catalog)                                     # collects failure → stop
+    evs = _health_events(server)
+    stopped = [e for e in evs if e["event"] == "group_chain_stopped"]
+    assert len(stopped) == 1 and "1 not-ok (a)" in stopped[0]["detail"]
+    assert not [e for e in evs if e["event"] == "group_chain_done"]
+
+
+async def test_skipped_member_emits_a_health_event(tmp_path):
+    """A missing/disabled member is visible to audit consumers, not only to rec['log']."""
+    from rsched.daemon.group_runs import GroupRunManager
+    server = _server(tmp_path)
+    _routine(server, "a")
+    g = groups.create(server.routines_home, name="G", members=[m("ghost"), m("a")],
+                      on_failure="continue")
+    group_runs.arm(server.routines_home, g, default_on_failure="continue")
+    runner = FakeRunner()
+    mgr = GroupRunManager(server, runner)
+    await mgr.tick(registry.scan(server))                       # skips ghost
+    evs = [e for e in _health_events(server)
+           if e["event"] == "group_chain_member_skipped"]
+    assert len(evs) == 1
+    assert evs[0]["routine"] == "ghost" and evs[0]["run_id"] == ""
+    assert "chain continues" in evs[0]["detail"]

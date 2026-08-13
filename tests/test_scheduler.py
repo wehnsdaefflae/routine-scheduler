@@ -420,3 +420,34 @@ async def test_non_scheduled_overrun_stays_quiet(make_routine, tmp_path, monkeyp
     events = _health_events(server, "resumer") if hpath.exists() else []
     assert all(e["event"] != "fire_refused" for e in events)
     await runner.abort("resumer")
+
+
+async def test_due_group_fire_while_in_flight_emits_refused_event(make_routine, tmp_path,
+                                                                  monkeypatch):
+    """F316: a due scheduled group fire that finds the previous chain still in flight is
+    REFUSED — and that refusal reaches the health-event stream (a wedged chain otherwise
+    starves the whole group with only a log.info line as witness)."""
+    import json
+
+    from rsched import groups
+    make_routine(slug="first")
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+    server = _server(tmp_path)
+    grp = groups.create(server.routines_home, name="Chain",
+                        members=[{"slug": "first", "split": False}],
+                        cron="0 7 * * *", tz="UTC")
+    fr = FakeRunner()
+    sched = Scheduler(server, fr, EventBus())
+    task = asyncio.create_task(sched.run_forever())
+    await asyncio.sleep(0.05)
+    sched.group_next_fires[grp["id"]] = datetime.now(UTC) - timedelta(seconds=1)
+    assert await _wait_for(lambda: ("first", "group") in fr.fired)
+    # due AGAIN while member 0 is still mid-flight → the fire is refused and logged
+    p = server.routines_home / ".control" / "health-events.jsonl"
+    sched.group_next_fires[grp["id"]] = datetime.now(UTC) - timedelta(seconds=1)
+    assert await _wait_for(lambda: p.exists() and "group_fire_refused" in p.read_text())
+    task.cancel()
+    ev = [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines()
+          if "group_fire_refused" in x][-1]
+    assert ev["routine"] == grp["id"] and ev["run_id"] == ""
+    assert "still in flight" in ev["detail"]

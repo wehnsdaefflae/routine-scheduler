@@ -48,6 +48,7 @@ import logging
 from .. import group_runs, registry
 from ..config import ServerConfig
 from ..groups import member_slugs, split_slugs
+from ..health_events import log_health_event
 from ..ids import now_iso
 from ..paths import read_json
 from .runner import Runner, _pid_alive
@@ -89,10 +90,24 @@ class GroupRunManager:
             await self._fire_next(rec, catalog)
 
     def _finalize(self, rec: dict, status: str) -> None:
-        """End the chain (status = done | stopped): stamp it, log it, consume the file."""
+        """End the chain (status = done | stopped): stamp it, log it, consume the file.
+
+        Emits a group_chain_done / group_chain_stopped health event (F316): the in-flight
+        file is consumed right here, so the event is the chain's only durable chain-level
+        record - and a scheduled group's daily/weekly done event is a HEARTBEAT whose
+        absence over a schedule period is how an audit detects a silently starved group.
+        """
         gid = str(rec.get("group_id") or "")
         rec["status"] = status
         rec["ended"] = now_iso()
+        entries = rec.get("log") or []
+        not_ok = [str(e.get("slug")) for e in entries if e.get("outcome") != "ok"]
+        log_health_event(
+            self.home, f"group_chain_{status}", routine=gid,
+            run_id=str(rec.get("id") or ""),
+            detail=f"{rec.get('name') or gid}: {len(entries)} member runs, {len(not_ok)} not-ok"
+                   + (f" ({', '.join(not_ok)})" if not_ok else "")
+                   + f", armed_by={rec.get('armed_by') or '?'}, armed {rec.get('created')}")
         log.info("group chain %s group=%s members=%d", status, gid, len(rec.get("members") or []))
         group_runs.remove(self.home, gid)
 
@@ -151,6 +166,11 @@ class GroupRunManager:
                                "outcome": "failed", "phase": rec.get("phase")})
             rec["cursor"] = cursor + 1
             log.warning("group member skipped group=%s slug=%s (missing or disabled)", gid, slug)
+            log_health_event(
+                self.home, "group_chain_member_skipped", routine=slug, run_id="",
+                detail=f"group {rec.get('name') or gid} ({gid}): member missing or disabled - "
+                       + ("chain stops (on_failure=stop)" if rec.get("on_failure") == "stop"
+                          else "chain continues"))
             if rec.get("on_failure") == "stop":
                 self._finalize(rec, "stopped")
             else:

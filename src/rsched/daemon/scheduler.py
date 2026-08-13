@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from .. import group_runs as group_runs_store
 from .. import groups, registry
 from ..config import ServerConfig
+from ..health_events import log_health_event
 from ..ids import now_iso
 from ..schedule import server_tz
 from . import pause, restart
@@ -204,6 +205,11 @@ class Scheduler:
                         # the chain overrun rule: a group still mid-chain skips this
                         # fire (the routine analog is Runner.fire's overrun_skipped)
                         log.info("group fire skipped — chain still in flight group=%s", gid)
+                        log_health_event(
+                            self.server.routines_home, "group_fire_refused",
+                            routine=gid, run_id="",
+                            detail="due scheduled group fire skipped - previous chain "
+                                   "still in flight (a wedged chain starves every later fire)")
                     else:
                         log.info("group fire armed group=%s members=%d", gid,
                                  len(rec.get("members") or []))
@@ -224,7 +230,6 @@ class Scheduler:
             except Exception:
                 log.exception("scheduler tick failed — continuing")
                 try:
-                    from ..health_events import log_health_event
                     log_health_event(self.server.routines_home, "scheduler_tick_error",
                                      routine="(daemon)", run_id="",
                                      detail="scheduler tick raised; see daemon log")

@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.195.0] — 2026-08-13
+
+### Added
+- **Group-chain health events (F316).** The silent starvation mode is instrumented: a
+  sequential group chain now writes `group_chain_done` / `group_chain_stopped` to the
+  health-event stream when it ends (routine = the group id, run_id = the chain record id,
+  detail = member-run and not-ok counts) — since the in-flight file is consumed at that
+  moment, this is the chain's durable record, and a scheduled group's periodic `done`
+  event doubles as a heartbeat whose absence means the group starved. A missing/disabled
+  member emits `group_chain_member_skipped`, and a due scheduled group fire refused
+  because the previous chain is still in flight emits `group_fire_refused` (the group
+  analog of `fire_refused`) — the wedged-chain mode that starved five maintenance
+  routines for a week in August with only `log.info` lines as witness.
+
 ## [0.194.0] — 2026-08-13
 
 ### Fixed
