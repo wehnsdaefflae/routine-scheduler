@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.199.0] — 2026-08-14
+
+### Added
+- **Drag-to-reorder inside an expanded group (user order).** In the routines table, an
+  expanded group's member rows are its fire order — dragging a row onto a sibling now
+  reorders the group in place (drop above the target's midline lands before it, below
+  lands after), persisting through the same `PATCH /api/groups/{id}` the editor uses; the
+  target row marks the landing slot. The overlay editor's ↑/↓ stays for precision.
+
 ## [0.198.3] — 2026-08-13
 
 ### Fixed

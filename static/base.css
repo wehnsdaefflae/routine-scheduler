@@ -273,6 +273,10 @@ table.list { width: 100%; border-collapse: collapse; }
 table.list tr.group-row td { cursor: pointer; font-weight: 600; background: rgba(255, 255, 255, 0.03); }
 table.list tr.group-row:hover td { background: rgba(255, 255, 255, 0.05); }
 table.list tr.group-member td:first-child { padding-left: 30px; }
+/* drag-reorder inside an expanded group: the member rows are the fire order, so a row is
+   draggable onto a sibling; the target row marks where the drop will land */
+table.list tr.group-member[draggable="true"] { cursor: grab; }
+table.list tr.group-member.drop-here td { box-shadow: inset 0 2px 0 var(--accent, #7aa2f7); }
 table.list td.row-actions { white-space: nowrap; }
 table.list td.row-actions .btn { margin-right: 6px; }
 table.list td, table.list th { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; }

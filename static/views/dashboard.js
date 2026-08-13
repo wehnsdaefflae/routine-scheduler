@@ -478,6 +478,10 @@ export async function render(view) {
       label + (key === sortKey
         ? ((sortDir || (SORTS[key]?.[2] ? "desc" : "asc")) === "desc" ? " ▾" : " ▴")
         : ""))));
+    // U-order (user, 2026-08-13): inside an expanded group the row order IS the fire
+    // order, so the rows themselves are the reorder surface — drag one onto a sibling
+    // (upper half = before it, lower half = after). The editor's ↑/↓ stays for precision.
+    let dragFrom = null;
     const rowFor = (c, extraCls = "", group = null) => {
       const last = c.last_run;
       const rowCls = [RUNNING.has(c.active_state) ? "live" : "",
@@ -491,7 +495,7 @@ export async function render(view) {
             "⇄ split")
         : null;
       const stats = statsLine(last);
-      return el("tr", { class: rowCls },
+      const tr = el("tr", { class: rowCls },
         el("td", {}, swatch(c.slug), el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug), split,
           c.open_questions ? el("a", { href: "#/questions", class: "chip blocking",
             title: "open questions waiting for you" }, `${c.open_questions} open ?`) : null,
@@ -518,6 +522,44 @@ export async function render(view) {
             ? el("a", { class: "btn small", href: `#/run/${c.active_run}`, title: "watch the live run" }, "◉")
             : runNowBtn(c, "btn small", true),
           enableToggle(c, "btn small ghost", true)));
+      if (group) {
+        tr.draggable = true;
+        tr.dataset.dragMember = c.slug;
+        tr.ondragstart = (e) => {
+          dragFrom = { gid: group.id, slug: c.slug };
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", c.slug);
+        };
+        tr.ondragover = (e) => {
+          if (!dragFrom || dragFrom.gid !== group.id || dragFrom.slug === c.slug) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          tr.classList.add("drop-here");
+        };
+        tr.ondragleave = () => tr.classList.remove("drop-here");
+        tr.ondragend = () => { dragFrom = null; };
+        tr.ondrop = async (e) => {
+          e.preventDefault();
+          tr.classList.remove("drop-here");
+          const from = dragFrom; dragFrom = null;
+          if (!from || from.gid !== group.id || from.slug === c.slug) return;
+          const raw = (groupData?.groups || []).find((r) => r.id === group.id);
+          const rec = raw?.members?.find((m) => m.slug === from.slug);
+          if (!rec) return;
+          const list = raw.members.filter((m) => m.slug !== from.slug);
+          const at = list.findIndex((m) => m.slug === c.slug);
+          if (at < 0) return;
+          const box = tr.getBoundingClientRect();
+          const before = e.clientY < box.top + box.height / 2;
+          list.splice(at + (before ? 0 : 1), 0, rec);
+          try {
+            await api(`/api/groups/${group.id}`, { method: "PATCH", body: { members: list } });
+            toast(`“${group.name}” fire order: ${list.map((m) => m.slug).join(" → ")}`);
+          } catch (ex) { toast(ex.message, 4000, { error: true }); }
+          load();
+        };
+      }
+      return tr;
     };
     // D73 + F281: each group is its own collapsible row — expanding lists its members
     // right beneath it, in the group's FIRE order (not the table sort). A grouped routine

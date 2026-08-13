@@ -169,3 +169,42 @@ def test_group_editor_shared_config_section(ui, ui_page):
     panel.locator("[data-group-fs_read_roots-save]").click()
     ui_page.wait_for_timeout(300)
     assert "config" in groups.load(ui.routines)["groups"][0]
+
+
+def test_expanded_group_rows_drag_to_reorder(ui, ui_page, make_routine):
+    """User order 2026-08-13: in an EXPANDED group in the routines table, the member rows
+    are the fire order — dragging one onto a sibling reorders the group (drop below the
+    target's midline lands after it). The store must carry the new order, flags intact."""
+    import time
+
+    make_routine(slug="gm1")
+    make_routine(slug="gm2")
+    g = groups.create(ui.routines, name="Ordered",
+                      members=[{"slug": "gm1", "split": True},
+                               {"slug": "gm2", "split": False}])
+    ui_page.goto(f"{ui.url}/#/routines")
+    row = ui_page.locator(f'tr[data-group-row="{g["id"]}"]')
+    row.wait_for(timeout=10_000)
+    row.get_by_text("⛓ Ordered").click()                     # expand → rows in fire order
+    src = ui_page.locator('tr[data-drag-member="gm1"]')
+    tgt = ui_page.locator('tr[data-drag-member="gm2"]')
+    expect(src).to_be_visible(timeout=10_000)
+    # Drive the HTML5 drag handlers with dispatched DragEvents + a real DataTransfer (the
+    # documented Playwright pattern) — its mouse-gesture drag does not start Chromium's
+    # native HTML5 drag reliably in headless, which is why weekgrid went pointer-based.
+    box = tgt.bounding_box()
+    y = box["y"] + box["height"] * 0.8                       # below the midline = "after"
+    dt = ui_page.evaluate_handle("() => new DataTransfer()")
+    src.dispatch_event("dragstart", {"dataTransfer": dt})
+    tgt.dispatch_event("dragover", {"dataTransfer": dt, "clientY": y})
+    tgt.dispatch_event("drop", {"dataTransfer": dt, "clientY": y})
+
+    def members():
+        gg = groups.get(ui.routines, g["id"])
+        return [(m["slug"], m["split"]) for m in (gg["members"] if gg else [])]
+
+    deadline = time.time() + 8
+    while time.time() < deadline and members() != [("gm2", False), ("gm1", True)]:
+        time.sleep(0.15)
+    assert members() == [("gm2", False), ("gm1", True)], \
+        f"drag did not reorder the group: {members()}"
