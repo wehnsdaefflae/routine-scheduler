@@ -44,6 +44,11 @@ def _seed_message_events(run_dir):
          "payload": {"where": "endpoint", "attempt": 1, "message": "boom"}},
         {"ts": "t", "type": "compaction", "turn": 3,
          "payload": {"before_chars": 9000, "after_chars": 1000}},
+        # the hard window clamp nests its numbers — must render its own line, never
+        # "undefined → undefined" (F309, user report 2026-08-12 on c-20260810-213335)
+        {"ts": "t", "type": "compaction", "turn": 4,
+         "payload": {"clamp": {"clamped_messages": 2, "before_chars": 8000,
+                               "after_chars": 5000, "ceiling_chars": 6000}}},
     ]
     with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
         for ev in events:
@@ -100,5 +105,10 @@ def test_transcript_renders_lifecycle_events(ui, ui_page):
         "Which path should I take?", timeout=10_000)
     _expect_message_markdown(ui_page)
     expect(ui_page.locator(".ev.error")).to_contain_text("error (endpoint, attempt 1): boom")
-    expect(ui_page.locator(".ev.compaction")).to_contain_text(
+    comps = ui_page.locator(".ev.compaction")
+    expect(comps.nth(1)).to_contain_text(
+        "window clamp: 2 oversized bodies trimmed in place")
+    for i in (0, 1):
+        expect(comps.nth(i)).not_to_contain_text("undefined")
+    expect(comps.nth(0)).to_contain_text(
         "context compacted: 9000 \u2192 1000")

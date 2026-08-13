@@ -269,8 +269,30 @@ export function createTranscript(container, opts = {}) {
     },
     error: (ev) => el("div", { class: "ev error" },
       `error (${ev.payload.where}${ev.payload.attempt ? `, attempt ${ev.payload.attempt}` : ""}): ${ev.payload.message}`),
-    compaction: (ev) => el("div", { class: "ev compaction" },
-      `— context compacted: ${ev.payload.before_chars} → ${ev.payload.after_chars} chars —`),
+    compaction: (ev) => {
+      // Three payload shapes, one line each (never "undefined → undefined"): the LLM
+      // archive / deterministic digest (flat before/after), the hard window clamp
+      // ({clamp}), and the provider-window correction ({window_guard}, optional clamp).
+      const p = ev.payload || {};
+      const c = p.clamp || p.window_guard?.clamp || null;
+      const span = (o) => `${o.before_chars} → ${o.after_chars} chars`;
+      let text;
+      if (p.window_guard) {
+        const g = p.window_guard;
+        text = `— window corrected: ${g.model} really holds ${g.corrected_chars} chars` +
+               `${c ? `; clamped ${c.clamped_messages} oversized, ${span(c)}` : ""} —`;
+      } else if (c) {
+        text = `— window clamp: ${c.clamped_messages} oversized ` +
+               `${c.clamped_messages === 1 ? "body" : "bodies"} trimmed in place, ${span(c)} —`;
+      } else if (p.mode === "llm-history") {
+        text = `— context archived: ${p.elided_messages} messages → history/ ` +
+               `(${p.history_files} files, browsable in the rail's files card), ${span(p)} —`;
+      } else {
+        text = `— context compacted: ` +
+               `${p.elided_messages ? `${p.elided_messages} messages digested, ` : ""}${span(p)} —`;
+      }
+      return el("div", { class: "ev compaction" }, text);
+    },
     subrun_start: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,
       `${ev.payload.mode === "sequential" ? "→ subtask" : "↳ subrun"} ${ev.payload.n} "${ev.payload.label}" started (${ev.payload.workflow}, depth ${ev.payload.depth})`)),
     subrun_end: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,

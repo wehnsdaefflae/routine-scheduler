@@ -11,6 +11,22 @@ from playwright.sync_api import expect
 from rsched import group_runs, groups
 
 
+def test_routine_page_hero_group_select_assigns_membership(ui, ui_page):
+    """Membership from the routine DETAIL page (user order 2026-08-12): the hero's group
+    select joins the routine to a scheduling group — same PATCH the Routines page's group
+    surface uses — and shows the current membership."""
+    groups.create(ui.routines, name="Nightly", members=[])
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    sel = ui_page.locator(".hero-group-sel")
+    expect(sel).to_be_visible(timeout=10_000)
+    expect(sel.locator("option")).to_have_count(2)          # none + Nightly
+    sel.select_option(label="Nightly")
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text(
+        "joined", timeout=10_000)
+    data = groups.load(ui.routines)
+    assert data["groups"][0]["members"] == [{"slug": "uir", "split": False}]
+
+
 def test_routines_page_group_crud(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector("[data-group-new]", timeout=10_000)

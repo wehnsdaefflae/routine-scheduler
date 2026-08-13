@@ -21,7 +21,6 @@ import { setQuery } from "/static/router.js";
 import { itemCard } from "/static/components/itemcard.js";
 import { focusRef, linkifyRefs } from "/static/components/reflinks.js";
 import { chip, el, emptyState, skeleton, tagChip, toast, when } from "/static/util.js";
-import { forgetField } from "/static/formpersist.js";
 
 const TYPES = [["finding", "findings"], ["decision", "decisions"], ["report", "reports"]];
 const STATUSES = ["open", "in_progress", "addressed", "settled", "dropped", "unknown"];
@@ -67,14 +66,6 @@ export async function render(view, query = {}) {
     toast(r.delivery === "mid-run"
       ? `${okMsg} → inbox → the RUNNING self-audit picks it up this run`
       : `${okMsg} → inbox → consumed by the next self-audit run`, 4200);
-    await load();
-  }
-  async function submitNote(text) {
-    const r = await api(`/api/routines/${routineSlug}/messages`,
-      { method: "POST", body: { text } });
-    toast(r.delivery === "mid-run"
-      ? "message sent → inbox → the RUNNING self-audit picks it up this run"
-      : "message sent → inbox → consumed by the next self-audit run", 4200);
     await load();
   }
   async function updateFeedback(id, payload, okMsg) {
@@ -152,54 +143,8 @@ export async function render(view, query = {}) {
         c.detail ? md(c.detail, "md muted mt prose") : null)));
   }
 
-  function generalSection() {
-    // A plain user message in self-audit's inbox (D74) — the same generic channel every
-    // routine page's Messages section uses, no [AUDIT …] tag wrapper.
-    // data-persist gives the draft an explicit storage key; discard clears a stale draft.
-    const box = el("textarea", { class: "code", "data-persist": "audit-note",
-      placeholder: "e.g. “add structured logging to the daemon runner”, or a priority/direction — a free-text prompt for the next self-audit run to act on" });
-    const discard = el("button", { class: "btn small mt", title: "clear this draft — nothing is sent" }, "discard draft");
-    discard.onclick = () => { box.value = ""; forgetField(box); };
-    const send = el("button", { class: "btn primary mt" }, "send to the next run");
-    send.onclick = async () => {
-      const text = box.value;
-      if (!text.trim()) return;
-      send.disabled = true;
-      // Clear the draft BEFORE the reload re-mounts the box — otherwise formpersist
-      // refills the fresh (empty) box from the not-yet-forgotten draft and it looks unsent.
-      box.value = ""; forgetField(box);
-      try { await submitNote(text); }
-      catch (err) { box.value = text; toast(err.message, 4000, { error: true }); }
-      finally { send.disabled = false; }
-    };
-    // Fires self-audit immediately; an unsent note is delivered first so it isn't lost —
-    // the fresh run drains the inbox at boot and reads it.
-    const runNow = el("button", { class: "btn mt" }, "▶ run self-audit now");
-    runNow.onclick = async () => {
-      runNow.disabled = send.disabled = true;
-      const text = box.value;
-      try {
-        if (text.trim()) {
-          box.value = "";
-          forgetField(box);   // clear BEFORE the reload re-mounts the box (else it refills)
-          await submitNote(text);
-        }
-        const r = await api(`/api/routines/${routineSlug}/run`, { method: "POST" });
-        toast("self-audit started");
-        location.hash = `#/run/${r.run_id}`;
-      } catch (err) { toast(err.message, 5000, { error: true }); }
-      finally { runNow.disabled = send.disabled = false; }
-    };
-    return el("div", {}, el("h2", {}, "Message the next run"),
-      el("div", { class: "panel" },
-        el("div", { class: "muted small", style: "margin-bottom:8px" },
-          "a message the self-audit routine reads on its next run — code changes to make, priorities, or anything not tied to an item above; it lands in the routine's inbox like any other message"),
-        box, el("div", { class: "row", style: "gap:8px" }, send, runNow, discard),
-        el("div", { class: "flow-note" },
-          el("span", {}, "submit"), el("span", { class: "arrow" }, "→"),
-          el("span", {}, "routine inbox"), el("span", { class: "arrow" }, "→"),
-          el("span", {}, "consumed at the start of the next self-audit run — or immediately via ▶"))));
-  }
+  // "Message the next run" retired from this page (user order 2026-08-12): it duplicated
+  // the generic Messages channel on self-audit's own routine page — write there instead.
 
   // ---- filters -------------------------------------------------------------------------
   // The select and the search box are built ONCE and re-appended on every render: rebuilding
@@ -334,7 +279,6 @@ export async function render(view, query = {}) {
 
     const changelog = changelogSection(data.changelog);
     if (changelog) body.append(changelog);
-    body.append(generalSection());
     // every F63/D14/R7 mention in the report's prose becomes a link to its card above
     linkifyRefs(body);
     linkifyRefs(header);

@@ -14,7 +14,6 @@ import { mdInline } from "/static/md.js";
 import { chip, el, emptyState, fmtCost, fmtDur, fmtNum, skeleton, storage, tagChip, toast, when } from "/static/util.js";
 import { WORKING as RUNNING } from "/static/states.js";
 
-const FILTER_KEY = "rsched_dash_tags";
 const VIEW_KEY = "rsched_dash_view";
 const SORT_KEY = "rsched_dash_sort";
 const DIR_KEY = "rsched_dash_dir";
@@ -162,7 +161,6 @@ export async function render(view) {
   let groupSchedBySlug = new Map();   // slug -> its scheduled group (cron suppressed, R313)
   let lastTagSig = null;   // F229: only rebuild the filter bar when the tag set changes
   let lastGroupSig = null; // same rule for the groups bar: its select must survive refreshes
-  const active = new Set(JSON.parse(storage.get(FILTER_KEY) || "[]"));
   const states = new Set();
   // D72: the table IS the default (operator, 2026-08-05) — denser, sortable, and where the
   // group rows live. The card grid stays one toggle away and a user's choice persists.
@@ -174,8 +172,6 @@ export async function render(view) {
   let search = "";
 
   function visible(c) {
-    const tags = c.tags || [];
-    if (active.size && !tags.some((t) => active.has(t))) return false;
     if (states.size && ![...states].some((s) => STATE_BUCKETS[s]?.(c))) return false;
     if (search) {
       const hay = `${c.name} ${c.slug} ${c.description} ${(c.tags || []).join(" ")}`.toLowerCase();
@@ -196,22 +192,11 @@ export async function render(view) {
   }
 
   function renderFilterBar() {
-    const all = [...new Set(cards.flatMap((c) => c.tags || []))]
-      .sort((a, b) => a.localeCompare(b));
     filterBar.replaceChildren();
     if (!cards.length) return;
-    filterBar.append(el("span", { class: "lbl" }, "filter"));
-    for (const t of all) {
-      filterBar.append(tagChip(t, {
-        active: active.has(t),
-        onClick: () => {
-          active.has(t) ? active.delete(t) : active.add(t);
-          storage.set(FILTER_KEY, JSON.stringify([...active]));
-          renderFilterBar(); renderBody();
-        },
-      }));
-    }
-    filterBar.append(el("span", { class: "lbl", style: "margin-left:10px" }, "state"));
+    // Tag chips retired (user order 2026-08-12: they ate a whole row; the search field
+    // still matches tags — visible()'s haystack includes them).
+    filterBar.append(el("span", { class: "lbl" }, "state"));
     for (const s of Object.keys(STATE_BUCKETS)) {
       filterBar.append(tagChip(s, {
         active: states.has(s),
@@ -233,8 +218,8 @@ export async function render(view) {
       onclick: () => { viewMode = viewMode === "cards" ? "list" : "cards"; storage.set(VIEW_KEY, viewMode); renderFilterBar(); renderBody(); } },
       viewMode === "cards" ? "☰ list view" : "▦ card view");
     filterBar.append(sortSel, searchIn, toggle);
-    if (active.size || states.size) filterBar.append(el("button", { class: "btn ghost small",
-      onclick: () => { active.clear(); states.clear(); storage.set(FILTER_KEY, "[]"); renderFilterBar(); renderBody(); },
+    if (states.size) filterBar.append(el("button", { class: "btn ghost small",
+      onclick: () => { states.clear(); renderFilterBar(); renderBody(); },
     }, "clear"));
   }
 
@@ -324,14 +309,13 @@ export async function render(view) {
         try { await api("/api/settings/pause", { method: "DELETE" }); toast("scheduling resumed"); await load(); }
         catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
       } }, "▶ resume scheduling")));
-    // F229: rebuild the filter bar ONLY when the available tags actually change. It calls
-    // filterBar.replaceChildren(), which tears down and recreates the search <input> and the
-    // sort <select>; doing that on every live bus refresh (~every 600ms while ≥1 routine
-    // runs) destroyed a user's focus and half-typed search text — the "UI non-responsive
-    // with >1 routine running" symptom. The body still re-renders every refresh.
-    const tagSig = JSON.stringify([...new Set(cards.flatMap((c) => c.tags || []))].sort());
-    if (tagSig !== lastTagSig) {
-      lastTagSig = tagSig;
+    // F229: build the filter bar ONCE. It holds the search <input> and sort <select>;
+    // replaceChildren() on every live bus refresh (~every 600ms while ≥1 routine runs)
+    // destroyed a user's focus and half-typed search text. Tag chips retired 2026-08-12
+    // (user order) — the bar's content no longer varies with data, so once is enough;
+    // state-chip toggles rebuild it themselves.
+    if (lastTagSig === null) {
+      lastTagSig = "built";
       renderFilterBar();
     }
     // The groups bar follows the same only-on-change rule (its select must survive live

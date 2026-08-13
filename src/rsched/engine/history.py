@@ -275,7 +275,20 @@ def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint,
                              temperature=ref.temperature, max_tokens=ref.max_tokens,
                              timeout=180,
                              purpose="Compaction · archival", kind="compaction")
-    data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
+    if comp.parsed is not None:
+        data = comp.parsed
+    else:
+        try:
+            data = json.loads(comp.text)
+        except ValueError:
+            # A weak archival model answering prose (or nothing) instead of the schema
+            # used to surface as a bare "Expecting value: line 1 column 1" error event
+            # (c-20260810-213335, every message) — name the model and the reply so the
+            # event teaches, and let the caller's deterministic fallback take the pass.
+            raise RuntimeError(
+                f"archival model {ref.endpoint}/{ref.model} returned non-JSON "
+                f"({len(comp.text or '')} chars: {(comp.text or '')[:80]!r}) — "
+                "deterministic compaction takes this pass") from None
     files = [f for f in (data.get("files") or [])
              if isinstance(f, dict) and str(f.get("content", "")).strip()]
     index = str(data.get("index") or "").strip()

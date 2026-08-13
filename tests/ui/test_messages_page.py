@@ -134,16 +134,23 @@ def test_messages_composer_queues_edits_and_withdraws_feedback(ui, ui_page, make
 
 
 def test_messages_note_is_a_plain_inbox_message(ui, ui_page, make_routine):
-    """The note for the next run (D74 phase 4): the composer creates a PLAIN user message
-    in self-audit's inbox — no [AUDIT note] wrapper — through the same generic endpoint
-    every routine page uses; it queues on the waiting list, is editable there in place
-    (same file), and withdrawable."""
+    """The Messages page's own composer is retired (user order 2026-08-12: it duplicated
+    the generic channel) — a plain message is queued from the ROUTINE page's Messages
+    section; it still lists on this page's waiting list, editable in place (same file)
+    and withdrawable."""
     _seed(ui, make_routine)
     inbox = ui.routines / "self-audit" / "inbox"
     ui_page.goto(f"{ui.url}/#/messages?status=all")
-    ui_page.wait_for_selector("h2:has-text('Message the next run')", timeout=10_000)
-    ui_page.locator("textarea.code").fill("focus on the daemon logging")
-    ui_page.locator("button", has_text="send to the next run").click()
+    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
+    expect(ui_page.locator("h2", has_text="Message the next run")).to_have_count(0)
+    ui_page.goto(f"{ui.url}/#/routine/self-audit")
+    box = ui_page.locator(".msg-composer textarea")
+    box.wait_for(timeout=10_000)
+    box.fill("focus on the daemon logging")
+    ui_page.locator("button", has_text="queue for the next run").click()
+    expect(ui_page.locator(".msg-item", has_text="focus on the daemon logging")
+           ).to_be_visible(timeout=10_000)
+    ui_page.goto(f"{ui.url}/#/messages?status=all")
 
     row = ui_page.locator(".pending-item", has_text="focus on the daemon logging")
     expect(row).to_be_visible(timeout=10_000)
@@ -170,13 +177,14 @@ def test_messages_note_is_a_plain_inbox_message(ui, ui_page, make_routine):
 
 def test_messages_without_a_report_still_lists_the_archive(ui, ui_page, make_routine):
     """A routine that never produced a report is not an empty page: the changelog archive and
-    the bug stream are items in their own right, and the note box stays available."""
+    the bug stream are items in their own right (the page-level composer is retired —
+    user order 2026-08-12)."""
     _seed(ui, make_routine, report=False)
     ui_page.goto(f"{ui.url}/#/messages?status=all")
     ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
     expect(ui_page.locator("#ref-R1")).to_be_visible(timeout=10_000)
     expect(ui_page.locator("#ref-F7")).to_be_visible()
-    expect(ui_page.locator("h2", has_text="Message the next run")).to_be_visible()
+    expect(ui_page.locator("h2", has_text="Message the next run")).to_have_count(0)
 
 
 def test_messages_empty_state_without_the_self_audit_routine(ui, ui_page):

@@ -384,6 +384,33 @@ def test_compact_to_history_writes_navigable_files(tmp_path):
     assert (hist / "t12-research-notes.md").read_text().strip() == "found X\nfound Y"
 
 
+def test_compact_to_history_non_json_reply_names_the_model(tmp_path):
+    """A weak archival model answering prose instead of the schema must raise the
+    teaching error — model + reply head — not a bare json "Expecting value" (F309,
+    c-20260810-213335: that bare error every message); the caller's deterministic
+    fallback then takes the pass."""
+    import pytest
+
+    from rsched.config import ModelRef
+    from rsched.engine.history import compact_to_history
+
+    class _Comp:
+        parsed = None
+        text, usage = "Sorry, I cannot produce JSON.", {}
+
+    class _Ep:
+        def complete(self, messages, **k):
+            return _Comp()
+
+    run_dir = tmp_path / "runs" / "20260710-070000"
+    run_dir.mkdir(parents=True)
+    with pytest.raises(RuntimeError) as exc:
+        compact_to_history(_history_messages(), [], _Ep(), ModelRef("e", "m"),
+                           run_dir, "history")
+    msg = str(exc.value)
+    assert "e/m" in msg and "non-JSON" in msg and "Sorry, I cannot" in msg
+
+
 def test_compact_to_history_reports_its_own_usage(tmp_path):
     """The archival call's spend rides the compaction info so the loop can fold it into
     the run's usage — full-context calls must never be invisible to accounting."""

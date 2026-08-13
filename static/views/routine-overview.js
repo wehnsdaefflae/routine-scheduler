@@ -6,13 +6,55 @@
 // h2s are preserved so the side-TOC still lists them, and anything unclaimed falls into a
 // trailing group so no control is ever lost.
 
+import { api } from "/static/api.js";
 import { heartbeat } from "/static/components/heartbeat.js";
-import { chip, el, fmtDur, fmtNum, fmtUsd, when } from "/static/util.js";
+import { chip, el, fmtDur, fmtNum, fmtUsd, toast, when } from "/static/util.js";
 
 function tile(label, ...body) {
   return el("div", { class: "hero-tile" },
     el("div", { class: "hero-label" }, label),
     ...body.filter(Boolean));
+}
+
+// Scheduling-group membership, right on the routine page (user order 2026-08-12): one
+// select — pick a group to join (leaving the previous one) or "none". Same PATCH the
+// Routines page's group surface uses; the daemon moves the fire/suppression tables itself.
+function groupTile(slug, current) {
+  const sel = el("select", { class: "hero-group-sel" });
+  const sub = el("div", { class: "hero-sub" }, current
+    ? "fires via the group's chain — its own cron is suppressed"
+    : "fires on its own cron");
+  let groupsData = null;
+  (async () => {
+    try {
+      groupsData = await api("/api/groups");
+      sel.replaceChildren(
+        el("option", { value: "" }, "none"),
+        ...(groupsData.groups || []).map((g) => el("option", { value: g.id }, g.name)));
+      sel.value = current?.id || "";
+    } catch { sel.replaceChildren(el("option", {}, "unavailable")); sel.disabled = true; }
+  })();
+  const spec = (ms) => ms.map((m) => ({ slug: m.slug, split: !!m.split }));
+  sel.onchange = async () => {
+    const target = sel.value;
+    sel.disabled = true;
+    try {
+      const prev = (groupsData.groups || [])
+        .find((g) => (g.members || []).some((m) => m.slug === slug));
+      if (prev && prev.id !== target)
+        await api(`/api/groups/${prev.id}`, { method: "PATCH",
+          body: { members: spec((prev.members || []).filter((m) => m.slug !== slug)) } });
+      if (target && (!prev || prev.id !== target)) {
+        const g = (groupsData.groups || []).find((x) => x.id === target);
+        await api(`/api/groups/${target}`, { method: "PATCH",
+          body: { members: [...spec(g.members || []), { slug, split: false }] } });
+      }
+      toast(target ? "joined — the group's schedule now drives this routine"
+                   : "left the group — its own cron applies again");
+      setTimeout(() => location.reload(), 600);   // hero + schedule tiles re-read the truth
+    } catch (err) { toast(err.message, 4000, { error: true }); sel.disabled = false; }
+  };
+  return tile("group", el("div", { class: "hero-strong" }, sel), sub);
 }
 
 // The hero: a compact instrument band an operator reads before touching any config.
@@ -28,6 +70,8 @@ export function routineHero(d, slug) {
       ? (d.next_fire ? el("span", {}, "next ", when(d.next_fire, { mode: "rel" }))
                      : (d.schedule_desc || "manual only"))
       : "scheduler off")));
+
+  tiles.push(groupTile(slug, d.group_managed));
 
   const lr = d.last_run;
   tiles.push(tile("last run",

@@ -19,6 +19,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.194.0] — 2026-08-13
+
+### Fixed
+- **Compaction events render what actually happened** (F309, user report on
+  c-20260810-213335): the transcript's compaction line knew only the flat
+  before/after shape, so window clamps and window-guard corrections printed
+  "context compacted: undefined → undefined chars" after every message. Each payload
+  shape now gets its own copy (archive → history/, digest, clamp, window correction).
+- **A weak archival model no longer yields a bare "Expecting value" error**: when the
+  compaction summarizer returns prose or nothing instead of the schema,
+  `compact_to_history` raises a teaching error naming the model and the reply head;
+  the deterministic fallback takes the pass as designed.
+
+### Changed
+- **Routines overview: the tag-chip filter row is retired** (user order): the tags ate
+  a row of space; the search field still matches tags. The filter bar (search, sort,
+  state chips, view toggle) is built once — the F229 focus guard holds.
+- **Messages page: "Message the next run" is retired** (user order): it duplicated the
+  generic Messages channel on self-audit's own routine page; queued messages remain
+  editable and withdrawable on the waiting list.
+
+### Added
+- **Group membership from the routine detail page** (user order): the routine hero
+  gains a "group" select — join a scheduling group (leaving the previous one) or
+  "none", via the same groups PATCH the Routines page uses; the sub-line says whether
+  the group chain or the routine's own cron drives it. The week panel's drag
+  join/leave (0.185.0) covers the same order's other half.
+
 ## [0.193.0] — 2026-08-13
 
 ### Added
