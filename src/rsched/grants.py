@@ -89,7 +89,7 @@ WORKFLOW_LEVELS = ("catalog", "generate")
 RECIPE_PREFIXES = ("main.md", "stages/", "tuning.yaml")
 CONFIG_FILE = "routine.yaml"
 # An all-off capabilities mapping — the base for cascades and the subrun/clarify default.
-EMPTY_CAPABILITIES = {"actions": [], "utils": [], "confirm": "always",
+EMPTY_CAPABILITIES = {"actions": [], "utils": [], "util_tags": [], "confirm": "always",
                       "rule_confirm": "always", "runs": "none", "workflows": "catalog"}
 
 
@@ -104,10 +104,11 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
     if raw is None:
         return {}, []
     if not isinstance(raw, dict):
-        return {}, [f"{label} must be a mapping (actions / utils"
+        return {}, [f"{label} must be a mapping (actions / utils / util_tags"
                     + (" / runs)" if requires else " / confirm / runs)")]
-    known = (("actions", "utils", "runs", "workflows") if requires
-             else ("actions", "utils", "confirm", "rule_confirm", "runs", "workflows"))
+    known = (("actions", "utils", "util_tags", "runs", "workflows") if requires
+             else ("actions", "utils", "util_tags", "confirm", "rule_confirm",
+                   "runs", "workflows"))
     problems = [f"{label}.{k}: unknown key (expected {' / '.join(known)})"
                 + (" — the approval level is a capability the user sets, not a requirement"
                    if requires and k in ("confirm", "rule_confirm") else "")
@@ -115,7 +116,9 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
     out: dict = {}
     for key, valid, kind_label in (("actions", lambda a: a in KINDS, "an action kind"),
                                    ("utils", lambda u: isinstance(u, str) and is_slug(u),
-                                    "a kebab-case util name")):
+                                    "a kebab-case util name"),
+                                   ("util_tags", lambda t: isinstance(t, str) and t.strip()
+                                    and t == t.strip().lower(), "a lowercase util tag")):
         if key not in raw:
             continue
         vals = raw[key]
@@ -153,6 +156,22 @@ def _parse(text: str) -> dict:
     return parse_lenient(text)[0]
 
 
+def _catalog_tags(permissions_home: Path) -> list[dict]:
+    """The live util catalog as `[{name, tags}]`, for expanding a doc's `util_tags:` gate.
+
+    `permissions_home` is `<libraries_home>/permissions` by construction (ServerConfig), so the
+    catalog sits beside it. A missing or unreadable library yields an empty catalog: tag gating
+    then matches nothing, exactly as if no doc declared a tag — a broken library must not
+    silently CLOSE every util either.
+    """
+    from . import utils_lib
+    try:
+        return [{"name": u["name"], "tags": list(u.get("tags") or [])}
+                for u in utils_lib.list_utils(Path(permissions_home).parent)]
+    except OSError:
+        return []
+
+
 def read_library_requires(permissions_home: Path) -> dict[str, dict]:
     """Slug → normalized `requires:` for every LIBRARY permission doc that declares one —
     the vocabulary of reservable capabilities and the docs↔capabilities dependency map.
@@ -185,19 +204,21 @@ def capabilities_for(active: list[str], lib: dict[str, dict],
     caps = {**EMPTY_CAPABILITIES, **(base or {})}
     actions = list(dict.fromkeys(caps.get("actions") or []))
     utils = list(dict.fromkeys(caps.get("utils") or []))
+    util_tags = list(dict.fromkeys(caps.get("util_tags") or []))
     runs = caps.get("runs") or "none"
     workflows = caps.get("workflows") or "catalog"
     for slug in active:
         req = lib.get(slug) or {}
         actions += [a for a in req.get("actions") or [] if a not in actions]
         utils += [u for u in req.get("utils") or [] if u not in utils]
+        util_tags += [t for t in req.get("util_tags") or [] if t not in util_tags]
         need = req.get("runs") or "none"
         if _RUNS_RANK.get(need, 0) > _RUNS_RANK.get(runs, 0):
             runs = need
         need_wf = req.get("workflows") or "catalog"
         if _WORKFLOW_RANK.get(need_wf, 0) > _WORKFLOW_RANK.get(workflows, 0):
             workflows = need_wf
-    return {"actions": actions, "utils": utils,
+    return {"actions": actions, "utils": utils, "util_tags": util_tags,
             "confirm": caps.get("confirm") or "always",
             "rule_confirm": caps.get("rule_confirm") or "always",
             "runs": runs, "workflows": workflows}
@@ -220,12 +241,14 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
     caps = {**EMPTY_CAPABILITIES, **(caps or {})}
     req_actions: set[str] = set()
     req_utils: set[str] = set()
+    req_util_tags: set[str] = set()
     grants_runs = False
     grants_wf = False
     for slug in active:
         req = lib.get(slug) or {}
         req_actions.update(a for a in req.get("actions") or [] if a in GATED_KINDS)
         req_utils.update(req.get("utils") or [])
+        req_util_tags.update(req.get("util_tags") or [])
         if req.get("runs"):
             grants_runs = True
         if req.get("workflows"):
@@ -240,9 +263,10 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
     actions = [a for a in caps.get("actions") or []
                if a in req_actions or _DEFAULT_KIND_SOURCE.get(a) in active_set]
     utils = [u for u in caps.get("utils") or [] if u in req_utils]
+    util_tags = [t for t in caps.get("util_tags") or [] if t in req_util_tags]
     runs = (caps.get("runs") or "none") if grants_runs else "none"
     workflows = (caps.get("workflows") or "catalog") if grants_wf else "catalog"
-    return {"actions": actions, "utils": utils,
+    return {"actions": actions, "utils": utils, "util_tags": util_tags,
             "confirm": caps.get("confirm") or "always",
             "rule_confirm": caps.get("rule_confirm") or "always",
             "runs": runs, "workflows": workflows}
@@ -275,7 +299,14 @@ class GrantPolicy:
     active: tuple[str, ...] = ()               # held conduct-permission slugs (prompt prose)
     actions: frozenset = frozenset()           # enabled gated action kinds
     utils: frozenset = frozenset()             # enabled reserved utils
+    # Enabled util TAG CLASSES. A permission doc gates a whole class with `util_tags:`, so a
+    # NEWLY ADDED util carrying a gated tag is closed by default instead of silently open —
+    # the name list alone was fail-open, and every util the library gains is a new hole.
+    util_tags: frozenset = frozenset()
     gated_utils: dict = field(default_factory=dict)   # util → library docs requiring it
+    # Gated util → its declared tags, for the tag-class check in deny(). Only gated utils are
+    # indexed; the catalog is read at policy load ONLY when some doc declares `util_tags`.
+    util_tag_index: dict = field(default_factory=dict)
     kind_sources: dict = field(default_factory=dict)  # gated kind → library docs requiring it
     confirm: str = "always"                    # write_util approval policy
     rule_confirm: str = "always"               # write_rule approval policy (own blast radius)
@@ -413,7 +444,12 @@ class GrantPolicy:
                     f"with what you have. {self.request_route(f'action:{kind}')}")
         if kind == "util":
             name = str(action.get("name") or "")
-            if name in self.gated_utils and name not in self.utils and not self.admin:
+            # Granted either BY NAME (capabilities.utils) or BY TAG CLASS
+            # (capabilities.util_tags) — holding the class covers every util in it, including
+            # ones the library gains later.
+            by_tag = bool(set(self.util_tag_index.get(name, ())) & self.util_tags)
+            if (name in self.gated_utils and name not in self.utils
+                    and not by_tag and not self.admin):
                 perms = ", ".join(self.gated_utils[name])
                 return (f"util {name!r} is a reserved capability switched OFF for this "
                         f"routine — this channel is off limits (the {perms} permission "
@@ -468,19 +504,39 @@ def load_policy(permissions_home: Path, active: list[str] | None,
     gated_utils: dict[str, list[str]] = {}
     kind_sources: dict[str, list[str]] = {}
     runs_sources: list[str] = []
+    gated_tags: dict[str, list[str]] = {}
     for slug, req in lib.items():
         for kind in req.get("actions") or []:
             if kind in GATED_KINDS:
                 kind_sources.setdefault(kind, []).append(slug)
         for util in req.get("utils") or []:
             gated_utils.setdefault(util, []).append(slug)
+        for tag in req.get("util_tags") or []:
+            gated_tags.setdefault(tag, []).append(slug)
         if req.get("runs"):
             runs_sources.append(slug)
+    # Expand tag classes into concrete gated utils against the LIVE catalog. Read it only when
+    # a doc actually declares `util_tags` — with no tag gates in the library this costs nothing
+    # and the policy is byte-identical to the name-only one.
+    util_tag_index: dict[str, tuple[str, ...]] = {}
+    if gated_tags:
+        for util in _catalog_tags(permissions_home):
+            tags = set(util["tags"])
+            hit = tags & set(gated_tags)
+            if not hit:
+                continue
+            util_tag_index[util["name"]] = tuple(sorted(tags))
+            for tag in sorted(hit):
+                for slug in gated_tags[tag]:
+                    if slug not in gated_utils.setdefault(util["name"], []):
+                        gated_utils[util["name"]].append(slug)
     caps, _ = normalize_capabilities(capabilities)
     return GrantPolicy(active=tuple(active or []),
                        actions=frozenset(k for k in caps.get("actions") or []
                                          if k in GATED_KINDS),
                        utils=frozenset(caps.get("utils") or []),
+                       util_tags=frozenset(caps.get("util_tags") or []),
+                       util_tag_index=util_tag_index,
                        gated_utils={k: tuple(v) for k, v in gated_utils.items()},
                        kind_sources={k: tuple(v) for k, v in kind_sources.items()},
                        confirm=caps.get("confirm") or "always",

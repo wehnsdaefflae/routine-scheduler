@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.196.0] — 2026-08-13
+
+### Added
+- **Util capability gating by TAG CLASS (`util_tags:`).** A permission doc's `requires:` and a
+  routine's `capabilities:` both gained `util_tags:` beside `utils:`. `utils:` names one util;
+  `util_tags:` switches on a whole class — every util whose docstring `tags:` line carries one
+  of them, **including utils the library gains later**. Every util must already declare at
+  least one tag (`utils_lib.header_problems`), so nothing can slip past by omission. The
+  catalog is read at policy load only when some doc declares `util_tags`, so a library with no
+  tag gate produces a byte-identical policy and touches no catalog.
+
+### Fixed
+- **Util gating was fail-open, and the util surface had outgrown its gate.** Only utils named
+  in a permission doc's `requires.utils` were ever gated — 6 of 114 on the live instance
+  (`shell`, `remote`, `discord`, `darknet`, `usenet`, `usenet-nzb`), leaving 108 callable by
+  any routine holding `global-utils`, which is all of them. 64 of those need no secret either,
+  so the secret grant was no second gate. `communication` gated Discord but not `signal`,
+  `whatsapp`, `telegram` or `zulip`; `fau-mail-send` was ungated entirely. `communication` now
+  covers every chat channel (`utils:` + `util_tags: [chat, messaging]`) and a new
+  **`outbound-mail`** permission covers sending email (`utils: [fau-mail-send]` +
+  `util_tags: [smtp]`). Reading a mailbox stays ungated — the line is drawn at transmitting in
+  the user's name. A gated-but-ungranted util is not a hard break: it denies with the existing
+  access-request route, which the Decisions page settles.
+
 ## [0.195.2] — 2026-08-13
 
 ### Changed

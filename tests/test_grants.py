@@ -133,8 +133,9 @@ def test_capabilities_for_raises_the_base_to_cover_active_docs(tmp_path):
                            "run-history": RUN_HISTORY})
     lib = read_library_requires(home)
     caps = capabilities_for(["util-authoring", "communication", "run-history"], lib)
-    assert caps == {"actions": ["write_util"], "utils": ["discord"], "confirm": "always",
-                    "rule_confirm": "always", "runs": "last", "workflows": "catalog"}
+    assert caps == {"actions": ["write_util"], "utils": ["discord"], "util_tags": [],
+                    "confirm": "always", "rule_confirm": "always", "runs": "last",
+                    "workflows": "catalog"}
     # base values survive and only rise: runs stays at the deeper level, confirm untouched
     base = {"actions": ["memory_read"], "utils": [], "confirm": "never", "runs": "all"}
     caps2 = capabilities_for(["run-history"], lib, base)
@@ -153,19 +154,19 @@ def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_pat
     orphan = {"actions": ["write_util"], "utils": ["discord"], "confirm": "never", "runs": "all"}
     # nothing held → every gated capability is floored away (confirm dial preserved)
     assert floor_capabilities([], lib, orphan) == {
-        "actions": [], "utils": [], "confirm": "never", "rule_confirm": "always",
-        "runs": "none", "workflows": "catalog"}
+        "actions": [], "utils": [], "util_tags": [], "confirm": "never",
+        "rule_confirm": "always", "runs": "none", "workflows": "catalog"}
     # util-authoring held → write_util survives (with its policy); discord + runs still floored
     assert floor_capabilities(["util-authoring"], lib, orphan) == {
-        "actions": ["write_util"], "utils": [], "confirm": "never", "rule_confirm": "always",
-        "runs": "none", "workflows": "catalog"}
+        "actions": ["write_util"], "utils": [], "util_tags": [], "confirm": "never",
+        "rule_confirm": "always", "runs": "none", "workflows": "catalog"}
     # run-history held → run DEPTH (a user dial) is kept above none; actions/utils floored
     kept = floor_capabilities(["run-history"], lib, orphan)
     assert kept["runs"] == "all" and kept["actions"] == [] and kept["utils"] == []
     # raise THEN floor == exactly the held docs' requires + policy dials, no contradiction
     active = ["util-authoring", "communication", "run-history"]
     assert floor_capabilities(active, lib, capabilities_for(active, lib)) == {
-        "actions": ["write_util"], "utils": ["discord"], "confirm": "always",
+        "actions": ["write_util"], "utils": ["discord"], "util_tags": [], "confirm": "always",
         "rule_confirm": "always", "runs": "last", "workflows": "catalog"}
 
 
@@ -427,3 +428,87 @@ def test_admin_lifts_capability_gating_only(tmp_path):
     #  - routine.yaml config is the user's, denied for everyone including admin
     c = admin.deny({"kind": "write_file", "path": "routine.yaml", "content": "x"})
     assert c is not None
+
+
+# ------------------------------------------------------- util TAG classes (fail-closed)
+
+MESSAGING = """---
+tags: [communication, policy]
+requires:
+  utils: [discord]
+  util_tags: [messaging]
+---
+# permission: communication — chat channels
+body
+"""
+
+
+def _util(lib_home: Path, name: str, tags: str) -> None:
+    """A minimal catalog entry beside the permissions dir (list_utils reads <home>/utils)."""
+    d = lib_home.parent / "utils" / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "main.py").write_text(
+        f'"""{name} — a test util.\n\nusage: gu {name}\ncalls: (none)\ntags: {tags}\n"""\n',
+        encoding="utf-8")
+
+
+def test_util_tags_accepted_in_requires_and_capabilities():
+    req, problems = normalize_capabilities({"util_tags": ["messaging"]}, requires=True)
+    assert req == {"util_tags": ["messaging"]} and not problems
+    caps, problems = normalize_capabilities({"util_tags": ["messaging"]})
+    assert caps == {"util_tags": ["messaging"]} and not problems
+    # a tag must be a lowercase non-empty string; junk is dropped AND reported
+    caps, problems = normalize_capabilities({"util_tags": ["Messaging", "", 3]})
+    assert caps == {"util_tags": []} and len(problems) == 3
+
+
+def test_a_tag_gate_closes_every_util_carrying_that_tag(tmp_path):
+    home = _lib(tmp_path, {"communication": MESSAGING})
+    _util(home, "signal", "signal, messaging, send")
+    _util(home, "page-fetch", "web, fetch")          # untagged by the gate → stays open
+
+    ungranted = load_policy(home, [], {})
+    denial = ungranted.deny({"kind": "util", "name": "signal", "args": ["send"]})
+    assert denial and "communication" in denial and "util:signal" in denial
+    # an ungated util is untouched by the tag gate
+    assert ungranted.deny({"kind": "util", "name": "page-fetch", "args": ["x"]}) is None
+
+    # holding the CLASS covers the util without naming it
+    granted = load_policy(home, ["communication"], {"util_tags": ["messaging"]})
+    assert granted.deny({"kind": "util", "name": "signal", "args": ["send"]}) is None
+    # so does the by-name grant, unchanged
+    by_name = load_policy(home, ["communication"], {"utils": ["signal"]})
+    assert by_name.deny({"kind": "util", "name": "signal", "args": ["send"]}) is None
+
+
+def test_a_new_util_carrying_a_gated_tag_is_closed_by_default(tmp_path):
+    """The point of the tag gate: the library gaining a util must not open a hole."""
+    home = _lib(tmp_path, {"communication": MESSAGING})
+    _util(home, "signal", "signal, messaging, send")
+    granted = load_policy(home, ["communication"], {"utils": ["signal"]})  # named, not classed
+    _util(home, "matrix", "matrix, messaging, send")                      # library gains one
+    fresh = load_policy(home, ["communication"], {"utils": ["signal"]})
+    assert fresh.deny({"kind": "util", "name": "matrix", "args": ["send"]})
+    assert granted.deny({"kind": "util", "name": "signal", "args": ["send"]}) is None
+    # the class grant covers the newcomer with no config change
+    classed = load_policy(home, ["communication"], {"util_tags": ["messaging"]})
+    assert classed.deny({"kind": "util", "name": "matrix", "args": ["send"]}) is None
+
+
+def test_no_tag_gate_in_the_library_means_no_catalog_read(tmp_path):
+    """With no doc declaring util_tags the policy is byte-identical to the name-only one."""
+    home = _lib(tmp_path, {"communication": COMMUNICATION})
+    _util(home, "signal", "signal, messaging, send")
+    policy = load_policy(home, [], {})
+    assert policy.util_tag_index == {}
+    assert policy.deny({"kind": "util", "name": "signal", "args": ["send"]}) is None
+
+
+def test_tag_class_survives_the_raise_then_floor_round_trip(tmp_path):
+    home = _lib(tmp_path, {"communication": MESSAGING})
+    lib = read_library_requires(home)
+    raised = capabilities_for(["communication"], lib)
+    assert raised["util_tags"] == ["messaging"]
+    assert floor_capabilities(["communication"], lib, raised)["util_tags"] == ["messaging"]
+    # dropping the permission floors the class away — no orphan capability
+    assert floor_capabilities([], lib, raised)["util_tags"] == []

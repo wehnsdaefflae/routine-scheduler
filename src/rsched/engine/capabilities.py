@@ -103,7 +103,13 @@ def _util_catalog_block(utils: list[dict], kinds: list[str], g) -> str:
         if not head.startswith(u["name"]):
             head = f"{u['name']} — {head}"
         note = ""
-        if g is not None and u["name"] in g.gated_utils and u["name"] not in g.utils:
+        # A tag-class grant covers the util just as a by-name grant does — annotating it
+        # "not granted" would tell the run it cannot call something it can.
+        by_tag = g is not None and bool(
+            set(getattr(g, "util_tag_index", {}).get(u["name"], ()))
+            & getattr(g, "util_tags", frozenset()))
+        if (g is not None and u["name"] in g.gated_utils and u["name"] not in g.utils
+                and not by_tag):
             # a deny-forever tombstone reads differently from merely-not-granted:
             # the first is a settled decision (never re-request), the second is
             # requestable (grants.request_route names the way).
@@ -202,6 +208,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                             "surface as an action; `cron` sets the group schedule, `split` "
                             "marks two-phase members, no operator needed)")
         cap_bits += [f"reserved util {u!r}" for u in sorted(g.utils)]
+        cap_bits += [f"every util tagged {t!r}" for t in sorted(getattr(g, "util_tags", ()))]
         if g.run_history != "none":
             cap_bits.append("read previous runs under runs/ "
                             + ("(the last run only)" if g.run_history == "last"

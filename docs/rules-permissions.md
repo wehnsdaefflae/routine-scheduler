@@ -13,8 +13,9 @@ ownership:
   yours on the Library tab, and writable by a routine holding the **rule-authoring**
   permission.
 - **Capabilities** — the atomic, engine-enforced surface: gated action kinds
-  (`write_util`, `memory_read`, `memory_write`), reserved utils (`discord`, `shell`, `remote`,
-  `darknet`, `usenet` / `usenet-nzb`), the
+  (`write_util`, `memory_read`, `memory_write`), reserved utils held by name (`shell`,
+  `remote`, `discord`, `darknet`, `usenet` / `usenet-nzb`) or by TAG CLASS (`util_tags:` —
+  every util carrying that docstring tag, including ones the library gains later), the
   write_util approval level, and the previous-run read depth. Held via `routine.yaml`'s
   `capabilities:` mapping, changed **only by you** (the routine page's panel; the web
   layer blocks edits while a run is active), and enforced when every single action is
@@ -185,7 +186,8 @@ says so in a `report` or a deferred `ask_user` and you delete it on the Library 
 ```yaml
 capabilities:
   actions: [write_util, memory_read, memory_write]  # gated action kinds switched on
-  utils: [discord]              # reserved utils switched on
+  utils: [discord]              # reserved utils switched on, BY NAME
+  util_tags: [messaging]        # reserved util CLASSES switched on, by tag
   confirm: always               # write_util approval: always | creations | never
   rule_confirm: always          # write_rule approval: always | creations | never
   runs: none                    # previous-run read depth: none | last | all
@@ -195,6 +197,22 @@ capabilities:
 A new routine's default: `write_util` (confirm `always`) + the memory pair, no reserved utils,
 no run history, no rule authoring — matching the default permission set below. `read_rule` is
 not listed because it is not gated.
+
+### Names gate one util; TAGS gate a class
+
+`utils:` names individual utils. `util_tags:` switches on a whole class — every util whose
+docstring `tags:` line carries one of them, including utils the library gains **later**. Both
+sides read the same way: a doc's `requires:` declares what its conduct presumes, and the
+routine's `capabilities:` is the user's switch.
+
+The distinction is the difference between fail-open and fail-closed. A name list only gates
+utils someone remembered to list, so every util the library gains is open by default — as of
+2026-08-13 that was 108 of 114. A tag gate closes the class once, and a new util carrying a
+gated tag is closed the moment it lands. Every util is required to declare at least one tag
+(`utils_lib.header_problems`), so there is no way to slip past by omission.
+
+The util catalog is read at policy load **only when some permission doc declares `util_tags`**;
+with none, the policy is identical to the name-only one and no catalog is touched.
 
 ## Permissions (conduct docs)
 
@@ -209,7 +227,8 @@ frontmatter and authoritative for that key on save.
 tags: [tool-use, utils, authoring]
 requires:
   actions: [write_util]        # gated action kinds these instructions presume
-  utils: [discord]             # reserved utils these instructions presume
+  utils: [discord]             # reserved utils these instructions presume, BY NAME
+  util_tags: [messaging]       # reserved util CLASSES presumed, by docstring tag
   runs: last                   # minimum previous-run depth presumed: last | all
 ---
 # permission: <name> — <summary>

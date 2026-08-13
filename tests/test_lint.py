@@ -101,7 +101,7 @@ def test_tags_on_library_elements():
     assert set(perms) == {"util-authoring", "memory", "communication", "run-history",
                           "shell", "workflow-generation", "background-tasks",
                           "scheduling", "global-utils", "rule-authoring",
-                          "remote-machines", "darknet",
+                          "remote-machines", "darknet", "outbound-mail",
                           "usenet", "scripts"}  # variants collapsed: level = capability
     assert "self-modification" not in perms          # retired: a fixed engine rule now
     # a doc's frontmatter is stripped before its body is shown/inlined
