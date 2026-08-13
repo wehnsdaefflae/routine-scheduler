@@ -213,7 +213,6 @@ def cmd_daemon(_args) -> int:
         adopt_permissions,
         adopt_seed_routine,
         ensure_config,
-        migrate_util_headers,
         seed_routines,
         sync_seed_library_docs,
         sync_seed_utils,
@@ -244,7 +243,6 @@ def cmd_daemon(_args) -> int:
     # seed cannot reach a live library on its own — three have to this release
     migrate_seed_utils(server)
     sync_seed_library_docs(server.libraries_home)  # workflows/rules/permissions added since, too
-    migrate_util_headers(server.libraries_home)  # MIGRATION(expires=2026-08-17): sandbox rollout
     from .migrate_rules import migrate_rules
 
     migrate_rules(server)  # MIGRATION(expires=2026-09-30): traits -> library-global rules

@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.195.1] — 2026-08-13
+
+### Removed
+- **Expired migration retired (F315).** The one-shot util-header migration for the sandbox
+  rollout (`bootstrap.migrate_util_headers` + `_with_header_line`, its boot call in
+  `cli.py`, and its coverage) is deleted at its declared 2026-08-17 expiry: the production
+  library converged weeks ago (the pass has returned 0 on every boot since), and an expired
+  MIGRATION marker is scheduled cruft by the repo's own rule.
+
 ## [0.195.0] — 2026-08-13
 
 ### Added

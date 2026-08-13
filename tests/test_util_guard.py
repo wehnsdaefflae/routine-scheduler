@@ -156,42 +156,6 @@ def test_seed_sync_never_resurrects_deleted(tmp_path, monkeypatch):
     assert not utils_lib.exists(home, "doomed")
 
 
-LEGACY_UTIL = '''# /// script
-# dependencies = []
-# ///
-"""legacy — a pre-sandbox util.
-
-usage: gu legacy
-calls: (none)
-tags: test
-"""
-import os, subprocess
-key = os.environ.get("LEGACY_API_KEY")
-subprocess.run(["gu", "adder", "1", "2"])
-'''
-
-
-def test_migrate_util_headers(tmp_path):
-    """MIGRATION(expires=2026-08-17) coverage: legacy headers gain net: outbound (behavior-
-    preserving), real `gu` sibling invocations land on calls:, undeclared credential vars
-    land on secrets:; a compliant util is untouched and the pass is idempotent."""
-    home = tmp_path / "library"
-    utils_lib.ensure_library(home)
-    utils_lib.write_util_file(home, "legacy", LEGACY_UTIL)
-    utils_lib.write_util_file(home, "modern", UTIL_BODY.replace("doomed", "modern"))
-    before_modern = utils_lib.read_util(home, "modern")
-
-    assert bootstrap.migrate_util_headers(home) == 1
-    migrated = utils_lib.read_util(home, "legacy")
-    header = utils_lib.parse_header(migrated)
-    assert header["net"] == "outbound"
-    assert header["calls"] == ["adder"]
-    assert "LEGACY_API_KEY" in header["secrets"]
-    assert utils_lib.header_problems(migrated) == []
-    assert utils_lib.read_util(home, "modern") == before_modern
-    assert bootstrap.migrate_util_headers(home) == 0       # converged: nothing to do
-
-
 def test_write_util_path_validation():
     """F280: 'path' is a third, byte-faithful content source — and stands ALONE."""
     from rsched.engine.actions import validate_action
