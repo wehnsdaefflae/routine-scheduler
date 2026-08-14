@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.201.0] - 2026-08-15
+
+### Added
+- **Artifact rows show their update time and are deletable from the sidebar** (F336,
+  user order 2026-08-14): the artifact list (runs, routines and conversations alike)
+  renders a visible "last updated" relative time per row — an artifact is rewritten in
+  place across turns, so the version must not hide in a tooltip — and a hover × deletes
+  the file after a confirm, via new `DELETE /api/routines/{slug}/artifacts` and
+  `DELETE /api/conversations/{slug}/artifacts` endpoints with the same resolved-path
+  containment as serving (artifacts/ only; attachments and config can never be deleted).
+
 ## [0.200.2] - 2026-08-15
 
 ### Fixed

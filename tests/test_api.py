@@ -431,6 +431,25 @@ def test_routine_artifacts_listed_and_served(client):
                  params={"path": "routine.yaml"}).status_code == 400
 
 
+def test_routine_artifact_delete(client):
+    """The sidebar's delete (user order 2026-08-14): removes exactly the named artifact,
+    refuses traversal and non-artifact paths with the same containment as serving."""
+    c, tmp = client
+    art = tmp / "routines" / "apir" / "artifacts"
+    art.mkdir()
+    (art / "old.csv").write_text("a,b", encoding="utf-8")
+    (art / "keep.md").write_text("# keep", encoding="utf-8")
+    r = c.delete("/api/routines/apir/artifacts", params={"path": "artifacts/old.csv"})
+    assert r.status_code == 200 and r.json()["deleted"] == "artifacts/old.csv"
+    assert not (art / "old.csv").exists() and (art / "keep.md").exists()
+    # containment: traversal and config paths never delete
+    assert c.delete("/api/routines/apir/artifacts",
+                    params={"path": "artifacts/../routine.yaml"}).status_code == 400
+    assert (tmp / "routines" / "apir" / "routine.yaml").exists()
+    assert c.delete("/api/routines/apir/artifacts",
+                    params={"path": "artifacts/gone.txt"}).status_code == 404
+
+
 def test_runs_and_transcript(client):
     c, tmp = client
     _mk_run(tmp / "routines", "apir", "20260707-070000", "finished")

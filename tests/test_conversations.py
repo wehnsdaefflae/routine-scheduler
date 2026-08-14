@@ -372,6 +372,23 @@ def test_artifacts_list_and_serving(client):
                  params={"path": "artifacts/../routine.yaml"}).status_code in (400, 404)
 
 
+def test_artifact_delete_scoped_to_artifacts_dir(client):
+    # the sidebar's delete (user order 2026-08-14): artifacts/ only — an attachment is the
+    # USER'S upload and must survive every artifact delete attempt against it
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "make a report"}).json()["slug"]
+    conv_dir = server.conversations_home / slug
+    (conv_dir / "artifacts" / "report.md").write_text("# hi")
+    (conv_dir / "attachments" / "input.pdf").write_bytes(b"%PDF")
+    r = c.delete(f"/api/conversations/{slug}/artifacts",
+                 params={"path": "artifacts/report.md"})
+    assert r.status_code == 200 and r.json()["deleted"] == "artifacts/report.md"
+    assert not (conv_dir / "artifacts" / "report.md").exists()
+    assert c.delete(f"/api/conversations/{slug}/artifacts",
+                    params={"path": "attachments/input.pdf"}).status_code == 400
+    assert (conv_dir / "attachments" / "input.pdf").exists()
+
+
 def test_create_conversation_accepts_prestart_budgets(client):
     c, server = client
     r = c.post("/api/conversations",

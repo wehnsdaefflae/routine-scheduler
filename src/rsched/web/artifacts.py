@@ -27,6 +27,26 @@ def list_artifacts(base_dir: Path) -> list[dict]:
     return out
 
 
+def delete_artifact(base_dir: Path, path: str,
+                    subdirs: tuple[str, ...] = ("artifacts",)) -> dict:
+    """Delete ONE artifact file — the sidebar's user-facing remove (2026-08-14 order:
+    artifacts must be deletable from the web UI). Same resolved-path containment as
+    serve_file: only files under the allowed subdirs are deletable, so
+    'artifacts/../routine.yaml' can never pass.
+    """
+    try:
+        p = resolve_rel(base_dir, path.lstrip("/"))
+    except PermissionError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not any(within(base_dir / sub, p) for sub in subdirs):
+        allowed = " and ".join(f"{s}/" for s in subdirs)
+        raise HTTPException(400, f"only {allowed} files can be deleted")
+    if not p.is_file():
+        raise HTTPException(404, f"no file {path!r}")
+    p.unlink()
+    return {"ok": True, "deleted": str(p.relative_to(base_dir))}
+
+
 def serve_file(base_dir: Path, path: str,
                subdirs: tuple[str, ...] = ("artifacts",)) -> FileResponse:
     """Serve one file raw (blob-rendered client-side) from the allowed subdirs ONLY.

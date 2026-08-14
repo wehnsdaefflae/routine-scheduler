@@ -498,6 +498,25 @@ def test_run_view_deliberation_relevel(ui, ui_page):
     assert ctrl["set_deliberation"]["ts"]
 
 
+def test_artifact_row_shows_time_and_deletes(ui, ui_page):
+    """The artifact row shows WHEN the file was last updated (user order 2026-08-14 —
+    an artifact is rewritten in place, so the version must be visible, not a tooltip)
+    and its hover delete removes the file after the confirm dialog."""
+    ui.seed_run("uir", "20260715-150000", "finished", summary="done")
+    art = ui.routine_dir("uir") / "artifacts"
+    art.mkdir(exist_ok=True)
+    (art / "notes.md").write_text("# n", encoding="utf-8")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-150000")
+    row = ui_page.locator(".art-item")
+    expect(row).to_have_count(1)
+    expect(row.locator(".art-time")).not_to_be_empty()
+    ui_page.on("dialog", lambda d: d.accept())
+    row.hover()
+    row.locator(".art-del").click()
+    expect(ui_page.locator(".art-item")).to_have_count(0)
+    assert not (art / "notes.md").exists()
+
+
 def test_run_transcript_story_and_refer(ui, ui_page):
     """The transcript reads as a story: a phase change draws a labeled divider, an injected
     message's leading `> re …` line renders as a quote chip, and the ↩ on a turn primes the

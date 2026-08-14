@@ -93,13 +93,29 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
     for (const it of items) {
       const ext = (it.name.split(".").pop() || "").toLowerCase();
       const size = `${(it.size / 1024).toFixed(it.size > 10240 ? 0 : 1)}kB`;
-      // one line per artifact — the viewer below is the star, the list just navigates
+      // one line per artifact — the viewer below is the star, the list just navigates.
+      // The update time is VISIBLE (user order 2026-08-14): an artifact is re-written in
+      // place across turns, and "which version is this" must not hide in a tooltip.
+      const del = el("span", {
+        class: "art-del", title: `delete ${it.name}`, role: "button",
+        onclick: async (ev) => {
+          ev.stopPropagation();
+          if (!window.confirm(`Delete artifact ${it.name}? The file is removed for good.`)) return;
+          try {
+            await api(`/api/${base}/${slug}/artifacts?path=${encodeURIComponent(it.path)}`,
+                      { method: "DELETE" });
+            if (openPath === it.path) { viewer.hidden = true; openPath = null; }
+            await refresh();
+          } catch (err) { window.alert(`could not delete: ${err.message}`); }
+        } }, "🗑");
       listBox.append(el("button",
         { class: `art-item${openPath === it.path ? " on" : ""}`, onclick: () => open(it),
-          title: `${it.name} · ${relTime(new Date(it.mtime * 1000))} · ${size}` },
+          title: `${it.name} · ${size}` },
         el("span", { class: "art-ico" }, ICON(ext)),
         el("span", { class: "art-name" }, it.name),
-        el("span", { class: "faint small", style: "flex:none" }, size)));
+        el("span", { class: "art-time faint small" }, relTime(new Date(it.mtime * 1000))),
+        el("span", { class: "faint small", style: "flex:none" }, size),
+        del));
     }
   }
 

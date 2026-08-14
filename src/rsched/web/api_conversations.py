@@ -507,6 +507,15 @@ def list_artifacts(request: Request, slug: str) -> list[dict]:
     return artifacts.list_artifacts(info.cfg.dir)
 
 
+@router.delete("/conversations/{slug}/artifacts")
+def delete_artifact(request: Request, slug: str, path: str) -> dict:
+    """Remove one artifact from the sidebar (user order 2026-08-14). artifacts/ only —
+    attachments are the USER'S uploads and stay.
+    """
+    info = conversation_info(request, slug)
+    return artifacts.delete_artifact(info.cfg.dir, path)
+
+
 @router.get("/conversations/{slug}/file")
 def get_file(request: Request, slug: str, path: str):
     """Serve one artifact or attachment (the chat panel fetches these with the auth header

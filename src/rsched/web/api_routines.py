@@ -282,6 +282,13 @@ def list_artifacts(request: Request, slug: str) -> list[dict]:
     return artifacts.list_artifacts(info.cfg.dir)
 
 
+@router.delete("/routines/{slug}/artifacts")
+def delete_artifact(request: Request, slug: str, path: str) -> dict:
+    """Remove one artifact from the sidebar (user order 2026-08-14). artifacts/ only."""
+    info = _info(request, slug)
+    return artifacts.delete_artifact(info.cfg.dir, path)
+
+
 @router.get("/routines/{slug}/artifact")
 def get_artifact(request: Request, slug: str, path: str):
     """Serve one artifact raw (blob-rendered client-side). ONLY artifacts/ is servable
