@@ -169,8 +169,15 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
                 "listing": utils_lib.search_listing(home, query)}
     if not utils_lib.exists(home, name):
         ctx.count_util(name, "missing")
-        return {"kind": "util", "name": name, "missing": True,
-                "available": [u["name"] for u in utils_lib.list_utils(home)]}
+        obs = {"kind": "util", "name": name, "missing": True,
+               "available": [u["name"] for u in utils_lib.list_utils(home)]}
+        # R367: the name may be a ROUTINE-LOCAL script, which the util action never
+        # resolves — say so, or the caller (told "scripts/ is the place for private
+        # helpers") has no path from this miss to actually running the file.
+        from .. import scripts
+        if scripts.exists(ctx.routine.dir, name):
+            obs["script_match"] = True
+        return obs
     # F290: optional (`?`-declared) secrets the routine may not see are WITHHELD from the
     # child env instead of blocking the call with an exposure ask — a public call runs
     # prompt-free; the observation names the withheld undecided ones so an auth-needing

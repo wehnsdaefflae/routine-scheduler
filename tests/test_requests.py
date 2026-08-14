@@ -57,6 +57,16 @@ def test_request_denial_teaches_the_grammar_on_a_bad_id(tmp_path):
     assert request_denial(_loop(tmp_path), _ask("action:util"))
 
 
+def test_request_denial_names_ungated_action_kinds(tmp_path):
+    # F331 (routine-improver:20260814-015412): 'create_routine' IS an action kind, just not
+    # a gateable one — the old generic grammar copy listed "action" as a valid class and so
+    # read as self-contradictory, inviting a retry. The correction must state the real rule.
+    problems = request_denial(_loop(tmp_path), _ask("action:create_routine"))
+    assert problems and "not grantable" in problems[0]
+    assert "write_util" in problems[0]  # names the requestable kinds
+    assert "not a grant-entity id" not in problems[0]
+
+
 def test_request_denial_redirects_already_available_entities(tmp_path):
     g = GrantPolicy(actions=frozenset({"write_util"}),
                     utils=frozenset({"discord"}),

@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.200.1] - 2026-08-15
+
+### Fixed
+- **`util` miss now names a matching routine-local script** (F330, R367): calling the
+  `util` action with the name of a `scripts/` helper used to dead-end on the global
+  catalog ("does not exist. Available: ...") with no path to actually running the file
+  the guidance told the routine to write. The miss observation now says the name exists
+  as a ROUTINE-LOCAL script, shows the `script` action call, and names the
+  `action:script` grant to request when the kind is absent from the run's schema.
+- **Ungated action kinds get a truthful request denial** (F331): requesting
+  `action:create_routine` was rejected with the generic "not a grant-entity id — class
+  one of action, ..." copy, which lists `action` as valid and so reads as
+  self-contradictory (routine-improver retried against it). A real-but-ungateable action
+  kind now gets its own copy naming the requestable kinds and the report/ask_user route.
+
+
 ## [0.200.0] — 2026-08-14
 
 ### Changed

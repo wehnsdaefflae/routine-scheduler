@@ -121,6 +121,25 @@ def test_util_show_and_missing_answer_with_the_catalog(util_ctx):
     assert set(gone["available"]) == {"crasher", "echoer", "flooder"}
 
 
+def test_util_miss_names_a_matching_routine_local_script(util_ctx):
+    # F330/R367: `util name=X` where X is a routine-local script must point at the script
+    # action instead of dead-ending on the global catalog — the reporter was told scripts/
+    # is the place for private helpers, then had no path from this miss to running one.
+    from rsched.engine.observations import format_observation
+
+    sdir = util_ctx.routine.dir / "scripts"
+    sdir.mkdir()
+    (sdir / "explode.py").write_text('"""explode — test helper."""\n', encoding="utf-8")
+    obs = dispatch({"kind": "util", "name": "explode"}, util_ctx)
+    assert obs["missing"] is True and obs["script_match"] is True
+    text = format_observation(obs)
+    assert "ROUTINE-LOCAL script" in text and "action:script" in text
+    # a plain miss (no matching script) stays hint-free
+    plain = dispatch({"kind": "util", "name": "nope"}, util_ctx)
+    assert "script_match" not in plain
+    assert "ROUTINE-LOCAL" not in format_observation(plain)
+
+
 def test_util_search_ranks_by_keyword_and_keeps_the_catalog_floor(util_ctx):
     """D52 Phase 3: `util name=search` is a discovery verb — keyword-rank the live catalog,
     return only close matches, and ALWAYS name the always-on floor so a miss hides nothing."""

@@ -61,9 +61,20 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
                         "a PEP 723 script whose docstring header carries "
                         "'<name> — <summary>', 'net:', 'secrets:' — then call it again. "
                         "Script names are lowercase letters/digits with '-' or '_'.")
-            return (f"OBSERVATION (util {(obs.get('target') or obs['name'])!r} does not exist). "
+            miss = (f"OBSERVATION (util {(obs.get('target') or obs['name'])!r} does not exist). "
                     f"Available: {names}. Pick one of those (run `util name=list` for their "
                     "usage), or write it with write_util, then call it.")
+            if obs.get("script_match"):
+                # R367: the file exists as a routine-local script — the util action will
+                # never run it; teach the one action that does, and the grant to request
+                # when that kind is absent from this run's schema.
+                miss += (f" NOTE: {obs['name']!r} exists as a ROUTINE-LOCAL script "
+                         f"(scripts/) — run it with the script action: "
+                         f'{{"kind": "script", "name": "{obs["name"]}"}}. If "script" is '
+                         "not among your action kinds it is gated behind the scripts "
+                         'permission — request it via ask_user with request: '
+                         '"action:script".')
+            return miss
         if obs.get("declined_secrets") or obs.get("pending_secrets"):
             # D39 secret-exposure gate: the util was NOT run — say why and what to do next.
             # A DECLINE never enumerates the names it refused (R17): the refusal must not

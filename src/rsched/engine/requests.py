@@ -80,6 +80,23 @@ def request_denial(loop, action: dict) -> list[str]:
     for raw in request_ids(action):
         parsed = entities.parse_entity(raw)
         if parsed is None:
+            # A real action kind that is simply not gateable (create_routine, manage_group,
+            # finish, ...) would otherwise get the generic "not a grant-entity id" copy —
+            # which lists "action" as a valid class and so reads as self-contradictory
+            # (routine-improver:20260814-015412 retried against it). Name the actual rule.
+            acls, _, aname = raw.partition(":")
+            aname = aname.strip()
+            if acls == "action" and aname:
+                from ..grants import GATED_KINDS
+                from .actions import KINDS
+                if aname in KINDS and aname not in GATED_KINDS:
+                    problems.append(
+                        f"request: the {aname!r} action kind exists but is not grantable "
+                        f"per-routine — the requestable action kinds are "
+                        f'{", ".join(GATED_KINDS)}. {aname!r} is wired to the run kind '
+                        "(e.g. conversation-only), so no grant can switch it on here — "
+                        "raise the need in a report or a plain ask_user instead")
+                    continue
             problems.append(
                 f'request: {raw!r} is not a grant-entity id — use "<class>:<name>" with '
                 f'class one of {", ".join(entities.CLASSES)} (e.g. "util:discord", '
