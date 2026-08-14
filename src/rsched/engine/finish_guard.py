@@ -27,13 +27,19 @@ import re
 
 # action kind -> regex of affirmative completion verb stems that assert it was performed
 _CLAIM_ACTIONS: dict[str, str] = {
-    "report": r"fil|submit|post|logg|sent|send|open|escalat|rais",
+    # "sent/send/open" deliberately absent for report: they are DOCUMENT-shipping verbs, and
+    # a routine whose deliverable is a PDF/LaTeX "report" writes them in every honest summary
+    # (R360, frame-fill-lab:20260814-061034 — four consecutive false rejects).
+    "report": r"fil|submit|post|logg|escalat|rais",
     "ask_user": r"ask|question|escalat|surfac|prompt",
     "schedule_run": r"schedul|arm|queu",
     "create_routine": r"creat|materializ|scaffold|set up|built|generat",
 }
 _NEGATION = r"\b(?:not|no|never|without|didn'?t|couldn'?t|cannot|can'?t|skip)\b"
 _WINDOW = 24  # max chars between the verb and the literal token, and the negation look-back
+# A "report" beside document vocabulary is a DELIVERABLE, not the action (R360): "compiled
+# the LaTeX report", "the report PDF", "reports/analysis.pdf" claim no engine action.
+_DOC_CONTEXT = re.compile(r"(?i)pdf|latex|\breports?/|\.(?:md|tex|html?)\b")
 
 
 def normalize_escaped_newlines(text: str) -> str:
@@ -70,7 +76,9 @@ def unbacked_action_claims(summary: str, taken_kinds, is_meta: bool) -> list[str
     for kind, verbs in _CLAIM_ACTIONS.items():
         if kind in taken or kind not in summary:
             continue
-        token = re.escape(kind)
+        # \b-bounded: "reports/", "reporting" or "schedule_runner" never contain the claim
+        # token as a word, so document paths and derived nouns cannot trip the guard (R360).
+        token = rf"\b{re.escape(kind)}\b"
         pat = re.compile(
             rf"(?:{verbs})\w*.{{0,{_WINDOW}}}?{token}|{token}.{{0,{_WINDOW}}}?(?:{verbs})\w*",
             re.IGNORECASE,
@@ -79,6 +87,10 @@ def unbacked_action_claims(summary: str, taken_kinds, is_meta: bool) -> list[str
             pre = summary[max(0, m.start() - _WINDOW):m.start()]
             if re.search(_NEGATION, pre, re.IGNORECASE):
                 continue
+            if kind == "report":
+                seg = summary[max(0, m.start() - _WINDOW):m.end() + _WINDOW]
+                if _DOC_CONTEXT.search(seg):
+                    continue
             flagged.add(kind)
             break
     return sorted(flagged)

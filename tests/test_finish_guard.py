@@ -53,6 +53,26 @@ def test_bare_discussion_token_not_flagged():
     assert unbacked_action_claims(s, set(), is_meta=False) == []
 
 
+def test_document_report_deliverable_not_flagged():
+    # R360 (frame-fill-lab): a routine whose DELIVERABLE is a PDF "report" must be able to
+    # describe shipping it — document vocabulary near the token is not an action claim.
+    s = ("Compiled the LaTeX report, verified all 4 pages, and sent the report PDF "
+         "to the user's folder.")
+    assert unbacked_action_claims(s, set(), is_meta=False) == []
+
+
+def test_reports_path_and_derived_noun_not_flagged():
+    # \b-bounded token: "reports/" and "reporting" never contain the claim token as a word.
+    s = "Wrote reports/analysis.md, opened three follow-ups, and submitted the final build."
+    assert unbacked_action_claims(s, set(), is_meta=False) == []
+
+
+def test_filed_report_still_flagged():
+    # the F127 positive case survives the R360 tightening
+    s = "Raised a report to global-utils-review about the crash."
+    assert unbacked_action_claims(s, set(), is_meta=False) == ["report"]
+
+
 def test_empty_and_actionless_summaries():
     assert unbacked_action_claims("", set(), is_meta=False) == []
     assert unbacked_action_claims("Did the work, all green.", {"util"}, is_meta=False) == []

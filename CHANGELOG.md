@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.200.2] - 2026-08-15
+
+### Fixed
+- **Finish-guard no longer flags the noun "report"** (F332, R360): a routine whose
+  DELIVERABLE is a PDF/LaTeX report could not write an honest finish summary — the
+  unbacked-claim check matched document-shipping verbs (sent/send/open) near the word
+  "report", and the token matched inside "reports/" paths. The claim token is now
+  word-bounded, the report verb list is filing verbs only, and a match beside document
+  vocabulary (PDF, LaTeX, reports/, .md/.tex) is exempt. The F127 positive case
+  ("Filed report to self-audit") stays rejected.
+
 ## [0.200.1] - 2026-08-15
 
 ### Fixed
