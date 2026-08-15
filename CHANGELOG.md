@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.202.0] — 2026-08-15
+
+### Changed
+- **Message fields are always multi-line, and stand alone on narrow screens** (F346,
+  user order 2026-08-15): the run view's composer and the answer form's free-text field
+  (Decisions page included) are textareas everywhere — Enter sends, Shift+Enter breaks
+  the line — and on a ≤860px viewport every message field takes its own full-width row
+  with the buttons wrapping beneath it (the F238 media rule now covers textareas; the
+  answer field's flex moved off the element so the stylesheet rule can win).
+- **The routine page's Runs table is capped at the 10 newest runs** (F345, user order
+  2026-08-15): the full history (keep_runs can be 30+) made Runs the tallest element on
+  the page; it now opens fully only on an explicit "show all N runs" click, and the
+  expanded state survives the live re-render on run_finished.
+
 ## [0.201.0] — 2026-08-15
 
 ### Added

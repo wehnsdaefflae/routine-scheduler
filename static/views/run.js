@@ -119,7 +119,10 @@ export async function render(view, runId, query = {}) {
   // No inline flex: the `.composer` stylesheet rules govern its width (base: fill the row;
   // ≤860px: its own full-width line) — an inline flex would beat the media rule and re-squish
   // it inline on narrow screens, which is exactly the F238 regression this avoids.
-  const msgInput = el("input", { type: "text", placeholder: "message…",
+  // ALWAYS a textarea (user order 2026-08-15, F346): a message field is multi-line prose,
+  // never a one-line slot — Enter sends, Shift+Enter breaks the line (same keys as the
+  // conversation composer, so the two send boxes feel like one control).
+  const msgInput = el("textarea", { rows: 2, placeholder: "message…",
     "data-persist": "run-msg" });
   const sendBtn = el("button", { class: "btn primary" }, "send");
   // Attachments: the same affordance as the conversation composer (file dialog, chips,
@@ -413,7 +416,9 @@ export async function render(view, runId, query = {}) {
     sendBtn.disabled = false;
   };
   sendBtn.onclick = doSend;
-  msgInput.onkeydown = (e) => { if (e.key === "Enter") doSend(); };
+  msgInput.onkeydown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); }
+  };
 
   // ---- boot -----------------------------------------------------------------------------------
   let detail;

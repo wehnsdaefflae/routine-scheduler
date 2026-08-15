@@ -320,7 +320,10 @@ pre.doc {
 /* the run/end-of-run composer input fills the row on wide screens (was an inline flex:1 on
    the element, which beat the ≤860px full-width media rule below and re-squished it inline —
    F238 regression); the flex now lives in the stylesheet so the media rule can override it. */
-.composer > input[type="text"] { flex: 1 1 auto; }
+.composer > input[type="text"], .composer > textarea { flex: 1 1 auto; resize: vertical; }
+/* answer forms: the field's flex lives HERE, not inline on the element — an inline flex
+   would beat the mobile full-width rule below (the F238 regression, re-learned on F346) */
+.row > .answer-input { flex: 1 1 auto; resize: vertical; }
 .mt { margin-top: 14px; }
 textarea, input[type=text], input[type=password], input[type=number], input[type=time], select {
   background: var(--ink-2); color: var(--text); border: 1px solid var(--line-2);
@@ -446,7 +449,8 @@ input[type=time], input[type=number] { width: auto; }
   /* the run/end-of-run composer: the message input takes its OWN full-width line, and the
      send/attach buttons + "editable recipe" toggle wrap onto the line beneath it (F238) —
      instead of the input shrinking inline next to them on a narrow screen. */
-  .composer > input[type="text"] { flex: 1 1 100%; }
+  .composer > input[type="text"], .composer > textarea,
+  .row > .answer-input { flex: 1 1 100%; }
 }
 
 @media (max-width: 480px) {

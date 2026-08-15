@@ -52,11 +52,13 @@ export function answerForm(q, {
     ["deny_forever", "never", "decline forever — the routine stops asking for this"],
   ].filter(([key]) => (key !== "allow_forever" || !request.every((e) => e.startsWith("recreate:")))
     && (key !== "allow_once" || onceOk));
-  const input = control === "input"
-    ? el("input", { type: "text", placeholder,
-        "data-persist": `answer-${q.qid}`, style: "flex:1" })
-    : el("textarea", { rows: "1", placeholder,
-        "data-persist": `answer-${q.qid}`, style: "flex:1;resize:vertical" });
+  // ALWAYS a textarea (user order 2026-08-15, F346): an answer is prose, and a one-line
+  // slot punishes any thought longer than a word. `control` now ONLY sets the Enter
+  // behavior ("input": Enter always sends; "textarea": Shift+Enter breaks the line).
+  // Flex lives on the .answer-input class, not inline — inline flex would beat the
+  // mobile full-width stylesheet rule (F238).
+  const input = el("textarea", { rows: "1", placeholder,
+    "data-persist": `answer-${q.qid}`, class: "answer-input" });
   const send = el("button", { class: "btn primary" }, "answer");
   const discuss = askBack && !quick ? el("button", { class: "btn",
     title: "send as a follow-up question / thought — the model replies and the question stays open" },

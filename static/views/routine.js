@@ -92,7 +92,7 @@ export async function render(view, slug, query = {}) {
 
   // -- runs (recent activity — kept in the overview zone) --------------------------
   view.append(el("h2", {}, "Runs"));
-  const runsBox = el("div", {});
+  const runsBox = el("div", { class: "runs-box" });
   view.append(runsBox);
   renderRuns(d);
 
@@ -163,10 +163,19 @@ export async function render(view, slug, query = {}) {
   window.addEventListener("rsched-bus", onBus);
   return () => window.removeEventListener("rsched-bus", onBus);
 
+  // The Runs table is capped (user order 2026-08-15, F345): with keep_runs at 30+ the full
+  // history made this element the tallest thing on the page, pushing every section below
+  // the fold. The newest rows answer "is it healthy right now"; the full history is one
+  // explicit click away (the expanded state survives the live re-render on run_finished
+  // because it rides on runsBox itself, not on this closure).
   function renderRuns(d) {
+  const RUNS_PREVIEW = 10;   // inside the function: it hoists, a const out here would not
   runsBox.replaceChildren();
   const view = runsBox;
-  const rows = (d.runs || []).map((r) => el("tr", {},
+  const all = d.runs || [];
+  const expanded = runsBox.dataset.expanded === "1";
+  const shown = expanded ? all : all.slice(0, RUNS_PREVIEW);
+  const rows = shown.map((r) => el("tr", {},
     el("td", {}, el("a", { href: `#/run/${r.run_id}` }, when(r.ts))),
     el("td", {}, chip(r.state, r.state)),
     el("td", { class: "num" }, String(r.turn ?? "")),
@@ -180,5 +189,12 @@ export async function render(view, slug, query = {}) {
         el("thead", {}, el("tr", {}, ["when", "state", "turns", "duration", "tokens", "summary"].map((h) => el("th", {}, h)))),
         el("tbody", {}, rows.length ? rows
           : el("tr", {}, el("td", { class: "muted", colspan: 6 }, "no runs yet — fire one with ▶ run now")))))));
+  if (all.length > RUNS_PREVIEW) {
+    view.append(el("div", { class: "row", style: "justify-content:center;padding:6px 0" },
+      el("button", { class: "btn small", onclick: () => {
+        runsBox.dataset.expanded = expanded ? "" : "1";
+        renderRuns(d);
+      } }, expanded ? "show fewer" : `show all ${all.length} runs`)));
+  }
 }
 }

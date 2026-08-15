@@ -145,3 +145,19 @@ def test_fs_root_directory_picker(ui, ui_page):
     row = ui_page.locator(".root-path")
     expect(row).to_have_count(1)
     expect(row).to_contain_text("routines")
+
+
+def test_runs_table_caps_at_ten_with_show_all(ui, ui_page):
+    """F345 (user order 2026-08-15): the Runs element grew as tall as the whole run
+    history and pushed every section below the fold — it now shows the 10 newest rows
+    and the full history opens only on an explicit "show all" click (reversible)."""
+    for i in range(12):
+        ui.seed_run("uir", f"202607{i + 1:02d}-000000", "finished", summary=f"run {i}")
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    rows = ui_page.locator(".runs-box tbody tr")
+    expect(rows).to_have_count(10)                       # capped, however many exist
+    btn = ui_page.locator(".runs-box button", has_text="show all")
+    expect(btn).to_be_visible()
+    btn.click()
+    expect(ui_page.locator(".runs-box button", has_text="show fewer")).to_be_visible()
+    assert rows.count() >= 12, "expanding must render the full history"

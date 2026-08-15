@@ -58,7 +58,7 @@ def test_decisions_blocking_question_from_live_run(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/questions")
     card = ui_page.locator(".question-item.warn")   # blocking questions render loud
     expect(card).to_contain_text("Ship it?")
-    card.locator('input[data-persist="answer-q-go"]').fill("yes — ship")
+    card.locator('textarea[data-persist="answer-q-go"]').fill("yes — ship")
     card.get_by_role("button", name="answer").click()
     expect(_toast(ui_page)).to_contain_text("answered — the run resumes")
     answer = json.loads(
@@ -327,7 +327,7 @@ def test_run_view_message_modes(ui, ui_page):
     # F237: no mode <select> — a live run's input injects (shown by its placeholder), a
     # terminal run's input continues the run; the destination is implied by run state.
     assert ui_page.locator('select[title="where this message goes"]').count() == 0
-    ui_page.locator('input[placeholder="inject a message into the run…"]').fill("mid-run note")
+    ui_page.locator('textarea[placeholder="inject a message into the run…"]').fill("mid-run note")
     # attachments ride a run message too (F202): picking a file shows a chip; the send
     # stores it under the routine's attachments/ and the inbox message records the rel
     ui_page.locator('input[type="file"]').set_input_files(
@@ -354,7 +354,7 @@ def test_run_view_message_modes(ui, ui_page):
     # send button wraps BENEATH it — not squished inline beside the controls. This asserts
     # the real layout (not just the class): the earlier count-only check passed even while an
     # inline flex:1 on the input silently beat the ≤860px stylesheet rule and kept it inline.
-    composer_input = ui_page.locator("div.composer input[data-persist='run-msg']")
+    composer_input = ui_page.locator("div.composer textarea[data-persist='run-msg']")
     assert composer_input.count() == 1
     ui_page.set_viewport_size({"width": 400, "height": 900})
     row = ui_page.locator("div.composer")
@@ -371,7 +371,7 @@ def test_run_view_message_modes(ui, ui_page):
         f"send button did not wrap below the input: input bottom {ibox['y'] + ibox['height']}, "
         f"button top {sbox['y']}")
     ui_page.set_viewport_size({"width": 1280, "height": 900})   # restore for the rest
-    ui_page.locator('input[placeholder^="message…"]').fill("continue please")
+    ui_page.locator('textarea[placeholder^="message…"]').fill("continue please")
     ui_page.get_by_role("button", name="send", exact=True).click()
     expect(_toast(ui_page)).to_contain_text("continue the conversation")
     assert any("continue please" in m.read_text(encoding="utf-8")
@@ -384,13 +384,13 @@ def test_run_view_composer_draft_persists_and_clears_on_send(ui, ui_page):
     behind."""
     ui.seed_run("uir", "20260729-140000", "running")
     ui_page.goto(f"{ui.url}/#/run/uir:20260729-140000")
-    composer = ui_page.locator('input[data-persist="run-msg"]')
+    composer = ui_page.locator('textarea[data-persist="run-msg"]')
     expect(composer).to_be_visible()
     composer.fill("a draft I am still writing")
     # refresh — the draft must come back (was broken: placeholder-keyed draft lost when the
     # placeholder changed)
     ui_page.reload()
-    composer = ui_page.locator('input[data-persist="run-msg"]')
+    composer = ui_page.locator('textarea[data-persist="run-msg"]')
     expect(composer).to_have_value("a draft I am still writing")
     # sending clears the input
     composer.fill("mid-run note to send")
@@ -476,10 +476,10 @@ def test_run_view_recipe_edit_checkbox(ui, ui_page):
     expect(chk).to_be_visible()
     expect(chk).not_to_be_checked()                     # off by default
     chk.check()
-    expect(ui_page.locator('input[placeholder*="may edit the routine"]')).to_be_visible()
+    expect(ui_page.locator('textarea[placeholder*="may edit the routine"]')).to_be_visible()
     chk.uncheck()
     expect(ui_page.locator(
-        'input[placeholder="message… (continues this run)"]')).to_be_visible()
+        'textarea[placeholder="message… (continues this run)"]')).to_be_visible()
 
 
 def test_run_view_deliberation_relevel(ui, ui_page):
@@ -569,7 +569,7 @@ def test_run_transcript_story_and_refer(ui, ui_page):
     expect(ref).to_contain_text("turn 1 (util websearch): Catalog fits — scanning portals.")
     # …and the continued-run message leads with the quoted reference line (F233: a terminal
     # run's input always continues THIS run — there is no queue mode to select).
-    ui_page.locator('input[placeholder^="message…"]').fill("dig into that result")
+    ui_page.locator('textarea[placeholder^="message…"]').fill("dig into that result")
     ui_page.get_by_role("button", name="send", exact=True).click()
     expect(_toast(ui_page)).to_contain_text("continue the conversation")
     expect(ref).to_be_hidden()                      # sent — the chip clears
@@ -1798,3 +1798,19 @@ def test_model_pickers_label_window_sizes(ui, ui_page):
     head_opt = ui_page.locator('.conv-model option[value="m"]').first
     head_opt.wait_for(state="attached", timeout=10_000)
     assert "ctx" in (head_opt.text_content() or "")
+
+
+def test_run_composer_textarea_stacks_on_narrow(ui, ui_page):
+    """F346 (user order 2026-08-15): the run composer is ALWAYS a textarea — a message is
+    multi-line prose, never a one-line slot — and on a narrow viewport the field is the
+    ONLY element on its row: send wraps onto the line beneath it (the F238 full-width
+    media rule now covers textareas, and the flex lives in the stylesheet, not inline)."""
+    ui.seed_run("uir", "20260815-090000", "running")
+    ui_page.set_viewport_size({"width": 420, "height": 900})
+    ui_page.goto(f"{ui.url}/#/run/uir:20260815-090000")
+    box = ui_page.locator('div.composer textarea[data-persist="run-msg"]')
+    expect(box).to_be_visible()
+    send = ui_page.locator("div.composer button", has_text="send")
+    bb, sb = box.bounding_box(), send.bounding_box()
+    assert sb["y"] >= bb["y"] + bb["height"] - 1, \
+        f"send must wrap BELOW the full-width message field, got field={bb} send={sb}"
