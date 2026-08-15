@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
-## [0.201.0] - 2026-08-15
+## [0.201.0] — 2026-08-15
 
 ### Added
 - **Artifact rows show their update time and are deletable from the sidebar** (F336,
@@ -30,7 +30,7 @@ _Nothing yet._
   `DELETE /api/conversations/{slug}/artifacts` endpoints with the same resolved-path
   containment as serving (artifacts/ only; attachments and config can never be deleted).
 
-## [0.200.2] - 2026-08-15
+## [0.200.2] — 2026-08-15
 
 ### Fixed
 - **Finish-guard no longer flags the noun "report"** (F332, R360): a routine whose
@@ -41,7 +41,7 @@ _Nothing yet._
   vocabulary (PDF, LaTeX, reports/, .md/.tex) is exempt. The F127 positive case
   ("Filed report to self-audit") stays rejected.
 
-## [0.200.1] - 2026-08-15
+## [0.200.1] — 2026-08-15
 
 ### Fixed
 - **`util` miss now names a matching routine-local script** (F330, R367): calling the
