@@ -1816,3 +1816,23 @@ def test_run_composer_textarea_stacks_on_narrow(ui, ui_page):
     bb, sb = box.bounding_box(), send.bounding_box()
     assert sb["y"] >= bb["y"] + bb["height"] - 1, \
         f"send must wrap BELOW the full-width message field, got field={bb} send={sb}"
+
+
+def test_enter_newline_shift_enter_sends(ui, ui_page):
+    """User order 2026-08-16 (F353): plain Enter in a message field inserts a NEWLINE and
+    sends nothing; Shift+Enter SENDS — the exact reverse of the 0.202.0 keys. The
+    conversation composer is the reference surface; answerform.js and the run composer
+    ship the same flipped handler."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill("keyboard playground")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    composer = ui_page.locator(".conv-composer textarea")
+    composer.wait_for(timeout=10_000)
+    composer.fill("line one")
+    composer.press("Enter")                 # stays local: a newline, not a send
+    composer.press_sequentially("line two")
+    assert "\n" in composer.input_value(), "plain Enter must insert a newline"
+    with ui_page.expect_request("**/api/conversations/**/message") as req:
+        composer.press("Shift+Enter")       # THIS is the send
+    assert req.value.method == "POST"

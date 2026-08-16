@@ -160,7 +160,7 @@ export function createChat(container, opts = {}) {
       return el("div", {}, head, strip.node);
     }
     const form = answerForm(p, {
-      placeholder: "answer… (Shift+Enter for a new line)",
+      placeholder: "answer… (Shift+Enter sends)",
       defaultLine: false,   // the head already shows the default
       submitText: (text, _intermediate, decision) => opts.answer(p.qid, text, decision),
       onSuccess: (text) => settleQuestion(p.qid, `✅ answered: ${text}`),

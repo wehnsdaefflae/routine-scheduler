@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.204.0] — 2026-08-16
+
+### Changed
+- **Message-field keys flipped** (F353, user order 2026-08-16): in EVERY message input —
+  conversation composer, run composer, answer forms and the Decisions page — plain **Enter
+  now inserts a newline** and **Shift+Enter sends**. This reverses the 0.202.0 keys on the
+  user's explicit order; single-line `input` controls (where a newline is impossible) keep
+  Enter-sends. All "(Shift+Enter for a new line)" hint copy now reads "(Shift+Enter sends)".
+
 ## [0.203.0] — 2026-08-15
 
 ### Added

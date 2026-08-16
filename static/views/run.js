@@ -120,7 +120,7 @@ export async function render(view, runId, query = {}) {
   // ≤860px: its own full-width line) — an inline flex would beat the media rule and re-squish
   // it inline on narrow screens, which is exactly the F238 regression this avoids.
   // ALWAYS a textarea (user order 2026-08-15, F346): a message field is multi-line prose,
-  // never a one-line slot — Enter sends, Shift+Enter breaks the line (same keys as the
+  // never a one-line slot — Shift+Enter sends, Enter breaks the line (same keys as the
   // conversation composer, so the two send boxes feel like one control).
   const msgInput = el("textarea", { rows: 2, placeholder: "message…",
     "data-persist": "run-msg" });
@@ -417,7 +417,7 @@ export async function render(view, runId, query = {}) {
   };
   sendBtn.onclick = doSend;
   msgInput.onkeydown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); }
+    if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); doSend(); }
   };
 
   // ---- boot -----------------------------------------------------------------------------------
