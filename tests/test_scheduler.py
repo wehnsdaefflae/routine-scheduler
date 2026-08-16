@@ -93,8 +93,8 @@ def test_rescan_suppresses_scheduled_group_members(make_routine, tmp_path):
     make_routine(slug="chained")
     make_routine(slug="loose")
     server = _server(tmp_path)
-    groups.create(server.routines_home, name="Plain", members=[{"slug": "loose", "split": False}])          # no cron
-    grp = groups.create(server.routines_home, name="Sched", members=[{"slug": "chained", "split": False}],
+    groups.create(server.routines_home, name="Plain", members=[{"slug": "loose"}])          # no cron
+    grp = groups.create(server.routines_home, name="Sched", members=[{"slug": "chained"}],
                         cron="0 7 * * *", tz="UTC")
     sched = Scheduler(server, FakeRunner(), EventBus())
     sched.rescan()
@@ -115,7 +115,7 @@ async def test_boot_catchup_skips_group_managed_members(make_routine, tmp_path):
     text = (d / "routine.yaml").read_text().replace("catchup: skip", "catchup: run_once")
     (d / "routine.yaml").write_text(text)
     server = _server(tmp_path)
-    groups.create(server.routines_home, name="Sched", members=[{"slug": "gcatch", "split": False}],
+    groups.create(server.routines_home, name="Sched", members=[{"slug": "gcatch"}],
                   cron="0 7 * * *", tz="UTC")
     fr = FakeRunner()
     sched = Scheduler(server, fr, EventBus())
@@ -134,7 +134,7 @@ async def test_due_group_cron_arms_the_chain_and_fires_member_zero(make_routine,
     make_routine(slug="second")
     monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
     server = _server(tmp_path)
-    grp = groups.create(server.routines_home, name="Chain", members=[{"slug": "first", "split": False}, {"slug": "second", "split": False}],
+    grp = groups.create(server.routines_home, name="Chain", members=[{"slug": "first"}, {"slug": "second"}],
                         cron="0 7 * * *", tz="UTC")
     fr = FakeRunner()
     sched = Scheduler(server, fr, EventBus())
@@ -434,7 +434,7 @@ async def test_due_group_fire_while_in_flight_emits_refused_event(make_routine, 
     monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
     server = _server(tmp_path)
     grp = groups.create(server.routines_home, name="Chain",
-                        members=[{"slug": "first", "split": False}],
+                        members=[{"slug": "first"}],
                         cron="0 7 * * *", tz="UTC")
     fr = FakeRunner()
     sched = Scheduler(server, fr, EventBus())

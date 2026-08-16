@@ -1,6 +1,6 @@
 """Routine groups: the store (rsched.groups) + its CRUD API (web.api_groups), the shared
 group store injected into member runs' fs roots (D67), the group schedule (D71), and the
-member-record shape with its per-member `split` flag (F292).
+member-record shape.
 
 These tests pin the store's shape guarantees (ordered/deduped member records, on_failure
 vocabulary, the update tri-state), the API's member-existence validation against the live
@@ -14,9 +14,9 @@ from pathlib import Path
 from rsched import groups
 
 
-def m(slug: str, *, split: bool = False) -> dict:
-    """A member record — the canonical membership shape (F292)."""
-    return {"slug": slug, "split": split}
+def m(slug: str) -> dict:
+    """A member record — the canonical membership shape."""
+    return {"slug": slug}
 
 
 # -- store ---------------------------------------------------------------------------------
@@ -31,14 +31,13 @@ def test_store_empty_reads_as_default(tmp_path):
 def test_create_preserves_order_and_dedups_members(tmp_path):
     home = tmp_path
     rec = groups.create(home, name="Morning",
-                        members=[m("b"), m("a", split=True), m("b"), {"slug": ""}, m("c")])
-    # order kept, dupes + blanks dropped, split coerced to a real bool
-    assert rec["members"] == [m("b"), m("a", split=True), m("c")]
+                        members=[m("b"), m("a"), m("b"), {"slug": ""}, m("c")])
+    # order kept, dupes + blanks dropped
+    assert rec["members"] == [m("b"), m("a"), m("c")]
     assert rec["id"].startswith("grp-")
     assert rec["on_failure"] is None               # inherit by default
     assert groups.get(home, rec["id"]) == rec
     assert groups.member_slugs(rec) == ["b", "a", "c"]
-    assert groups.split_slugs(rec) == ["a"]
 
 
 def test_create_rejects_blank_name_and_bad_on_failure(tmp_path):
@@ -97,15 +96,15 @@ def test_load_normalizes_corrupt_shape(tmp_path):
     data = groups.load(home)
     assert data["default_on_failure"] == "stop"            # bad default → built-in
     assert len(data["groups"]) == 1                          # non-dicts dropped
-    # deduped by slug (first record wins), junk entries dropped, split → real bool
-    assert data["groups"][0]["members"] == [m("a", split=True)]
+    # deduped by slug (first record wins), junk entries + stray keys dropped
+    assert data["groups"][0]["members"] == [m("a")]
     assert data["groups"][0]["on_failure"] is None          # bad value → inherit
 
 
 def test_migration_converts_string_members_and_drops_old_chains(tmp_path):
     """MIGRATION(F292): a pre-record store (members as plain slug strings) converts once;
-    an old-shape in-flight chain file is dropped (transient state the two-phase manager
-    cannot advance), while a record-shape chain survives."""
+    an old-shape in-flight chain file is dropped (transient state the manager cannot
+    advance), while a record-shape chain survives."""
     from types import SimpleNamespace
 
     from rsched import group_runs
@@ -123,7 +122,7 @@ def test_migration_converts_string_members_and_drops_old_chains(tmp_path):
                  "status": "pending", "log": []}
     group_runs.save(home, old_chain)
     new_chain = {"id": "gr-new", "group_id": "grp-new", "members": [m("c")],
-                 "on_failure": "stop", "phase": "ingest", "cursor": 0,
+                 "on_failure": "stop", "cursor": 0,
                  "current_run": None, "status": "pending", "log": []}
     group_runs.save(home, new_chain)
 
@@ -168,7 +167,7 @@ def test_api_group_lifecycle(api_client):
     assert body["groups"] == []
     assert {k["slug"] for k in body["known_routines"]} == {"alpha", "beta"}
 
-    # create with real members (records; split defaults false)
+    # create with real members (records)
     r = client.post("/api/groups", json={"name": "Morning",
                                          "members": [{"slug": "beta"}, {"slug": "alpha"}]})
     assert r.status_code == 200, r.text
@@ -180,12 +179,12 @@ def test_api_group_lifecycle(api_client):
     assert r.status_code == 400
     assert "ghost" in r.json()["detail"]
 
-    # patch: reorder + flag a split member (F292) + set on_failure override
+    # patch: reorder + set on_failure override
     r = client.patch(f"/api/groups/{gid}",
-                     json={"members": [{"slug": "alpha", "split": True}, {"slug": "beta"}],
+                     json={"members": [{"slug": "alpha"}, {"slug": "beta"}],
                            "on_failure": "continue", "set_on_failure": True})
     assert r.status_code == 200, r.text
-    assert r.json()["group"]["members"] == [m("alpha", split=True), m("beta")]
+    assert r.json()["group"]["members"] == [m("alpha"), m("beta")]
     assert r.json()["group"]["on_failure"] == "continue"
 
     # set the instance default
@@ -214,26 +213,25 @@ def test_api_run_group_arms_a_chain(api_client):
     gid = client.post("/api/groups",
                       json={"name": "Chain",
                             "members": [{"slug": "alpha"},
-                                        {"slug": "beta", "split": True}]}).json()["group"]["id"]
+                                        {"slug": "beta"}]}).json()["group"]["id"]
 
     # a memberless group cannot be fired
     empty = client.post("/api/groups", json={"name": "Empty"}).json()["group"]["id"]
     assert client.post(f"/api/groups/{empty}/run").status_code == 400
 
     # arm: the chain lands, snapshotting member records + the resolved policy (default
-    # 'stop'), starting in the ingest pass (F292)
+    # 'stop')
     r = client.post(f"/api/groups/{gid}/run")
     assert r.status_code == 200, r.text
     run = r.json()["run"]
-    assert run["members"] == [m("alpha"), m("beta", split=True)]
+    assert run["members"] == [m("alpha"), m("beta")]
     assert run["on_failure"] == "stop"
-    assert run["cursor"] == 0 and run["status"] == "pending" and run["phase"] == "ingest"
+    assert run["cursor"] == 0 and run["status"] == "pending"
 
-    # GET /groups now surfaces the in-flight chain, with its pass
+    # GET /groups now surfaces the in-flight chain
     body = client.get("/api/groups").json()
     assert gid in body["in_flight"]
-    assert body["in_flight"][gid]["members"] == [m("alpha"), m("beta", split=True)]
-    assert body["in_flight"][gid]["phase"] == "ingest"
+    assert body["in_flight"][gid]["members"] == [m("alpha"), m("beta")]
 
     # a second arm of the same group is a 409 (one chain at a time)
     assert client.post(f"/api/groups/{gid}/run").status_code == 409
@@ -410,71 +408,6 @@ def test_grouped_run_reads_and_writes_the_shared_store(make_routine, scripted):
     reads = [e for e in events if e["type"] == "observation"
              and e["payload"].get("kind") == "read_file"]
     assert reads and not reads[0]["payload"].get("error")
-
-
-# -- the two-phase boot param (F292) -------------------------------------------------------
-
-
-def test_group_phase_prose_in_the_harness_contract(make_routine, tmp_path):
-    """A split member's run is told its pass — and ONLY its pass — in the harness contract;
-    a phase-less run carries none of the prose."""
-    from rsched.config import ServerConfig, load_routine
-    from rsched.engine.composer import harness_contract
-    from rsched.engine.run_context import Budgets, RunContext
-    from rsched.engine.transcript import Transcript
-
-    d = make_routine(slug="phased")
-    cfg, _ = load_routine(d)
-    run_dir = d / "runs" / "20260812-070000"
-    run_dir.mkdir(parents=True)
-    ctx = RunContext(routine=cfg, server=ServerConfig(), registry=None,
-                     run_ts="20260812-070000", run_dir=run_dir,
-                     transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    assert "GROUP FIRE PHASE" not in harness_contract(ctx)
-    ctx.group_phase = "ingest"
-    prose = harness_contract(ctx)
-    assert "GROUP FIRE PHASE: ingest" in prose
-    assert "finish WITHOUT any outbound communication" in prose
-    ctx.group_phase = "outbound"
-    prose = harness_contract(ctx)
-    assert "GROUP FIRE PHASE: outbound" in prose
-    assert "do not redo the ingestion" in prose
-
-
-def test_run_routine_reads_the_phase_from_boot_json(make_routine, scripted):
-    """The one channel end to end: run_routine(group_phase=…) writes the run dir's
-    boot.json (exactly what a daemon group fire writes), the engine reads it back as boot
-    context, and status.json stamps the pass for the UI. A junk phase reads as none."""
-    from rsched.engine.runtime import run_routine
-    from rsched.paths import atomic_write_json, read_json
-    from test_loop import _server
-
-    d = make_routine(slug="splitrun")
-    server = _server(d)
-    scripted([
-        {"say": "stage for outbound", "kind": "write_file", "path": "state/staged.md",
-         "content": "ingested\n"},
-        {"say": "done", "kind": "finish", "status": "ok",
-         "summary": "ingest half staged its state, eight words here now yes ok done"},
-    ])
-    status, run_dir = run_routine(d, server, run_ts="20260812-070001", group_phase="ingest")
-    assert status == "ok"
-    assert read_json(run_dir / "boot.json") == {"phase": "ingest"}
-    assert read_json(run_dir / "status.json")["group_phase"] == "ingest"
-
-    # a pre-written junk boot.json (or none) reads as no phase
-    scripted([
-        {"say": "look around", "kind": "read_file", "path": "state/staged.md"},
-        {"say": "done", "kind": "finish", "status": "ok",
-         "summary": "a plain run with no phase, eight words here now yes done"},
-    ])
-    run_dir2 = d / "runs" / "20260812-070002"
-    run_dir2.mkdir(parents=True)
-    atomic_write_json(run_dir2 / "boot.json", {"phase": "sideways"})
-    status, run_dir2 = run_routine(d, server, run_ts="20260812-070002")
-    assert status == "ok"
-    assert read_json(run_dir2 / "status.json")["group_phase"] == ""
 
 
 def test_ungrouped_run_context_has_no_store_root(tmp_path):

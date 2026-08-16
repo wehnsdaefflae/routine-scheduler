@@ -1349,7 +1349,7 @@ def test_dashboard_shows_group_membership(ui, ui_page):
     from rsched import groups
 
     rec = groups.create(ui.routines, name="Maintenance",
-                        members=[{"slug": "uir", "split": False}], on_failure="stop")
+                        members=[{"slug": "uir"}], on_failure="stop")
 
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.get_by_role("button", name="▦ card view").click()   # list is the default (D72)
@@ -1378,7 +1378,7 @@ def test_dashboard_list_default_group_rows_and_inline_pause(ui, ui_page):
     config page."""
     from rsched import groups
 
-    groups.create(ui.routines, name="Nightly", members=[{"slug": "uir", "split": False}],
+    groups.create(ui.routines, name="Nightly", members=[{"slug": "uir"}],
                   on_failure="stop")
 
     ui_page.goto(f"{ui.url}/#/routines")
@@ -1427,7 +1427,7 @@ def test_dashboard_group_managed_schedule_shown(ui, ui_page):
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     cfg["cron"] = "0 11 * * *"
     cfg_path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
-    groups.create(ui.routines, name="Sched", members=[{"slug": "uir", "split": False}],
+    groups.create(ui.routines, name="Sched", members=[{"slug": "uir"}],
                   on_failure="stop", cron="0 10 * * *", tz="Europe/Berlin")
 
     ui_page.goto(f"{ui.url}/#/routines")

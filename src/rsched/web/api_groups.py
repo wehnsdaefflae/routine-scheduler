@@ -2,10 +2,10 @@
 instance-level `.control/groups.json` store (rsched.groups). (D80: the former /groups
 subpage is retired — the routines page's group rows are the one management surface.)
 
-A group is an ORDERED list of member records — {"slug", "split"}, where `split` opts the
-member into the two-phase fire (F292) — plus a mid-chain-failure policy, and optionally a
-cron schedule (D71) that auto-arms the chain — saved here as a friendly spec converted to
-cron + the server's tz, exactly like a routine's schedule. The WEB layer only RECORDS it;
+A group is an ORDERED list of member records — {"slug"} — plus a mid-chain-failure
+policy, and optionally a cron schedule (D71) that auto-arms the chain — saved here as a
+friendly spec converted to cron + the server's tz, exactly like a routine's schedule.
+The WEB layer only RECORDS it;
 the daemon fires (the 0.62.0 split). While a group has a schedule, its members' own crons
 are suppressed by the daemon and their Schedule dropdowns read "group managed". Every
 member slug is validated against the live registry here (the store validates shape only),
@@ -30,10 +30,9 @@ def _routines_home(request: Request):
 
 
 class MemberSpec(BaseModel):
-    """One membership record: the routine + its two-phase opt-in (F292)."""
+    """One membership record: the routine's slug."""
 
     slug: str = Field(min_length=1)
-    split: bool = False
 
 
 def _validate_members(request: Request, members: list[MemberSpec] | None) -> list[dict]:
@@ -47,7 +46,7 @@ def _validate_members(request: Request, members: list[MemberSpec] | None) -> lis
     unknown = [m.slug for m in members if m.slug not in known]
     if unknown:
         raise HTTPException(400, f"unknown routine(s): {', '.join(sorted(unknown))}")
-    return [{"slug": m.slug, "split": m.split} for m in members]
+    return [{"slug": m.slug} for m in members]
 
 
 def _config_layers(request: Request, config: dict) -> dict:

@@ -6,8 +6,8 @@ ACTION, not only the web surface (the routines page's group rows since D80 retir
 mirroring the `/api/groups` surface the routines page uses:
 
     verb=list                                    → the whole store (default + every group)
-    verb=create   name=… [members=…] [split=…] [on_failure=…] [cron=…]
-    verb=update   target=<group id> [name=…] [members=…] [split=…] [on_failure=…] [cron=…]
+    verb=create   name=… [members=…] [on_failure=…] [cron=…]
+    verb=update   target=<group id> [name=…] [members=…] [on_failure=…] [cron=…]
                   [paused=…]
     verb=delete   target=<group id>
     verb=set-default  on_failure=<stop|continue>
@@ -20,12 +20,10 @@ request is completed by the conversation itself, with no operator round-trip to 
 (R312 — direct user requirement 2026-08-11). `paused` (update only) gates the cron without
 touching it — nothing in a paused group auto-fires, an explicit run still works.
 
-`split` (F292) names the subset of `members` that fire ONCE PER PASS of the two-phase
-group fire (ingest, then outbound — each run told its half via the `phase` boot param);
-the action keeps the flat slugs+subset shape (weak-model-friendly schema) and the handler
-folds it into the store's member records. On update: `members` without `split` keeps each
-kept member's existing flag; `split` without `members` re-flags the existing member list;
-both together are exact.
+Members are flat ordered slugs (weak-model-friendly schema); the handler wraps them into
+the store's member records. A flow with an inbound and an outbound end brackets the group
+(D90, 2026-08-16): an inbound-router member placed first, an outbound-sender member placed
+last — the F292 two-pass `split` flag is retired.
 
 It reuses the SAME `rsched.groups` store + `rsched.group_runs` the endpoints call — one source
 of truth, so a group created from chat and one created from the page are identical, and member
@@ -69,39 +67,23 @@ def _slug_list_or_error(action: dict, field: str):
     return list(raw), None
 
 
-def _members_or_error(ctx: RunContext, action: dict, current: dict | None = None):
-    """Fold the action's flat `members` (ordered slugs) + `split` (the phase-split subset)
-    into the store's member RECORDS, validated against the live registry. Returns
-    (records, None) or (None, reject); (None, None) when neither field is present —
-    'leave unchanged' for update, [] for create. `current` (update only) supplies the
-    existing records, so a reorder keeps flags and a re-flag keeps the member list.
+def _members_or_error(ctx: RunContext, action: dict):
+    """Wrap the action's flat `members` (ordered slugs) into the store's member RECORDS,
+    validated against the live registry. Returns (records, None) or (None, reject);
+    (None, None) when the field is absent — 'leave unchanged' for update, [] for create.
     """
     slugs, err = _slug_list_or_error(action, "members")
     if err:
         return None, err
-    split, err = _slug_list_or_error(action, "split")
-    if err:
-        return None, err
-    if slugs is None and split is None:
-        return None, None
-    existing = {m["slug"]: bool(m.get("split")) for m in (current or {}).get("members") or []}
     if slugs is None:
-        slugs = list(existing)   # split-only update: re-flag the existing member list
+        return None, None
     known = _known_slugs(ctx)
     unknown = [m for m in slugs if m not in known]
     if unknown:
         return None, _reject(
             f"manage_group: unknown routine(s) {sorted(unknown)} — a group may only name "
             "routines that exist in the registry")
-    stray = [s for s in split or [] if s not in slugs]
-    if stray:
-        return None, _reject(
-            f"manage_group: 'split' names non-member(s) {sorted(stray)} — split is the "
-            "subset of `members` that fires once per pass of the two-phase group fire")
-    flags = set(split) if split is not None else None
-    return [{"slug": s,
-             "split": (s in flags) if flags is not None else existing.get(s, False)}
-            for s in slugs], None
+    return [{"slug": s} for s in slugs], None
 
 
 def handle_manage_group(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911 — a verb dispatcher: each verb's guard returns its own teaching rejection, one flat handler by design
@@ -114,8 +96,6 @@ def handle_manage_group(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911
       target      — the group id (required for update/delete/run)
       name        — the group's display name (required for create; optional for update)
       members     — ordered routine slugs (optional; create/update)
-      split       — the subset of members that fire once per two-phase pass (F292;
-                    optional; create/update)
       on_failure  — 'stop' | 'continue' (optional for create/update; required for set-default)
       paused      — gate the group's cron without clearing it (optional; update)
     """
@@ -172,7 +152,7 @@ def handle_manage_group(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911
         current = groups.get(home, gid)
         if current is None:
             return _reject(f"manage_group update: no group {gid!r}")
-        members, err = _members_or_error(ctx, action, current)
+        members, err = _members_or_error(ctx, action)
         if err:
             return err
         on_failure = _normalize_on_failure(action) if "on_failure" in action else groups._UNSET

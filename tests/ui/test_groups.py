@@ -1,6 +1,6 @@
 """Group management on the Routines page (D80 — the /groups subpage is retired): the group
 toolbar creates a group, the group row runs/pauses it, the overlay editor edits members,
-split flags (F292), the instance default, and deletes — all persisting to
+the instance default, and deletes — all persisting to
 .control/groups.json. Driven against the REAL console JS — the ui_page fixture also asserts
 the page threw no JS error."""
 
@@ -24,7 +24,7 @@ def test_routine_page_hero_group_select_assigns_membership(ui, ui_page):
     expect(ui_page.locator("#toast:not([hidden])")).to_contain_text(
         "joined", timeout=10_000)
     data = groups.load(ui.routines)
-    assert data["groups"][0]["members"] == [{"slug": "uir", "split": False}]
+    assert data["groups"][0]["members"] == [{"slug": "uir"}]
 
 
 def test_routines_page_group_crud(ui, ui_page):
@@ -44,40 +44,32 @@ def test_routines_page_group_crud(ui, ui_page):
     row.wait_for(timeout=10_000)
     expect(row).to_contain_text("Morning")
 
-    # it persisted to the store, as member RECORDS (F292)
+    # it persisted to the store, as member RECORDS
     def stored():
         return groups.load(ui.routines)
     data = stored()
     assert len(data["groups"]) == 1
     gid = data["groups"][0]["id"]
     assert data["groups"][0]["name"] == "Morning"
-    assert data["groups"][0]["members"] == [{"slug": "uir", "split": False}]
+    assert data["groups"][0]["members"] == [{"slug": "uir"}]
     assert data["groups"][0]["on_failure"] is None      # inherited by default
 
-    # the editor toggles the member's split flag (F292: fires once per two-phase pass)
+    # the editor opens and lists the member
     row.locator("[data-group-edit]").click()
     editor = ui_page.locator(f'[data-group="{gid}"]')
     editor.wait_for(timeout=10_000)
     expect(editor.locator('[data-member="uir"]')).to_contain_text("uir")
-    editor.locator('[data-member-split="uir"]').check()
-    ui_page.wait_for_timeout(300)   # give the PATCH a beat to land
-    assert stored()["groups"][0]["members"] == [{"slug": "uir", "split": True}]
     ui_page.locator("[data-group-editor-close]").click()
 
-    # the expanded group row badges the split member
-    ui_page.locator("tr[data-group-row]", has_text="Morning").get_by_text("⛓ Morning").click()
-    expect(ui_page.locator("tr.group-member [data-member-split-badge]")).to_be_visible(
-        timeout=10_000)
-
-    # Run now → arms a sequential fire; the row shows the ingest-pass progress and the
+    # Run now → arms a sequential fire; the row shows the chain progress and the
     # in-flight chain snapshots the member records
+    ui_page.locator("tr[data-group-row]", has_text="Morning").get_by_text("⛓ Morning").click()
     ui_page.locator("[data-group-run]").click()
     expect(ui_page.locator("[data-group-progress]")).to_contain_text(
-        "ingest 1/1", timeout=10_000)
+        "1/1", timeout=10_000)
     flight = group_runs.read(ui.routines, gid)
     assert flight is not None and flight["cursor"] == 0
-    assert flight["phase"] == "ingest"
-    assert flight["members"] == [{"slug": "uir", "split": True}]
+    assert flight["members"] == [{"slug": "uir"}]
     # clear the armed chain so the delete-and-empty-store assertions below stay clean
     group_runs.remove(ui.routines, gid)
 
@@ -106,9 +98,9 @@ def test_routines_page_group_pause_toggle(ui, ui_page):
     persists paused=true to the store and shows the badge; resume clears both. An
     unscheduled group shows no toggle (there is no cron to pause; ▶ run now is its only
     fire path)."""
-    rec = groups.create(ui.routines, name="Sched", members=[{"slug": "uir", "split": False}],
+    rec = groups.create(ui.routines, name="Sched", members=[{"slug": "uir"}],
                         cron="0 7 * * *", tz="UTC")
-    plain = groups.create(ui.routines, name="Plain", members=[{"slug": "uir", "split": False}])
+    plain = groups.create(ui.routines, name="Plain", members=[{"slug": "uir"}])
     ui_page.goto(f"{ui.url}/#/routines")
     sched_row = ui_page.locator(f'tr[data-group-row="{rec["id"]}"]')
     sched_row.wait_for(timeout=10_000)
@@ -145,7 +137,7 @@ def test_group_editor_shared_config_section(ui, ui_page):
     """D82: the group editor's "Shared config" section is where the block every member
     inherits is edited. Exercises the real panel end to end — it mounts the ROUTINE page's own
     permissions control, and a save lands in .control/groups.json as the group's config."""
-    g = groups.create(ui.routines, name="Nightly", members=[{"slug": "uir", "split": False}])
+    g = groups.create(ui.routines, name="Nightly", members=[{"slug": "uir"}])
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector("tr[data-group-row]", timeout=10_000)
     ui_page.locator("tr[data-group-row] [data-group-edit]").click()
@@ -174,14 +166,14 @@ def test_group_editor_shared_config_section(ui, ui_page):
 def test_expanded_group_rows_drag_to_reorder(ui, ui_page, make_routine):
     """User order 2026-08-13: in an EXPANDED group in the routines table, the member rows
     are the fire order — dragging one onto a sibling reorders the group (drop below the
-    target's midline lands after it). The store must carry the new order, flags intact."""
+    target's midline lands after it). The store must carry the new order."""
     import time
 
     make_routine(slug="gm1")
     make_routine(slug="gm2")
     g = groups.create(ui.routines, name="Ordered",
-                      members=[{"slug": "gm1", "split": True},
-                               {"slug": "gm2", "split": False}])
+                      members=[{"slug": "gm1"},
+                               {"slug": "gm2"}])
     ui_page.goto(f"{ui.url}/#/routines")
     row = ui_page.locator(f'tr[data-group-row="{g["id"]}"]')
     row.wait_for(timeout=10_000)
@@ -201,10 +193,10 @@ def test_expanded_group_rows_drag_to_reorder(ui, ui_page, make_routine):
 
     def members():
         gg = groups.get(ui.routines, g["id"])
-        return [(m["slug"], m["split"]) for m in (gg["members"] if gg else [])]
+        return [m["slug"] for m in (gg["members"] if gg else [])]
 
     deadline = time.time() + 8
-    while time.time() < deadline and members() != [("gm2", False), ("gm1", True)]:
+    while time.time() < deadline and members() != ["gm2", "gm1"]:
         time.sleep(0.15)
-    assert members() == [("gm2", False), ("gm1", True)], \
+    assert members() == ["gm2", "gm1"], \
         f"drag did not reorder the group: {members()}"

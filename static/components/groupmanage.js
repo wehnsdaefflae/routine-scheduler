@@ -7,8 +7,8 @@
 // (debounced 600ms while anything runs), which would tear down inline inputs mid-typing
 // (the F229 lesson) — an overlay lives outside that cycle and closes on its own terms.
 // Every mutation goes through /api/groups (the .control/groups.json store); a member is a
-// RECORD {slug, split} — `split` (F292) opts it into the two-phase fire (it runs once per
-// pass, branching on the `phase` boot param; non-split members run once, in the ingest pass).
+// RECORD {slug}. A flow with an inbound and an outbound end brackets the group (D90):
+// an inbound-router member placed first in the order, an outbound-sender member placed last.
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
@@ -16,10 +16,6 @@ import { groupConfigPanel } from "/static/components/groupconfig.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { el, toast } from "/static/util.js";
 
-const SPLIT_TITLE = "split (two-phase fire): this member runs once per pass — ingest first "
-  + "(gather/process/stage, no outbound), then outbound (send/publish from the staged state) "
-  + "after every member's ingest is done. Its recipe branches on the run's phase boot param. "
-  + "Unchecked: runs once, in the ingest pass, doing its whole job.";
 
 const err = (e) => toast(e.message, 4000, { error: true });
 
@@ -52,21 +48,19 @@ export function groupControls(g, data, { reload }) {
     catch (ex) { err(ex); reload(); }
   };
   const edit = el("button", { class: "btn small ghost", "data-group-edit": "",
-    title: "edit this group: members, order, split flags, schedule, on-failure, delete" }, "✎");
+    title: "edit this group: members, order, schedule, on-failure, delete" }, "✎");
   edit.onclick = (e) => { e.stopPropagation(); openGroupEditor(g, data, { reload }); };
   return [run, ...(pause ? [pause] : []), edit];
 }
 
-/** One line of in-flight chain progress for the group row, or null. Names the pass (F292). */
+/** One line of in-flight chain progress for the group row, or null. */
 export function groupProgress(g, data) {
   const flight = (data.in_flight || {})[g.id];
   if (!flight) return null;
-  const list = (flight.phase === "outbound"
-    ? (flight.members || []).filter((m) => m.split)
-    : flight.members || []).map((m) => m.slug);
+  const list = (flight.members || []).map((m) => m.slug);
   const at = Math.min((flight.cursor || 0) + 1, list.length);
   return el("span", { class: "muted small", "data-group-progress": "" },
-    `· ${flight.phase || "ingest"} ${at}/${list.length}`,
+    `· ${at}/${list.length}`,
     list[flight.cursor] ? ` · ${list[flight.cursor]}` : " · finishing…");
 }
 
@@ -125,8 +119,10 @@ export function openGroupCreate(data, { reload }) {
   const addBtn = el("button", { class: "btn primary" }, "add group");
   const body = el("div", { class: "mt" },
     el("div", { class: "muted small", style: "margin-bottom:8px" },
-      "A group runs its routines in order, one after another. Fire order, split flags and "
-      + "the group schedule are edited on the group after it is created."),
+      "A group runs its routines in order, one after another. For a flow with an inbound "
+      + "and an outbound end, bracket the group: an inbound-router routine first, an "
+      + "outbound-sender routine last. Fire order and the group schedule are edited on "
+      + "the group after it is created."),
     el("div", { class: "row", style: "flex-wrap:wrap;gap:10px;align-items:flex-start" },
       el("label", { class: "small" }, el("div", { class: "muted" }, "name"), nameIn),
       el("label", { class: "small" }, el("div", { class: "muted" },
@@ -137,7 +133,7 @@ export function openGroupCreate(data, { reload }) {
   addBtn.onclick = async () => {
     const name = nameIn.value.trim();
     if (!name) { toast("a group name is required"); return; }
-    const members = [...picker.selectedOptions].map((o) => ({ slug: o.value, split: false }));
+    const members = [...picker.selectedOptions].map((o) => ({ slug: o.value }));
     try {
       await api("/api/groups", { method: "POST",
         body: { name, members, on_failure: ofSel.value || null } });
@@ -173,7 +169,7 @@ export function openGroupEditor(group, data, { reload }) {
     body.append(el("label", { class: "small" },
       el("div", { class: "muted" }, "name"), nameIn));
 
-    // ordered member rows: ↑/↓ reorder, split checkbox (F292), remove
+    // ordered member rows: ↑/↓ reorder, remove
     const rows = el("div", { class: "mt" });
     if (!(g.members || []).length) rows.append(el("div", { class: "muted small" }, "no members"));
     (g.members || []).forEach((m, i) => {
@@ -184,15 +180,10 @@ export function openGroupEditor(group, data, { reload }) {
       up.onclick = () => { [g.members[i - 1], g.members[i]] = [g.members[i], g.members[i - 1]]; saveMembers(); };
       down.onclick = () => { [g.members[i + 1], g.members[i]] = [g.members[i], g.members[i + 1]]; saveMembers(); };
       rm.onclick = () => { g.members.splice(i, 1); saveMembers(); };
-      const split = el("input", { type: "checkbox", "data-member-split": m.slug,
-        ...(m.split ? { checked: "" } : {}) });
-      split.onchange = () => { m.split = split.checked; saveMembers(); };
       rows.append(el("div", { class: "row", style: "gap:6px;align-items:center",
         "data-member": m.slug },
         el("span", { class: "small mono", style: "width:22px" }, `${i + 1}.`),
         el("span", { class: "small", style: "min-width:160px" }, m.slug),
-        el("label", { class: "small muted", title: SPLIT_TITLE,
-          style: "display:flex;gap:4px;align-items:center" }, split, "split"),
         up, down, rm));
     });
     body.append(rows);
@@ -205,7 +196,7 @@ export function openGroupEditor(group, data, { reload }) {
         ...addable.map((r) => el("option", { value: r.slug }, r.name)));
       const addBtn = el("button", { class: "btn small" }, "add member");
       addBtn.onclick = () => {
-        g.members = [...(g.members || []), { slug: sel.value, split: false }];
+        g.members = [...(g.members || []), { slug: sel.value }];
         saveMembers();
       };
       body.append(el("div", { class: "row mt", style: "gap:6px;align-items:center" },
@@ -231,8 +222,8 @@ export function openGroupEditor(group, data, { reload }) {
     body.append(el("div", { class: "mt", "data-group-schedule": "" },
       el("div", { class: "small", style: "font-weight:600" }, "Schedule"),
       el("div", { class: "muted small" },
-        "fires the chain on this cadence — members run in order (ingest pass, then the split "
-        + "members' outbound pass); each member's own schedule is suppressed while this is set"),
+        "fires the chain on this cadence — members run in order; each member's own "
+        + "schedule is suppressed while this is set"),
       sched.node,
       el("div", { class: "row mt" }, schedBtn)));
 

@@ -7,12 +7,12 @@ SUPPRESSED while it belongs to a scheduled group — one fire path, no double-fi
 routine page's Schedule dropdown shows such a member as "group managed". An UNSCHEDULED
 group changes nothing about its members' own schedules.
 
-A membership record carries a per-member `split` flag (F292): a chain fires in TWO passes —
-an ingest pass over every member in order, then an outbound pass over the SPLIT members in
-the same order. A split member therefore runs once per pass, told which half it is in via a
-run-scoped `phase=ingest|outbound` boot param its recipe branches on (ingest/process and
-stage state, or read the staged state and communicate); a non-split member runs once, in the
-ingest pass, with no param. A group with no split members chains once, exactly as before.
+A membership record carries the member's slug (a record, not a bare string, so a future
+per-member field has a home). A chain fires ONCE: every member in order. A flow with an
+inbound and an outbound end BRACKETS the group instead (D90, 2026-08-16): a dedicated
+inbound-router routine placed first in the order and a dedicated outbound-sender routine
+placed last — two single-purpose members instead of one member running twice (the F292
+two-pass `split` flag is retired).
 
 Ownership mirrors rsched.triggers / rsched.schedule_once: a group is instance-level operator
 state that the WEB layer writes and the daemon reads (web RECORDS, daemon FIRES), so it
@@ -26,8 +26,7 @@ Shape (single document, atomic-written):
 
     {"default_on_failure": "stop",
      "groups": [{"id": "grp-1a2b3c4d", "name": "Morning jobs",
-                 "members": [{"slug": "weight-coach", "split": false},
-                             {"slug": "news-digest", "split": true}],
+                 "members": [{"slug": "weight-coach"}, {"slug": "news-digest"}],
                  "config": {"permissions": […], "capabilities": {…}, …},  # D82, see below
                  "on_failure": null,          # null = inherit default_on_failure
                  "cron": "0 7 * * *",         # "" = unscheduled (fire only when armed)
@@ -172,13 +171,8 @@ def member_slugs(group: dict) -> list[str]:
     return [m["slug"] for m in group.get("members") or []]
 
 
-def split_slugs(group: dict) -> list[str]:
-    """The ordered subset of members flagged `split` (F292) — the outbound pass's fire list."""
-    return [m["slug"] for m in group.get("members") or [] if m.get("split")]
-
-
 def _clean_members(members: object) -> list[dict]:
-    """Coerce to an ordered, de-duplicated list of member RECORDS {"slug", "split"} (order
+    """Coerce to an ordered, de-duplicated list of member RECORDS {"slug"} (order
     preserved — it is the fire order a chain uses; dedup is by slug, first record wins).
     Junk entries — non-dicts, blank slugs — are dropped, never raised on.
     """
@@ -191,7 +185,7 @@ def _clean_members(members: object) -> list[dict]:
             s = str(m.get("slug") or "").strip()
             if s and s not in seen:
                 seen.add(s)
-                out.append({"slug": s, "split": bool(m.get("split"))})
+                out.append({"slug": s})
     return out
 
 
@@ -262,7 +256,7 @@ def get(routines_home: Path, gid: str) -> dict | None:
 def create(routines_home: Path, *, name: str, members: list[dict] | None = None,
            on_failure: str | None = None, cron: str = "", tz: str = "") -> dict:
     """Create a group. `name` must be non-empty; `members` is an ordered list of records
-    {"slug", "split"} stored in order (deduped by slug); `on_failure` must be in ON_FAILURE
+    {"slug"} stored in order (deduped by slug); `on_failure` must be in ON_FAILURE
     or None (inherit); `cron` (optional, D71) must be a valid cron expression — "" leaves
     the group unscheduled. Raises ValueError on a bad value.
     """
@@ -295,7 +289,7 @@ def update(routines_home: Path, gid: str, *, name: str | None = None,
            cron: str | None = None, tz: str | None = None,
            paused: bool | None = None, config: dict | None = None) -> dict | None:
     """Patch a group in place (only the fields passed are touched). `members` replaces the
-    whole record list ({"slug", "split"} each). `on_failure` is a tri-state: omit it to
+    whole record list ({"slug"} each). `on_failure` is a tri-state: omit it to
     leave unchanged, pass None to inherit the default, pass a value in ON_FAILURE to
     override. `cron` "" clears the schedule (members fire on their own crons again); a
     non-empty value must be valid cron. `config` REPLACES the group-level routine config

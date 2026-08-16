@@ -918,7 +918,7 @@ def test_routine_detail_reports_group_managed_state(client):
     c, tmp = client
     home = tmp / "routines"
     assert c.get("/api/routines/apir").json()["group_managed"] is None
-    grp = groups_mod.create(home, name="Morning", members=[{"slug": "apir", "split": False}])
+    grp = groups_mod.create(home, name="Morning", members=[{"slug": "apir"}])
     assert c.get("/api/routines/apir").json()["group_managed"] is None    # no cron: no lock
     groups_mod.update(home, grp["id"], cron="0 7 * * *", tz="UTC")
     gm = c.get("/api/routines/apir").json()["group_managed"]

@@ -146,8 +146,7 @@ def cmd_run_once(args) -> int:
     try:
         status, run_dir = run_routine(routine_dir, server,
                                       model_overrides=_parse_model_overrides(args.model),
-                                      on_event=None if args.quiet else on_event,
-                                      group_phase=getattr(args, "phase", None))
+                                      on_event=None if args.quiet else on_event)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -364,10 +363,6 @@ def main(argv: list[str] | None = None) -> int:
                    help="override a routine model role: kind=name (a catalog model; kind: "
                         f"{'|'.join(MODEL_KINDS)}, repeatable)")
     r.add_argument("--quiet", action="store_true", help="no event stream on stdout")
-    r.add_argument("--phase", choices=["ingest", "outbound"],
-                   help="run as one half of a two-phase group fire (F292): writes the run's "
-                        "boot.json phase, exactly as a daemon group fire does for a split "
-                        "member — for exercising a split routine's phase branch by hand")
     r.set_defaults(fn=cmd_run_once)
 
     e = sub.add_parser("engine-run", help="internal: run a routine (spawned by the daemon)")

@@ -86,12 +86,12 @@ export async function render(view) {
   const banner = el("div", {});
   // Week-strip drag ops (weekgrid-drag.js): every drop PATCHes config, then reloads so the
   // strip redraws from truth. Group-membership PATCHes always carry the FULL member records —
-  // split flags (F292) survive a reorder. Reschedules ride the same schedule.friendly PATCH
+  // Reschedules ride the same schedule.friendly PATCH
   // the editors use; a custom cron has no draggable shape and is refused with a pointer to
   // its editor. `cards`/`serverTz` bind lazily — drops only happen after load() filled them.
   const fmtFireAt = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
   const nameOf = (slug) => cards.find((c) => c.slug === slug)?.name || slug;
-  const memberRecords = (g, order) => order.map((s) => ({ slug: s, split: g.splitSet.has(s) }));
+  const memberRecords = (_g, order) => order.map((s) => ({ slug: s }));
   async function dropOp(fn, okMsg) {
     try { await fn(); toast(okMsg); } catch (err) { toast(err.message, 4000, { error: true }); }
     await load();
@@ -108,7 +108,7 @@ export async function render(view) {
       if (from) await api(`/api/groups/${from.id}`, { method: "PATCH",
         body: { members: memberRecords(from, from.members.filter((s) => s !== slug)) } });
       await api(`/api/groups/${g.id}`, { method: "PATCH",
-        body: { members: [...memberRecords(g, g.members), { slug, split: false }] } });
+        body: { members: [...memberRecords(g, g.members), { slug }] } });
     }, `${nameOf(slug)} joined ${g.name}`),
     leave: (g, slug) => dropOp(() => api(`/api/groups/${g.id}`, { method: "PATCH",
       body: { members: memberRecords(g, g.members.filter((s) => s !== slug)) } }),
@@ -157,7 +157,7 @@ export async function render(view) {
   let serverTz = "";   // the zone crons are stored in — drag-reschedules re-time specs in it
   let groupData = null;   // the raw /api/groups payload — the group-management surface's input
   let groupsBySlug = new Map();   // slug -> [group records] (R107/F269 — group badges on the list)
-  let groupsOrdered = [];   // [{id, name, members(slugs), splitSet, …}] in fire order (F271)
+  let groupsOrdered = [];   // [{id, name, members(slugs), …}] in fire order (F271)
   let groupSchedBySlug = new Map();   // slug -> its scheduled group (cron suppressed, R313)
   let lastTagSig = null;   // F229: only rebuild the filter bar when the tag set changes
   let lastGroupSig = null; // same rule for the groups bar: its select must survive refreshes
@@ -263,8 +263,8 @@ export async function render(view) {
     // slug -> [group records]: each routine card/row shows which group(s) it belongs to —
     // the chips open the group editor (D80: this page IS the group-management surface).
     groupsBySlug = new Map();
-    // members are RECORDS {slug, split} in the store (F292); the display list keeps plain
-    // slugs (what the week grid + rows consume) plus the split set for the ⇄ badges.
+    // members are RECORDS {slug} in the store; the display list keeps plain
+    // slugs (what the week grid + rows consume).
     // `fires` are the GROUP's cron fire times from the week payload (D71) — a scheduled
     // group's members carry no fires of their own, the chain is drawn from these.
     const groupFires = new Map((sched?.groups || [])
@@ -272,7 +272,6 @@ export async function render(view) {
     groupsOrdered = (groupData?.groups || [])
       .map((g) => ({ id: g.id, name: g.name,
                      members: (g.members || []).map((m) => m.slug),
-                     splitSet: new Set((g.members || []).filter((m) => m.split).map((m) => m.slug)),
                      schedule_desc: g.schedule_desc || "", cron: g.cron || "",
                      paused: !!g.paused, fires: groupFires.get(g.id) || [] }));
     // slug -> its SCHEDULED group (the first, matching the server's group_managed rule):
@@ -488,15 +487,9 @@ export async function render(view) {
         c.active_state === "waiting_user" ? "attention" : "",
         c.enabled ? "" : "disabled-row", extraCls]
         .filter(Boolean).join(" ");
-      // F292: a split member (of the group row this one sits under) fires once per pass
-      const split = group?.splitSet?.has(c.slug)
-        ? el("span", { class: "chip", "data-member-split-badge": "",
-            title: "split member — fires twice per group run: ingest pass, then outbound pass" },
-            "⇄ split")
-        : null;
       const stats = statsLine(last);
       const tr = el("tr", { class: rowCls },
-        el("td", {}, swatch(c.slug), el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug), split,
+        el("td", {}, swatch(c.slug), el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
           c.open_questions ? el("a", { href: "#/questions", class: "chip blocking",
             title: "open questions waiting for you" }, `${c.open_questions} open ?`) : null,
           c.description ? el("div", { class: "faint small", style: "max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, c.description) : null,

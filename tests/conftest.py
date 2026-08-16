@@ -314,7 +314,6 @@ class FakeRunner:
 
     def __init__(self, *, ts: str = "20260717-120000"):
         self.fired: list[tuple[str, str]] = []
-        self.phases: list[str] = []   # the group_phase of each fire ("" = none), same order
         self.resumed: list[tuple[str, str, str]] = []
         self.active: dict[str, str] = {}
         self.draining = False
@@ -329,9 +328,8 @@ class FakeRunner:
     def recover_orphans(self, catalog):
         return 0
 
-    async def fire(self, cfg, *, reason="schedule", group_phase: str = "") -> str:
+    async def fire(self, cfg, *, reason="schedule") -> str:
         self.fired.append((cfg.slug, reason))
-        self.phases.append(group_phase)
         self.active[cfg.slug] = self.ts
         return f"{cfg.slug}:{self.ts}"
 

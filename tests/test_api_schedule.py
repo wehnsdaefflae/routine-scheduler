@@ -63,7 +63,7 @@ def test_scheduled_group_suppresses_members_and_emits_group_fires(client, make_r
     make_routine(slug="m1")
     make_routine(slug="m2")
     groups.create(tmp / "routines", name="Nightly", cron="0 3 * * *",
-                  members=[{"slug": "m1", "split": False}, {"slug": "m2", "split": True}])
+                  members=[{"slug": "m1"}, {"slug": "m2"}])
     data = c.get("/api/schedule/week").json()
     assert {r["slug"] for r in data["routines"]} == {"weekly"}
     grows = {g["name"]: g for g in data["groups"]}
@@ -79,7 +79,7 @@ def test_paused_scheduled_group_is_silent(client, make_routine):
     c, tmp = client
     make_routine(slug="pm")
     g = groups.create(tmp / "routines", name="Held", cron="0 3 * * *",
-                      members=[{"slug": "pm", "split": False}])
+                      members=[{"slug": "pm"}])
     groups.update(tmp / "routines", g["id"], paused=True)
     data = c.get("/api/schedule/week").json()
     assert {r["slug"] for r in data["routines"]} == {"weekly"}
@@ -89,7 +89,7 @@ def test_paused_scheduled_group_is_silent(client, make_routine):
 def test_unscheduled_group_leaves_member_fires_alone(client, make_routine):
     c, tmp = client
     make_routine(slug="um")
-    groups.create(tmp / "routines", name="Loose", members=[{"slug": "um", "split": False}])
+    groups.create(tmp / "routines", name="Loose", members=[{"slug": "um"}])
     data = c.get("/api/schedule/week").json()
     assert {r["slug"] for r in data["routines"]} == {"weekly", "um"}
     assert data["groups"] == []
@@ -101,7 +101,7 @@ def test_suppressed_member_with_one_shot_still_appears(client, make_routine):
     c, tmp = client
     make_routine(slug="os")
     groups.create(tmp / "routines", name="G", cron="0 3 * * *",
-                  members=[{"slug": "os", "split": False}])
+                  members=[{"slug": "os"}])
     schedule_once.arm(tmp / "routines", "os",
                       fire_at=datetime.now(UTC) + timedelta(hours=1),
                       reason="t", requested_by="test")

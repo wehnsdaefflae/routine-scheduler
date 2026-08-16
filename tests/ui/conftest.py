@@ -61,7 +61,7 @@ class StubRunner:
         self.active: dict[str, object] = {}
         self.draining = False
 
-    async def fire(self, cfg, reason: str = "", *, group_phase: str = "") -> str:
+    async def fire(self, cfg, reason: str = "") -> str:
         self.fired.append((cfg.slug, reason))
         return f"{cfg.slug}:20260715-120000"
 

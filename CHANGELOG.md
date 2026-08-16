@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.205.0] — 2026-08-16
+
+### Removed
+- **The two-phase `split` flag is retired** (D90 option A, user-selected 2026-08-16; F354,
+  R359): a group chain now fires ONCE, member by member in order. A flow with an inbound
+  and an outbound end brackets the group instead — a dedicated inbound-router routine
+  first in the order, a dedicated outbound-sender routine last. Gone end to end: the
+  member records' `split` field (store, API, manage_group action + schema), the
+  ingest/outbound pass flip in the daemon chain manager, the `phase` boot.json channel
+  (Runner.fire, run_routine, RunContext.group_phase, harness-contract prose,
+  `run-once --phase`), and the group modal's split checkbox + badges the user reported
+  still lingering. No installed group used the flag; stale stored keys are dropped by the
+  normalizer.
+
 ## [0.204.0] — 2026-08-16
 
 ### Changed

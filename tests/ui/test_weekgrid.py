@@ -96,7 +96,7 @@ def test_same_group_routines_share_one_week_row(ui, ui_page, make_routine):
     make_routine(slug="solo")
     # Group uir + uir2 in fire order; 'solo' stays ungrouped.
     groups.create(ui.routines, name="Nightly", on_failure="stop",
-                  members=[{"slug": "uir", "split": False}, {"slug": "uir2", "split": False}])
+                  members=[{"slug": "uir"}, {"slug": "uir2"}])
 
     ui_page.goto(f"{ui.url}/#/routines")
     expect(ui_page.locator(".weekpanel svg.wg")).to_be_visible(timeout=10_000)
@@ -122,7 +122,7 @@ def _chained_group(ui, make_routine):
     make_routine(slug="gm1")
     make_routine(slug="gm2")
     return groups.create(ui.routines, name="Chained", on_failure="stop", cron="30 9 * * *",
-                         members=[{"slug": "gm1", "split": False}, {"slug": "gm2", "split": False}])
+                         members=[{"slug": "gm1"}, {"slug": "gm2"}])
 
 
 def _members(ui, gid):

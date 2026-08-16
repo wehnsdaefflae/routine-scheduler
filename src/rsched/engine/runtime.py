@@ -87,8 +87,7 @@ def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:
 
 def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None = None,
                 model_overrides: dict | None = None, on_event=None,
-                resume_from: str | None = None, run_dir: Path | None = None,
-                group_phase: str | None = None) -> tuple[str, Path]:
+                resume_from: str | None = None, run_dir: Path | None = None) -> tuple[str, Path]:
     """Execute one run of the routine at routine_dir. Returns (final status, run dir).
     on_event(obj) is called for every transcript event (used by `rsched run-once`). When
     resume_from is a prior run's ts, that run dir is reused and its transcript is rehydrated
@@ -96,10 +95,6 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     run_dir overrides the default `<routine_dir>/runs/<ts>` artifact location — the clarify flow's
     clarify sessions run their hidden throwaway workspace but land the run itself under the
     real `clarification` routine, so it has a valid run id and the standard run surfaces.
-    group_phase ("ingest"/"outbound", F292) writes the run's boot.json before it is read
-    below — `rsched run-once --phase` exercising a split member's phase branch by hand; a
-    daemon group fire writes the same file itself (Runner.fire), so the FILE stays the one
-    channel and a resume keeps the phase.
     """
     cfg, problems = load_routine(routine_dir)
     if cfg is None:
@@ -126,17 +121,6 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     from ..groups import member_store_roots
 
     ctx.group_store_roots = member_store_roots(server.routines_home, cfg.slug, create=True)
-    # F292: the run's two-phase group-fire half, read from the run dir's boot.json — the
-    # boot context beside slug/run_ts. The daemon wrote the file when it fired this run as
-    # a split group member (Runner.fire); `run-once --phase` writes it here instead. One
-    # reader, one file; anything but the two known phases reads as no phase.
-    from ..paths import atomic_write_json, read_json
-
-    if group_phase:
-        atomic_write_json(run_dir / "boot.json", {"phase": group_phase})
-    boot_params = read_json(run_dir / "boot.json")
-    raw_phase = boot_params.get("phase") if isinstance(boot_params, dict) else ""
-    ctx.group_phase = raw_phase if raw_phase in ("ingest", "outbound") else ""
     # Stamp the recipe version that produces this run (recipes.current_recipe_commit —
     # snapshots any uncommitted recipe edits first, e.g. the routine-improver's). None
     # for unversioned dirs (conversations). Lands in status.json + the usage record.

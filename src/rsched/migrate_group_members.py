@@ -1,12 +1,11 @@
 """MIGRATION(expires=2026-09-30): group members become records (F292, 0.181.0).
 
-`.control/groups.json` stored members as plain slug strings; the two-phase group fire
-gives each member a `split` flag, so the canonical membership shape is now a record
-`{"slug": ..., "split": bool}`. The store's normalizer reads ONLY the record shape (no
+`.control/groups.json` stored members as plain slug strings; the canonical membership
+shape is now a record `{"slug": ...}`. The store's normalizer reads ONLY the record shape (no
 dual-convention tolerance), so an existing instance's string members must be rewritten
 once. Any pre-F292 in-flight chain file (`.control/group-runs/*.json` with string
 members) is DELETED rather than converted: a chain is transient fire-progress state, the
-member runs it already fired are each their own durable record, and the two-phase manager
+member runs it already fired are each their own durable record, and the manager
 cannot advance the old shape.
 
 Runs once at daemon boot, then gets deleted (delete-after-convergence — CLAUDE.md).
@@ -35,7 +34,7 @@ def migrate_group_members(server) -> bool:
                 continue
             members = g.get("members") or []
             if any(isinstance(m, str) for m in members):
-                g["members"] = [{"slug": m, "split": False}
+                g["members"] = [{"slug": m}
                                 for m in members if isinstance(m, str) and m.strip()]
                 converted += 1
         if converted:
