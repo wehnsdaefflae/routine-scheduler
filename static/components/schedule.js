@@ -1,4 +1,4 @@
-// Friendly schedule builder. `initial` is a friendly spec {frequency, time, weekday, ...};
+// Friendly schedule builder. `initial` is a friendly spec {frequency, time, weekdays, ...};
 // returns { node, value(), catchup() }. Pass opts.catchup (a string) to also offer a
 // missed-run policy select — routines want it, other schedule editors do not.
 // Pass opts.groupManaged ({id, name} — D71) when the routine belongs to a SCHEDULED group:
@@ -16,7 +16,7 @@ import { el } from "/static/util.js";
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "", opts = {}) {
-  const spec = { time: "07:00", weekday: 1, day: 1, minute: 0, ...initial };
+  const spec = { time: "07:00", weekdays: [1], day: 1, minute: 0, ...initial };
   const gm = opts.groupManaged || null;
   const freq = el("select", { ...(gm ? { disabled: true } : {}) },
     ...["manual", "hourly", "daily", "weekly", "monthly"].map((f) =>
@@ -25,8 +25,16 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
     ...(gm ? [el("option", { value: "group-managed", selected: true }, "Group managed")] : []));
   const time = el("input", { type: "time", value: spec.time });
   const minute = el("input", { type: "number", min: 0, max: 59, value: spec.minute, style: "width:70px" });
-  const weekday = el("select", {}, ...WEEKDAYS.map((d, i) =>
-    el("option", { value: i, ...(spec.weekday === i ? { selected: true } : {}) }, d)));
+  // weekly is a SET of days (F347, user order 2026-08-15 — GCal's "repeat on: S M T W T
+  // F S"): seven toggles instead of one select, so "not on weekends" is four clicks.
+  const dayBoxes = WEEKDAYS.map((d, i) => {
+    const box = el("input", { type: "checkbox", "data-nopersist": true,
+      ...(Array.isArray(spec.weekdays) && spec.weekdays.includes(i) ? { checked: "" } : {}) });
+    return { box, node: el("label", { class: "day-chip", title: d }, box,
+      el("span", {}, d.slice(0, 3))) };
+  });
+  const weekdayRow = el("span", { class: "row", style: "gap:4px;flex-wrap:wrap" },
+    dayBoxes.map((c) => c.node));
   const day = el("input", { type: "number", min: 1, max: 31, value: spec.day, style: "width:70px" });
   const detail = el("span", { class: "row", style: "gap:6px" });
 
@@ -52,7 +60,7 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
         el("span", { class: "muted" }, " — this routine's own schedule is suppressed while the group is scheduled"));
     } else if (f === "hourly") detail.append(document.createTextNode("at minute"), minute);
     else if (f === "daily") detail.append(document.createTextNode("at"), time);
-    else if (f === "weekly") detail.append(document.createTextNode("on"), weekday, document.createTextNode("at"), time);
+    else if (f === "weekly") detail.append(document.createTextNode("on"), weekdayRow, document.createTextNode("at"), time);
     else if (f === "monthly") detail.append(document.createTextNode("on day"), day, document.createTextNode("at"), time);
     else detail.append(el("span", { class: "muted" }, "runs only when you click Run now"));
     if (catchupRow) catchupRow.style.display = (f === "manual" || gm) ? "none" : "";
@@ -76,7 +84,8 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
       if (f === "manual") return { frequency: "manual" };
       if (f === "hourly") return { frequency: "hourly", minute: Number(minute.value) };
       if (f === "daily") return { frequency: "daily", time: time.value };
-      if (f === "weekly") return { frequency: "weekly", time: time.value, weekday: Number(weekday.value) };
+      if (f === "weekly") return { frequency: "weekly", time: time.value,
+        weekdays: dayBoxes.flatMap((c, i) => (c.box.checked ? [i] : [])) };
       return { frequency: "monthly", time: time.value, day: Number(day.value) };
     },
     catchup() {
@@ -88,6 +97,23 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
 // Cron string → friendly spec, mirroring rsched.schedule.cron_to_friendly: the four simple
 // cadences round-trip, anything else comes back {frequency: "custom", cron} (read-only in
 // every editor, and not drag-reschedulable).
+// A cron day-of-week field as a sorted weekday set, or null when it isn't one — the
+// client half of the server's _parse_dow (digits, commas, simple ranges; anything else
+// stays "custom").
+function parseDow(dow) {
+  const days = new Set();
+  for (const part of dow.split(",")) {
+    if (/^\d$/.test(part)) days.add(+part);
+    else if (/^\d-\d$/.test(part)) {
+      const [a, b] = part.split("-").map(Number);
+      if (a > b) return null;
+      for (let i = a; i <= b; i++) days.add(i);
+    } else return null;
+  }
+  const out = [...days].sort((a, b) => a - b);
+  return out.length && out.every((x) => x >= 0 && x <= 6) ? out : null;
+}
+
 export function cronToFriendly(cron) {
   const c = (cron || "").trim();
   if (!c) return { frequency: "manual" };
@@ -100,7 +126,10 @@ export function cronToFriendly(cron) {
   if (mon === "*" && d(mn) && d(hr)) {
     const time = `${String(+hr).padStart(2, "0")}:${String(+mn).padStart(2, "0")}`;
     if (dom === "*" && dow === "*") return { frequency: "daily", time };
-    if (dom === "*" && d(dow)) return { frequency: "weekly", time, weekday: +dow };
+    if (dom === "*") {
+      const days = parseDow(dow);
+      if (days) return { frequency: "weekly", time, weekdays: days };
+    }
     if (dow === "*" && d(dom)) return { frequency: "monthly", time, day: +dom };
   }
   return { frequency: "custom", cron: c };
@@ -120,8 +149,13 @@ export function specAtInstant(spec, date, tz = "") {
   const time = `${get("hour")}:${get("minute")}`;
   if (freq === "hourly") return { frequency: "hourly", minute: +get("minute") };
   if (freq === "daily") return { frequency: "daily", time };
-  if (freq === "weekly")
-    return { frequency: "weekly", time,
-             weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(get("weekday")) };
+  if (freq === "weekly") {
+    // a one-day cadence follows the drop onto its new weekday; a multi-day SET keeps its
+    // days (dragging one occurrence must not collapse "Mon-Fri" to just the drop day)
+    // and takes only the new time-of-day
+    const days = Array.isArray(spec.weekdays) ? spec.weekdays : [];
+    const drop = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(get("weekday"));
+    return { frequency: "weekly", time, weekdays: days.length > 1 ? days : [drop] };
+  }
   return { frequency: "monthly", time, day: +get("day") };
 }

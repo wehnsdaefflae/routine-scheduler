@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.203.0] — 2026-08-15
+
+### Added
+- **Weekly schedules repeat on a SET of days** (F347, user order 2026-08-15 — "do it like
+  Google Calendar does custom repetitions"): the schedule editor's weekly mode is seven
+  day toggles instead of one weekday select, so "every weekday" or "Mon/Wed/Fri" is a few
+  clicks — for routines AND groups (both use the same editor). The friendly vocabulary's
+  weekly shape is now `weekdays: [0-6, …]`; cron carries it as a day-of-week list
+  (`0 10 * * 1,2,3,4,5`), hand-written ranges (`1-5`) read back as the same set, and
+  `describe` says "Every weekday at 10:00". Dragging one occurrence of a multi-day
+  schedule in the week strip keeps its day set and moves only the time.
+
 ## [0.202.0] — 2026-08-15
 
 ### Changed

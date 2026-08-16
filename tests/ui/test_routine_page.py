@@ -161,3 +161,30 @@ def test_runs_table_caps_at_ten_with_show_all(ui, ui_page):
     btn.click()
     expect(ui_page.locator(".runs-box button", has_text="show fewer")).to_be_visible()
     assert rows.count() >= 12, "expanding must render the full history"
+
+
+def test_weekly_schedule_day_set_roundtrips(ui, ui_page, make_routine):
+    """F347 (user order 2026-08-15, GCal-style repetitions): weekly is a SET of day
+    toggles — checking Mon+Wed+Fri saves a day-list cron and reads back as the same
+    checked set (server round-trip, not client state)."""
+    make_routine(slug="wkly")
+    ui_page.goto(f"{ui.url}#/routine/wkly")
+    ui_page.wait_for_selector("h2:has-text('Schedule')", timeout=10_000)
+    freq = ui_page.locator("select", has=ui_page.locator('option[value="weekly"]')).first
+    freq.select_option("weekly")
+    chips = ui_page.locator(".day-chip input")
+    expect(chips).to_have_count(7)
+    expect(chips.nth(1)).to_be_checked()          # Monday is the default set
+    chips.nth(3).check()                          # Wednesday
+    chips.nth(5).check()                          # Friday
+    ui_page.get_by_role("button", name="save schedule").click()
+    expect(_toast(ui_page)).to_contain_text("schedule saved")
+
+    ui_page.goto(f"{ui.url}#/routine/wkly")
+    ui_page.wait_for_selector(".day-chip input", timeout=10_000)
+    chips = ui_page.locator(".day-chip input")
+    for i in range(7):
+        if i in (1, 3, 5):
+            expect(chips.nth(i)).to_be_checked()
+        else:
+            expect(chips.nth(i)).not_to_be_checked()

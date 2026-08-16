@@ -755,8 +755,10 @@ def test_routine_page_saves(ui, ui_page):
 
     # schedule: saves in place — the page must NOT reload (marker survives)
     ui_page.evaluate("window.__no_reload = true")
+    # by LABEL, not position — the weekly day-set toggles (F347) put seven checkboxes
+    # ahead of "enabled" whenever the schedule is weekly (the fixture cron is)
     ui_page.locator(".panel", has=ui_page.get_by_role("button", name="save schedule")) \
-        .get_by_role("checkbox").first.uncheck()   # enabled off
+        .get_by_label("enabled", exact=True).uncheck()   # enabled off
     ui_page.get_by_role("button", name="save schedule").click()
     expect(_toast(ui_page)).to_contain_text("schedule saved")
     ui_page.wait_for_timeout(600)   # the old reload fired at 400ms — outlive it

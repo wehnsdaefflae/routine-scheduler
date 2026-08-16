@@ -4,7 +4,7 @@ Friendly spec (what the UI sends/receives):
   {"frequency": "manual|hourly|daily|weekly|monthly",
    "time": "HH:MM",        # daily/weekly/monthly (local time)
    "minute": 0-59,          # hourly
-   "weekday": 0-6,          # weekly (0=Sunday … 6=Saturday)
+   "weekdays": [0-6, ...],  # weekly — a SET of days (0=Sunday … 6=Saturday), e.g. Mon-Fri
    "day": 1-31}             # monthly
 
 The routine still stores a cron string (croniter drives the scheduler); this module is the
@@ -64,9 +64,15 @@ def friendly_to_cron(spec: dict) -> str:
     if freq == "daily":
         return f"{mm} {hh} * * *"
     if freq == "weekly":
-        wd = int(spec.get("weekday", 1))
-        _check(0 <= wd <= 6, "weekday must be 0-6")
-        return f"{mm} {hh} * * {wd}"
+        # A SET of weekdays (F347, user order 2026-08-15 — Google-Calendar-style "repeat
+        # on: S M T W T F S"): one day is just a one-element set, "not on weekends" is
+        # [1,2,3,4,5]. Cron carries it natively as a day-of-week list.
+        days_in = spec.get("weekdays")
+        if not isinstance(days_in, list) or not days_in:   # explicit — mypy can narrow this
+            raise ValueError("weekly needs a non-empty weekdays list (0=Sunday … 6=Saturday)")
+        days = sorted({int(d) for d in days_in})
+        _check(all(0 <= d <= 6 for d in days), "weekdays must be 0-6")
+        return f"{mm} {hh} * * {','.join(str(d) for d in days)}"
     if freq == "monthly":
         day = int(spec.get("day", 1))
         _check(1 <= day <= 31, "day must be 1-31")
@@ -92,8 +98,8 @@ def cron_to_friendly(cron: str) -> dict:
             time = f"{int(hr):02d}:{int(mn):02d}"
             if dom == "*" and dow == "*":
                 return {"frequency": "daily", "time": time}
-            if dom == "*" and dow.isdigit():
-                return {"frequency": "weekly", "time": time, "weekday": int(dow)}
+            if dom == "*" and (days := _parse_dow(dow)) is not None:
+                return {"frequency": "weekly", "time": time, "weekdays": days}
             if dow == "*" and dom.isdigit():
                 return {"frequency": "monthly", "time": time, "day": int(dom)}
     except ValueError:
@@ -112,10 +118,36 @@ def describe(cron: str) -> str:
     if freq == "daily":
         return f"Every day at {f['time']}"
     if freq == "weekly":
-        return f"Every {WEEKDAYS[f['weekday']]} at {f['time']}"
+        days = f["weekdays"]
+        if days == [1, 2, 3, 4, 5]:
+            return f"Every weekday at {f['time']}"
+        names = [WEEKDAYS[d] for d in days]
+        joined = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+        return f"Every {joined} at {f['time']}"
     if freq == "monthly":
         return f"Every month on day {f['day']} at {f['time']}"
     return f"Custom schedule ({f.get('cron')})"
+
+
+def _parse_dow(dow: str) -> list[int] | None:
+    """A cron day-of-week field as a sorted weekday set, or None when it isn't one.
+    Accepts what people actually write: '3', '1,3,5', '1-5', 'MON-FRI'-free digits only —
+    names, steps and mixed forms stay 'custom' (they are cron-literate territory).
+    """
+    days: set[int] = set()
+    for part in dow.split(","):
+        if part.isdigit():
+            days.add(int(part))
+        elif "-" in part:
+            a, _, b = part.partition("-")
+            if not (a.isdigit() and b.isdigit() and int(a) <= int(b)):
+                return None
+            days.update(range(int(a), int(b) + 1))
+        else:
+            return None
+    if not days or not all(0 <= d <= 6 for d in days):
+        return None
+    return sorted(days)
 
 
 def _parse_time(t: str) -> tuple[int, int]:
