@@ -17,6 +17,15 @@ from ..paths import read_json
 
 log = logging.getLogger("rsched.inbox")
 
+#: The injection channels that mean "the user is talking to THIS run": the conversation
+#: composer and the run page. The daemon's post-finish sweep re-opens a finished run only
+#: for these (R108/F268), and a RESUMED leg's boot drains ONLY these (F359, user order
+#: 2026-08-17): everything else waiting in an inbox — audit feedback, report deliveries,
+#: routine-page queued messages, trigger/background/one-shot texts, answers to other runs'
+#: questions — is addressed to the routine's NEXT fresh run, and a follow-up leg draining
+#: it wholesale silently ate decision answers meant for that night's run (D92/D93).
+USER_MESSAGE_VIAS = ("conversation", "web", "web-converse")
+
 
 def _consume(path: Path, consumed_dir: Path) -> None:
     consumed_dir.mkdir(parents=True, exist_ok=True)
@@ -28,8 +37,11 @@ def _consume(path: Path, consumed_dir: Path) -> None:
     path.rename(target)
 
 
-def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
-    """Injected messages, oldest first; answer-* files are left alone. Each item is
+def drain_messages(routine_dir: Path, consumed_dir: Path,
+                   *, user_only: bool = False) -> list[dict]:
+    """Injected messages, oldest first; answer-* files are left alone. With `user_only`
+    (a RESUMED leg's boot, F359) only messages whose `via` is in USER_MESSAGE_VIAS are
+    consumed — everything else stays queued for the next fresh run, untouched. Each item is
     {"text": str, "attachments": [rel, ...], "command": bool} — attachments (recorded by
     the web layer for a conversation message) drive auto-attach of images/PDFs; `command`
     marks a slash command the engine EXECUTES instead of injecting as prose.
@@ -55,6 +67,9 @@ def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
             obj = json.loads(raw)
         except ValueError:
             obj = None
+        if user_only and not (isinstance(obj, dict)
+                              and str(obj.get("via") or "") in USER_MESSAGE_VIAS):
+            continue   # not this leg's conversation — stays queued for the next fresh run
         if isinstance(obj, dict) and obj.get("text"):
             out.append({"text": str(obj["text"]),
                         "attachments": [str(a) for a in (obj.get("attachments") or [])],
@@ -71,7 +86,7 @@ def drain_messages(routine_dir: Path, consumed_dir: Path) -> list[dict]:
     return out
 
 
-def has_pending_messages(routine_dir: Path) -> bool:
+def has_pending_messages(routine_dir: Path, *, user_only: bool = False) -> bool:
     """True if an unconsumed injected user message (a `msg-*` file, not an `answer-*`) is
     waiting. A responsive `wait` polls this so a child-wait YIELDS to the user — hands control
     back to the turn loop, which drains the message and lets the parent respond — instead of
@@ -80,7 +95,19 @@ def has_pending_messages(routine_dir: Path) -> bool:
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
         return False
-    return any(p.is_file() and not p.name.startswith("answer-") for p in inbox.iterdir())
+    for p in inbox.iterdir():
+        if not p.is_file() or p.name.startswith("answer-"):
+            continue
+        if not user_only:
+            return True
+        # mirror drain_messages' F359 filter EXACTLY: counting a message the drain would
+        # skip would make a resumed leg's wait-yield / finish-deferral spin forever on
+        # freight it is never going to consume
+        obj = read_json(p)
+        if (isinstance(obj, dict) and obj.get("text")
+                and str(obj.get("via") or "") in USER_MESSAGE_VIAS):
+            return True
+    return False
 
 
 def file_message(routine_dir: Path, text: str, *, source: str = "") -> Path:
@@ -115,7 +142,8 @@ def take_answer(routine_dir: Path, qid: str, consumed_dir: Path) -> dict | None:
     return obj
 
 
-def collect_deferred_answers(routine_dir: Path, consumed_dir: Path) -> list[dict]:
+def collect_deferred_answers(routine_dir: Path, consumed_dir: Path,
+                             *, own_run_ts: str | None = None) -> list[dict]:
     """Match stray answer files against questions/pending/, consume both, and return
     [{question, answer}] — called at run start (boot digest) AND at every live turn
     boundary (control.drain_injections, the F195 delivery). An access-request pair also
@@ -140,6 +168,11 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path) -> list[dict
                         path.name)
             continue
         qid = str(obj.get("qid") or path.stem.removeprefix("answer-"))
+        if own_run_ts is not None and not qid.startswith(f"q-{own_run_ts}-"):
+            # F359: a RESUMED leg (the caller sets own_run_ts) takes only answers to ITS
+            # OWN questions; an answer to another run's question waits for the next fresh
+            # run, whose boot digest presents it with full context.
+            continue
         qfile = pending / f"{qid}.json"
         q = read_json(qfile)
         if not isinstance(q, dict):

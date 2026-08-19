@@ -322,7 +322,8 @@ class EngineLoop:
                     # engine string on the next boundary — so _finish_run surfaces the
                     # still-queued message to both sides instead.
                     if (ctx.depth == 0 and not self._finish_reserved
-                            and inbox.has_pending_messages(ctx.routine.dir)):
+                            and inbox.has_pending_messages(ctx.routine.dir,
+                                                           user_only=self.resume)):
                         obs = {"kind": "finish", "rejected": True, "pending_user_input": True}
                         ctx.transcript.event("observation", obs, turn=ctx.turn)
                         self.messages.append({"role": "user", "content":
@@ -472,7 +473,8 @@ class EngineLoop:
         killed = self.subruns.kill_all(reason=f"parent run finished ({status})")
         if killed:
             summary += f"\n[{killed} still-running sub-workflow(s) were terminated at run end.]"
-        if ctx.depth == 0 and inbox.has_pending_messages(ctx.routine.dir):
+        if ctx.depth == 0 and inbox.has_pending_messages(ctx.routine.dir,
+                                                         user_only=self.resume):
             # The paths the R108 deferral cannot serve (the spent reserved-finish turn,
             # aborts, engine failures — plus a message racing this very write): the
             # message could not become a turn THIS run, so say so on BOTH sides — this

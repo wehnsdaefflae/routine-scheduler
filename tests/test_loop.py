@@ -277,6 +277,41 @@ def test_converse_resume_delivers_message_and_allows_immediate_refinish(make_rou
     assert st["state"] == "finished" and st["turn"] == 3
 
 
+def test_resume_leaves_next_run_inbox_queued(make_routine, scripted):
+    """F359 (user order 2026-08-17): a RESUMED leg consumes only what is addressed to IT —
+    the via-stamped conversation follow-up and answers to its OWN questions. A routine-page
+    queued message (no user via) and an answer to an OLDER run's question must survive the
+    resume untouched, so the next FRESH run reads them in its boot digest instead of a
+    follow-up leg of an ended run eating them (the D92/D93 loss, 2026-08-17)."""
+    d = make_routine(slug="keepq")
+    scripted([probe("first work"), finish(summary="first pass done")])
+    status1, _ = run_routine(d, _server(d), run_ts=TS)
+    assert status1 == "ok"
+
+    # the follow-up trigger (run page) + freight addressed to the NEXT fresh run
+    atomic_write_json(d / "inbox" / "msg-1.json",
+                      {"text": "quick follow-up", "via": "web-converse"})
+    atomic_write_json(d / "inbox" / "msg-2.json",
+                      {"text": "queued for the next run", "ts": "t"})
+    (d / "questions" / "pending").mkdir(parents=True, exist_ok=True)
+    atomic_write_json(d / "questions" / "pending" / "q-20990101-000000-1.json",
+                      {"qid": "q-20990101-000000-1", "question": "older run's ask?"})
+    atomic_write_json(d / "inbox" / "answer-q-20990101-000000-1.json",
+                      {"qid": "q-20990101-000000-1", "text": "the queued answer"})
+
+    ep2 = scripted([finish(summary="follow-up handled")])
+    status2, _ = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    assert status2 == "ok"
+    prompt = " ".join(m["content"] for m in ep2.calls[0]["messages"])
+    assert "quick follow-up" in prompt                    # the trigger arrived
+    assert "queued for the next run" not in prompt        # the freight did NOT
+    assert "the queued answer" not in prompt
+    # ...and every piece of freight is still queued for the next fresh run
+    assert (d / "inbox" / "msg-2.json").exists()
+    assert (d / "inbox" / "answer-q-20990101-000000-1.json").exists()
+    assert (d / "questions" / "pending" / "q-20990101-000000-1.json").exists()
+
+
 def test_resume_after_engine_forced_end_keeps_interruption_framing(make_routine, scripted):
     """A run that ended WITHOUT a model-authored finish (crash close-out, budget stop) resumes
     with the interruption note — not the continued-conversation one."""
@@ -1552,7 +1587,8 @@ def test_command_only_wake_executes_without_a_reply(make_routine, scripted):
     atomic_write_json(run_dir / "status.json",
                       {"run_id": f"cmdr:{TS}", "state": "finished", "turn": 1})
     atomic_write_json(d / "inbox" / "msg-1.json",
-                      {"text": "/read_file LEDGER.md", "command": True, "ts": "t"})
+                      {"text": "/read_file LEDGER.md", "command": True, "ts": "t",
+                       "via": "web-converse"})   # the real writers stamp a user via (F359)
     ep = scripted([])   # NO scripted actions — the model must not be called at all
     status, run_dir = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
     assert status == "finished"

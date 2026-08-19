@@ -249,7 +249,13 @@ def drain_injections(loop) -> None:
     # the live run finished claiming "awaits your answer" (observed 2026-07-24 with
     # q-20260724-121507-11). Same delivery as any mid-run user message; the pending
     # record is consumed with it.
-    pairs = inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir)
+    # F359: a RESUMED leg stays filtered at every boundary, not just boot — it takes only
+    # user-channel messages and answers to its OWN questions; queued freight (audit
+    # feedback, reports, routine-page messages, other runs' answers) waits for the next
+    # fresh run. A fresh live run still drains everything (mid-run delivery, F195).
+    resumed = loop.resume and ctx.depth == 0
+    pairs = inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir,
+                                           own_run_ts=ctx.run_ts if resumed else None)
     if pairs:
         # R118: when the answer is a typed ACCESS-REQUEST decision, the GRANT must
         # arrive with the prose — seed the run overlay and rebuild the live policy
@@ -262,7 +268,7 @@ def drain_injections(loop) -> None:
     for qa in pairs:
         inject_user_message(loop, {"text": f"ANSWER to your deferred question "
                                            f"“{qa['question']}”:\n{qa['answer']}"})
-    drained = inbox.drain_messages(ctx.routine.dir, loop.consumed_dir)
+    drained = inbox.drain_messages(ctx.routine.dir, loop.consumed_dir, user_only=resumed)
     for m in drained:
         inject_user_message(loop, m)
     reports.stamp_delivered(ctx.server.routines_home, drained, run_id=ctx.run_id)

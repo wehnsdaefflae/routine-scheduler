@@ -40,12 +40,14 @@ _NOTABLE_RE = re.compile(r"\b(?:WARNING|ERROR|CRITICAL)\b|Traceback \(most recen
 # post-finish sweep (R108/F268): the conversation composer and the run page. Everything
 # else that lands in an inbox — report deliveries, trigger events, one-shot provenance,
 # background results, audit feedback — has its own wake policy and must never re-open a
-# finished run from the reap.
-_USER_MESSAGE_VIAS = ("conversation", "web", "web-converse")
+# finished run from the reap. The tuple itself lives with the engine's inbox
+# (engine.inbox.USER_MESSAGE_VIAS): the resume-boot drain (F359) keys on the same
+# channels, so wake policy and consumption policy stay ONE vocabulary.
 
 
 def _stranded_user_messages(routine_dir: Path) -> bool:
-    """An unconsumed USER message is waiting in the dir's inbox (see _USER_MESSAGE_VIAS)."""
+    """An unconsumed USER message is waiting in the dir's inbox (USER_MESSAGE_VIAS)."""
+    from ..engine.inbox import USER_MESSAGE_VIAS
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
         return False
@@ -54,7 +56,7 @@ def _stranded_user_messages(routine_dir: Path) -> bool:
             continue
         obj = read_json(p)
         if (isinstance(obj, dict) and obj.get("text")
-                and str(obj.get("via") or "") in _USER_MESSAGE_VIAS):
+                and str(obj.get("via") or "") in USER_MESSAGE_VIAS):
             return True
     return False
 

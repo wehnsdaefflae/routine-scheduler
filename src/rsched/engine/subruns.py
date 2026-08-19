@@ -267,7 +267,8 @@ class SubrunManager:
             # freezing the conversation until the child finishes — the child keeps running and
             # is announced when it exits. Root runs only (children don't drain the routine inbox).
             if (self.parent.ctx.depth == 0
-                    and inbox.has_pending_messages(self.parent.ctx.routine.dir)):
+                    and inbox.has_pending_messages(self.parent.ctx.routine.dir,
+                                                   user_only=self.parent.resume)):
                 finished = self.take_finished_unannounced()
                 return {"kind": "wait", "interrupted_by_user": True, "timed_out": False,
                         "finished": self._finished_rows(finished),

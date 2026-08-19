@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.206.0] — 2026-08-19
+
+### Changed
+- **A resumed run leg no longer drains the whole inbox** (F359, user order 2026-08-17).
+  A follow-up/recovery leg now consumes ONLY what is addressed to *it*: messages the user
+  sent through the conversation/run-page channels (`via` in `USER_MESSAGE_VIAS`) and
+  answers to the run's OWN questions (qid prefix match). Audit feedback, report
+  deliveries, routine-page queued messages and answers to other runs' questions stay
+  queued for the next fresh run, whose boot digest presents them with full context —
+  previously a follow-up leg of an already-ended run ate decision answers meant for the
+  night's scheduled run (the D92/D93 loss). The user-channel vocabulary now lives once, in
+  `engine/inbox.py`; the daemon's post-finish wake sweep imports it.
+
 ## [0.205.0] — 2026-08-16
 
 ### Removed
