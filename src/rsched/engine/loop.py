@@ -276,11 +276,13 @@ class EngineLoop:
                 if action is None:
                     return self._finish_run(
                         "failed",
-                        f"The model ({ctx.main_model}) could not produce a schema-valid "
-                        f"action in {MAX_SCHEMA_ATTEMPTS} attempts ({ctx.schema_retries} "
-                        f"schema rejections this run, {ctx.turn} completed turns) — it "
-                        "cannot hold the action schema. Pick a stronger model for "
-                        "schema-driven work (D87).")
+                        f"No action was ACCEPTED in {MAX_SCHEMA_ATTEMPTS} attempts "
+                        f"({ctx.schema_retries} rejections this run, {ctx.turn} completed "
+                        f"turns). The last rejection in the transcript names the wall: "
+                        f"schema-invalid output means the model ({ctx.main_model}) cannot "
+                        "hold the action schema — pick a stronger model (D87); repeated "
+                        "capability/grant denials mean the run was boxed in by policy, "
+                        "and no model change fixes that (R404/F351).")
                 ctx.turn += 1
                 ctx.transcript.event("assistant_action", dict(action), turn=ctx.turn, usage=usage,
                                      **({"phase": ctx.phase} if ctx.phase else {}),

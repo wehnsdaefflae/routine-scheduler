@@ -396,6 +396,12 @@ class GrantPolicy:
         if state == "denied_now":
             return (f"The user declined {eid} for THIS RUN — do not re-request it now; "
                     f"work without it.")
+        if self.is_subrun:
+            # R404/F351: a child cannot file access requests (requests.request_denial
+            # refuses them), so hinting `ask_user with request:` here sent children into
+            # a dead end that ended as a false "weak model" forced-finish verdict.
+            return (f"Sub-workflows cannot request access. If {eid} is essential, name it "
+                    "in your finish summary so the top-level run can request it.")
         hint = (' with mode "blocking" if you cannot proceed without it (deferred '
                 "otherwise)" if blocking_hint else "")
         return (f'If it is essential, request it: ask_user with request: "{eid}" and a '

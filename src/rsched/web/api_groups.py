@@ -154,9 +154,9 @@ def list_groups(request: Request) -> dict:
     catalog = _catalog(request)
     known = [{"slug": s, "name": info.cfg.name or s} for s, info in sorted(catalog.items())]
     # in-flight sequential fires (Phase B), keyed by group id, so the UI can show a running
-    # chain's progress (per pass, F292) and refuse a duplicate "Run now"
+    # chain's progress and refuse a duplicate "Run now" (the F292 two-pass `phase` field
+    # is retired with the split flag — D90, 0.205.0; chains fire once over the members)
     in_flight = {str(r["group_id"]): {"cursor": r.get("cursor", 0), "status": r.get("status"),
-                                      "phase": r.get("phase", "ingest"),
                                       "members": r.get("members", []), "log": r.get("log", [])}
                  for r in group_runs.in_flight(home)}
     # each group rides out with its schedule prefill (the editor speaks friendly specs)

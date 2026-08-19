@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.206.1] — 2026-08-19
+
+### Fixed
+- **Child dead-end cascade copy** (F351, R404): a sub-workflow's reserved-capability
+  denial no longer hints `ask_user with request:` — a child cannot file access requests,
+  and following that hint burned its strikes and ended in a false verdict. The denial now
+  says to name the need in the finish summary; the forced-finish copy itself now
+  distinguishes schema-invalid output (a model problem, D87) from repeated policy
+  denials (a boxed-in run no model change fixes).
+- **Spawn contract copy told the wrong story** (F352, R405/R406): children do NOT share
+  the parent's working directory — they run isolated in `runs/<ts>/sub/<n>/`. The action
+  surface and `docs/prompt-anatomy.md` now say so and tell the parent to pass absolute
+  paths and fold results back from the finish summary.
+- **Dead two-pass residue in the groups API** (F361, R414): the in-flight chain payload
+  dropped the retired `phase` field (no consumer; split machinery removed in 0.205.0)
+  and the stale F292 comment.
+
 ## [0.206.0] — 2026-08-19
 
 ### Changed

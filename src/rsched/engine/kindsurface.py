@@ -182,8 +182,9 @@ your prompt/system — include everything it needs; set response_schema for stru
 child's PURPOSE from the patterns listed under CAPABILITIES (default general-task) and give it \
 a fully self-contained "prompt" as its instruction; it sees nothing else and returns only its \
 finish summary. You keep working while it runs; you are notified automatically when it exits. \
-Give parallel children disjoint outputs (they share your working directory); they must not \
-write LEDGER.md or state/phase.json."""),
+A child works in its OWN directory (runs/<ts>/sub/<n>/, NOT your working tree — R405/R406): \
+relative paths resolve THERE, so name absolute paths (within the allowed roots) for anything \
+it must read, and fold its results back yourself from its finish summary."""),
     (("subtask",), """- subtask: start a child sub-workflow that runs SEQUENTIALLY in the \
 background — decompose a large \
 task into ordered steps, each a fresh-context child run with its OWN budget and pattern. It does \
