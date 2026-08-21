@@ -293,6 +293,12 @@ def test_resume_leaves_next_run_inbox_queued(make_routine, scripted):
                       {"text": "quick follow-up", "via": "web-converse"})
     atomic_write_json(d / "inbox" / "msg-2.json",
                       {"text": "queued for the next run", "ts": "t"})
+    # F367: a detached task's result is THIS conversation's freight — the daemon wakes the
+    # idle owner to deliver it, so the resumed leg MUST drain it (before this, the wake
+    # spun forever on a message the filtered leg never consumed)
+    atomic_write_json(d / "inbox" / "msg-bg-t1.json",
+                      {"text": "[background task finished] the scrape result",
+                       "via": "background"})
     (d / "questions" / "pending").mkdir(parents=True, exist_ok=True)
     atomic_write_json(d / "questions" / "pending" / "q-20990101-000000-1.json",
                       {"qid": "q-20990101-000000-1", "question": "older run's ask?"})
@@ -304,8 +310,10 @@ def test_resume_leaves_next_run_inbox_queued(make_routine, scripted):
     assert status2 == "ok"
     prompt = " ".join(m["content"] for m in ep2.calls[0]["messages"])
     assert "quick follow-up" in prompt                    # the trigger arrived
+    assert "the scrape result" in prompt                  # the background result arrived (F367)
     assert "queued for the next run" not in prompt        # the freight did NOT
     assert "the queued answer" not in prompt
+    assert not (d / "inbox" / "msg-bg-t1.json").exists()  # …and it was consumed
     # ...and every piece of freight is still queued for the next fresh run
     assert (d / "inbox" / "msg-2.json").exists()
     assert (d / "inbox" / "answer-q-20990101-000000-1.json").exists()
@@ -692,7 +700,7 @@ def test_finish_with_pending_user_message_defers_and_delivers(make_routine, scri
     d = make_routine(slug="finrace")
 
     def racing_finish():
-        file_message(d, "wait — also do X")   # lands AFTER this turn's inbox drain
+        file_message(d, "wait — also do X", via="web")   # lands AFTER this turn's drain
         return finish(summary="all done")
 
     ep = scripted([probe(), racing_finish,
@@ -729,7 +737,7 @@ def test_reserved_finish_surfaces_still_queued_message(make_routine, scripted):
     d = make_routine(slug="finrace2", budgets={"max_turns": 1})
 
     def racing_finish():
-        file_message(d, "too late for this run")
+        file_message(d, "too late for this run", via="web")
         return finish(status="partial", summary="out of budget")
 
     scripted([probe(), racing_finish])
@@ -1183,7 +1191,9 @@ def test_wait_yields_to_a_pending_user_message(make_routine, scripted):
 
     def inject_then_wait():
         # drop a user message, THEN park — the wait must yield to it, not freeze
-        atomic_write_json(d / "inbox" / "msg-1.json", {"text": "quick question while you work"})
+        atomic_write_json(d / "inbox" / "msg-1.json",
+                          {"text": "quick question while you work",
+                           "via": "web-converse"})   # the real writers stamp a user via
         return wait_(n=1, timeout_s=30)
 
     scripted([
@@ -1279,21 +1289,39 @@ def test_llm_subcall(make_routine, scripted):
 
 
 def test_injection_mid_run(make_routine, scripted):
+    """F368 (user order 2026-08-20): a turn boundary delivers only the LIVE set — the live
+    run view's channels and a background task's result. Queued freight (a routine-page
+    message without a via, a report delivery) written mid-run stays in the inbox for the
+    NEXT fresh run's boot instead of interrupting the running one."""
     d = make_routine(slug="inject")
 
     def action_then_inject():
-        atomic_write_json(d / "inbox" / "msg-1.json", {"text": "also mention the moon"})
+        atomic_write_json(d / "inbox" / "msg-1.json",
+                          {"text": "also mention the moon", "via": "web"})
+        atomic_write_json(d / "inbox" / "msg-2.json",
+                          {"text": "queued routine-page freight"})
+        atomic_write_json(d / "inbox" / "msg-3.json",
+                          {"text": "[report] sibling delivery", "via": "report",
+                           "report": "R999", "from": "sibling"})
+        atomic_write_json(d / "inbox" / "msg-4.json",
+                          {"text": "[background task finished] result", "via": "background"})
         return probe()
 
     ep = scripted([action_then_inject, finish()])
     status, run_dir = run_routine(d, ServerConfig(), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert status == "ok"
-    inj = next(e for e in events if e["type"] == "user_injection")
-    assert inj["payload"]["text"] == "also mention the moon"
+    injected = [e["payload"]["text"] for e in events if e["type"] == "user_injection"]
+    assert "also mention the moon" in injected          # live run view arrives
+    assert any("background task finished" in t for t in injected)   # detached result arrives
+    assert not any("freight" in t for t in injected)    # routine-page msg does NOT
+    assert not any("sibling delivery" in t for t in injected)       # report does NOT
     assert any("USER MESSAGE (injected mid-run)" in m["content"]
                for m in ep.calls[1]["messages"])
     assert (run_dir / "consumed" / "msg-1.json").exists()
+    # the freight is still queued, untouched, for the next fresh run's boot
+    assert (d / "inbox" / "msg-2.json").exists()
+    assert (d / "inbox" / "msg-3.json").exists()
 
 
 def test_boot_inbox_message_lands_in_system_prompt(make_routine, scripted):
@@ -1673,27 +1701,32 @@ def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):
 
 
 def test_previous_runs_ride_the_run_history_permission(make_routine, scripted):
-    """read_file into an earlier run needs the previous-runs capability; the live run's
-    own tree stays readable (the engine points there after compaction)."""
+    """D96 (user decision 2026-08-20): the LAST previous run is readable ALWAYS-ON, with
+    no permission — baseline observability. Runs older than the last still ride the
+    run-history permission's 'all' depth; the live run's own tree stays readable."""
     import yaml as _yaml
 
     from rsched.engine.transcript import read_events as _read
 
     d = make_routine(slug="historian")
-    old_run = d / "runs" / "20260101-000000"
-    old_run.mkdir(parents=True)
-    (old_run / "result.md").write_text("ANCIENT RESULT\n")
+    for ts, text in (("20250101-000000", "OLDEST RESULT"), ("20260101-000000", "ANCIENT RESULT")):
+        r = d / "runs" / ts
+        r.mkdir(parents=True)
+        (r / "result.md").write_text(text + "\n")
     scripted([
-        {"say": "Peek at the previous run.", "kind": "read_file",
-         "path": "runs/20260101-000000/result.md"},              # denied
-        probe(),
+        {"say": "Peek at the OLDER run.", "kind": "read_file",
+         "path": "runs/20250101-000000/result.md"},              # beyond 'last' → denied
+        {"say": "Peek at the LAST run.", "kind": "read_file",
+         "path": "runs/20260101-000000/result.md"},              # always-on → readable
         finish(),
     ])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)
     events, _ = _read(run_dir / "transcript.jsonl")
     assert status == "ok"
-    errs = [e for e in events if e["type"] == "error"]
-    assert len(errs) == 1 and "run-history" in errs[0]["payload"]["message"]
+    obs = [e for e in events if e["type"] == "observation"]
+    assert any("run-history" in str(o["payload"]) for o in obs[:1])   # older: names the raise
+    assert any("ANCIENT RESULT" in str(o["payload"]) for o in obs)    # last: content delivered
+    assert not any("OLDEST RESULT" in str(o["payload"]) for o in obs)
 
     d2 = make_routine(slug="historian2")
     old2 = d2 / "runs" / "20260101-000000"

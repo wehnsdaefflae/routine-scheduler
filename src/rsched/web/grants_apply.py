@@ -87,8 +87,19 @@ def _apply_capability(server, raw: dict, cls: str, name: str) -> None:
         base["workflows"] = "generate"
     lib = read_library_requires(server.permissions_home)
     raw["permissions"] = active
-    raw["capabilities"] = floor_capabilities(active, lib,
-                                             capabilities_for(active, lib, base))
+    if cls == "util":
+        # D97=B (user decision 2026-08-20, F360): a forever-grant for ONE util activates
+        # the covering conduct doc but floors capabilities to base + the NAMED util only —
+        # the doc's sibling utils and tag classes stay OFF, each requestable separately.
+        # The capabilities_for raise cascade would grant the whole class: one
+        # `allow_forever util:signal` click handed sprind AND uncensored-model-radar all
+        # four personal messengers + chat/messaging tags (commits 30e1894, df2b944).
+        # The routine page's full permission save keeps the raise — that surface SHOWS
+        # the whole class before writing it.
+        raw["capabilities"] = floor_capabilities(active, lib, base)
+    else:
+        raw["capabilities"] = floor_capabilities(active, lib,
+                                                 capabilities_for(active, lib, base))
 
 
 def apply_forever(server, routine_dir: Path, ids: list[str],

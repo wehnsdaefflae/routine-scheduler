@@ -19,6 +19,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.207.0] — 2026-08-21
+
+Self-audit batch: four user decisions executed + one user order + two defect fixes.
+
+### Changed
+- **Inbox consumption timing (user order 2026-08-20, F368).** A run's turn boundaries now
+  deliver only the LIVE message set — the live run view's channels (`web`, `web-converse`,
+  the conversation composer) plus a detached background task's result. Queued freight
+  (reports, audit feedback, routine-page messages, trigger texts) is consumed only at the
+  START of the routine's next fresh run, never mid-flight. `inbox.drain_messages` /
+  `has_pending_messages` take a `vias` allow-set instead of the `user_only` flag.
+- **Run history 'last' depth is always on (D96, F364).** Every routine reads its own last
+  run under `runs/` with no permission — baseline observability, like the state digest.
+  The run-history permission now governs only the `all` depth; sub-workflow children stay
+  at `none` (their brief is their context). Denial copy rewritten to match.
+- **Forever-grant blast radius (D97=B, F360).** `allow_forever util:X` from a decision card
+  activates the covering conduct doc but floors capabilities to the NAMED util only —
+  sibling utils and tag classes stay off, each requestable separately (one `util:signal`
+  click used to hand a routine all four personal messengers — sprind `30e1894`, umr
+  `df2b944`). The permissions editor's full save keeps the class raise. The
+  `allow_forever` decision phrase states the narrow apply.
+- **Once-grant attribution (D93=A, F350).** The ONCE-GRANT SPENT notice names the consuming
+  action, and when an fs once-grant is burned by a util call it teaches the D76 coarseness
+  (any util invocation receives mounted roots — do file work first). The `allow_once`
+  decision phrase carries the same warning at deciding time.
+
+### Fixed
+- **Detached results stranded after F359 (F367).** A resumed conversation leg's boot now
+  drains `via: background` messages (the LIVE set) — before this, the daemon's delivery
+  wake resumed the idle owner in a loop while the filtered leg never consumed the result.
+- **Script header declarations in the wrong block fail loudly (F369, R444/R419).** A
+  routine script declaring `secrets = [...]` / `net = "outbound"` inside the PEP 723
+  `# /// script` block (where the engine never reads them) is refused with copy teaching
+  the docstring header form — before this it ran with no secrets and no network and
+  failed obscurely at the first env read (sprind's publish helper lost FTP_SOURCES and
+  HTTPS to exactly this).
+
 ## [0.206.1] — 2026-08-19
 
 ### Fixed

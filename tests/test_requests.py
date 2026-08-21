@@ -295,7 +295,12 @@ def test_consume_once_spends_on_use_and_survives_gate_refusals():
     assert spent == {"util:discord"}
     assert loop.ctx.granted_once == set() and loop.ctx.granted_now == set()
     assert "discord" not in loop.grants.utils
-    assert "ONCE-GRANT SPENT" in spent_notice(spent)
+    # D93 (F350): the notice ATTRIBUTES the consuming action…
+    notice = spent_notice(spent, {"kind": "util", "name": "discord"})
+    assert "ONCE-GRANT SPENT" in notice and "util 'discord' call" in notice
+    assert "fs once-grant" not in notice          # …and the fs caveat only where it applies
+    fs_notice = spent_notice({"fs-write:/home/x"}, {"kind": "util", "name": "codemap"})
+    assert "ANY util invocation" in fs_notice     # the codemap-burn lesson is taught
 
 
 def test_once_match_covers_each_turn_action_class():

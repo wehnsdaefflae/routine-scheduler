@@ -284,6 +284,13 @@ def do_script(action: dict, ctx: RunContext) -> dict:
     if not scripts.exists(ctx.routine.dir, name):
         return {"kind": "script", "name": name, "missing": True,
                 "available": [s["name"] for s in scripts.list_scripts(ctx.routine.dir)]}
+    if bad := scripts.misdeclared(ctx.routine.dir, name):
+        return {"kind": "script", "name": name, "error":
+                f"declaration in the wrong place: {', '.join(bad)} — these are engine header "
+                "keys, but this script declares them inside the PEP 723 `# /// script` block, "
+                "which the engine never reads (the script would run with NO secrets and NO "
+                "network). Move them into the module DOCSTRING as header lines, exactly the "
+                "util model — e.g.\n    secrets: FTP_SOURCES\n    net: outbound\n— then rerun."}
     declared, _net, _opt = scripts.needs(ctx.routine.dir, name)
     env_secrets = {k: v for k, v in load_secrets().items()
                    if k in declared and secret_state(ctx, k) == "granted"}

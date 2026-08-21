@@ -967,15 +967,17 @@ def test_allow_once_gates_on_once_grantable_classes_at_the_endpoint(client):
 
 
 def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
-    """allow_forever for a reserved util activates its covering conduct doc AND the
-    capability through the same raise-then-floor the permissions editor uses — the saved
-    mapping can never contradict the held permissions."""
+    """D97=B (F360): allow_forever for a reserved util activates its covering conduct doc
+    but floors capabilities to the NAMED util only — the doc's sibling utils and tag
+    classes stay OFF (one `util:signal` click used to hand a routine every messenger).
+    The permissions editor's full save keeps the raise; this click-path must not."""
     c, tmp = client
     routines = tmp / "routines"
     perms = tmp / "library" / "permissions"
     perms.mkdir(parents=True, exist_ok=True)
     (perms / "communication.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
+        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord, signal]\n"
+        "  util_tags: [messaging]\n---\n"
         "# permission: communication — discord\nbody\n", encoding="utf-8")
     pending = routines / "apir" / "questions" / "pending"
     pending.mkdir(parents=True, exist_ok=True)
@@ -988,6 +990,8 @@ def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
     raw = yaml.safe_load((routines / "apir" / "routine.yaml").read_text())
     assert "communication" in raw["permissions"]
     assert "discord" in raw["capabilities"]["utils"]
+    assert "signal" not in raw["capabilities"]["utils"]           # sibling stays off
+    assert "messaging" not in (raw["capabilities"].get("util_tags") or [])  # class too
 
 
 def test_permissions_put_persists_remove_util_under_util_authoring(client):

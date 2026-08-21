@@ -228,6 +228,18 @@ def test_policy_enforces_capabilities_not_docs(tmp_path):
     assert caps_only.kind_sources == {"write_util": ("util-authoring",)}
 
 
+def test_run_history_floors_at_last_for_every_routine(tmp_path):
+    """D96 (user decision 2026-08-20): own-runs read at 'last' depth is ALWAYS ON — a
+    routine policy never comes out of load_policy below 'last', whatever the saved caps
+    say; only 'all' remains permission-governed. The loop's depth>0 seam drops children
+    back to 'none' (a child's brief, not the archive, is its context)."""
+    home = _lib(tmp_path, {})
+    assert load_policy(home, [], {}).run_history == "last"                    # no caps
+    assert load_policy(home, [], {"runs": "none"}).run_history == "last"      # explicit none
+    assert load_policy(home, [], {"runs": "last"}).run_history == "last"
+    assert load_policy(home, [], {"runs": "all"}).run_history == "all"        # opt-in kept
+
+
 def test_policy_ignores_ungated_kinds_in_capabilities(tmp_path):
     home = _lib(tmp_path, {})
     policy = load_policy(home, [], {"actions": ["util", "read_file", "memory_read"]})
@@ -297,7 +309,7 @@ def test_subrun_denial_names_the_child_scope_not_the_routine(tmp_path):
 def test_deny_gates_previous_runs_but_not_the_live_run():
     none = GrantPolicy(current_run_ts="20260712-090000")
     denial = none.deny({"kind": "read_file", "path": "runs/20260101-000000/result.md"})
-    assert denial and "run-history" in denial
+    assert denial and "not readable in this scope" in denial   # post-D96: child-scope copy
     # the live run's own tree (archived history) stays readable — the engine points there
     assert none.deny({"kind": "read_file",
                       "path": "runs/20260712-090000/history/INDEX.md"}) is None
@@ -309,7 +321,7 @@ def test_deny_gates_previous_runs_but_not_the_live_run():
     # a batched read is gated per path — one gated entry denies the whole action
     batched = none.deny({"kind": "read_file",
                          "paths": ["state/a.md", "runs/20260101-000000/result.md"]})
-    assert batched and "run-history" in batched
+    assert batched and "not readable in this scope" in batched
     assert none.deny({"kind": "read_file", "paths": ["state/a.md", "LEDGER.md"]}) is None
 
 
@@ -414,8 +426,13 @@ def test_admin_lifts_capability_gating_only(tmp_path):
     assert admin.deny({"kind": "write_util", "name": "x", "content": "y"}) is None
     assert base.deny({"kind": "util", "name": "discord", "args": ["send", "hi"]})
     assert admin.deny({"kind": "util", "name": "discord", "args": ["send", "hi"]}) is None
-    # previous-run READ depth: gated for base, lifted for admin
-    assert base.deny({"kind": "read_file", "path": "runs/20260101-000000/result.md"})
+    # previous-run READ depth: post-D96 a routine floors at 'last', so deny() passes the
+    # read for base too (depth enforcement lives in fileops' read gate); only a scope
+    # WITHOUT history — a child — still refuses here, and admin lifts even that
+    from dataclasses import replace
+    child = replace(base, run_history="none")
+    assert child.deny({"kind": "read_file", "path": "runs/20260101-000000/result.md"})
+    assert base.deny({"kind": "read_file", "path": "runs/20260101-000000/result.md"}) is None
     assert admin.deny({"kind": "read_file", "path": "runs/20260101-000000/result.md"}) is None
 
     # STRUCTURAL gates STILL apply under admin — these are NOT capabilities:

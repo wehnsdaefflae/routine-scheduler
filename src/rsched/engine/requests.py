@@ -38,9 +38,13 @@ DECISION_PHRASES = {
     "allow_now": "allowed for THIS RUN only — usable now; the grant does not survive "
                  "this run",
     "allow_once": "allowed for ONE action only — your next matching action spends it, "
-                  "then the engine revokes it; request again if you need another use",
+                  "then the engine revokes it; request again if you need another use. "
+                  "For an fs root, ANY util call counts as the matching action (the "
+                  "sandbox mounts granted roots wholesale), so do the file work first",
     "allow_forever": "allowed permanently — recorded in the routine's config (and usable "
-                     "now)",
+                     "now). A util grant enables the NAMED util only: its permission "
+                     "doc activates for conduct, but sibling utils and tag classes stay "
+                     "off, each requestable separately",
     "deny_now": "declined for this run — work without it and do not re-request it now",
     "deny_forever": "declined permanently — never request it again (the routine page can "
                     "revisit this)",
@@ -360,14 +364,23 @@ def consume_once_grants(loop, action: dict, obs: dict) -> set[str]:
     return spent
 
 
-def spent_notice(spent: set[str]) -> str:
+def spent_notice(spent: set[str], action: dict) -> str:
     """The engine line appended to the consuming action's observation — the model must
     learn the revocation at the boundary it happens, or its next matching attempt reads
-    as an unexplained denial (docs/prompt-anatomy.md pins it).
+    as an unexplained denial (docs/prompt-anatomy.md pins it). D93 (F350): the notice
+    NAMES the consuming action — an fs once-grant is received by ANY util invocation
+    (the sandbox mounts granted roots wholesale), so an unrelated first util call can be
+    the spender, and without attribution that burn read as silent loss (2026-08-16: the
+    run's opening codemap call spent the fs-write grant meant for a later scrub).
     """
-    return (f"\n[ONCE-GRANT SPENT: {', '.join(sorted(spent))} — allowed for one action, "
-            "which this was; the grant is now revoked. Request it again if you need "
-            "another use.]")
+    kind = str(action.get("kind") or "")
+    what = f"util {action.get('name')!r} call" if kind == "util" else f"{kind} action"
+    note = ""
+    if kind == "util" and any(e.startswith(("fs-read:", "fs-write:")) for e in spent):
+        note = (" An fs once-grant is received by ANY util invocation — to spend it on "
+                "file work, do the file actions BEFORE unrelated util calls.")
+    return (f"\n[ONCE-GRANT SPENT: {', '.join(sorted(spent))} — consumed by this {what}; "
+            f"the grant is now revoked. Request it again if you need another use.{note}]")
 
 
 def apply_deferred_decisions(loop, deferred_qa: list[dict]) -> None:

@@ -40,16 +40,20 @@ def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
     if resolved.is_relative_to(ctx.root_run_dir):
         return None
     if g.run_history == "none":
-        return ("reading previous runs is not among this routine's permissions "
-                "(the run-history permission unlocks it; depth last/all is a capability)")
+        # after D96 a routine's own policy always carries at least "last" — this branch
+        # serves scopes genuinely without history (sub-workflow children, synthetic
+        # policies), so the copy must not claim the ROUTINE lacks a permission (R46).
+        return ("previous runs are not readable in this scope — a routine reads its own "
+                "last run by default, but sub-workflows run without run history; fold "
+                "what the child needs into its brief instead")
     if g.run_history == "last":
         prior = sorted(d.name for d in runs_dir.iterdir()
                        if d.is_dir() and d.name != ctx.root_run_dir.name)
         last = prior[-1] if prior else None
         if not rel.parts or rel.parts[0] != last:
-            return (f"this routine's run-history permission covers only the LAST previous "
-                    f"run ({'runs/' + last if last else 'none exists yet'}); "
-                    f"raising its run-history depth to 'all' would cover all of them")
+            return (f"previous runs are readable at the default 'last' depth only "
+                    f"({'runs/' + last if last else 'none exists yet'}); the run-history "
+                    f"permission raises the depth to 'all' for longitudinal work")
     return None
 
 

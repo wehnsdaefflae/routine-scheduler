@@ -30,11 +30,13 @@ def boot(loop) -> None:
     resuming = loop.resume and ctx.depth == 0
     if ctx.depth == 0:
         # F359 (user order 2026-08-17): a RESUMED leg consumes only what is addressed to
-        # IT — the user's conversation/run-page messages and answers to its OWN questions.
-        # Audit feedback, reports, routine-page queued messages and answers to other runs'
-        # questions stay in the inbox for the next FRESH run, whose boot digest presents
-        # them with full context (a follow-up leg draining them wholesale is how the
-        # D92/D93 decision answers were eaten by an already-ended run).
+        # IT — the user's conversation/run-page messages, a detached background task's
+        # result (started by this very conversation; without it the daemon's delivery
+        # wake would spin on a message the leg never drains, F367) and answers to its
+        # OWN questions. Audit feedback, reports, routine-page queued messages and answers
+        # to other runs' questions stay in the inbox for the next FRESH run, whose boot
+        # digest presents them with full context (a follow-up leg draining them wholesale
+        # is how the D92/D93 decision answers were eaten by an already-ended run).
         deferred_qa = inbox.collect_deferred_answers(
             ctx.routine.dir, loop.consumed_dir,
             own_run_ts=ctx.run_ts if resuming else None)
@@ -44,8 +46,9 @@ def boot(loop) -> None:
         from .requests import apply_deferred_decisions
         apply_deferred_decisions(loop, deferred_qa)
         open_qs = inbox.open_questions(ctx.routine.dir)
-        msgs = inbox.drain_messages(ctx.routine.dir, loop.consumed_dir,
-                                    user_only=resuming)
+        msgs = inbox.drain_messages(
+            ctx.routine.dir, loop.consumed_dir,
+            vias=inbox.LIVE_MESSAGE_VIAS if resuming else None)
         reports.stamp_delivered(ctx.server.routines_home, msgs, run_id=ctx.run_id)
         digest = state_digest(ctx.routine.dir, deferred_qa, open_qs,
                               routines_home=ctx.server.routines_home,
@@ -151,8 +154,9 @@ def boot(loop) -> None:
     # Absorb messages that landed WHILE boot ran (rapid slash commands) so this leg handles
     # them all; a prose straggler upgrades the leg to a reply (see loop.run's command-only gate).
     if ctx.depth == 0:
-        while extra := inbox.drain_messages(ctx.routine.dir, loop.consumed_dir,
-                                            user_only=resuming):
+        while extra := inbox.drain_messages(
+                ctx.routine.dir, loop.consumed_dir,
+                vias=inbox.LIVE_MESSAGE_VIAS if resuming else None):
             _ingest(loop, extra, resuming=True)
     ctx.write_status("running")
 

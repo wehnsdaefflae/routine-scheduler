@@ -107,6 +107,29 @@ def needs(routine_dir: Path, name: str) -> tuple[set[str], bool, set[str]]:
     return declared, header["net"] == "outbound", optional
 
 
+_PEP723_BLOCK = re.compile(r"^# /// script\s*$(.*?)^# ///\s*$", re.MULTILINE | re.DOTALL)
+_ENGINE_KEYS_IN_BLOCK = re.compile(r"^#\s*(secrets|optional_secrets|net|calls)\s*=", re.MULTILINE)
+
+
+def misdeclared(routine_dir: Path, name: str) -> list[str]:
+    """Engine-header keys an author wrote INSIDE the PEP 723 metadata block (`# secrets =
+    [...]`, `# net = "outbound"`), where the engine never reads them. `needs()` parses the
+    DOCSTRING header only, so such a declaration silently yields no secrets and no network —
+    the script then fails on a missing env var or a blocked socket with no hint at the real
+    cause (R444/R419: sprind's publish helper lost FTP_SOURCES *and* HTTPS to exactly this).
+    The script action refuses to run such a script and teaches the docstring form instead:
+    failing loudly at the declaration beats failing obscurely at the first env read.
+    """
+    try:
+        text = script_path(routine_dir, name).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    m = _PEP723_BLOCK.search(text)
+    if not m:
+        return []
+    return sorted(set(_ENGINE_KEYS_IN_BLOCK.findall(m.group(1))))
+
+
 def script_deps(routine_dir: Path, name: str) -> list[str]:
     """The script's PEP 723 `dependencies`, from its `# /// script` block. [] when the
     block is absent or unparseable — a missing dep then fails visibly at exec.

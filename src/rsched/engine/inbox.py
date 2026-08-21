@@ -3,7 +3,9 @@
 The daemon/web write files into <routine>/inbox/ atomically:
   msg-<ts>.json     {"text": ..., "ts": ...}          — injected user message
   answer-<qid>.json {"qid": ..., "text": ..., "source": ...}
-The engine drains messages at every turn boundary and matches answers by qid.
+A fresh run's boot drains every message; live turn boundaries deliver only the
+LIVE_MESSAGE_VIAS set (the live run view + background results — user order 2026-08-20);
+answers are matched by qid.
 Consumed files move to <run_dir>/consumed/ for the audit trail.
 """
 
@@ -26,6 +28,17 @@ log = logging.getLogger("rsched.inbox")
 #: it wholesale silently ate decision answers meant for that night's run (D92/D93).
 USER_MESSAGE_VIAS = ("conversation", "web", "web-converse")
 
+#: What a LIVE run may consume at a mid-run turn boundary, and what a RESUMED leg's boot
+#: drains (user order 2026-08-20, generalizing F359): the user talking to THIS run
+#: (USER_MESSAGE_VIAS) plus a detached background task's result delivery — the task was
+#: started by this very conversation, so its result IS this conversation's freight, and the
+#: daemon's delivery contract counts on the live owner draining it at the next boundary
+#: (daemon/detached._wake). Everything else — reports, audit feedback, routine-page queued
+#: messages, trigger/one-shot texts — is addressed to the routine's NEXT FRESH run and is
+#: consumed only by that run's boot, never mid-flight. Mid-run injection into a running run
+#: is the live run view's channel, by design.
+LIVE_MESSAGE_VIAS = (*USER_MESSAGE_VIAS, "background")
+
 
 def _consume(path: Path, consumed_dir: Path) -> None:
     consumed_dir.mkdir(parents=True, exist_ok=True)
@@ -38,10 +51,11 @@ def _consume(path: Path, consumed_dir: Path) -> None:
 
 
 def drain_messages(routine_dir: Path, consumed_dir: Path,
-                   *, user_only: bool = False) -> list[dict]:
-    """Injected messages, oldest first; answer-* files are left alone. With `user_only`
-    (a RESUMED leg's boot, F359) only messages whose `via` is in USER_MESSAGE_VIAS are
-    consumed — everything else stays queued for the next fresh run, untouched. Each item is
+                   *, vias: tuple[str, ...] | None = None) -> list[dict]:
+    """Injected messages, oldest first; answer-* files are left alone. With `vias` (a live
+    turn boundary or a RESUMED leg's boot — LIVE_MESSAGE_VIAS) only messages whose `via` is
+    in that set are consumed — everything else stays queued, untouched, for the next fresh
+    run's boot (`vias=None`), which drains all. Each item is
     {"text": str, "attachments": [rel, ...], "command": bool} — attachments (recorded by
     the web layer for a conversation message) drive auto-attach of images/PDFs; `command`
     marks a slash command the engine EXECUTES instead of injecting as prose.
@@ -67,9 +81,9 @@ def drain_messages(routine_dir: Path, consumed_dir: Path,
             obj = json.loads(raw)
         except ValueError:
             obj = None
-        if user_only and not (isinstance(obj, dict)
-                              and str(obj.get("via") or "") in USER_MESSAGE_VIAS):
-            continue   # not this leg's conversation — stays queued for the next fresh run
+        if vias is not None and not (isinstance(obj, dict)
+                                     and str(obj.get("via") or "") in vias):
+            continue   # not live-deliverable — stays queued for the next fresh run's boot
         if isinstance(obj, dict) and obj.get("text"):
             out.append({"text": str(obj["text"]),
                         "attachments": [str(a) for a in (obj.get("attachments") or [])],
@@ -86,7 +100,7 @@ def drain_messages(routine_dir: Path, consumed_dir: Path,
     return out
 
 
-def has_pending_messages(routine_dir: Path, *, user_only: bool = False) -> bool:
+def has_pending_messages(routine_dir: Path, *, vias: tuple[str, ...] | None = None) -> bool:
     """True if an unconsumed injected user message (a `msg-*` file, not an `answer-*`) is
     waiting. A responsive `wait` polls this so a child-wait YIELDS to the user — hands control
     back to the turn loop, which drains the message and lets the parent respond — instead of
@@ -98,23 +112,25 @@ def has_pending_messages(routine_dir: Path, *, user_only: bool = False) -> bool:
     for p in inbox.iterdir():
         if not p.is_file() or p.name.startswith("answer-"):
             continue
-        if not user_only:
+        if vias is None:
             return True
-        # mirror drain_messages' F359 filter EXACTLY: counting a message the drain would
-        # skip would make a resumed leg's wait-yield / finish-deferral spin forever on
+        # mirror drain_messages' filter EXACTLY: counting a message the drain would
+        # skip would make a live leg's wait-yield / finish-deferral spin forever on
         # freight it is never going to consume
         obj = read_json(p)
         if (isinstance(obj, dict) and obj.get("text")
-                and str(obj.get("via") or "") in USER_MESSAGE_VIAS):
+                and str(obj.get("via") or "") in vias):
             return True
     return False
 
 
-def file_message(routine_dir: Path, text: str, *, source: str = "") -> Path:
+def file_message(routine_dir: Path, text: str, *, source: str = "",
+                 via: str = "") -> Path:
     """Queue TEXT as an injected user message — the exact msg-* shape the web layer
-    writes, drained at the next turn boundary. The engine's own writer for D38: a reply
-    that reaches a blocking APPROVAL but names neither option is not the answer; it is
-    held here, DELAYED until the question no longer blocks the run.
+    writes. `via` decides WHEN it is consumed: a via in LIVE_MESSAGE_VIAS reaches the
+    running run at its next turn boundary (the D38 held-reply path stamps "web" — the
+    text IS the user talking to this run); no via means queued freight, consumed only
+    by the next fresh run's boot (the routine-page queue).
     """
     import uuid
     from datetime import datetime
@@ -125,7 +141,8 @@ def file_message(routine_dir: Path, text: str, *, source: str = "") -> Path:
     path = (routine_dir / "inbox"
             / f"msg-{ts.replace(':', '')}-{uuid.uuid4().hex[:8]}.json")
     atomic_write_json(path, {"text": text, "ts": ts,
-                             **({"source": source} if source else {})})
+                             **({"source": source} if source else {}),
+                             **({"via": via} if via else {})})
     return path
 
 

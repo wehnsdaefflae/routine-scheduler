@@ -156,7 +156,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                 src = str(answer.get("source", "web"))
                 ctx.transcript.event("answer", {"qid": qid, "text": str(answer["text"]),
                                                 "source": src, "held": True})
-                inbox.file_message(ctx.routine.dir, str(answer["text"]), source=src)
+                inbox.file_message(ctx.routine.dir, str(answer["text"]), source=src,
+                                   via="web")   # the user's own reply to THIS run — live
                 if mirror:
                     mirror.notify_held(str(answer["text"]))
                 answer = None

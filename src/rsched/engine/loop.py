@@ -146,8 +146,11 @@ class EngineLoop:
         if ctx.depth > 0:
             # A spawned/subtask child: capabilities are off by design (childrun), so a
             # gated-kind denial must name the child scope, not claim the routine lacks it.
+            # run_history drops back to "none" here: D96's always-on 'last' floor is a
+            # ROUTINE baseline, and a child's brief — not the archive — is its context.
             from dataclasses import replace
-            self.base_grants = replace(self.base_grants, is_subrun=True)
+            self.base_grants = replace(self.base_grants, is_subrun=True,
+                                       run_history="none")
         self.grants = ctx.grants = self.base_grants.with_overlay(ctx.granted_now,
                                                                  ctx.denied_now)
         self.util_reminder = self._build_util_reminder()
@@ -325,7 +328,7 @@ class EngineLoop:
                     # still-queued message to both sides instead.
                     if (ctx.depth == 0 and not self._finish_reserved
                             and inbox.has_pending_messages(ctx.routine.dir,
-                                                           user_only=self.resume)):
+                                                           vias=inbox.LIVE_MESSAGE_VIAS)):
                         obs = {"kind": "finish", "rejected": True, "pending_user_input": True}
                         ctx.transcript.event("observation", obs, turn=ctx.turn)
                         self.messages.append({"role": "user", "content":
@@ -425,7 +428,7 @@ class EngineLoop:
                 # matching action — revoked here, at the same boundary, and announced so
                 # the next matching attempt is not an unexplained denial.
                 if spent := requests.consume_once_grants(self, action, obs):
-                    text += requests.spent_notice(spent)
+                    text += requests.spent_notice(spent, action)
                 if REPEAT_WARN <= repeat_streak < REPEAT_FAIL:
                     self._shed_schema_turns = 1   # re-arms on every further repeat
                     self._sheds += 1
@@ -476,7 +479,7 @@ class EngineLoop:
         if killed:
             summary += f"\n[{killed} still-running sub-workflow(s) were terminated at run end.]"
         if ctx.depth == 0 and inbox.has_pending_messages(ctx.routine.dir,
-                                                         user_only=self.resume):
+                                                         vias=inbox.LIVE_MESSAGE_VIAS):
             # The paths the R108 deferral cannot serve (the spent reserved-finish turn,
             # aborts, engine failures — plus a message racing this very write): the
             # message could not become a turn THIS run, so say so on BOTH sides — this

@@ -59,6 +59,31 @@ def test_list_and_needs_from_own_header(tmp_path):
     assert scripts.list_scripts(tmp_path / "empty") == []
 
 
+def test_misdeclared_engine_keys_in_pep723_block(tmp_path):
+    """F369 (R444/R419): `secrets = [...]` / `net = "outbound"` inside the PEP 723 block is
+    a plausible author guess the engine never reads — needs() would silently yield no
+    secrets and no network. misdeclared() names the misplaced keys so the script action can
+    refuse loudly instead of the script failing obscurely at its first env read / socket."""
+    d = _routine(tmp_path)
+    assert scripts.misdeclared(d, "probe") == []          # docstring form: clean
+    bad = SCRIPT.replace("# dependencies = []",
+                         '# dependencies = ["requests"]\n'
+                         '# secrets = ["FTP_SOURCES"]\n'
+                         '# net = "outbound"')
+    (d / "scripts" / "publish.py").write_text(bad, encoding="utf-8")
+    assert scripts.misdeclared(d, "publish") == ["net", "secrets"]
+    assert scripts.misdeclared(d, "gone") == []           # missing file: no crash
+
+    from rsched.engine.executor import do_script
+
+    class _Ctx:
+        class routine:  # noqa: N801 — mirrors ctx.routine attribute shape
+            dir = d
+    obs = do_script({"kind": "script", "name": "publish"}, _Ctx)
+    assert "error" in obs and "PEP 723" in obs["error"]
+    assert "secrets: FTP_SOURCES" in obs["error"]         # the fix is taught, not implied
+
+
 def test_run_script_declared_env_and_venv(tmp_path, monkeypatch):
     """The env is what the CALLER composed from the script's DECLARED grants; everything
     else in the store is scrubbed, and the util library is NOT reachable (no

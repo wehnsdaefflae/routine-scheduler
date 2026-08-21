@@ -249,10 +249,13 @@ def drain_injections(loop) -> None:
     # the live run finished claiming "awaits your answer" (observed 2026-07-24 with
     # q-20260724-121507-11). Same delivery as any mid-run user message; the pending
     # record is consumed with it.
-    # F359: a RESUMED leg stays filtered at every boundary, not just boot — it takes only
-    # user-channel messages and answers to its OWN questions; queued freight (audit
-    # feedback, reports, routine-page messages, other runs' answers) waits for the next
-    # fresh run. A fresh live run still drains everything (mid-run delivery, F195).
+    # F359 + user order 2026-08-20 (F368): EVERY root run's turn boundary drains only the
+    # LIVE set — the user talking to this run (live run view / composer) plus a detached
+    # task's result delivery. Queued freight (audit feedback, reports, routine-page
+    # messages, trigger texts, other runs' answers) is addressed to the routine's NEXT
+    # fresh run and is consumed only by that run's boot — mid-run injection is the live
+    # run view's channel, by design. Answers to THIS run's own deferred questions still
+    # arrive mid-run (F195, below).
     resumed = loop.resume and ctx.depth == 0
     pairs = inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir,
                                            own_run_ts=ctx.run_ts if resumed else None)
@@ -268,7 +271,8 @@ def drain_injections(loop) -> None:
     for qa in pairs:
         inject_user_message(loop, {"text": f"ANSWER to your deferred question "
                                            f"“{qa['question']}”:\n{qa['answer']}"})
-    drained = inbox.drain_messages(ctx.routine.dir, loop.consumed_dir, user_only=resumed)
+    drained = inbox.drain_messages(ctx.routine.dir, loop.consumed_dir,
+                                   vias=inbox.LIVE_MESSAGE_VIAS)
     for m in drained:
         inject_user_message(loop, m)
     reports.stamp_delivered(ctx.server.routines_home, drained, run_id=ctx.run_id)

@@ -475,12 +475,12 @@ class GrantPolicy:
                         return ("runs/ is engine-owned and read-only — transcripts and results "
                                 "are written by the engine, never by the run.")
                     if self.run_history == "none" and not self.admin:
-                        srcs = ", ".join(self.runs_sources)
-                        return (f"reading previous runs under runs/ is switched OFF in this "
-                                f"routine's capabilities (the user can raise the depth to the "
-                                f"last run or all; the {srcs} permission covers the conduct). "
-                                f"The state digest already carries the last run's result. "
-                                f"{self.request_route('runs:last')}")
+                        # post-D96 a routine's own policy floors at "last" — this fires
+                        # only for scopes without history (sub-workflow children).
+                        return ("previous runs under runs/ are not readable in this "
+                                "scope — a routine reads its own last run by default, "
+                                "but sub-workflows run on their brief alone. "
+                                f"{self.request_route('runs:all')}")
                 if writes and _norm_rel(path).split("/")[-1] == CONFIG_FILE:
                     return (f"writing {_norm_rel(path)!r} would change routine config "
                             f"(routine.yaml — permissions, capabilities, budgets, roots). Config "
@@ -547,7 +547,14 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                        kind_sources={k: tuple(v) for k, v in kind_sources.items()},
                        confirm=caps.get("confirm") or "always",
                        rule_confirm=caps.get("rule_confirm") or "always",
-                       run_history=caps.get("runs") or "none",
+                       # D96 (user decision 2026-08-20): own-runs read at 'last' depth is
+                       # ALWAYS ON for a routine — baseline observability, like the state
+                       # digest carrying the last result. The run-history permission doc
+                       # governs only the 'all' depth (longitudinal work stays an explicit
+                       # opt-in). Sub-workflow children DO load through here (empty caps),
+                       # so the loop's depth>0 seam drops them back to "none" — a child's
+                       # brief, not the archive, is its context.
+                       run_history="all" if caps.get("runs") == "all" else "last",
                        workflows=caps.get("workflows") or "catalog",
                        denied=frozenset(k for k, v in (grants_map or {}).items()
                                         if v is False),
