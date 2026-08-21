@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.209.0] — 2026-08-21
+
+### Added
+- **Guided create_routine: preview → confirm (D92=A).** The action is now TWO-step: the
+  first call stores a draft (`state/routine-draft.json` in the conversation dir) and
+  returns a preview observation — nothing is materialized; the agent relays the draft and
+  finishes its reply. A follow-up call with the SAME fields from a LATER reply (the
+  confirm gate is structural: a different engine process means the user has spoken since
+  the preview) materializes through the same scaffold path. Changed fields update the
+  draft and restart the round-trip; a same-reply confirm attempt is held with teaching
+  copy. The kind's surfaced prose states the flow.
+- **SIGKILLed runs auto-resume once (D99=A).** A run the kernel killed (rc=-9, no
+  authored finish, not a user abort) gets ONE automatic in-place resume from the reap: a
+  `sigkill-retry.json` marker in the run dir caps the retry (a second kill leaves the run
+  failed), and a recovery note filed `via=background` — the channel a resumed leg's boot
+  drains — tells the resumed leg what happened and to finish honestly. A user-cancel
+  SIGKILL (F188 attribution) never retries.
+- **rc=-9 post-mortems see memory now (F348).** Every engine status write samples
+  `/proc/self/status` VmHWM into `status.json` (`vm_hwm_kb`), and the daemon's
+  died-without-finish close-out names the last sampled peak in the failure summary and
+  health event — a peak near host RAM is the kernel-OOM signature that R437's specimen
+  (opus, 154k context, 3.4 GB host) left invisible.
+
 ## [0.208.0] — 2026-08-21
 
 ### Added

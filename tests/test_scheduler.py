@@ -382,6 +382,58 @@ def test_dead_pid_recovery_still_logs_orphaned_run(make_routine, tmp_path):
     assert [e["event"] for e in _health_events(server, "orphan2")] == ["orphaned_run"]
 
 
+# --- D99: a kernel-killed run (rc=-9) auto-resumes exactly once ------------------------
+
+
+async def test_sigkilled_run_auto_resumes_exactly_once(make_routine, tmp_path, monkeypatch):
+    """rc=-9 without an authored finish and without a user cancel gets ONE automatic
+    in-place resume (D99-A): the run-dir marker caps the retry, the recovery note lands
+    in the inbox via=background (the channel a resumed leg's boot drains), and a second
+    kill leaves the run failed — no third leg."""
+    d = make_routine(slug="oomer")
+    cfg, _ = load_routine(d)
+    _stub_engine(monkeypatch, "echo x >> legs; kill -9 $$")
+    server = _server(tmp_path)
+    runner = Runner(server, EventBus())
+    await runner.fire(cfg)
+    assert await _wait_for(lambda: (d / "legs").exists()
+                           and len((d / "legs").read_text().splitlines()) >= 2)
+    assert await _wait_for(lambda: not runner.active)
+    await asyncio.sleep(0.3)                       # room for a (wrong) third leg to appear
+    assert len((d / "legs").read_text().splitlines()) == 2       # exactly one retry
+    run_dir = next((d / "runs").iterdir())
+    assert (run_dir / "sigkill-retry.json").is_file()            # the cap
+    notes = [json.loads(p.read_text(encoding="utf-8"))
+             for p in (d / "inbox").glob("msg-*.json")]
+    recov = [n for n in notes if "AUTOMATIC RECOVERY" in n.get("text", "")]
+    assert recov and recov[0].get("via") == "background"         # resumed-boot drainable
+    mine = _health_events(server, "oomer")
+    assert [e["event"] for e in mine] == ["orphaned_run", "orphaned_run"]
+    assert read_run(run_dir, "oomer").state == "failed"          # second kill: stays failed
+
+
+async def test_user_cancel_sigkill_never_retries(make_routine, tmp_path, monkeypatch):
+    """An abort the USER escalated to SIGKILL is a cancel, not a crash — no auto-resume
+    (the F188 attribution gates D99's retry too)."""
+    d = make_routine(slug="cancelee2")
+    cfg, _ = load_routine(d)
+    # TERM-immune: the trap ignores SIGTERM and the loop outlives its killed sleep
+    # children, so the abort escalates to SIGKILL after the grace period (rc=-9).
+    _stub_engine(monkeypatch, "echo x >> legs; trap '' TERM; while true; do sleep 0.2; done")
+    monkeypatch.setattr(runner_mod, "KILL_GRACE_S", 0.5)
+    server = _server(tmp_path)
+    runner = Runner(server, EventBus())
+    await runner.fire(cfg)
+    assert await _wait_for(lambda: runner.active["cancelee2"].proc is not None)
+    assert await _wait_for((d / "legs").exists)
+    assert await runner.abort("cancelee2") is True
+    assert await _wait_for(lambda: not runner.active)
+    await asyncio.sleep(0.3)
+    assert len((d / "legs").read_text().splitlines()) == 1       # no retry leg
+    run_dir = next((d / "runs").iterdir())
+    assert not (run_dir / "sigkill-retry.json").exists()
+
+
 # --- F276/R213: a due cron fire that produces no run must be visible in the audit stream ---
 
 

@@ -216,10 +216,13 @@ THIS conversation into a real \
 scheduled routine — `target` (its new kebab-case slug), `name` (its display name), `prompt` (the \
 clarified task, decomposed into the routine's stages — say WHAT it does, not when), and optional \
 `workflow` (the library pattern to build from, default general-task). Clarify the task WITH the \
-user first — what it produces, what "done" is, which pattern fits — THEN emit this to materialize \
-it (its own dir, its held rules, git repo). The daemon picks it up on its next registry rescan; \
-tell the user it exists and what to set next (its schedule). This is the ONLY way a routine is \
-created — it is available only inside a conversation."""),
+user first — what it produces, what "done" is, which pattern fits — THEN emit this. It is a \
+TWO-STEP flow: the first call stores a DRAFT and returns a preview — relay that preview to the \
+user and finish your reply; after the user confirms, call it again with the SAME fields to \
+materialize (its own dir, its held rules, git repo). A changed field updates the draft instead. \
+The daemon picks the new routine up on its next registry rescan; tell the user it exists and \
+what to set next (its schedule). This is the ONLY way a routine is created — it is available \
+only inside a conversation."""),
     (("manage_group",), """- manage_group: manage routine GROUPS (ordered collections that fire \
 back-to-back) from THIS conversation via a `verb`: list (the whole store), create (`name` + \
 optional `members` + `split` + `on_failure` + `cron`), update (`target` = the group id, plus any \

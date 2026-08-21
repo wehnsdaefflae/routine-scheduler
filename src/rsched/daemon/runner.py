@@ -349,12 +349,20 @@ class Runner:
         rc = run.proc.returncode if run.proc else None
         info = registry.read_run(run.run_dir, run.slug)
         if info.state in (*registry.ACTIVE_STATES, "unknown"):
-            # engine died without closing out (SIGKILL, crash) — the daemon finalizes
+            # engine died without closing out (SIGKILL, crash) — the daemon finalizes.
+            # F348: the last engine status write sampled vm_hwm_kb (peak resident memory);
+            # naming it here turns a blind rc=-9 post-mortem into an OOM diagnosis — a
+            # peak near the host's RAM is the kernel-OOM signature.
+            hwm = _last_vm_hwm_kb(run.run_dir)
+            hwm_note = f"; peak memory VmHWM={hwm} kB" if hwm else ""
             self._close_out(run.run_dir, run.run_id,
                             f"engine exited rc={rc} without a finish "
-                            f"({stderr.decode('utf-8', 'replace')[-400:].strip() or 'no stderr'})",
+                            f"({stderr.decode('utf-8', 'replace')[-400:].strip() or 'no stderr'}"
+                            f"{hwm_note})",
                             event="run_canceled" if run.user_cancel else "orphaned_run")
             info = registry.read_run(run.run_dir, run.slug)
+            if rc == -9 and not run.user_cancel:
+                self._retry_sigkilled(run, cfg, hwm)
         else:
             # Clean finish: stdout was DEVNULL and stderr is otherwise dropped here, so a
             # non-fatal WARNING/ERROR the engine logged (e.g. a persistent telemetry-write
@@ -396,6 +404,39 @@ class Runner:
             registry.apply_retention(cfg.dir, cfg.slug, cfg.keep_runs)
         except OSError as exc:
             log.warning("retention failed for %s: %s", cfg.slug, exc)
+
+    def _retry_sigkilled(self, run: ActiveRun, cfg: RoutineConfig, hwm: int | None) -> None:
+        """D99-A: a run the KERNEL killed (rc=-9, no authored finish, not a user abort)
+        gets ONE automatic in-place resume. The run-dir marker caps the retry — a run
+        that OOMs again dies failed instead of looping — and the recovery note (filed
+        via=background, the one channel a resumed leg's boot drains) makes the resumed
+        leg STATE what happened instead of continuing as if nothing did.
+        """
+        from ..engine.inbox import file_message
+        marker = run.run_dir / "sigkill-retry.json"
+        if marker.exists():
+            log.warning("sigkill retry already spent for %s — run stays failed", run.run_id)
+            return
+        atomic_write_json(marker, {"ts": now_iso(), "rc": -9, "vm_hwm_kb": hwm})
+        hwm_note = f", peak memory {hwm} kB" if hwm else ""
+        file_message(cfg.dir,
+                     f"AUTOMATIC RECOVERY: this run's previous leg was killed by the kernel "
+                     f"(rc=-9, no authored finish{hwm_note} — likely out-of-memory). This is "
+                     "the single automatic retry. Reassess from the transcript where the work "
+                     "stood, avoid repeating whatever ballooned memory (huge file reads, giant "
+                     "observations), and end with an honest authored finish even if that means "
+                     "partial.", source="daemon", via="background")
+
+        async def _wake() -> None:
+            rid = await self.resume(cfg, run.run_ts, reason="sigkill-retry")
+            if rid:
+                log.warning("sigkill auto-resume (D99): %s resumed as %s", run.run_id, rid)
+            else:
+                log.warning("sigkill auto-resume refused for %s (active/draining/gone) — "
+                            "the recovery note stays durable in the inbox", run.run_id)
+        task = asyncio.create_task(_wake())
+        self._supervisors.add(task)
+        task.add_done_callback(self._supervisors.discard)
 
     def _resume_for_stranded(self, cfg: RoutineConfig) -> None:
         """Fire-and-forget the terminal resume for a post-finish stranded message (the
@@ -487,6 +528,20 @@ class Runner:
                     fixed += 1
                     log.warning("orphan closed: %s", r.run_id)
         return fixed
+
+
+def _last_vm_hwm_kb(run_dir: Path) -> int | None:
+    """The dead engine's peak resident memory, from its LAST status.json write (the
+    engine samples /proc/self/status VmHWM into every status update — F348).
+    """
+    st = read_json(run_dir / "status.json")
+    if not isinstance(st, dict):
+        return None
+    try:
+        val = st.get("vm_hwm_kb")
+        return int(val) if val else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _pid_alive(pid: int | None) -> bool:

@@ -28,6 +28,24 @@ if TYPE_CHECKING:
 _UNSET: Any = "\0"
 
 
+def _vm_hwm_kb() -> int | None:
+    """Peak resident memory (VmHWM, kB) of THIS engine process, from /proc/self/status.
+
+    F348: rc=-9 post-mortems were blind — a run the kernel OOM-killed left no memory
+    trace. write_status samples this every update, so the run's LAST status write tells
+    the daemon's close-out (and D99's auto-resume note) how close to host RAM the engine
+    got before it died. None on non-Linux or a degraded /proc — absence is a platform
+    fact, never an error.
+    """
+    try:
+        for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
+            if line.startswith("VmHWM:"):
+                return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
 @dataclass
 class Budgets:
     """A run's hard ceilings (turns, wall clock, tokens, subruns, ask timeout) — checked
@@ -348,6 +366,9 @@ class RunContext:
             "recipe_commit": self.recipe_commit,
             "utils": self.util_stats,
             "asks_deferred": self.asks_deferred,
+            # peak resident memory of the engine process (kB) — the rc=-9 post-mortem's
+            # key datum (F348); the daemon reads the last write's value at close-out
+            "vm_hwm_kb": _vm_hwm_kb(),
             "budgets": {
                 "turns_left": None if turns_left is None else int(turns_left),
                 "wall_clock_left_s": None if wall_left_min is None else int(wall_left_min * 60),

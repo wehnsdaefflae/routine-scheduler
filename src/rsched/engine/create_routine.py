@@ -1,12 +1,23 @@
 """The `create_routine` action handler — a CONVERSATION graduates the work it just
-clarified with the user into a real scheduled routine (D58).
+clarified with the user into a real scheduled routine (D58), in TWO steps (D92):
+preview first, materialize only after the user has confirmed the draft.
 
 The operator's rule: routine creation is initiated from a conversation ONLY. Instead of a
 retired standalone wizard page, the conversation agent (or a `/create_routine` slash
-command) clarifies the task WITH the user in the normal chat, then emits this one action to
-materialize the routine. It reuses the SAME `workflows.scaffold` path the retired wizard's
-build half called — decompose the chosen workflow into the routine's own main.md + stages/,
-adapt its rules, write routine.yaml, init the auto-push git repo — one materializer only.
+command) clarifies the task WITH the user in the normal chat, then emits this action. The
+FIRST call stores a DRAFT (slug, name, instruction, workflow) under the conversation's own
+`state/routine-draft.json` and returns a preview observation — nothing is created yet; the
+agent relays the preview and finishes its reply. When the user answers, the agent calls
+`create_routine` again with the SAME fields, and only then does the handler materialize —
+through the same `workflows.scaffold` path the retired wizard's build half called
+(decompose the chosen workflow into main.md + stages/, adapt rules, write routine.yaml,
+init the auto-push git repo — one materializer only).
+
+The confirm gate is structural, not honor-system: a conversation reply runs as its own
+engine process, so a draft written by THIS process cannot be confirmed by this process —
+the confirming call must come from a LATER leg, which a root conversation only gets after
+the user (or a background delivery) speaks. A changed field on the confirming call is a
+DESIGN CHANGE, not a confirmation: it replaces the draft and restarts the round-trip.
 
 Structural rule (mirrors `detach`): valid ONLY from a ROOT CONVERSATION (depth 0, dir directly
 under conversations_home). A scheduled routine has no user in the loop to design a new routine
@@ -24,6 +35,11 @@ to a no-LLM fallback when no endpoint is available (tests, offline).
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
+from ..ids import now_iso
+from ..paths import atomic_write_json, read_json
 from .detach import _is_root_conversation
 from .run_context import RunContext
 
@@ -31,10 +47,49 @@ from .run_context import RunContext
 # workflow, same default the spawn/subtask/detach actions use.
 DEFAULT_WORKFLOW = "general-task"
 
+#: Where a conversation's pending routine draft lives (relative to the conversation dir).
+#: ONE draft per conversation: a new slug simply replaces the old draft — the flow is a
+#: linear chat, not a queue.
+DRAFT_RELPATH = Path("state") / "routine-draft.json"
+
+
+def _draft_path(ctx: RunContext) -> Path:
+    return ctx.routine.dir / DRAFT_RELPATH
+
+
+def _load_draft(ctx: RunContext) -> dict | None:
+    path = _draft_path(ctx)
+    if not path.is_file():
+        return None
+    draft = read_json(path)
+    return draft if isinstance(draft, dict) and draft.get("slug") else None
+
+
+def _preview_obs(draft: dict, *, updated: bool, blocked_same_leg: bool = False) -> dict:
+    """The draft/preview observation: what WILL be created, and the exact next step. The
+    teaching copy is the contract — a same-leg confirm attempt gets told why it was held.
+    """
+    instruction = draft["instruction"]
+    obs = {"kind": "create_routine", "slug": draft["slug"], "name": draft["name"],
+           "workflow": draft["workflow"], "draft": True, "updated": updated,
+           "instruction_chars": len(instruction),
+           "instruction_preview": instruction[:600],
+           "next": ("Nothing is created yet. Relay this draft to the user in your reply — "
+                    "slug, name, workflow pattern, and what the routine will do — and finish "
+                    "the reply. If the user confirms, call create_routine again with the SAME "
+                    "fields to materialize it; a call with changed fields updates the draft "
+                    "and restarts the confirmation.")}
+    if blocked_same_leg:
+        obs["held"] = ("This reply already drafted the routine — the confirming call must "
+                       "follow the user's answer, in their next message. Show the draft and "
+                       "finish the reply.")
+    return obs
+
 
 def handle_create_routine(ctx: RunContext, action: dict) -> dict:
-    """Materialize a new scheduled routine from this conversation (or reject when not a root
-    conversation). Returns the observation dict the loop records and renders.
+    """Store/refresh the draft (first step) or materialize it (confirmed second step), or
+    reject when not a root conversation. Returns the observation dict the loop records and
+    renders.
 
     Action fields (all reused from the shared schema — no create_routine-only fields):
       target   — the new routine's kebab-case slug (required)
@@ -57,6 +112,20 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
 
     if (server.routines_home / slug).exists():
         return {"kind": "create_routine", "slug": slug, "already_exists": True}
+
+    draft = _load_draft(ctx)
+    fields = {"slug": slug, "name": name, "instruction": instruction,
+              "workflow": workflow_slug}
+    if draft is None or any(draft.get(k) != v for k, v in fields.items()):
+        # First step, or a design change: (re)write the draft and ask for the round-trip.
+        record = {**fields, "pid": os.getpid(), "created_at": now_iso()}
+        atomic_write_json(_draft_path(ctx), record)
+        return _preview_obs(record, updated=draft is not None)
+    if draft.get("pid") == os.getpid():
+        # Same reply that drafted it — no user has seen the preview yet. Hold, teach.
+        return _preview_obs(draft, updated=False, blocked_same_leg=True)
+
+    # Confirmed: identical fields, a later leg — the user has spoken since the preview.
     try:
         routine_dir = scaffold(server, slug=slug, name=name, instruction=instruction,
                                workflow_slug=workflow_slug, description=name)
@@ -64,5 +133,6 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
         # bad slug, unknown workflow, or a dir that appeared mid-flight — a teaching rejection,
         # corrected by the model, never a crash
         return {"kind": "create_routine", "slug": slug, "error": str(exc)}
+    _draft_path(ctx).unlink(missing_ok=True)
     return {"kind": "create_routine", "slug": slug, "name": name,
             "workflow": workflow_slug, "created": True, "dir": str(routine_dir)}

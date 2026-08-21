@@ -193,3 +193,13 @@ def test_fresh_run_carries_no_elapsed_base(make_routine, tmp_path):
     assert ctx.elapsed_base_s == 0.0
     ctx.write_status("running")
     assert read_json(ctx.run_dir / "status.json")["elapsed_s"] <= 1
+
+
+def test_write_status_samples_vm_hwm(make_routine, tmp_path):
+    """F348: every status write samples the engine process's peak resident memory
+    (VmHWM, /proc/self/status), so a kernel-OOM SIGKILL leaves its key datum in the
+    run's LAST status.json for the daemon's close-out post-mortem."""
+    ctx = _ctx(make_routine, tmp_path, slug="hwm")
+    ctx.write_status("running")
+    st = read_json(ctx.run_dir / "status.json")
+    assert isinstance(st.get("vm_hwm_kb"), int) and st["vm_hwm_kb"] > 0   # Linux host/CI
