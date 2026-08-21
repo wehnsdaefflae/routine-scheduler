@@ -728,6 +728,36 @@ def test_finish_with_pending_user_message_defers_and_delivers(make_routine, scri
     assert not any(p.name.startswith("msg-") for p in (d / "inbox").iterdir())
 
 
+def test_finish_gate_rejects_unaccounted_stopping_conditions(make_routine, scripted):
+    """F334/D98 v1: a depth-0 finish whose summary ignores an OPEN stopping condition is
+    set aside (the R108 deferral shape — one extra turn); a summary carrying the
+    `[s<n>]` accounting passes. The engine checks the accounting, never the semantics."""
+    from rsched.engine import stopping as stopping_mod
+
+    d = make_routine(slug="stopper")
+    stopping_mod.save(d, [{"text": "stop once the PDF is verified"},
+                          {"text": "only diagnose — never fix"}], now="t")
+    scripted([
+        probe(),
+        finish(summary="all done, PDF looks fine"),                     # no accounting → deferred
+        {"say": "Accounting.", "kind": "finish", "status": "ok",
+         "summary": "[s1] met — PDF verified byte-identical; [s2] met — no fix attempted"},
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    rejected = [e for e in events if e["type"] == "observation"
+                and e["payload"].get("stopping_unaccounted")]
+    assert len(rejected) == 1
+    assert rejected[0]["payload"]["stopping_unaccounted"] == ["s1", "s2"]
+    fin = next(e for e in events if e["type"] == "finish")
+    assert fin["payload"]["summary"].startswith("[s1] met")             # the second finish landed
+    # …and the digest section reaches the system prompt (composer wiring)
+    from rsched.engine.composer import state_digest
+    digest = state_digest(d, [], [])
+    assert "STOPPING CONDITIONS" in digest and "[s1] stop once the PDF is verified" in digest
+
+
 def test_reserved_finish_surfaces_still_queued_message(make_routine, scripted):
     """The spent reserved-finish turn cannot defer (the next boundary would force-finish
     with an engine string) — the finish goes through, and the summary tells BOTH sides the

@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.208.0] — 2026-08-21
+
+### Added
+- **Semantic stopping conditions v1 (D98=A, F334 — engine + API).** A conversation carries
+  user-owned, meaning-level bounds ("stop once the PDF is verified", "only diagnose") in
+  `state/stopping.json` (`engine/stopping.py`): the state digest inlines every open
+  condition with the accounting contract, and the finish gate rejects a depth-0 finish
+  whose summary lacks a `[s<n>] met/unmet — why` line per open condition (the R108
+  one-extra-turn deferral shape; the reserved-finish turn is exempt). The engine checks
+  only the ACCOUNTING — semantics stay the model's; v2 (a verifier subcall) remains a
+  separate decision. `GET/PUT /api/conversations/{slug}/stopping` is the user surface
+  (stable ids, whole-list replace); the sidebar panel ships with F324's shared component.
+  Deviation from the design note: no `stopping_update` transcript event — v1 has no
+  engine-side status transitions to record, and the store file is replayable state.
+
 ## [0.207.0] — 2026-08-21
 
 Self-audit batch: four user decisions executed + one user order + two defect fixes.

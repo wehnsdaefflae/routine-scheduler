@@ -225,6 +225,11 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                      "you: tick off what is done, re-order, add what you discovered, drop what "
                      "turned out unnecessary. Delete the file once the job is finished):\n"
                      + plan)
+    # F334/D98: the user's meaning-level bounds ride beside the plan — always visible, so
+    # a finish can never claim it did not know them (the finish gate enforces the accounting).
+    from . import stopping
+    if stop_sec := stopping.digest_section(routine_dir):
+        parts.append(stop_sec)
     state_dir = routine_dir / "state"
     if state_dir.is_dir():
         entries = [f"{p.name} ({p.stat().st_size}B)"

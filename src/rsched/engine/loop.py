@@ -339,6 +339,26 @@ class EngineLoop:
                         drain_injections(self)
                         ctx.write_status()
                         continue
+                    # F334/D98 v1: a finish that ignores the user's OPEN stopping
+                    # conditions is set aside (same one-extra-turn shape as R108 above).
+                    # The engine checks only the ACCOUNTING — a `[s<n>]` mention per open
+                    # condition — never the semantics; the reserved-finish turn is exempt
+                    # (deferring it would force-finish with an engine string).
+                    if ctx.depth == 0 and not self._finish_reserved:
+                        from . import stopping
+                        if missing := stopping.unaccounted(
+                                str(action.get("summary") or ""), ctx.routine.dir):
+                            obs = {"kind": "finish", "rejected": True,
+                                   "stopping_unaccounted": missing}
+                            ctx.transcript.event("observation", obs, turn=ctx.turn)
+                            self.messages.append({"role": "user", "content":
+                                "OBSERVATION (finish deferred): your summary does not "
+                                "account for the open STOPPING CONDITIONS "
+                                f"{', '.join(missing)} (see the STOPPING CONDITIONS "
+                                "section). Add a line `[s<n>] met — <evidence>` or "
+                                "`[s<n>] unmet — <why>` for each, then finish again."})
+                            ctx.write_status()
+                            continue
                     if action["status"] == "ok" and self.executed_actions == 0 and ctx.depth == 0:
                         # Fabrication guard: a top-level ok-finish as the very first action
                         # is a hallucinated completion (the classic no-tools failure mode) —
