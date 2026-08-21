@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from ..readmodels.claude_usage import claude_usage
+from ..readmodels.recipe_size import recipe_sizes
 from ..readmodels.stats import aggregate, monthly_spend
 from ..readmodels.util_stats import util_stats
 
@@ -28,8 +29,9 @@ def stats(request: Request) -> dict:
     by_endpoint / by_day / by_kind / by_state slices, the durable `monthly`
     per-routine spend series (workflow-usage stream — survives run retention), and
     `utils` — per-util execution stats (library git dates + the stream's per-run
-    outcome breakdowns + a memoized transcript backfill for pre-stream history).
+    outcome breakdowns + a memoized transcript backfill for pre-stream history),
+    and `recipes` — per-routine recipe length with its ~30-day git baseline (F371).
     """
     server = request.app.state.server
     return {**aggregate(server), "monthly": monthly_spend(server),
-            "utils": util_stats(server)}
+            "utils": util_stats(server), "recipes": recipe_sizes(server)}

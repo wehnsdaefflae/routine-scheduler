@@ -27,6 +27,24 @@ def test_schema_compiles_and_example_passes():
     assert validate_action(obj) == []
 
 
+def test_transcript_js_brief_field_mirrors_python():
+    """The web transcript keeps its own copy of BRIEF_FIELD (static/ is no-build, so it
+    cannot import the Python map); a kind missing there silently renders an EMPTY turn
+    brief — the 2026-08-21 hygiene sweep found the copy 10 kinds behind. Parse the JS
+    literal and hold the two in lockstep."""
+    import re
+    from pathlib import Path
+
+    from rsched.engine.actions import BRIEF_FIELD
+
+    js = (Path(__file__).resolve().parents[1] / "static" / "components"
+          / "transcript.js").read_text(encoding="utf-8")
+    m = re.search(r"const BRIEF_FIELD = \{(.*?)\};", js, re.DOTALL)
+    assert m, "transcript.js lost its BRIEF_FIELD map"
+    parsed = dict(re.findall(r'(\w+): "(\w+)"', m.group(1)))
+    assert parsed == BRIEF_FIELD
+
+
 @pytest.mark.parametrize(
     "action",
     [

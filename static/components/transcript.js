@@ -17,10 +17,17 @@ import { md, mdInline } from "/static/md.js";
 import { answerForm } from "/static/components/answerform.js";
 import { el, fmtTime, fmtTokens, fullOutput } from "/static/util.js";
 
-const BRIEF_FIELD = { util: "name", write_util: "name", read_file: "path", write_file: "path",
+// Mirror of engine/actions.py BRIEF_FIELD (the source of truth) — a kind missing here
+// renders its turn line with an EMPTY brief, which is how this map drifted 10 kinds
+// behind before the 2026-08-21 sweep caught it. Keep the two in lockstep.
+const BRIEF_FIELD = { util: "name", write_util: "name", remove_util: "name",
+                      read_file: "path", view_image: "path", write_file: "path",
                       edit_file: "path", memory_read: "name", memory_write: "name",
-                      llm: "prompt", spawn: "label", kill: "n", wait: "n",
-                      ask_user: "question", finish: "status" };
+                      read_rule: "name", write_rule: "name", script: "name",
+                      llm: "prompt", spawn: "label", subtask: "label", detach: "label",
+                      schedule_run: "target", create_routine: "target",
+                      manage_group: "verb", kill: "n", wait: "n",
+                      ask_user: "question", report: "title", finish: "status" };
 
 // "Refer to" rides the message TEXT as one leading quoted line — `> re <label>: <snippet>`,
 // then a blank line, then the message. Plain markdown the model reads naturally, no new

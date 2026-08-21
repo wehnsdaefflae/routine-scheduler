@@ -449,6 +449,10 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .stat-table th, .stat-table td { padding: 7px 11px; text-align: left; border-bottom: 1px solid var(--line); }
 .stat-table thead th { color: var(--muted); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.04em; background: var(--surface-2); }
 .stat-table td.num, .stat-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Recipe-length bars (F371): instruction mass, deliberately NOT a usage-series color —
+   violet says "prose", the charts' palette says "spend". */
+.recipe-bar-cell { min-width: 160px; }
+.recipe-bar { height: 10px; border-radius: 3px; background: #8b7ec8; min-width: 2px; }
 .stat-table tbody tr:last-child td { border-bottom: none; }
 .stat-table tbody tr:hover { background: var(--surface-2); }
 .stat-foot { color: var(--muted); font-size: 11px; margin: 16px 0 4px; font-family: var(--sans); }

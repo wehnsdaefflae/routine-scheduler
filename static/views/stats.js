@@ -99,6 +99,44 @@ function chartsSection(runs) {
   return box;
 }
 
+// Recipe length by routine (F371): how much INSTRUCTION each routine carries — one
+// violet bar per routine (deliberately not a usage-series color: this is prose mass,
+// not spend) plus a trend chip against the recipe as committed ~30 days ago (from each
+// routine dir's own git history). Sits beside the token charts so "how much it costs"
+// and "how much it is told" read together.
+function recipeSection(recipes) {
+  const rows = Object.entries(recipes?.by_routine || {});
+  if (!rows.length) return null;
+  rows.sort((a, b) => b[1].chars - a[1].chars);
+  const max = Math.max(...rows.map(([, d]) => d.chars), 1);
+  const days = recipes.trend_days || 30;
+  const trendChip = (d) => {
+    const base = d.chars_baseline;
+    if (!base) return NBSP;                       // no git history that far back
+    if (d.chars > base * 1.05) return el("span", { class: "chip partial", title: `${fmtInt(base)} chars ${days}d ago` }, "↑ growing");
+    if (d.chars < base * 0.95) return el("span", { class: "chip ok", title: `${fmtInt(base)} chars ${days}d ago` }, "↓ shrinking");
+    return el("span", { class: "chip bare", title: `${fmtInt(base)} chars ${days}d ago` }, "→ steady");
+  };
+  const body = rows.map(([slug, d]) => el("tr", {},
+    el("td", {}, el("a", { href: `#/routine/${slug}` }, slug)),
+    el("td", { class: "recipe-bar-cell" },
+      el("div", { class: "recipe-bar", style: `width:${Math.max(1, Math.round((d.chars / max) * 100))}%` })),
+    el("td", { class: "num" }, fmtInt(d.chars)),
+    el("td", {}, trendChip(d))));
+  return el("div", { class: "stat-section" },
+    el("h2", {}, "Recipe length by routine"),
+    el("div", { class: "sub" },
+      `instruction mass (main.md + stages/ + tuning.yaml, chars) with its trend vs the recipe ${days} days ago — from each routine's git history`),
+    el("div", { class: "table-wrap" },
+      el("table", { class: "stat-table" },
+        el("thead", {}, el("tr", {},
+          el("th", {}, "routine"),
+          el("th", { style: "width:40%" }, "length"),
+          el("th", { class: "num" }, "chars"),
+          el("th", {}, "trend"))),
+        el("tbody", {}, ...body))));
+}
+
 // Deep link for a routine/conversation row — null (plain text) when the home is unknown.
 const routineHref = (slug, kind) =>
   kind === "routine" ? `#/routine/${slug}`
@@ -254,6 +292,9 @@ export async function render(view) {
 
     // ---- configurable charts (metric × grouping × range × form, persisted) ----
     parts.push(chartsSection(agg.runs || []));
+
+    // ---- recipe length (instruction mass + trend, beside the token charts) ----
+    parts.push(recipeSection(agg.recipes));
 
     // ---- monthly spend (durable series) ------------------------------------
     parts.push(monthlySection(agg.monthly, Object.fromEntries(

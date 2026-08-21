@@ -211,7 +211,7 @@ def test_claude_usage_windows(tmp_path):
 
     server = _server(tmp_path)
     server.endpoints["claude"] = EndpointConfig(name="claude", kind="claude-cli")
-    out = claude_usage(server, now=datetime(2026, 7, 13, 12, 0, 0))  # noqa: DTZ001 — local-naive now, like run-ts stamps
+    out = claude_usage(server, now=datetime(2026, 7, 13, 12, 0, 0))  # noqa: DTZ001 — a naive injected now is taken as UTC, like run-ts stamps
 
     assert out["supported"] and out["endpoints"] == ["claude"]
     assert out["windows"]["5h"] == {"runs": 1, "tokens_in": 100, "tokens_out": 10,
@@ -220,8 +220,48 @@ def test_claude_usage_windows(tmp_path):
                                     "tokens_cached": 0}
 
 
+def test_claude_usage_windows_cut_in_utc(tmp_path):
+    """F357: run-ts stamps are UTC (ids.run_ts); the windows must cut in UTC no matter
+    the caller's tz. A run 4.5h before an aware Berlin (+02:00) `now` sits INSIDE the 5h
+    window — the retired local-naive comparison shifted it out by the UTC offset."""
+    from datetime import datetime, timedelta, timezone
+
+    from rsched.readmodels.claude_usage import claude_usage
+
+    home = tmp_path / "routines"
+    a = _mk_routine(home, "alpha", model_name="opus")
+    # 12:00+02:00 == 10:00 UTC; the run started 05:30 UTC = 4.5h before now
+    _mk_run(a, "20260713-053000", "finished", tin=50, tout=5, model="claude/opus")
+    server = _server(tmp_path)
+    server.endpoints["claude"] = EndpointConfig(name="claude", kind="claude-cli")
+    berlin_now = datetime(2026, 7, 13, 12, 0, 0, tzinfo=timezone(timedelta(hours=2)))
+    out = claude_usage(server, now=berlin_now)
+    assert out["windows"]["5h"]["runs"] == 1
+    assert out["windows"]["5h"]["tokens_in"] == 50
+
+
 def test_claude_usage_unsupported_without_cli_endpoint(tmp_path):
     """No claude-cli endpoint configured → the widget hides itself."""
     from rsched.readmodels.claude_usage import claude_usage
 
     assert claude_usage(_server(tmp_path)) == {"supported": False}
+
+
+def test_recipe_sizes(tmp_path):
+    """F371: per-routine recipe bytes (main.md + stages/ + tuning.yaml) for the Stats
+    tab's instruction-mass bars; a dir without git history reports no trend baseline
+    (the chip hides) instead of erroring."""
+    from rsched.readmodels.recipe_size import recipe_sizes
+
+    s = ServerConfig()
+    s.routines_home = tmp_path / "routines"
+    d = s.routines_home / "alpha"
+    (d / "stages").mkdir(parents=True)
+    (d / "routine.yaml").write_text("slug: alpha\n", encoding="utf-8")
+    (d / "main.md").write_text("x" * 100, encoding="utf-8")
+    (d / "stages" / "one.md").write_text("y" * 50, encoding="utf-8")
+    (d / "tuning.yaml").write_text("z" * 10, encoding="utf-8")
+    (s.routines_home / "not-a-routine").mkdir()          # no routine.yaml → skipped
+    out = recipe_sizes(s)
+    assert out["trend_days"] == 30
+    assert out["by_routine"] == {"alpha": {"chars": 160, "chars_baseline": None}}

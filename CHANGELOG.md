@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.210.0] — 2026-08-21
+
+### Added
+- **Recipe length on the Stats tab (F371, user order).** New `recipes` slice in
+  `/api/stats` (`readmodels/recipe_size.py`: current main.md + stages/ + tuning.yaml
+  bytes per routine, plus the recipe's size at the last commit ≥30 days old from the
+  routine dir's own git history — two git calls per routine) and a "Recipe length by
+  routine" section beside the token charts: one violet bar per routine (deliberately not
+  a usage-series color — instruction mass, not spend) with a growing/steady/shrinking
+  trend chip against the 30-day baseline.
+
+### Fixed
+- **Claude-quota windows cut in UTC (F357).** `claude_usage` read run-ts dir names as
+  local-naive and compared them to a local `now`, shifting the 5h/7d subscription
+  windows by the host's UTC offset (~2h on Berlin); run-ts is ALWAYS UTC (ids.run_ts).
+  Now parsed by the one reader (`registry.parse_run_ts`) against an aware-UTC now;
+  `stats._run_day`'s docstring stops claiming run-ts is server-local (by_day buckets
+  are UTC days).
+- **Transcript turn briefs for 11 kinds (hygiene sweep).** `transcript.js` BRIEF_FIELD
+  had drifted 10 kinds behind `actions.py` — subtask/report/view_image/manage_group/…
+  turns rendered with empty one-line briefs; the maps are synced (`script` added on the
+  Python side too) and a new test parses the JS literal to hold them in lockstep.
+- **Library section says "Rules" again** — the retired "Traits" title + per-copy
+  description (traits retired 0.164) survived in `library.js`; the 0.174 vocabulary
+  sweep missed it.
+
 ## [0.209.0] — 2026-08-21
 
 ### Added

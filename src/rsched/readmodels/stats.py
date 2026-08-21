@@ -44,8 +44,8 @@ def _add(acc: dict, usage: dict, elapsed_s) -> None:
 
 def _run_day(ts: str) -> str:
     """A run dir name is `YYYYMMDD-HHMMSS`; the day is its date part. A pure string
-    reformat of the run-ts dir name (server-local wall clock, by ids.run_ts design)
-    — no tz to attach.
+    reformat of the run-ts dir name (ALWAYS UTC, by ids.run_ts design — so by_day
+    buckets are UTC days; the tab labels a day, not a local midnight boundary).
     """
     raw = str(ts)[:8]
     try:

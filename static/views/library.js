@@ -73,7 +73,7 @@ export async function render(view, sub, query = {}) {
       data.workflows.filter((w) => matches(w.tags)).map((w) =>
         item(w.name || w.slug, w.problems, w.tags, () => openWorkflow(w.slug), w.description,
              `#/library/workflow/${w.slug}`)));
-    section("Traits", "reusable practices — adapted into each new routine at creation, then owned by the routine (this is only the template)",
+    section("Rules", "general rules — shared practices a routine holds by reference and reads with read_rule; a revision here reaches every holder",
       data.rules.filter((f) => matches(f.tags)).map((f) =>
         item(f.slug, f.problems, f.tags, () => openDoc("rules", f.slug), f.summary,
              `#/library/rule/${f.slug}`)),

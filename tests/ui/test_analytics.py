@@ -102,3 +102,25 @@ def test_stats_utils_table(ui, ui_page):
     # a seeded util that never ran is honest about it
     never = section.locator("tr", has_text="vision")
     expect(never.first.locator("td").nth(3)).to_have_text("never")
+
+
+def test_stats_recipe_length_section(ui, ui_page):
+    """F371: the Stats tab charts each routine's recipe length (instruction mass) as its
+    own differently-colored bar, with a trend chip against the recipe as committed ~30
+    days back in the routine's own git history."""
+    d = ui.routine_dir("uir")
+    _git(d, "init", "-q")
+    (d / "main.md").write_text("# recipe v1\n", encoding="utf-8")
+    _git(d, "add", "-A")
+    # committed well over 30 days before any plausible test run date → the baseline
+    _git(d, "commit", "-qm", "scaffold", date="2026-07-01T10:00:00+00:00")
+    (d / "main.md").write_text("# recipe v2\n" + "instruction prose. " * 40,
+                               encoding="utf-8")
+    ui.seed_run("uir", "20260715-100000", "finished", summary="ok")
+    ui_page.goto(f"{ui.url}/#/stats")
+    section = ui_page.locator(".stat-section", has=ui_page.get_by_role(
+        "heading", name="Recipe length by routine"))
+    expect(section).to_be_visible()
+    row = section.locator("tr", has_text="uir")
+    expect(row.locator(".recipe-bar")).to_be_visible()   # the bar renders
+    expect(row).to_contain_text("↑ growing")             # v2 ≫ v1: the trend chip

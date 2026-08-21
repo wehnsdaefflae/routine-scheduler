@@ -4,15 +4,18 @@ in the rolling last 5 hours (Anthropic's subscription quota window) and last 7 d
 Anthropic exposes no balance/quota API for subscriptions, so this is the honest local
 proxy: fold every run served by a claude-cli endpoint (both homes, status.json usage —
 running runs count live) into the two windows. Run start times come from the run-ts dir
-name (`YYYYMMDD-HHMMSS`, server-local wall clock by ids.run_ts design), compared against
-a local-naive `now` — injectable for tests. Attribution mirrors stats._run_ref: the
+name (`YYYYMMDD-HHMMSS`, ALWAYS UTC by ids.run_ts design — F357: this module used to
+read them as local-naive and compare against a local `now`, shifting both quota windows
+by the host's UTC offset), parsed by the one run-ts reader (registry.parse_run_ts) and
+compared against an aware-UTC `now` — injectable for tests (a naive injected `now` is
+taken as UTC, like the stamps it cuts against). Attribution mirrors stats._run_ref: the
 recorded "<endpoint>/<model>" wins, a legacy/empty field falls back to the routine's
 main model.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from .. import registry
 from ..config import ServerConfig
@@ -20,13 +23,6 @@ from ..endpoints import EndpointError, EndpointRegistry
 from .stats import _run_ref
 
 WINDOWS = {"5h": timedelta(hours=5), "7d": timedelta(days=7)}
-
-
-def _run_start(ts: str) -> datetime | None:
-    try:
-        return datetime.strptime(str(ts), "%Y%m%d-%H%M%S")  # noqa: DTZ007 — run-ts dir names are local-naive by design (ids.run_ts)
-    except ValueError:
-        return None
 
 
 def claude_usage(server: ServerConfig, *, now: datetime | None = None) -> dict:
@@ -37,7 +33,9 @@ def claude_usage(server: ServerConfig, *, now: datetime | None = None) -> dict:
     cli_eps = sorted(n for n, ep in server.endpoints.items() if ep.kind == "claude-cli")
     if not cli_eps:
         return {"supported": False}
-    now = now or datetime.now()   # noqa: DTZ005 — local-naive, like the run-ts dir names it compares to
+    now = now or datetime.now(UTC)
+    if now.tzinfo is None:   # an injected naive now is taken as UTC, like run-ts stamps
+        now = now.replace(tzinfo=UTC)
     cutoff = {k: now - d for k, d in WINDOWS.items()}
     oldest = min(cutoff.values())
     wins = {k: {"runs": 0, "tokens_in": 0, "tokens_out": 0, "tokens_cached": 0}
@@ -51,7 +49,7 @@ def claude_usage(server: ServerConfig, *, now: datetime | None = None) -> dict:
             except EndpointError:
                 main_ref = None
             for r in info.runs:
-                start = _run_start(r.ts)
+                start = registry.parse_run_ts(r.ts)
                 if start is None or start < oldest:
                     continue
                 endpoint, _model = _run_ref(r.model, main_ref)

@@ -289,7 +289,7 @@ ACTION_SCHEMA: dict = {
 # The one field that best identifies a turn of each kind — the one-line "briefs" used by
 # turn records, compaction digests, and transcript replay.
 BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "read_file": "path",
-               "view_image": "path",
+               "view_image": "path", "script": "name",
                "write_file": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
                "llm": "prompt", "spawn": "label", "subtask": "label",
