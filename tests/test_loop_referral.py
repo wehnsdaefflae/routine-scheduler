@@ -109,8 +109,11 @@ def test_free_text_refusal_flags_and_refers_fragment_only(make_routine):
     p = evs[0]["payload"]
     assert p["where"] == "loop" and p["isolated"] == "the risky step"
     assert p["referred"] is True and "pretend" in p["harness_reply"]
-    assert unc.prompts == ["the risky step"]       # fragment ONLY — never loop.messages
+    assert unc.prompts == ["the risky step"]       # the essence ONLY — never loop.messages
     assert main.calls == 3                         # the normal retry path continued
+    # the retry message routes everything ELSE to the main model, refusal-free
+    assert "handled separately" in main.prompts[1]
+    assert "the risky step" in main.prompts[1]
 
 
 def test_llm_judged_refusal_without_markers(make_routine):

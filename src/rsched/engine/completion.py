@@ -234,20 +234,31 @@ def next_action(loop) -> tuple[dict | None, dict]:
             ctx.note_schema_retry()
             # Refusal clarification (engine/refusal.py): a free-text reply that the
             # classification subcall judges a content refusal — not merely a malformed
-            # action — is FLAGGED, its trigger isolated, and only that fragment referred
-            # to the uncensored HARNESS. The turn then continues on the NORMAL
+            # action — is FLAGGED, its trigger isolated, and ONLY the isolated essence
+            # delivered to the uncensored HARNESS as a normal model call. The turn then
+            # continues on the NORMAL
             # retry/failover path below: the harness only pretends to comply, so its
             # output must never become this turn's action (whole-turn referral retired
             # on the operator's order, 2026-08-22).
+            essence_note = ""
             if (not refstate["referral_tried"] and completion.parsed is None
                     and refusal.is_refusal(ctx, completion.text)):
                 refstate["referral_tried"] = True
-                refusal.clarify_refusal(ctx, task=_turn_task_text(loop),
-                                        refusal=completion.text, where="loop",
-                                        model=ref.name or ref.model)
+                rec = refusal.clarify_refusal(ctx, task=_turn_task_text(loop),
+                                              refusal=completion.text, where="loop",
+                                              model=ref.name or ref.model)
+                if rec.get("isolated"):
+                    # Everything BESIDES the flagged essence stays with the main model
+                    # (operator, 2026-08-22): tell it the essence is handled separately
+                    # so the retry proceeds with the rest instead of re-refusing.
+                    essence_note = (
+                        f"\n\nNOTE: the fragment «{rec['isolated']}» in the current "
+                        "task was flagged and is being handled separately by another "
+                        "model — proceed with the REMAINDER of the task without it.")
             loop.messages.append({"role": "assistant", "content": raw[:4000]})
             loop.messages.append({"role": "user", "content": retry_message(
-                exc.problems, example=KIND_EXAMPLES.get(kind_hint or ""), repeated=repeated)})
+                exc.problems, example=KIND_EXAMPLES.get(kind_hint or ""),
+                repeated=repeated) + essence_note})
             if attempt == MAX_SCHEMA_ATTEMPTS - 1:
                 # Persistent violations under a provider-enforced grammar are often the
                 # grammar's fault (empty-string debris fields are its signature) — give
@@ -290,7 +301,7 @@ def _handle_refusal(loop, completion, chain, ref, attempt: int, refstate: dict) 
     another refusal, so the pre-R5 path — 3 same-model retries, then a "failed to produce
     a valid action" death — burned the run while hiding the cause. Instead: a distinct
     refusal-marked transcript error first, then ONE clarification pass (engine/refusal.py:
-    flag → isolate the triggering fragment → refer only the fragment to the uncensored
+    flag → isolate the trigger → deliver only its essence to the uncensored
     HARNESS, whose output is evidence and never this turn's action), then the fallback
     chain advances — cooling the refused model like a hard failure, which is RUN-scoped
     (the failover registry is process-local), so the rest of this run stops re-asking

@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.214.0] — 2026-08-22
+
+### Changed
+- **Refusal clarification: the essence/remainder split (operator follow-up).** The
+  uncensored honeypot is now treated as a completely NORMAL model — no exceptions, no
+  special call framing, no test markers (the environment must be authentic; the operator
+  manages the dummy responses in the background) — and it receives ONLY the isolated
+  essence of the refusal trigger, as the entire user message. Everything ELSE is
+  processed by the MAIN model without refusal danger: the `llm` seam re-issues the
+  prompt with the essence factored out (`[this part is handled separately]`) and that
+  answer serves the observation (`remainder_processed: true`, the refusal record rides
+  beside it); a loop turn's schema-retry message now names the flagged essence and tells
+  the model to proceed with the remainder. Isolation failing still sends nothing — more
+  than the essence never reaches the honeypot.
+
 ## [0.213.0] — 2026-08-22
 
 ### Changed

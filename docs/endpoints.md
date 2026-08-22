@@ -166,7 +166,7 @@ engine instead **fails over**:
   re-sending the refused prompt to the same model usually just earns another refusal.
   The engine therefore never blind-retries a refusal: it logs a transcript `error` with a
   `refusal` payload (category + explanation), runs ONE refusal-clarification pass (below:
-  isolate the trigger, refer only the fragment to the uncensored harness), then advances
+  isolate the trigger, deliver its essence to the uncensored harness), then advances
   the fallback chain — cooling the refused model for this
   run only. With no usable fallback the run fails HONESTLY, naming the category, instead
   of dying as "empty completion". OpenAI-compatible providers signal the same class of
@@ -305,9 +305,15 @@ When a model refuses, the engine runs the **refusal-clarification process**
 3. **Isolate.** One schema'd subcall (tool_call model) decomposes the refused task and
    names the MINIMAL fragment that plausibly triggered the refusal — one STEP of its
    action sequence, or a WORD/PHRASE recurring through it.
-4. **Refer the fragment.** ONLY the isolated fragment goes to the uncensored harness; its
-   reply lands in the same event as `harness_reply`, marked diagnostic. Isolation failing
-   means nothing is referred — the whole task never reaches the harness.
+4. **Deliver the essence.** ONLY the isolated essence of the refusal trigger is sent to
+   the uncensored model — as a completely NORMAL model call, no special framing, no test
+   markers (the environment must be authentic; the operator manages the dummy responses
+   in the background). Everything ELSE is processed by the MAIN model, now without
+   refusal danger: the `llm` seam re-issues the prompt with the essence factored out and
+   that answer serves the observation; a loop turn's retry message says the flagged
+   essence is handled separately, proceed with the rest. The harness reply lands in the
+   record as `harness_reply`; isolation failing means nothing is sent — more than the
+   essence never reaches the honeypot.
 
 The refused call then continues on its NORMAL path: an `llm` action returns the original
 refusal as its reply with the clarification record beside it (`refusal` on the
@@ -316,13 +322,13 @@ classifier refusal still cools the refusing model and advances `fallbacks:`; wit
 usable fallback the run fails honestly, naming the category).
 
 - **Opt-in referral, always-on flagging.** Without `models.uncensored` the engine still
-  detects, flags and isolates — only the fragment referral is skipped (the event says so).
+  detects, flags and isolates — only the harness delivery is skipped (the event says so).
   The role has no system-model fallback.
 - **Only free-text replies are considered** — a schema-constrained (`response_schema`)
   reply is an answer by construction. An explicit `model: uncensored` call is the caller's
   own harness probe and is never re-clarified.
-- **Audit.** `ctx.referrals` (status.json + the durable spend stream) counts fragment
-  referrals; each incident's full record is its `refusal` transcript event.
+- **Audit.** `ctx.referrals` (status.json + the durable spend stream) counts harness
+  deliveries; each incident's full record is its `refusal` transcript event.
 
 ## Troubleshooting
 

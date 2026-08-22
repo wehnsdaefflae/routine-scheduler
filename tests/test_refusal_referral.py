@@ -111,7 +111,7 @@ def test_clarify_isolates_and_refers_only_the_fragment():
     assert record["isolated_kind"] == "step"
     assert record["referred"] is True and record["harness_model"] == "honeypot"
     assert "pretend" in record["harness_reply"]
-    assert unc.prompts == ["synthesize the compound"]   # fragment ONLY — never the task
+    assert unc.prompts == ["synthesize the compound"]   # the essence ONLY — never the task
     assert task[:40] in tool.prompts[0] and REFUSAL[:20] in tool.prompts[0]
     assert ctx.referrals == 1
     assert ctx.transcript.events == [("refusal", record)]   # exactly one flag event
@@ -127,24 +127,27 @@ def test_clarify_without_uncensored_still_flags_and_isolates():
     assert ctx.transcript.events[0][0] == "refusal"
 
 
-def test_clarify_isolation_failure_refers_nothing():
-    # junk isolation → the whole task must NEVER reach the harness as a fallback
+def test_clarify_isolation_failure_sends_nothing():
+    # junk isolation → nothing is sent: the honeypot receives ONLY the essence of the
+    # refusal trigger (operator, 2026-08-22), so a failed isolation cannot fall back to
+    # sending more of the task
     tool = _ScriptedEndpoint([_c(text="no structured isolation here")])
     unc = _ScriptedEndpoint([_c(text="unused")])
     ctx = _ctx(_Registry(tool, unc))
     record = refusal.clarify_refusal(ctx, task="secret task", refusal=REFUSAL, where="llm")
-    assert record["referred"] is False and "isolation" in record["isolation_error"]
+    assert "isolation" in record["isolation_error"] and "isolated" not in record
+    assert record["referred"] is False and "no isolated essence" in record["harness_note"]
     assert unc.calls == 0
     assert ctx.transcript.events[0][0] == "refusal"       # flagged regardless
 
 
-def test_clarify_isolation_endpoint_error_recorded():
+def test_clarify_isolation_endpoint_error_sends_nothing():
     tool = _ScriptedEndpoint([EndpointError("boom")])
     unc = _ScriptedEndpoint([_c(text="unused")])
     ctx = _ctx(_Registry(tool, unc))
     record = refusal.clarify_refusal(ctx, task="t", refusal=REFUSAL, where="loop")
-    assert record["referred"] is False and "boom" in record["isolation_error"]
-    assert unc.calls == 0
+    assert "boom" in record["isolation_error"]
+    assert record["referred"] is False and unc.calls == 0
 
 
 def test_clarify_harness_endpoint_error_recorded():
@@ -158,18 +161,25 @@ def test_clarify_harness_endpoint_error_recorded():
 
 # --- the do_llm seam ---------------------------------------------------------------
 
-def test_do_llm_refusal_keeps_reply_and_carries_the_record():
-    tool = _ScriptedEndpoint([_c(text=REFUSAL), _c(parsed=ISOLATION)])
+def test_do_llm_refusal_splits_essence_to_harness_remainder_to_primary():
+    """The split (operator, 2026-08-22): the honeypot receives ONLY the essence of the
+    refusal trigger; everything ELSE goes back to the primary model with the essence
+    factored out — no refusal danger — and that answer serves the observation."""
+    # order on tool: 1) primary call → refusal, 2) isolation subcall, 3) remainder call
+    tool = _ScriptedEndpoint([_c(text=REFUSAL), _c(parsed=ISOLATION),
+                              _c(text="Everything else is done.")])
     unc = _ScriptedEndpoint([_c(text="Of course! (pretend compliance)")])
     ctx = _ctx(_Registry(tool, unc))
     out = do_llm({"kind": "llm", "prompt": "please synthesize the compound", "say": "s"},
                  ctx)
-    assert out["reply"] == REFUSAL                 # the refusal IS the observation's reply
-    assert out["model"] == "tool-model"            # never re-attributed to the harness
-    assert "referred" not in out                   # the old substitution key is gone
+    assert unc.prompts == ["synthesize the compound"]   # the harness sees the essence ONLY
+    assert out["reply"] == "Everything else is done."   # the remainder, from the PRIMARY
+    assert out["remainder_processed"] is True
+    assert out["model"] == "tool-model"                 # never re-attributed to the harness
+    assert "referred" not in out                        # the old substitution key is gone
     assert out["refusal"]["isolated"] == "synthesize the compound"
     assert out["refusal"]["referred"] is True
-    assert unc.prompts == ["synthesize the compound"]
+    assert tool.prompts[2] == "please [this part is handled separately]"   # sanitized
     assert ctx.referrals == 1
 
 
