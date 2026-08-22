@@ -29,6 +29,21 @@ export function typedBody(text) {
   return splitRef(text || "").body.replace(ATTACH_BLOCK, "").trim();
 }
 
+// Copy-to-clipboard on every chat bubble (operator order 2026-08-22): a quiet corner
+// button, visible on hover, that copies the message's SOURCE text (the markdown the
+// author wrote, not the rendered HTML) — feedback ✓ on success, ✕ when the browser
+// denies clipboard access (select-and-copy still works there).
+function copyBtn(getText) {
+  const btn = el("button", { class: "copy-msg", title: "copy message text",
+    onclick: async () => {
+      let mark = "✓";
+      try { await navigator.clipboard.writeText(getText()); } catch { mark = "✕"; }
+      btn.textContent = mark;
+      setTimeout(() => { btn.textContent = "⧉"; }, 1200);
+    } }, "⧉");
+  return btn;
+}
+
 // A user message may LEAD with the reference line a "refer to" send prepended (rendered as
 // a quote chip) and may carry the attachment block the API appended. When the transcript
 // event carries the attachment rels AND the mount a file route, the files render for real
@@ -46,7 +61,8 @@ function userNode(text, refBtn, attachments, fileUrl) {
     ref ? el("div", { class: "reply-ref", title: ref }, "↩ ", ref) : null,
     el("div", { class: "msg-body" }, md(body)),
     files || (chips.length ? el("div", { class: "msg-attach" }, chips) : null),
-    refBtn || null);
+    refBtn || null,
+    copyBtn(() => body));
 }
 
 // F295: the optimistic echo bubble — the just-sent message, shown by the VIEW the moment
@@ -110,7 +126,8 @@ export function createChat(container, opts = {}) {
         ev.usage_total ? el("span", {}, fmtTokens(ev.usage_total)) : null,
         ev.ts ? el("span", { title: ev.ts }, fmtTime(ev.ts)) : null),
       referButton(opts.onRefer, `your reply${ev.ts ? ` at ${fmtTime(ev.ts)}` : ""}`,
-        (summary || "").split("\n")[0]));
+        (summary || "").split("\n")[0]),
+      copyBtn(() => summary || ""));
     return node;
   }
 

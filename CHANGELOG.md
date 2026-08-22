@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.224.0] — 2026-08-22
+
+### Added
+- **Copy-to-clipboard button on every conversation chat bubble** (operator order
+  2026-08-22). User and assistant bubbles carry a quiet corner `⧉` button — visible on
+  hover / keyboard focus — that copies the message's SOURCE text (the markdown the author
+  wrote, not the rendered HTML; a user message copies the typed body without the ref line
+  or the API-appended attachment block). Feedback: `✓` on success, `✕` when the browser
+  denies clipboard access.
+
 ## [0.223.0] — 2026-08-22
 
 ### Fixed

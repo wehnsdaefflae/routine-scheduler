@@ -369,7 +369,18 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 
 .conv-chat { margin-top: 14px; }
 .chat { display: flex; flex-direction: column; gap: 10px; }
-.msg { max-width: 92%; border-radius: 10px; padding: 10px 13px; border: 1px solid var(--line); }
+.msg { max-width: 92%; border-radius: 10px; padding: 10px 13px; border: 1px solid var(--line); position: relative; }
+/* copy-to-clipboard on every chat bubble: the ⧉ twin of the ↩ refer glyph, sitting just
+   left of it (right: 28px keeps it OFF the refer button's hit area — overlapping it
+   intercepted refer clicks). Quiet until the bubble is hovered or the button is
+   keyboard-focused; ✓/✕ feedback swaps the glyph for a moment after a click. */
+.msg .copy-msg {
+  position: absolute; top: 3px; right: 28px; background: none; border: none; cursor: pointer;
+  color: var(--faint); font-size: 12.5px; line-height: 1; padding: 3px 5px;
+  opacity: 0; transition: opacity 0.12s;
+}
+.msg:hover .copy-msg, .msg .copy-msg:focus-visible { opacity: 1; }
+.msg .copy-msg:hover { color: var(--text); }
 .msg.user { align-self: flex-end; background: var(--raised); border-color: var(--line-2); }
 /* F295: the optimistic echo of a just-sent message — below the streamed history, dashed
    until the woken leg's real user_injection event replaces it */

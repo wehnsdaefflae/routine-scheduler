@@ -646,6 +646,22 @@ def test_conversation_composer(ui, ui_page):
     expect(pending).to_contain_text("also include the gym")
 
 
+def test_chat_message_copy_button(ui, ui_page):
+    """Every chat bubble carries a copy-to-clipboard button (operator order 2026-08-22):
+    hover reveals it, clicking puts the message SOURCE text on the clipboard."""
+    ui_page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill("Copy me: the quick brown fox.")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    bubble = ui_page.locator(".msg.user").first
+    expect(bubble).to_contain_text("Copy me")
+    bubble.hover()
+    bubble.locator(".copy-msg").click()
+    got = ui_page.evaluate("navigator.clipboard.readText()")
+    assert "Copy me: the quick brown fox." in got
+
+
 def test_typed_body_matches_attachment_dressed_injection(ui, ui_page):
     """R473: the optimistic echo is cleared by comparing typedBody on BOTH sides — the
     injected event text arrives DRESSED (ref line + API-appended attachment block) while
