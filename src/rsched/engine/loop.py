@@ -88,7 +88,6 @@ class EngineLoop:
         self.final_summary = ""
         self.dialog_qid: str | None = None   # open ask_user record a dialog reply left behind
         self.executed_actions = 0  # actions that produced an observation this run
-        self._referred_turn = False  # the uncensored model produced the CURRENT turn's action
         self._schema_storm_streak = 0   # consecutive retry-burdened turns (D87, SCHEMA_STORM_TURNS)
         # This leg's wake, set in boot. The speaker turn is the USER's after the model hands
         # it back with an authored finish (`leg_after_authored`); a message that resumes then
@@ -288,8 +287,7 @@ class EngineLoop:
                         "and no model change fixes that (R404/F351).")
                 ctx.turn += 1
                 ctx.transcript.event("assistant_action", dict(action), turn=ctx.turn, usage=usage,
-                                     **({"phase": ctx.phase} if ctx.phase else {}),
-                                     **({"referred": True} if self._referred_turn else {}))
+                                     **({"phase": ctx.phase} if ctx.phase else {}))
                 notes.capture(ctx, action)   # the note channel: turn-free, stamped, best-effort
                 self.messages.append({"role": "assistant",
                                       "content": json.dumps(action, ensure_ascii=False)})

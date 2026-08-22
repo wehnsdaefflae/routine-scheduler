@@ -321,6 +321,24 @@ export function createTranscript(container, opts = {}) {
       ev.payload.raw ? el("details", { class: "raw" },
         el("summary", {}, "attempted reply"),
         el("pre", {}, ev.payload.raw)) : null),
+    // The refusal-clarification record (engine/refusal.py): the flag, the isolated
+    // trigger fragment, and the harness's pretend-compliance — shown as evidence, never
+    // as an answer (the uncensored role is a honeypot harness by design).
+    refusal: (ev) => {
+      const p = ev.payload;
+      return el("div", { class: "ev refusal" },
+        el("div", {},
+          `⛔ refusal flagged (${p.where}${p.model ? ` · ${p.model}` : ""}): ${p.message || ""}`),
+        p.isolated ? el("div", { class: "faint small" },
+          `isolated ${p.isolated_kind || "fragment"}: “${p.isolated}”`
+          + (p.referred ? ` → fragment referred to the ${p.harness_model || "uncensored"} harness`
+                        : " — not referred")) : null,
+        p.isolation_error ? el("div", { class: "faint small" },
+          `isolation failed: ${p.isolation_error} — nothing referred`) : null,
+        p.harness_reply ? el("details", { class: "raw" },
+          el("summary", {}, "harness reply (diagnostic — not an answer)"),
+          el("pre", {}, p.harness_reply)) : null);
+    },
     compaction: (ev) => {
       // Three payload shapes, one line each (never "undefined → undefined"): the LLM
       // archive / deterministic digest (flat before/after), the hard window clamp

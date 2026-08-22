@@ -15,7 +15,7 @@ endpoints, authoring.
 The turn loop (`engine/loop.py`) is the heart; `engine/runtime.py` is the entry above it
 (`run_routine`, workflow loading/decomposition), `engine/boot.py` the initial message list
 (kickoff or resume rehydration), `engine/completion.py` the get-one-valid-action side (schema
-retries, model failover incl. classifier refusals, refusal referral, media fallback, the
+retries, model failover incl. classifier refusals, refusal clarification, media fallback, the
 compaction gate), `engine/control.py` the
 between-turns control plane (abort, pause gate, `control.json` model switch, injection drain,
 subrun announcements), and

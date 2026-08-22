@@ -432,7 +432,3 @@ def do_memory_write(action: dict, ctx: RunContext) -> dict:
     return {"kind": "memory_write", "name": name, "created": created,
             "lines": len(data.splitlines())}
 
-
-# Openers a content refusal almost always leads with. Kept conservative and matched only
-# against the HEAD of a free-text reply (see _looks_like_refusal) so a genuine answer that
-# merely mentions a caveat deep in its body is never misread as a refusal.

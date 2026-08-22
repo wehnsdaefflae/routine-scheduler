@@ -19,7 +19,7 @@ from ..endpoints import failover
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import executor, fileops
+from . import fileops, refusal
 from .actions import (
     ACTION_SCHEMA,
     KIND_EXAMPLES,
@@ -146,7 +146,6 @@ def fold_usage(usage_sum: dict, completion) -> None:
 
 def next_action(loop) -> tuple[dict | None, dict]:
     ctx = loop.ctx
-    loop._referred_turn = False   # set when the uncensored model produced THIS turn's action
     chain = ctx.registry.for_model_chain("main", ctx.routine.models)
     endpoint, ref = failover.pick(chain)   # first chain member not in provider cooldown
     ref = _override_window(loop, ref)      # re-apply any run-local window correction (F278)
@@ -158,7 +157,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
         loop._shed_schema_turns -= 1
         schema = None
     prev_raw: str | None = None
-    # Shared across attempts: one uncensored referral per turn (free-text OR
+    # Shared across attempts: one refusal-clarification pass per turn (free-text OR
     # classifier-refusal path), and the consecutive-empty streak from the CURRENT model.
     refstate = {"referral_tried": False, "empty": 0}
     base_len = len(loop.messages)   # schema-retry debris beyond this is dropped on success
@@ -190,13 +189,10 @@ def next_action(loop) -> tuple[dict | None, dict]:
         if completion.stop_reason in REFUSAL_STOPS:
             # BEFORE the empty check: a mid-stream classifier cut can leave partial text
             # (and the CLI's refusal envelope carries error prose), but a refused turn is
-            # never a usable action and never a same-model retry.
-            referred_action, switched = _handle_refusal(loop, completion, chain, ref,
-                                                        usage_sum, base_len, attempt,
-                                                        refstate)
-            if switched is None:
-                loop._referred_turn = True      # _handle_refusal raised otherwise
-                return referred_action, usage_sum
+            # never a usable action and never a same-model retry — flag + clarify
+            # (engine/refusal.py), then advance the fallback chain (_handle_refusal
+            # raises when the chain is exhausted).
+            switched = _handle_refusal(loop, completion, chain, ref, attempt, refstate)
         elif completion.parsed is None and not completion.text.strip():
             switched = _handle_empty(loop, completion, chain, ref, attempt, refstate)
             if switched is None:
@@ -236,18 +232,19 @@ def next_action(loop) -> tuple[dict | None, dict]:
                                            **({"provider": completion.provider}
                                               if completion.provider else {})})
             ctx.note_schema_retry()
-            # Refusal referral (opt-in, D8 scope C): a free-text reply that reads as a
-            # content refusal — not a malformed action — means the loop's serving model
-            # DECLINED the turn. If the routine configured an `uncensored` model, re-issue
-            # this turn to it once; a schema-valid action from it continues the loop
-            # untouched. Inert when the role is unset (for_uncensored → None).
+            # Refusal clarification (engine/refusal.py): a free-text reply that the
+            # classification subcall judges a content refusal — not merely a malformed
+            # action — is FLAGGED, its trigger isolated, and only that fragment referred
+            # to the uncensored HARNESS. The turn then continues on the NORMAL
+            # retry/failover path below: the harness only pretends to comply, so its
+            # output must never become this turn's action (whole-turn referral retired
+            # on the operator's order, 2026-08-22).
             if (not refstate["referral_tried"] and completion.parsed is None
-                    and executor._looks_like_refusal(completion.text)):
+                    and refusal.is_refusal(ctx, completion.text)):
                 refstate["referral_tried"] = True
-                referred_action = refer_turn_to_uncensored(loop, usage_sum, base_len)
-                if referred_action is not None:
-                    loop._referred_turn = True
-                    return referred_action, usage_sum
+                refusal.clarify_refusal(ctx, task=_turn_task_text(loop),
+                                        refusal=completion.text, where="loop",
+                                        model=ref.name or ref.model)
             loop.messages.append({"role": "assistant", "content": raw[:4000]})
             loop.messages.append({"role": "user", "content": retry_message(
                 exc.problems, example=KIND_EXAMPLES.get(kind_hint or ""), repeated=repeated)})
@@ -286,20 +283,20 @@ def _recover_transport(loop, chain, endpoint, ref, exc: EndpointError) -> tuple:
     return switched
 
 
-def _handle_refusal(loop, completion, chain, ref, usage_sum: dict, base_len: int,
-                    attempt: int, refstate: dict) -> tuple[dict | None, tuple | None]:
+def _handle_refusal(loop, completion, chain, ref, attempt: int, refstate: dict) -> tuple:
     """A classifier refusal (stop_reason in REFUSAL_STOPS — an HTTP 200, so error-rate
     monitoring never sees it; content usually empty, stop_details naming the category).
     Never blind-retried against the same model: re-sending a refused prompt usually earns
     another refusal, so the pre-R5 path — 3 same-model retries, then a "failed to produce
     a valid action" death — burned the run while hiding the cause. Instead: a distinct
-    refusal-marked transcript error first, then the turn is referred to the `uncensored`
-    model once (when configured), else the fallback chain advances — cooling the refused
-    model like a hard failure, which is RUN-scoped (the failover registry is
-    process-local), so the rest of this run stops re-asking while other runs, with other
-    prompts, still probe it fresh. Chain exhausted (or no fallbacks): raises, failing the
-    run HONESTLY with the category named — never "empty completion".
-    Returns (referred_action, switched_chain_entry) — exactly one is set.
+    refusal-marked transcript error first, then ONE clarification pass (engine/refusal.py:
+    flag → isolate the triggering fragment → refer only the fragment to the uncensored
+    HARNESS, whose output is evidence and never this turn's action), then the fallback
+    chain advances — cooling the refused model like a hard failure, which is RUN-scoped
+    (the failover registry is process-local), so the rest of this run stops re-asking
+    while other runs, with other prompts, still probe it fresh. Chain exhausted (or no
+    fallbacks): raises, failing the run HONESTLY with the category named — never "empty
+    completion". Returns the switched chain entry.
     """
     details = completion.stop_details or {}
     category = str(details.get("category") or "") or "unreported"
@@ -313,15 +310,26 @@ def _handle_refusal(loop, completion, chain, ref, usage_sum: dict, base_len: int
                     **({"explanation": explanation[:500]} if explanation else {})}})
     if not refstate["referral_tried"]:
         refstate["referral_tried"] = True
-        referred = refer_turn_to_uncensored(loop, usage_sum, base_len)
-        if referred is not None:
-            return referred, None
+        refusal.clarify_refusal(loop.ctx, task=_turn_task_text(loop),
+                                refusal=explanation or what, where="loop",
+                                model=ref.name or ref.model)
     switched = _switch_to_fallback(loop, chain, ref, EndpointError(what))
     if switched is not None:
-        return None, switched
+        return switched
     raise EndpointError(
         f"{what}; no usable fallback model — configure `fallbacks:` on the catalog "
-        f"model (or an `uncensored` role) to survive classifier refusals")
+        f"model to survive classifier refusals")
+
+
+def _turn_task_text(loop) -> str:
+    """The refused turn's TASK text for the isolation subcall: the newest USER-role
+    message (the observation/instruction the model was answering), falling back to the
+    run instruction. Length-capped inside engine/refusal.py.
+    """
+    for m in reversed(loop.messages):
+        if m.get("role") == "user":
+            return str(m.get("content") or "")
+    return str(getattr(loop, "instruction", "") or "")
 
 
 def _handle_empty(loop, completion, chain, ref,
@@ -378,43 +386,6 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
         "failover": {"from": failed_ref.name, "to": n_ref.name,
                      "cooldown_s": failover.COOLDOWN_S}})
     return nxt
-
-
-def refer_turn_to_uncensored(loop, usage_sum: dict, base_len: int) -> dict | None:
-    """D8 scope C: the loop's serving model refused the turn in free text. If an
-    `uncensored` model is configured, re-issue the CURRENT turn to it once and return a
-    schema-valid action if it produces one (else None → fall back to normal schema retry).
-    Opt-in and inert: no `uncensored` role (for_uncensored → None) means no-op. Usage from the
-    referred completion is folded into this turn's usage; on success the schema-retry debris
-    is dropped like the primary success path. Best-effort — any endpoint/parse failure returns
-    None so the loop keeps its existing retry behaviour.
-    """
-    ctx = loop.ctx
-    target = ctx.registry.for_uncensored(ctx.routine.models)
-    if target is None:
-        return None
-    u_endpoint, u_ref = target
-    try:
-        completion = u_endpoint.complete(loop.messages, model=u_ref.model,
-                                         schema=loop.action_schema, effort=u_ref.effort,
-                                         temperature=u_ref.temperature,
-                                         max_tokens=u_ref.max_tokens,
-                                         session=str(ctx.run_dir),
-                                         purpose=f"turn {ctx.turn + 1} · referred", kind="turn")
-    except EndpointError:
-        return None
-    fold_usage(usage_sum, completion)
-    try:
-        candidate, problems = action_candidate(loop, completion)
-    except Exception:   # best-effort: a bad referred reply just falls through to normal retry
-        return None
-    if problems:
-        return None
-    if len(loop.messages) > base_len:
-        del loop.messages[base_len:]
-    ctx.referrals += 1
-    usage_sum["model"] = f"{u_ref.endpoint}/{u_ref.model}"   # the model that served the turn
-    return candidate
 
 
 def action_candidate(loop, completion) -> tuple[dict, list]:

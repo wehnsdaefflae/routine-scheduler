@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.213.0] — 2026-08-22
+
+### Changed
+- **Refusal clarification replaces whole-turn uncensored referral (operator order).** The
+  `uncensored` model role is now explicitly a **honeypot harness**: it only acts as if it
+  complies, so the catching machinery can be exercised before any actually-uncensored
+  model is in the loop — nothing it produces is executed, returned as an answer, or
+  allowed to become a turn's action. New `engine/refusal.py` runs the process at both
+  seams (the `llm` action and the agent turn loop): every refusal is **flagged** as a
+  first-class `refusal` transcript event (new `EVENT_TYPES` member, rendered by the
+  transcript UI with the isolated fragment and the harness reply in a fold marked
+  diagnostic), its **trigger isolated** by a schema'd tool_call subcall (one STEP of the
+  task's action sequence, or a recurring WORD/PHRASE), and **only the isolated fragment
+  referred** to the harness — isolation failing means nothing is referred. The refused
+  call then continues on its normal path: an `llm` observation keeps the original refusal
+  as its reply with the record beside it; a loop turn takes the ordinary
+  schema-retry/failover path. `refer_turn_to_uncensored` and the `referred` stamp on
+  `assistant_action` events are retired.
+- **Free-text refusal detection is no longer a marker list (operator: regex is not
+  reliable).** An LLM classification subcall (tool_call model, schema'd verdict) decides;
+  the legacy markers survive only as a zero-cost fast path that can CONFIRM an obvious
+  opener, never deny. Provider classifier stops (`refusal`/`content_filter`) remain
+  authoritative.
+
 ## [0.212.0] — 2026-08-22
 
 ### Changed

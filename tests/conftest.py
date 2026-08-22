@@ -101,6 +101,15 @@ class ScriptedEndpoint:
 
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None,
                  timeout=600, session=None, temperature=None):
+        from rsched.engine import refusal as _refusal
+        if schema is _refusal.CLASSIFY_SCHEMA or schema is _refusal.ISOLATION_SCHEMA:
+            # The refusal-clarification subcalls (engine/refusal.py) ride the same
+            # endpoint as the turns: answer them OUT-OF-BAND — "not a refusal" for the
+            # classifier, "no usable isolation" for the isolator — consuming no scripted
+            # reply and recording no call, so scripted turn sequences stay exactly as
+            # written. Refusal-behaviour tests use their own fakes.
+            parsed = {"refusal": False} if schema is _refusal.CLASSIFY_SCHEMA else None
+            return Completion(text="", parsed=parsed, usage={"in": 1, "out": 1})
         system = messages[0]["content"] if messages else ""
         with self.lock:
             self.calls.append({"messages": [dict(m) for m in messages], "model": model,

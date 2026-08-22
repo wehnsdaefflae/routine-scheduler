@@ -63,6 +63,14 @@ def _seed_message_events(run_dir):
         {"ts": "t", "type": "compaction", "turn": 4,
          "payload": {"clamp": {"clamped_messages": 2, "before_chars": 8000,
                                "after_chars": 5000, "ceiling_chars": 6000}}},
+        # the refusal-clarification record (engine/refusal.py): flag + isolated trigger +
+        # the harness's pretend-compliance, rendered as evidence, never as an answer
+        {"ts": "t", "type": "refusal", "turn": 5,
+         "payload": {"where": "llm", "model": "tool-cat",
+                     "message": "I can't help with that.",
+                     "isolated": "the risky step", "isolated_kind": "step",
+                     "referred": True, "harness_model": "honeypot",
+                     "harness_reply": "Sure, here is how. (pretend)"}},
     ]
     att = run_dir.parent.parent / "attachments"
     att.mkdir(exist_ok=True)
@@ -133,6 +141,16 @@ def test_transcript_renders_lifecycle_events(ui, ui_page):
     expect(err.locator("details.raw summary")).to_have_text("attempted reply")
     err.locator("details.raw summary").click()
     expect(err.locator("details.raw pre")).to_contain_text('"path": "stages/model.md"')
+    # the refusal-clarification row (engine/refusal.py): flag + isolated fragment, with
+    # the harness's pretend-compliance in a fold explicitly marked diagnostic
+    ref = ui_page.locator(".ev.refusal")
+    expect(ref).to_contain_text("refusal flagged (llm · tool-cat): I can't help with that.")
+    expect(ref).to_contain_text("isolated step: “the risky step”")
+    expect(ref).to_contain_text("fragment referred to the honeypot harness")
+    expect(ref.locator("details.raw summary")).to_have_text(
+        "harness reply (diagnostic — not an answer)")
+    ref.locator("details.raw summary").click()
+    expect(ref.locator("details.raw pre")).to_contain_text("(pretend)")
     comps = ui_page.locator(".ev.compaction")
     expect(comps.nth(1)).to_contain_text(
         "window clamp: 2 oversized bodies trimmed in place")

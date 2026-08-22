@@ -165,6 +165,8 @@ table.list tr.disabled-row td { opacity: 0.55; }
 .ev.question { background: rgba(242, 193, 78, 0.06); color: var(--warn); border: 1px solid rgba(242, 193, 78, 0.32); }
 .ev.answer { background: rgba(95, 206, 143, 0.05); color: var(--ok); border: 1px solid rgba(95, 206, 143, 0.3); }
 .ev.error { background: rgba(242, 105, 92, 0.06); color: var(--err); border: 1px solid rgba(242, 105, 92, 0.35); }
+/* a flagged refusal is inspection material, not a hard failure — same palette, dashed */
+.ev.refusal { background: rgba(242, 105, 92, 0.04); color: var(--err); border: 1px dashed rgba(242, 105, 92, 0.45); }
 .ev.subrun { background: var(--raised); color: var(--violet); border: 1px solid var(--line-2); }
 .ev.subrun summary { cursor: pointer; }
 .ev.compaction, .ev.system { background: transparent; color: var(--faint); text-align: center; border: none; }

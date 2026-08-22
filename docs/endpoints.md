@@ -45,10 +45,11 @@ OpenAI chat-completions dialect, cloud or local.
    work: routine creation and workflow generation) by picking a catalog model, and per
    routine the model roles — **main** (the orchestrator loop; spawned children run it by
    default, and a call may override per child), **tool_call** (the `llm` action), and the
-   optional **uncensored** (a refused `llm` tool-call is re-referred here) — on the
+   optional **uncensored** (the refusal-clarification harness — see below) — on the
    routine's page, each a catalog model name.
    main/tool_call fall back to the system model when left unset; **uncensored has no
-   fallback** — leave it unset and the routine never refers. See *Refusal referral* below.
+   fallback** — leave it unset and refusals are still flagged + isolated, but no fragment
+   is referred. See *Refusal clarification* below.
 
 ## Adding endpoints + models (config file)
 
@@ -164,8 +165,9 @@ engine instead **fails over**:
   `frontier_llm`, `reasoning_extraction`) — so error-rate monitoring never sees it, and
   re-sending the refused prompt to the same model usually just earns another refusal.
   The engine therefore never blind-retries a refusal: it logs a transcript `error` with a
-  `refusal` payload (category + explanation), tries the `uncensored` referral once (below,
-  when configured), then advances the fallback chain — cooling the refused model for this
+  `refusal` payload (category + explanation), runs ONE refusal-clarification pass (below:
+  isolate the trigger, refer only the fragment to the uncensored harness), then advances
+  the fallback chain — cooling the refused model for this
   run only. With no usable fallback the run fails HONESTLY, naming the category, instead
   of dying as "empty completion". OpenAI-compatible providers signal the same class of
   decline as `finish_reason: "content_filter"` (or the spec's `message.refusal` field) —
@@ -279,36 +281,48 @@ endpoints:
     context_chars: 400000
 ```
 
-## Refusal referral (the `uncensored` model role)
+## Refusal clarification (the `uncensored` harness role)
 
-A routine may configure a third model role, **`uncensored`**, alongside main /
-tool_call. When the routine's **tool_call** model (the `llm` action) replies with a *content
-refusal* (it declines the request in free text — "I can't help with that…"), the engine
-re-issues the **same** prompt to the routine's `uncensored` model and returns that answer
-instead, with `referred: true` on the observation.
+A routine may configure a third model role, **`uncensored`**, alongside main / tool_call.
+It is a **honeypot harness, not an answer machine** (operator, 2026-08-22): it only *acts
+as if* it complies, so the catching machinery below can be exercised and evaluated BEFORE
+any actually-uncensored model is ever in the loop. Nothing it produces is executed,
+returned as an answer, or allowed to become a turn's action — the earlier behaviour
+(re-issue the whole refused prompt/turn to it and use the reply) is retired.
 
-- **Opt-in and inert by default.** Referral fires ONLY when `models.uncensored` is set — and
-  that role has no system-model fallback, so leaving it blank means "never refer". Every
-  routine that doesn't configure it behaves exactly as before.
-- **Only free-text tool-call replies are considered** — a schema-constrained (`response_schema`)
-  reply is an answer, not a refusal, and is never rerouted. The refusal detector is
-  deliberately conservative (matches a decline only at the head of the reply) to avoid
-  rerouting genuine answers.
-- **Typical wiring:** point `uncensored` at a Nano-GPT abliterated model (above), keep
-  `tool_call` on your normal model. Requests the normal model refuses get answered by the
-  abliterated one; everything else stays on the normal model.
-- **Scope: the `llm` tool-call AND the agent loops** (the orchestrator, children included). In a
-  loop, a turn is a schema-constrained *action*, so a refusal shows up in one of two shapes:
-  a free-text reply that fails to parse as an action **and** reads as a decline, or a
-  **classifier refusal** — `stop_reason: "refusal"` / `"content_filter"` on the completion
-  itself, usually with empty content (see *Failover & cooldowns* above). Either way, when an
-  `uncensored` model is configured the engine re-issues the same turn to it once and, if it
-  produces a valid action, continues the run with it (the `assistant_action` transcript event
-  carries `referred: true`). A malformed-but-not-refusing reply still takes the normal
-  schema-retry path — the uncensored model is only consulted on a genuine decline. A
-  classifier refusal whose referral does not resolve it advances the model's `fallbacks:`
-  chain instead of retrying the refusing model. Subroutines run the same loop, so they are
-  covered by the same mechanism.
+When a model refuses, the engine runs the **refusal-clarification process**
+(`engine/refusal.py`), at both seams — the `llm` action and the agent turn loop
+(children run the same loop and are covered identically):
+
+1. **Detect — reliably, not by a marker list.** A provider classifier stop
+   (`stop_reason: "refusal"` / `"content_filter"`, see *Failover & cooldowns* above) is
+   authoritative. A free-text decline is judged by an LLM classification subcall on the
+   tool_call model (schema'd verdict); the legacy marker list survives only as a zero-cost
+   fast path that can CONFIRM an obvious opener — it never decides "not a refusal".
+2. **Flag.** A first-class `refusal` transcript event records the seam, the refusing
+   model, and the refusal message — the explicit signal the clarification hangs off, and
+   what the transcript UI renders.
+3. **Isolate.** One schema'd subcall (tool_call model) decomposes the refused task and
+   names the MINIMAL fragment that plausibly triggered the refusal — one STEP of its
+   action sequence, or a WORD/PHRASE recurring through it.
+4. **Refer the fragment.** ONLY the isolated fragment goes to the uncensored harness; its
+   reply lands in the same event as `harness_reply`, marked diagnostic. Isolation failing
+   means nothing is referred — the whole task never reaches the harness.
+
+The refused call then continues on its NORMAL path: an `llm` action returns the original
+refusal as its reply with the clarification record beside it (`refusal` on the
+observation); a loop turn takes the ordinary schema-retry / fallback-chain path (a
+classifier refusal still cools the refusing model and advances `fallbacks:`; with no
+usable fallback the run fails honestly, naming the category).
+
+- **Opt-in referral, always-on flagging.** Without `models.uncensored` the engine still
+  detects, flags and isolates — only the fragment referral is skipped (the event says so).
+  The role has no system-model fallback.
+- **Only free-text replies are considered** — a schema-constrained (`response_schema`)
+  reply is an answer by construction. An explicit `model: uncensored` call is the caller's
+  own harness probe and is never re-clarified.
+- **Audit.** `ctx.referrals` (status.json + the durable spend stream) counts fragment
+  referrals; each incident's full record is its `refusal` transcript event.
 
 ## Troubleshooting
 

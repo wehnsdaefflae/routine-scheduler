@@ -77,17 +77,20 @@ def test_schema_accepts_roles_and_catalog_names():
 def test_llm_role_override_resolves_that_role():
     reg = _Registry()
     obs = do_llm({"prompt": "p", "model": "main", "say": "s"}, _ctx(reg))
-    assert obs["reply"] == "reply" and reg.roles == ["main"]
+    # roles[0] is the reply's serving role; a free-text reply now also costs one
+    # tool_call refusal-classify subcall (engine/refusal.py), so the list grew
+    assert obs["reply"] == "reply" and reg.roles[0] == "main"
     reg2 = _Registry()
     do_llm({"prompt": "p", "say": "s"}, _ctx(reg2))
-    assert reg2.roles == ["tool_call"]           # default unchanged
+    assert reg2.roles[0] == "tool_call"          # default unchanged (+ classify subcall)
 
 
 def test_llm_catalog_name_override_resolves_by_name():
     reg = _Registry()
     obs = do_llm({"prompt": "p", "model": "glm-5", "say": "s"}, _ctx(reg))
     assert obs["reply"] == "reply"
-    assert reg.names == ["glm-5"] and reg.roles == []
+    assert reg.names == ["glm-5"]
+    assert reg.roles == ["tool_call"]   # only the refusal-classify subcall resolved a role
 
 
 def test_llm_unknown_model_is_a_teaching_error_naming_the_catalog():

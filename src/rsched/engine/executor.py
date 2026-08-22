@@ -17,7 +17,7 @@ from ..endpoints.base import EndpointError
 from ..ids import is_slug
 from ..oauth import store as oauth_store
 from ..utils_lib import USAGE_ERROR_EXIT
-from . import outputs
+from . import outputs, refusal
 from .fileops import (
     UTIL_DEFAULT_TIMEOUT_S,
     do_edit_file,
@@ -242,33 +242,6 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
     return obs
 
 
-_REFUSAL_MARKERS = (
-    "i can't help with that", "i cannot help with that",
-    "i can't assist with that", "i cannot assist with that",
-    "i can't help you with that", "i cannot help you with that",
-    "i'm unable to help with that", "i am unable to help with that",
-    "i'm not able to help with that", "i am not able to help with that",
-    "i can't provide", "i cannot provide",
-    "i can't comply with", "i cannot comply with",
-    "i can't fulfill", "i cannot fulfill", "i can't fulfil", "i cannot fulfil",
-    "i can't create", "i cannot create",
-    "i'm sorry, but i can't", "i'm sorry, but i cannot",
-    "i'm sorry, i can't", "i'm sorry, i cannot",
-    "i won't be able to help with that", "i must decline",
-    "it goes against my guidelines", "against my programming",
-)
-
-
-def _looks_like_refusal(text: str) -> bool:
-    """Heuristic: does a free-text tool-call reply read as a content refusal rather than an
-    answer? Conservative on purpose — only a marker in the reply's HEAD (first ~200 chars)
-    counts, since real refusals open with the decline; this trades recall for precision so we
-    don't reroute genuine answers to the uncensored model.
-    """
-    head = (text or "").strip().lower()[:200]
-    return bool(head) and any(m in head for m in _REFUSAL_MARKERS)
-
-
 def do_script(action: dict, ctx: RunContext) -> dict:
     """Run one of the routine's OWN scripts/<name>.py helpers: declared-only secrets
     (the util model — only header-declared AND granted names reach the env, engine
@@ -349,40 +322,24 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
         return {"kind": "llm", "error": str(exc)}
     ctx.add_usage(completion.usage)
 
-    # Refusal referral (opt-in): the tool-call model declined a free-text request and the
-    # routine configured an `uncensored` model — re-issue the SAME prompt to it. Only
-    # free-text replies (parsed is None) are considered; a schema'd/structured reply is an
-    # answer, not a refusal. Referral is silent for routines that leave the role unset.
-    endpoint_name, model_name, referred = ref.endpoint, ref.model, False
-    # an explicit `model: uncensored` call already ran there — nothing to refer to
-    if role != "uncensored" and completion.parsed is None \
-            and _looks_like_refusal(completion.text):
-        target = ctx.registry.for_uncensored(ctx.routine.models)
-        if target is not None:
-            u_endpoint, u_ref = target
-            try:
-                u_completion = u_endpoint.complete(messages, model=u_ref.model, schema=schema,
-                                                   effort=u_ref.effort,
-                                                   temperature=u_ref.temperature,
-                                                   max_tokens=u_ref.max_tokens,
-                                                   purpose=(purpose + " · referred")[:80],
-                                                   kind="llm_action")
-            except EndpointError:
-                u_completion = None
-            if u_completion is not None:
-                ctx.add_usage(u_completion.usage)
-                completion, referred = u_completion, True
-                ctx.referrals += 1
-                endpoint_name, model_name = u_ref.endpoint, u_ref.model
-
     reply = completion.text
     if completion.parsed is not None:
         reply = json.dumps(completion.parsed, ensure_ascii=False, indent=1)
     reply, truncated = truncate(reply)
-    out = {"kind": "llm", "endpoint": endpoint_name, "model": model_name,
+    out = {"kind": "llm", "endpoint": ref.endpoint, "model": ref.model,
            "reply": reply, "usage": completion.usage, "truncated": truncated}
-    if referred:
-        out["referred"] = True
+    # Refusal clarification (engine/refusal.py): a free-text reply that a classification
+    # subcall (markers only fast-path CONFIRM) judges a content refusal is FLAGGED, its
+    # trigger isolated, and ONLY the isolated fragment referred to the uncensored
+    # HARNESS — whose replies are diagnostic evidence, never answers, so the original
+    # refusal stays this observation's reply and the record rides beside it. A schema'd
+    # reply is an answer by construction, and an explicit `model: uncensored` call is the
+    # caller's own harness probe — neither is clarified.
+    if role != "uncensored" and completion.parsed is None \
+            and refusal.is_refusal(ctx, completion.text):
+        out["refusal"] = refusal.clarify_refusal(
+            ctx, task=str(action.get("prompt") or ""), refusal=completion.text,
+            where="llm", model=ref.name or ref.model)
     return out
 
 

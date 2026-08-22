@@ -45,7 +45,7 @@ Two design rules explain most of the system's shape:
   catalog models the engine fails over to when this one's provider fails hard, with a
   cooldown so a flapping provider isn't hammered. Each routine picks its models by name —
   the main loop, spawned sub-workflows, the `llm` tool-call action, and (optionally) an
-  `uncensored` referral model — or falls back to the one **system model**. A model can be
+  `uncensored` refusal-clarification harness — or falls back to the one **system model**. A model can be
   **multimodal**: it views images and PDFs natively
   (default on for Anthropic/Claude models, a per-model toggle for OpenAI-compatible vision
   models), otherwise through the `vision` util.

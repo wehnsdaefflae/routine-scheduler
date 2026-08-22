@@ -287,11 +287,13 @@ def test_refusal_without_fallback_fails_run_honestly(make_routine, monkeypatch):
     assert "valid action" not in fin["payload"]["summary"]
 
 
-def test_empty_refusal_referred_to_uncensored(make_routine, monkeypatch):
-    """The FIRST classifier refusal is referred to the routine's `uncensored` model (when
-    configured) exactly like a free-text refusal — the referred action serves the turn,
-    the referral is audited, and the refused model is NOT cooled (no failover happened),
-    so the next turn probes it again."""
+def test_classifier_refusal_with_harness_never_hands_it_the_turn(make_routine, monkeypatch):
+    """0.213.0 (operator order 2026-08-22): the uncensored role is a honeypot HARNESS —
+    even when configured, a refused turn is never re-issued to it wholesale and nothing
+    it says can serve a turn. The refusal is flagged (`refusal` transcript event; the
+    scripted fixture answers the isolation subcall with "no isolation", so nothing is
+    referred), the refused model cools like any hard failure, and the fallback chain
+    serves the run."""
     import json as _json
 
     import yaml as _yaml
@@ -310,19 +312,22 @@ def test_empty_refusal_referred_to_uncensored(make_routine, monkeypatch):
         .ModelConfig(endpoint="epU", model="m-u")
     server.models["unc"].name = "unc"
     eps = _wire(monkeypatch, server, {
-        "epA": [Completion(text="", stop_reason="refusal"),
-                finish(summary="finished after the referred turn")],
-        "epB": [],
-        "epU": [write_file("state/probe.txt", say="the uncensored model serves the turn")]})
+        "epA": [Completion(text="", stop_reason="refusal",
+                           stop_details={"category": "cyber"})],
+        "epB": [write_file("state/probe.txt", say="the backup model serves the turn"),
+                finish(summary="served by the backup model")],
+        "epU": []})
     status, run_dir = run_routine(d, server, run_ts=TS)
     assert status == "ok"
-    assert len(eps["epU"].calls) == 1 and len(eps["epA"].calls) == 2
-    assert not failover.is_cooling("epA", "m-a")   # a referred refusal is not a failover
+    assert len(eps["epU"].calls) == 0              # the harness NEVER sees the turn
+    assert len(eps["epA"].calls) == 1              # one refusal — no same-model retry
+    assert failover.is_cooling("epA", "m-a")       # a refusal now always fails over
     events, _ = read_events(run_dir / "transcript.jsonl")
-    refusals = [e for e in events if e["type"] == "error" and e["payload"].get("refusal")]
-    assert len(refusals) == 1                      # the refusal itself is still audited
+    flags = [e for e in events if e["type"] == "refusal"]
+    assert len(flags) == 1 and flags[0]["payload"]["where"] == "loop"
+    assert flags[0]["payload"]["referred"] is False        # nothing isolated → nothing sent
     turns = [e for e in events if e["type"] == "assistant_action"]
-    assert turns[0].get("referred") is True
-    assert turns[0]["usage"]["model"] == "epU/m-u"
+    assert all("referred" not in t for t in turns)         # the old stamp is retired
+    assert turns[0]["usage"]["model"] == "epB/m-b"
     status_json = _json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
-    assert status_json["referrals"] == 1
+    assert status_json["referrals"] == 0
