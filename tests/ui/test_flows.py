@@ -469,10 +469,10 @@ def test_new_conversation_composer_sets_honeypot_role_on_create(ui, ui_page):
     the first reply."""
     ui_page.goto(f"{ui.url}/#/conversations")
     ui_page.locator(".conv-new textarea").wait_for(timeout=10_000)
-    # the honeypot (uncensored) picker exists and offers catalog models
-    hp_select = ui_page.locator('select[title="honeypot (uncensored) model"]')
+    # the uncensored (honeypot) picker exists and offers catalog models
+    hp_select = ui_page.locator('select[title="uncensored model — where refused requests are delivered"]')
     expect(hp_select).to_be_visible()
-    # pick the first real option (index 0 is the "none · honeypot off" fallback)
+    # pick the first real option (index 0 is the "none · uncensored off" fallback)
     hp_select.select_option(index=1)
     ui_page.locator(".conv-new textarea").fill("start with a honeypot configured")
     with ui_page.expect_request(

@@ -63,7 +63,7 @@ export function mountComposerOnly(main) {
     el("option", { value: "" }, fallbackLabel));
   const modelSel = roleSel("default · system model", "main model");
   const toolSel = roleSel("↳ same as main", "tool-call model");
-  const uncSel = roleSel("none · honeypot off", "honeypot (uncensored) model");
+  const uncSel = roleSel("none · uncensored off", "uncensored model — where refused requests are delivered");
   api("/api/settings/models").then((r) => {
     if (r.system_model) modelSel.options[0].textContent = `default · ${r.system_model}`;
     (r.models || []).forEach((m) => {
@@ -135,8 +135,8 @@ export function mountComposerOnly(main) {
       fd.append("text", text.value);
       if (pbSel.value) fd.append("playbook", pbSel.value);
       // Model roles: if only main is picked, send the `model` shorthand (seeds main +
-      // tool_call). If tool_call or the honeypot (uncensored) role is set too, send the
-      // full per-role `models` map so a conversation can START with a honeypot configured.
+      // tool_call). If tool_call or the uncensored role is set too, send the
+      // full per-role `models` map so a conversation can START with an uncensored model configured.
       if (toolSel.value || uncSel.value) {
         const roles = {};
         if (modelSel.value) { roles.main = modelSel.value; roles.tool_call = modelSel.value; }
@@ -188,17 +188,17 @@ export function mountComposerOnly(main) {
     // the pre-start settings — the same titled-section vocabulary the routine page uses
     ...settingsSection("Model",
       "Which model answers this conversation — pick one from the catalog or start on the "
-      + "system default. You can switch the main model any time from the top of the "
-      + "conversation. The tool-call and honeypot (uncensored) roles can only be set here, "
-      + "before the conversation starts — the honeypot is the role the refusal-handling "
-      + "machinery hands a refused request's essence to, so leave it off unless you want that.",
+      + "system default. You can switch the main and uncensored models any time from the top "
+      + "of the conversation; the tool-call model can only be set here, before the "
+      + "conversation starts. The uncensored role is where the refusal-handling machinery "
+      + "hands a refused request's essence, so leave it off unless you want that.",
       el("div", { class: "col", style: "gap:8px" },
         el("label", { class: "faint small row", style: "gap:6px;align-items:center" },
           "main", modelSel),
         el("label", { class: "faint small row", style: "gap:6px;align-items:center" },
           "tool-call", toolSel),
         el("label", { class: "faint small row", style: "gap:6px;align-items:center" },
-          "honeypot (uncensored)", uncSel))),
+          "uncensored", uncSel))),
     ...settingsSection("Project directory",
       "A folder on the server the agent may read and edit for this conversation. Leave empty "
       + "to keep it sandboxed to the conversation's own directory.",

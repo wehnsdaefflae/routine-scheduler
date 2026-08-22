@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.219.0] — 2026-08-22
+
+### Changed
+- **The conversation UI calls the refusal-referral role "uncensored", not "honeypot"**
+  (operator: "you cannot call the model 'honeypot' in the frontend. just call it
+  'uncensored'. to the frontend it's the same model role like in the routine model
+  settings"). The new-conversation composer and the conversation header's model line now
+  label the picker `uncensored` and use "none · uncensored off" / "uncensored model —
+  where refused requests are delivered", matching the routine config page's existing
+  `uncensored` role label. The `models.uncensored` key, the API, and the engine's internal
+  "honeypot harness" concept are unchanged — this is a copy fix so one role has one name
+  across every surface the user sees. The composer's Model help text also dropped the stale
+  "can only be set here" claim for this role (it became live-switchable in 0.218.0); only
+  the tool-call role is create-only now.
+
 ## [0.218.0] — 2026-08-22
 
 ### Added

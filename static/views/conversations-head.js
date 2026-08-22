@@ -14,9 +14,9 @@ import { navigate } from "/static/router.js";
 import { el, modelOption, toast } from "/static/util.js";
 
 // The model line at the top of a conversation: shows the EFFECTIVE main model and the
-// honeypot (uncensored) role, and switches EITHER at any point — routine.yaml is patched
+// uncensored role, and switches EITHER at any point — routine.yaml is patched
 // (each reply boots on it), and a live reply additionally gets the mid-run control.json
-// switch, per role. The honeypot is a normal uncensored model to the engine; the refusal
+// switch, per role. The uncensored role is a normal model to the engine; the refusal
 // machinery only fires when it is set, so it must be switchable here, not only at create.
 // Options carry each model's context window from `catalog_meta`, and a model whose window
 // cannot run the harness is disabled (R112/R128 — the PATCH refuses it anyway; the picker
@@ -29,34 +29,34 @@ function modelControl(detail, slug, isLive) {
     el("option", { value: "" }, fallback),
     (detail.catalog || []).map((n) => modelOption(n, meta[n], { selected: cur === n || null })));
   const mainSel = mkSel(detail.models?.main || "", `default · ${sysLabel}`, "main model");
-  const honSel = mkSel(detail.models?.uncensored || "", "none · honeypot off",
-    "honeypot (uncensored) model — where refused requests are delivered");
+  const uncSel = mkSel(detail.models?.uncensored || "", "none · uncensored off",
+    "uncensored model — where refused requests are delivered");
   const apply = el("button", { class: "btn small primary", hidden: true }, "apply");
   const show = () => { apply.hidden = false; };
-  mainSel.onchange = show; honSel.onchange = show;
+  mainSel.onchange = show; uncSel.onchange = show;
   apply.onclick = async () => {
-    const mainName = mainSel.value, honName = honSel.value;
+    const mainName = mainSel.value, uncName = uncSel.value;
     // wholesale-replace semantics (blank clears a role) — send the FULL role set so
     // switching one role never drops the other; main seeds tool_call, as the composer does.
     const models = {};
     if (mainName) { models.main = mainName; models.tool_call = mainName; }
-    if (honName) models.uncensored = honName;
+    if (uncName) models.uncensored = uncName;
     try {
       await api(`/api/conversations/${slug}`, { method: "PATCH", body: { models } });
       if (isLive() && detail.run_id) {
         // a live reply switches each role at its next turn boundary
         if (mainName) await api(`/api/runs/${detail.run_id}/model`,
           { method: "POST", body: { model: mainName, kind: "main" } }).catch(() => {});
-        if (honName) await api(`/api/runs/${detail.run_id}/model`,
-          { method: "POST", body: { model: honName, kind: "uncensored" } }).catch(() => {});
+        if (uncName) await api(`/api/runs/${detail.run_id}/model`,
+          { method: "POST", body: { model: uncName, kind: "uncensored" } }).catch(() => {});
       }
-      toast(`model → ${mainName || sysLabel}${honName ? ` · honeypot → ${honName}` : ""}`);
+      toast(`model → ${mainName || sysLabel}${uncName ? ` · uncensored → ${uncName}` : ""}`);
       apply.hidden = true;
     } catch (err) { toast(err.message, 4000, { error: true }); }
   };
   return el("span", { class: "conv-model" },
     el("span", { class: "faint small" }, "model"), mainSel,
-    el("span", { class: "faint small" }, "honeypot"), honSel, apply);
+    el("span", { class: "faint small" }, "uncensored"), uncSel, apply);
 }
 
 export function renderHead(head, detail, stateChip, { slug, isLive, onListChanged }) {
