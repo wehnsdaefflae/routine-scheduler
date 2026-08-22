@@ -13,6 +13,12 @@ def test_machines_card_add(ui, ui_page):
     ui_page.wait_for_selector("#sec-machines", timeout=10_000)
     expect(ui_page.locator("[data-mach-empty]")).to_contain_text("no machines yet")
 
+    # R474: the form teaches the two-key distinction inline — KEY_VAR names a Secret
+    # holding the LOGIN key; the pinned host key is the SERVER's identity, filled by scan
+    expect(ui_page.get_by_text("private SSH login key")).to_be_visible()
+    expect(ui_page.get_by_text("SERVER's identity key")).to_be_visible()
+    expect(ui_page.get_by_text("host key (pinned server identity)")).to_be_visible()
+
     # fill the add form and save
     ui_page.get_by_placeholder("name (gpu-box)").fill("gpu-box")
     ui_page.get_by_placeholder("host / IP").fill("10.0.0.9")

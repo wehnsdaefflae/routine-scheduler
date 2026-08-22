@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.225.0] — 2026-08-22
+
+### Changed
+- **Settings → Machines teaches the two-key distinction inline** (R474,
+  `c-20260822-174836`: a user pasted a key into "host key (pinned)" and asked whether the
+  same key also goes into Secrets — the form gave no way to know these are different keys).
+  `KEY_VAR` now carries a teaching line — it names a **Secret** holding the private SSH
+  **login** key (link to Settings → Secrets, example name, and the "no key_var" consequence
+  spelled out). The host-key field is labelled "host key (pinned server identity)", its
+  placeholder leads with the scan button, and the scan row states this is the SERVER's
+  identity key, normally never typed, and never your login key.
+
 ## [0.224.0] — 2026-08-22
 
 ### Added

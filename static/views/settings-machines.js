@@ -68,7 +68,7 @@ export function renderMachines(view) {
     const shareIn = inp("share to mount, e.g. /srv/shared (optional)", "260px");
     const descIn = inp("one-line description", "280px"), tagsIn = inp("tags, comma-separated", "200px");
     const hkIn = el("textarea", { class: "code", rows: "2", style: "width:100%",
-      placeholder: "ssh-ed25519 AAAA…  (click scan, or paste ssh-keyscan output)" });
+      placeholder: "click “scan host key” below to fill this — or paste ssh-keyscan output" });
     const scanOut = el("span", { class: "small mono" });
     const scanBtn = el("button", { class: "btn small" }, "scan host key");
     scanBtn.onclick = async () => {
@@ -109,12 +109,24 @@ export function renderMachines(view) {
       el("div", { class: "mt small", style: "font-weight:600" }, "Add / edit a machine"),
       el("div", { class: "row mt", style: "flex-wrap:wrap;gap:6px" }, nameIn, hostIn, userIn, portIn),
       el("div", { class: "row mt", style: "flex-wrap:wrap;gap:6px" }, keyVarIn, wdIn, tagsIn),
+      // R474: the two keys confused a first-time user — per-field teaching lines, not just
+      // the card blurb. KEY_VAR names a Secret (the LOGIN key); the host key is the server's.
+      el("div", { class: "muted small", style: "margin-top:3px" },
+        el("code", {}, "KEY_VAR"), " = the NAME of a ",
+        el("a", { href: "#/settings?section=secrets" }, "Secret"),
+        " holding the private SSH login key (e.g. ", el("code", {}, "GPU_BOX_KEY"),
+        ") — how the scheduler proves it may log in. Create the secret first; the machine ",
+        "stays “no key_var” until it names one."),
       el("div", { class: "row mt", style: "flex-wrap:wrap;gap:6px" }, shareIn,
         el("span", { class: "muted small", style: "align-self:center" },
           "a share mounts at mnt/<name>/ for bound routines")),
       el("div", { class: "row mt" }, descIn),
-      el("div", { class: "field mt" }, el("span", {}, "host key (pinned)"), hkIn),
-      el("div", { class: "row mt" }, scanBtn, scanOut),
+      el("div", { class: "field mt" }, el("span", {}, "host key (pinned server identity)"), hkIn),
+      el("div", { class: "row mt" }, scanBtn, scanOut,
+        el("span", { class: "muted small", style: "align-self:center" },
+          "the SERVER's identity key — click scan to read and pin it over the network; ",
+          "you normally never type here. Your login key does NOT go in this box (see ",
+          el("code", {}, "KEY_VAR"), " above).")),
       el("div", { class: "row mt" }, saveBtn));
   }
   return fill();
