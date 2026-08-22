@@ -12,7 +12,7 @@
 //   onRefer({label, snippet}) — "refer to" on any message primes the composer (also passed
 //                       into the work-fold transcripts, so a single step is referable)
 
-import { createTranscript, referButton, splitRef } from "/static/components/transcript.js";
+import { attachmentRow, createTranscript, referButton, splitRef } from "/static/components/transcript.js";
 import { answerForm } from "/static/components/answerform.js";
 import { md, mdInline } from "/static/md.js";
 import { el, fmtTime, fmtTokens, fullOutput } from "/static/util.js";
@@ -21,19 +21,22 @@ const NEW_TOPIC = /^\s*\[new-topic\]\s*(.*)$/;
 const ATTACH_BLOCK = /\n?\n?\[attached files[^\]]*\]\n((?:- .*\n?)+)/;
 
 // A user message may LEAD with the reference line a "refer to" send prepended (rendered as
-// a quote chip) and may carry the attachment block the API appended (rendered as chips).
-function userNode(text, refBtn) {
+// a quote chip) and may carry the attachment block the API appended. When the transcript
+// event carries the attachment rels AND the mount a file route, the files render for real
+// (thumbnails / open chips via attachmentRow); otherwise the name-only chips stand in.
+function userNode(text, refBtn, attachments, fileUrl) {
   const { ref, body: rest } = splitRef(text);
   const m = ATTACH_BLOCK.exec(rest);
   const body = m ? rest.replace(ATTACH_BLOCK, "").trimEnd() : rest;
-  const chips = m ? m[1].trim().split("\n").map((line) => {
+  const files = attachmentRow(attachments, fileUrl);
+  const chips = !files && m ? m[1].trim().split("\n").map((line) => {
     const p = line.replace(/^- /, "").trim();
     return el("span", { class: "attach-chip", title: p }, "📎 ", p.split("/").pop());
   }) : [];
   return el("div", { class: "msg user" },
     ref ? el("div", { class: "reply-ref", title: ref }, "↩ ", ref) : null,
     el("div", { class: "msg-body" }, md(body)),
-    chips.length ? el("div", { class: "msg-attach" }, chips) : null,
+    files || (chips.length ? el("div", { class: "msg-attach" }, chips) : null),
     refBtn || null);
 }
 
@@ -61,7 +64,8 @@ export function createChat(container, opts = {}) {
     const box = el("div", { class: "fold-body" });
     const details = el("details", { class: "work-fold" }, summary, box);
     const transcript = createTranscript(box, {
-      answer: opts.answer, loadSub: opts.loadSub, isLive: opts.isLive, onRefer: opts.onRefer });
+      answer: opts.answer, loadSub: opts.loadSub, isLive: opts.isLive, onRefer: opts.onRefer,
+      fileUrl: opts.fileUrl });
     root.append(details);
     fold = { details, summary, transcript, steps: 0, briefs: [] };
     return fold;
@@ -188,7 +192,8 @@ export function createChat(container, opts = {}) {
             closeFold("ok");
             lastUser = splitRef(p.text || "").body.replace(ATTACH_BLOCK, "").trim();
             root.append(userNode(p.text || "",
-              referButton(opts.onRefer, "my earlier message", lastUser)));
+              referButton(opts.onRefer, "my earlier message", lastUser),
+              p.attachments, opts.fileUrl));
           }
           return;
         case "finish":

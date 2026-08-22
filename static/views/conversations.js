@@ -316,6 +316,8 @@ export async function render(view, slug, _query = {}) {
         navigate("#/conversations");
       },
       onRefer: composer.setRef,
+      // message attachments render inline (attachments/ is a servable subdir of the route)
+      fileUrl: (rel) => `/api/conversations/${slug}/file?path=${encodeURIComponent(rel)}`,
     });
 
     // The first message became instruction.md (composed into the system prompt), so no

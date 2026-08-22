@@ -177,7 +177,12 @@ def inject_user_message(loop, m: dict) -> None:
         run_user_command(loop, m)
         return
     ctx = loop.ctx
-    ctx.transcript.event("user_injection", {"text": m["text"]})
+    # The event carries the attachment rels so the transcript UI can render the files
+    # (thumbnails / links) instead of the bare filename list inside the text block —
+    # ALL of them, not just the media the model can view (a csv is still linkable).
+    ctx.transcript.event("user_injection", {
+        "text": m["text"],
+        **({"attachments": m["attachments"]} if m.get("attachments") else {})})
     # A delivered report already carries its own "REPORT <id> from routine <slug>" heading
     # (reports.message_text) — labelling it a USER MESSAGE would name the wrong sender.
     lead = ("REPORT (injected mid-run)" if m.get("report")

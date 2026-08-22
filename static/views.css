@@ -442,6 +442,11 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 
 
 /* ---------- stats: usage analytics ---------- */
+/* inline message-attachment row (transcript injections + chat user bubbles) */
+.att-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.att-thumb { max-width: 260px; max-height: 200px; border: 1px solid var(--line);
+             border-radius: 8px; cursor: zoom-in; object-fit: contain; }
+
 .stat-section { margin: 22px 0; }
 .stat-section h2 { font-size: 14px; color: var(--text); margin: 0 0 10px; letter-spacing: 0.01em; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }

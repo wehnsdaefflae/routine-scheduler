@@ -183,7 +183,8 @@ export function activityFeed() {
     }
 
     async function build() {
-      transcript = createTranscript(body);
+      transcript = createTranscript(body, {
+        fileUrl: (rel) => `/api/runs/${r0.run_id}/file?path=${encodeURIComponent(rel)}` });
       if (isActive(cur.state)) {
         tail = liveTail({
           page: (o) => `/api/runs/${r0.run_id}/transcript?offset=${o}`,

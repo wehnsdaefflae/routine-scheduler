@@ -193,6 +193,23 @@ def _loop(make_routine, tmp_path):
     return EngineLoop(ctx, "## Run flow", "instr")
 
 
+def test_inject_user_message_event_carries_attachments(make_routine, tmp_path, monkeypatch):
+    """The user_injection transcript event records the attachment rels — the UI renders
+    the files inline from them (user report 2026-08-22: the transcript showed only the
+    bare filename list). A message without attachments keeps the payload lean."""
+    from rsched.engine import control
+    from rsched.engine.transcript import read_events
+    monkeypatch.setattr(fileops, "media_from_paths", lambda _ctx, _rels: [])
+    loop = _loop(make_routine, tmp_path)
+    control.inject_user_message(loop, {"text": "see the screenshot",
+                                       "attachments": ["attachments/shot.png"]})
+    control.inject_user_message(loop, {"text": "plain", "attachments": []})
+    events, _off = read_events(loop.ctx.run_dir / "transcript.jsonl")
+    evs = [e for e in events if e["type"] == "user_injection"]
+    assert evs[0]["payload"]["attachments"] == ["attachments/shot.png"]
+    assert "attachments" not in evs[1]["payload"]
+
+
 def test_apply_media_fallback(make_routine, tmp_path, monkeypatch):
     monkeypatch.setattr(fileops, "vision_describe", lambda ctx, _ab, pr: "DESCRIBED")
     loop = _loop(make_routine, tmp_path)

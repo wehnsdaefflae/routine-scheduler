@@ -2,10 +2,16 @@
 the pages/branches the UI suite never exercised (findings ledger COVERAGE items).
 """
 
+import base64
 import json
+import re
 import time
 
 from playwright.sync_api import expect
+
+# a valid 1×1 PNG — the seeded message attachment the transcript must render inline
+PNG_1PX = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
 
 
 def test_help_view_renders_docs_state(ui, ui_page):
@@ -38,10 +44,18 @@ def _seed_message_events(run_dir):
                      "question": "Which path should I take?", "default": "A"}},
         {"ts": "t", "type": "answer", "turn": 1,
          "payload": {"qid": "q1", "source": "web", "text": MD_ANSWER}},
+        # the attachment rel rides the event; the file itself sits in the routine dir the
+        # run file route serves — the transcript renders it as an inline thumbnail
         {"ts": "t", "type": "user_injection", "turn": 2,
-         "payload": {"source": "web", "text": MD_INJECTION}},
+         "payload": {"source": "web", "text": MD_INJECTION,
+                     "attachments": ["attachments/shot.png"]}},
+        # the engine persists the rejected reply itself (completion.py: raw[:1500]) — the
+        # card must let the reader open it (user report 2026-08-22: the schema card showed
+        # only the rejection, never what the model actually tried)
         {"ts": "t", "type": "error", "turn": 2,
-         "payload": {"where": "endpoint", "attempt": 1, "message": "boom"}},
+         "payload": {"where": "endpoint", "attempt": 1, "message": "boom",
+                     "provider": "stub-inc",
+                     "raw": '{"kind": "edit_file", "path": "stages/model.md"}'}},
         {"ts": "t", "type": "compaction", "turn": 3,
          "payload": {"before_chars": 9000, "after_chars": 1000}},
         # the hard window clamp nests its numbers — must render its own line, never
@@ -50,6 +64,9 @@ def _seed_message_events(run_dir):
          "payload": {"clamp": {"clamped_messages": 2, "before_chars": 8000,
                                "after_chars": 5000, "ceiling_chars": 6000}}},
     ]
+    att = run_dir.parent.parent / "attachments"
+    att.mkdir(exist_ok=True)
+    (att / "shot.png").write_bytes(PNG_1PX)
     with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
         for ev in events:
             fh.write(json.dumps(ev) + "\n")
@@ -104,7 +121,18 @@ def test_transcript_renders_lifecycle_events(ui, ui_page):
     expect(ui_page.locator(".ev.question")).to_contain_text(
         "Which path should I take?", timeout=10_000)
     _expect_message_markdown(ui_page)
-    expect(ui_page.locator(".ev.error")).to_contain_text("error (endpoint, attempt 1): boom")
+    # the injected message's attachment renders as a real inline thumbnail, loaded
+    # through the authenticated blob route (user report 2026-08-22: the transcript
+    # used to show only the bare filename list inside the text block)
+    thumb = ui_page.locator(".ev.injection img.att-thumb")
+    expect(thumb).to_be_visible(timeout=10_000)
+    expect(thumb).to_have_attribute("src", re.compile(r"^blob:"), timeout=10_000)
+    err = ui_page.locator(".ev.error")
+    expect(err).to_contain_text("error (endpoint, attempt 1, via stub-inc): boom")
+    # the attempted reply folds under the card, collapsed by default, readable on open
+    expect(err.locator("details.raw summary")).to_have_text("attempted reply")
+    err.locator("details.raw summary").click()
+    expect(err.locator("details.raw pre")).to_contain_text('"path": "stages/model.md"')
     comps = ui_page.locator(".ev.compaction")
     expect(comps.nth(1)).to_contain_text(
         "window clamp: 2 oversized bodies trimmed in place")

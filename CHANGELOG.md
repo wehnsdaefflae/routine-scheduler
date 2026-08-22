@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.211.0] — 2026-08-22
+
+### Added
+- **Message attachments render inline in transcripts.** An injected user message's
+  attached files used to appear only as the bare filename list inside the text block —
+  the image itself was nowhere to be seen (user report, 2026-08-22). The engine now
+  stamps the attachment rels onto the `user_injection` transcript event (all of them,
+  not just the media the model can view), and every transcript mount renders them:
+  images as click-to-open thumbnails loaded through the authenticated blob route (a
+  bare `<img src>` cannot carry the Authorization header — the artifact panel's
+  pattern), other files as fetch-and-open chips. Wired in the run view (main + sub
+  transcripts + nested subrun expansion), the conversation chat (user bubbles + the
+  work fold), and the Dashboard activity feed; a mount without a file route falls back
+  to the text block's plain list.
+
+### Fixed
+- **Schema-error cards now show what the model actually tried.** The engine has always
+  persisted the rejected reply into every schema/transport `error` event (`payload.raw`,
+  capped at 1500 chars), but the transcript renderer printed only the rejection message —
+  the reader saw *why* an attempt failed, never *what* was attempted (user report,
+  2026-08-22). The error card now folds an `attempted reply` details block underneath
+  (same pattern as a turn's `action json` fold) and names the serving provider when the
+  event recorded one.
+
 ## [0.210.0] — 2026-08-21
 
 ### Added

@@ -12,7 +12,11 @@
 //   isLive()           — true while the run is live; expanded subruns keep polling.
 //   onRefer({label, snippet}) — enables a hover "refer to" button on every message (the
 //                        messenger reply analog); the view primes its composer with it.
+//   fileUrl(rel)       — maps a message attachment's rel path (e.g. "attachments/x.png") to
+//                        this mount's serving route, enabling inline thumbnails on injected
+//                        user messages; omitted = the text block's plain list stands alone.
 
+import { apiBlobUrl } from "/static/api.js";
 import { md, mdInline } from "/static/md.js";
 import { answerForm } from "/static/components/answerform.js";
 import { el, fmtTime, fmtTokens, fullOutput } from "/static/util.js";
@@ -43,6 +47,37 @@ export function referButton(onRefer, label, snippet) {
   return el("button", { class: "refer-btn", title: "refer to this in your next message",
     onclick: () => onRefer({ label,
       snippet: String(snippet || "").replace(/\s+/g, " ").trim().slice(0, 160) }) }, "↩");
+}
+
+// Inline rendering for a user message's file attachments (user_injection
+// payload.attachments): images become thumbnails loaded through the authenticated
+// blob route (a bare <img src> cannot carry the Authorization header — the artifact
+// panel's pattern), everything else a fetch-and-open chip. Shared by the transcript's
+// injection renderer and the conversation chat's user bubbles.
+const ATT_IMG = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"]);
+
+export function attachmentRow(rels, fileUrl) {
+  if (!rels?.length || !fileUrl) return null;
+  const row = el("div", { class: "att-row" });
+  for (const rel of rels) {
+    const name = String(rel).split("/").pop();
+    const ext = (name.split(".").pop() || "").toLowerCase();
+    if (ATT_IMG.has(ext)) {
+      const img = el("img", { class: "att-thumb", alt: name, title: `${name} — click to open` });
+      img.onclick = () => { if (img.src) window.open(img.src, "_blank"); };
+      apiBlobUrl(fileUrl(rel)).then(({ url }) => { img.src = url; })
+        .catch(() => img.replaceWith(
+          el("span", { class: "faint small" }, `🖼 ${name} (unavailable)`)));
+      row.append(img);
+    } else {
+      const btn = el("button", { class: "btn small att-file", title: rel }, `📎 ${name}`);
+      btn.onclick = () => apiBlobUrl(fileUrl(rel))
+        .then(({ url }) => window.open(url, "_blank"))
+        .catch((err) => window.alert(`could not load ${name}: ${err.message}`));
+      row.append(btn);
+    }
+  }
+  return row;
 }
 
 export function createTranscript(container, opts = {}) {
@@ -113,7 +148,8 @@ export function createTranscript(container, opts = {}) {
       const box = el("div", { class: "subtranscript" });
       details.append(box);
       const sub = createTranscript(box, {
-        loadSub: (m, o) => opts.loadSub(`${p.n}/${m}`, o), isLive: opts.isLive });
+        loadSub: (m, o) => opts.loadSub(`${p.n}/${m}`, o), isLive: opts.isLive,
+        fileUrl: opts.fileUrl });
       let off = 0, pulling = false;
       const pull = async () => {
         if (pulling) return;
@@ -264,7 +300,8 @@ export function createTranscript(container, opts = {}) {
       const { ref, body } = splitRef(ev.payload.text);
       return el("div", { class: "ev injection" },
         ref ? el("div", { class: "reply-ref", title: ref }, "↩ ", ref) : null,
-        evlabel("\u{1F4E8} user: "), md(body));
+        evlabel("\u{1F4E8} user: "), md(body),
+        attachmentRow(ev.payload.attachments, opts.fileUrl));
     },
     question: questionNode,
     answer: (ev) => {
@@ -274,8 +311,16 @@ export function createTranscript(container, opts = {}) {
         evlabel(p.intermediate ? `💬 reply (${p.source}, dialog): ` : `✅ answer (${p.source}): `),
         md(p.text || ""));
     },
+    // A schema/transport error card shows WHY the attempt was rejected; the raw reply the
+    // model actually sent (persisted by the engine as payload.raw, capped 1500 chars) folds
+    // underneath — without it the reader sees the rejection but never what was tried.
     error: (ev) => el("div", { class: "ev error" },
-      `error (${ev.payload.where}${ev.payload.attempt ? `, attempt ${ev.payload.attempt}` : ""}): ${ev.payload.message}`),
+      el("div", {},
+        `error (${ev.payload.where}${ev.payload.attempt ? `, attempt ${ev.payload.attempt}` : ""}` +
+        `${ev.payload.provider ? `, via ${ev.payload.provider}` : ""}): ${ev.payload.message}`),
+      ev.payload.raw ? el("details", { class: "raw" },
+        el("summary", {}, "attempted reply"),
+        el("pre", {}, ev.payload.raw)) : null),
     compaction: (ev) => {
       // Three payload shapes, one line each (never "undefined → undefined"): the LLM
       // archive / deterministic digest (flat before/after), the hard window clamp

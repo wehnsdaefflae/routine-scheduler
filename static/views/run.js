@@ -330,6 +330,7 @@ export async function render(view, runId, query = {}) {
       loadSub: (m, o) => api(`/api/runs/${runId}/transcript?sub=${n}/${m}&offset=${o}`),
       isLive: () => !TERMINAL.has(curState),
       onRefer: setRef,
+      fileUrl: (rel) => `/api/runs/${runId}/file?path=${encodeURIComponent(rel)}`,
     });
     subOffset = startOffset || 0;
     const pull = async () => {
@@ -457,6 +458,8 @@ export async function render(view, runId, query = {}) {
     loadSub: (n, o) => api(`/api/runs/${runId}/transcript?sub=${n}&offset=${o}`),
     isLive: () => !TERMINAL.has(curState),
     onRefer: setRef,
+    // message attachments render inline: the run file route serves attachments/ rels
+    fileUrl: (rel) => `/api/runs/${runId}/file?path=${encodeURIComponent(rel)}`,
   });
 
   // Question state stays in sync everywhere: an answer given on the Decisions page (or in
