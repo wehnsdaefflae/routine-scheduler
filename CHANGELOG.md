@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.217.0] — 2026-08-22
+
+### Fixed
+- **The honeypot (uncensored) model role can now be set BEFORE a conversation starts.**
+  Root cause of a live gap: `POST /api/conversations` accepted only a single `model`
+  param and seeded it into `main` + `tool_call` — there was no way to configure the
+  `uncensored` role at create time, and the live model switcher only ever set main +
+  tool_call too. So a conversation always started with no honeypot, and the refusal
+  machinery (0.213.0–0.216.0) — whose detection classifier and essence-delivery both
+  resolve `for_uncensored` — silently degraded to "unconfirmed = answer" and let
+  refusal-worded finishes through (live specimens `c-20260822-085029`, `-091412`,
+  `-100653`). Now the create endpoint also accepts a per-role `models` JSON map
+  (`{main, tool_call, uncensored}`), validated against the catalog + window exactly like
+  the PATCH path (R112/R128), and the new-conversation composer exposes three role
+  pickers (main / tool-call / **honeypot (uncensored)**). The single-`model` shorthand
+  still works for the common case. Extracted `_resolve_create_models` to keep the create
+  handler under the complexity cap.
+
 ## [0.216.0] — 2026-08-22
 
 ### Fixed

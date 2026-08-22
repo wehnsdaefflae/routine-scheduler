@@ -59,11 +59,18 @@ export function mountComposerOnly(main) {
   // so a conversation can start on the right model instead of system-default-then-switch.
   // Options carry the model's context window and disable ones the harness cannot run
   // (R112/R128 — the create endpoint refuses those too; the picker says so up front).
-  const modelSel = el("select", { "data-nopersist": "" },
-    el("option", { value: "" }, "default · system model"));
+  const roleSel = (fallbackLabel, title) => el("select", { "data-nopersist": "", title },
+    el("option", { value: "" }, fallbackLabel));
+  const modelSel = roleSel("default · system model", "main model");
+  const toolSel = roleSel("↳ same as main", "tool-call model");
+  const uncSel = roleSel("none · honeypot off", "honeypot (uncensored) model");
   api("/api/settings/models").then((r) => {
     if (r.system_model) modelSel.options[0].textContent = `default · ${r.system_model}`;
-    (r.models || []).forEach((m) => modelSel.append(modelOption(m.name, m.window)));
+    (r.models || []).forEach((m) => {
+      modelSel.append(modelOption(m.name, m.window));
+      toolSel.append(modelOption(m.name, m.window));
+      uncSel.append(modelOption(m.name, m.window));
+    });
   }).catch(() => { /* settings unreachable — the default option still works */ });
   // D70: folder access granted at CREATE time — the roots land on the conversation's
   // config before the engine boots, so reply #1 already has them (the workdir above
@@ -127,7 +134,18 @@ export function mountComposerOnly(main) {
       const fd = new FormData();
       fd.append("text", text.value);
       if (pbSel.value) fd.append("playbook", pbSel.value);
-      if (modelSel.value) fd.append("model", modelSel.value);
+      // Model roles: if only main is picked, send the `model` shorthand (seeds main +
+      // tool_call). If tool_call or the honeypot (uncensored) role is set too, send the
+      // full per-role `models` map so a conversation can START with a honeypot configured.
+      if (toolSel.value || uncSel.value) {
+        const roles = {};
+        if (modelSel.value) { roles.main = modelSel.value; roles.tool_call = modelSel.value; }
+        if (toolSel.value) roles.tool_call = toolSel.value;
+        if (uncSel.value) roles.uncensored = uncSel.value;
+        fd.append("models", JSON.stringify(roles));
+      } else if (modelSel.value) {
+        fd.append("model", modelSel.value);
+      }
       if (workdir.value.trim()) fd.append("workdir", workdir.value.trim());
       if (readRoots.value().length) fd.append("fs_read_roots", JSON.stringify(readRoots.value()));
       if (writeRoots.value().length) fd.append("fs_write_roots", JSON.stringify(writeRoots.value()));
@@ -170,8 +188,17 @@ export function mountComposerOnly(main) {
     // the pre-start settings — the same titled-section vocabulary the routine page uses
     ...settingsSection("Model",
       "Which model answers this conversation — pick one from the catalog or start on the "
-      + "system default. You can switch it any time from the top of the conversation.",
-      modelSel),
+      + "system default. You can switch the main model any time from the top of the "
+      + "conversation. The tool-call and honeypot (uncensored) roles can only be set here, "
+      + "before the conversation starts — the honeypot is the role the refusal-handling "
+      + "machinery hands a refused request's essence to, so leave it off unless you want that.",
+      el("div", { class: "col", style: "gap:8px" },
+        el("label", { class: "faint small row", style: "gap:6px;align-items:center" },
+          "main", modelSel),
+        el("label", { class: "faint small row", style: "gap:6px;align-items:center" },
+          "tool-call", toolSel),
+        el("label", { class: "faint small row", style: "gap:6px;align-items:center" },
+          "honeypot (uncensored)", uncSel))),
     ...settingsSection("Project directory",
       "A folder on the server the agent may read and edit for this conversation. Leave empty "
       + "to keep it sandboxed to the conversation's own directory.",

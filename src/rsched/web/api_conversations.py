@@ -13,6 +13,7 @@ here for the chat's artifact panel. Its detached background tasks live in api_ba
 from __future__ import annotations
 
 import asyncio
+import json
 import shutil
 import uuid
 from typing import Annotated
@@ -99,11 +100,48 @@ def _parse_roots(raw: str, field: str) -> list[str]:
     return roots
 
 
+def _resolve_create_models(server, model: str, models: str) -> dict[str, str] | None:
+    """Model roles at create time. `model` is the shorthand — one picked catalog name seeds
+    main + tool_call. `models` is the full per-role JSON map (main / tool_call / uncensored),
+    so a conversation can START with a honeypot (uncensored) role already configured — the
+    role the refusal machinery hands a refused request's essence to, otherwise unreachable
+    before the first reply. The per-role map, when present, wins over the shorthand. Every
+    name is validated against the catalog + window exactly like the PATCH path (R112/R128).
+    """
+    cfg: dict[str, str] | None = None
+    if model.strip():
+        if model.strip() not in server.models:
+            raise HTTPException(
+                400, f"unknown model {model.strip()!r} — add it to the catalog first")
+        problem = model_window_problem(server, model.strip())
+        if problem:
+            raise HTTPException(400, problem)
+        cfg = {k: model.strip() for k in ("main", "tool_call")}
+    if not models.strip():
+        return cfg
+    try:
+        per_role = json.loads(models)
+    except ValueError as exc:
+        raise HTTPException(400, f"models: invalid JSON ({exc})") from None
+    if not isinstance(per_role, dict):
+        raise HTTPException(400, "models: must be a {role: model-name} object")
+    for kind, name in per_role.items():
+        if kind not in MODEL_KINDS:
+            raise HTTPException(400, f"unknown model kind {kind!r}")
+        if not isinstance(name, str) or name not in server.models:
+            raise HTTPException(400, f"models.{kind}: must be a catalog model name")
+        problem = model_window_problem(server, name)
+        if problem:   # R112/R128: the first reply would die on its first completion
+            raise HTTPException(400, problem)
+    return {**(cfg or {}), **{k: v.strip() for k, v in per_role.items()}}
+
+
 @router.post("/conversations")
 async def create_conversation(request: Request, text: Annotated[str, Form()] = "",  # noqa: PLR0913 — one Form field per composer knob
 
                               workdir: Annotated[str, Form()] = "",
                               model: Annotated[str, Form()] = "",
+                              models: Annotated[str, Form()] = "",
                               playbook: Annotated[str, Form()] = "",
                               max_turns: Annotated[str, Form()] = "",
                               max_total_turns: Annotated[str, Form()] = "",
@@ -148,20 +186,12 @@ async def create_conversation(request: Request, text: Annotated[str, Form()] = "
     # boots — reply #1 already runs with it (the mid-run grant path stays for later changes).
     read_roots = _parse_roots(fs_read_roots, "fs_read_roots")
     write_roots = _parse_roots(fs_write_roots, "fs_write_roots")
-    models = None
-    if model.strip():   # a picked catalog model name → all three roles (else system_model fallback)
-        if model.strip() not in server.models:
-            raise HTTPException(
-                400, f"unknown model {model.strip()!r} — add it to the catalog first")
-        problem = model_window_problem(server, model.strip())
-        if problem:   # R112/R128: refuse a model the harness mathematically cannot run
-            raise HTTPException(400, problem)
-        models = {k: model.strip() for k in ("main", "tool_call")}
+    models_cfg = _resolve_create_models(server, model, models)
     server.conversations_home.mkdir(parents=True, exist_ok=True)
     slug = conv_mod.new_slug(server.conversations_home)
     try:
         conv_dir = conv_mod.create_conversation(server, slug=slug, first_message=text,
-                                                workdir=workdir, models=models,
+                                                workdir=workdir, models=models_cfg,
                                                 permissions=active_perms,
                                                 capabilities=caps_override,
                                                 deliberation=deliberation.strip(),

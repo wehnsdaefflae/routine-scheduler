@@ -5,6 +5,7 @@ interactive slots, and the boot-time library-doc seed sync."""
 from __future__ import annotations
 
 import asyncio
+import json
 import shutil
 from pathlib import Path
 
@@ -595,6 +596,43 @@ def test_model_change_refuses_impossible_window(client):
     ok = c.patch(f"/api/conversations/{slug}",
                  json={"models": {"main": "m", "tool_call": "m"}})
     assert ok.status_code == 200
+
+
+def test_create_conversation_accepts_per_role_models_including_honeypot(client):
+    """A conversation can START with a honeypot (uncensored) role configured — the role the
+    refusal machinery hands a refused request's essence to, otherwise unreachable before the
+    first reply. The per-role `models` map seeds all three roles at create time; the single
+    `model` shorthand only ever seeded main + tool_call."""
+    c, server = client
+    from rsched.config import ModelConfig
+    server.models["hp"] = ModelConfig(name="hp", endpoint="dummy", model="h",
+                                      context_chars=200_000, max_tokens=4_096)
+    r = c.post("/api/conversations", data={
+        "text": "t",
+        "models": json.dumps({"main": "m", "tool_call": "m", "uncensored": "hp"}),
+    })
+    assert r.status_code == 200
+    slug = r.json()["slug"]
+    raw = yaml.safe_load((server.conversations_home / slug / "routine.yaml").read_text())
+    assert raw["models"] == {"main": "m", "tool_call": "m", "uncensored": "hp"}
+    # the detail endpoint round-trips all three roles
+    got = c.get(f"/api/conversations/{slug}").json()["models"]
+    assert got["uncensored"] == "hp" and got["main"] == "m"
+
+
+def test_create_conversation_per_role_models_validated(client):
+    """Per-role create models are validated exactly like the PATCH path: unknown role,
+    non-catalog name, and an unrunnable window are each refused up front."""
+    c, server = client
+    _tiny_window_model(server)
+    assert c.post("/api/conversations", data={
+        "text": "t", "models": json.dumps({"bogus_role": "m"})}).status_code == 400
+    assert c.post("/api/conversations", data={
+        "text": "t", "models": json.dumps({"uncensored": "nope"})}).status_code == 400
+    assert c.post("/api/conversations", data={
+        "text": "t", "models": json.dumps({"uncensored": "tiny"})}).status_code == 400
+    assert c.post("/api/conversations", data={
+        "text": "t", "models": "not-json"}).status_code == 400
 
 
 def test_detail_and_settings_pickers_carry_window_meta(client):

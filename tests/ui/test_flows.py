@@ -461,6 +461,28 @@ def test_new_conversation_admin_toggle_sends_token_on_create(ui, ui_page):
     assert req.value.headers.get("x-admin-token") == "s3cret-admin-token"
 
 
+def test_new_conversation_composer_sets_honeypot_role_on_create(ui, ui_page):
+    """A conversation can START with a honeypot (uncensored) role configured — the composer
+    exposes main / tool-call / honeypot pickers, and choosing a honeypot model makes the
+    CREATE request send a per-role `models` payload (not the single-`model` shorthand), so
+    the refusal machinery has a honeypot from reply #1. Otherwise it was unreachable before
+    the first reply."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").wait_for(timeout=10_000)
+    # the honeypot (uncensored) picker exists and offers catalog models
+    hp_select = ui_page.locator('select[title="honeypot (uncensored) model"]')
+    expect(hp_select).to_be_visible()
+    # pick the first real option (index 0 is the "none · honeypot off" fallback)
+    hp_select.select_option(index=1)
+    ui_page.locator(".conv-new textarea").fill("start with a honeypot configured")
+    with ui_page.expect_request(
+            lambda r: r.url.rstrip("/").endswith("/api/conversations")
+            and r.method == "POST") as req:
+        ui_page.get_by_role("button", name="start conversation").click()
+    body = req.value.post_data or ""
+    assert "models" in body and "uncensored" in body
+
+
 def test_run_view_recipe_edit_checkbox(ui, ui_page):
     """D37 (revised): a terminal routine run shows the "editable recipe" CHECKBOX right
     next to the composer input — OFF by default; checking it flips the placeholder to say
