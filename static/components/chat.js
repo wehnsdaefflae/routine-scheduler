@@ -20,6 +20,15 @@ import { el, fmtTime, fmtTokens, fullOutput } from "/static/util.js";
 const NEW_TOPIC = /^\s*\[new-topic\]\s*(.*)$/;
 const ATTACH_BLOCK = /\n?\n?\[attached files[^\]]*\]\n((?:- .*\n?)+)/;
 
+// The user-TYPED body of a message: the "refer to" line and the attachment block the API
+// appends are stripped, leaving what the composer actually sent. THE one comparison shape
+// for matching an injected transcript event back to a just-typed message (R473: the
+// optimistic echo compared the RAW injected text, so an attachment send never matched and
+// the "✓ sent" bubble stayed beside the real attachment card forever).
+export function typedBody(text) {
+  return splitRef(text || "").body.replace(ATTACH_BLOCK, "").trim();
+}
+
 // A user message may LEAD with the reference line a "refer to" send prepended (rendered as
 // a quote chip) and may carry the attachment block the API appended. When the transcript
 // event carries the attachment rels AND the mount a file route, the files render for real
@@ -190,7 +199,7 @@ export function createChat(container, opts = {}) {
               el("div", { class: "msg-body" }, p.text || "")));
           } else {
             closeFold("ok");
-            lastUser = splitRef(p.text || "").body.replace(ATTACH_BLOCK, "").trim();
+            lastUser = typedBody(p.text);
             root.append(userNode(p.text || "",
               referButton(opts.onRefer, "my earlier message", lastUser),
               p.attachments, opts.fileUrl));

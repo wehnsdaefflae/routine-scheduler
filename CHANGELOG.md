@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.223.0] — 2026-08-22
+
+### Fixed
+- **A sent message with an attachment no longer renders twice in the conversation chat**
+  (R473, `c-20260822-174836`). The F295 optimistic "✓ sent" echo is cleared when the real
+  `user_injection` event arrives — but the comparison was raw-text equality, and the API
+  DRESSES an attachment send (appends the `[attached files]` block), so the echo never
+  matched and sat beside the real attachment card forever. `chat.js` now exports
+  `typedBody()` (ref line + attachment block stripped — the same normalization its
+  `lastUser` tracking already used) and the echo-clear compares typed bodies on both sides.
+
 ## [0.222.0] — 2026-08-22
 
 ### Fixed

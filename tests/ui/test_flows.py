@@ -646,6 +646,22 @@ def test_conversation_composer(ui, ui_page):
     expect(pending).to_contain_text("also include the gym")
 
 
+def test_typed_body_matches_attachment_dressed_injection(ui, ui_page):
+    """R473: the optimistic echo is cleared by comparing typedBody on BOTH sides — the
+    injected event text arrives DRESSED (ref line + API-appended attachment block) while
+    the echo holds the raw typed text. A raw comparison never matched an attachment send,
+    so the "✓ sent" bubble duplicated the real attachment card forever."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    dressed = "what's KEY_VAR? do we need a share?\n\n[attached files]\n- attachments/x.png\n"
+    got = ui_page.evaluate(
+        "d => import('/static/components/chat.js').then(m => m.typedBody(d))", dressed)
+    assert got == "what's KEY_VAR? do we need a share?"
+    # a plain message passes through unchanged (the pre-R473 equality case still holds)
+    plain = ui_page.evaluate(
+        "d => import('/static/components/chat.js').then(m => m.typedBody(d))", "hi there ")
+    assert plain == "hi there"
+
+
 def test_conversation_slash_commands(ui, ui_page):
     """The chat composer's command surface: the reference panel lists actions + utils,
     typing / opens autocomplete, accepting fills the input, and a sent command is flagged

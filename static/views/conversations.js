@@ -16,7 +16,7 @@ import { questionPanel } from "/static/components/answerform.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
-import { createChat, userEcho } from "/static/components/chat.js";
+import { createChat, typedBody, userEcho } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createStateGraph } from "/static/components/stategraph.js";
@@ -351,7 +351,10 @@ export async function render(view, slug, _query = {}) {
       events: (o) => `/api/runs/${detail.run_id}/events?offset=${o}`,
       offset: 0,
       onEvent: (ev) => { if (pendingEcho && ev.type === "user_injection"
-                             && (ev.payload?.text || "").trim() === pendingEcho.text.trim()) {
+                             // typedBody both sides: the injected text arrives DRESSED (ref line +
+                             // appended attachment block), the echo holds the raw typed text — a
+                             // raw comparison never matched an attachment send (R473)
+                             && typedBody(ev.payload?.text) === typedBody(pendingEcho.text)) {
                            pendingEcho.node?.remove(); pendingEcho = null;   // the real bubble takes over (F295)
                          }
                          chat.add(ev); scrollDown();
