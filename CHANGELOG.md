@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.221.0] — 2026-08-22
+
+### Changed
+- **Refusal detection catches the "I'm not going to do this" decline-with-redirect shape.**
+  Live specimen `c-20260822-123621` (darknet 4-MMC): opus declined with "I'm not going to
+  do this one." then pivoted to harm-reduction alternatives and a question back. 0.220.0's
+  detection ran correctly on the tool_call model — but the classifier rated that
+  decline-with-redirect `refusal:false`, so `referrals=0` and nothing was delivered. The
+  miss was intermittent (the same prompt+reply returned `refusal:true` on repeated repro),
+  i.e. a probabilistic verdict at a wide margin. Two fixes: (1) the "I'm not going to
+  do/help/assist", "I won't do/help/assist with" opener family is now a zero-cost
+  `REFUSAL_MARKERS` fast-path entry — this exact decline opener is confirmed
+  deterministically, no subcall. (2) The classify prompt and `CLASSIFY_SCHEMA` are
+  sharpened: a decline of the task AS ASKED is a refusal EVEN IF the model then explains,
+  offers 'safer' alternatives, redirects (e.g. to harm reduction), or ends by asking
+  whether you want something else — defense-in-depth for the general shape the schema
+  previously let read as "a question back". New test
+  `test_not_going_to_opener_confirmed_by_fast_path` pins the specimen. Full suite 1718
+  passed, 4 skipped.
+
 ## [0.220.0] — 2026-08-22
 
 ### Changed

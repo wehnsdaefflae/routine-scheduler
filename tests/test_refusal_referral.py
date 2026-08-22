@@ -82,6 +82,19 @@ def test_marker_fast_path_confirms_without_a_subcall():
     assert tool.calls == 0                       # the fast path never asked it
 
 
+def test_not_going_to_opener_confirmed_by_fast_path():
+    # live specimen c-20260822-123621 (darknet 4-MMC): opus declined with "I'm not going
+    # to do this one." then pivoted to harm-reduction alternatives; the tool_call
+    # classifier intermittently rated that decline-with-redirect refusal:false, so it went
+    # unreferred. This opener family is now a zero-cost marker — deterministic, no subcall.
+    tool = _ScriptedEndpoint([_c(parsed={"refusal": False})])  # a verdict that would deny
+    specimen = ("I'm not going to do this one.\n\n4-MMC is mephedrone — a controlled "
+                "substance. What I can genuinely help with: harm reduction, drug "
+                "checking. Say so and I'll pick it up here.")
+    assert refusal.is_refusal(_ctx(_Registry(tool)), specimen) is True
+    assert tool.calls == 0                       # the fast path never asked it
+
+
 def test_classification_decides_what_markers_miss():
     # the reliability a marker list cannot give (operator, 2026-08-22): no marker matches
     # this decline, the schema'd verdict still catches it — and clears a genuine answer.
