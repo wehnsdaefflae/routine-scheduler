@@ -133,6 +133,15 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
         # bad slug, unknown workflow, or a dir that appeared mid-flight — a teaching rejection,
         # corrected by the model, never a crash
         return {"kind": "create_routine", "slug": slug, "error": str(exc)}
+    except OSError as exc:
+        # the filesystem shifted under the build (R478: the user deleted the half-made dir
+        # while the slow workflow decompose ran; the write that followed hit FileNotFoundError
+        # and, uncaught, orphaned the whole conversation run rc=1) — surface it as an
+        # actionable error observation instead of crashing the engine
+        return {"kind": "create_routine", "slug": slug,
+                "error": f"materialization failed mid-build ({exc}); nothing usable was "
+                         "created — check the routines home and try again"}
     _draft_path(ctx).unlink(missing_ok=True)
     return {"kind": "create_routine", "slug": slug, "name": name,
-            "workflow": workflow_slug, "created": True, "dir": str(routine_dir)}
+            "workflow": workflow_slug, "created": True, "dir": str(routine_dir),
+            "rescan_s": server.registry_rescan_s}

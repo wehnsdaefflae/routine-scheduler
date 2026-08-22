@@ -148,3 +148,51 @@ def test_create_routine_rejects_duplicate_slug(tmp_path):
     obs = create_routine.handle_create_routine(
         ctx, {"kind": "create_routine", "target": "taken", "name": "Taken", "prompt": "p"})
     assert obs.get("already_exists") and not obs.get("created")
+
+
+def test_draft_observation_never_reads_as_created(tmp_path):
+    """0.222.0 (R476/R477/R478): the D92 preview obs fell through to the created-copy,
+    telling the agent to announce a routine that did not exist."""
+    from rsched.engine.observations import format_observation
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    obs = create_routine.handle_create_routine(ctx, dict(ACTION))
+    text = format_observation(obs)
+    assert "NOTHING CREATED YET" in text
+    assert "created routine" not in text
+    # the same-leg confirm attempt renders its hold copy too
+    held = create_routine.handle_create_routine(ctx, dict(ACTION))
+    held_text = format_observation(held)
+    assert "HELD" in held_text and "created routine" not in held_text
+
+
+def test_created_observation_names_rescan_cadence(tmp_path):
+    """R477: 'shortly' was vague — the created obs now carries and renders the actual
+    registry-rescan cadence."""
+    from rsched.engine.observations import format_observation
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    create_routine.handle_create_routine(ctx, dict(ACTION))
+    _age_draft(ctx)
+    obs = create_routine.handle_create_routine(ctx, dict(ACTION))
+    assert obs.get("created") and obs["rescan_s"] == server.registry_rescan_s
+    assert f"~{server.registry_rescan_s}s" in format_observation(obs)
+
+
+def test_mid_build_oserror_is_teaching_error_and_leaves_no_dir(tmp_path, monkeypatch):
+    """R478: a filesystem shift during the slow decompose crashed the engine rc=1 and left
+    an empty skeleton. Now: an error observation, and NO half-made dir — the routine dir is
+    only created after decompose returns."""
+    from rsched.workflows import adapt
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    create_routine.handle_create_routine(ctx, dict(ACTION))
+    _age_draft(ctx)
+
+    def boom(*a, **k):
+        raise FileNotFoundError("stages/orient-project-state.md vanished mid-build")
+
+    monkeypatch.setattr(adapt, "decompose", boom)
+    obs = create_routine.handle_create_routine(ctx, dict(ACTION))
+    assert "materialization failed mid-build" in obs.get("error", "")
+    assert not (server.routines_home / ACTION["target"]).exists()

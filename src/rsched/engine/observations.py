@@ -184,10 +184,21 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
         if obs.get("error"):
             return (f"OBSERVATION (create_routine {slug!r} FAILED): {obs['error']}. Fix the "
                     "slug / workflow / instruction and try again.")
+        if obs.get("draft"):
+            # D92's preview step MUST NOT read as success: before 0.222.0 this fell through
+            # to the created-copy below, so the agent announced a routine that did not exist
+            # (R476/R477/R478, conversation c-20260822-174836).
+            state = "draft UPDATED — confirmation restarted" if obs.get("updated") \
+                else "draft stored"
+            held = f" HELD: {obs['held']}" if obs.get("held") else ""
+            return (f"OBSERVATION (create_routine DRAFT {slug!r} — NOTHING CREATED YET; "
+                    f"{state}. name {obs.get('name')!r}, workflow {obs.get('workflow')!r}, "
+                    f"instruction {obs.get('instruction_chars')} chars, beginning: "
+                    f"{obs.get('instruction_preview', '')[:200]!r}. {obs.get('next')}{held})")
         return (f"OBSERVATION (create_routine: created routine {slug!r} from workflow "
-                f"{obs.get('workflow')!r} — the daemon's registry rescan will pick it up "
-                "shortly and it appears on the dashboard. Tell the user it exists and what to "
-                "set next, e.g. its schedule.)")
+                f"{obs.get('workflow')!r} — the daemon's registry rescan (every "
+                f"~{obs.get('rescan_s') or 30}s) picks it up and it appears on the dashboard. "
+                "Tell the user it exists and what to set next, e.g. its schedule.)")
     if kind == "manage_group":
         if obs.get("rejected"):
             return f"OBSERVATION (manage_group REJECTED): {obs['reason']}"

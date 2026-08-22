@@ -84,15 +84,19 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
 
     from .adapt import decompose, dump_markdown
 
-    for sub in ("state", "stages", "inbox"):
-        (routine_dir / sub).mkdir(parents=True)
     # DECOMPOSE the single-file workflow (applied to the instruction) into the routine's OWN
     # main.md (entry state machine) + one markdown stage per step/state. The instruction is
     # consumed here (not persisted); rules are NOT part of the decomposition — they are
     # general by construction and stay in the library. Degrades to the whole workflow as
     # main.md if no endpoint is available.
+    # Decompose FIRST: it is the slow step (an LLM call that can run for minutes), and the
+    # routine dir must not exist until every file's content is in hand — a half-made skeleton
+    # sitting in the routines home for minutes reads as a broken build (R478: the user watched
+    # empty dirs, deleted them mid-flight, and the writes that followed crashed the run).
     result = decompose(server, workflow_slug, instruction, params=params,
                        rules=active_rules, progress=progress)
+    for sub in ("state", "stages", "inbox"):
+        (routine_dir / sub).mkdir(parents=True)
     main_meta = {
         "name": name, "slug": slug,
         "materialized_from": {"slug": workflow_slug, "commit": commit,

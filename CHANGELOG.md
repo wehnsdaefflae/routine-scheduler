@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.222.0] — 2026-08-22
+
+### Fixed
+- **`create_routine`'s draft/preview observation no longer reads as success.** The D92
+  two-step flow's FIRST call stores a draft — but the observation renderer had no `draft`
+  branch, so the preview fell through to the created-copy and told the agent "created
+  routine … tell the user it exists" (R476/R477/R478, conversation `c-20260822-174836`:
+  the user was told the routine existed, watched the dashboard show nothing, restarted the
+  daemon and re-called). The draft obs now renders "DRAFT — NOTHING CREATED YET" with the
+  drafted name/workflow/instruction preview and the exact confirm step; the created obs
+  names the actual registry-rescan cadence (`~Ns`) instead of "shortly".
+- **Materialization can no longer crash the conversation run or leave a half-made routine
+  dir.** `workflows.scaffold` created the dir skeleton BEFORE the slow (minutes-long) LLM
+  decompose, so the routines home showed empty `inbox/ stages/ state/` dirs mid-build —
+  which read as a broken build; when the user deleted them mid-flight, the writes that
+  followed raised `FileNotFoundError`, uncaught, orphaning the whole conversation run rc=1.
+  Scaffold now decomposes FIRST and creates the dir only when every file's content is in
+  hand, and the `create_routine` handler catches `OSError` into a teaching error
+  observation ("materialization failed mid-build … try again").
+
 ## [0.221.0] — 2026-08-22
 
 ### Changed
