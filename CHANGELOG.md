@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.215.0] — 2026-08-22
+
+### Fixed
+- **A refusal that arrives as a `finish(status=failed)` is now caught (live specimen
+  `c-20260822-085029`).** The refusal-clarification pipeline (0.213/0.214) watched only
+  free-text replies and provider classifier stops — but a loop refusal's most natural
+  shape is a SCHEMA-VALID `finish` whose summary is the decline prose ("Declined — will
+  not fulfill…"). That action parsed cleanly, so it was accepted as the turn's action
+  and the run just ended `failed` with `referrals: 0` and no `refusal` event — the whole
+  machinery stayed dark. `next_action` now judges a failed-finish summary too
+  (`_intercept_refusal_finish`): a content refusal is flagged, its essence isolated and
+  delivered to the honeypot, and the turn is re-driven on the main model with the essence
+  named as handled-separately, so it proceeds with the remainder instead of the run
+  terminating on the refusal. Latched (one interception per turn) so a genuinely
+  refusal-only task still lands its failed finish honestly; an HONEST failure report
+  (non-refusal summary) is accepted unchanged.
+
 ## [0.214.0] — 2026-08-22
 
 ### Changed

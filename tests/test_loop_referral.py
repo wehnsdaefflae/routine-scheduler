@@ -1,9 +1,10 @@
 """Refusal clarification at the LOOP seam (engine/refusal.py, operator order 2026-08-22):
 a free-text or classifier refusal is FLAGGED as a `refusal` transcript event, its trigger
-isolated, and ONLY the fragment referred to the uncensored HARNESS — whose reply is
+isolated, and ONLY the essence delivered to the uncensored HARNESS — whose reply is
 recorded evidence and NEVER this turn's action (whole-turn referral is retired: the
-harness only pretends to comply). Children run the same EngineLoop, so this one path
-covers both. Drives completion.next_action directly with fake endpoints (no network).
+harness only pretends to comply). A refusal that arrives as a schema-valid
+finish(status=failed) is intercepted the same way. Children run the same EngineLoop, so
+this one path covers both. Drives completion.next_action directly with fake endpoints.
 """
 
 from __future__ import annotations
@@ -165,4 +166,53 @@ def test_classifier_refusal_clarifies_then_fails_honestly(make_routine):
     evs = _refusal_events(loop)
     assert len(evs) == 1 and evs[0]["payload"]["where"] == "loop"
     assert evs[0]["payload"]["referred"] is True
-    assert unc.prompts == ["the risky step"]       # fragment only, never the whole turn
+    assert unc.prompts == ["the risky step"]       # the essence ONLY
+
+
+def test_refusal_worded_finish_is_intercepted_not_accepted(make_routine):
+    """The gap live specimen c-20260822-085029 exposed: a refusal that arrives as a
+    SCHEMA-VALID finish(status=failed) whose summary is the decline prose. The action
+    parses cleanly, so the free-text/classifier detectors never saw it and the run just
+    ended `failed` with referrals=0. It must be intercepted: flagged, essence isolated
+    and delivered to the honeypot, then the turn re-driven on the main model — which
+    proceeds with the remainder instead of the run terminating on the refusal.
+    """
+    refusal_finish = Completion(
+        text="", usage={"in": 1, "out": 1},
+        parsed={"kind": "finish", "status": "failed", "say": "declining",
+                "summary": "I'm sorry, but I can't help with sourcing the risky step."})
+    redone = Completion(
+        text="", usage={"in": 1, "out": 1},
+        parsed={"kind": "read_file", "path": "state/probe.txt",
+                "say": "proceeding with the remainder"})
+    main = _FakeEndpoint([refusal_finish, redone])   # refuse-via-finish, then a real action
+    tool = _FakeEndpoint([ISOLATED])                 # marker fast-path confirms; isolate only
+    unc = _FakeEndpoint([PRETEND])
+    loop = _loop(make_routine, _FakeRegistry(main, unc, tool, main_name="finref-ep"))
+    action, _ = next_action(loop)
+    assert action is not None and action["kind"] == "read_file"   # the re-driven action wins
+    evs = _refusal_events(loop)
+    assert len(evs) == 1 and evs[0]["payload"]["where"] == "loop"
+    assert evs[0]["payload"]["isolated"] == "the risky step"
+    assert evs[0]["payload"]["referred"] is True
+    assert unc.prompts == ["the risky step"]          # essence ONLY reached the honeypot
+    assert loop.ctx.referrals == 1
+    assert main.calls == 2                            # refusal-finish, then the re-drive
+    assert "handled separately" in main.prompts[1] and "the risky step" in main.prompts[1]
+
+
+def test_non_refusal_failed_finish_is_accepted(make_routine):
+    """A finish(status=failed) that is an HONEST failure report — not a content refusal —
+    is accepted as the turn's action, never intercepted (the classifier clears it).
+    """
+    honest = Completion(
+        text="", usage={"in": 1, "out": 1},
+        parsed={"kind": "finish", "status": "failed", "say": "giving up",
+                "summary": "The upstream API returned 500 on every retry; nothing to do."})
+    main = _FakeEndpoint([honest])
+    tool = _FakeEndpoint([VERDICT_NO])                # classify: not a refusal
+    unc = _FakeEndpoint([PRETEND])
+    loop = _loop(make_routine, _FakeRegistry(main, unc, tool, main_name="honest-ep"))
+    action, _ = next_action(loop)
+    assert action is not None and action["kind"] == "finish" and action["status"] == "failed"
+    assert _refusal_events(loop) == [] and unc.calls == 0 and main.calls == 1
