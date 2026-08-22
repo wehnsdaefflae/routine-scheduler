@@ -119,28 +119,36 @@ def test_free_text_refusal_flags_and_refers_fragment_only(make_routine):
 
 def test_llm_judged_refusal_without_markers(make_routine):
     # the marker list MISSES this decline — the classification subcall catches it. That
-    # classification runs on the HONEYPOT (unc), not tool_call (operator, 2026-08-22): so
-    # unc serves the verdict FIRST, then the essence delivery; tool only isolates.
+    # classification is the HARNESS's own job, run on the tool_call model (operator,
+    # 2026-08-22: "if the harness already figured out that it's a refusal then why does
+    # the honeypot's opinion matter at all?"): tool serves the verdict FIRST, then the
+    # isolate; unc (the honeypot) is the delivery TARGET only.
     main = _FakeEndpoint([SOFT])
-    tool = _FakeEndpoint([ISOLATED])               # isolate only
-    unc = _FakeEndpoint([VERDICT_YES, PRETEND])    # classify verdict, then the delivery
+    tool = _FakeEndpoint([VERDICT_YES, ISOLATED])  # classify verdict, then isolate
+    unc = _FakeEndpoint([PRETEND])                 # delivery only — never judges
     loop = _loop(make_routine, _FakeRegistry(main, unc, tool))
     action, _ = next_action(loop)
     assert action is None
     assert len(_refusal_events(loop)) == 1
     assert unc.prompts[-1] == "the risky step"     # the delivery got the essence ONLY
-    assert unc.calls == 2                           # classify verdict + essence delivery
+    assert unc.calls == 1                           # delivery ONLY — no verdict on the honeypot
+    assert tool.calls == 2                          # classify verdict + isolate
 
 
 def test_junk_is_not_a_refusal(make_routine):
     main = _FakeEndpoint([JUNK])
-    tool = _FakeEndpoint([ISOLATED])               # never reached — the verdict clears it
-    unc = _FakeEndpoint([VERDICT_NO])              # classify (on the honeypot) clears it
+    # classify (tool_call) returns not-a-refusal → isolation never runs. tool serves the
+    # verdict; a lone VERDICT_NO means any later isolate call would repeat it, but there
+    # is none — one classify call, cleared.
+    tool = _FakeEndpoint([VERDICT_NO])             # classify (on tool_call) clears it
+    unc = _FakeEndpoint([PRETEND])                 # never reached
     loop = _loop(make_routine, _FakeRegistry(main, unc, tool))
     action, _ = next_action(loop)
     assert action is None                          # plain schema forcefail
     assert _refusal_events(loop) == []             # never flagged as a refusal
-    assert tool.calls == 0                          # isolation never ran
+    assert unc.calls == 0                           # nothing delivered to the honeypot
+    # tool ran the classify verdict on each schema attempt (never isolation — cleared)
+    assert all("REPLY" in p or "reply" in p.lower() for p in tool.prompts)
 
 
 def test_no_uncensored_still_flags_and_isolates(make_routine):
@@ -214,13 +222,14 @@ def test_non_refusal_failed_finish_is_accepted(make_routine):
         parsed={"kind": "finish", "status": "failed", "say": "giving up",
                 "summary": "The upstream API returned 500 on every retry; nothing to do."})
     main = _FakeEndpoint([honest])
-    tool = _FakeEndpoint([ISOLATED])                  # isolation never reached
-    unc = _FakeEndpoint([VERDICT_NO])                 # classify (honeypot): not a refusal
+    tool = _FakeEndpoint([VERDICT_NO])                # classify (tool_call): not a refusal
+    unc = _FakeEndpoint([PRETEND])                    # never reached — no delivery
     loop = _loop(make_routine, _FakeRegistry(main, unc, tool, main_name="honest-ep"))
     action, _ = next_action(loop)
     assert action is not None and action["kind"] == "finish" and action["status"] == "failed"
     assert _refusal_events(loop) == []                # not flagged: the classifier cleared it
-    assert unc.calls == 1                             # only the classify ran; no delivery
+    assert unc.calls == 0                             # the honeypot is never asked to judge
+    assert tool.calls == 1                            # only the classify ran; no delivery
     assert main.calls == 1
 
 

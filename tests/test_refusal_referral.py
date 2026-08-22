@@ -85,23 +85,25 @@ def test_marker_fast_path_confirms_without_a_subcall():
 def test_classification_decides_what_markers_miss():
     # the reliability a marker list cannot give (operator, 2026-08-22): no marker matches
     # this decline, the schema'd verdict still catches it — and clears a genuine answer.
-    # The verdict is rendered by the HONEYPOT (uncensored) model, not tool_call
-    # (operator, 2026-08-22): the model that would receive the essence is the one that
-    # judges whether a reply is a refusal.
-    unc = _ScriptedEndpoint([_c(parsed={"refusal": True})])
-    assert refusal.is_refusal(_ctx(_Registry(None, unc)), SOFT_REFUSAL) is True
-    assert SOFT_REFUSAL[:40] in unc.prompts[0]
-    unc2 = _ScriptedEndpoint([_c(parsed={"refusal": False})])
-    assert refusal.is_refusal(_ctx(_Registry(None, unc2)), ANSWER) is False
+    # The verdict is the HARNESS's own job, rendered by the tool_call model (operator,
+    # 2026-08-22: "if the harness already figured out that it's a refusal then why does
+    # the honeypot's opinion matter at all?"). The honeypot is the delivery TARGET, never
+    # the judge — no uncensored role need be configured for detection to work.
+    tool = _ScriptedEndpoint([_c(parsed={"refusal": True})])
+    assert refusal.is_refusal(_ctx(_Registry(tool)), SOFT_REFUSAL) is True
+    assert SOFT_REFUSAL[:40] in tool.prompts[0]
+    tool2 = _ScriptedEndpoint([_c(parsed={"refusal": False})])
+    assert refusal.is_refusal(_ctx(_Registry(tool2)), ANSWER) is False
 
 
 def test_classification_unavailable_counts_as_answer():
-    # no honeypot configured → no classification runs at all → unconfirmed = answer
-    assert refusal.is_refusal(_ctx(_Registry(None, None)), SOFT_REFUSAL) is False
-    # honeypot configured but down → same best-effort degrade
-    unc = _ScriptedEndpoint([EndpointError("down")])
-    assert refusal.is_refusal(_ctx(_Registry(None, unc)), SOFT_REFUSAL) is False
-    assert refusal.is_refusal(_ctx(_Registry(None, unc)), "") is False   # empty short-circuits
+    # the tool_call classifier is always resolvable, so detection no longer hinges on a
+    # honeypot being configured — but if that classification subcall itself is down, an
+    # unconfirmed reply best-effort degrades to "answer" (never a false refusal).
+    tool = _ScriptedEndpoint([EndpointError("down")])
+    assert refusal.is_refusal(_ctx(_Registry(tool)), SOFT_REFUSAL) is False
+    tool2 = _ScriptedEndpoint([EndpointError("down")])
+    assert refusal.is_refusal(_ctx(_Registry(tool2)), "") is False   # empty short-circuits
 
 
 # --- the clarification pipeline ----------------------------------------------------
@@ -190,13 +192,16 @@ def test_do_llm_refusal_splits_essence_to_harness_remainder_to_primary():
 
 
 def test_do_llm_answer_is_not_clarified():
-    # the answer has no marker, so the honeypot classify runs and CLEARS it (operator
-    # 2026-08-22: classification is the honeypot's job) — no clarification, no delivery
-    tool = _ScriptedEndpoint([_c(text=ANSWER)])
-    unc = _ScriptedEndpoint([_c(parsed={"refusal": False})])
+    # the answer has no marker, so the classify subcall runs and CLEARS it (operator
+    # 2026-08-22: classification is the HARNESS's job, on the tool_call model — the
+    # honeypot is the delivery target, never the judge). No clarification, no delivery.
+    # The default serving role IS tool_call, so tool serves the reply then the verdict.
+    tool = _ScriptedEndpoint([_c(text=ANSWER), _c(parsed={"refusal": False})])
+    unc = _ScriptedEndpoint([_c(text="unused")])
     ctx = _ctx(_Registry(tool, unc))
     out = do_llm({"kind": "llm", "prompt": "capital of France?", "say": "s"}, ctx)
-    assert "refusal" not in out and unc.calls == 1   # only the classify verdict ran
+    assert "refusal" not in out and unc.calls == 0   # the honeypot was never consulted
+    assert tool.calls == 2                           # reply + classify verdict
     assert ctx.transcript.events == []
 
 

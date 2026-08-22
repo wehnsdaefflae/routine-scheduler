@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.220.0] — 2026-08-22
+
+### Changed
+- **Refusal detection is the harness's own job again — the uncensored (honeypot) model no
+  longer judges whether a reply is a refusal, it only receives the essence.** Operator:
+  "if the conversation harness already figured out that it's a refusal then why does the
+  honeypot model's opinion matter at all? why do we even ask for it? forward the essence
+  of the refusal trigger to the honeypot model as soon as the refusal has been
+  determined." `refusal.is_refusal`'s classification subcall now resolves the **tool_call**
+  model (it always resolves), not `for_uncensored` — a leftover from the 2026-08-22 leg-6
+  spec that let the honeypot veto its own delivery. Two live specimens
+  (`c-20260822-112420`, `c-20260822-114953`, both the darknet 4-MMC task) showed exactly
+  that failure: opus clearly declined, the gemma honeypot rated the decline `refusal:false`,
+  so nothing was ever delivered (`referrals=0`, no refusal event). With detection on the
+  harness, a determined refusal now goes straight to isolate → deliver-essence-to-honeypot.
+  Delivery target, isolation, and the essence-only guarantee are unchanged. Consequence:
+  every free-text reply and finish summary now costs one classify subcall regardless of
+  whether an uncensored role is configured (previously inert when unset).
+
 ## [0.219.0] — 2026-08-22
 
 ### Changed

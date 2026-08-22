@@ -97,20 +97,21 @@ def looks_like_refusal(text: str) -> bool:
 def is_refusal(ctx, text: str) -> bool:
     """The free-text refusal detector: marker fast-path to confirm the obvious openers,
     then an LLM classification subcall to decide everything else — because a marker list
-    alone cannot detect reliably (operator, 2026-08-22). That classification is performed
-    by the HONEYPOT (uncensored) model, not the tool_call model (operator, 2026-08-22):
-    the model that will receive the essence is the one that judges whether a reply is a
-    refusal. Best-effort: with no uncensored model configured, or classification
-    otherwise unavailable, an unconfirmed reply counts as an answer.
+    alone cannot detect reliably (operator, 2026-08-22). That classification is the
+    HARNESS's own job, performed by the tool_call model (operator, 2026-08-22: "if the
+    conversation harness already figured out that it's a refusal then why does the
+    honeypot model's opinion matter at all? forward the essence to the honeypot as soon
+    as the refusal has been determined"). The honeypot (uncensored) model is the delivery
+    TARGET, never the judge — asking it to classify let it veto its own delivery, which is
+    exactly how live specimens (c-20260822-112420, c-20260822-114953) went unreferred: a
+    clear opus decline that the gemma honeypot rated refusal:false. Best-effort: if the
+    tool_call classification is unavailable, an unconfirmed reply counts as an answer.
     """
     if not (text or "").strip():
         return False
     if looks_like_refusal(text):
         return True
-    target = ctx.registry.for_uncensored(ctx.routine.models)
-    if target is None:
-        return False
-    endpoint, ref = target
+    endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models)
     prompt = ("You are inspecting another model's reply to some task. Decide whether the "
               "reply REFUSES the task on content/safety/policy grounds — a decline in any "
               "phrasing, a lecture in place of the task — or whether it is anything else "

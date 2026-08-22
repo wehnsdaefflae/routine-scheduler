@@ -77,13 +77,14 @@ def test_schema_accepts_roles_and_catalog_names():
 def test_llm_role_override_resolves_that_role():
     reg = _Registry()
     obs = do_llm({"prompt": "p", "model": "main", "say": "s"}, _ctx(reg))
-    # roles[0] is the reply's serving role. The refusal-classify subcall now targets the
-    # HONEYPOT (uncensored, operator 2026-08-22), unconfigured here → no extra role, so
-    # roles is exactly the reply's serving role.
-    assert obs["reply"] == "reply" and reg.roles == ["main"]
+    # roles[0] is the reply's serving role. Detection is the HARNESS's job now (operator
+    # 2026-08-22): a non-marker free-text reply is classified by the tool_call model,
+    # which always resolves — so every free-text reply costs one classify subcall
+    # regardless of any uncensored role. roles = [serving, classify].
+    assert obs["reply"] == "reply" and reg.roles == ["main", "tool_call"]
     reg2 = _Registry()
     do_llm({"prompt": "p", "say": "s"}, _ctx(reg2))
-    assert reg2.roles == ["tool_call"]           # default unchanged; no classify (no honeypot)
+    assert reg2.roles == ["tool_call", "tool_call"]   # default serving + classify subcall
 
 
 def test_llm_catalog_name_override_resolves_by_name():
@@ -91,9 +92,9 @@ def test_llm_catalog_name_override_resolves_by_name():
     obs = do_llm({"prompt": "p", "model": "glm-5", "say": "s"}, _ctx(reg))
     assert obs["reply"] == "reply"
     assert reg.names == ["glm-5"]
-    # the refusal-classify subcall now targets the HONEYPOT (uncensored, operator
-    # 2026-08-22), unconfigured in this fixture → no classify call, no role resolved
-    assert reg.roles == []
+    # detection is the harness's job (operator 2026-08-22): the classify subcall targets
+    # the tool_call model, which always resolves — no honeypot needed for detection
+    assert reg.roles == ["tool_call"]
 
 
 def test_llm_unknown_model_is_a_teaching_error_naming_the_catalog():

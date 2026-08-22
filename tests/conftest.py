@@ -107,9 +107,13 @@ class ScriptedEndpoint:
             # endpoint as the turns: answer them OUT-OF-BAND — "not a refusal" for the
             # classifier, "no usable isolation" for the isolator — consuming no scripted
             # reply and recording no call, so scripted turn sequences stay exactly as
-            # written. Refusal-behaviour tests use their own fakes.
+            # written. Classification now runs on the tool_call model for EVERY free-text
+            # reply and finish summary (operator 2026-08-22: detection is the harness's
+            # job, always available), so this path fires on ordinary turns too — bill it
+            # ZERO usage so it stays invisible to scripted-turn usage arithmetic.
+            # Refusal-behaviour tests use their own fakes.
             parsed = {"refusal": False} if schema is _refusal.CLASSIFY_SCHEMA else None
-            return Completion(text="", parsed=parsed, usage={"in": 1, "out": 1})
+            return Completion(text="", parsed=parsed, usage={"in": 0, "out": 0})
         system = messages[0]["content"] if messages else ""
         with self.lock:
             self.calls.append({"messages": [dict(m) for m in messages], "model": model,
