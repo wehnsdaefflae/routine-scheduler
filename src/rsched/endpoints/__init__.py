@@ -43,7 +43,8 @@ def make_endpoint(cfg: EndpointConfig) -> ChatEndpoint:
 
 class EndpointRegistry:
     """Lazily instantiates and caches adapters by config name, and resolves a catalog model
-    NAME (a routine's main/subroutine/tool_call/uncensored role or the server's system model)
+    NAME (a routine's main/tool_call/uncensored role, a per-call override, or the server's
+    system model)
     to its serving endpoint adapter + a fully-resolved ModelRef.
     """
 
@@ -117,13 +118,22 @@ class EndpointRegistry:
         return self.resolve_chain(name)
 
     def for_model(self, kind: str, models: dict[str, str]) -> tuple[InstrumentedEndpoint, ModelRef]:
-        """Resolve one of a routine's model roles (main/subroutine/tool_call) by catalog name.
+        """Resolve one of a routine's model roles (main/tool_call) by catalog name.
         A role the routine left unset falls back to the server's system_model (also a name).
         Cooldown-aware: a model whose provider just failed hard is skipped for its first
         not-cooling fallback (failover.pick), so every resolution site avoids a known-bad
         provider without changing.
         """
         return failover.pick(self.for_model_chain(kind, models))
+
+    def for_name(self, name: str) -> tuple[InstrumentedEndpoint, ModelRef]:
+        """Resolve a CATALOG model by its NAME — the per-call `model` override path (an
+        action naming a concrete catalog model instead of a role). Cooldown-aware like
+        for_model (the model's own fallbacks: chain applies); raises EndpointError for a
+        name the catalog does not carry — callers turn that into a teaching rejection
+        naming the available models (the `list_models` action shows the same catalog).
+        """
+        return failover.pick(self.resolve_chain(name))
 
     def for_uncensored(
             self, models: dict[str, str]) -> tuple[InstrumentedEndpoint, ModelRef] | None:

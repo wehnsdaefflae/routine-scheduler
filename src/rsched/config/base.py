@@ -62,13 +62,16 @@ DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write"]
 # prose (the Library tab). Improvement of the RULES THEMSELVES is the rules-review meta
 # routine's job — it observes how runs actually interpreted each one and proposes revisions.
 DEFAULT_RULES = ["ask-policy", "web-research", "decision-record", "intent-inference"]
-# Each routine picks its own models: the MAIN orchestrator loop, the model spawned
-# SUBROUTINEs run their main loop on, the model TOOL_CALLs (the `llm` action) use, and an
-# OPTIONAL UNCENSORED model a refused `llm` tool-call is re-referred to. The uncensored role
-# is opt-in and has NO system_model fallback: a routine refers a refusal ONLY when it has
-# explicitly configured this role (e.g. to a Nano-GPT abliterated model). Leaving it unset
-# preserves the previous behaviour exactly.
-MODEL_KINDS = ("main", "subroutine", "tool_call", "uncensored")
+# Each routine picks its own models: the MAIN orchestrator loop, the model TOOL_CALLs (the
+# `llm` action) use, and an OPTIONAL UNCENSORED model a refused `llm` tool-call is
+# re-referred to. The uncensored role is opt-in and has NO system_model fallback: a routine
+# refers a refusal ONLY when it has explicitly configured this role (e.g. to a Nano-GPT
+# abliterated model). Leaving it unset preserves the previous behaviour exactly.
+# The per-routine SUBROUTINE role is RETIRED (user order 2026-08-22): spawned/subtask
+# children run the routine's MAIN model by default, and a call may override per child —
+# the action's `model` field takes a role OR a catalog model name (`list_models` shows
+# them). The loader tolerates a leftover models.subroutine key as an advisory problem.
+MODEL_KINDS = ("main", "tool_call", "uncensored")
 # How much of the model's thinking lands ON PAPER — the persistent prose channel (`say`,
 # plus a notes-file discipline at the top stop). Ordered stops, not a continuum: models
 # follow qualitatively distinct contracts, not "verbosity 0.7". Composer wording per stop

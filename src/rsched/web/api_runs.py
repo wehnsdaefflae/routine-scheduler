@@ -339,7 +339,7 @@ def _set_pause(request: Request, run_id: str, value: bool) -> dict:
 
 class ModelSwitch(BaseModel):
     model: str           # a catalog model name
-    kind: str = "main"   # main | subroutine | tool_call
+    kind: str = "main"   # main | tool_call
 
 
 @router.post("/runs/{run_id}/model")
@@ -351,8 +351,8 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
     server = request.app.state.server
     if body.model not in server.models:
         raise HTTPException(400, f"unknown model {body.model!r} — add it to the catalog first")
-    if body.kind not in ("main", "subroutine", "tool_call"):
-        raise HTTPException(400, "kind must be main|subroutine|tool_call")
+    if body.kind not in ("main", "tool_call"):
+        raise HTTPException(400, "kind must be main|tool_call")
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) in TERMINAL_STATES:
         raise HTTPException(409, "run is not active; nothing to switch")

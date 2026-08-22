@@ -317,8 +317,10 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
     messages.append({"role": "user", "content": action["prompt"]})
     schema = action.get("response_schema")
     purpose = ("llm · " + str(action.get("say") or "sub-call"))[:80]
-    # D81: the optional `model` field names a ROLE (not a catalog model) — the call runs
-    # on that role's configured model instead of the tool_call default.
+    # The optional `model` field: a ROLE (main/tool_call; uncensored → the routine's
+    # uncensored model) or a CATALOG model NAME (`list_models` shows them) — default
+    # tool_call. An unknown value is a teaching error naming the catalog (D81 extended,
+    # 2026-08-22).
     role = str(action.get("model") or "tool_call")
     try:
         if role == "uncensored":
@@ -329,8 +331,16 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
                                  "— it needs a models.uncensored catalog entry (routine page "
                                  "→ Models). Use the default role, or ask the user to set one."}
             endpoint, ref = target
-        else:
+        elif role in ("main", "tool_call"):
             endpoint, ref = ctx.registry.for_model(role, ctx.routine.models)
+        elif role in ctx.server.models:
+            endpoint, ref = ctx.registry.for_name(role)
+        else:
+            avail = ", ".join(sorted(ctx.server.models)) or "none configured"
+            return {"kind": "llm",
+                    "error": f"model {role!r} is neither a role (main/tool_call/uncensored) "
+                             f"nor a catalog model name. Catalog models: {avail}. The "
+                             "list_models action shows each one's endpoint and attributes."}
         completion = endpoint.complete(messages, model=ref.model, schema=schema,
                                        effort=ref.effort, temperature=ref.temperature,
                                        max_tokens=ref.max_tokens, purpose=purpose,
@@ -386,7 +396,41 @@ DISPATCH = {
     "memory_write": do_memory_write,
     "read_rule": do_read_rule,
     "llm": do_llm,
+    "list_models": lambda _action, ctx: do_list_models(ctx),
 }
+
+
+def do_list_models(ctx: RunContext) -> dict:
+    """The model DISCOVERY surface (paired with the per-call `model` override,
+    2026-08-22): what this run's role bindings resolve to right now, plus every catalog
+    model a `model` field may name. Read-only — config stays the user's. A catalog row
+    that fails to resolve surfaces as its own error line instead of vanishing
+    (failure-visibility).
+    """
+    roles: dict = {}
+    for role in ("main", "tool_call"):
+        try:
+            _, ref = ctx.registry.for_model(role, ctx.routine.models)
+            roles[role] = {"catalog": ref.name, "endpoint": ref.endpoint, "model": ref.model}
+        except EndpointError as exc:
+            roles[role] = {"error": str(exc)}
+    unc = ctx.registry.for_uncensored(ctx.routine.models)
+    roles["uncensored"] = ({"catalog": unc[1].name, "endpoint": unc[1].endpoint,
+                            "model": unc[1].model} if unc else None)
+    models = []
+    for name in sorted(ctx.server.models):
+        try:
+            _, ref = ctx.registry.resolve(name)
+            models.append({"name": name, "endpoint": ref.endpoint, "model": ref.model,
+                           "multimodal": ref.multimodal, "context_chars": ref.context_chars,
+                           "effort": ref.effort,
+                           "fallbacks": list(ctx.server.models[name].fallbacks)})
+        except EndpointError as exc:
+            models.append({"name": name, "error": str(exc)})
+    return {"kind": "list_models", "roles": roles, "models": models,
+            "note": ("a spawn/subtask/llm action's `model` field takes one of these "
+                     "catalog names, or a role (main/tool_call/uncensored); children "
+                     "default to main, llm to tool_call")}
 
 
 def dispatch(action: dict, ctx: RunContext) -> dict:

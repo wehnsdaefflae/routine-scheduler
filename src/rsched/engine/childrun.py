@@ -114,15 +114,22 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
     recipe_slug, note = materialize_to_disk(parent_ctx.server, recipe_slug, sub_dir,
                                             action["prompt"])
     transcript = Transcript(sub_dir / "transcript.jsonl")
-    # D81: an optional `model` ROLE override on the action (subtask) — the caller rejects
-    # an unconfigured 'uncensored' before building, so the None fallback never fires live
-    role = str(action.get("model") or "subroutine")
-    if role == "uncensored":
+    # The optional `model` override on the action: a ROLE (main/tool_call; uncensored →
+    # the routine's uncensored model) or a CATALOG model NAME (`list_models` shows them).
+    # Default MAIN — a child continues the same routine's work, so it runs on the same
+    # model unless the call says otherwise (the per-routine subroutine role is retired,
+    # user order 2026-08-22). The subruns caller pre-validates the override (unconfigured
+    # uncensored, unknown catalog name) with a teaching rejection, so failures never
+    # crash the build here.
+    sel = str(action.get("model") or "main")
+    if sel == "uncensored":
         target = parent_ctx.registry.for_uncensored(parent_ctx.routine.models)
         _, sub_ref = target if target is not None else \
-            parent_ctx.registry.for_model("subroutine", parent_ctx.routine.models)
+            parent_ctx.registry.for_model("main", parent_ctx.routine.models)
+    elif sel in ("main", "tool_call"):
+        _, sub_ref = parent_ctx.registry.for_model(sel, parent_ctx.routine.models)
     else:
-        _, sub_ref = parent_ctx.registry.for_model(role, parent_ctx.routine.models)
+        _, sub_ref = parent_ctx.registry.for_name(sel)
     child_budgets = parent_ctx.child_budgets(overrides=alloc_overrides)
     child_ctx = RunContext(
         routine=_sub_routine(parent_ctx.routine, sub_dir, sub_ref,
@@ -171,8 +178,9 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
 
 def _sub_routine(routine, sub_dir, ref, *, deliberation: str = ""):
     """A child's config: its OWN dir (so main.md + read_file/write_file resolve under sub_dir),
-    the parent's fs roots inherited, the parent's SUBROUTINE model as the child's MAIN model
-    (subroutine/tool_call inherited so the child can spawn/subtask/llm too), permissions and
+    the parent's fs roots inherited, the RESOLVED child model (the parent's MAIN unless the
+    call overrode it) as the child's main (tool_call/uncensored inherited so the child can
+    spawn/subtask/llm too), permissions and
     capabilities off (a child holds nothing gated: it reports through its finish summary and
     keeps no LEDGER/audit). The parent's LIVE deliberation level carries over (a mid-run
     switch reaches children spawned after it).
@@ -188,8 +196,8 @@ def _sub_routine(routine, sub_dir, ref, *, deliberation: str = ""):
     # Extend — never replace — so configured extra roots still apply.
     r.fs_read_roots = [*routine.fs_read_roots, routine.dir]
     r.fs_write_roots = [*routine.fs_write_roots, routine.dir]
-    r.models = dict(routine.models)   # role → catalog NAME (subroutine/tool_call inherited)
-    r.models["main"] = ref.name       # resolved subroutine catalog name → the child's main
+    r.models = dict(routine.models)   # role → catalog NAME (tool_call/uncensored inherited)
+    r.models["main"] = ref.name       # the resolved child model's catalog name → its main
     r.permissions = []
     r.capabilities = {}
     if deliberation:

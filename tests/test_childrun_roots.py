@@ -10,7 +10,7 @@ from rsched.engine.childrun import _sub_routine
 
 
 def _parent(tmp_path):
-    return SimpleNamespace(dir=tmp_path / "routine", models={"subroutine": "m"},
+    return SimpleNamespace(dir=tmp_path / "routine", models={"main": "m"},
                            permissions=["shell"], capabilities={"utils": ["shell"]},
                            fs_read_roots=[Path("/data/in")], fs_write_roots=[],
                            deliberation="low")

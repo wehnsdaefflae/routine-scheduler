@@ -237,7 +237,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
                                               if completion.provider else {})})
             ctx.note_schema_retry()
             # Refusal referral (opt-in, D8 scope C): a free-text reply that reads as a
-            # content refusal — not a malformed action — means the main/subroutine model
+            # content refusal — not a malformed action — means the loop's serving model
             # DECLINED the turn. If the routine configured an `uncensored` model, re-issue
             # this turn to it once; a schema-valid action from it continues the loop
             # untouched. Inert when the role is unset (for_uncensored → None).
@@ -381,7 +381,7 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
 
 
 def refer_turn_to_uncensored(loop, usage_sum: dict, base_len: int) -> dict | None:
-    """D8 scope C: the routine's main/subroutine model refused the turn in free text. If an
+    """D8 scope C: the loop's serving model refused the turn in free text. If an
     `uncensored` model is configured, re-issue the CURRENT turn to it once and return a
     schema-valid action if it produces one (else None → fall back to normal schema retry).
     Opt-in and inert: no `uncensored` role (for_uncensored → None) means no-op. Usage from the

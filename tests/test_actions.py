@@ -51,6 +51,7 @@ def test_transcript_js_brief_field_mirrors_python():
         {"say": "s", "kind": "util", "name": "websearch", "args": ["q", "--json"]},
         {"say": "s", "kind": "write_util", "name": "my-util", "content": "# script"},
         {"say": "s", "kind": "remove_util", "name": "obsolete-util"},
+        {"say": "s", "kind": "list_models"},
         {"say": "s", "kind": "read_file", "path": "LEDGER.md", "max_lines": 40},
         {"say": "s", "kind": "view_image", "path": "attachments/shot.png", "prompt": "what is shown"},
         {"say": "s", "kind": "write_file", "path": "state/x.json", "content": "{}", "append": False},

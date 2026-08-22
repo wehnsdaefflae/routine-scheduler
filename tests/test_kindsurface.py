@@ -68,7 +68,7 @@ def test_projection_drops_other_kinds_fields_and_prose():
     assert "target" in props
     assert "schedule_run" not in props["target"]["description"]
     assert "report" in props["target"]["description"]
-    assert props["kind"]["enum"] == ["util", "read_file", "report", "finish"]
+    assert props["kind"]["enum"] == ["util", "read_file", "list_models", "report", "finish"]
     # the shared `name` description sheds its memory_read / read_rule clauses
     assert "memory_read" not in props["name"]["description"]
     assert "read_rule" not in props["name"]["description"]
@@ -103,8 +103,10 @@ def test_effective_kinds_intersects_allowlist_and_grants():
             return kind != "write_util"
 
     assert effective_kinds(None, None) == list(KINDS)
-    # ALWAYS_KINDS ride along even when the workflow allowlist omits them
-    assert effective_kinds({"read_file"}, None) == ["read_file", "report", "finish"]
+    # ALWAYS_KINDS ride along even when the workflow allowlist omits them (list_models
+    # joined 0.212.0 — read-only discovery for the per-call model override)
+    assert effective_kinds({"read_file"}, None) == ["read_file", "list_models",
+                                                   "report", "finish"]
     # a capability-denied kind is dropped even when the workflow permits it
     assert "write_util" not in effective_kinds({"read_file", "write_util"}, Grants())
 

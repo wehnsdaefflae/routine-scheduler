@@ -163,7 +163,7 @@ def routine_detail(request: Request, slug: str) -> dict:
         # workflow that isn't there (hand-authored recipes carry an empty slug).
         "workflow_ref": {"slug": info.cfg.workflow_slug, "commit": info.cfg.workflow_commit,
                          "in_library": in_library},
-        # Per-routine model roles (main/subroutine/tool_call/uncensored) — each a catalog model
+        # Per-routine model roles (main/tool_call/uncensored) — each a catalog model
         # NAME, or null to fall back to the server system_model. `catalog` populates the picker.
         "models": {k: (info.cfg.models.get(k) or None) for k in MODEL_KINDS},
         "catalog": list(server.models.keys()),

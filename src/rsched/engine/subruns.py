@@ -72,6 +72,29 @@ class SubrunManager:
                     "wait for or kill one first")
         return None
 
+    def _model_reason(self, action: dict) -> str | None:
+        """Why the action's `model` override cannot serve a child, or None. The field
+        takes a ROLE (main/tool_call; uncensored needs the role configured) or a CATALOG
+        model NAME — validated here so a bad override is a teaching rejection naming the
+        alternatives, never a crash inside the child build.
+        """
+        ctx = self.parent.ctx
+        sel = str(action.get("model") or "")
+        if not sel or sel in ("main", "tool_call"):
+            return None
+        if sel == "uncensored":
+            if ctx.registry.for_uncensored(ctx.routine.models) is None:
+                return ("model role 'uncensored' is not configured for this routine — "
+                        "it needs a models.uncensored catalog entry (routine page → "
+                        "Models). Drop the override, or ask the user to set one.")
+            return None
+        if sel not in ctx.server.models:
+            avail = ", ".join(sorted(ctx.server.models)) or "none configured"
+            return (f"model {sel!r} is neither a role (main/tool_call/uncensored) nor a "
+                    f"catalog model name. Catalog models: {avail}. The list_models "
+                    "action shows each one's endpoint and attributes.")
+        return None
+
     def _start(self, sub: Subrun) -> None:
         """Register the child and run its EngineLoop in a daemon thread; its exit sets the
         completion events so a blocked parent wakes at once.
@@ -101,6 +124,9 @@ class SubrunManager:
         if reason := self._cap_reason(noun="child-task"):
             return {"kind": "spawn", "rejected": True,
                     "label": action.get("label") or default_label, "reason": reason}
+        if reason := self._model_reason(action):
+            return {"kind": "spawn", "rejected": True,
+                    "label": action.get("label") or default_label, "reason": reason}
         running = sum(1 for s in self.subruns.values() if s.status == "running")
         sub = build_child(ctx, action, mode="parallel", default_label=default_label,
                           emit=ctx.transcript.event)
@@ -124,14 +150,11 @@ class SubrunManager:
         if reason := self._cap_reason(noun="child-task"):
             return {"kind": "subtask", "rejected": True,
                     "label": action.get("label") or default_label, "reason": reason}
-        # D81: a `model: uncensored` override needs the role configured — teach, don't build
-        if str(action.get("model") or "") == "uncensored" \
-                and ctx.registry.for_uncensored(ctx.routine.models) is None:
+        # A bad `model` override (unconfigured uncensored, unknown catalog name) is a
+        # teaching rejection before anything is built (D81 extended, 2026-08-22).
+        if reason := self._model_reason(action):
             return {"kind": "subtask", "rejected": True,
-                    "label": action.get("label") or default_label,
-                    "reason": "model role 'uncensored' is not configured for this routine — "
-                              "it needs a models.uncensored catalog entry (routine page → "
-                              "Models). Drop the override, or ask the user to set one."}
+                    "label": action.get("label") or default_label, "reason": reason}
         action, gen_note = self._maybe_generate(dict(action))
         turns = action.get("turns")
         overrides = {"turns": int(turns)} if isinstance(turns, int) and turns > 0 else None

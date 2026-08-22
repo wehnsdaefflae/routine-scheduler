@@ -243,8 +243,9 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
         } catch (err) { toast(err.message, 4000, { error: true }); }
       } }, "save roots"))));
 
-  // -- models (per routine: main / subroutine / tool_call / uncensored) ----------
-  const MODEL_KINDS = [["main", "the orchestrator loop"], ["subroutine", "spawned sub-workflows"],
+  // -- models (per routine: main / tool_call / uncensored; children run main by default,
+  //    a spawn/subtask call may override per child) ------------------------------
+  const MODEL_KINDS = [["main", "the orchestrator loop (children inherit it by default)"],
                        ["tool_call", "the llm action"],
                        ["uncensored", "a refused llm call is referred here (opt-in)"]];
   const catalog = d.catalog || [];      // catalog model names (see Settings → Models)

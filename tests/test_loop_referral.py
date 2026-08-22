@@ -1,5 +1,5 @@
-"""D8 scope C: the main/subroutine turn loop refers a free-text refusal to the routine's
-optional `uncensored` model. Subroutines run the same EngineLoop, so this one path covers both.
+"""D8 scope C: the orchestrator turn loop refers a free-text refusal to the routine's
+optional `uncensored` model. Children run the same EngineLoop, so this one path covers both.
 Drives completion.next_action directly with fake endpoints (no network)."""
 
 from __future__ import annotations

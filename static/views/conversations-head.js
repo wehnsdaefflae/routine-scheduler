@@ -31,7 +31,7 @@ function modelControl(detail, slug, isLive) {
   sel.onchange = () => { apply.hidden = false; };
   apply.onclick = async () => {
     const name = sel.value;
-    const models = name ? { main: name, subroutine: name, tool_call: name } : {};
+    const models = name ? { main: name, tool_call: name } : {};
     try {
       await api(`/api/conversations/${slug}`, { method: "PATCH", body: { models } });
       if (name && isLive() && detail.run_id) {

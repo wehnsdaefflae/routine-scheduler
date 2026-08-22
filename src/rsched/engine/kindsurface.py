@@ -3,8 +3,8 @@ projection of ACTION_SCHEMA onto them.
 
 `actions.py` stays the single source of truth for what a turn may do — this module only
 NARROWS what the model is shown to what the engine would accept anyway. A run whose
-workflow `tools:` allowlist and capabilities permit 8 of the 25 kinds was previously sent
-all 25 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
+workflow `tools:` allowlist and capabilities permit 8 of the 26 kinds was previously sent
+all 26 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
 model read, every turn, the full description of channels the validator would reject. The
 projection is derived from `actions.KIND_FIELDS` — the same map `validate_action` builds
 its allowed-field set from — so the shown schema and the enforced contract cannot drift.
@@ -174,8 +174,9 @@ say what evidence made the current wording wrong. A rule states a principle and 
 no routine and no file — mechanism belongs in a recipe or a conduct doc. The library linter \
 gates the write and your approval level decides whether the user confirms it. There is no \
 delete: a rule that should go is a report or a deferred ask_user naming it."""),
-    (("llm",), """- llm: one scoped, stateless LLM subcall (runs on this routine's tool-call \
-model). It sees ONLY \
+    (("llm",), """- llm: one scoped, stateless LLM subcall (default: this routine's tool-call \
+model; `model` overrides per call — a role or a catalog model name, `list_models` shows them). \
+It sees ONLY \
 your prompt/system — include everything it needs; set response_schema for structured replies."""),
     (("spawn",), """- spawn: start a SUB-WORKFLOW that runs IN PARALLEL with you — pick its \
 "workflow" for the \
@@ -184,7 +185,8 @@ a fully self-contained "prompt" as its instruction; it sees nothing else and ret
 finish summary. You keep working while it runs; you are notified automatically when it exits. \
 A child works in its OWN directory (runs/<ts>/sub/<n>/, NOT your working tree — R405/R406): \
 relative paths resolve THERE, so name absolute paths (within the allowed roots) for anything \
-it must read, and fold its results back yourself from its finish summary."""),
+it must read, and fold its results back yourself from its finish summary. A child runs on \
+your MAIN model unless `model` picks a role or a catalog model for it."""),
     (("subtask",), """- subtask: start a child sub-workflow that runs SEQUENTIALLY in the \
 background — decompose a large \
 task into ordered steps, each a fresh-context child run with its OWN budget and pattern. It does \
@@ -193,7 +195,8 @@ fold its result into that brief — the wait YIELDS if the user writes (so the c
 live) and you are notified when it finishes; or do other work meanwhile. Pick its "workflow" for \
 that step's purpose (or omit for the default, or "generate" to DRAFT one when none fits — only if \
 that capability is enabled); give a self-contained "prompt"; "turns" bounds it (default: half your \
-remaining). Unlike a plain workflow step it runs on its own context window + pattern."""),
+remaining). Unlike a plain workflow step it runs on its own context window + pattern; it runs \
+on the routine's MAIN model unless `model` picks a role or a catalog model for it."""),
     (("detach",), """- detach: start a LONG background task that OUTLIVES this reply — for a \
 big, self-contained job (a \
 large scrape, a bulk conversion, a slow build) you want to kick off and keep chatting around. \
@@ -233,6 +236,9 @@ name a real routine; `split` is the subset that fires once per pass of the two-p
 (every member's ingest pass first, then the split members' outbound pass — each split run is \
 told its half via a `phase` boot param). The routines page manages the same store — this is it, \
 reachable from chat. Available only inside a conversation."""),
+    (("list_models",), """- list_models: the model catalog + this run's resolved role \
+bindings (main / tool_call / uncensored), read-only — consult it BEFORE setting a `model` \
+override on llm/spawn/subtask so the name you pass is one the catalog actually carries."""),
     (("subruns",), """- subruns: a status table of your sub-workflows (state, turns, \
 elapsed)."""),
     (("kill", "wait"), """- kill: terminate sub-workflow "n". wait: block until sub-workflow \

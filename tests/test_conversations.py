@@ -587,13 +587,13 @@ def test_model_change_refuses_impossible_window(client):
     _tiny_window_model(server)
     slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
     r = c.patch(f"/api/conversations/{slug}",
-                json={"models": {"main": "tiny", "subroutine": "tiny", "tool_call": "tiny"}})
+                json={"models": {"main": "tiny", "tool_call": "tiny"}})
     assert r.status_code == 400
     assert "cannot run a single turn" in r.json()["detail"]
     raw = yaml.safe_load((server.conversations_home / slug / "routine.yaml").read_text())
     assert "models" not in raw                     # nothing landed on the config
     ok = c.patch(f"/api/conversations/{slug}",
-                 json={"models": {"main": "m", "subroutine": "m", "tool_call": "m"}})
+                 json={"models": {"main": "m", "tool_call": "m"}})
     assert ok.status_code == 200
 
 

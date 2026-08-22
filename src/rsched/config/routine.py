@@ -28,7 +28,7 @@ from .base import (
 
 
 class RoutineConfig(_Config):
-    """One routine's `routine.yaml`: schedule, models (main/subroutine/tool_call/uncensored),
+    """One routine's `routine.yaml`: schedule, models (main/tool_call/uncensored),
     budgets, held permissions, held general rules, filesystem roots, and retention. The
     routine's recipe lives next to it as `main.md` + `stages/`; the rules it practises are
     library slugs in `rules:`. (The instruction is a transient compile seed — decomposed
@@ -62,7 +62,7 @@ class RoutineConfig(_Config):
     # a normal routine. A DECLARED marker so the guards key off the kind instead of a slug
     # hardcoded across the web layer.
     kind: BlankableStr = ""
-    # Role → catalog model NAME (main/subroutine/tool_call/uncensored). A role left unset
+    # Role → catalog model NAME (main/tool_call/uncensored). A role left unset
     # falls back to the server system_model. Resolved live via EndpointRegistry, so editing
     # a catalog model updates every routine that names it.
     models: dict[str, str] = Field(default_factory=dict)
@@ -412,7 +412,11 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
         problems.append("description is empty — every routine needs a one-line "
                         "description (shown in the UI)")
     for kind in [k for k in cfg.models if k not in MODEL_KINDS]:
-        problems.append(f"models.{kind}: unknown model kind (expected one of {MODEL_KINDS})")
+        hint = (" — the subroutine role is retired: children run the routine's MAIN model "
+                "by default (a call overrides per child); remove this key"
+                if kind == "subroutine" else "")
+        problems.append(f"models.{kind}: unknown model kind "
+                        f"(expected one of {MODEL_KINDS}){hint}")
         del cfg.models[kind]
     from ..oauth.providers import PROVIDERS  # function-level: oauth imports secrets, not config
     for prov in [p for p in cfg.connections if p not in PROVIDERS]:

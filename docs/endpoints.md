@@ -43,10 +43,11 @@ OpenAI chat-completions dialect, cloud or local.
    many models with different windows and vision support — add one catalog entry per model.
 5. **Point roles at models.** Set the server-wide **system model** (used only for setup-time
    work: routine creation and workflow generation) by picking a catalog model, and per
-   routine the model roles — **main** (the orchestrator loop), **subroutine** (spawned
-   children), **tool_call** (the `llm` action), and the optional **uncensored** (a refused
-   `llm` tool-call is re-referred here) — on the routine's page, each a catalog model name.
-   main/subroutine/tool_call fall back to the system model when left unset; **uncensored has no
+   routine the model roles — **main** (the orchestrator loop; spawned children run it by
+   default, and a call may override per child), **tool_call** (the `llm` action), and the
+   optional **uncensored** (a refused `llm` tool-call is re-referred here) — on the
+   routine's page, each a catalog model name.
+   main/tool_call fall back to the system model when left unset; **uncensored has no
    fallback** — leave it unset and the routine never refers. See *Refusal referral* below.
 
 ## Adding endpoints + models (config file)
@@ -280,7 +281,7 @@ endpoints:
 
 ## Refusal referral (the `uncensored` model role)
 
-A routine may configure a fourth model role, **`uncensored`**, alongside main / subroutine /
+A routine may configure a third model role, **`uncensored`**, alongside main /
 tool_call. When the routine's **tool_call** model (the `llm` action) replies with a *content
 refusal* (it declines the request in free text — "I can't help with that…"), the engine
 re-issues the **same** prompt to the routine's `uncensored` model and returns that answer
@@ -296,7 +297,7 @@ instead, with `referred: true` on the observation.
 - **Typical wiring:** point `uncensored` at a Nano-GPT abliterated model (above), keep
   `tool_call` on your normal model. Requests the normal model refuses get answered by the
   abliterated one; everything else stays on the normal model.
-- **Scope: the `llm` tool-call AND the agent loops** (main orchestrator + subroutine). In a
+- **Scope: the `llm` tool-call AND the agent loops** (the orchestrator, children included). In a
   loop, a turn is a schema-constrained *action*, so a refusal shows up in one of two shapes:
   a free-text reply that fails to parse as an action **and** reads as a decline, or a
   **classifier refusal** — `stop_reason: "refusal"` / `"content_filter"` on the completion

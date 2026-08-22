@@ -136,12 +136,13 @@ is auditable), plus `fallbacks:` — the ordered FAILOVER chain (catalog names, 
 Endpoints hold only transport + auth + those DEFAULTS; `multimodal` is NOT on the endpoint (one
 endpoint serves many models with different windows and vision support). Each **routine
 references models BY NAME** (`routine.yaml` `models:` maps a role → catalog name): `main` (the
-loop), `subroutine` (a spawned child's main), `tool_call` (the `llm` action), optional
+loop — and every spawned child's default), `tool_call` (the `llm` action), optional
 `uncensored`. A role left unset falls back to the server's single `system_model` (also a catalog
 name) — the ONE model for pre-routine machine work (the clarify flow + workflow
-generation/suggestion). A single `llm`/`subtask` call may override its role per call
-(`model: main|subroutine|tool_call|uncensored`, D81 — role names, never catalog names; an
-unconfigured `uncensored` is rejected with a teaching note). `EndpointRegistry.resolve(name)` /
+generation/suggestion). A single `llm`/`spawn`/`subtask` call may override its model per call
+(`model:` a role — main|tool_call|uncensored — or a CATALOG model name; D81, extended by
+the 2026-08-22 order retiring the subroutine role. The `list_models` action shows the
+catalog; an unconfigured `uncensored` or an unknown name is rejected with a teaching note). `EndpointRegistry.resolve(name)` /
 `.for_model(kind, routine.models)` / `.for_system()` produce a RESOLVED `ModelRef` (endpoint,
 model id, effort + the filled-in multimodal/context_chars/temperature/max_tokens) — the runtime
 handle, no longer parsed from yaml. `supports_media(mime, *, multimodal)` and compaction
@@ -241,7 +242,7 @@ mid-run: subtask/spawn materialization, gated in-run workflow generation, `read_
 and the capabilities digest's catalog listing):
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
-  main / subroutine / tool_call / uncensored), `connections:` (provider → account label — OAuth
+  main / tool_call / uncensored), `connections:` (provider → account label — OAuth
   connection bindings, a resource like models; see OAuth connections above),
   `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: {actions, utils,
   confirm, runs, workflows} — both user-changeable only, side by side on the routine page with cascades between

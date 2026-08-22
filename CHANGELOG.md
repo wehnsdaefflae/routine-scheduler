@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.212.0] — 2026-08-22
+
+### Changed
+- **The per-routine `subroutine` model role is retired (user order, 2026-08-22).**
+  Spawned/subtask children now run the routine's **MAIN** model by default — a child
+  continues the same routine's work, so it runs on the same model unless the call says
+  otherwise. The `model` field on `llm`/`spawn`/`subtask` takes a ROLE (`main`,
+  `tool_call`, `uncensored`) **or a catalog model NAME**; an unknown value is a teaching
+  rejection naming the real catalog, validated before any child is built (spawn now
+  pre-validates too — it never did). `MODEL_KINDS` shrinks to main/tool_call/uncensored
+  across config, the mid-run model switch, the web APIs, and the routine/conversation
+  editors; a leftover `models.subroutine` yaml key still loads and surfaces as an
+  advisory config problem telling the user to remove it.
+
+### Added
+- **`list_models` action** — read-only model discovery, available on EVERY turn (it
+  joins ALWAYS_KINDS: the override is only usable where the run can see the catalog):
+  the run's resolved role bindings plus every catalog model a `model` override may name
+  (endpoint, provider id, multimodal, context, effort, fallbacks) — a catalog row that
+  fails to resolve surfaces as its own error line instead of vanishing.
+
 ## [0.211.0] — 2026-08-22
 
 ### Added

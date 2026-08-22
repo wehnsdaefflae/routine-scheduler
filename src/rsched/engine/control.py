@@ -100,7 +100,7 @@ def apply_model_switch(loop) -> None:
     loop._last_switch_ts = str(sw["ts"])
     _mark_applied(loop, "switch_model", str(sw["ts"]))
     applied = []
-    for kind in ("main", "subroutine", "tool_call"):
+    for kind in ("main", "tool_call"):
         name = sw.get(kind)   # a catalog model NAME; roles re-resolve every turn via for_model
         if isinstance(name, str) and name in ctx.server.models:
             ctx.routine.models[kind] = name

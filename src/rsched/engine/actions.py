@@ -19,14 +19,16 @@ KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_
          "script",
          "llm", "spawn", "subtask", "detach",
          "schedule_run", "create_routine", "manage_group",
-         "subruns", "kill", "wait", "ask_user", "report", "finish")
+         "list_models", "subruns", "kill", "wait", "ask_user", "report", "finish")
 
 # Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist: `finish`
 # so a run can always end, and `report` so any routine can always raise work that is not its
 # own task — unaddressed for triage, or addressed to the routine that owns it. Neither is a
 # GATED_KIND, so both also pass the capability layer for every routine. Routing only works if
-# the channel is present at the moment the run notices the problem.
-ALWAYS_KINDS = ("finish", "report")
+# the channel is present at the moment the run notices the problem. `list_models` rides along
+# because the per-call `model` override is only usable where the run can SEE the catalog —
+# read-only discovery of user config, never a mutation, so gating it would only cost turns.
+ALWAYS_KINDS = ("finish", "report", "list_models")
 
 READ_PATHS_MAX = 8
 
@@ -200,12 +202,12 @@ ACTION_SCHEMA: dict = {
         "response_schema": {"type": "object",
                             "description": "llm: optional JSON schema constraining the reply"},
         "model": {"type": "string",
-                  "enum": ["main", "subroutine", "tool_call", "uncensored"],
-                  "description": "llm/subtask: OPTIONAL model-ROLE override — run this call on "
-                                 "the named role's configured model instead of the default "
-                                 "(llm → tool_call, subtask → subroutine). 'uncensored' targets "
-                                 "the routine's uncensored model for a step the default model "
-                                 "refuses (rejected if that role is unconfigured)"},
+                  "description": "llm/spawn/subtask: OPTIONAL model override — a ROLE (main, "
+                                 "tool_call; uncensored targets the routine's uncensored model "
+                                 "for a step the default refuses, rejected if unconfigured) OR "
+                                 "a catalog model NAME from `list_models`. Defaults: children "
+                                 "(spawn/subtask) run the routine's MAIN model, llm runs "
+                                 "tool_call"},
         "workflow": {"type": "string",
                      "description": "spawn/subtask/detach: library workflow slug for the child "
                                     "(default general-task) — pick the pattern matching its "
@@ -303,6 +305,7 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
 # level); an abstract error alone often doesn't correct them — a concrete shape does.
 KIND_EXAMPLES: dict[str, dict] = {
     "util": {"say": "<why this util now>", "kind": "util", "name": "list"},
+    "list_models": {"say": "<why model discovery now>", "kind": "list_models"},
     "script": {"say": "<why this deterministic step now>", "kind": "script",
                "name": "poll-inbox", "args": ["--json"]},
     "write_util": {"say": "<why a new util>", "kind": "write_util", "name": "my-util",
@@ -380,9 +383,10 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "read_rule": (("name",), ()),
     "write_rule": (("name",), ("content", "anchor", "replacement", "all")),
     "llm": (("prompt",), ("system", "response_schema", "model")),
-    "spawn": (("prompt",), ("workflow", "label")),
+    "spawn": (("prompt",), ("workflow", "label", "model")),
     "subtask": (("prompt",), ("workflow", "label", "turns", "model")),
     "detach": (("prompt",), ("workflow", "label")),
+    "list_models": ((), ()),
     "subruns": ((), ()),
     "kill": (("n",), ()),
     "wait": ((), ("n", "all", "timeout_s")),
@@ -513,12 +517,9 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     if kind == "create_routine" and not is_slug(str(obj.get("target") or "")):
         problems.append("kind=create_routine requires 'target' to be a kebab-case slug for the "
                         "new routine")
-    if kind in ("llm", "subtask") and obj.get("model") is not None:
-        roles = ("main", "subroutine", "tool_call", "uncensored")
-        if str(obj["model"]) not in roles:
-            problems.append(f"kind={kind}: 'model' names a model ROLE — one of "
-                            f"{list(roles)} — never a catalog model name; the role's "
-                            "configured model is what runs")
+    # A `model` override (llm/spawn/subtask) is validated at DISPATCH, not here: it may
+    # name a role OR a catalog model, and only the executor sees the catalog — its
+    # teaching rejection lists the real alternatives (list_models shows the same).
     if kind == "manage_group":
         verb = str(obj.get("verb") or "").strip()
         verbs = ("list", "create", "update", "delete", "set-default", "run")

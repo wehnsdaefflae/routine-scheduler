@@ -156,7 +156,7 @@ async def create_conversation(request: Request, text: Annotated[str, Form()] = "
         problem = model_window_problem(server, model.strip())
         if problem:   # R112/R128: refuse a model the harness mathematically cannot run
             raise HTTPException(400, problem)
-        models = {k: model.strip() for k in ("main", "subroutine", "tool_call")}
+        models = {k: model.strip() for k in ("main", "tool_call")}
     server.conversations_home.mkdir(parents=True, exist_ok=True)
     slug = conv_mod.new_slug(server.conversations_home)
     try:

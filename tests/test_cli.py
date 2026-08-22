@@ -120,10 +120,8 @@ def test_render_unknown_event_type_is_silent():
 
 
 def test_parse_model_overrides_accepts_every_role():
-    out = _parse_model_overrides(["main=opus", "subroutine=cheap", "tool_call=fast",
-                                  "uncensored=raw"])
-    assert out == {"main": "opus", "subroutine": "cheap", "tool_call": "fast",
-                   "uncensored": "raw"}
+    out = _parse_model_overrides(["main=opus", "tool_call=fast", "uncensored=raw"])
+    assert out == {"main": "opus", "tool_call": "fast", "uncensored": "raw"}
     assert _parse_model_overrides([]) == {}
     assert _parse_model_overrides(None) == {}
     # a repeated role: the last value wins (argparse append order)

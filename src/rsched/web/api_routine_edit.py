@@ -160,7 +160,7 @@ class RoutinePatch(BaseModel):
     enabled: bool | None = None
     schedule: dict | None = None            # {"friendly":…, "catchup":…} (cron built server-side)
     budgets: dict | None = None
-    models: dict | None = None              # {main|subroutine|tool_call|uncensored: catalog name}
+    models: dict | None = None              # {main|tool_call|uncensored: catalog name}
     connections: dict | None = None         # {provider: account-label} OAuth connection bindings
     grants: dict | None = None              # {entity-id: bool} decision rows (secret exposure
     #                                          + deny-forever tombstones — entities.py)
