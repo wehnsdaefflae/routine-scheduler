@@ -357,9 +357,17 @@ export function createTranscript(container, opts = {}) {
       } else if (p.mode === "llm-history") {
         text = `— context archived: ${p.elided_messages} messages → history/ ` +
                `(${p.history_files} files, browsable in the rail's files card), ${span(p)} —`;
-      } else {
+      } else if (p.before_chars != null) {
         text = `— context compacted: ` +
                `${p.elided_messages ? `${p.elided_messages} messages digested, ` : ""}${span(p)} —`;
+      } else {
+        // archival failed AND the digest had nothing to elide — reason-only record
+        text = `— compaction: nothing elided this pass —`;
+      }
+      if (p.archival_degraded) {
+        // a failed LLM archival is a designed degrade (the digest took the pass), not a
+        // run error (F376) — note it on the neutral line instead of a red error card
+        text += ` (history archival degraded: ${p.archival_degraded})`;
       }
       return el("div", { class: "ev compaction" }, text);
     },

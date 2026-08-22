@@ -104,6 +104,10 @@ def test_apply_model_switch(make_routine):
         "main": "ghost", "ts": "t2"}})                        # unknown catalog name ignored
     apply_model_switch(loop)
     assert ctx.routine.models["main"] == "other"
+    atomic_write_json(run_dir / "control.json", {"switch_model": {
+        "uncensored": "big", "ts": "t3"}})                    # honeypot role switches live too
+    apply_model_switch(loop)
+    assert ctx.routine.models["uncensored"] == "big"
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert any(e["type"] == "user_injection" and "model switched" in e["payload"]["text"] for e in events)
 
@@ -2108,6 +2112,46 @@ def test_compaction_antithrash(make_routine, monkeypatch):
     loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]
     compact_if_needed(loop, None, _Tiny())
     assert not attempts, "no meaningful growth since the last archive → skip"
+
+
+def test_failed_archival_degrades_without_error_card(make_routine, monkeypatch):
+    """F376: a failed LLM history-archival is a DESIGNED degrade — the deterministic digest
+    takes the pass and the reason rides the neutral `compaction` event; no red `error`
+    event may be emitted for it."""
+    from rsched.config import load_routine
+    from rsched.engine import completion as completion_mod
+    from rsched.engine.completion import compact_if_needed
+    from rsched.engine.history import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
+    from rsched.engine.loop import EngineLoop
+    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.transcript import Transcript, read_events
+
+    d = make_routine(slug="cmpdeg")
+    run_dir = d / "runs" / TS
+    run_dir.mkdir(parents=True)
+    cfg, _ = load_routine(d)
+    ctx = RunContext(routine=cfg, server=_server(d), registry=None, run_ts=TS, run_dir=run_dir,
+                     transcript=Transcript(run_dir / "transcript.jsonl"),
+                     budgets=Budgets.from_config(cfg.budgets))
+    loop = EngineLoop(ctx, "## Run flow", "instr")
+
+    def _boom(*a, **k):
+        raise RuntimeError("claude-cli: call timed out after 599s")
+    monkeypatch.setattr(completion_mod, "compact_to_history", _boom)
+
+    class _Tiny:
+        context_chars = 1000
+        max_tokens = 0
+
+    msg = {"role": "user", "content": "x" * 500}
+    loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]
+    compact_if_needed(loop, None, _Tiny())
+    assert len(loop.messages) == KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 1   # digest still landed
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert not [e for e in events if e["type"] == "error"], \
+        "a designed archival degrade must not raise a red error card"
+    comps = [e for e in events if e["type"] == "compaction"]
+    assert comps and comps[-1]["payload"]["archival_degraded"].startswith("claude-cli")
 
 
 def test_edit_file_replaces_anchor_in_place(make_routine, scripted):

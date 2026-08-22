@@ -339,7 +339,7 @@ def _set_pause(request: Request, run_id: str, value: bool) -> dict:
 
 class ModelSwitch(BaseModel):
     model: str           # a catalog model name
-    kind: str = "main"   # main | tool_call
+    kind: str = "main"   # main | tool_call | uncensored (the honeypot role)
 
 
 @router.post("/runs/{run_id}/model")
@@ -351,12 +351,21 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
     server = request.app.state.server
     if body.model not in server.models:
         raise HTTPException(400, f"unknown model {body.model!r} — add it to the catalog first")
-    if body.kind not in ("main", "tool_call"):
-        raise HTTPException(400, "kind must be main|tool_call")
+    if body.kind not in ("main", "tool_call", "uncensored"):
+        raise HTTPException(400, "kind must be main|tool_call|uncensored")
     st = read_json(run_dir / "status.json")
     if (st.get("state") if isinstance(st, dict) else None) in TERMINAL_STATES:
         raise HTTPException(409, "run is not active; nothing to switch")
-    merge_control(run_dir, {"switch_model": {body.kind: body.model, "ts": now_iso()}})
+    # merge per-role into any PENDING switch (two quick per-role POSTs must not race:
+    # the dict is replaced wholesale, so without the fold the second would drop the
+    # first before the engine drains it at the turn boundary; re-applying an already
+    # -set role there is an idempotent assignment, so the refreshed ts is harmless)
+    ctrl = read_json(run_dir / "control.json")
+    pending = ctrl.get("switch_model") if isinstance(ctrl, dict) else None
+    sw = dict(pending) if isinstance(pending, dict) else {}
+    sw[body.kind] = body.model
+    sw["ts"] = now_iso()
+    merge_control(run_dir, {"switch_model": sw})
     return {"ok": True, "switch": f"{body.kind} → {body.model}"}
 
 

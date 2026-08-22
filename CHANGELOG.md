@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.218.0] — 2026-08-22
+
+### Added
+- **The honeypot (uncensored) role is switchable mid-conversation.** The conversation
+  header's model line gains a honeypot picker beside main; `POST /runs/{id}/model` accepts
+  `kind: uncensored` and the turn-boundary apply (`apply_model_switch`) honours it. The
+  endpoint now MERGES per-role into any pending switch — two quick per-role POSTs used to
+  race, the second wiping the first's control signal before the engine drained it. The
+  switcher PATCHes the FULL role map so switching one role never drops the other. The
+  honeypot is an ordinary model to the engine — a plain completion call; the refusal
+  machinery only fires when the role is set, so it must be reachable mid-conversation,
+  not only at create time (completes 0.217.0).
+
+### Fixed
+- **A failed LLM history-archival no longer shows a red `error (compaction)` card (F376).**
+  The deterministic digest taking the pass is a DESIGNED degrade: the reason now rides the
+  neutral `compaction` event as `archival_degraded` (rendered inline on the compaction
+  line), never as an error event. And the archival timeout scales with the middle being
+  read — 180s base + 60s per 200k chars, capped at the endpoint default (600s); the fixed
+  180s died on a 1.25M-char middle every single time while the operator saw a scary card.
+
 ## [0.217.0] — 2026-08-22
 
 ### Fixed

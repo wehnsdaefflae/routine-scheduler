@@ -531,11 +531,15 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     except Exception:
         pass
     cinfo = None
+    degraded = None
     try:
         result = compact_to_history(loop.messages, loop.turn_records, c_endpoint, c_ref,
                                     ctx.run_dir, loop._hist_rel)
     except Exception as exc:
-        ctx.transcript.event("error", {"where": "compaction", "message": str(exc)[:300]})
+        # A failed archival is a DESIGNED degrade (the deterministic digest takes the
+        # pass), not a run error — a red error card for it alarmed operators (F376).
+        # The reason stays visible: it rides on the compaction event below.
+        degraded = str(exc)[:300]
         result = None
     if result is not None:
         loop.messages, cinfo = result
@@ -544,11 +548,16 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     else:
         loop.messages, cinfo = maybe_compact(loop.messages, loop.turn_records,
                                              ref.context_chars)
+        if cinfo is not None and degraded:
+            cinfo["archival_degraded"] = degraded
     if cinfo:
         if cinfo.get("usage"):
             ctx.add_usage(cinfo["usage"])   # the archival call itself now hits the books
         loop._last_compact_after = messages_size(loop.messages)
         ctx.transcript.event("compaction", cinfo)
+    elif degraded:
+        # digest found nothing to elide either — the failed archival must still be visible
+        ctx.transcript.event("compaction", {"archival_degraded": degraded})
 
 
 def apply_media_fallback(loop, exc: EndpointError) -> bool:

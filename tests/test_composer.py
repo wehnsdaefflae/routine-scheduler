@@ -425,6 +425,42 @@ def test_compact_to_history_reports_its_own_usage(tmp_path):
     assert info["usage"] == {"in": 1, "out": 1} and info["model"] == "e/m"
 
 
+def test_compact_to_history_timeout_scales_with_middle_size(tmp_path):
+    """F376: the archival call's timeout grows with the middle being read — a fixed 180s
+    died on a 1.25M-char middle while the digest fallback took every pass. 180s base
+    + 60s/200k chars, capped at the endpoint default (600s)."""
+    from typing import ClassVar
+
+    from rsched.config import ModelRef
+    from rsched.engine.history import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history
+
+    seen = []
+
+    class _Comp:
+        parsed: ClassVar = {"files": [{"name": "n", "content": "c"}], "index": "- n: c"}
+        text, usage = "", {}
+
+    class _Ep:
+        def complete(self, messages, **k):
+            seen.append(k["timeout"])
+            return _Comp()
+
+    def _msgs(middle_chars):
+        head = [{"role": "system", "content": "S"}] * KEEP_HEAD_MSGS
+        tail = [{"role": "user", "content": "t"}] * KEEP_TAIL_MSGS
+        return [*head, {"role": "assistant", "content": "x" * middle_chars}, *tail]
+
+    run_dir = tmp_path / "runs" / "20260710-070000"
+    run_dir.mkdir(parents=True)
+    for middle_chars in (1_000, 450_000, 1_300_000, 2_000_000):
+        compact_to_history(_msgs(middle_chars), [], _Ep(), ModelRef("e", "m"),
+                           run_dir, "history")
+    assert seen[0] == 180                     # small middle keeps the old base
+    assert seen[1] == 300                     # ~450k chars → 180 + 2*60
+    assert seen[2] == 540                     # 1.3M chars (the F376 specimen) → 180 + 6*60
+    assert seen[3] == 600                     # 2M chars → capped at the endpoint default
+
+
 def test_prior_usage_sums_all_legs():
     """Resume accounting: every usage-carrying event across the whole transcript counts —
     actions, llm subcalls, compactions — so status.json shows the run's true total."""

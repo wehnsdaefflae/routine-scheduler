@@ -269,11 +269,15 @@ def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint,
     existing_note = ("\nThere is already a history index — KEEP its entries and add the new "
                      f"files to it:\n---\n{prior}\n---\n" if prior else "\n")
     convo = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in middle)
+    # Archival time scales with the middle being read: a fixed 180s died on a 1.25M-char
+    # middle (F376) while the digest fallback took the pass every time. 180s base + 60s
+    # per 200k chars, capped at the endpoint default (600s) so a hung CLI still dies.
+    timeout = min(600, 180 + 60 * (len(convo) // 200_000))
     comp = endpoint.complete([{"role": "user", "content":
                                _HISTORY_PROMPT.format(existing_note=existing_note, convo=convo)}],
                              model=ref.model, schema=_HISTORY_SCHEMA, effort=ref.effort,
                              temperature=ref.temperature, max_tokens=ref.max_tokens,
-                             timeout=180,
+                             timeout=timeout,
                              purpose="Compaction · archival", kind="compaction")
     if comp.parsed is not None:
         data = comp.parsed

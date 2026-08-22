@@ -576,6 +576,15 @@ def test_model_switch_endpoint(client):
     ctrl = read_json(run_dir / "control.json")
     assert ctrl["pause"] is True                                   # pause preserved
     assert ctrl["switch_model"]["main"] == "m" and ctrl["switch_model"]["ts"]
+    # the honeypot (uncensored) role is switchable live too — the refusal machinery
+    # only fires when it is set, so it must be reachable mid-conversation, not only at create
+    r = c.post(f"/api/runs/{rid}/model", json={"model": "m", "kind": "uncensored"})
+    assert r.status_code == 200 and "uncensored" in r.json()["switch"]
+    ctrl = read_json(run_dir / "control.json")
+    assert ctrl["switch_model"]["uncensored"] == "m"
+    assert ctrl["switch_model"]["main"] == "m"   # per-role merge: the pending main switch survives
+    assert c.post(f"/api/runs/{rid}/model",
+                  json={"model": "m", "kind": "bogus"}).status_code == 400
     atomic_write_json(run_dir / "status.json", {"run_id": rid, "state": "finished"})
     assert c.post(f"/api/runs/{rid}/model", json={"model": "m"}).status_code == 409
 
