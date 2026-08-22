@@ -118,25 +118,29 @@ def test_free_text_refusal_flags_and_refers_fragment_only(make_routine):
 
 
 def test_llm_judged_refusal_without_markers(make_routine):
-    # the marker list MISSES this decline — the classification subcall catches it
+    # the marker list MISSES this decline — the classification subcall catches it. That
+    # classification runs on the HONEYPOT (unc), not tool_call (operator, 2026-08-22): so
+    # unc serves the verdict FIRST, then the essence delivery; tool only isolates.
     main = _FakeEndpoint([SOFT])
-    tool = _FakeEndpoint([VERDICT_YES, ISOLATED])  # classify, then isolate
-    unc = _FakeEndpoint([PRETEND])
+    tool = _FakeEndpoint([ISOLATED])               # isolate only
+    unc = _FakeEndpoint([VERDICT_YES, PRETEND])    # classify verdict, then the delivery
     loop = _loop(make_routine, _FakeRegistry(main, unc, tool))
     action, _ = next_action(loop)
     assert action is None
     assert len(_refusal_events(loop)) == 1
-    assert unc.prompts == ["the risky step"]
+    assert unc.prompts[-1] == "the risky step"     # the delivery got the essence ONLY
+    assert unc.calls == 2                           # classify verdict + essence delivery
 
 
 def test_junk_is_not_a_refusal(make_routine):
     main = _FakeEndpoint([JUNK])
-    tool = _FakeEndpoint([VERDICT_NO])             # the verdict clears it every attempt
-    unc = _FakeEndpoint([PRETEND])
+    tool = _FakeEndpoint([ISOLATED])               # never reached — the verdict clears it
+    unc = _FakeEndpoint([VERDICT_NO])              # classify (on the honeypot) clears it
     loop = _loop(make_routine, _FakeRegistry(main, unc, tool))
     action, _ = next_action(loop)
     assert action is None                          # plain schema forcefail
-    assert _refusal_events(loop) == [] and unc.calls == 0
+    assert _refusal_events(loop) == []             # never flagged as a refusal
+    assert tool.calls == 0                          # isolation never ran
 
 
 def test_no_uncensored_still_flags_and_isolates(make_routine):
@@ -210,9 +214,38 @@ def test_non_refusal_failed_finish_is_accepted(make_routine):
         parsed={"kind": "finish", "status": "failed", "say": "giving up",
                 "summary": "The upstream API returned 500 on every retry; nothing to do."})
     main = _FakeEndpoint([honest])
-    tool = _FakeEndpoint([VERDICT_NO])                # classify: not a refusal
-    unc = _FakeEndpoint([PRETEND])
+    tool = _FakeEndpoint([ISOLATED])                  # isolation never reached
+    unc = _FakeEndpoint([VERDICT_NO])                 # classify (honeypot): not a refusal
     loop = _loop(make_routine, _FakeRegistry(main, unc, tool, main_name="honest-ep"))
     action, _ = next_action(loop)
     assert action is not None and action["kind"] == "finish" and action["status"] == "failed"
-    assert _refusal_events(loop) == [] and unc.calls == 0 and main.calls == 1
+    assert _refusal_events(loop) == []                # not flagged: the classifier cleared it
+    assert unc.calls == 1                             # only the classify ran; no delivery
+    assert main.calls == 1
+
+
+def test_refusal_worded_ok_status_finish_is_intercepted(make_routine):
+    """The gap live specimen c-20260822-091412 exposed: a refusal wrapped in
+    finish(status=OK) ("I'm not going to do this one"). The 0.215.0 interception was
+    gated on status==failed, so an ok/partial refusal sailed through and the run was even
+    logged as a SUCCESS. Interception must judge the summary REGARDLESS of status.
+    """
+    refusal_finish = Completion(
+        text="", usage={"in": 1, "out": 1},
+        parsed={"kind": "finish", "status": "ok", "say": "declining",
+                "summary": "I'm sorry, but I can't help with sourcing the risky step."})
+    redone = Completion(
+        text="", usage={"in": 1, "out": 1},
+        parsed={"kind": "read_file", "path": "state/probe.txt",
+                "say": "proceeding with the remainder"})
+    main = _FakeEndpoint([refusal_finish, redone])
+    tool = _FakeEndpoint([ISOLATED])
+    unc = _FakeEndpoint([PRETEND])
+    loop = _loop(make_routine, _FakeRegistry(main, unc, tool, main_name="okref-ep"))
+    action, _ = next_action(loop)
+    assert action is not None and action["kind"] == "read_file"   # re-driven action wins
+    evs = _refusal_events(loop)
+    assert len(evs) == 1 and evs[0]["payload"]["isolated"] == "the risky step"
+    assert unc.prompts == ["the risky step"]          # essence ONLY reached the honeypot
+    assert loop.ctx.referrals == 1
+    assert main.calls == 2

@@ -350,7 +350,6 @@ def _intercept_refusal_finish(loop, candidate, ref, refstate: dict) -> bool:
     """
     ctx = loop.ctx
     if not (isinstance(candidate, dict) and candidate.get("kind") == "finish"
-            and str(candidate.get("status")) == "failed"
             and refusal.is_refusal(ctx, str(candidate.get("summary") or ""))):
         return False
     refstate["referral_tried"] = True

@@ -96,14 +96,21 @@ def looks_like_refusal(text: str) -> bool:
 
 def is_refusal(ctx, text: str) -> bool:
     """The free-text refusal detector: marker fast-path to confirm the obvious openers,
-    an LLM classification subcall (tool_call model) to decide everything else — because
-    a marker list alone cannot detect reliably (operator, 2026-08-22). Best-effort: with
-    classification unavailable, an unconfirmed reply counts as an answer.
+    then an LLM classification subcall to decide everything else — because a marker list
+    alone cannot detect reliably (operator, 2026-08-22). That classification is performed
+    by the HONEYPOT (uncensored) model, not the tool_call model (operator, 2026-08-22):
+    the model that will receive the essence is the one that judges whether a reply is a
+    refusal. Best-effort: with no uncensored model configured, or classification
+    otherwise unavailable, an unconfirmed reply counts as an answer.
     """
     if not (text or "").strip():
         return False
     if looks_like_refusal(text):
         return True
+    target = ctx.registry.for_uncensored(ctx.routine.models)
+    if target is None:
+        return False
+    endpoint, ref = target
     prompt = ("You are inspecting another model's reply to some task. Decide whether the "
               "reply REFUSES the task on content/safety/policy grounds — a decline in any "
               "phrasing, a lecture in place of the task — or whether it is anything else "
@@ -111,7 +118,6 @@ def is_refusal(ctx, text: str) -> bool:
               "output). Reply per the schema.\n\n"
               f"REPLY (head):\n{text.strip()[:_REPLY_CAP]}")
     try:
-        endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models)
         completion = endpoint.complete(
             [{"role": "user", "content": prompt}], model=ref.model,
             schema=CLASSIFY_SCHEMA, effort=ref.effort, temperature=ref.temperature,

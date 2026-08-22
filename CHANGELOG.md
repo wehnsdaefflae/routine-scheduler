@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.216.0] — 2026-08-22
+
+### Fixed
+- **A refusal wrapped in `finish(status=ok)` (or `partial`) is now caught too (live
+  specimen `c-20260822-091412`).** 0.215.0's `_intercept_refusal_finish` was gated on
+  `status == "failed"`, so a model that declined via a *successful*-looking finish
+  ("I'm not going to do this one") sailed straight through — and the run was even logged
+  as a SUCCESS with `referrals: 0` and no `refusal` event. The interception now judges
+  the finish summary through the refusal classifier **regardless of status** (ok /
+  partial / failed); an honest completion or failure report still fails the classifier
+  and is accepted unchanged. Same downstream handling as 0.215.0: flag → isolate essence
+  → deliver to the honeypot → re-drive the turn on the main model with the remainder.
+
 ## [0.215.0] — 2026-08-22
 
 ### Fixed

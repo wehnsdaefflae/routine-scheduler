@@ -77,12 +77,13 @@ def test_schema_accepts_roles_and_catalog_names():
 def test_llm_role_override_resolves_that_role():
     reg = _Registry()
     obs = do_llm({"prompt": "p", "model": "main", "say": "s"}, _ctx(reg))
-    # roles[0] is the reply's serving role; a free-text reply now also costs one
-    # tool_call refusal-classify subcall (engine/refusal.py), so the list grew
-    assert obs["reply"] == "reply" and reg.roles[0] == "main"
+    # roles[0] is the reply's serving role. The refusal-classify subcall now targets the
+    # HONEYPOT (uncensored, operator 2026-08-22), unconfigured here → no extra role, so
+    # roles is exactly the reply's serving role.
+    assert obs["reply"] == "reply" and reg.roles == ["main"]
     reg2 = _Registry()
     do_llm({"prompt": "p", "say": "s"}, _ctx(reg2))
-    assert reg2.roles[0] == "tool_call"          # default unchanged (+ classify subcall)
+    assert reg2.roles == ["tool_call"]           # default unchanged; no classify (no honeypot)
 
 
 def test_llm_catalog_name_override_resolves_by_name():
@@ -90,7 +91,9 @@ def test_llm_catalog_name_override_resolves_by_name():
     obs = do_llm({"prompt": "p", "model": "glm-5", "say": "s"}, _ctx(reg))
     assert obs["reply"] == "reply"
     assert reg.names == ["glm-5"]
-    assert reg.roles == ["tool_call"]   # only the refusal-classify subcall resolved a role
+    # the refusal-classify subcall now targets the HONEYPOT (uncensored, operator
+    # 2026-08-22), unconfigured in this fixture → no classify call, no role resolved
+    assert reg.roles == []
 
 
 def test_llm_unknown_model_is_a_teaching_error_naming_the_catalog():
