@@ -662,6 +662,23 @@ def test_chat_message_copy_button(ui, ui_page):
     assert "Copy me: the quick brown fox." in got
 
 
+def test_code_fence_copy_button(ui, ui_page):
+    """F385 (operator order 2026-08-23): a fenced code block inside a bubble carries its OWN
+    copy button, and clicking it puts ONLY the fence's source text on the clipboard (the
+    bubble's ⧉ still copies the whole message)."""
+    ui_page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill(
+        "run this:\n```\nsudo apt install cowsay\n```\nthen tell me")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    pre = ui_page.locator(".msg.user").first.locator("pre")
+    pre.hover()
+    pre.locator(".copy-fence").click()
+    got = ui_page.evaluate("navigator.clipboard.readText()")
+    assert got.strip() == "sudo apt install cowsay"
+
+
 def test_typed_body_matches_attachment_dressed_injection(ui, ui_page):
     """R473: the optimistic echo is cleared by comparing typedBody on BOTH sides — the
     injected event text arrives DRESSED (ref line + API-appended attachment block) while

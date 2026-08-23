@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.229.0] — 2026-08-23
+
+### Changed
+- **The chat bubble's ⧉ copy button is mellowed** (operator order 2026-08-23: "visually too
+  strong"). Hovering the bubble now reveals it at half strength (opacity .45, 11.5px) —
+  full contrast only when the pointer is on the button itself or it holds keyboard focus.
+
+### Added
+- **Every fenced code block in a chat bubble carries its own copy button** (operator order
+  2026-08-23). A quiet corner ⧉ inside the `<pre>` copies ONLY that fence's source text —
+  copying one command out of a long reply beats copying the whole message and trimming.
+  Same hover/focus reveal and ✓/✕ feedback as the bubble button (shared `copyBtn`).
+
 ## [0.228.0] — 2026-08-23
 
 ### Added

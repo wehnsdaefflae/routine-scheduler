@@ -33,8 +33,8 @@ export function typedBody(text) {
 // button, visible on hover, that copies the message's SOURCE text (the markdown the
 // author wrote, not the rendered HTML) — feedback ✓ on success, ✕ when the browser
 // denies clipboard access (select-and-copy still works there).
-function copyBtn(getText) {
-  const btn = el("button", { class: "copy-msg", title: "copy message text",
+function copyBtn(getText, cls = "copy-msg", title = "copy message text") {
+  const btn = el("button", { class: cls, title,
     onclick: async () => {
       let mark = "✓";
       try { await navigator.clipboard.writeText(getText()); } catch { mark = "✕"; }
@@ -42,6 +42,18 @@ function copyBtn(getText) {
       setTimeout(() => { btn.textContent = "⧉"; }, 1200);
     } }, "⧉");
   return btn;
+}
+
+// F385 (operator order 2026-08-23): every fenced code block in a bubble gets its OWN quiet
+// copy button — copying one command out of a long reply beats copying the whole message and
+// trimming. It reads the fence's source text; the button sits in the <pre> OUTSIDE the
+// <code>, so the copied text never includes the glyph.
+function fenceBtns(bodyNode) {
+  for (const pre of bodyNode.querySelectorAll("pre")) {
+    const code = pre.querySelector("code");
+    pre.append(copyBtn(() => (code || pre).textContent, "copy-fence", "copy code block"));
+  }
+  return bodyNode;
 }
 
 // A user message may LEAD with the reference line a "refer to" send prepended (rendered as
@@ -59,7 +71,7 @@ function userNode(text, refBtn, attachments, fileUrl) {
   }) : [];
   return el("div", { class: "msg user" },
     ref ? el("div", { class: "reply-ref", title: ref }, "↩ ", ref) : null,
-    el("div", { class: "msg-body" }, md(body)),
+    fenceBtns(el("div", { class: "msg-body" }, md(body))),
     files || (chips.length ? el("div", { class: "msg-attach" }, chips) : null),
     refBtn || null,
     copyBtn(() => body));
@@ -119,7 +131,7 @@ export function createChat(container, opts = {}) {
         el("span", {}, "⤴ this looks like a new topic"),
         opts.onFork ? el("button", { class: "btn small",
           onclick: () => opts.onFork(topic, lastUser) }, `fork: ${topic}`) : null) : null,
-      el("div", { class: "msg-body" }, md(summary || "(no reply text)")),
+      fenceBtns(el("div", { class: "msg-body" }, md(summary || "(no reply text)"))),
       el("div", { class: "msg-meta" },
         p.status && p.status !== "ok" ? el("span", { class: `chip ${p.status}` }, p.status) : null,
         el("span", {}, `${ev.turns ?? "?"} turns`),

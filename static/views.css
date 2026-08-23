@@ -376,11 +376,24 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
    keyboard-focused; ✓/✕ feedback swaps the glyph for a moment after a click. */
 .msg .copy-msg {
   position: absolute; top: 3px; right: 28px; background: none; border: none; cursor: pointer;
-  color: var(--faint); font-size: 12.5px; line-height: 1; padding: 3px 5px;
+  color: var(--faint); font-size: 11.5px; line-height: 1; padding: 3px 5px;
   opacity: 0; transition: opacity 0.12s;
 }
-.msg:hover .copy-msg, .msg .copy-msg:focus-visible { opacity: 1; }
-.msg .copy-msg:hover { color: var(--text); }
+/* mellowed (operator order 2026-08-23): hover reveals it at HALF strength — full contrast
+   only when the pointer is ON the button (or it holds keyboard focus), so it reads as an
+   affordance, not a feature */
+.msg:hover .copy-msg { opacity: .45; }
+.msg .copy-msg:hover, .msg .copy-msg:focus-visible { opacity: .9; color: var(--text); }
+/* F385: per-fence copy — the bubble button's quieter sibling, pinned to the block corner */
+.msg-body pre { position: relative; }
+.msg-body pre .copy-fence {
+  position: absolute; top: 4px; right: 4px; background: none; border: none; cursor: pointer;
+  color: var(--faint); font-size: 11.5px; line-height: 1; padding: 3px 5px;
+  opacity: 0; transition: opacity 0.12s;
+}
+.msg-body pre:hover .copy-fence { opacity: .45; }
+.msg-body pre .copy-fence:hover,
+.msg-body pre .copy-fence:focus-visible { opacity: .9; color: var(--text); }
 .msg.user { align-self: flex-end; background: var(--raised); border-color: var(--line-2); }
 /* F295: the optimistic echo of a just-sent message — below the streamed history, dashed
    until the woken leg's real user_injection event replaces it */
