@@ -36,6 +36,15 @@ services:
       # these binds they land in the container's writable layer and DIE on every recreate.
       - ${RSCHED_HOME:-/home/mark}/conversations:/home/mark/conversations
       - ${RSCHED_HOME:-/home/mark}/background:/home/mark/background
+      # Messenger session stores — the SAME rule. Signal/WhatsApp/Telegram authenticate by a
+      # linked session on disk (no API key), so losing these dirs unlinks the account and the
+      # operator has to re-pair by phone. They are the util sandbox's write target for
+      # SIGNAL_/WHATSAPP_/TELEGRAM_SESSION_DIR, and a routine reaches them through its
+      # fs_write_roots. Bind-mount an EMPTY host dir over a populated container path and you
+      # shadow a live session — copy the data out first.
+      - ${RSCHED_HOME:-/home/mark}/telegram-sessions:/home/mark/telegram-sessions
+      - ${RSCHED_HOME:-/home/mark}/signal-sessions:/home/mark/signal-sessions
+      - ${RSCHED_HOME:-/home/mark}/whatsapp-sessions:/home/mark/whatsapp-sessions
       # The host's timezone, read-only: local times in logs/cron, and server_tz() reads
       # /etc/timezone (the /etc/localtime symlink trick doesn't survive a bind mount).
       - /etc/localtime:/etc/localtime:ro
