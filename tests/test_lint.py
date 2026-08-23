@@ -98,7 +98,8 @@ def test_tags_on_library_elements():
         assert len(d["tags"]) >= 3, (d["slug"], d["tags"])
     assert set(rules["web-research"]["tags"]) >= {"web", "research"}
     perms = {d["slug"]: d for d in library_docs.list_docs(SEED / "permissions")}
-    assert set(perms) == {"util-authoring", "util-removal", "memory", "communication",
+    assert set(perms) == {"util-authoring", "util-revision", "util-removal",
+                          "memory", "communication",
                           "run-history", "shell", "workflow-generation", "background-tasks",
                           "scheduling", "global-utils", "rule-authoring",
                           "remote-machines", "darknet", "outbound-mail",
@@ -108,6 +109,7 @@ def test_tags_on_library_elements():
     # Each act gets its own permission: writing a util adds a capability, removing one takes
     # it away from every caller, and each messenger reaches a different person differently.
     assert perms["util-authoring"]["requires"]["actions"] == ["write_util"]
+    assert perms["util-revision"]["requires"]["actions"] == ["revise_util"]
     assert perms["util-removal"]["requires"]["actions"] == ["remove_util"]
     for channel in ("signal", "telegram", "whatsapp", "zulip"):
         doc = perms[f"messaging-{channel}"]

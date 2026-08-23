@@ -171,20 +171,33 @@ def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_pat
 
 
 def test_floor_keeps_gated_kind_via_default_source_when_doc_predates_it(tmp_path):
-    """Regression (remove_util toggle reverted on save): a gated kind whose permission doc's
-    requires: predates the kind — util-authoring.md was seeded before remove_util existed —
-    must still persist when the user EXPLICITLY opts in AND holds the canonical source
-    permission (_DEFAULT_KIND_SOURCE). Otherwise floor_capabilities strips it every save."""
-    home = _lib(tmp_path, {"util-authoring": AUTHORING})   # requires: [write_util] only
+    """Regression (a toggle reverting on save): a gated kind whose permission doc's requires:
+    predates the kind must still persist when the user EXPLICITLY opts in AND holds the
+    canonical source permission (_DEFAULT_KIND_SOURCE). Otherwise floor_capabilities strips
+    it every save. Shown here with write_rule, whose canonical source is rule-authoring."""
+    authoring_no_rule = AUTHORING.replace("actions: [write_util]", "actions: [write_util]")
+    home = _lib(tmp_path, {"util-authoring": authoring_no_rule,
+                           "rule-authoring": AUTHORING.replace(
+                               "actions: [write_util]", "actions: []")})
     lib = read_library_requires(home)
-    opt_in = {"actions": ["write_util", "remove_util"]}
-    # util-authoring held + explicit opt-in → remove_util survives the floor (order kept)
-    assert floor_capabilities(["util-authoring"], lib, opt_in)["actions"] == \
-        ["write_util", "remove_util"]
+    opt_in = {"actions": ["write_util", "write_rule"]}
+    # rule-authoring held + explicit opt-in → write_rule survives via the canonical source
+    assert floor_capabilities(["util-authoring", "rule-authoring"], lib, opt_in)["actions"] == \
+        ["write_util", "write_rule"]
     # not held → floored away entirely
     assert floor_capabilities([], lib, opt_in)["actions"] == []
-    # RAISE is unchanged: merely holding util-authoring does NOT auto-add remove_util
+    # RAISE is unchanged: merely holding util-authoring does NOT auto-add anything else
     assert capabilities_for(["util-authoring"], lib)["actions"] == ["write_util"]
+
+
+def test_util_authoring_no_longer_carries_deletion(tmp_path):
+    """0.226.0: remove_util's canonical source is util-removal, not util-authoring. Holding
+    only util-authoring must NOT float an explicit remove_util past the floor — while the two
+    were fused, every routine allowed to create a util could also delete one."""
+    home = _lib(tmp_path, {"util-authoring": AUTHORING})
+    lib = read_library_requires(home)
+    opt_in = {"actions": ["write_util", "remove_util"]}
+    assert floor_capabilities(["util-authoring"], lib, opt_in)["actions"] == ["write_util"]
 
 
 def test_workflows_generate_capability_binds_to_its_permission(tmp_path):
@@ -529,3 +542,95 @@ def test_tag_class_survives_the_raise_then_floor_round_trip(tmp_path):
     assert floor_capabilities(["communication"], lib, raised)["util_tags"] == ["messaging"]
     # dropping the permission floors the class away — no orphan capability
     assert floor_capabilities([], lib, raised)["util_tags"] == []
+
+
+REVISION = """---
+tags: [tool-use, utils, authoring]
+requires:
+  actions: [revise_util]
+---
+# permission: util revision — change an existing util
+body
+"""
+
+SIGNAL_DOC = """---
+tags: [communication, messaging, outbound]
+requires:
+  utils: [signal]
+---
+# permission: signal messaging
+body
+"""
+
+
+def _write_util(name: str) -> dict:
+    return {"kind": "write_util", "name": name, "content": "x"}
+
+
+def test_write_util_splits_create_from_revise(tmp_path):
+    """One action kind, two permissions: the engine decides which act this is from whether
+    the target already exists, so the model never has to know before it looks."""
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "util-revision": REVISION})
+    creator = load_policy(home, ["util-authoring"], {"actions": ["write_util"]})
+    reviser = load_policy(home, ["util-revision"], {"actions": ["revise_util"]})
+    # the catalog is empty here, so every name reads as NEW
+    assert creator.deny(_write_util("brand-new")) is None
+    denial = reviser.deny(_write_util("brand-new"))
+    assert denial and "CREATION" in denial and "util-authoring" in denial
+    # both halves held → neither branch can refuse
+    both = load_policy(home, ["util-authoring", "util-revision"],
+                       {"actions": ["write_util", "revise_util"]})
+    assert both.deny(_write_util("brand-new")) is None
+    # neither half → the kind is off entirely
+    assert load_policy(home, [], {}).deny(_write_util("brand-new"))
+
+
+def test_write_util_revise_branch_uses_the_live_catalog(tmp_path):
+    """An EXISTING name is a revision, so the create-only holder is refused and the
+    revise-only holder is allowed — the mirror image of the create case."""
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "util-revision": REVISION})
+    (home.parent / "utils" / "existing").mkdir(parents=True)
+    (home.parent / "utils" / "existing" / "main.py").write_text(
+        '"""does a thing.\n\ntags: a, b, c\nsecrets: (none)\ncalls: (none)\nnet: none\n'
+        'usage: gu existing\n"""\n', encoding="utf-8")
+    creator = load_policy(home, ["util-authoring"], {"actions": ["write_util"]})
+    reviser = load_policy(home, ["util-revision"], {"actions": ["revise_util"]})
+    assert "existing" in creator.known_utils
+    denial = creator.deny(_write_util("existing"))
+    assert denial and "REVISION" in denial and "util-revision" in denial
+    assert reviser.deny(_write_util("existing")) is None
+    # …and the create-only holder can still create
+    assert creator.deny(_write_util("not-there-yet")) is None
+
+
+def test_util_grant_can_be_scoped_to_one_verb(tmp_path):
+    """`signal:read` grants exactly that subcommand — a read-only channel is not a write one."""
+    home = _lib(tmp_path, {"messaging-signal": SIGNAL_DOC})
+    ro = load_policy(home, ["messaging-signal"], {"utils": ["signal:read"]})
+    assert ro.deny({"kind": "util", "name": "signal", "args": ["read", "--limit", "5"]}) is None
+    denial = ro.deny({"kind": "util", "name": "signal", "args": ["send", "hi"]})
+    assert denial and "read" in denial and "signal" in denial
+    # a call with no verb at all cannot be matched against the scope → refused
+    assert ro.deny({"kind": "util", "name": "signal", "args": []})
+    # the bare grant still covers every verb
+    full = load_policy(home, ["messaging-signal"], {"utils": ["signal"]})
+    assert full.deny({"kind": "util", "name": "signal", "args": ["send", "hi"]}) is None
+
+
+def test_verb_scoped_grant_survives_the_floor_and_stays_gated(tmp_path):
+    """A narrower grant survives a doc that reserves the whole util; and a doc reserving
+    only a verb still makes the util gated (the fail-open direction)."""
+    home = _lib(tmp_path, {"messaging-signal": SIGNAL_DOC})
+    lib = read_library_requires(home)
+    floored = floor_capabilities(["messaging-signal"], lib,
+                                 {**EMPTY_CAPABILITIES, "utils": ["signal:read"]})
+    assert floored["utils"] == ["signal:read"]
+    # unheld doc → the scoped entry is floored away like any other
+    assert floor_capabilities([], lib, {**EMPTY_CAPABILITIES,
+                                        "utils": ["signal:read"]})["utils"] == []
+    # a doc that reserves ONLY `signal:read` still gates the `signal` util by bare name
+    verb_only = _lib(tmp_path / "v", {"ro": SIGNAL_DOC.replace("utils: [signal]",
+                                                              "utils: [signal:read]")})
+    pol = load_policy(verb_only, [], {})
+    assert "signal" in pol.gated_utils
+    assert pol.deny({"kind": "util", "name": "signal", "args": ["send"]})

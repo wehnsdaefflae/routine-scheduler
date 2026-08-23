@@ -20,7 +20,12 @@ demand):
 
     capabilities:
       actions: [write_util, write_rule, memory_read, memory_write]  # only GATED_KINDS count
-      utils: [discord]                 # reserved utils switched on for this routine
+      #   `revise_util` is a capability TOKEN here, never an action kind: the model emits
+      #   write_util for both, and the engine picks create-vs-revise from whether the
+      #   target name already exists in the library.
+      utils: [discord, signal:read]    # reserved utils switched on for this routine —
+      #   a bare name grants every verb, `name:verb` grants that ONE subcommand (the
+      #   call's first positional argument), which is how read-only access is expressed
       confirm: always | creations | never       # write_util approval level
       rule_confirm: always | creations | never  # write_rule approval level
       runs: none | last | all          # previous-run read depth (requires: last | all)
@@ -54,15 +59,36 @@ from .ids import is_slug
 # `read_rule` is deliberately NOT gated: a routine must be able to read the general rules
 # it holds, and reading library prose has no side effect worth a decision. The catalog
 # (`name: "list"`) is open for the same reason.
-GATED_KINDS = ("write_util", "remove_util", "write_rule", "memory_read", "memory_write",
-               "detach", "schedule_run", "script")
+GATED_KINDS = ("write_util", "revise_util", "remove_util", "write_rule", "memory_read",
+               "memory_write", "detach", "schedule_run", "script")
+# `revise_util` is a CAPABILITY token, NOT an action kind: the model always emits
+# kind=write_util, and the engine decides create-vs-revise from whether the target slug
+# already exists in the library (see GrantPolicy.deny). Keeping it out of the action schema
+# is deliberate — the flat kind surface is what weak models and Ollama grammars handle well,
+# and the model has no reliable way to know which mode it is in before it looks.
+CAPABILITY_ACTIONS = (*KINDS, "revise_util")
 # When no library permission doc requires a gated kind (e.g. the library predates it),
 # denials still name the doc that canonically covers its conduct.
-_DEFAULT_KIND_SOURCE = {"write_util": "util-authoring", "remove_util": "util-authoring",
+_DEFAULT_KIND_SOURCE = {"write_util": "util-authoring", "revise_util": "util-revision",
+                        "remove_util": "util-removal",
                         "memory_read": "memory", "memory_write": "memory",
                         "write_rule": "rule-authoring",
                         "detach": "background-tasks", "schedule_run": "scheduling",
                         "script": "scripts"}
+# A capabilities `utils:` entry is either a bare util name (every verb) or `name:verb`
+# (that ONE subcommand — the util's first positional argument). Verb-scoping is how a
+# routine gets read-only access to a channel it must not write to.
+def split_util_verb(entry: str) -> tuple[str, str]:
+    """`"signal:read"` → `("signal", "read")`; `"signal"` → `("signal", "")`."""
+    name, _, verb = str(entry or "").partition(":")
+    return name, verb
+
+
+def is_util_entry(entry: object) -> bool:
+    if not isinstance(entry, str):
+        return False
+    name, verb = split_util_verb(entry)
+    return is_slug(name) and (not verb or is_slug(verb))
 _DEFAULT_RUNS_SOURCE = ("run-history",)
 # write_util approval policy, least → most permissive: "always" (user approves create AND
 # revise), "creations" (revisions are autonomous once the selftest passes; NEW utils ask),
@@ -114,9 +140,10 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
                    if requires and k in ("confirm", "rule_confirm") else "")
                 for k in raw if k not in known]
     out: dict = {}
-    for key, valid, kind_label in (("actions", lambda a: a in KINDS, "an action kind"),
-                                   ("utils", lambda u: isinstance(u, str) and is_slug(u),
-                                    "a kebab-case util name"),
+    for key, valid, kind_label in (("actions", lambda a: a in CAPABILITY_ACTIONS,
+                                    "an action kind"),
+                                   ("utils", is_util_entry,
+                                    "a kebab-case util name, optionally :verb-scoped"),
                                    ("util_tags", lambda t: isinstance(t, str) and t.strip()
                                     and t == t.strip().lower(), "a lowercase util tag")):
         if key not in raw:
@@ -262,7 +289,13 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
     # permission does NOT auto-add the kind; only an explicit user opt-in survives the floor.
     actions = [a for a in caps.get("actions") or []
                if a in req_actions or _DEFAULT_KIND_SOURCE.get(a) in active_set]
-    utils = [u for u in caps.get("utils") or [] if u in req_utils]
+    # A verb-scoped entry is NARROWER than the doc that reserves the util, so `signal:read`
+    # survives under a doc requiring `signal` (and under one requiring `signal:read`). The
+    # reverse never holds: a doc that only reserves `signal:read` cannot float a bare
+    # `signal` past the floor.
+    req_util_names = {split_util_verb(u)[0] for u in req_utils if not split_util_verb(u)[1]}
+    utils = [u for u in caps.get("utils") or []
+             if u in req_utils or split_util_verb(u)[0] in req_util_names]
     util_tags = [t for t in caps.get("util_tags") or [] if t in req_util_tags]
     runs = (caps.get("runs") or "none") if grants_runs else "none"
     workflows = (caps.get("workflows") or "catalog") if grants_wf else "catalog"
@@ -307,6 +340,10 @@ class GrantPolicy:
     # Gated util → its declared tags, for the tag-class check in deny(). Only gated utils are
     # indexed; the catalog is read at policy load ONLY when some doc declares `util_tags`.
     util_tag_index: dict = field(default_factory=dict)
+    # Util names the library already has, for the create-vs-revise split. Loaded ONLY when
+    # the routine holds exactly one half (holding both, or neither, settles the call without
+    # knowing) — so the common policies cost no catalog read.
+    known_utils: frozenset = frozenset()
     kind_sources: dict = field(default_factory=dict)  # gated kind → library docs requiring it
     confirm: str = "always"                    # write_util approval policy
     rule_confirm: str = "always"               # write_rule approval policy (own blast radius)
@@ -343,7 +380,15 @@ class GrantPolicy:
     is_subrun: bool = False
 
     def allows_kind(self, kind: str) -> bool:
-        return self.admin or kind not in GATED_KINDS or kind in self.actions
+        if self.admin or kind not in GATED_KINDS:
+            return True
+        if kind == "write_util":
+            # EITHER half offers the kind — the model emits write_util for both create and
+            # revise, and deny() decides which one this call is once the name is known.
+            # Projecting the kind away when only one half is held would hide the capability
+            # the routine does have.
+            return bool({"write_util", "revise_util"} & set(self.actions))
+        return kind in self.actions
 
     def with_overlay(self, granted_now: set[str], denied_now: set[str]) -> GrantPolicy:
         """This policy plus the run's one-time decisions: capability-class granted
@@ -427,15 +472,55 @@ class GrantPolicy:
         return (self.rule_confirm == "always"
                 or (self.rule_confirm == "creations" and creating))
 
+    def _deny_util(self, action: dict) -> str | None:
+        """The reserved-util gate. A util is granted BY NAME (`capabilities.utils`), BY TAG
+        CLASS (`util_tags` — covers every util in the class, including ones the library gains
+        later), or BY VERB (`name:verb` — that one subcommand, matched against the call's
+        first positional argument, which is how read-only access to a channel is expressed).
+        """
+        name = str(action.get("name") or "")
+        if name not in self.gated_utils or name in self.utils or self.admin:
+            return None
+        if set(self.util_tag_index.get(name, ())) & self.util_tags:
+            return None
+        args = action.get("args") or []
+        verb = str(args[0]) if args and isinstance(args[0], str) else ""
+        scoped = {v for u in self.utils
+                  if (n := split_util_verb(u))[0] == name and (v := n[1])}
+        if scoped:
+            if verb in scoped:
+                return None
+            miss = f"{verb!r} is not one of those" if verb else "this call names no verb"
+            return (f"util {name!r} is granted to this routine only for: "
+                    f"{', '.join(sorted(scoped))}. {miss} — a read-only channel is not a "
+                    f"write one. {self.request_route(f'util:{name}')}")
+        perms = ", ".join(self.gated_utils[name])
+        return (f"util {name!r} is a reserved capability switched OFF for this "
+                f"routine — this channel is off limits (the {perms} permission "
+                f"covers its conduct). {self.request_route(f'util:{name}')}")
+
     def deny(self, action: dict) -> str | None:
         """A precise, actionable rejection for a gated call — or None when permitted. Worded
         for the model inside the schema-retry cycle: capabilities are switched by the USER
         (on the routine's Permissions panel), so route to ask_user.
         """
         kind = action.get("kind")
-        if kind in GATED_KINDS and kind not in self.actions and not self.admin:
-            srcs = ", ".join(self.kind_sources.get(kind)
-                             or [_DEFAULT_KIND_SOURCE.get(kind, "util-authoring")])
+        # Create and revise are ONE action kind but two permissions: writing a NEW util adds
+        # a capability nobody had, revising an existing one changes what every caller already
+        # gets. Which act this is depends on the target, not on the call — so the capability
+        # the call actually needs is resolved here, then gated like any other.
+        need = kind
+        mode = ""
+        if kind == "write_util":
+            name = str(action.get("name") or "")
+            revising = name in self.known_utils
+            need = "revise_util" if revising else "write_util"
+            mode = (f"util {name!r} {'already exists' if revising else 'does not exist yet'}, "
+                    f"so this is a {'REVISION' if revising else 'CREATION'}. ")
+        if need in GATED_KINDS and need not in self.actions and not self.admin:
+            srcs = ", ".join(self.kind_sources.get(need)
+                             or [_DEFAULT_KIND_SOURCE.get(need, "util-authoring")])
+            kind = need
             if self.is_subrun:
                 # A spawned/subtask child runs with capabilities OFF by design, regardless
                 # of what the parent routine holds — so the limit is the CHILD's scope, not
@@ -445,21 +530,14 @@ class GrantPolicy:
                         f"{srcs} permission is enforced on the parent run, not inherited). "
                         f"Do the work that needs {kind} in the PARENT run, or return the "
                         f"material it needs in your finish summary so the parent can.")
-            return (f"kind={kind} is switched OFF in this routine's capabilities — only the "
-                    f"user can switch it on (the {srcs} permission covers its conduct). Work "
-                    f"with what you have. {self.request_route(f'action:{kind}')}")
+            return (f"{mode}kind={kind} is switched OFF in this routine's capabilities — "
+                    f"only the user can switch it on (the {srcs} permission covers its "
+                    f"conduct). Work with what you have. "
+                    f"{self.request_route(f'action:{kind}')}")
         if kind == "util":
-            name = str(action.get("name") or "")
-            # Granted either BY NAME (capabilities.utils) or BY TAG CLASS
-            # (capabilities.util_tags) — holding the class covers every util in it, including
-            # ones the library gains later.
-            by_tag = bool(set(self.util_tag_index.get(name, ())) & self.util_tags)
-            if (name in self.gated_utils and name not in self.utils
-                    and not by_tag and not self.admin):
-                perms = ", ".join(self.gated_utils[name])
-                return (f"util {name!r} is a reserved capability switched OFF for this "
-                        f"routine — this channel is off limits (the {perms} permission "
-                        f"covers its conduct). {self.request_route(f'util:{name}')}")
+            refusal = self._deny_util(action)
+            if refusal is not None:
+                return refusal
         if kind in ("read_file", "view_image", "write_file", "edit_file"):
             writes = kind in ("write_file", "edit_file")
             paths = [str(action.get("path") or "")]
@@ -516,7 +594,10 @@ def load_policy(permissions_home: Path, active: list[str] | None,
             if kind in GATED_KINDS:
                 kind_sources.setdefault(kind, []).append(slug)
         for util in req.get("utils") or []:
-            gated_utils.setdefault(util, []).append(slug)
+            # Key by the BARE name: a doc that reserves only `signal:read` still makes the
+            # `signal` util gated, or the name lookup in deny() would miss it and the util
+            # would be wide open — the fail-open direction.
+            gated_utils.setdefault(split_util_verb(util)[0], []).append(slug)
         for tag in req.get("util_tags") or []:
             gated_tags.setdefault(tag, []).append(slug)
         if req.get("runs"):
@@ -537,7 +618,14 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                     if slug not in gated_utils.setdefault(util["name"], []):
                         gated_utils[util["name"]].append(slug)
     caps, _ = normalize_capabilities(capabilities)
+    # The create-vs-revise split needs to know which util names already exist — but only when
+    # the routine holds exactly ONE half. Holding both makes every write_util allowed;
+    # holding neither denies them all. Either way the catalog is not worth reading.
+    held_write = {"write_util", "revise_util"} & set(caps.get("actions") or [])
+    known_utils = (frozenset(u["name"] for u in _catalog_tags(permissions_home))
+                   if len(held_write) == 1 else frozenset())
     return GrantPolicy(active=tuple(active or []),
+                       known_utils=known_utils,
                        actions=frozenset(k for k in caps.get("actions") or []
                                          if k in GATED_KINDS),
                        utils=frozenset(caps.get("utils") or []),

@@ -3,9 +3,9 @@ tags: [tool-use, utils, authoring]
 requires:
   actions: [write_util]
 ---
-# permission: util authoring — create and revise global utils
+# permission: util authoring — create a new global util
 
-Unlocks `write_util`: when no existing util fits, write one (single-purpose, reusable — never
+Unlocks CREATING a util: when no existing util fits, write one (single-purpose, reusable — never
 a one-off); when a util is broken, repair it (read its source first: `util` name `show`, args
 `["<name>"]`). **Placement test — util or script?** A util is GLOBAL, for every routine; a
 script is for one routine only. Would another routine plausibly call this capability? NO —
@@ -22,4 +22,4 @@ a filesystem/network sandbox; undeclared network = no TCP. NEVER recreate a util
 deleted (a slug with a deletion in the library's history is rejected): ask_user first, mode
 blocking, naming the util and why — only an explicit yes in the same run unblocks it.
 
-Deleting a util is a SEPARATE permission (`util-removal`). Writing one adds a capability; removing one takes it away from every routine that calls it, so holding this doc never lets you delete.
+Revising an existing util (`util-revision`) and deleting one (`util-removal`) are SEPARATE permissions. You emit the same action for create and revise — the engine decides which it is from whether the name already exists in the library, and refuses the half you do not hold. Holding this doc alone lets you add new utils, never touch the ones other routines already depend on.

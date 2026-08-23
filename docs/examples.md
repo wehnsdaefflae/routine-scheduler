@@ -236,7 +236,7 @@ re-proposing what you already declined.
   *rejections* (in LEDGER/state) so nothing is re-proposed. Cheap and transformative.
 - **Sub-workflows per source, not one mega-loop.** Parallel children with disjoint outputs
   (Freelance radar step 2) keep the main conversation short and the failures isolated.
-- **Repair, don't route around.** A broken util fixed under `util-authoring` (revisions
+- **Repair, don't route around.** A broken util fixed under `util-revision` (revisions
   auto-approved) is fixed for every routine. A silent workaround breaks everyone tomorrow.
 - **Give history only where history is the point.** Only Grants radar carries
   `run-history` at full depth (`all`); the others get by on the last summary + LEDGER —

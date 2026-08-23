@@ -578,8 +578,12 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   and the server runs the SAME raise-then-floor on every path that persists a mapping: save AND
   creation (scaffold, conversation create, the composer's ⚙ payload, the /defaults preview), so a
   mapping never expresses a capability its held docs don't require — from birth, not first edit).
-  Both layers user-changeable ONLY; routines can't self-grant. The doc set: `util-authoring` (requires write_util — the approval level
-  always/creations/never is a CAPABILITY setting, default), `memory` (memory_read/memory_write —
+  Both layers user-changeable ONLY; routines can't self-grant. The doc set: `util-authoring` (requires write_util — CREATING a new util; the approval
+  level always/creations/never is a CAPABILITY setting, default), `util-revision`
+  (requires the `revise_util` capability token — changing a util other routines already
+  call; the model emits the same write_util action and the engine picks the half from
+  whether the name exists), `util-removal` (requires remove_util — deletion takes a
+  capability away from every caller, so it is its own decision), `memory` (memory_read/memory_write —
   indexed ≤100-line notes in `.memory/`; INDEX.md engine-maintained, surfaced in the state digest;
   default), `communication` (requires `discord`; the enabled capability also turns on engine-side
   Discord mirroring of blocking decisions), `run-history` (previous-run reads; depth last/all is the

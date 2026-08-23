@@ -19,6 +19,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.227.0] — 2026-08-23
+
+### Added
+- **Create and revise are separate permissions.** `util-authoring` now covers only CREATING a
+  util; the new **`util-revision`** covers changing one that already exists. The model still
+  emits a single `write_util` action — the engine resolves which act it is from whether the
+  target name is already in the library, and refuses the half the routine does not hold. The
+  action schema is unchanged: `revise_util` is a capability TOKEN (`CAPABILITY_ACTIONS`), not a
+  26th kind, because the flat kind surface is what weak models and Ollama grammars handle well
+  and the model cannot know its mode before it looks.
+- **Verb-scoped util grants.** A `capabilities.utils` entry is either a bare name (every verb)
+  or `name:verb` — that one subcommand, matched against the call's first positional argument.
+  `signal:read` is read-only access to a channel the routine must not write to. Scoping is
+  narrower than the doc that reserves the util, so it survives the floor; and a doc reserving
+  only `signal:read` still gates the `signal` util by bare name, closing the fail-open path.
+
+### Fixed
+- **`remove_util`'s canonical source is `util-removal`, not `util-authoring`.** The
+  `_DEFAULT_KIND_SOURCE` fallback still named the old fused doc after 0.226.0 split them, so
+  the floor would have floated an explicit `remove_util` past for any `util-authoring` holder —
+  making that split cosmetic.
+- The `write_util` denial keeps the sub-workflow wording: a child is told the limit is the
+  CHILD's scope and to route the work to its parent, rather than that the routine lacks the
+  capability.
+
 ## [0.226.0] — 2026-08-23
 
 ### Changed

@@ -1003,27 +1003,40 @@ def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
     assert "messaging" not in (raw["capabilities"].get("util_tags") or [])  # class too
 
 
-def test_permissions_put_persists_remove_util_under_util_authoring(client):
-    """R2 endpoint-level: the canonical-source FALLBACK, for a library where no doc
-    requires remove_util — the SAVE path's floor must carry the explicit opt-in, or the
-    toggle silently reverts to unchecked on save (the pre-0.76.0 bug). The shipped library
-    no longer hits this path: since 0.226.0 `util-removal` requires remove_util outright,
-    so the real source wins and holding util-authoring alone floors the kind away. This
-    fixture library deliberately omits that doc to keep exercising the fallback.
-    Fail-closed stays intact either way: with no covering permission held, the kind goes."""
+def test_permissions_put_persists_remove_util_under_its_canonical_source(client):
+    """R2 endpoint-level, two things at once.
+
+    The canonical-source FALLBACK: for a library whose doc does not yet name a gated kind,
+    the SAVE path's floor must carry an explicit opt-in, or the toggle silently reverts to
+    unchecked on save (the pre-0.76.0 bug). Since 0.226.0 remove_util's canonical source is
+    `util-removal`, so that is the doc the fallback keys on.
+
+    And the SPLIT itself: holding `util-authoring` no longer floats remove_util past the
+    floor. While the two were fused, every routine allowed to CREATE a util could also
+    DELETE one — the whole point of separating them is that this save now strips it."""
     c, tmp = client
     perms = tmp / "library" / "permissions"
     perms.mkdir(parents=True, exist_ok=True)
     (perms / "util-authoring.md").write_text(
         "---\ntags: [tool-use, utils, authoring]\nrequires:\n  actions: [write_util]\n---\n"
-        "# permission: util authoring — create and revise utils\nbody\n", encoding="utf-8")
+        "# permission: util authoring — create a new util\nbody\n", encoding="utf-8")
+    # the doc that canonically covers deletion, with a requires: that predates the kind
+    (perms / "util-removal.md").write_text(
+        "---\ntags: [tool-use, utils, authoring]\nrequires:\n  actions: []\n---\n"
+        "# permission: util removal — delete a util\nbody\n", encoding="utf-8")
     r = c.put("/api/routines/apir/permissions",
-              json={"active": ["util-authoring"],
+              json={"active": ["util-authoring", "util-removal"],
                     "capabilities": {"actions": ["write_util", "remove_util"]}})
     assert r.status_code == 200
     assert "remove_util" in r.json()["capabilities"]["actions"]
     raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
     assert "remove_util" in raw["capabilities"]["actions"]     # persisted, not reverted
+    # util-authoring ALONE no longer carries deletion — the 0.226.0 split, at the endpoint
+    r_split = c.put("/api/routines/apir/permissions",
+                    json={"active": ["util-authoring"],
+                          "capabilities": {"actions": ["write_util", "remove_util"]}})
+    assert r_split.status_code == 200
+    assert r_split.json()["capabilities"]["actions"] == ["write_util"]
     r2 = c.put("/api/routines/apir/permissions",
                json={"active": [], "capabilities": {"actions": ["write_util", "remove_util"]}})
     assert r2.status_code == 200
