@@ -8,7 +8,7 @@ requires:
 Unlocks the reserved `discord` util: ONE channel beside the web UI, for decisions the user
 must see promptly. It covers Discord ONLY. Reaching someone on a personal messenger is a far
 bigger interruption than a Discord ping, so those channels live behind their own permission
-(`personal-messaging`) and are never granted as a side effect of holding this one. The engine
+(the per-channel `messaging-*` docs) and are never granted as a side effect of holding this one. The engine
 mirrors blocking questions to Discord automatically when
 this permission is held — you normally do NOT message Discord yourself. Use the util
 directly only when the workflow explicitly calls for an outbound notification, and then:

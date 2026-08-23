@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.226.0] — 2026-08-23
+
+### Changed
+- **`util-authoring` no longer grants deletion.** Writing a util adds a capability nobody had;
+  removing one takes a capability away from every routine that calls it. They were a single doc
+  requiring `[write_util, remove_util]`, so every routine allowed to create a util was silently
+  allowed to delete one. `util-authoring` now requires `[write_util]`; the new **`util-removal`**
+  requires `[remove_util]`.
+- **`personal-messaging` is replaced by one doc per channel** — `messaging-signal`,
+  `messaging-telegram`, `messaging-whatsapp`, `messaging-zulip`. The bundle named all four
+  messengers *and* the `chat`/`messaging` util_tags, which also swept in `discord` and `ntfy`, so
+  a narrow "Signal only" grant could not be expressed at all. The tag wildcard is gone; each doc
+  gates exactly its own util.
+- **`problem-routing`** gains a clause: work the operator owns must be FILED as a decision, not
+  narrated in a ledger, report body or run summary — nothing renders prose as awaiting an answer,
+  so an item described there and never filed is indistinguishable from one never found.
+- **`config-optimizer`** now judges a routine's cadence against its measured turn and wall-clock
+  use across several runs, distinguishing "did not need the budget" from "was blocked", and
+  addressing the group where a group is what schedules the routine.
+
+### Fixed
+- **Messenger session stores are bind-mounted.** `~/{telegram,signal,whatsapp}-sessions` lived
+  only in the container's writable layer, so any recreate or image update silently unlinked all
+  three accounts and dropped the WhatsApp message history — the failure the
+  `conversations`/`background` binds already guard against.
+
 ## [0.225.0] — 2026-08-22
 
 ### Changed

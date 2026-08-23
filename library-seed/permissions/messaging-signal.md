@@ -1,17 +1,11 @@
 ---
 tags: [communication, messaging, outbound]
 requires:
-  utils: [signal, telegram, whatsapp, zulip]
-  util_tags: [chat, messaging]
+  utils: [signal]
 ---
-# permission: personal messaging — reach a person on their own messenger
+# permission: signal messaging — reach a person on Signal
 
-Unlocks the personal chat-channel utils — `signal`, `telegram`, `whatsapp`, `zulip`, and every
-util tagged `chat` or `messaging` the library gains later. Deliberately separate from
-`communication` (Discord): a Discord ping sits in a room the user visits when they choose,
-while a message on a personal messenger arrives on their phone, next to messages from their
-family, and is read by whoever is standing next to them. That is a different act, so it is a
-different permission — holding one never grants the other.
+Unlocks the `signal` util: read the mirrored history and send text as the linked Signal account. The account is linked once by the operator and its state lives in the session store — a run never authenticates.
 
 Hold it only for a routine whose task genuinely needs to reach a person that way, and then:
 
@@ -25,5 +19,10 @@ Hold it only for a routine whose task genuinely needs to reach a person that way
 - **Never a second channel for the same thing.** If it is already on the status page or in a
   Discord ping, sending it again here is noise wearing the clothes of urgency.
 - **Record the answer** in the LEDGER so no future run re-asks something already settled.
+
+Holding one channel never grants another, and none of them grants `communication` (Discord).
+A Discord ping sits in a room the user visits when they choose; a message on a personal
+messenger arrives on their phone, next to messages from their family, and is read by whoever
+is standing next to them. That is a different act, so it is a different permission.
 
 If you are unsure whether a message earns this channel, it does not. Put it on the page.

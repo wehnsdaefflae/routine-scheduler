@@ -98,12 +98,23 @@ def test_tags_on_library_elements():
         assert len(d["tags"]) >= 3, (d["slug"], d["tags"])
     assert set(rules["web-research"]["tags"]) >= {"web", "research"}
     perms = {d["slug"]: d for d in library_docs.list_docs(SEED / "permissions")}
-    assert set(perms) == {"util-authoring", "memory", "communication", "run-history",
-                          "shell", "workflow-generation", "background-tasks",
+    assert set(perms) == {"util-authoring", "util-removal", "memory", "communication",
+                          "run-history", "shell", "workflow-generation", "background-tasks",
                           "scheduling", "global-utils", "rule-authoring",
                           "remote-machines", "darknet", "outbound-mail",
-                          "personal-messaging", "usenet", "scripts"}  # variants collapsed: level = capability
+                          "messaging-signal", "messaging-telegram", "messaging-whatsapp",
+                          "messaging-zulip", "usenet", "scripts"}  # variants collapsed: level = capability
     assert "self-modification" not in perms          # retired: a fixed engine rule now
+    # Each act gets its own permission: writing a util adds a capability, removing one takes
+    # it away from every caller, and each messenger reaches a different person differently.
+    assert perms["util-authoring"]["requires"]["actions"] == ["write_util"]
+    assert perms["util-removal"]["requires"]["actions"] == ["remove_util"]
+    for channel in ("signal", "telegram", "whatsapp", "zulip"):
+        doc = perms[f"messaging-{channel}"]
+        assert doc["requires"]["utils"] == [channel], channel
+        # no util_tags wildcard: the retired bundle's [chat, messaging] also swept in
+        # discord and ntfy, so a "Signal only" grant was not expressible
+        assert not doc["requires"].get("util_tags"), channel
     # a doc's frontmatter is stripped before its body is shown/inlined
     raw = (SEED / "rules" / "web-research.md").read_text()
     assert raw.startswith("---") and library_docs.doc_body(raw).lstrip().startswith("# rule:")

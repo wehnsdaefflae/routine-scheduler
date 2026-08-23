@@ -1004,11 +1004,13 @@ def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
 
 
 def test_permissions_put_persists_remove_util_under_util_authoring(client):
-    """R2 endpoint-level: remove_util has no conduct doc of its own (util-authoring's
-    requires: predates the kind), so the SAVE path's floor must carry the explicit
-    opt-in via the canonical-source fallback — before 0.76.0 the toggle silently
-    reverted to unchecked on save. Fail-closed stays intact: without the covering
-    permission held, the kind is floored away."""
+    """R2 endpoint-level: the canonical-source FALLBACK, for a library where no doc
+    requires remove_util — the SAVE path's floor must carry the explicit opt-in, or the
+    toggle silently reverts to unchecked on save (the pre-0.76.0 bug). The shipped library
+    no longer hits this path: since 0.226.0 `util-removal` requires remove_util outright,
+    so the real source wins and holding util-authoring alone floors the kind away. This
+    fixture library deliberately omits that doc to keep exercising the fallback.
+    Fail-closed stays intact either way: with no covering permission held, the kind goes."""
     c, tmp = client
     perms = tmp / "library" / "permissions"
     perms.mkdir(parents=True, exist_ok=True)
