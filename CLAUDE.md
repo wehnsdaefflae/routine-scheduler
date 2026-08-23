@@ -232,9 +232,21 @@ A bump MUST land with a matching `## [x.y.z]` CHANGELOG.md header in the same co
 
 `deploy/install.sh` (idempotent host install: venv, config + token, seeds, systemd user service + linger)
 or Docker (`docker compose up -d` — a disposable engine-only image; source, config, `~/.credentials`,
-`~/routines`, `~/conversations`, `~/background`, and the library repo are all bind-mounted, so the
+`~/routines`, `~/conversations`, `~/background`, the messenger session stores
+(`~/{telegram,signal,whatsapp}-sessions` — a linked session IS the credential, so losing one
+unlinks the account), and the library repo are all bind-mounted, so the
 whole system migrates as a tarball of those dirs — EVERY data home must be a bind, or it dies with
-the container layer on recreate. The host's `/etc/localtime` + `/etc/timezone` ride along read-only
+the container layer on recreate. **`docker compose up -d` NEVER reloads code**: the source is
+bind-mounted, so compose compares the CONFIG, finds no drift and no-ops while the running process
+keeps the modules it imported at boot — a green `compose config` and a `Container rsched Running`
+both look like success and mean nothing about what is live (probe a changed behaviour through the
+API to know). Shipping code needs the process itself replaced: drop the RESTART SENTINEL
+`~/routines/.control/restart.request` (`{"reason": …, "requested": <iso>}`) and the daemon DRAINS
+— starts no new runs, waits for every in-flight one, never kills a run, defers while a run is
+parked on the user — then exits into `restart: unless-stopped`, which relaunches it on the new
+code. This is the path self-audit uses after a `__version__` bump, and it is the right one for a
+hand-made change too; `docker compose restart rsched` is the blunt equivalent that bounces the
+process immediately and takes any running routine with it. The host's `/etc/localtime` + `/etc/timezone` ride along read-only
 so the container keeps the host's zone; `schedule.server_tz()` honors TZ env / the zoneinfo key /
 `/etc/timezone` / the localtime symlink, in that order). Server config:
 `~/.config/routine-scheduler/config.yaml` (generated with a random token on
