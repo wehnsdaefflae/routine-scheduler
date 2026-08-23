@@ -46,6 +46,9 @@ sandboxed:
   connection. Host keys are PINNED (a mismatch, or an unscanned machine, refuses to connect).
 - **`web/settings/machines.py`** — the Settings CRUD + `scan-host` + `test`. The routine page's
   Machines card binds catalog machines to the routine (`api_routines` PATCH `machines`).
+  Conversations bind identically (D102): the conversation header mounts the same card
+  (`api_conversations` PATCH `machines`), and a running reply can ask in-flow with a
+  `machine:<name>` access request — one click injects `RSCHED_MACHINES` from the next turn.
 
 ## Setting one up (a GPU box)
 

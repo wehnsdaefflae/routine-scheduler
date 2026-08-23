@@ -1056,3 +1056,29 @@ def test_creation_floors_capabilities_like_save(server):
     assert cfg.permissions == ["leaky"]
     assert cfg.capabilities["utils"] == ["remote"]      # required by the held doc - kept
     assert cfg.capabilities["actions"] == []            # finish is not a gated kind - floored
+
+
+def test_conversation_machines_bind_and_validate(client):
+    """D102 (R475/R496): a conversation binds catalog machines exactly like a routine — the
+    detail payload carries the catalog for the picker, the PATCH persists into routine.yaml
+    (the next reply's boot injects RSCHED_MACHINES), and an off-catalog name is a 400: that
+    binding would resolve to nothing at run time, so it must fail at the click, not silently.
+    """
+    from rsched.config import MachineConfig
+
+    c, server = client
+    mac = MachineConfig(host="10.0.0.9", user="rs", description="RTX 4090")
+    mac.name = "gpu-box"
+    server.machines["gpu-box"] = mac
+    slug = c.post("/api/conversations", data={"text": "train the model"}).json()["slug"]
+    detail = c.get(f"/api/conversations/{slug}").json()
+    assert detail["machines"] == []
+    assert [m["name"] for m in detail["machine_catalog"]] == ["gpu-box"]
+    r = c.patch(f"/api/conversations/{slug}", json={"machines": ["gpu-box"]})
+    assert r.status_code == 200, r.text
+    raw = yaml.safe_load(
+        (server.conversations_home / slug / "routine.yaml").read_text(encoding="utf-8"))
+    assert raw["machines"] == ["gpu-box"]
+    assert c.get(f"/api/conversations/{slug}").json()["machines"] == ["gpu-box"]
+    r = c.patch(f"/api/conversations/{slug}", json={"machines": ["ghost"]})
+    assert r.status_code == 400 and "Settings" in r.json()["detail"]

@@ -395,6 +395,14 @@ def detail(request: Request, slug: str) -> dict:
         # routine.yaml `connections:` either way). The picker's options come from
         # GET /api/settings/oauth. D55: closes R70 (a conversation could not bind Google).
         "connections": dict(info.cfg.connections),
+        # Remote-machine bindings + the catalog for the picker — the same card the routine
+        # page mounts (D102, R475/R496: a conversation had no surface to bind a machine, so
+        # RSCHED_MACHINES stayed empty however many grants it held). Stale bindings are
+        # kept, like routines: the UI flags them clearable.
+        "machines": list(info.cfg.machines),
+        "machine_catalog": [{"name": m.name, "description": m.description,
+                             "host": m.host, "user": m.user, "tags": list(m.tags)}
+                            for m in server.machines.values()],
         "permissions": permissions,
         "capabilities": capabilities,
         "rules": list(info.cfg.rules),
@@ -406,6 +414,19 @@ def detail(request: Request, slug: str) -> dict:
     }
 
 
+def _apply_machines(server, raw: dict, names: list) -> None:
+    """Same rule as the routine PATCH (api_routine_edit): catalog membership required — a
+    machine name off the catalog is meaningless and the picker only offers catalog names.
+    REPLACE wholesale; the next reply's boot injects RSCHED_MACHINES (D102).
+    """
+    if any(not isinstance(n, str) for n in names):
+        raise HTTPException(400, "machines: must be a list of catalog machine names")
+    for n in names:
+        if n not in server.machines:
+            raise HTTPException(400, f"unknown machine {n!r} (add it in Settings → Machines)")
+    raw["machines"] = names
+
+
 class ConversationPatch(BaseModel):
     # forbid unknown keys, like RoutinePatch: a silently-dropped stray reads as "saved"
     model_config = ConfigDict(extra="forbid")
@@ -415,6 +436,7 @@ class ConversationPatch(BaseModel):
     workdir: str | None = None
     budgets: dict | None = None
     models: dict | None = None
+    machines: list[str] | None = None   # catalog machine names (D102) — REPLACE wholesale
     connections: dict | None = None   # {provider: account} — bound OAuth connections (D55)
     deliberation: str | None = None   # DELIBERATION_LEVELS — applies at the next reply
     fs_read_roots: list[str] | None = None    # D82: full folder-access lists — REPLACE
@@ -483,6 +505,8 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
             if not isinstance(account, str) or not account:
                 raise HTTPException(400, f"connections.{prov}: must be an account label")
         raw["connections"] = updates["connections"]
+    if "machines" in updates:
+        _apply_machines(request.app.state.server, raw, updates["machines"] or [])
     if "deliberation" in updates:   # tuning, not config — lands in tuning.yaml
         if updates["deliberation"] not in DELIBERATION_LEVELS:
             raise HTTPException(400, f"deliberation: unknown level "

@@ -257,7 +257,8 @@ ACTION_SCHEMA: dict = {
             "type": "string",
             "description": "ask_user: OPTIONAL — a typed ACCESS REQUEST, one grant-entity id "
                            '"<class>:<name>" (e.g. "util:discord", "fs-write:~/project", '
-                           '"secret:FOO_KEY"). The user decides allow/deny, once (this run) or '
+                           '"secret:FOO_KEY", "machine:gpu-box"). The user decides allow/deny, '
+                           "once (this run) or "
                            "forever; the engine applies the decision — your question just says "
                            "WHY. Use it when a denial names a requestable entity.",
         },

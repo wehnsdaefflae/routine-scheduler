@@ -9,6 +9,7 @@ import { api } from "/static/api.js";
 import { connectionsCard } from "/static/components/connections.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { el, skeleton, toast, when } from "/static/util.js";
+import { machinesCard } from "/static/components/machines.js";
 import { permissionsPanel } from "/static/components/permissions.js";
 import { rootsEditor } from "/static/components/fsroots.js";
 import { scheduleEditor } from "/static/components/schedule.js";
@@ -397,45 +398,12 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
   };
   window.addEventListener("rsched-bus", onSecretsBus);
 
-  // -- machines: bind the remote SSH hosts this routine may act on (Settings → Machines) --------
-  const catalogM = d.machine_catalog || [];   // instance-wide machine catalog (name + summary)
-  const boundM = new Set(d.machines || []);    // names this routine currently binds
-  const machChecks = {};
-  const machPanel = el("div", {},
-    el("div", { class: "muted small", style: "margin-bottom:8px" },
-      "Remote machines this routine may act on over SSH (needs the ",
-      el("code", {}, "remote-machines"), " permission + the ", el("code", {}, "remote"),
-      " util). Add machines in ",
-      el("a", { href: "#/settings?section=machines" }, "Settings → Machines"), "."));
-  if (!catalogM.length) {
-    machPanel.append(el("div", { class: "muted small" }, "no machines in the catalog yet"));
-  } else {
-    for (const m of catalogM) {
-      const cb = el("input", { type: "checkbox" });
-      if (boundM.has(m.name)) cb.checked = true;
-      machChecks[m.name] = cb;
-      const meta = m.description || `${m.user}@${m.host}`;
-      const tags = (m.tags || []).length ? ` [${m.tags.join(", ")}]` : "";
-      machPanel.append(el("label", { class: "row", style: "margin:5px 0;gap:8px;cursor:pointer" },
-        cb, el("span", { style: "font-weight:600;min-width:110px" }, m.name),
-        el("span", { class: "muted small" }, meta + tags)));
-    }
-    // A binding to a machine no longer in the catalog: keep it visible so it can be cleared.
-    for (const name of boundM) if (!catalogM.some((m) => m.name === name)) {
-      const cb = el("input", { type: "checkbox", checked: "" });
-      machChecks[name] = cb;
-      machPanel.append(el("label", { class: "row", style: "margin:5px 0;gap:8px;cursor:pointer" },
-        cb, el("span", { style: "font-weight:600;min-width:110px" }, name),
-        el("span", { class: "small", style: "color:var(--warn)" }, "not in the catalog — uncheck to clear")));
-    }
-    machPanel.append(el("div", { class: "row mt" }, el("button", { class: "btn primary",
-      onclick: async () => {
-        const machines = Object.entries(machChecks).filter(([, cb]) => cb.checked).map(([n]) => n);
-        try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { machines } }); toast("machines saved"); }
-        catch (err) { toast(err.message, 4000, { error: true }); }
-      } }, "save machines")));
-  }
-  view.append(...settingsSection("Machines", "", machPanel));
+  // -- machines: the shared binding card (components/machines.js) — D102: the conversation
+  // header mounts the same card, so both surfaces bind catalog machines identically --------
+  view.append(...settingsSection("Machines", "",
+    machinesCard(d.machine_catalog || [], d.machines || [], {
+      onSave: (machines) => api(`/api/routines/${slug}`, { method: "PATCH", body: { machines } }),
+    })));
 
   // -- origin: the library pattern this routine was generated from (provenance only) ----------
   const wf = d.workflow_ref || {};

@@ -104,7 +104,8 @@ def request_denial(loop, action: dict) -> list[str]:
             problems.append(
                 f'request: {raw!r} is not a grant-entity id — use "<class>:<name>" with '
                 f'class one of {", ".join(entities.CLASSES)} (e.g. "util:discord", '
-                f'"fs-write:~/project", "secret:FOO_KEY", "recreate:util-slug")')
+                f'"fs-write:~/project", "secret:FOO_KEY", "machine:gpu-box", '
+                f'"recreate:util-slug")')
             continue
         cls, name = parsed
         eid = f"{cls}:{name}"

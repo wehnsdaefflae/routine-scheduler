@@ -53,3 +53,29 @@ def test_routine_machine_binding(ui, ui_page):
 
     raw = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
     assert raw["machines"] == ["gpu-box"]
+
+
+def test_conversation_machine_binding(ui, ui_page):
+    """D102 (R475/R496): a CONVERSATION binds a catalog machine with the SAME shared card as a
+    routine; the PATCH writes the conversation's routine.yaml `machines:` (where the engine's
+    RSCHED_MACHINES injection reads it). Before this the Machines surface existed only on
+    routine pages, so heavy conversation work had no way onto the GPU box."""
+    mac = MachineConfig(host="10.0.0.9", user="rsched", description="RTX 4090", tags=["gpu"])
+    mac.name = "gpu-box"
+    ui.server_cfg.machines = {"gpu-box": mac}
+
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill("stabilize the videos on the gpu box")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    slug = ui_page.url.rsplit("/", 1)[-1]
+
+    ui_page.locator(".conv-caps summary").click()   # ⚙ capabilities & budgets
+    row = ui_page.locator("label", has_text="gpu-box")
+    row.wait_for(timeout=10_000)
+    row.locator("input[type=checkbox]").check()
+    ui_page.get_by_role("button", name="save machines").click()
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("machines saved")
+
+    raw = yaml.safe_load((ui.conversations / slug / "routine.yaml").read_text(encoding="utf-8"))
+    assert raw["machines"] == ["gpu-box"]

@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.228.0] — 2026-08-23
+
+### Added
+- **Conversations bind remote machines** (D102 = both halves, operator order 2026-08-23;
+  R475/R496: heavy conversation work — a GPU batch render — had no way onto a catalog
+  machine, and two conversations independently concluded machine access was
+  routine-only). The conversation header's capabilities panel now mounts the same
+  Machines card the routine page uses (new shared `static/components/machines.js`;
+  `routine-config.js` swaps its inline panel for it), backed by `machines` +
+  `machine_catalog` in the conversation detail and a validated `machines` PATCH — the
+  next reply's boot injects `RSCHED_MACHINES`/`RSCHED_MACHINE_KEYS` exactly as a routine
+  run's does. The in-run half already existed since 0.124.0 (`machine:<name>` access
+  request → one-click allow → env injection, run-overlay included) but no surface ever
+  NAMED it, so both R475/R496 conversations never tried: the request-field teaching copy
+  (schema description + denial text) now carries a `machine:gpu-box` example, and
+  docs/remote-machines.md names both conversation paths.
+
+
 ## [0.227.0] — 2026-08-23
 
 ### Added

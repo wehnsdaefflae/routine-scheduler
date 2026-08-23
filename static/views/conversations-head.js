@@ -4,6 +4,7 @@
 
 import { api } from "/static/api.js";
 import { connectionsCard } from "/static/components/connections.js";
+import { machinesCard } from "/static/components/machines.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { rootsEditor } from "/static/components/fsroots.js";
@@ -164,6 +165,15 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
     connectionsCard(detail.connections || {}, {
       onSave: (connections) => api(`/api/conversations/${slug}`,
         { method: "PATCH", body: { connections } }),
+    }));
+  // Machines: bind a catalog SSH host so the `remote` util reaches it — the same card the
+  // routine page uses (D102, R475/R496: heavy conversation work had no way onto the GPU box;
+  // the machine:<name> access request is the in-run twin of this panel).
+  capBody.append(el("div", { class: "faint small mt" }, "machines — bind a remote SSH host so "
+    + "the remote util can act on it; applies from the next reply"),
+    machinesCard(detail.machine_catalog || [], detail.machines || [], {
+      onSave: (machines) => api(`/api/conversations/${slug}`,
+        { method: "PATCH", body: { machines } }),
     }));
   // General rules: a conversation shifts topic mid-thread, so a newly bound rule is pushed
   // to the reply in flight as well as saved for every reply after it (the server does both).
