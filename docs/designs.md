@@ -88,9 +88,18 @@ procedure invented per routine, and `copy-file` does not even create parent dirs
   the engine would have to arbitrate; the isolated dir plus a declared hand-back gives the
   same result with no arbitration.
 
-**First increment.** The declared result on `subtask` only (sequential — no concurrency to
-reason about), with the copy into the parent's `artifacts/` and the enriched observation.
-`spawn` follows once the shape has survived a real routine.
+**First increment — SHIPPED 0.233.0**, with one deliberate change from the sketch above: no
+new `finish` field. A child hands a file back by WRITING it into its own `artifacts/`, the
+convention the Artifacts panel and detached tasks already use; the engine copies that into the
+parent's `artifacts/from-sub-<n>/` on exit and the notification names the landed paths. That
+needs no action-schema change at all, so it costs every non-child run nothing, and the
+hand-back is opt-in by writing. The spawn/subtask contract copy was corrected to say so
+(`engine/kindsurface.py`), and `docs/subtasks.md` documents it.
+
+**Still unbuilt:** the vocabulary unification itself — one CHILD RUN concept with `spawn`,
+`subtask` and a future `branch` as scheduling modes of it, rather than three names. The
+hand-back was the load-bearing half and it is now settled; the rename is cosmetic by
+comparison and should follow F325's needs rather than lead them.
 
 ---
 

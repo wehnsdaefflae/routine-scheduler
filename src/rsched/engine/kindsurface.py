@@ -185,7 +185,9 @@ a fully self-contained "prompt" as its instruction; it sees nothing else and ret
 finish summary. You keep working while it runs; you are notified automatically when it exits. \
 A child works in its OWN directory (runs/<ts>/sub/<n>/, NOT your working tree — R405/R406): \
 relative paths resolve THERE, so name absolute paths (within the allowed roots) for anything \
-it must read, and fold its results back yourself from its finish summary. A child runs on \
+it must read. To hand a FILE back, tell the child to write it into its own artifacts/ — the \
+engine copies that into YOUR artifacts/from-sub-<n>/ when the child exits and names the landed \
+paths in the notification, so you never go looking in its dir (F338). A child runs on \
 your MAIN model unless `model` picks a role or a catalog model for it."""),
     (("subtask",), """- subtask: start a child sub-workflow that runs SEQUENTIALLY in the \
 background — decompose a large \
@@ -196,7 +198,9 @@ live) and you are notified when it finishes; or do other work meanwhile. Pick it
 that step's purpose (or omit for the default, or "generate" to DRAFT one when none fits — only if \
 that capability is enabled); give a self-contained "prompt"; "turns" bounds it (default: half your \
 remaining). Unlike a plain workflow step it runs on its own context window + pattern; it runs \
-on the routine's MAIN model unless `model` picks a role or a catalog model for it."""),
+on the routine's MAIN model unless `model` picks a role or a catalog model for it. A file it \
+must hand back goes in its own artifacts/ — the engine copies that into your \
+artifacts/from-sub-<n>/ and names it when the child exits (F338)."""),
     (("detach",), """- detach: start a LONG background task that OUTLIVES this reply — for a \
 big, self-contained job (a \
 large scrape, a bulk conversion, a slow build) you want to kick off and keep chatting around. \

@@ -208,6 +208,14 @@ class SubrunManager:
     def _collect(self, sub: Subrun) -> None:
         if not sub.collected:
             sub.collected = True
+            # F338: the hand-back happens HERE, at the child's single finalization point,
+            # because there are two paths that can REPORT an exit — `wait` (which consumes
+            # finished children directly) and the turn-boundary announcement — and a child
+            # that finished during a wait must hand its files back exactly like one that
+            # finished between turns. Collecting in either reporter made it a race.
+            from .control import collect_child_artifacts
+
+            sub.collected_paths = collect_child_artifacts(sub)
             # kill_all can collect a child that REFUSED to stop (still running in its
             # thread, still mutating its usage dict) — snapshot defensively so the fold
             # and the event agree, and a concurrent key insert can't blow the copy.
@@ -311,7 +319,9 @@ class SubrunManager:
     @staticmethod
     def _finished_rows(finished: list) -> list[dict]:
         return [{"n": s.n, "label": s.label, "status": s.status, "turns": s.ctx.turn,
-                 "mode": s.mode, "summary": truncate(s.summary, cap=3000)[0]} for s in finished]
+                 "mode": s.mode, "summary": truncate(s.summary, cap=3000)[0],
+                 **({"collected": list(s.collected_paths)} if s.collected_paths else {})}
+                for s in finished]
 
     def kill_all(self, *, reason: str) -> int:
         """Parent is exiting — children never outlive it."""

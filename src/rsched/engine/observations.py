@@ -392,8 +392,14 @@ def format_observation(obs: dict) -> str:  # noqa: C901, PLR0911, PLR0912, PLR09
         parts = []
         for f in obs.get("finished", []):
             noun = "SUBTASK" if f.get("mode") == "sequential" else "SUB-WORKFLOW"
+            # F338: name the deliverables the engine copied up. The WAIT is one of the two
+            # paths that report a child's exit (the turn-boundary announcement is the other),
+            # and which one wins is a timing race — so both must say where the files landed,
+            # or a parent that happened to be waiting never learns.
+            got = (" Collected from the child into your artifacts/: "
+                   + ", ".join(f["collected"]) if f.get("collected") else "")
             parts.append(f"{noun} {f['n']} {f['label']!r} FINISHED "
-                         f"(status {f['status']}, {f['turns']} turns):\n{f['summary']}")
+                         f"(status {f['status']}, {f['turns']} turns):\n{f['summary']}{got}")
         if obs.get("interrupted_by_user"):
             parts.append("Wait PAUSED — a user message just arrived (delivered next). Handle "
                          "it, then `wait` again for the still-running child(ren) "

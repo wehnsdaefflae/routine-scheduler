@@ -50,6 +50,19 @@ capability-class grants: permissions and capabilities are off at depth > 0. Keep
 children's outputs disjoint by convention — they share the tree, and the harness contract
 already forbids them `LEDGER.md` / `state/phase.json`.
 
+**Handing a FILE back** (F338, first increment; from R409/R410). Isolation is deliberate — a
+shared writable dir between concurrent children is a race the engine would have to arbitrate —
+but it left the parent to know the child's path, search it and copy files out by hand, a
+procedure every routine reinvented and one the spawn contract used to describe *wrongly* (it
+claimed children share the parent's working directory; they never have). A child now hands a
+file back by WRITING it into its own `artifacts/` — the same deliverable convention the
+Artifacts panel lists and a detached background task already uses. On the child's exit the
+engine copies that into the PARENT's `artifacts/from-sub-<n>/` and the finished-notification
+names the landed paths, so nothing greps the runs tree. A child that writes nothing hands back
+only its summary, exactly as before: the hand-back is opt-in by writing, needing no new action
+field. The rest of the F338 unification — one vocabulary across spawn/subtask/branch — is
+specced in [designs](designs.md).
+
 ## The decomposition gate
 
 Concrete subtasks are never known statically — you can't put them in the workflow file. Instead

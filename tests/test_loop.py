@@ -1179,6 +1179,52 @@ def test_subtask_starts_nonblocking_and_is_awaited(make_routine, scripted):
     assert events[-1]["usage_total"]["in"] >= 30   # child tokens folded into the parent
 
 
+def test_child_deliverables_are_collected_into_the_parent(make_routine, scripted):
+    """F338 (from R409/R410): a child hands work back by WRITING it, not by being scavenged.
+
+    Children run in their own dir by design — the isolation is deliberate, so concurrent
+    siblings never race a shared tree — but that left the parent to know the child's path,
+    search it and copy files out by hand, a procedure every routine reinvented and which the
+    spawn contract used to describe wrongly ("they share your working directory"). A child's
+    `artifacts/` (the same deliverable convention the Artifacts panel and detached background
+    tasks already use) is now copied into the PARENT's artifacts/, namespaced by child number,
+    and the finished-announcement names exactly what landed.
+    """
+    d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
+        (PARENT, subtask("CHILD-A: produce the report.", label="build")),
+        ("CHILD-A", write_file("artifacts/report.md", content="# the deliverable")),
+        ("CHILD-A", finish(summary="wrote artifacts/report.md")),
+        (PARENT, wait_(n=1)),
+        (PARENT, finish(summary="collected")),
+    ], slug="collect")
+    assert status == "ok"
+    landed = d / "artifacts" / "from-sub-1" / "report.md"
+    assert landed.is_file(), "the child's deliverable must land in the parent's artifacts/"
+    assert landed.read_text(encoding="utf-8") == "# the deliverable"
+    # …and the parent is TOLD, by path — no grepping the runs tree. The path is named whether
+    # the exit is reported by the WAIT (which consumes finished children directly) or by the
+    # turn-boundary announcement: which one wins is a timing race, so collection happens at the
+    # child's single finalization point and BOTH reporters carry it. Collecting in one reporter
+    # made this test pass alone and fail under load.
+    said = json.dumps(ep.calls[-1]["messages"])
+    assert "artifacts/from-sub-1/report.md" in said
+
+
+def test_a_child_that_writes_nothing_collects_nothing(make_routine, scripted):
+    """The hand-back is opt-in by writing: a child with no artifacts/ hands back only its
+    summary, exactly as before, and the announcement gains no misleading collection line."""
+    d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
+        (PARENT, subtask("CHILD-A: just think.", label="think")),
+        ("CHILD-A", finish(summary="thought about it")),
+        (PARENT, wait_(n=1)),
+        (PARENT, finish(summary="done")),
+    ], slug="nocollect")
+    assert status == "ok"
+    assert not (d / "artifacts" / "from-sub-1").exists()
+    assert "Collected from the child" not in json.dumps(ep.calls[-1]["messages"])
+    assert "from-sub-1" not in json.dumps(ep.calls[-1]["messages"])
+
+
 def test_subtasks_run_in_order_and_forward_results(make_routine, scripted):
     """Two subtasks, each awaited before the next; the first's result is in the parent's context
     before it composes the second (the parent forwards it)."""
@@ -2608,6 +2654,7 @@ def test_wait_timeout_reports_timed_out():
 
     sub = SimpleNamespace(n=1, label="t", status="", mode="parallel", summary="",
                           done=threading.Event(), announced=False,
+                          collected_paths=(),          # F338: a real Subrun always has it
                           ctx=SimpleNamespace(turn=1))
 
     stub = SimpleNamespace(subruns={1: sub}, exit_event=threading.Event(),

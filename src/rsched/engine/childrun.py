@@ -15,6 +15,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .. import entities
@@ -63,6 +64,8 @@ class Subrun:
     abort_event: threading.Event
     started_mono: float
     mode: str = "parallel"             # parallel (spawn) | sequential (subtask)
+    parent_dir: Path | None = None     # where collected deliverables land (F338)
+    collected_paths: tuple = ()        # what actually landed there, parent-relative
     note: str = ""                     # e.g. "recipe X unavailable — builtin fallback"
     thread: threading.Thread | None = None   # attached by SubrunManager just before start
     status: str = "running"            # running | ok | partial | failed | aborted
@@ -164,7 +167,7 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
                             allowed_tools=tools)
     sub = Subrun(n=n, label=label, workflow=recipe_slug, mode=mode, note=note,
                  ctx=child_ctx, loop=child_loop, abort_event=abort_event,
-                 started_mono=time.monotonic())
+                 started_mono=time.monotonic(), parent_dir=parent_ctx.routine.dir)
     # subrun_start carries `mode` (the tree read-model distinguishes sequential/parallel) and
     # the child's allocated budget (the per-node meter) — both are payload EXTENSIONS, so every
     # existing consumer keeps working; a new event type would have broken them.

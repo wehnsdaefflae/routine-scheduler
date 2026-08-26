@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.233.0] — 2026-08-26
+
+### Added
+- **A child run hands a file back by writing it** (F338 first increment, from R409/R410).
+  Children run in their own dir by design — a shared writable tree between concurrent siblings
+  is a race the engine would have to arbitrate — but that left the parent to know the child's
+  path, search it and copy files out by hand: a procedure every routine reinvented, and one
+  the spawn contract used to describe *wrongly* ("they share your working directory"; they
+  never did). A child now writes what it is handing back into its own `artifacts/` — the same
+  deliverable convention the Artifacts panel lists and a detached background task already uses
+  — and on the child's exit the engine copies it into the parent's `artifacts/from-sub-<n>/`,
+  naming the landed paths in the finished-notification. **No action-schema change**: the
+  hand-back is opt-in by writing, so a child that writes nothing hands back only its summary
+  and every non-child run pays nothing. The `spawn` and `subtask` contract copy now says so.
+
 ## [0.232.0] — 2026-08-26
 
 ### Fixed

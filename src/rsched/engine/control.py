@@ -9,6 +9,7 @@ never the model call itself. control.json stays web-owned: the engine only reads
 
 from __future__ import annotations
 
+import logging
 import time
 
 from .. import reports
@@ -19,6 +20,8 @@ from . import deliberation, executor, fileops, inbox
 from .actions import ACTION_SCHEMA, util_rejection_outcome, validate_action
 from .commands import CommandError, parse_command
 from .observations import format_observation, truncate
+
+log = logging.getLogger("rsched.control")
 
 _ABORT = {"flag": False}
 
@@ -284,18 +287,59 @@ def drain_injections(loop) -> None:
 
 
 def child_finished_message(*, mode: str, n: int, label: str, workflow: str, status: str,
-                           turns: int, summary: str) -> str:
+                           turns: int, summary: str, collected: tuple = ()) -> str:
     """The one wording for a child-exit notification — used live by
     announce_finished_subruns AND by history.replay_messages when it reconstitutes an
     announcement from a `subrun_end` event, so a resumed prompt reads like the live one.
+
+    `collected` names the child's deliverables that the engine copied up (F338). Without it
+    a parent had to know the child's dir, search it and copy files out by hand — a procedure
+    every routine reinvented, and one the spawn contract used to describe WRONGLY (R409/R410:
+    it claimed children share the parent's working directory; they never did).
     """
     head, _ = truncate(summary, cap=4000)
+    got = ("\nCollected from the child into your artifacts/: "
+           + ", ".join(collected) + " — read them from there; the child's own dir is gone "
+           "from your reach." if collected else "")
     if mode == "sequential":
         return (f"SUBTASK FINISHED — #{n} {label!r} (workflow {workflow}, status "
                 f"{status}, {turns} turns). Fold this result into your next subtask's "
-                f"brief, or finish:\n{head}")
+                f"brief, or finish:\n{head}{got}")
     return (f"SUB-WORKFLOW FINISHED — #{n} {label!r} (workflow {workflow}, "
-            f"status {status}, {turns} turns):\n{head}")
+            f"status {status}, {turns} turns):\n{head}{got}")
+
+
+def collect_child_artifacts(sub) -> tuple:
+    """Copy a finished child's deliverables into the PARENT's artifacts/, namespaced by the
+    child's number, and return the parent-relative paths (F338, first increment).
+
+    The convention is the one the rest of the system already uses: a child writes what it is
+    handing back into its own `artifacts/`, exactly as a detached background task does
+    (daemon/detached.py `_copy_artifacts`) and exactly what the Artifacts panel lists. Nothing
+    new to declare, no action-schema change — a child that writes nothing hands back only its
+    summary, as before.
+
+    Isolation is preserved on purpose: children keep their own dirs (childrun.py), so
+    concurrent siblings never race a shared tree; this is the hand-back that isolation was
+    missing. Best-effort — a copy failure must never turn a finished child into a failed one.
+    """
+    import shutil
+
+    src = sub.ctx.routine.dir / "artifacts"
+    if not src.is_dir() or not any(src.iterdir()):
+        return ()
+    parent_dir = sub.parent_dir
+    if parent_dir is None:
+        return ()          # a child built outside the normal path collects nothing
+    rel = f"artifacts/from-sub-{sub.n}"
+    dst = parent_dir / rel
+    try:
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+    except OSError as exc:
+        log.warning("subrun %s: could not collect artifacts: %s", sub.n, exc)
+        return ()
+    return tuple(sorted(f"{rel}/{p.relative_to(dst).as_posix()}"
+                        for p in dst.rglob("*") if p.is_file()))
 
 
 def announce_finished_subruns(loop) -> None:
@@ -306,4 +350,5 @@ def announce_finished_subruns(loop) -> None:
     for sub in loop.subruns.take_finished_unannounced():
         loop.messages.append({"role": "user", "content": child_finished_message(
             mode=sub.mode, n=sub.n, label=sub.label, workflow=sub.workflow,
-            status=sub.status, turns=sub.ctx.turn, summary=sub.summary)})
+            status=sub.status, turns=sub.ctx.turn, summary=sub.summary,
+            collected=sub.collected_paths)})
