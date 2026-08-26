@@ -11,6 +11,24 @@ export function getToken() {
   return (storage.get(KEY) || "").trim();
 }
 
+// FastAPI's error `detail` is a plain string for our HTTPExceptions, but a LIST of
+// {loc, msg, type} validation records for a 422 (an unknown or forbidden request field).
+// `new Error(list)` stringifies to "[object Object]" — the opaque toast a rejected
+// config-patch apply on the Decisions page showed (F392). Render whichever shape arrives as
+// a legible one-line message ("field: message; …") so every view's error toast is readable.
+export function detailMessage(detail) {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => {
+      if (typeof d === "string") return d;
+      const field = Array.isArray(d?.loc) ? d.loc[d.loc.length - 1] : null;
+      const msg = d?.msg || JSON.stringify(d);
+      return field ? `${field}: ${msg}` : msg;
+    }).join("; ");
+  }
+  return detail ? JSON.stringify(detail) : "";
+}
+
 function clearToken() {
   storage.remove(KEY);
   dropWorkerToken();
@@ -113,7 +131,7 @@ async function authedJson(path, makeInit) {
     }
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      const err = new Error(data.detail || `${resp.status} ${resp.statusText}`);
+      const err = new Error(detailMessage(data.detail) || `${resp.status} ${resp.statusText}`);
       err.status = resp.status;
       throw err;
     }

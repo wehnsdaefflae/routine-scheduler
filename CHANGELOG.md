@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.233.2] — 2026-08-26
+
+### Fixed
+- **API error toasts no longer render `[object Object]`** (F392, failure-visibility). The
+  shared `api()` helper built its `Error` from FastAPI's `detail` assuming a string — but a
+  **422** returns `detail` as a LIST of `{loc, msg, type}` validation records, and
+  `new Error(list)` stringifies to `[object Object]`. That was the opaque toast the Decisions
+  page showed when a rejected config-patch apply hit a forbidden field (companion to the
+  0.233.1 root fix). A new `detailMessage()` helper renders whichever shape `detail` arrives
+  in as a legible one-line message (`field: message; …`), so every view's error toast is
+  readable. Deterministic in-browser test in `tests/ui/test_error_message.py`.
+
 ## [0.233.1] — 2026-08-26
 
 ### Fixed
