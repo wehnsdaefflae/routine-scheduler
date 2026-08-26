@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.231.1] — 2026-08-26
+
+### Fixed
+- **The container entrypoint repairs a root-owned `~/.cache/uv`.** Running `uv` inside the
+  container as root — which is what a `docker exec` without `-u` gives you — leaves
+  `environments-v2/` (or a `wheels-v6/` entry) owned by root inside an otherwise mark-owned
+  tree. The uid-1000 daemon then cannot create its per-script environment and **every util
+  call in the instance** fails with `failed to create directory …/environments-v2/…:
+  Permission denied` — for every routine at once, self-audit included. Observed live on
+  2026-08-26; the same class as the F97 `~/.local/state` bug and the earlier `util-stats`
+  root:root one, which the entrypoint already guards. `~/.cache/uv` joins the chowned mount
+  points and additionally gets a recursive repair of just the offending entries (`find !
+  -user mark`), so a warm cache stays cheap.
+
 ## [0.231.0] — 2026-08-26
 
 ### Added

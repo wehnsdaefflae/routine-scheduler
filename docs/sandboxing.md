@@ -92,6 +92,12 @@ requests exposure explicitly (`ask_user` with `request: "secret:NAME"`). Blast r
 after both layers: a prompt-injected util can leak at most its own declared secrets, not
 the store.
 
+**Never run `uv` in the container as root.** `docker exec` defaults to root, and uv creates a
+per-script environment under `~/.cache/uv` at every util call — so one root-run `uv` leaves
+`environments-v2/` root-owned inside a tree the uid-1000 daemon must write, and EVERY util call
+in the instance then dies with `Permission denied` (observed 2026-08-26). Use
+`docker exec -u 1000:1000`. The entrypoint repairs the ownership on start, so a restart heals it.
+
 ## The mode — config.yaml `sandbox:`
 
 - `permissive` (**default**) — jail whenever the kernel supports Landlock; warn once in

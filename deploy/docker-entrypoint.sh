@@ -9,10 +9,21 @@ for d in \
   "/home/mark/routines" \
   "/home/mark/.local/share/routine-scheduler-libraries" \
   "/home/mark/.local/state" \
-  "/home/mark/.cache/ms-playwright" ; do
+  "/home/mark/.cache/ms-playwright" \
+  "/home/mark/.cache/uv" ; do
   mkdir -p "$d"
   chown mark:mark "$d" 2>/dev/null || true
 done
+# ~/.cache/uv needs a RECURSIVE repair, not just its top dir: uv creates per-script
+# environments under it at every util call, and anything that runs uv in this container as
+# root (a `docker exec` without -u, which is what root-by-default gives you) leaves
+# environments-v2/ — or a wheels-v6/ entry — owned by root INSIDE an otherwise mark-owned
+# tree. The uid-1000 daemon then fails to create its env and EVERY util call in the instance
+# dies with "failed to create directory .../environments-v2/...: Permission denied", for every
+# routine at once (2026-08-26; same class as the F97 ~/.local/state bug above and the
+# util-stats root:root one). Only the offenders are touched, so this stays cheap on a warm
+# cache.
+find /home/mark/.cache/uv ! -user mark -exec chown mark:mark {} + 2>/dev/null || true
 # NOTE ~/.local/state above: the util-stats snapshot (util_stats.snapshot_path(), the Stats
 # tab + `util-stats` util's single source of truth) is written to ~/.local/state/routine-
 # scheduler/. That dir is NOT a bind mount, so Docker created ONLY the sibling bind parent
