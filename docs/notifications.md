@@ -17,40 +17,43 @@ Everything that needs *a decision from you* is always on the **Decisions page** 
 asks, deferred asks, and util approvals share one record shape (`{mode, type, default,
 expires}`). Answering on any surface resolves the record everywhere.
 
-## The channels: you switch them on
+## The channel: the web console, and only the web console
 
-- **Web** — always on. The Decisions page, the in-app notification tier (Settings →
-  Notifications, opt-in), and browser **Web Push** (opt-in per browser, works with the tab
-  closed). Both push tiers key off the same open-decisions source the Decisions page reads,
-  so the surfaces can never disagree.
-- **Discord** — opt-in per routine/conversation by activating the **`communication`**
-  permission (which reserves the `discord` util). Two things then happen engine-side:
-  - every **blocking decision** is mirrored to your channel; a reply there resolves it on
-    the web too (and vice versa — whichever surface answers first counts);
-  - a finished **background task** pings the channel so an away user knows to look.
-- **Anything else** (Zulip, e-mail, …) is an ordinary **util call by the agent itself**:
-  visible in the transcript, gated by the utils you granted, never engine-implicit.
+- **Web** — always on, and the only delivery the system performs by itself. The Decisions
+  page, the in-app notification tier (Settings → Notifications, opt-in), and browser **Web
+  Push** (opt-in per browser, works with the tab closed). Both push tiers key off the same
+  open-decisions source the Decisions page reads, so the surfaces can never disagree.
+- **A messenger** (Discord, Signal, Telegram, WhatsApp, Zulip, e-mail, …) is an ordinary
+  **util call by the agent itself**: visible in the transcript, gated by that channel's
+  `messaging-*` permission, never engine-implicit. A run sends there because its workflow
+  says to reach a *person*, not because the system decided you should be pinged.
+
+**There is no second decision surface** (0.230.0). Discord mirroring of blocking questions
+was deleted after D48/F193: an answer given on the channel was observed not reaching the
+waiting run, so the user believed they had answered while the run stalled. With it went the
+two remaining engine-implicit sends — the OAuth-reauth ping and the background-task-finished
+ping — so `messaging-discord` is now exactly what its siblings are: a grant to speak in a
+channel, nothing more. Away-from-console reach is browser push, which needs no permission and
+no util.
 
 ## Example: a blocking ask, end to end
 
-1. A routine holding `communication` reaches a decision it can't make:
+1. A routine reaches a decision it can't make:
    ```json
    {"say": "Need a go/no-go.", "kind": "ask_user", "mode": "blocking",
     "question": "Ship v2 today?", "options": ["yes", "no"],
     "default": "hold the release"}
    ```
-2. The engine files the record (Decisions page shows it immediately, badge + push fire)
-   and mirrors the question to Discord with the options and the timeout default.
-3. You reply `yes` — on either surface. The record resolves, the other surface is told,
-   and the run continues with your answer.
+2. The engine files the record; the Decisions page shows it immediately and the badge +
+   push fire.
+3. You answer `yes` there. The record resolves and the run continues with your answer.
 4. If you don't answer within `ask_timeout_min`, the run continues on the stated
    `default` and the record stays open as *deferred* — a late answer still reaches the
    next run.
 5. Or you **defer it yourself** (the Decisions page's *defer to next run* button): the
-   run unblocks immediately on its stated default — the timeout path, chosen by you —
-   and Discord is told the question was deferred from the console. Deferred (non-blocking)
-   records can also be **snoozed** from the Decisions page: hidden there until a
-   timestamp, still open to the routine.
+   run unblocks immediately on its stated default — the timeout path, chosen by you.
+   Deferred (non-blocking) records can also be **snoozed** from the Decisions page: hidden
+   there until a timestamp, still open to the routine.
 
 ## Web Push: what it needs, and what it does not
 
@@ -87,11 +90,16 @@ error="insufficient_scope"`, on which `static/api.js` drops the token and re-ope
 gate; ordinary 403s (a protected template, the credentials dir, a denied path) omit the
 marker and are left alone.
 
-## For developers: one seam in the code
+## For developers: no implicit outbound send exists
 
-All implicit outbound sends go through **`rsched/notify.py`** — the engine's decision
-mirror (`engine/decisions.py`) and the daemon's background-task ping (`daemon/detached.py`)
-both call it. If a new channel is ever added, it becomes a new permission + a `notify.py`
-transport; nothing else in the codebase learns about channels.
+There is no notification seam module any more, because there is nothing for it to carry:
+`rsched/notify.py` and `engine/decisions.py` were deleted in 0.230.0 along with their two
+daemon callers. The engine and the daemon reach the user by writing the durable record and
+nothing else; `web/push.py` renders that record to subscribed browsers.
+
+If an engine-implicit channel is ever wanted again, it comes back as a permission plus ONE
+seam module every implicit send goes through — never as an inline util call sprinkled into
+a caller. What must not come back without it is the failure D48 recorded: a channel that
+looks like it can answer a decision, and silently cannot.
 
 See also: [Rules & permissions](rules-permissions.md) · [Background tasks](background-tasks.md)

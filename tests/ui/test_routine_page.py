@@ -1,6 +1,6 @@
-"""Routine detail page: the four MESSAGE folders (D74), the sections side-TOC (like
-Settings) and the filesystem-root directory picker (browse the server FS, pick a real
-path — no more free-text textarea)."""
+"""Routine detail page: the four MESSAGE folders (D74), the routine's OWN secrets (D103),
+the sections side-TOC (like Settings) and the filesystem-root directory picker (browse the
+server FS, pick a real path — no more free-text textarea)."""
 
 import json
 
@@ -99,6 +99,34 @@ def test_messages_folders_and_outbox_retract(ui, ui_page, make_routine):
 
 def _toast(page):
     return page.locator("#toast:not([hidden])")
+
+
+def test_own_secrets_set_shadow_and_remove(ui, ui_page):
+    """D103: the routine's own secrets store, written from its own page. A name that also
+    exists centrally is labelled as shadowing it — a value silently overriding a shared one
+    is exactly the confusion the single flat namespace used to cause — and the API answers
+    with NAMES, so the value never returns to the browser."""
+    from rsched import secrets
+
+    secrets.set_secret("SFTP_USER", "the-shared-one")
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    ui_page.wait_for_selector("h2:has-text('Own secrets')", timeout=10_000)
+
+    ui_page.locator("[data-own-secret-key]").fill("SFTP_USER")
+    ui_page.locator("[data-own-secret-value]").fill("mine-only")
+    ui_page.locator("[data-own-secret-set]").click()
+    expect(_toast(ui_page)).to_contain_text("SFTP_USER saved")
+
+    row = ui_page.locator('[data-own-secret="SFTP_USER"]')
+    expect(row).to_be_visible(timeout=10_000)
+    expect(row).to_contain_text("overrides the central store")
+    assert secrets.load_routine_secrets("uir") == {"SFTP_USER": "mine-only"}
+    assert secrets.load_secrets()["SFTP_USER"] == "the-shared-one"     # central untouched
+
+    row.get_by_role("button", name="remove").click()
+    expect(_toast(ui_page)).to_contain_text("SFTP_USER removed")
+    expect(ui_page.locator('[data-own-secret="SFTP_USER"]')).to_have_count(0)
+    assert secrets.load_routine_secrets("uir") == {}
 
 
 def test_sections_side_toc(ui, ui_page):

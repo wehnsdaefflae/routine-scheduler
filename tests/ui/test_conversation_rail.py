@@ -69,7 +69,9 @@ def test_browser_section_renders_and_close_clears_session(ui, ui_page):
 
 def test_rail_sections_collapse_and_persist(ui, ui_page):
     """F296: a rail cap is a toggle — clicking collapses just that section, the choice
-    sticks in localStorage across a full reload, and clicking again reopens it."""
+    sticks in localStorage across a full reload, and clicking again reopens it. R341: the
+    key is `rail:<name>` (not `convrail:`) because the run view renders the SAME component
+    — a fold meant in one view is meant in the other."""
     _start_conversation(ui, ui_page)
     cap = ui_page.locator(".conv-view .rail-cap", has_text="state").first
     graph = ui_page.locator(".stategraph")
@@ -77,11 +79,11 @@ def test_rail_sections_collapse_and_persist(ui, ui_page):
 
     cap.click()
     expect(graph).to_be_hidden()
-    assert ui_page.evaluate("localStorage.getItem('convrail:state')") == "closed"
+    assert ui_page.evaluate("localStorage.getItem('rail:state')") == "closed"
 
     ui_page.reload()
     expect(ui_page.locator(".stategraph")).to_be_hidden()
 
     ui_page.locator(".conv-view .rail-cap", has_text="state").first.click()
     expect(ui_page.locator(".stategraph")).to_be_visible()
-    assert ui_page.evaluate("localStorage.getItem('convrail:state')") == "open"
+    assert ui_page.evaluate("localStorage.getItem('rail:state')") == "open"

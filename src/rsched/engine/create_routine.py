@@ -5,8 +5,10 @@ preview first, materialize only after the user has confirmed the draft.
 The operator's rule: routine creation is initiated from a conversation ONLY. Instead of a
 retired standalone wizard page, the conversation agent (or a `/create_routine` slash
 command) clarifies the task WITH the user in the normal chat, then emits this action. The
-FIRST call stores a DRAFT (slug, name, instruction, workflow) under the conversation's own
-`state/routine-draft.json` and returns a preview observation — nothing is created yet; the
+FIRST call VALIDATES the named workflow against the live library, then stores a DRAFT (slug,
+name, instruction, workflow) under the conversation's own
+`state/routine-draft.json` and returns a preview observation carrying the pattern catalog —
+nothing is created yet; the
 agent relays the preview and finishes its reply. When the user answers, the agent calls
 `create_routine` again with the SAME fields, and only then does the handler materialize —
 through the same `workflows.scaffold` path the retired wizard's build half called
@@ -47,6 +49,12 @@ from .run_context import RunContext
 # workflow, same default the spawn/subtask/detach actions use.
 DEFAULT_WORKFLOW = "general-task"
 
+#: `generate` is a SUBTASK capability (`subtask` with `workflow: "generate"`, gated by the
+#: `workflows: generate` permission — docs/subtasks.md), never a library pattern. Naming it
+#: here used to store cleanly and blow up at materialize, i.e. AFTER the user confirmed
+#: (F387/R493); it is rejected at draft time with the reason.
+GENERATE_PSEUDO_SLUG = "generate"
+
 #: Where a conversation's pending routine draft lives (relative to the conversation dir).
 #: ONE draft per conversation: a new slug simply replaces the old draft — the flow is a
 #: linear chat, not a queue.
@@ -65,20 +73,52 @@ def _load_draft(ctx: RunContext) -> dict | None:
     return draft if isinstance(draft, dict) and draft.get("slug") else None
 
 
-def _preview_obs(draft: dict, *, updated: bool, blocked_same_leg: bool = False) -> dict:
-    """The draft/preview observation: what WILL be created, and the exact next step. The
-    teaching copy is the contract — a same-leg confirm attempt gets told why it was held.
+def _catalog(server) -> list[dict]:
+    """Every library pattern, one line each: what the draft observation shows so the choice
+    is made against the real catalog rather than from memory (F383).
+    """
+    from ..workflows import library
+
+    return [{"slug": w["slug"], "description": w["description"] or w["name"],
+             **({"when_to_use": w["when_to_use"]} if w["when_to_use"] else {})}
+            for w in library.list_workflows(server.libraries_home)]
+
+
+def _unknown_workflow_obs(slug: str, workflow_slug: str, catalog: list[dict]) -> dict:
+    """A draft naming a pattern the library does not hold is refused HERE — before the user
+    is asked to confirm — instead of at the expensive materialize step (F387/R493).
+    """
+    why = (f"{GENERATE_PSEUDO_SLUG!r} is not a library pattern: drafting a NEW pattern is a "
+           'subtask capability (`subtask` with workflow: "generate"), not something '
+           "create_routine can materialize from. Pick a pattern from the catalog below, or "
+           "generate one in a subtask first and name the slug it wrote."
+           if workflow_slug == GENERATE_PSEUDO_SLUG else
+           f"no workflow {workflow_slug!r} exists in the library.")
+    return {"kind": "create_routine", "slug": slug, "workflow": workflow_slug,
+            "rejected": True, "reason": why, "workflow_catalog": catalog}
+
+
+def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
+                 blocked_same_leg: bool = False) -> dict:
+    """The draft/preview observation: what WILL be created, the catalog the choice was made
+    against, and the exact next step. The teaching copy is the contract — a same-leg confirm
+    attempt gets told why it was held.
     """
     instruction = draft["instruction"]
     obs = {"kind": "create_routine", "slug": draft["slug"], "name": draft["name"],
            "workflow": draft["workflow"], "draft": True, "updated": updated,
            "instruction_chars": len(instruction),
            "instruction_preview": instruction[:600],
-           "next": ("Nothing is created yet. Relay this draft to the user in your reply — "
-                    "slug, name, workflow pattern, and what the routine will do — and finish "
-                    "the reply. If the user confirms, call create_routine again with the SAME "
-                    "fields to materialize it; a call with changed fields updates the draft "
-                    "and restarts the confirmation.")}
+           # F383: the pattern catalog rides the observation so the relay compares against
+           # what the library actually holds — the choice stops being an unexamined default.
+           "workflow_catalog": catalog,
+           "next": ("Nothing is created yet. Relay this draft to the user in your reply and "
+                    "finish the reply. The relay must state, in the user's words: what the "
+                    "routine PRODUCES each run, what DONE looks like for one run, the chosen "
+                    "workflow pattern AND one alternative from workflow_catalog with why this "
+                    "one fits better. If the user confirms, call create_routine again with "
+                    "the SAME fields to materialize it; a call with changed fields updates "
+                    "the draft and restarts the confirmation.")}
     if blocked_same_leg:
         obs["held"] = ("This reply already drafted the routine — the confirming call must "
                        "follow the user's answer, in their next message. Show the draft and "
@@ -113,6 +153,12 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     if (server.routines_home / slug).exists():
         return {"kind": "create_routine", "slug": slug, "already_exists": True}
 
+    # F387: the pattern is checked against the LIVE library at draft time. The old flow
+    # stored any string and only failed inside scaffold — after the user had confirmed.
+    catalog = _catalog(server)
+    if workflow_slug not in {w["slug"] for w in catalog}:
+        return _unknown_workflow_obs(slug, workflow_slug, catalog)
+
     draft = _load_draft(ctx)
     fields = {"slug": slug, "name": name, "instruction": instruction,
               "workflow": workflow_slug}
@@ -120,10 +166,10 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
         # First step, or a design change: (re)write the draft and ask for the round-trip.
         record = {**fields, "pid": os.getpid(), "created_at": now_iso()}
         atomic_write_json(_draft_path(ctx), record)
-        return _preview_obs(record, updated=draft is not None)
+        return _preview_obs(record, catalog, updated=draft is not None)
     if draft.get("pid") == os.getpid():
         # Same reply that drafted it — no user has seen the preview yet. Hold, teach.
-        return _preview_obs(draft, updated=False, blocked_same_leg=True)
+        return _preview_obs(draft, catalog, updated=False, blocked_same_leg=True)
 
     # Confirmed: identical fields, a later leg — the user has spoken since the preview.
     try:

@@ -535,10 +535,11 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .browser-shot { width: 100%; border: 1px solid var(--line-2); border-radius: 6px; cursor: zoom-in; }
-/* F296: in the conversation rail the caps double as per-section collapse toggles */
-.conv-view .rail-cap { cursor: pointer; user-select: none; }
-.conv-view .rail-cap::before { content: "▾ "; color: var(--faint); }
-.conv-view .rail-cap.closed::before { content: "▸ "; }
+/* F296/R341: every rail cap doubles as its section's collapse toggle. Unscoped from
+   .conv-view when the run view started rendering the SAME rail component. */
+.rail-cap { cursor: pointer; user-select: none; }
+.rail-cap::before { content: "▾ "; color: var(--faint); }
+.rail-cap.closed::before { content: "▸ "; }
 .stategraph { display: flex; flex-direction: column; font-family: var(--sans); }
 .sg-node {
   display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted);

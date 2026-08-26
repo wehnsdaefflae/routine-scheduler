@@ -209,19 +209,18 @@ def run_plan(request: Request, run_id: str) -> dict:
     return {"plan": text}
 
 
-async def _file_inbox_message(request: Request, run_dir: Path, text: str,
+async def _file_inbox_message(run_dir: Path, text: str,
                               files: list[UploadFile] | None, via: str) -> None:
     """Deliver a run-page message. Uploads are stored under `attachments/` BESIDE the
-    polled inbox — the routine dir, or the `.wizard-<ts>` workspace for clarify runs —
-    i.e. the run's working dir, so the recorded rels resolve for read_file / view_image.
-    The message carries the conversation-style attachment block plus the `attachments`
-    rels the engine auto-attaches (engine/inbox.py → engine/control.py).
+    polled inbox — the routine dir, i.e. the run's working dir, so the recorded rels
+    resolve for read_file / view_image. The message carries the conversation-style
+    attachment block plus the `attachments` rels the engine auto-attaches
+    (engine/inbox.py → engine/control.py).
     """
     from ..conversations import attachment_note
-    from . import wizard_store
     from .conversations_common import _save_attachments
 
-    inbox = wizard_store.session_inbox_dir(request.app.state.server, run_dir)
+    inbox = run_dir.parent.parent / "inbox"
     rels = await _save_attachments(inbox.parent, files or [])
     atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json",
                       {"text": text.rstrip() + attachment_note(rels), "ts": now_iso(),
@@ -241,7 +240,7 @@ async def inject(request: Request, run_id: str, text: Annotated[str, Form()],
         raise HTTPException(400, "empty message")
     st = read_json(run_dir / "status.json")
     state = st.get("state") if isinstance(st, dict) else None
-    await _file_inbox_message(request, run_dir, text, files, via="web")
+    await _file_inbox_message(run_dir, text, files, via="web")
     return {"ok": True,
             "delivery": "mid-run" if state not in TERMINAL_STATES else "next-run"}
 
@@ -288,7 +287,7 @@ async def converse(request: Request, run_id: str, text: Annotated[str, Form()],
         raise HTTPException(
             503, "the server is restarting — your message was NOT saved. Resend it once, in a "
                  "moment, after the server is back (repeated resends only pile up duplicates).")
-    await _file_inbox_message(request, run_dir, text, files, via="web-converse")
+    await _file_inbox_message(run_dir, text, files, via="web-converse")
     if state not in TERMINAL_STATES:
         return {"ok": True, "delivery": "mid-run"}
     from ..config import load_routine

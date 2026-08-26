@@ -107,7 +107,7 @@ function overlay(title, body, { onClose }) {
 }
 
 /** The create form: name + members (order via the editor afterwards) + on-failure. */
-export function openGroupCreate(data, { reload }) {
+function openGroupCreate(data, { reload }) {
   const nameIn = el("input", { type: "text", placeholder: "group name",
     "data-group-new-name": "", "data-nopersist": true, style: "width:220px" });
   const picker = el("select", { multiple: "", size: "6", style: "min-width:240px",

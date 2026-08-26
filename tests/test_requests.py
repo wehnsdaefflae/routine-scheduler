@@ -70,7 +70,7 @@ def test_request_denial_names_ungated_action_kinds(tmp_path):
 def test_request_denial_redirects_already_available_entities(tmp_path):
     g = GrantPolicy(actions=frozenset({"write_util"}),
                     utils=frozenset({"discord"}),
-                    gated_utils={"discord": ("communication",)},
+                    gated_utils={"discord": ("messaging-discord",)},
                     run_history="last")
     lp = _loop(tmp_path, grants=g)
     assert "already enabled" in request_denial(lp, _ask("action:write_util"))[0]
@@ -90,13 +90,13 @@ def test_request_denial_names_unreserved_and_missing_utils(tmp_path):
 
 def test_request_denial_honors_tombstones_and_now_denials(tmp_path):
     tomb = GrantPolicy(denied=frozenset({"util:discord"}),
-                       gated_utils={"discord": ("communication",)})
+                       gated_utils={"discord": ("messaging-discord",)})
     assert "PERMANENTLY declined" in request_denial(_loop(tmp_path, grants=tomb),
                                                     _ask("util:discord"))[0]
-    now = GrantPolicy(gated_utils={"discord": ("communication",)}).with_overlay(
+    now = GrantPolicy(gated_utils={"discord": ("messaging-discord",)}).with_overlay(
         set(), {"util:discord"})
     assert "THIS RUN" in request_denial(_loop(tmp_path, grants=now), _ask("util:discord"))[0]
-    granted = GrantPolicy(gated_utils={"discord": ("communication",)}).with_overlay(
+    granted = GrantPolicy(gated_utils={"discord": ("messaging-discord",)}).with_overlay(
         {"util:discord"}, set())
     assert "already granted for this run" in request_denial(
         _loop(tmp_path, grants=granted), _ask("util:discord"))[0]
@@ -148,9 +148,9 @@ def test_request_denial_checks_secret_connection_machine_registries(tmp_path, mo
 
 def _reserve_discord(server) -> None:
     server.permissions_home.mkdir(parents=True, exist_ok=True)
-    (server.permissions_home / "communication.md").write_text(
+    (server.permissions_home / "messaging-discord.md").write_text(
         "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
-        "# permission: communication — discord\nbody\n", encoding="utf-8")
+        "# permission: discord messaging\nbody\n", encoding="utf-8")
 
 
 def _answer_when_asked(d, payload: dict) -> threading.Thread:
@@ -637,7 +637,7 @@ def test_capabilities_digest_teaches_once_grants_and_tombstones(make_routine, tm
                      run_dir=d / "runs" / TS,
                      transcript=Transcript(tmp_path / "t2.jsonl"),
                      budgets=Budgets.from_config(cfg.budgets))
-    ctx.grants = GrantPolicy(gated_utils={"discord": ("communication",)},
+    ctx.grants = GrantPolicy(gated_utils={"discord": ("messaging-discord",)},
                              denied=frozenset({"util:discord"})).with_overlay(
         {"fs-write:/tmp/granted"}, set())
     from rsched import utils_lib

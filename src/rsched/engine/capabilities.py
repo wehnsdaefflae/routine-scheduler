@@ -129,6 +129,42 @@ def _util_catalog_block(utils: list[dict], kinds: list[str], g) -> str:
     return header + "\n" + "\n\n".join(group_blocks)
 
 
+def _secret_notes(ctx: RunContext) -> list[str]:
+    """The two secret scopes, as CAPABILITIES lines.
+
+    D46: the NAMES provisioned in the central store — no consent, values NEVER shown to a run
+    — so a run knows up front which credentials exist (and which do not) instead of probing
+    with a util. D103: the routine's OWN names listed apart, because they need no exposure
+    request (they are already its) and they shadow a central name of the same spelling — a
+    run that cannot tell them apart spends a turn asking for what it already holds.
+
+    A util still only RECEIVES a secret it declares on its `secrets:` header, so naming
+    either set here is informational and cannot leak a value.
+    """
+    try:
+        from ..secrets import routine_secret_keys, secret_keys
+
+        provisioned = secret_keys()
+    except Exception:
+        provisioned = []
+    try:
+        own = routine_secret_keys(ctx.routine.slug)
+    except Exception:
+        own = []
+    out = []
+    if provisioned:
+        out.append(
+            "Secrets provisioned in the central store (NAMES only — a run never sees a secret's "
+            "VALUE; a util receives one only if it DECLARES the var on its `secrets:` header): "
+            + ", ".join(provisioned) + ".")
+    if own:
+        out.append(
+            "Secrets that are THIS ROUTINE's own (NAMES only, same declared-only rule): "
+            + ", ".join(own) + ". These are already exposed to you — never file an access "
+            "request for them; where a name also exists centrally, yours is what a util gets.")
+    return out
+
+
 def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) -> str:
     """What this run can ACTUALLY do, stated up front: model + context window, the action
     kinds usable this run (workflow tools ∩ grants), the held permissions with their
@@ -230,21 +266,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         notes = _permission_notes(ctx, g)
         if notes:
             parts.append(notes)
-    # D46: surface the NAMES of the secrets provisioned in the central store — no consent, values
-    # NEVER shown to a run — so a run knows up front which credentials exist (and which do not)
-    # instead of probing with a util. A util still only RECEIVES a secret it declares on its
-    # `secrets:` header; naming them here is informational and cannot leak a value.
-    try:
-        from ..secrets import secret_keys
-
-        provisioned = secret_keys()
-    except Exception:
-        provisioned = []
-    if provisioned:
-        parts.append(
-            "Secrets provisioned in the central store (NAMES only — a run never sees a secret's "
-            "VALUE; a util receives one only if it DECLARES the var on its `secrets:` header): "
-            + ", ".join(provisioned) + ".")
+    parts.extend(_secret_notes(ctx))
     bound = getattr(ctx.routine, "machines", None)
     if bound:
         # Bound remote machines are a resource the run can act on (via the `remote` util);

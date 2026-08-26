@@ -6,8 +6,8 @@
 
 import { el, fmtNum, fmtUsd } from "/static/util.js";
 
-export const SERIES_COLORS = ["#cc7f1f", "#3d8fe0", "#219e8e", "#a86fd1", "#d16a92", "#7fa03f"];
-export const OTHER_COLOR = "#56697e";
+const SERIES_COLORS = ["#cc7f1f", "#3d8fe0", "#219e8e", "#a86fd1", "#d16a92", "#7fa03f"];
+const OTHER_COLOR = "#56697e";
 
 // Stable color IDENTITY for a routine: hash the slug into the palette so it keeps its color
 // across reorders / additions (an index-based pick reshuffles everyone). One color per routine

@@ -1,10 +1,11 @@
 """Dispatch a validated action to its effect and return the observation dict.
 
-Handles util / read_file / write_file / edit_file / memory_read / memory_write / llm here.
-Control-flow kinds (spawn, subruns, kill, wait, finish) live in loop.py — they change the
-run's state machine — and the user-facing kinds (ask_user, write_util) in interact.py.
-Every observation dict feeds both the transcript event and (via
-composer.format_observation) the next user message.
+DISPATCH covers util / read_file / view_image / write_file / edit_file / memory_read /
+memory_write / read_rule / llm / list_models; `script` lives here too and is called
+directly from loop.py. Control-flow kinds (spawn, subruns, kill, wait, finish) live in
+loop.py — they change the run's state machine — and the user-facing kinds (ask_user,
+write_util, write_rule) in interact.py. Every observation dict feeds both the transcript
+event and (via observations.format_observation) the next user message.
 """
 
 from __future__ import annotations
@@ -79,10 +80,27 @@ def _machine_env(ctx: RunContext) -> dict[str, str]:
     return env
 
 
+def _routine_secrets(ctx: RunContext) -> dict[str, str]:
+    """This routine's own scoped store (D103). A conversation or background task has a slug
+    too, so the same mechanism serves them; a routine with no store contributes nothing.
+    """
+    from ..secrets import load_routine_secrets
+
+    try:
+        return load_routine_secrets(ctx.routine.slug)
+    except ValueError:
+        return {}     # a dir-path routine whose name is not a slug has no scoped store
+
+
 def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     """Engine-resolved, per-run secrets a util may receive (still under the declared-only gate):
-    OAuth connection access tokens + bound remote-machine details/keys. The var names are
-    disjoint, so a plain merge is safe.
+    the routine's OWN scoped secrets, OAuth connection access tokens, and bound remote-machine
+    details/keys. The var names are disjoint, so a plain merge is safe.
+
+    ROUTINE-SCOPED SECRETS (D103): `secrets.d/<slug>.env` rides this channel because
+    extra_secrets WIN the _child_env merge — so a routine's own `SFTP_USER` shadows a central
+    value of the same name for its runs, and reaches no other routine. There is no grant to
+    check: a scoped secret is the routine's own, implicitly exposed to it (secrets.py).
 
     RSCHED_API_TOKEN (R94, operator decision 2026-08-05: ENFORCE): the reserved name a
     util declares to talk to the daemon API resolves to the server's ROUTINE token — the
@@ -91,7 +109,7 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     subprocess through the store. Config stays honest: the engine reads `routine_token`
     here, it never writes it (bootstrap.ensure_config generates it).
     """
-    out = {**_connection_env(ctx), **_machine_env(ctx)}
+    out = {**_routine_secrets(ctx), **_connection_env(ctx), **_machine_env(ctx)}
     routine_token = str(getattr(ctx.server, "routine_token", "") or "")
     if routine_token:
         out["RSCHED_API_TOKEN"] = routine_token

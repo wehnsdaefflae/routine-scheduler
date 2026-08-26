@@ -189,11 +189,11 @@ model; the enforced half is the routine's `capabilities:` mapping. The frontmatt
 
 ```markdown
 ---
-tags: [communication, policy, notification]
+tags: [communication, messaging, outbound]
 requires:
   utils: [discord]
 ---
-# permission: communication — Discord as a second decision surface
+# permission: discord messaging — reach a person on Discord
 
 Keep channel messages short; the durable record is always the Decisions page…
 ```

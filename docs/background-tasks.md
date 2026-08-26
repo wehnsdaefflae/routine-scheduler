@@ -49,8 +49,8 @@ disk so it is restart-safe:
 3. **wake** — if the owner conversation is idle (its last run is terminal), `runner.resume`s it so the
    result reaches an away user; if a reply is live, the message rides its next turn boundary. This wake
    is state-driven (terminal-owner + pending inbox), so it also catches the race where the owner finishes
-   a reply just after the message was written. If the owner holds `communication`, a best-effort Discord
-   ping nudges the user to look (the *result* is in the conversation, not the ping).
+   a reply just after the message was written. Nothing pings anywhere else: the durable message in
+   the conversation IS the delivery, and the console surfaces it.
 4. **digest** — rebuilds `<owner>/state/background.json`, which the composer inlines into each reply's
    state digest ("Background tasks you launched: …") so the assistant can answer "how's the scrape
    going?" and knows to relay a newly-finished result.

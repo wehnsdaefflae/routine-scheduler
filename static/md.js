@@ -71,7 +71,7 @@ function alignments(line, count) {
     : c.endsWith(":") ? "right" : null));
 }
 
-export function mdToHtml(text, _depth = 0) {
+function mdToHtml(text, _depth = 0) {
   const lines = String(text ?? "").replace(/\r\n?/g, "\n").split("\n");
   const out = [];
   let para = [], list = null, fence = null;

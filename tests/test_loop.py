@@ -625,9 +625,9 @@ def test_gated_util_requires_its_permission(make_routine, scripted):
 
     d = make_routine(slug="gated")
     server = _server(d)
-    _library_permission(server, "communication", "requires:\n  utils: [discord]")
+    _library_permission(server, "messaging-discord", "requires:\n  utils: [discord]")
     scripted([
-        util("discord", ["send", "hi"]),          # communication not active → denied
+        util("discord", ["send", "hi"]),          # messaging-discord not active → denied
         probe(),
         finish(),
     ])
@@ -635,17 +635,17 @@ def test_gated_util_requires_its_permission(make_routine, scripted):
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert status == "ok"
     errs = [e for e in events if e["type"] == "error"]
-    assert len(errs) == 1 and "communication" in errs[0]["payload"]["message"]
+    assert len(errs) == 1 and "messaging-discord" in errs[0]["payload"]["message"]
     assert not any(e["type"] == "observation" and e["payload"].get("name") == "discord"
                    for e in events)
 
     # with the capability ENABLED the same call passes the gate and reaches the executor
     d2 = make_routine(slug="gated2")
     cfg = _yaml.safe_load((d2 / "routine.yaml").read_text())
-    cfg["permissions"] = ["communication"]
+    cfg["permissions"] = ["messaging-discord"]
     (d2 / "routine.yaml").write_text(_yaml.safe_dump(cfg))
     server2 = _server(d2)
-    _library_permission(server2, "communication", "requires:\n  utils: [discord]")
+    _library_permission(server2, "messaging-discord", "requires:\n  utils: [discord]")
     _set_capabilities(d2, utils=["discord"])
     scripted([util("discord", ["send", "hi"]), finish()])
     status2, run_dir2 = run_routine(d2, server2, run_ts=TS)

@@ -207,7 +207,7 @@ def test_failed_util_observation_teaches_usage(tmp_path):
 def _ctx(home, grants=None):
     from types import SimpleNamespace
     return SimpleNamespace(server=SimpleNamespace(libraries_home=home, sandbox="off"),
-                           routine=SimpleNamespace(dir=home, fs_read_roots=[],
+                           routine=SimpleNamespace(slug="demo", dir=home, fs_read_roots=[],
                                                    fs_write_roots=[], connections={},
                                                    machines=[]),
                            grants=grants,

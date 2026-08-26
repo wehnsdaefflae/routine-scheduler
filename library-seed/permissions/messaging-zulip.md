@@ -20,9 +20,9 @@ Hold it only for a routine whose task genuinely needs to reach a person that way
   Discord ping, sending it again here is noise wearing the clothes of urgency.
 - **Record the answer** in the LEDGER so no future run re-asks something already settled.
 
-Holding one channel never grants another, and none of them grants `communication` (Discord).
-A Discord ping sits in a room the user visits when they choose; a message on a personal
-messenger arrives on their phone, next to messages from their family, and is read by whoever
-is standing next to them. That is a different act, so it is a different permission.
+Holding one channel never grants another, `messaging-discord` included. A Discord post sits
+in a room the user visits when they choose; a message on a personal messenger arrives on their
+phone, next to messages from their family, and is read by whoever is standing next to them.
+That is a different act, so it is a different permission.
 
 If you are unsure whether a message earns this channel, it does not. Put it on the page.

@@ -129,9 +129,8 @@ Every run is a transparent conversation: watch it live in the run view, **inject
 message (picked up at the next turn boundary, or at the next run's boot), **pause/resume**,
 **abort**, **switch the model mid-run**, and answer **blocking or deferred questions** on
 the Decisions page. Answers to deferred questions reach the routine's next run
-automatically. A routine with the `communication` permission held may additionally ask
-blocking questions through Discord (one batched, phone-answerable message per run) — the UI
-stays the only channel otherwise.
+automatically. The console is the only decision surface — nothing mirrors a question to a
+messenger; opt-in browser push carries the same open-decisions record to your phone.
 
 ## Event triggers
 

@@ -6,6 +6,7 @@ harness exists to catch.
 """
 
 import json
+import re
 import time
 
 import yaml
@@ -243,17 +244,17 @@ def test_run_view_plan_strip_hidden_without_plan(ui, ui_page):
 
 
 def test_run_view_question_form(ui, ui_page):
-    """The run view's blocking-question panel rides the shared answerForm: the mirrored/
-    Discord note renders, ask-back sends an intermediate reply, and clicking an option
-    SUBMITS it one-click (F189) — no prefill-then-Enter second step."""
+    """The run view's blocking-question panel rides the shared answerForm: the timeout note
+    points at the Decisions page, ask-back sends an intermediate reply, and clicking an
+    option SUBMITS it one-click (F189) — no prefill-then-Enter second step."""
     ui.seed_run("uir", "20260715-100000", "waiting_user",
                 question={"qid": "q-rv", "question": "Which path?", "options": ["a", "b"],
                           "default": "a", "expires": "2026-07-15T13:00:00+00:00",
-                          "mirrored": True, "asked": "20260715-100000"})
+                          "asked": "20260715-100000"})
     ui.seed_question("uir", "q-rv", "Which path?", mode="blocking", default="a")
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-100000")
     box = ui_page.locator(".panel.warn", has_text="Which path?")
-    expect(box).to_contain_text("and on Discord")
+    expect(box).to_contain_text("also answerable on the Decisions page")
     expect(box).to_contain_text("without an answer: a")
     box.locator("textarea").fill("thinking out loud: why not both?")
     box.get_by_role("button", name="ask back").click()
@@ -537,6 +538,32 @@ def test_artifact_row_shows_time_and_deletes(ui, ui_page):
     row.locator(".art-del").click()
     expect(ui_page.locator(".art-item")).to_have_count(0)
     assert not (art / "notes.md").exists()
+
+
+def test_run_rail_sections_collapse_and_list_a_reports_deliverable(ui, ui_page):
+    """R339/R340/R341, the user's steer being "don't we reuse the same code?": the run view
+    now renders the SHARED rail component, so each section collapses (it could not before —
+    only the conversation copy could), and a deliverable committed to `reports/` shows in
+    Artifacts instead of leaving the panel empty."""
+    ui.seed_run("uir", "20260715-160000", "finished", summary="done")
+    reports = ui.routine_dir("uir") / "reports"
+    reports.mkdir(exist_ok=True)
+    (reports / "findings.md").write_text("# findings", encoding="utf-8")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-160000")
+
+    # R339: the reports/ file IS the artifact — the panel used to say "no artifacts yet"
+    row = ui_page.locator(".art-item", has_text="findings.md")
+    expect(row).to_be_visible(timeout=10_000)
+
+    # R340/R341: the caps are toggles here, exactly as in the conversation rail
+    cap = ui_page.locator('.run-rail .rail-cap[data-rail="tasks"]')
+    body = cap.locator("xpath=following-sibling::div[1]")
+    expect(body).to_be_visible()
+    cap.click()
+    expect(cap).to_have_class(re.compile(r"closed"))
+    expect(body).to_be_hidden()
+    cap.click()
+    expect(body).to_be_visible()
 
 
 def test_run_transcript_story_and_refer(ui, ui_page):

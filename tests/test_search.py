@@ -172,6 +172,35 @@ def test_pure_cache_rebuilds(server, index):
     assert fresh.search("zeppelin")
 
 
+def test_corrupt_index_self_heals_at_query_time(server, index):
+    """F356: corruption reached the QUERY seam and stuck. `_db()` heals the WRITER, but a
+    search opens its own read connection — so a malformed image made every search raise
+    until something happened to reopen the writer. The index is a pure cache: a query that
+    meets a corrupt file discards it and answers empty, and the next refresh rebuilds."""
+    assert index.search("zeppelin")                 # healthy to start with
+    index.close()
+    index.path.write_bytes(b"not a database at all" * 200)
+
+    assert index.search("zeppelin") == []           # heals instead of raising
+    assert not index.path.exists()                  # the cache was thrown away
+
+    index.refresh()                                 # rebuilt from the flat files
+    assert index.search("zeppelin")
+
+
+def test_a_locked_index_is_never_discarded(server, index, monkeypatch):
+    """The self-heal must fire on CORRUPTION only — an OperationalError is transient
+    (a lock, a busy timeout) and discarding a good index for one would be a real loss."""
+    import sqlite3
+
+    def boom(*_a, **_kw):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(index, "_match", boom)
+    assert index.search("zeppelin") == []           # answers empty, like an unbuilt schema
+    assert index.path.exists()                      # but the cache is NOT thrown away
+
+
 def test_budget_bounds_work(server):
     idx = SearchIndex(server)
     stats = idx.refresh(budget_s=0)

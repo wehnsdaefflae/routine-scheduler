@@ -19,6 +19,12 @@ function tile(label, ...body) {
 // Scheduling-group membership, right on the routine page (user order 2026-08-12): one
 // select — pick a group to join (leaving the previous one) or "none". Same PATCH the
 // Routines page's group surface uses; the daemon moves the fire/suppression tables itself.
+//
+// F388: the selection comes from MEMBERSHIP in /api/groups, never from the card's
+// `group_managed` — that field answers a different question ("does a SCHEDULED group drive
+// this routine's fires?", D71) and is null for a member of an unscheduled group. Reading it
+// as membership rendered a persisted assignment as "none" after reload, so users assigned
+// the group again and reported data loss (R499/R500).
 function groupTile(slug, current) {
   const sel = el("select", { class: "hero-group-sel" });
   const sub = el("div", { class: "hero-sub" }, current
@@ -31,7 +37,13 @@ function groupTile(slug, current) {
       sel.replaceChildren(
         el("option", { value: "" }, "none"),
         ...(groupsData.groups || []).map((g) => el("option", { value: g.id }, g.name)));
-      sel.value = current?.id || "";
+      const mine = (groupsData.groups || [])
+        .find((g) => (g.members || []).some((m) => m.slug === slug));
+      sel.value = mine?.id || "";
+      // An UNSCHEDULED group changes nothing about firing — say so instead of leaving the
+      // "fires on its own cron" line looking like the routine is in no group at all.
+      if (mine && !current)
+        sub.textContent = `member of ${mine.name} — the group has no schedule, so its own cron applies`;
     } catch { sel.replaceChildren(el("option", {}, "unavailable")); sel.disabled = true; }
   })();
   const spec = (ms) => ms.map((m) => ({ slug: m.slug, split: !!m.split }));
@@ -49,8 +61,10 @@ function groupTile(slug, current) {
         await api(`/api/groups/${target}`, { method: "PATCH",
           body: { members: [...spec(g.members || []), { slug, split: false }] } });
       }
-      toast(target ? "joined — the group's schedule now drives this routine"
-                   : "left the group — its own cron applies again");
+      const joined = (groupsData.groups || []).find((x) => x.id === target);
+      toast(!target ? "left the group — its own cron applies again"
+            : joined?.cron ? "joined — the group's schedule now drives this routine"
+                           : "joined — the group has no schedule, so its own cron still applies");
       setTimeout(() => location.reload(), 600);   // hero + schedule tiles re-read the truth
     } catch (err) { toast(err.message, 4000, { error: true }); sel.disabled = false; }
   };

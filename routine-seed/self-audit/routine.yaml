@@ -12,7 +12,7 @@ schedule:
   tz: Europe/Berlin
   catchup: skip
 permissions:
-- communication
+- messaging-discord
 - global-utils
 - util-authoring
 rules:

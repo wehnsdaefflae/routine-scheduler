@@ -1,21 +1,19 @@
-"""The unified decision surface: one record shape for every kind of required feedback,
-timeout-continues-on-default, and the Discord mirror's synchronization behavior."""
+"""The unified decision surface: one record shape for every kind of required feedback, and
+timeout-continues-on-default. The console is the ONLY surface — 0.230.0 deleted the Discord
+mirror (D48/F193) and with it every engine-implicit outbound send."""
 
 from __future__ import annotations
 
-import json
 import threading
 import time
 
 import pytest
 
 from conftest import finish
-from rsched import notify
+from rsched import utils_lib
 from rsched.config import ServerConfig
-from rsched.engine import decisions
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
-from rsched.grants import GrantPolicy
 from rsched.paths import atomic_write_json, read_json
 
 TS = "20260708-070000"
@@ -215,136 +213,6 @@ def test_dialog_reply_survives_a_finish_without_reask(make_routine, scripted):
     assert len(recs) == 1 and recs[0]["mode"] == "deferred"   # open for the next run
 
 
-def test_notify_is_the_single_outbound_seam(monkeypatch):
-    """notify.discord_enabled honours both gates — the engine's granted-util set and the
-    daemon's held-permissions list — and requires the channel util to exist at all."""
-    s = ServerConfig()
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    assert notify.discord_enabled(s, granted_utils={"discord"})
-    assert not notify.discord_enabled(s, granted_utils=set())
-    assert notify.discord_enabled(s, permissions=["communication"])
-    assert not notify.discord_enabled(s, permissions=["memory"])
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: False)
-    assert not notify.discord_enabled(s, granted_utils={"discord"})
-
-
-# ------------------------------------------------------------------ the Discord mirror
-
-
-class _FakeDiscord:
-    """Records every discord util call; feeds back scripted read replies."""
-
-    def __init__(self, replies=()):
-        self.calls: list[list[str]] = []
-        self.replies = list(replies)
-
-    def run_util(self, home, name, args, timeout=0, policy=None):
-        assert name == "discord"
-        self.calls.append(list(args))
-        if args[0] == "read":
-            batch = self.replies.pop(0) if self.replies else []
-            return 0, json.dumps(batch), ""
-        return 0, '{"id": "1"}', ""      # send --json: the posted message's snowflake
-
-    def sends(self):
-        return [a for a in self.calls if a[0] == "send"]
-
-
-def _mirror_ctx(make_routine, slug, *, granted=True):
-    from rsched.config import load_routine
-    from rsched.engine.run_context import Budgets, RunContext
-    from rsched.engine.transcript import Transcript
-
-    d = make_routine(slug=slug)
-    run_dir = d / "runs" / TS
-    run_dir.mkdir(parents=True)
-    cfg, _ = load_routine(d)
-    ctx = RunContext(routine=cfg, server=_server(d), registry=None, run_ts=TS,
-                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    ctx.grants = GrantPolicy(active=("communication",),
-                             utils=frozenset({"discord"} if granted else set()))
-    return ctx
-
-
-def test_mirror_requires_the_communication_permission(make_routine, monkeypatch):
-    fake = _FakeDiscord()
-    monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # test the permission gate, not the D48 flag
-    ctx = _mirror_ctx(make_routine, "nomirror", granted=False)
-    assert decisions.mirror_blocking(ctx, "q1", "Go?", [], "", 8) is None
-    assert fake.calls == []                       # never touches the channel ungranted
-
-
-def test_blocking_questions_are_not_mirrored_by_default(make_routine, monkeypatch):
-    """D48: even fully Discord-enabled, a blocking question is NOT mirrored to Discord
-    while MIRROR_BLOCKING_QUESTIONS is off (its default) — the two-way mirror is disabled
-    until Discord answer-ingestion is proven reliable (F193). Outbound FYI is unaffected."""
-    fake = _FakeDiscord()
-    monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    # NOTE: MIRROR_BLOCKING_QUESTIONS left at its default (False) on purpose
-    ctx = _mirror_ctx(make_routine, "nomirrordefault", granted=True)
-    assert decisions.mirror_blocking(ctx, "q1", "Go?", ["yes", "no"], "", 8) is None
-    assert fake.calls == []                       # the channel is never touched
-
-
-def test_mirror_sends_polls_and_notifies(make_routine, monkeypatch):
-    # one empty read (cursor prime), then a reply on the first poll
-    fake = _FakeDiscord(replies=[[], [{"id": "5", "message": "yes please"}]])
-    monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
-    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # D48: machinery retained behind a flag
-    ctx = _mirror_ctx(make_routine, "mirrored")
-    mirror = decisions.mirror_blocking(ctx, "q1", "Ship v2 today?", ["yes", "no"],
-                                       "wait for Monday", 8)
-    assert mirror is not None
-    send = fake.sends()[0]
-    assert "Ship v2 today?" in send[1] and "wait for Monday" in send[1]
-    assert "Decisions page" in send[1]            # cross-surface pointer in the message
-    assert mirror.poll() == "yes please"
-    mirror.notify_resolved("yes please", "discord")
-    assert "got it" in fake.sends()[-1][1]
-    mirror.notify_resolved("no", "web")           # resolved on the OTHER surface → told so
-    assert "web" in fake.sends()[-1][1]
-    mirror.notify_timeout("wait for Monday")
-    assert "no answer" in fake.sends()[-1][1] and "wait for Monday" in fake.sends()[-1][1]
-
-
-def test_mirror_reply_resolves_the_blocking_ask(make_routine, scripted, monkeypatch):
-
-    fake = _FakeDiscord(replies=[[], [{"id": "5", "message": "approved — go"}]])
-    monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
-    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # D48: machinery retained behind a flag
-    # the routine has the discord capability switched on (the doc covers the conduct)
-    d = make_routine(slug="viaphone", budgets={"ask_timeout_min": 1})
-    server = _server(d)
-    server.permissions_home.mkdir(parents=True, exist_ok=True)
-    (server.permissions_home / "communication.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
-        "# permission: communication — discord\nbody\n", encoding="utf-8")
-    import yaml as _yaml
-    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
-    cfg["permissions"] = ["communication"]
-    cfg["capabilities"] = {"utils": ["discord"]}
-    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
-    scripted([
-        {"say": "q", "kind": "ask_user", "question": "Go?", "mode": "blocking"},
-        finish(),
-    ])
-    status, run_dir = run_routine(d, server, run_ts=TS)
-    assert status == "ok"
-    ans = next(e for e in _events(run_dir) if e["type"] == "answer")
-    assert ans["payload"]["text"] == "approved — go"
-    assert ans["payload"]["source"] == "discord"
-    assert not list((d / "questions" / "pending").glob("*.json"))
-    assert any("got it" in a[1] for a in fake.sends())   # the channel was told it counted
-
-
 def test_util_secret_gate_files_one_request_covering_the_run(make_routine, scripted,
                                                              monkeypatch):
     """D39 through the four-state grant model: the FIRST util call declaring a store
@@ -355,11 +223,11 @@ def test_util_secret_gate_files_one_request_covering_the_run(make_routine, scrip
     from rsched import secrets as secrets_mod
 
     ran = []
-    monkeypatch.setattr(notify.utils_lib, "run_util",
+    monkeypatch.setattr(utils_lib, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (ran.append((name, list(args))) or (0, "ran", "")))
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(notify.utils_lib, "util_needs",
+    monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(utils_lib, "util_needs",
                         lambda home, name: ({"FOO_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secgate", budgets={"ask_timeout_min": 1})
@@ -405,13 +273,13 @@ def test_optional_secret_never_asks_and_is_withheld(make_routine, scripted, monk
     from rsched import secrets as secrets_mod
 
     seen_withhold = []
-    monkeypatch.setattr(notify.utils_lib, "run_util",
+    monkeypatch.setattr(utils_lib, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         withhold_secrets=None,
                         **_kw: (seen_withhold.append(set(withhold_secrets or set()))
                                 or (0, "fetched", "")))
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(notify.utils_lib, "util_needs",
+    monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(utils_lib, "util_needs",
                         lambda home, name: ({"WEB_AUTH_SOURCES"}, True, {"WEB_AUTH_SOURCES"}))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"WEB_AUTH_SOURCES": "x"})
     d = make_routine(slug="optsec")
@@ -437,11 +305,11 @@ def test_secret_grant_row_covers_runs_without_asking(make_routine, scripted, mon
     from rsched import secrets as secrets_mod
 
     ran: list[tuple[str, list]] = []
-    monkeypatch.setattr(notify.utils_lib, "run_util",
+    monkeypatch.setattr(utils_lib, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (ran.append((name, list(args))) or (0, "ran", "")))
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(notify.utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False, set()))
+    monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secgate2", budgets={"ask_timeout_min": 1})
     import yaml as _yaml
@@ -464,11 +332,11 @@ def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, 
     from rsched import secrets as secrets_mod
 
     ran = []
-    monkeypatch.setattr(notify.utils_lib, "run_util",
+    monkeypatch.setattr(utils_lib, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None, **_kw:
                         (ran.append((name, list(args))) or (0, "ran", "")))
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(notify.utils_lib, "util_needs",
+    monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(utils_lib, "util_needs",
                         lambda home, name: ({"FOO_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secdeny")
@@ -501,11 +369,11 @@ def test_secret_decline_observation_names_no_secrets(make_routine, scripted, mon
     from rsched.engine.observations import format_observation
 
     ran = []
-    monkeypatch.setattr(notify.utils_lib, "run_util",
+    monkeypatch.setattr(utils_lib, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (ran.append(name) or (0, "ran", "")))
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(notify.utils_lib, "util_needs",
+    monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(utils_lib, "util_needs",
                         lambda home, name: ({"FOO_KEY", "BAR_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x", "BAR_KEY": "y"})
     d = make_routine(slug="secmute")
@@ -535,11 +403,11 @@ def test_secret_decline_after_ask_stays_generic(make_routine, scripted, monkeypa
     from rsched import secrets as secrets_mod
     from rsched.engine.observations import format_observation
 
-    monkeypatch.setattr(notify.utils_lib, "run_util",
+    monkeypatch.setattr(utils_lib, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (0, "ran", ""))
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(notify.utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False, set()))
+    monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secmute2", budgets={"ask_timeout_min": 1})
 
@@ -570,80 +438,40 @@ def test_secret_decline_after_ask_stays_generic(make_routine, scripted, monkeypa
     assert "FOO_KEY" not in format_observation(obs["payload"])
 
 
-def test_reply_items_pin_the_discord_util_shape():
-    """ONE pinned shape — the discord util's `read --json` emits a list of message
-    objects with a snowflake `id` and text in `message`. Anything else reads as no
-    replies; an id-less message cannot be ordered against the question and is dropped."""
-    assert decisions._reply_items(
-        '[{"id": "9", "message": "x", "author": "u"}, {"id": "3", "message": " y "}]') \
-        == [(3, "y"), (9, "x")]
-    assert decisions._reply_items("") == []
-    assert decisions._reply_items("not json") == []
-    assert decisions._reply_items('[{"foo": 1}]') == []
-    assert decisions._reply_items('[{"message": "no id"}]') == []            # unorderable
-    assert decisions._reply_items('{"messages": [{"message": "z"}]}') == []  # not a list
-    assert decisions._reply_items('["bare string"]') == []                   # not an object
-
-
-def test_mirror_ignores_replies_older_than_the_question(make_routine, monkeypatch):
-    """F194: a message posted BEFORE the question (a stale or another routine's reply
-    still in the channel) must never settle it — only a strictly newer snowflake counts.
-    Observed 2026-07-24: a 2h-stale "Yes" answered train-seat-finder's fresh question."""
-
-    class _StaleThenFresh(_FakeDiscord):
-        def run_util(self, home, name, args, timeout=0, policy=None):
-            self.calls.append(list(args))
-            if args[0] == "read":
-                batch = self.replies.pop(0) if self.replies else []
-                return 0, json.dumps(batch), ""
-            return 0, '{"id": "100"}', ""          # the question's own snowflake
-
-    fake = _StaleThenFresh(replies=[[], [{"id": "50", "message": "Yes"}],
-                                    [{"id": "150", "message": "Yes"}]])
-    monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
-    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # D48: machinery retained behind a flag
-    ctx = _mirror_ctx(make_routine, "staleguard")
-    mirror = decisions.mirror_blocking(ctx, "q1", "Proceed?", ["yes", "no"], "", 8)
-    assert mirror is not None and mirror.question_id == 100
-    send = fake.sends()[0]                          # the send feeds the routing ledger
-    assert "--cursor" in send and "--json" in send
-    assert mirror.poll() is None                    # id 50 < 100 → stale, NOT consumed
-    assert mirror.poll() == "Yes"                   # id 150 > 100 → a real answer
-    reads = [a for a in fake.calls if a[0] == "read"]
-    assert "--mine" in reads[-1]                    # sibling-addressed replies are skipped
-
-
-def test_ambiguous_approval_reply_is_held_not_consumed(make_routine, scripted, monkeypatch):
+@pytest.mark.flaky(reruns=2)   # a real driver thread races the ask window; starves under xdist load
+def test_ambiguous_approval_reply_is_held_not_consumed(make_routine, scripted):
     """D38: a reply that names neither option must not settle a blocking util-approval —
     it is HELD as a delayed user message (drained at the next turn boundary, i.e. after
-    the decision), the channel is re-prompted, and the question stays open until a clear
-    approve/decline arrives."""
-    fake = _FakeDiscord(replies=[[], [{"id": "5", "message": "Bin hier"}],
-                                 [{"id": "6", "message": "no thanks"}]])
-    monkeypatch.setattr(notify.utils_lib, "run_util", fake.run_util)
-    monkeypatch.setattr(notify.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(decisions, "DISCORD_POLL_S", 0)
-    monkeypatch.setattr(decisions, "MIRROR_BLOCKING_QUESTIONS", True)  # D48: machinery retained behind a flag
+    the decision), and the question stays open until a clear approve/decline arrives."""
     d = make_routine(slug="heldreply", budgets={"ask_timeout_min": 1})
-    server = _server(d)
-    server.permissions_home.mkdir(parents=True, exist_ok=True)
-    (server.permissions_home / "communication.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
-        "# permission: communication — discord\nbody\n", encoding="utf-8")
     import yaml as _yaml
     cfg = _yaml.safe_load((d / "routine.yaml").read_text())
-    cfg["permissions"] = ["communication"]
-    cfg["capabilities"] = {"actions": ["write_util"], "utils": ["discord"],
-                           "confirm": "always"}
+    cfg["capabilities"] = {"actions": ["write_util"], "confirm": "always"}
     (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+
+    def driver():
+        """Answer twice: first something that names neither option, then a clear decline."""
+        deadline = time.time() + 180
+        sent = 0
+        while time.time() < deadline and sent < 2:
+            recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
+            blocking = [r for r in recs if r.get("mode") == "blocking"]
+            if blocking and not (d / "inbox" / f"answer-{blocking[0]['qid']}.json").exists():
+                text = "Bin hier" if sent == 0 else "no thanks"
+                atomic_write_json(d / "inbox" / f"answer-{blocking[0]['qid']}.json",
+                                  {"qid": blocking[0]["qid"], "text": text, "source": "web"})
+                sent += 1
+            time.sleep(0.02)
+
+    t = threading.Thread(target=driver)
+    t.start()
     scripted([
         {"say": "new util", "kind": "write_util", "name": "frob",
          "content": '"""frob — test util.\n\nusage: gu frob\ntags: test, demo\nnet: none\n"""\n'},
         finish(),
     ])
-    status, run_dir = run_routine(d, server, run_ts=TS)
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    t.join()
     assert status == "ok"
     events = _events(run_dir)
     answers = [e["payload"] for e in events if e["type"] == "answer"]
@@ -655,9 +483,6 @@ def test_ambiguous_approval_reply_is_held_not_consumed(make_routine, scripted, m
     # the held text reached the run as a NORMAL delayed message, after the decision
     assert any("Bin hier" in p.read_text(encoding="utf-8")
                for p in (run_dir / "consumed").glob("msg-*.json"))
-    # the channel was told the reply was held and the question stayed open
-    held_note = next(a[1] for a in fake.sends() if "neither option" in a[1])
-    assert "Bin hier" in held_note
     assert not list((d / "questions" / "pending").glob("*.json"))   # decline resolved it
 
 

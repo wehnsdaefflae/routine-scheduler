@@ -58,7 +58,7 @@ class Doc:
 
 def iter_sources(server: ServerConfig) -> Iterator[SourceFile]:
     """Every indexable file across the routines AND conversations homes, in a stable
-    order. Dot-dirs (`.control`, `.wizard-*`) are skipped like the registry skips them;
+    order. Dot-dirs (`.control`, …) are skipped like the registry skips them;
     background_home is transient by design (dirs are deleted after delivery) and its
     results land in the owner conversation's transcript, so it is not walked.
     """

@@ -242,7 +242,7 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
             f'"""{name} — {summary}.\n\nusage: gu {name} X\ntags: {tags}\n"""\n',
             encoding="utf-8")
     ctx.grants = GrantPolicy(active=("run-history",),
-                             gated_utils={"discord": ("communication",)})
+                             gated_utils={"discord": ("messaging-discord",)})
     text = capabilities_digest(ctx)
     assert "frob — flips widgets." in text
     assert "discord — phone channel.  [reserved — not granted to this routine]" in text
@@ -252,7 +252,7 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     assert "### Email & messaging (1)" in text            # discord (tags: communication, chat)
     from rsched.engine.capabilities import _util_category
     assert _util_category(["code", "dev"]) == "Code & development"
-    assert _util_category(["communication"]) == "Email & messaging"
+    assert _util_category(["communication"]) == "Email & messaging"  # a util TAG, not the permission
     assert _util_category([]) == "Other"                  # no tags → Other, still listed
     # order-based collision resolution: a util tagged both health AND logs files under the
     # meta/logs group (listed first), NOT under Health & fitness.

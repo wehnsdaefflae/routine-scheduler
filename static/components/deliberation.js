@@ -8,7 +8,7 @@
 
 import { el } from "/static/util.js";
 
-export const LEVELS = ["terse", "standard", "deliberate", "think-on-paper"];
+const LEVELS = ["terse", "standard", "deliberate", "think-on-paper"];
 const HINTS = {
   "terse": "one clause per step — for cheap, mechanical routines",
   "standard": "finding first; 2-3 sentences at decisions",

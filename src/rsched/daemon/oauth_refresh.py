@@ -4,8 +4,8 @@ The daemon/web process is the single writer of the connection store; this manage
 EXPIRING-provider connection's access token valid (refreshing ~5 min before expiry) and persists
 any ROTATED refresh_token, so a run always reads a live token from disk. Non-expiring providers
 (Notion — long-lived bearer, no refresh_token) are skipped, so an instance that only uses those
-never does any work here. A refresh that the provider rejects flags the connection `needs_reauth`
-and pings the user through the one notification seam.
+never does any work here. A refresh that the provider rejects flags the connection `needs_reauth`,
+which badges it in Settings → Connections — the console record IS the notification.
 
 The token exchange is blocking httpx (mirrors the connect flow); the async `tick` runs it in a
 worker thread so it never blocks the scheduler loop. Store writes are serialized by the store's
@@ -20,7 +20,6 @@ import time
 
 import httpx
 
-from .. import notify
 from ..config import ServerConfig
 from ..oauth import providers, store
 from ..oauth.providers import Provider
@@ -132,22 +131,5 @@ class OAuthRefreshManager:
         if not store.update_connection(conn.provider, conn.account, apply):
             return
         log.warning("oauth refresh: %s needs re-auth (%s)", conn.key(), why)
-        # Discord is OPT-IN (the communication permission). An instance-level event pings
-        # only when a routine/conversation actually BINDS this connection and holds the
-        # permission — the web record (Settings badge) is the always-on surface.
-        if self._discord_opted_in(conn):
-            notify.send(self.server,
-                        f"OAuth connection {conn.key()} needs re-authorization ({why}). "
-                        f"Reconnect it in Settings → Connections.",
-                        title="Connection expired")
-
-    def _discord_opted_in(self, conn: Connection) -> bool:
-        from .. import registry
-
-        for home in (self.server.routines_home, self.server.conversations_home):
-            for info in registry.scan(self.server, home).values():
-                if (info.cfg.connections.get(conn.provider) == conn.account
-                        and notify.discord_enabled(self.server,
-                                                   permissions=info.cfg.permissions)):
-                    return True
-        return False
+        # The web record IS the notification: Settings → Connections badges the connection
+        # and the reauth ask reaches the operator there. No implicit outbound send exists.

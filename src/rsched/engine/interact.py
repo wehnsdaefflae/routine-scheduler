@@ -4,11 +4,11 @@ capabilities (`confirm` / `rule_confirm`).
 
 EVERY kind of required user feedback funnels into the same decision record
 (inbox.file_question): plain asks and util approvals, deferred and blocking. A blocking
-decision waits up to the routine's ask_timeout_min (configurable on the routine page),
-mirrors to Discord when the routine holds the communication permission, and — whichever
-surface answers first — the other one is told. On timeout the run CONTINUES on the
-model's stated `default`; the question stays open as deferred so a late answer still
-reaches the next run. Waiting time is credited back to the wall-clock budget.
+decision waits up to the routine's ask_timeout_min (configurable on the routine page)
+and is answered on the web console — the Decisions page, with browser push carrying it to
+a phone. On timeout the run CONTINUES on the model's stated `default`; the question stays
+open as deferred so a late answer still reaches the next run. Waiting time is credited
+back to the wall-clock budget.
 """
 
 from __future__ import annotations
@@ -20,13 +20,13 @@ from datetime import datetime, timedelta
 from .. import reports, sandbox, schedule_once, utils_lib
 from ..ids import is_slug, question_id
 from ..paths import resolve_rel
-from . import decisions, detach, inbox, requests
+from . import detach, inbox, requests
 from .control import RunAborted
 from .observations import truncate
 
-# Natural affirmatives count: approval answers arrive as free text (Discord mirrors the
-# question to a phone), and "Do it. The mail is …" must not read as a decline (F161 —
-# two real approvals were recorded DECLINED because "do" was missing here).
+# Natural affirmatives count: approval answers arrive as free text, and "Do it. The mail
+# is …" must not read as a decline (F161 — two real approvals were recorded DECLINED
+# because "do" was missing here).
 _APPROVE_WORDS = ("approve", "approved", "yes", "y", "ok", "okay", "go", "accept", "confirm",
                   "do", "sure", "yep", "yeah", "proceed", "ja")
 # Explicit declines only. An approval question is settled by a clear yes OR a clear no —
@@ -130,11 +130,9 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                         mode="blocking", qtype=qtype, default=default, expires=expires,
                         config_patch=cpatch, request=req_ids)
-    mirror = decisions.mirror_blocking(ctx, qid, question, options, default, timeout_min)
     ctx.write_status("waiting_user",
                      question={"qid": qid, "question": question, "options": options,
-                               "asked": ctx.run_ts, "expires": expires,
-                               "mirrored": mirror is not None, **extra,
+                               "asked": ctx.run_ts, "expires": expires, **extra,
                                **({"request": req_ids} if req_ids else {})})
     deadline = time.monotonic() + timeout_min * 60
     started = time.monotonic()
@@ -144,22 +142,18 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
             if loop._aborted():
                 raise RunAborted
             answer = inbox.take_answer(ctx.routine.dir, qid, loop.consumed_dir)
-            if not answer and mirror and (reply := mirror.poll()):
-                answer = {"text": reply, "source": "discord"}
             # D38: an approval is settled ONLY by a clear approve/decline, and an access
             # REQUEST only by one of the typed decisions (the web's buttons). Any
             # other reply ("Bin hier", an unrelated instruction) is user INPUT that
             # arrived while the question blocks — hold it as a normal delayed message
             # (drained at the next turn boundary, i.e. after this decision) and keep
-            # waiting; the channel is told the question is still open.
+            # waiting; the question stays open.
             if answer is not None and _held_not_settled(qtype, answer):
                 src = str(answer.get("source", "web"))
                 ctx.transcript.event("answer", {"qid": qid, "text": str(answer["text"]),
                                                 "source": src, "held": True})
                 inbox.file_message(ctx.routine.dir, str(answer["text"]), source=src,
                                    via="web")   # the user's own reply to THIS run — live
-                if mirror:
-                    mirror.notify_held(str(answer["text"]))
                 answer = None
                 continue
             if answer:
@@ -182,8 +176,6 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                             qtype=qtype, default=default, config_patch=cpatch,
                             request=req_ids)
         ctx.asks_deferred += 1
-        if mirror:
-            mirror.notify_deferred(default)
         return {"kind": "ask_user", "qid": qid, "mode": mode, "deferred_by_user": True,
                 **({"default": default} if default else {})}
     if answer:
@@ -196,8 +188,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
             # A dialog reply, not the answer: the user needs some back-and-forth before they
             # can decide. The decision record STAYS OPEN (deferred — the run is no longer
             # parked on it): the model's re-ask supersedes it, and a finish without a re-ask
-            # leaves it live for the next run instead of silently dropping it. Discord gets
-            # no "resolved" note — the follow-up question is the reply.
+            # leaves it live for the next run instead of silently dropping it.
             inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                                 qtype=qtype, default=default, config_patch=cpatch,
                                 request=req_ids)
@@ -208,8 +199,6 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                             "more back-and-forth first. Address their message, then ask again "
                             "with ask_user (the original question, or a sharper version)."}
         inbox.resolve_question(ctx.routine.dir, qid)
-        if mirror:
-            mirror.notify_resolved(answer["text"], source)
         if req_ids:
             # One of the typed decisions (guaranteed by the settle rule above):
             # seed the run overlay, rebuild the live policy + transport schema, and
@@ -228,8 +217,6 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                         qtype=qtype, default=default, config_patch=cpatch, request=req_ids)
     ctx.asks_deferred += 1
-    if mirror:
-        mirror.notify_timeout(default)
     return {"kind": "ask_user", "qid": qid, "mode": mode, "timed_out": True,
             "timeout_min": timeout_min, **({"default": default} if default else {})}
 
@@ -283,6 +270,20 @@ def secret_state(ctx, secret: str) -> str:
     return "granted" if grants.get(eid) is True else "undecided"
 
 
+def _own_secrets(ctx) -> set[str]:
+    """Names in the routine's OWN scoped store (D103). They are implicitly exposed to their
+    owner — no grant, no ask — and they SHADOW a central value of the same name, so every
+    exposure decision about the central store must skip them or it asks about a value this
+    run will never be handed.
+    """
+    from ..secrets import load_routine_secrets
+
+    try:
+        return set(load_routine_secrets(ctx.routine.slug))
+    except ValueError:
+        return set()
+
+
 def withheld_optional(ctx, optional: set[str]) -> list[str]:
     """The OPTIONAL (`?`-declared, F290) secrets present in the store that this run may NOT
     see — not granted to the routine. They never block a call or file an ask: the executor
@@ -290,7 +291,8 @@ def withheld_optional(ctx, optional: set[str]) -> list[str]:
     prompt-free and an auth-needing one learns to request exposure explicitly.
     """
     from ..secrets import load_secrets
-    return sorted(s for s in optional & set(load_secrets())
+    own = _own_secrets(ctx)
+    return sorted(s for s in (optional & set(load_secrets())) - own
                   if secret_state(ctx, s) != "granted")
 
 
@@ -349,7 +351,9 @@ def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
     ctx = loop.ctx
     from ..secrets import load_secrets
     required = needed - optional
-    present = sorted(required & set(load_secrets())) if required else []
+    # D103: a name the routine holds in its OWN store needs no exposure decision — it is
+    # the routine's, and its value shadows the central one for this run.
+    present = sorted((required & set(load_secrets())) - _own_secrets(ctx)) if required else []
     if not present:
         return None   # nothing exposable — a declared-but-unset secret fails visibly inside
 

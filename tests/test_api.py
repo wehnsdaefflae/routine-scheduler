@@ -32,25 +32,6 @@ def _mk_run(routines, slug, ts, state, question=None):
                                "payload": {"say": "s", "kind": "util", "name": "gu-list"}}])
 
 
-def _mk_wizard(routines, ts, *, state="running", result=None):
-    """A hidden .wizard-<ts> clarify session on disk (no engine process) — enough for the
-    /api/questions surfacing of a live clarify run's blocking questions to reconstruct it."""
-    wid = f".wizard-{ts}"
-    d = routines / wid
-    (d / "state").mkdir(parents=True, exist_ok=True)
-    (d / "inbox").mkdir(exist_ok=True)
-    (d / "instruction.md").write_text("Collect new arxiv AI-agent papers and keep a reading list.\n")
-    atomic_write_json(d / "state" / "wizard_meta.json",
-                      {"wid": wid, "run_ts": ts, "created": "2026-07-10T09:00:00+02:00"})
-    run_dir = d / "runs" / ts
-    run_dir.mkdir(parents=True)
-    atomic_write_json(run_dir / "status.json",
-                      {"run_id": f"{wid}:{ts}", "state": state, "pid": 4242, "turn": 1, "question": None})
-    if result is not None:
-        atomic_write_json(d / "state" / "wizard_result.json", result)
-    return wid, d
-
-
 def test_auth_required(client):
     c, _ = client
     bare = TestClient(c.app)
@@ -140,7 +121,7 @@ def test_engine_injects_the_routine_token_for_the_reserved_name():
     from rsched.engine.executor import _extra_secrets
 
     ctx = SimpleNamespace(server=SimpleNamespace(routine_token="routine-tok", machines={}),
-                          routine=SimpleNamespace(connections={}, machines=[]),
+                          routine=SimpleNamespace(slug="apir", connections={}, machines=[]),
                           granted_now=set(), grant_args={})
     assert _extra_secrets(ctx)["RSCHED_API_TOKEN"] == "routine-tok"
     ctx.server.routine_token = ""              # tier off → nothing injected for the name
@@ -429,6 +410,35 @@ def test_routine_artifacts_listed_and_served(client):
                  params={"path": "artifacts/../routine.yaml"}).status_code == 400
     assert c.get("/api/routines/apir/artifact",
                  params={"path": "routine.yaml"}).status_code == 400
+
+
+def test_deliverable_dirs_beyond_artifacts_are_listed_and_served(client):
+    """R339/F336: a run that commits a real deliverable must have a working way to surface
+    it. frame-fill-lab wrote a verified `reports/*.pdf` and the panel stayed empty, because
+    only `artifacts/` was scanned and nothing anywhere could register a file. All three
+    deliverable dirs list, serve AND delete — a row you can see is a row you can open."""
+    c, tmp = client
+    base = tmp / "routines" / "apir"
+    for sub, name, body in (("artifacts", "a.html", "<p>a</p>"),
+                            ("reports", "r.md", "# r"),
+                            ("output", "o.json", "{}")):
+        (base / sub).mkdir(exist_ok=True)
+        (base / sub / name).write_text(body, encoding="utf-8")
+    (base / "state").mkdir(exist_ok=True)
+    (base / "state" / "scratch.json").write_text("{}", encoding="utf-8")   # NOT a deliverable
+
+    items = c.get("/api/routines/apir/artifacts").json()
+    assert {i["path"] for i in items} == {"artifacts/a.html", "reports/r.md", "output/o.json"}
+
+    r = c.get("/api/routines/apir/artifact", params={"path": "reports/r.md"})
+    assert r.status_code == 200 and r.text == "# r"
+    assert c.delete("/api/routines/apir/artifacts",
+                    params={"path": "output/o.json"}).status_code == 200
+    # working state stays out of reach on every verb
+    assert c.get("/api/routines/apir/artifact",
+                 params={"path": "state/scratch.json"}).status_code == 400
+    assert c.delete("/api/routines/apir/artifacts",
+                    params={"path": "state/scratch.json"}).status_code == 400
 
 
 def test_routine_artifact_delete(client):
@@ -984,10 +994,10 @@ def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
     routines = tmp / "routines"
     perms = tmp / "library" / "permissions"
     perms.mkdir(parents=True, exist_ok=True)
-    (perms / "communication.md").write_text(
+    (perms / "messaging-discord.md").write_text(
         "---\ntags: [a, b, c]\nrequires:\n  utils: [discord, signal]\n"
         "  util_tags: [messaging]\n---\n"
-        "# permission: communication — discord\nbody\n", encoding="utf-8")
+        "# permission: discord messaging\nbody\n", encoding="utf-8")
     pending = routines / "apir" / "questions" / "pending"
     pending.mkdir(parents=True, exist_ok=True)
     atomic_write_json(pending / "q-cap.json",
@@ -997,7 +1007,7 @@ def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
     assert c.post("/api/questions/q-cap/answer",
                   json={"decision": "allow_forever"}).status_code == 200
     raw = yaml.safe_load((routines / "apir" / "routine.yaml").read_text())
-    assert "communication" in raw["permissions"]
+    assert "messaging-discord" in raw["permissions"]
     assert "discord" in raw["capabilities"]["utils"]
     assert "signal" not in raw["capabilities"]["utils"]           # sibling stays off
     assert "messaging" not in (raw["capabilities"].get("util_tags") or [])  # class too
@@ -1055,28 +1065,6 @@ def test_patch_routine_reports_every_applied_field(client):
     assert sorted(r.json()["updated"]) == ["connections", "tags"]
     raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
     assert raw["connections"] == {"google": "personal"} and raw["tags"] == ["media"]
-
-
-def test_wizard_questions_join_the_decisions_inbox(client):
-    """A clarify session's questions surface on /api/questions (wizard-badged) even though
-    the registry skips dot-hidden dirs, and are answerable through the same endpoint —
-    the answer lands in the wizard's own inbox."""
-    c, tmp = client
-    routines = tmp / "routines"
-    ts = "20260711-090000"
-    wid, d = _mk_wizard(routines, ts, state="waiting_user")
-    atomic_write_json(d / "runs" / ts / "status.json",
-                      {"run_id": f"{wid}:{ts}", "state": "waiting_user", "pid": 4242, "turn": 1,
-                       "question": {"qid": f"q-{ts}-1", "question": "Which arxiv areas?",
-                                    "options": ["cs.AI", "cs.CL"]}})
-    q = next(x for x in c.get("/api/questions").json() if x.get("wizard"))
-    assert q["qid"] == f"q-{ts}-1" and q["routine"] == wid and q["mode"] == "blocking"
-    assert not q.get("answered")
-    r = c.post(f"/api/questions/q-{ts}-1/answer", json={"text": "cs.AI"})
-    assert r.status_code == 200 and r.json()["routine"] == wid
-    assert read_json(d / "inbox" / f"answer-q-{ts}-1.json")["text"] == "cs.AI"
-    q2 = next(x for x in c.get("/api/questions").json() if x.get("wizard"))
-    assert q2["answered"] is True and q2["answer"] == "cs.AI"
 
 
 def test_subrun_transcript_nested_path(client):
@@ -1936,28 +1924,28 @@ def test_put_permissions_cascades_capabilities(client):
     c, tmp = client
     perms_home = tmp / "library" / "permissions"
     perms_home.mkdir(parents=True, exist_ok=True)
-    (perms_home / "communication.md").write_text(
+    (perms_home / "messaging-discord.md").write_text(
         "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
-        "# permission: communication — discord\nbody\n", encoding="utf-8")
+        "# permission: discord messaging\nbody\n", encoding="utf-8")
     (perms_home / "memory.md").write_text(
         "---\ntags: [a, b, c]\nrequires:\n  actions: [memory_read, memory_write]\n---\n"
         "# permission: memory — notebook\nbody\n", encoding="utf-8")
     # ask for memory_read WITHOUT holding the memory permission → floored away (D8)
     r = c.put("/api/routines/apir/permissions",
-              json={"active": ["communication", "ghost"],
+              json={"active": ["messaging-discord", "ghost"],
                     "capabilities": {"actions": ["memory_read"], "confirm": "creations"}})
     assert r.status_code == 200
     body = r.json()
-    assert body["active"] == ["communication"]           # unknown doc slugs dropped
+    assert body["active"] == ["messaging-discord"]           # unknown doc slugs dropped
     assert body["capabilities"]["utils"] == ["discord"]  # activation cascade (raise)
     assert body["capabilities"]["actions"] == []         # orphan action floored (no memory perm)
     assert body["capabilities"]["confirm"] == "creations"  # user policy dial preserved
     raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
-    assert raw["permissions"] == ["communication"]
+    assert raw["permissions"] == ["messaging-discord"]
     assert raw["capabilities"] == body["capabilities"]
     # holding the memory permission grants its actions (the means of that permission)
     r2 = c.put("/api/routines/apir/permissions",
-               json={"active": ["communication", "memory"],
+               json={"active": ["messaging-discord", "memory"],
                      "capabilities": {"confirm": "creations"}})
     assert r2.status_code == 200
     caps2 = r2.json()["capabilities"]
@@ -1975,42 +1963,40 @@ def test_library_permission_doc_requires_roundtrip(client):
     c, tmp = client
     perms_home = tmp / "library" / "permissions"
     perms_home.mkdir(parents=True, exist_ok=True)
-    (perms_home / "communication.md").write_text(
+    (perms_home / "messaging-discord.md").write_text(
         "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
-        "# permission: communication — discord\nbody\nmore lines here\n", encoding="utf-8")
-    d = c.get("/api/library/permissions/communication").json()
+        "# permission: discord messaging\nbody\nmore lines here\n", encoding="utf-8")
+    d = c.get("/api/library/permissions/messaging-discord").json()
     assert d["requires"] == {"utils": ["discord"]}
-    r = c.put("/api/library/permissions/communication",
+    r = c.put("/api/library/permissions/messaging-discord",
               json={"content": d["content"], "requires": {"utils": ["discord", "zulip"]}})
     assert r.status_code == 200
-    d2 = c.get("/api/library/permissions/communication").json()
+    d2 = c.get("/api/library/permissions/messaging-discord").json()
     assert d2["requires"] == {"utils": ["discord", "zulip"]}
-    assert "# permission: communication" in d2["content"]   # body untouched
+    assert "# permission: discord messaging" in d2["content"]   # body untouched
     # a requires panel demanding a confirm level is rejected (it is user policy)
-    bad = c.put("/api/library/permissions/communication",
+    bad = c.put("/api/library/permissions/messaging-discord",
                 json={"content": d2["content"], "requires": {"confirm": "never"}})
     assert bad.status_code == 422
 
 
-def test_wizard_blocking_question_listed_once(client):
-    """A live blocking clarify question also has a durable pending record on disk — the
-    Decisions page must list it ONCE, not twice (observed 2026-07-16: every clarify question
-    showed doubled). Genuinely separate deferred records still surface."""
+def test_live_blocking_question_listed_once(client):
+    """A live blocking question also has a durable pending record on disk — the Decisions
+    page must list it ONCE, not twice (observed 2026-07-16: every question showed doubled).
+    Genuinely separate deferred records still surface."""
     c, tmp = client
     routines = tmp / "routines"
     ts = "20260711-091500"
-    wid, d = _mk_wizard(routines, ts, state="waiting_user")
-    atomic_write_json(d / "runs" / ts / "status.json",
-                      {"run_id": f"{wid}:{ts}", "state": "waiting_user", "pid": 4242, "turn": 1,
-                       "question": {"qid": f"q-{ts}-1", "question": "Which areas?"}})
-    pend = d / "questions" / "pending"
-    pend.mkdir(parents=True)
+    _mk_run(routines, "apir", ts, "waiting_user",
+            question={"qid": f"q-{ts}-1", "question": "Which areas?"})
+    pend = routines / "apir" / "questions" / "pending"
+    pend.mkdir(parents=True, exist_ok=True)
     atomic_write_json(pend / f"q-{ts}-1.json",
                       {"qid": f"q-{ts}-1", "question": "Which areas?", "mode": "blocking"})
     atomic_write_json(pend / f"q-{ts}-2.json",
                       {"qid": f"q-{ts}-2", "question": "Another, deferred one",
                        "mode": "deferred"})
-    qs = [q for q in c.get("/api/questions").json() if q.get("wizard")]
+    qs = [q for q in c.get("/api/questions").json() if q["routine"] == "apir"]
     assert [q["qid"] for q in qs].count(f"q-{ts}-1") == 1
     assert {q["qid"] for q in qs} == {f"q-{ts}-1", f"q-{ts}-2"}
     live = next(q for q in qs if q["qid"] == f"q-{ts}-1")

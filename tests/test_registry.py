@@ -26,7 +26,7 @@ def _mk_run(d, ts, state, summary=""):
 def test_scan_catalog(make_routine, tmp_path):
     d = make_routine(slug="alpha")
     make_routine(slug="beta")
-    (tmp_path / "routines" / ".wizard-x").mkdir()          # dot dir: hidden
+    (tmp_path / "routines" / ".scratch-x").mkdir()         # dot dir: hidden
     (tmp_path / "routines" / "not-a-routine").mkdir()      # no routine.yaml: skipped
     (tmp_path / "routines" / "broken").mkdir()
     (tmp_path / "routines" / "broken" / "routine.yaml").write_text(":::not yaml{{{")

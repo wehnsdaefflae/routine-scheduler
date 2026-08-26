@@ -99,7 +99,7 @@ def test_tags_on_library_elements():
     assert set(rules["web-research"]["tags"]) >= {"web", "research"}
     perms = {d["slug"]: d for d in library_docs.list_docs(SEED / "permissions")}
     assert set(perms) == {"util-authoring", "util-revision", "util-removal",
-                          "memory", "communication",
+                          "memory", "messaging-discord",
                           "run-history", "shell", "workflow-generation", "background-tasks",
                           "scheduling", "global-utils", "rule-authoring",
                           "remote-machines", "darknet", "outbound-mail",

@@ -11,7 +11,7 @@ export function getToken() {
   return (storage.get(KEY) || "").trim();
 }
 
-export function clearToken() {
+function clearToken() {
   storage.remove(KEY);
   dropWorkerToken();
 }

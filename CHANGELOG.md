@@ -19,6 +19,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.230.0] — 2026-08-26
+
+### Added
+- **Routine-scoped secrets** (D103, operator decision 2026-08-26 — R497). The store had one
+  flat instance-wide namespace, so `eye-stabilize-folder`'s SFTP credentials could only be
+  spelled `SFTP_USER` (colliding with every other SFTP consumer) or `EYESTAB_SFTP_USER` by a
+  convention nothing enforced. A routine now has its OWN store, `secrets.d/<slug>.env`:
+  - **Ownership is the grant.** A scoped secret is implicitly exposed to its routine's runs,
+    invisible to every other routine, and it SHADOWS a central value of the same name (it
+    rides `executor._extra_secrets`, which wins the child-env merge). The four-state
+    `secret:<NAME>` exposure gate subtracts a routine's own names before deciding anything,
+    so a run never files a request for a credential it already holds.
+  - **Declared-only is untouched.** A util receives the var only if its own `secrets:` header
+    (or a transitive `calls:` sibling's) declares it — scoped or central alike.
+  - **CAPABILITIES lists the two sets apart**, so the model can tell "already mine" from
+    "shared, may need asking for".
+  - **Write surface**: an *Own secrets* section on the routine page (its own card, beside
+    Connections and Machines), backed by `web/api_routine_secrets.py`. Values are write-only;
+    the API answers with names, and marks which central names a routine shadows.
+  - Scoped stores live under the CONFIG dir, never in the routine dir — that dir is
+    `git add -A` autocommitted and auto-pushed, so a secret written there would leave the
+    host. Archiving a routine drops its store, so a credential never outlives its owner or is
+    inherited by a later routine reusing the slug.
+- The routine page groups **Secrets & access** (own secrets · shared-store exposure · settled
+  denials) as its own fold; secret exposure used to sit in the trailing "More" catch-all.
+
+### Changed
+- **`communication` → `messaging-discord`** (D104, operator decision 2026-08-26). With the
+  operator decision surface deleted, the permission gates one thing only — posting in the
+  user's Discord as them — which is precisely what its `messaging-*` siblings do. It now
+  reads as one, tags and conduct alike (`library-seed/permissions/messaging-discord.md`),
+  and the shared closing paragraph in the four sibling docs no longer points at a
+  `communication` doc that does not exist.
+- **The `create_routine` draft observation carries the workflow catalog** and its relay
+  contract now requires naming what the routine produces, what DONE looks like for one run,
+  and the chosen pattern **plus one alternative** (F383, from R476/R492). The pattern choice
+  was previously trusted to the conversation agent, which could default to `general-task`
+  silently while the preview merely named it.
+
+### Fixed
+- **The routine page's group dropdown re-rendered a persisted assignment as "none"** (F388,
+  from R499/R500). It read `group_managed`, which answers a different question — "does a
+  SCHEDULED group drive this routine's fires?" (D71) — and is null for a member of an
+  unscheduled group. Membership now comes from `/api/groups`, which the select already
+  fetches; the sub-line and the join toast say plainly when a group has no schedule, instead
+  of claiming its chain drives the routine. Regression-tested for both group kinds.
+- **`create_routine` accepted an unknown workflow at draft time and failed at materialize**
+  (F387, from R493) — i.e. the failure landed at the expensive step, *after* the user had
+  confirmed. The pattern is validated against the live library on the FIRST call, and
+  `workflow: "generate"` is refused with the reason it is a `subtask` capability rather than
+  a library slug.
+- **Search survives a corrupt index at the query seam** (F356). `_db()` healed the writer's
+  connection, but a search opens its own reader — so a malformed image ("database disk image
+  is malformed", "file is not a database") made every query raise until something happened to
+  reopen the writer. The index is a pure cache of the flat files: a query that meets a corrupt
+  one discards it, answers empty, and the next refresh rebuilds. A transient
+  `OperationalError` (a lock) never discards anything.
+
+### Removed
+- **The Discord decision surface is gone, and with it every engine-implicit outbound send**
+  (F284, D104; operator order 2026-08-26). `MIRROR_BLOCKING_QUESTIONS` had been False since
+  D48 (2026-07-29) because a Discord-side answer was observed not reaching the waiting run
+  (F193) — the machinery had been dead code for a month. Deleted: `engine/decisions.py`
+  (the whole `DiscordMirror`), the mirror's arms in `engine/interact.py`, the daemon's
+  OAuth-reauth ping and background-task-finished ping, and `rsched/notify.py` itself — with
+  no implicit send left, the one-seam module had nothing to carry. The durable console
+  record IS the notification; opt-in browser push (`web/push.py`) is the only
+  away-from-console tier. A run reaches a *person* by calling a messenger util itself,
+  gated and visible in the transcript, exactly as before.
+- The `mirrored` flag on the blocking-question record and its "and on Discord" note in the
+  answer form (`static/components/answerform.js`).
+- **The retired clarify-wizard machinery, now producer-less** (F372, sweep-proven). Nothing
+  has created a `.wizard-*` workspace or written `wizard_meta.json` since D59; every reader
+  was dead. Deleted `web/wizard_store.py`, `api_questions._wizard_questions` and its three
+  call sites, the `.wizard-` answer-routing and badge branches, `api_runs`'s workspace inbox
+  redirect, and the `engine-run --run-dir` flag with `run_routine`'s `run_dir` parameter (one
+  producer, `daemon/runner.py`, never passed it). The blocking-question dedup invariant its
+  test covered is kept, re-pointed at an ordinary routine.
+- 11 stray `export` keywords in `static/` whose symbols are used only in-module, and
+  `executor.py`'s docstring no longer attributes `format_observation` to `composer` or omits
+  the kinds it dispatches (hygiene sweep 2026-08-21, items 7 and 9 — F358).
+
 ## [0.229.0] — 2026-08-23
 
 ### Changed

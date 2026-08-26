@@ -215,10 +215,12 @@ by a test, by the engine, or by a past incident.
   gated by `utils_lib.header_problems` + their `--selftest`.
 - ONE outbound notification seam: any engine/daemon-implicit "reach the user" send goes through
   `rsched/notify.py` (see docs/notifications.md); new channels become a permission + a notify
-  transport, never an inline util call. Discord is opt-in per routine via `communication`
-  (instance-level events like an OAuth reauth ping only fire when a BINDING routine holds it).
-  Browser push (`web/push.py`) is the WEB channel's delivery arm — it renders the same
-  open-decisions record, so it rides beside the seam, not through it.
+  transport, never an inline util call. There is currently NO such transport and no
+  `notify.py`: 0.230.0 deleted every engine/daemon-implicit outbound send (the Discord
+  decision mirror, the OAuth-reauth ping, the background-task ping), so a message to a
+  person is always an explicit util call by the run, gated by a `messaging-*` permission.
+  Browser push (`web/push.py`) is the WEB channel's delivery arm — it renders the
+  open-decisions record and is the only away-from-console tier.
 
 ## Versioning
 

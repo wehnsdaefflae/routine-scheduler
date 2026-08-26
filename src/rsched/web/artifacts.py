@@ -1,5 +1,13 @@
 """Shared artifact listing/serving — one implementation behind the routine AND the
 conversation artifact panels (each router keeps only a thin handler on top).
+
+The DELIVERABLE DIRS (R339/F336) are a documented convention, not a per-routine setting: a
+run that commits a real deliverable must have a defined, working way to make it visible, and
+`artifacts/` alone was not it — frame-fill-lab wrote a verified `reports/*.pdf` and the panel
+stayed empty, with no mechanism anywhere to register the file. These three names are what
+routines already use for exactly this, and they are deliverable-shaped by definition; a run
+writing anywhere else is writing working state, not a deliverable. One list governs listing,
+serving AND deletion, so a file that appears in the panel is always openable and removable.
 """
 
 from __future__ import annotations
@@ -12,12 +20,21 @@ from fastapi.responses import FileResponse
 
 from ..paths import resolve_rel, within
 
+#: Where a run's deliverables live. `artifacts/` is the name to reach for in new work; the
+#: other two are long-standing conventions in live routines (reports/ for rendered documents,
+#: output/ for generated pages/feeds) that the panel used to be blind to.
+ARTIFACT_DIRS = ("artifacts", "reports", "output")
+
 
 def list_artifacts(base_dir: Path) -> list[dict]:
-    """Everything under <dir>/artifacts/ — the deliverables, newest first."""
-    art = base_dir / "artifacts"
+    """Everything under the deliverable dirs — newest first, each row's `path` relative to
+    the routine dir (so the panel's open/delete calls address it unambiguously).
+    """
     out: list[dict] = []
-    if art.is_dir():
+    for sub in ARTIFACT_DIRS:
+        art = base_dir / sub
+        if not art.is_dir():
+            continue
         for p in art.rglob("*"):
             if p.is_file():
                 st = p.stat()
@@ -28,7 +45,7 @@ def list_artifacts(base_dir: Path) -> list[dict]:
 
 
 def delete_artifact(base_dir: Path, path: str,
-                    subdirs: tuple[str, ...] = ("artifacts",)) -> dict:
+                    subdirs: tuple[str, ...] = ARTIFACT_DIRS) -> dict:
     """Delete ONE artifact file — the sidebar's user-facing remove (2026-08-14 order:
     artifacts must be deletable from the web UI). Same resolved-path containment as
     serve_file: only files under the allowed subdirs are deletable, so
@@ -48,7 +65,7 @@ def delete_artifact(base_dir: Path, path: str,
 
 
 def serve_file(base_dir: Path, path: str,
-               subdirs: tuple[str, ...] = ("artifacts",)) -> FileResponse:
+               subdirs: tuple[str, ...] = ARTIFACT_DIRS) -> FileResponse:
     """Serve one file raw (blob-rendered client-side) from the allowed subdirs ONLY.
     The containment check runs on the RESOLVED path — 'artifacts/../routine.yaml' must
     not pass.

@@ -39,7 +39,7 @@ tags: [communication, policy, notification]
 requires:
   utils: [discord]
 ---
-# permission: communication — Discord as a second decision surface
+# permission: discord messaging — reach a person on Discord
 body
 """
 
@@ -112,10 +112,10 @@ def test_requires_mode_rejects_confirm_and_runs_none():
 
 
 def test_requires_read_from_library_only(tmp_path):
-    home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION,
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION,
                            "plain": "# permission: plain — no requires\nbody\n"})
     lib = read_library_requires(home)
-    assert set(lib) == {"util-authoring", "communication"}   # requires-less docs omitted
+    assert set(lib) == {"util-authoring", "messaging-discord"}   # requires-less docs omitted
     assert lib["util-authoring"] == {"actions": ["write_util"]}
     assert read_library_requires(tmp_path / "nowhere") == {}   # missing library → none
 
@@ -129,10 +129,10 @@ def test_broken_frontmatter_degrades_to_no_requires(tmp_path):
 
 
 def test_capabilities_for_raises_the_base_to_cover_active_docs(tmp_path):
-    home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION,
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION,
                            "run-history": RUN_HISTORY})
     lib = read_library_requires(home)
-    caps = capabilities_for(["util-authoring", "communication", "run-history"], lib)
+    caps = capabilities_for(["util-authoring", "messaging-discord", "run-history"], lib)
     assert caps == {"actions": ["write_util"], "utils": ["discord"], "util_tags": [],
                     "confirm": "always", "rule_confirm": "always", "runs": "last",
                     "workflows": "catalog"}
@@ -148,7 +148,7 @@ def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_pat
     """D8: a gated action / reserved util / run access survives only as the MEANS of a HELD
     permission; the confirm level and run depth remain user policy under it. raise+floor
     together == exactly the union of the held docs' requires (plus those policy dials)."""
-    home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION,
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION,
                            "run-history": RUN_HISTORY})
     lib = read_library_requires(home)
     orphan = {"actions": ["write_util"], "utils": ["discord"], "confirm": "never", "runs": "all"}
@@ -164,7 +164,7 @@ def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_pat
     kept = floor_capabilities(["run-history"], lib, orphan)
     assert kept["runs"] == "all" and kept["actions"] == [] and kept["utils"] == []
     # raise THEN floor == exactly the held docs' requires + policy dials, no contradiction
-    active = ["util-authoring", "communication", "run-history"]
+    active = ["util-authoring", "messaging-discord", "run-history"]
     assert floor_capabilities(active, lib, capabilities_for(active, lib)) == {
         "actions": ["write_util"], "utils": ["discord"], "util_tags": [], "confirm": "always",
         "rule_confirm": "always", "runs": "last", "workflows": "catalog"}
@@ -224,11 +224,11 @@ def test_workflows_generate_capability_binds_to_its_permission(tmp_path):
 def test_policy_enforces_capabilities_not_docs(tmp_path):
     """Holding a conduct doc unlocks NOTHING by itself — enforcement reads the routine's
     capabilities mapping alone, so a doc-without-capability misconfiguration fails closed."""
-    home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION})
-    docs_only = load_policy(home, ["util-authoring", "communication"], {})
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION})
+    docs_only = load_policy(home, ["util-authoring", "messaging-discord"], {})
     assert not docs_only.allows_kind("write_util")
     assert "discord" not in docs_only.utils
-    assert docs_only.active == ("util-authoring", "communication")   # prose still rides along
+    assert docs_only.active == ("util-authoring", "messaging-discord")   # prose still rides along
 
     caps_only = load_policy(home, [], {"actions": ["write_util"], "utils": ["discord"],
                                        "confirm": "creations", "runs": "all"})
@@ -237,7 +237,7 @@ def test_policy_enforces_capabilities_not_docs(tmp_path):
     assert caps_only.confirm == "creations" and caps_only.run_history == "all"
     assert caps_only.deny({"kind": "util", "name": "discord"}) is None
     # the library-wide index survives for denial wording regardless of what is enabled
-    assert caps_only.gated_utils == {"discord": ("communication",)}
+    assert caps_only.gated_utils == {"discord": ("messaging-discord",)}
     assert caps_only.kind_sources == {"write_util": ("util-authoring",)}
 
 
@@ -292,12 +292,12 @@ def test_detach_is_gated_and_denial_names_background_tasks(tmp_path):
 
 
 def test_deny_names_the_covering_permission(tmp_path):
-    home = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION})
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION})
     policy = load_policy(home, [], {})
     denial = policy.deny({"kind": "write_util", "name": "x", "content": "y"})
     assert denial and "util-authoring" in denial and "ask_user" in denial
     denial_util = policy.deny({"kind": "util", "name": "discord", "args": ["send", "hi"]})
-    assert denial_util and "communication" in denial_util and "reserved" in denial_util
+    assert denial_util and "messaging-discord" in denial_util and "reserved" in denial_util
     # ungated capabilities pass silently
     assert policy.deny({"kind": "util", "name": "websearch"}) is None
     assert policy.deny({"kind": "read_file", "path": "LEDGER.md"}) is None
@@ -375,13 +375,13 @@ def test_validate_action_carries_capability_denials():
     from rsched.engine.actions import validate_action
 
     policy = GrantPolicy(active=("run-history",),
-                         gated_utils={"discord": ("communication",)},
+                         gated_utils={"discord": ("messaging-discord",)},
                          kind_sources={"write_util": ("util-authoring",)})
     wu = {"say": "s", "kind": "write_util", "name": "x", "content": "# script"}
     problems = validate_action(wu, grants=policy)
     assert len(problems) == 1 and "util-authoring" in problems[0]
     problems2 = validate_action({"say": "s", "kind": "util", "name": "discord"}, grants=policy)
-    assert len(problems2) == 1 and "communication" in problems2[0]
+    assert len(problems2) == 1 and "messaging-discord" in problems2[0]
     fin = {"say": "s", "kind": "finish", "status": "ok", "summary": "d"}
     assert validate_action(fin, grants=policy) == []
     assert validate_action(wu, grants=None) == []
@@ -428,7 +428,7 @@ def test_admin_lifts_capability_gating_only(tmp_path):
     """D62: an admin conversation leg lifts CAPABILITY gating (gated kinds, reserved utils,
     previous-run read depth) but leaves every STRUCTURAL / ownership gate in force."""
     # A stock (no-capability) policy denies gated kinds + reserved utils; its admin twin allows.
-    lib = _lib(tmp_path, {"util-authoring": AUTHORING, "communication": COMMUNICATION,
+    lib = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION,
                           "run-history": RUN_HISTORY})
     base = load_policy(lib, [], None, current_run_ts="20260712-090000")
     admin = load_policy(lib, [], None, current_run_ts="20260712-090000", admin=True)
@@ -468,7 +468,7 @@ requires:
   utils: [discord]
   util_tags: [messaging]
 ---
-# permission: communication — chat channels
+# permission: discord messaging — chat channels
 body
 """
 
@@ -493,41 +493,41 @@ def test_util_tags_accepted_in_requires_and_capabilities():
 
 
 def test_a_tag_gate_closes_every_util_carrying_that_tag(tmp_path):
-    home = _lib(tmp_path, {"communication": MESSAGING})
+    home = _lib(tmp_path, {"messaging-discord": MESSAGING})
     _util(home, "signal", "signal, messaging, send")
     _util(home, "page-fetch", "web, fetch")          # untagged by the gate → stays open
 
     ungranted = load_policy(home, [], {})
     denial = ungranted.deny({"kind": "util", "name": "signal", "args": ["send"]})
-    assert denial and "communication" in denial and "util:signal" in denial
+    assert denial and "messaging-discord" in denial and "util:signal" in denial
     # an ungated util is untouched by the tag gate
     assert ungranted.deny({"kind": "util", "name": "page-fetch", "args": ["x"]}) is None
 
     # holding the CLASS covers the util without naming it
-    granted = load_policy(home, ["communication"], {"util_tags": ["messaging"]})
+    granted = load_policy(home, ["messaging-discord"], {"util_tags": ["messaging"]})
     assert granted.deny({"kind": "util", "name": "signal", "args": ["send"]}) is None
     # so does the by-name grant, unchanged
-    by_name = load_policy(home, ["communication"], {"utils": ["signal"]})
+    by_name = load_policy(home, ["messaging-discord"], {"utils": ["signal"]})
     assert by_name.deny({"kind": "util", "name": "signal", "args": ["send"]}) is None
 
 
 def test_a_new_util_carrying_a_gated_tag_is_closed_by_default(tmp_path):
     """The point of the tag gate: the library gaining a util must not open a hole."""
-    home = _lib(tmp_path, {"communication": MESSAGING})
+    home = _lib(tmp_path, {"messaging-discord": MESSAGING})
     _util(home, "signal", "signal, messaging, send")
-    granted = load_policy(home, ["communication"], {"utils": ["signal"]})  # named, not classed
+    granted = load_policy(home, ["messaging-discord"], {"utils": ["signal"]})  # named, not classed
     _util(home, "matrix", "matrix, messaging, send")                      # library gains one
-    fresh = load_policy(home, ["communication"], {"utils": ["signal"]})
+    fresh = load_policy(home, ["messaging-discord"], {"utils": ["signal"]})
     assert fresh.deny({"kind": "util", "name": "matrix", "args": ["send"]})
     assert granted.deny({"kind": "util", "name": "signal", "args": ["send"]}) is None
     # the class grant covers the newcomer with no config change
-    classed = load_policy(home, ["communication"], {"util_tags": ["messaging"]})
+    classed = load_policy(home, ["messaging-discord"], {"util_tags": ["messaging"]})
     assert classed.deny({"kind": "util", "name": "matrix", "args": ["send"]}) is None
 
 
 def test_no_tag_gate_in_the_library_means_no_catalog_read(tmp_path):
     """With no doc declaring util_tags the policy is byte-identical to the name-only one."""
-    home = _lib(tmp_path, {"communication": COMMUNICATION})
+    home = _lib(tmp_path, {"messaging-discord": COMMUNICATION})
     _util(home, "signal", "signal, messaging, send")
     policy = load_policy(home, [], {})
     assert policy.util_tag_index == {}
@@ -535,11 +535,11 @@ def test_no_tag_gate_in_the_library_means_no_catalog_read(tmp_path):
 
 
 def test_tag_class_survives_the_raise_then_floor_round_trip(tmp_path):
-    home = _lib(tmp_path, {"communication": MESSAGING})
+    home = _lib(tmp_path, {"messaging-discord": MESSAGING})
     lib = read_library_requires(home)
-    raised = capabilities_for(["communication"], lib)
+    raised = capabilities_for(["messaging-discord"], lib)
     assert raised["util_tags"] == ["messaging"]
-    assert floor_capabilities(["communication"], lib, raised)["util_tags"] == ["messaging"]
+    assert floor_capabilities(["messaging-discord"], lib, raised)["util_tags"] == ["messaging"]
     # dropping the permission floors the class away — no orphan capability
     assert floor_capabilities([], lib, raised)["util_tags"] == []
 

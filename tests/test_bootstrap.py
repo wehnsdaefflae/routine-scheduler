@@ -58,13 +58,13 @@ def test_adopt_skips_dot_dirs_and_already_active(make_routine, tmp_path, monkeyp
     monkeypatch.setattr(bootstrap, "ADOPT_PERMISSIONS", ["memory"])
     d = make_routine(slug="r3")
     _set_permissions(d, ["memory"])
-    wizard = tmp_path / "routines" / ".wizard-20260712-000000"
-    wizard.mkdir(parents=True)
-    (wizard / "routine.yaml").write_text("permissions: [util-authoring]\n", encoding="utf-8")
+    hidden = tmp_path / "routines" / ".scratch-20260712-000000"
+    hidden.mkdir(parents=True)
+    (hidden / "routine.yaml").write_text("permissions: [util-authoring]\n", encoding="utf-8")
     perms = _mk_library(tmp_path)
 
     assert adopt_permissions(tmp_path / "routines", perms) == 0
-    assert "memory" not in (wizard / "routine.yaml").read_text(encoding="utf-8")
+    assert "memory" not in (hidden / "routine.yaml").read_text(encoding="utf-8")
     # already-adopted slugs are still marked done so the next boot skips the scan
     assert json.loads((tmp_path / "routines" / _ADOPTED_MARKER).read_text(encoding="utf-8")) == ["memory"]
 

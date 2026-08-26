@@ -64,7 +64,7 @@ def test_pseudo_utils_are_not_counted(make_routine, tmp_path):
 
 
 def test_rejection_classifier():
-    reserved = GrantPolicy(gated_utils={"discord": ("communication",)})
+    reserved = GrantPolicy(gated_utils={"discord": ("messaging-discord",)})
     # a reserved util switched off → a permission problem, whatever else is wrong
     assert util_rejection_outcome({"kind": "util", "name": "discord"},
                                   grants=reserved) == ("discord", "denied")
@@ -85,8 +85,8 @@ def test_rejection_classifier():
 
 def _reserve_discord(server: ServerConfig) -> None:
     server.permissions_home.mkdir(parents=True, exist_ok=True)
-    (server.permissions_home / "communication.md").write_text(
-        "---\nrequires:\n  utils: [discord]\n---\n# permission: communication\nbody\n",
+    (server.permissions_home / "messaging-discord.md").write_text(
+        "---\nrequires:\n  utils: [discord]\n---\n# permission: discord messaging\nbody\n",
         encoding="utf-8")
 
 

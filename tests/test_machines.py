@@ -134,7 +134,7 @@ def test_ssh_agent_vars_always_stripped(tmp_path, monkeypatch):
 # --------------------------------------------------------------------- executor injection ----
 def test_machine_env_resolves_bindings(monkeypatch):
     monkeypatch.setattr(secrets, "load_secrets", lambda: {"GPU_KEY": "PEM"})
-    ctx = SimpleNamespace(routine=SimpleNamespace(machines=["gpu"]),
+    ctx = SimpleNamespace(routine=SimpleNamespace(slug="mach", machines=["gpu"]),
                           granted_now=set(), grant_args={},
                           server=SimpleNamespace(machines={"gpu": _mac("gpu", key_var="GPU_KEY")}))
     env = _machine_env(ctx)
@@ -142,7 +142,7 @@ def test_machine_env_resolves_bindings(monkeypatch):
 
 
 def test_machine_env_no_bindings():
-    ctx = SimpleNamespace(routine=SimpleNamespace(machines=[]),
+    ctx = SimpleNamespace(routine=SimpleNamespace(slug="mach", machines=[]),
                           granted_now=set(), grant_args={},
                           server=SimpleNamespace(machines={}))
     assert _machine_env(ctx) == {}
@@ -150,7 +150,7 @@ def test_machine_env_no_bindings():
 
 def test_extra_secrets_merges_connections_and_machines(monkeypatch):
     monkeypatch.setattr(secrets, "load_secrets", lambda: {"GPU_KEY": "PEM"})
-    ctx = SimpleNamespace(routine=SimpleNamespace(connections={}, machines=["gpu"]),
+    ctx = SimpleNamespace(routine=SimpleNamespace(slug="mach", connections={}, machines=["gpu"]),
                           granted_now=set(), grant_args={},
                           server=SimpleNamespace(machines={"gpu": _mac("gpu", key_var="GPU_KEY")}))
     env = _extra_secrets(ctx)

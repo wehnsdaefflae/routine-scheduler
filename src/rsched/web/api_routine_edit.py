@@ -312,5 +312,11 @@ def archive_routine(request: Request, slug: str) -> dict:
     target = home / ".archive" / f"{slug}-{run_ts()}"
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(info.cfg.dir), str(target))
+    # D103: the routine's OWN secrets die with it. They live under the config dir, so the
+    # move would otherwise leave live credentials behind with nothing entitled to them —
+    # and a later routine reusing the slug would silently inherit them.
+    from ..secrets import drop_routine_secrets
+    dropped = drop_routine_secrets(slug)
     _state(request).scheduler.rescan()
-    return {"ok": True, "archived_to": str(target), "ts": now_iso()}
+    return {"ok": True, "archived_to": str(target), "ts": now_iso(),
+            "secrets_dropped": dropped}

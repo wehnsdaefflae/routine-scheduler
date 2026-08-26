@@ -15,7 +15,7 @@ export function parseHash(hash = location.hash) {
 }
 
 // Drop empty / null / undefined values so the URL stays clean (a blank filter = absent key).
-export function buildHash(path, query = {}) {
+function buildHash(path, query = {}) {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query))
     if (v !== "" && v !== null && v !== undefined) params.set(k, v);

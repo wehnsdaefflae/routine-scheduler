@@ -201,7 +201,9 @@ async def test_crashed_task_delivers_failure(tmp_path):
 
 # -- wake -----------------------------------------------------------------------------------
 
-async def test_discord_ping_gated_on_communication(tmp_path, monkeypatch):
+async def test_delivery_makes_no_outbound_send(tmp_path, monkeypatch):
+    """0.230.0: the durable message in the owner's inbox IS the delivery. The daemon pings
+    no channel — not Discord, not anything — whatever permissions the owner holds."""
     from rsched import utils_lib
     sent = []
     monkeypatch.setattr(utils_lib, "run_util",
@@ -209,16 +211,11 @@ async def test_discord_ping_gated_on_communication(tmp_path, monkeypatch):
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
 
     server = _server(tmp_path)
-    # owner WITHOUT communication → no ping
-    owner_a = _owner(server, "c-no", permissions=("memory",))
-    _task(server, "bg-a", owner_a)
+    owner = _owner(server, "c-yes", permissions=("memory", "messaging-discord"))
+    _task(server, "bg-b", owner, summary="scrape ok")
     await DetachedManager(server, DetachedFakeRunner()).tick()
     assert sent == []
-    # owner WITH communication → a discord ping fires
-    owner_b = _owner(server, "c-yes", permissions=("memory", "communication"))
-    _task(server, "bg-b", owner_b, summary="scrape ok")
-    await DetachedManager(server, DetachedFakeRunner()).tick()
-    assert sent and sent[0][0] == "discord" and sent[0][1][0] == "send"
+    assert list((owner / "inbox").glob("msg-bg-*.json"))   # the record still lands
 
 
 async def test_wake_resumes_idle_owner(tmp_path):

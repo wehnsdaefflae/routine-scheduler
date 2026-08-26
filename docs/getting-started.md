@@ -57,9 +57,9 @@ Two design rules explain most of the system's shape:
   blocking questions (a run is waiting), deferred ones (the next run picks the answer up),
   util approvals, and self-audit decisions. A blocking question waits up to the routine's
   configured timeout, then the run **continues on the default the model stated** — the
-  question stays open for a future run. Routines with the *communication* permission
-  mirror blocking questions to Discord; answer on whichever surface is closer, and the
-  other one is told. **Browser notifications** are opt-in under Settings → Notifications:
+  question stays open for a future run. The console is the only decision surface — no
+  channel mirrors a question anywhere else. **Browser notifications** are opt-in under
+  Settings → Notifications:
   OS notifications while a console tab is open, and — per browser — Web Push that reaches
   you with the console closed (needs HTTPS or a localhost tunnel).
 
@@ -67,7 +67,7 @@ Two design rules explain most of the system's shape:
 
 **1 · Connect a model.** Settings → LLM endpoints → add one (an OpenRouter key is the
 fastest start; the Claude subscription needs no per-token billing). Set it as the system
-model. Add any secrets your future utils need (Settings → Secrets — write-only store; at
+model. Add any secrets your future utils need (Settings → Secrets — the shared write-only store; a credential meaningful to ONE routine belongs in that routine's own *Own secrets* section instead, where it needs no exposure grant; at
 run time a util receives ONLY the secrets its docstring declares — see the sandboxing guide).
 
 **2 · Describe the task.** *+ new routine* → write the TASK in your own words — what to

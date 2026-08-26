@@ -23,7 +23,7 @@ const TOK = new RegExp([
   "([A-Za-z_]\\w*)",                                                               // 6 word
 ].join("|"), "g");
 
-export function highlightPython(src) {
+function highlightPython(src) {
   const frag = document.createDocumentFragment();
   let last = 0;
   let pendingDef = false;   // the word right after `def`/`class` is the defined name

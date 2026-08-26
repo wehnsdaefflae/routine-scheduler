@@ -18,6 +18,7 @@ import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
 import { createChat, typedBody, userEcho } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
+import { createRail } from "/static/components/rail.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createStateGraph } from "/static/components/stategraph.js";
 import { createTaskTree } from "/static/components/tasktree.js";
@@ -176,50 +177,23 @@ export async function render(view, slug, _query = {}) {
     if (pendingEcho) { pendingEcho.node = userEcho(pendingEcho.text); echoBox.append(pendingEcho.node); }
 
     artBody.replaceChildren();
+    // R341: the SHARED rail component (components/rail.js) — the run view renders the same
+    // one, so per-section collapse (F296, R262 pt1) is one implementation, not two.
+    const rail = createRail(artBody);
     // the state graph rides at the top of the artifact rail: current phase lit up,
     // re-highlighted live on the SSE state events below
-    const graphBody = el("div", {});
-    const treeBody = el("div", {});
-    const filesBody = el("div", {});
-    // F296 (R262 pt1): every rail section is individually collapsible, remembered per
-    // browser (localStorage) — the cap is the toggle; the outer <details> stays the
-    // whole-rail switch it always was.
-    const sectClosed = (name) => localStorage.getItem(`convrail:${name}`) === "closed";
-    function railCap(name, ...bodies) {
-      const cap = el("div", { class: "rail-cap", role: "button", tabindex: "0",
-                              title: "collapse / expand" }, name);
-      const apply = () => {
-        cap.classList.toggle("closed", sectClosed(name));
-        for (const b of bodies) b.hidden = sectClosed(name);
-      };
-      const flip = () => {
-        localStorage.setItem(`convrail:${name}`, sectClosed(name) ? "open" : "closed");
-        apply();
-      };
-      cap.onclick = flip;
-      cap.onkeydown = (e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); }
-      };
-      apply();
-      return cap;
-    }
-    artBody.append(railCap("state", graphBody), graphBody);
-    if (detail.run_id) artBody.append(railCap("tasks", treeBody), treeBody,
-                                      railCap("files", filesBody), filesBody);
+    const graphBody = rail.add("state", el("div", {}));
+    const treeBody = detail.run_id ? rail.add("tasks", el("div", {})) : el("div", {});
+    const filesBody = detail.run_id ? rail.add("files", el("div", {})) : el("div", {});
     // the live browser session (D86, R262 pt2): the browser-session util's persisted handle
     // + latest screenshot view, with a close control. Hidden until a session exists.
-    const brBody = el("div", { class: "browser-sess" });
-    const brCap = railCap("browser", brBody);
-    brCap.hidden = true;
-    artBody.append(brCap, brBody);
+    const brBody = rail.add("browser", el("div", { class: "browser-sess" }));
+    rail.toggle("browser", false);
     // detached background tasks the assistant launched (the `detach` action): a flat cross-run
     // list with a cancel affordance. Hidden until there is at least one.
-    const bgBody = el("div", { class: "bg-tasks" });
-    const bgCap = railCap("background", bgBody);
-    bgCap.hidden = true;
-    artBody.append(bgCap, bgBody);
-    const artsBody = el("div", {});
-    artBody.append(railCap("artifacts", artsBody), artsBody);
+    const bgBody = rail.add("background", el("div", { class: "bg-tasks" }));
+    rail.toggle("background", false);
+    const artsBody = rail.add("artifacts", el("div", {}));
     const stateGraph = createStateGraph(graphBody, {
       graphUrl: `/api/conversations/${slug}/stategraph`,
       ...(detail.run_id ? { statsUrl: `/api/runs/${detail.run_id}/phases` } : {}) });
@@ -232,7 +206,7 @@ export async function render(view, slug, _query = {}) {
     const BG_LIVE = new Set(["queued", "starting", "running", "waiting_user", "paused"]);
     function paintBackground(rows) {
       bgBody.replaceChildren();
-      bgCap.hidden = !rows.length;
+      rail.toggle("background", !!rows.length);
       for (const t of rows) {
         const row = el("div", { class: "bg-task" },
           chip(t.state, t.state),
@@ -264,7 +238,7 @@ export async function render(view, slug, _query = {}) {
     const freeBrBlobs = () => { for (const u of brBlobs.splice(0)) URL.revokeObjectURL(u); };
     function paintBrowser(rows) {
       freeBrBlobs();
-      brCap.hidden = !rows.length;
+      rail.toggle("browser", !!rows.length);
       brBody.replaceChildren();
       for (const s of rows) {
         const line = el("div", { class: "browser-line" },

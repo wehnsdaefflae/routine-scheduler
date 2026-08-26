@@ -28,7 +28,6 @@ class _Resp:
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "connections_path", lambda: tmp_path / "connections.json")
-    monkeypatch.setattr(oauth_refresh.notify, "send", lambda *a, **k: True)
     secrets.set_secret("GOOGLE_OAUTH_CLIENT_ID", "gid")     # google is an expiring provider
     secrets.set_secret("GOOGLE_OAUTH_CLIENT_SECRET", "gsec")
 
@@ -74,35 +73,14 @@ def test_skips_not_yet_due(monkeypatch):
     assert calls == []
 
 
-def test_rejection_marks_reauth_and_notifies(monkeypatch):
+def test_rejection_marks_reauth_and_the_record_is_the_notification(monkeypatch):
+    """A refresh the provider rejects flags `needs_reauth` — and that is the whole
+    notification: 0.230.0 deleted every engine/daemon-implicit outbound send, so the
+    Settings → Connections badge is the only surface (docs/notifications.md)."""
     store.set_connection(Connection(provider="google", account="me", access_token="AT",
                                     refresh_token="RT", expires_at=time.time() + 60))
     monkeypatch.setattr(oauth_refresh.httpx, "post",
                         lambda *a, **k: _Resp(400, {"error": "invalid_grant"}))
-    notes = []
-    monkeypatch.setattr(oauth_refresh.notify, "send",
-                        lambda server, text, **k: notes.append(text) is None or True)
-    # Discord is opt-in: the ping fires only when a routine BINDS this connection and
-    # holds the communication permission
-    mgr = _mgr()
-    monkeypatch.setattr(type(mgr), "_discord_opted_in", lambda self, conn: True)
-    mgr._refresh_due(time.time())
+    _mgr()._refresh_due(time.time())
     conn = store.get_connection("google", "me")
     assert conn is not None and conn.needs_reauth is True
-    assert notes and "google:me" in notes[0]
-
-
-def test_rejection_without_optin_flags_but_does_not_ping(monkeypatch):
-    store.set_connection(Connection(provider="google", account="me", access_token="AT",
-                                    refresh_token="RT", expires_at=time.time() + 60))
-    monkeypatch.setattr(oauth_refresh.httpx, "post",
-                        lambda *a, **k: _Resp(400, {"error": "invalid_grant"}))
-    notes = []
-    monkeypatch.setattr(oauth_refresh.notify, "send",
-                        lambda server, text, **k: notes.append(text) is None or True)
-    mgr = _mgr()
-    monkeypatch.setattr(type(mgr), "_discord_opted_in", lambda self, conn: False)
-    mgr._refresh_due(time.time())
-    conn = store.get_connection("google", "me")
-    assert conn is not None and conn.needs_reauth is True     # the flag always lands
-    assert notes == []                                        # the ping is opt-in

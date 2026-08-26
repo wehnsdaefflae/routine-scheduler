@@ -20,6 +20,10 @@ const SECTION_GROUPS = [
     headings: ["Schedule", "Triggers", "Schedule once"] },
   { title: "Permissions & practices", hint: "what it may do, and how it works",
     headings: ["Permissions & capabilities", "Practice modules"] },
+  // D103: the two secret scopes read together — what this routine OWNS, and which shared
+  // names it may be handed. Before this group they fell into the trailing "More" fold.
+  { title: "Secrets & access", hint: "its own credentials · shared-store exposure · settled denials",
+    headings: ["Own secrets", "Secret exposure", "Declined access"] },
   { title: "Budgets & limits", hint: "per-run ceilings · retention · filesystem reach",
     headings: ["Budgets", "Retention", "Filesystem roots"] },
   { title: "Models & resources", hint: "models · connections · machines",

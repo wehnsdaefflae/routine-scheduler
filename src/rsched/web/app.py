@@ -208,6 +208,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_push,
         api_questions,
         api_routine_edit,
+        api_routine_secrets,
         api_routines,
         api_runs,
         api_schedule,
@@ -219,7 +220,8 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         settings,
     )
 
-    for module in (api_push, api_routines, api_routine_edit, api_conversations,
+    for module in (api_push, api_routines, api_routine_edit, api_routine_secrets,
+                   api_conversations,
                    api_conversation_playbooks,
                    api_background, api_browser, api_runs,
                    api_schedule, api_stats, api_summary, api_questions, api_audit,
@@ -278,7 +280,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
 
         marker = _setup_marker()
         needs_setup = not (marker and marker.exists())
-        # llm_ready: the system_model (used by the clarify wizard + workflow generation) names a
+        # llm_ready: the system_model (used by clarify + workflow generation) names a
         # catalog model whose endpoint is configured. Until then nothing that needs an LLM to
         # CREATE a routine works — the UI disables those. (Routines pick their own models to run.)
         mc = server.models.get(server.system_model) if server.system_model else None

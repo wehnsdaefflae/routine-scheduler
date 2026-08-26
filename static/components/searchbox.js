@@ -18,7 +18,7 @@ const LIMIT = 60;
 // their sub path in the query, which the run view's transcript pager understands);
 // a conversation's surface is the chat; durable decision records live on the Decisions tab;
 // routine-level files (ledger/memory/recipe/instruction) land on the routine page.
-export function hitHref(h) {
+function hitHref(h) {
   if (h.kind === "decision") return "#/questions";
   if (h.home === "conversation") return `#/conversations/${h.slug}`;
   if (h.run_ts) {
@@ -29,7 +29,7 @@ export function hitHref(h) {
 }
 
 // match → <mark>match</mark>, built with textContent only.
-export function markSnippet(snippet) {
+function markSnippet(snippet) {
   const out = el("span", { class: "gs-snip" });
   String(snippet || "").split(MARK_START).forEach((part, i) => {
     if (i === 0) { if (part) out.append(part); return; }

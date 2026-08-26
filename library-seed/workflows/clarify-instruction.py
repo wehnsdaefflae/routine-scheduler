@@ -105,7 +105,7 @@ def write_result():
     OWNERSHIP RULE — the instruction is the TASK, nothing else. Cross-cutting conduct is owned
     by TRAITS (practice modules adapted into the routine at creation: asking policy, LEDGER
     and web-research discipline, git checkpoints) and capabilities by user-set
-    PERMISSIONS (communication channels, util authoring, previous-run access): the
+    PERMISSIONS (messaging channels, util authoring, previous-run access): the
     refined_instruction must contain NONE of it, and must not assume any rule or permission is
     present. If the user's draft mixes conduct into the task ("message me on discord when...",
     "improve your own prompt after each run"), do not copy it into the instruction — flag it in

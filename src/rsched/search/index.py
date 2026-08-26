@@ -230,8 +230,32 @@ class SearchIndex:
                     return self._match(conn, _escape_query(q), limit)
                 except sqlite3.OperationalError:
                     return []   # schema not created yet (first boot, empty cache)
-        finally:
+        except sqlite3.OperationalError:
+            raise          # a lock/timeout is transient — never discard the index for it
+        except sqlite3.DatabaseError as exc:
+            # F356: corruption reached the QUERY seam. `_db()` heals the writer's
+            # connection, but a reader opens its own — so before this, a malformed image
+            # ("database disk image is malformed", "file is not a database") made every
+            # search 500 until something happened to reopen the writer. The index is a
+            # cache over the flat files, so discarding it is always safe: drop it here and
+            # let the refresh loop rebuild from disk.
+            log.warning("search index unreadable at query time (%s) — discarding the cache",
+                        exc)
             conn.close()
+            self._discard_cache()
+            return []
+        finally:
+            with contextlib.suppress(sqlite3.Error):
+                conn.close()
+
+    def _discard_cache(self) -> None:
+        """Throw the index away so the next refresh rebuilds it. The writer connection is
+        closed FIRST: on POSIX an unlinked file keeps its open handles alive, so a surviving
+        writer would keep indexing into an inode nothing can ever read again.
+        """
+        self.close()
+        with self._lock:
+            self._remove_db_files()
 
     def _match(self, db: sqlite3.Connection, fts_query: str, limit: int) -> list[dict]:
         rows = db.execute(

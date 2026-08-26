@@ -12,6 +12,7 @@ import { el, skeleton, toast, when } from "/static/util.js";
 import { machinesCard } from "/static/components/machines.js";
 import { permissionsPanel } from "/static/components/permissions.js";
 import { rootsEditor } from "/static/components/fsroots.js";
+import { routineSecretsCard } from "/static/components/routine-secrets.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { scheduleOnceCard } from "/static/components/schedule-once.js";
 import { settingsSection } from "/static/components/settings-section.js";
@@ -310,6 +311,9 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
         { method: "PATCH", body: { connections } }),
     })));
 
+  // -- own secrets: this routine's private store (D103) ---------------------------------------
+  view.append(...settingsSection("Own secrets", "", routineSecretsCard(slug)));
+
   // -- grant decisions: secret exposure (D39) + declined-access tombstones ---------------------
   // Both live in routine.yaml `grants:` (entity ids, entities.py): `secret:<NAME>` rows are
   // the exposure map; a FALSE row of any other class is a deny-forever tombstone an access
@@ -319,7 +323,7 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
   view.append(...settingsSection("Secret exposure", "", secBox));
   const declinedBox = el("div", {}, skeleton(["50%"]));
   view.append(...settingsSection("Declined access", "", declinedBox));
-  // F193: a grant decided elsewhere (Decisions-page approval, Discord) lands in
+  // F193: a grant decided elsewhere (a Decisions-page approval) lands in
   // routine.yaml while this page is open — the panel refetches BOTH the store and the
   // routine's CURRENT grants instead of rendering the page-load snapshot forever.
   const loadSecrets = async () => {

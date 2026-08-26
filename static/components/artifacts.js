@@ -1,5 +1,7 @@
-// The artifact panel (conversations AND routines): everything the model wrote into
-// artifacts/ — listed newest-first and rendered inline by type. Files are fetched WITH the
+// The artifact panel (conversations AND routines): everything the model wrote into a
+// deliverable dir — artifacts/, reports/ or output/ (web/artifacts.py ARTIFACT_DIRS; R339:
+// scanning artifacts/ alone left the panel empty for a run that committed a real reports/
+// PDF) — listed newest-first and rendered inline by type. Files are fetched WITH the
 // auth header and rendered from blob URLs (iframes/imgs can't carry Authorization); html
 // renders in a sandboxed iframe (scripts yes, same-origin no — an artifact can never read
 // the console's token). Re-writing the same filename updates the artifact in place:
@@ -87,7 +89,7 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
     listBox.replaceChildren();
     if (!items.length) {
       listBox.append(emptyState("⬡", "No artifacts yet",
-        "Deliverables the agent writes to artifacts/ appear here."));
+        "Deliverables a run writes to artifacts/, reports/ or output/ appear here."));
       return;
     }
     for (const it of items) {

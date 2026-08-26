@@ -180,12 +180,31 @@ daemon-owned connection store (one `connections.json` beside `config.yaml`, keye
 per-flow `state` is the CSRF guard) exchanges the code and writes the connection; the new
 `ServerConfig.public_url` (external https URL, e.g. Tailscale Serve) builds the redirect_uri.
 `daemon/oauth_refresh.py` (`OAuthRefreshManager`, ticked by the scheduler like the trigger/detached
-managers) refreshes EXPIRING tokens near expiry, persists rotation, flags `needs_reauth` + notifies
-on rejection — a no-op for non-expiring providers (Notion). **Engine injection**:
+managers) refreshes EXPIRING tokens near expiry, persists rotation and flags `needs_reauth` on
+rejection — which badges it in Settings → Connections, the only notification there is (0.230.0
+deleted every implicit outbound send) — a no-op for non-expiring providers (Notion). **Engine injection**:
 `executor.do_util` resolves the routine's bound connections to `{<PROVIDER>_ACCESS_TOKEN: token}`
 and passes them to `utils_lib.run_util` as `extra_secrets`; `_child_env` injects each ONLY if the
 util declares the var — so a token reaches a util iff the routine binds the connection AND the util
 declares the var (the `notion` util declares `NOTION_ACCESS_TOKEN`). See docs/oauth-connections.md.
+
+## Secrets — two scopes (secrets.py)
+
+`secrets.env` beside config.yaml is the CENTRAL store: instance-wide names, so exposing one
+to a routine is a decision (the four-state `secret:<NAME>` grant). `secrets.d/<slug>.env` is
+a routine's OWN store (D103, operator decision 2026-08-26 — R497): `SFTP_USER` means
+something different to every routine that has one, and one flat namespace forced them either
+to collide or to be spelled by convention. A scoped secret is owned by its routine —
+implicitly exposed to its runs, invisible to every other routine, and SHADOWING a central
+value of the same name (it rides `executor._extra_secrets`, which wins the `_child_env`
+merge). The exposure gate therefore subtracts a routine's own names before deciding anything
+(`interact._own_secrets`), and CAPABILITIES lists the two sets apart so a run never spends a
+turn requesting what it already holds. Both scopes stay under the declared-only rule. Write
+surface: Settings → Secrets for the central store, the routine page's *Own secrets* section
+(`web/api_routine_secrets.py`) for the scoped one — values write-only in both, names only on
+the way out. Scoped stores live under the CONFIG dir, never in the routine dir, which is
+`git add -A` autocommitted and auto-pushed; archiving a routine drops its store, so a
+credential never outlives its owner or is inherited by a slug's reuse.
 
 ## Remote machines (machines.py)
 
@@ -357,8 +376,8 @@ and the capabilities digest's catalog listing):
   owns the lifecycle — materialize (`childrun.materialize_to_disk`) + `runner.fire` on a third
   `BACKGROUND_SLOTS` pool → poll `status.json` (the `EventBus` is lossy) → on terminal, DELIVER
   (idempotent via `delivered.json` + a deterministic msg filename): copy `artifacts/` → owner, write a
-  durable `<owner>/inbox/` message, then WAKE (`runner.resume` if idle, else the live reply drains it) +
-  optional Discord ping (`communication`) → rebuild `<owner>/state/background.json` → gc past a grace
+  durable `<owner>/inbox/` message, then WAKE (`runner.resume` if idle, else the live reply drains it)
+  → rebuild `<owner>/state/background.json` → gc past a grace
   window. Detached runs are excluded from the restart drain gate (the child survives SIGTERM via
   `start_new_session`; disk-poll delivers post-restart) and use deferred asks only. Gated by the
   `background-tasks` permission (default-ON for conversations); action = `detach` (never call it
@@ -377,11 +396,10 @@ and the capabilities digest's catalog listing):
   config), and every decision seeds the run's in-memory overlay (`engine/requests.py`) at
   whichever seam consumes it: the blocking answer, boot (decided between runs), or the live
   turn boundary (a deferred ask answered mid-run — the running run's policy, schema and util
-  sandbox pick the grant up at once). Blocking
-  asks are durable records too, and — when the routine holds the `communication` permission — are mirrored to Discord by
-  the ENGINE (`engine/decisions.py`): a reply on either surface resolves everywhere and the other side
-  is notified. All implicit outbound sends (the mirror + the detached-delivery ping) go through
-  the ONE notification seam `rsched/notify.py` — see docs/notifications.md. The web layer posts
+  sandbox pick the grant up at once). Blocking asks are durable records too, and the console is
+  the ONLY surface that carries them: no channel mirrors a decision, and the engine and daemon
+  make no implicit outbound send at all (0.230.0 — see docs/notifications.md). Browser push is
+  the away-from-console tier, rendering the same open-decisions record. The web layer posts
   answers into `inbox/`. Decisions-page LIFECYCLE (fields on the one record shape, never a new
   type): a blocking ask can be **deferred to the next run** (a `{defer: true}` inbox marker —
   the engine unblocks on the stated default, the record stays open; stale markers are swept at
@@ -451,10 +469,16 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   not commands.
 - Web: `web/api_conversations.py` (create/message are multipart — **attachments** land in
   `<conv>/attachments/` and ride the message text as an `[attached files]` block; vision util for
-  images). **Artifacts**: deliverables the model `write_file`s into `<conv>/artifacts/` are
-  listed/served here and rendered in the chat's side panel (html sandboxed, md/img/pdf/csv/json
+  images). **Artifacts**: deliverables the model `write_file`s into a DELIVERABLE DIR —
+  `artifacts/`, `reports/` or `output/` (`web/artifacts.py` `ARTIFACT_DIRS`, one list governing
+  listing, serving and deletion; R339/F336 — scanning `artifacts/` alone left the panel empty for
+  a run that committed a verified `reports/*.pdf`, with no way to register it) — are listed/served
+  here and rendered in the chat's side panel (html sandboxed, md/img/pdf/csv/json
   inline); routines get the SAME panel on the run view (`api_routines` `/artifacts` + `/artifact`,
   `components/artifacts.js` with `base: "routines"`), with the state-graph card on top.
+  The RAIL those cards sit in is one component too (`components/rail.js`, R341): the run view
+  and the conversation view render the same collapsible sections, remembered per browser —
+  they were divergent copies, and only the conversation one could collapse (F296/R340).
   UI: `static/views/conversations.js` + `components/chat.js` (work folded per reply,
   `[new-topic]` first-line marker → warn + one-click fork) + `components/artifacts.js`.
   **Refer-to** (messenger reply analog, run view + chat): every rendered message carries a
@@ -585,8 +609,8 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   whether the name exists), `util-removal` (requires remove_util — deletion takes a
   capability away from every caller, so it is its own decision), `memory` (memory_read/memory_write —
   indexed ≤100-line notes in `.memory/`; INDEX.md engine-maintained, surfaced in the state digest;
-  default), `communication` (requires `discord`; the enabled capability also turns on engine-side
-  Discord mirroring of blocking decisions), `run-history` (previous-run reads; depth last/all is the
+  default), `messaging-discord` (requires the reserved `discord` util — one of the per-channel
+  `messaging-*` docs), `run-history` (previous-run reads; depth last/all is the
   capability), `shell` (requires the `shell` util — the escape hatch), `workflow-generation`
   (requires `workflows: generate` — a subtask may DRAFT a new library pattern when none fits, folding
   the system-model spend into the run; off by default), `background-tasks` (requires the `detach`

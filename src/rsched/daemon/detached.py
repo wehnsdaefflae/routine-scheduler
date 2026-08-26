@@ -218,24 +218,6 @@ class DetachedManager:
                           {"ts": now_iso(), "state": state, "owner": owner.get("slug")})
         log.info("detached delivered task=%s state=%s owner=%s artifacts=%d",
                  taskid, state, owner.get("slug"), copied)
-        await self._maybe_ping_discord(owner_dir, info.cfg.name or taskid, state)
-
-    async def _maybe_ping_discord(self, owner_dir: Path, label: str, state: str) -> None:
-        """A best-effort nudge to the owner's Discord channel (the RESULT is in the conversation;
-        this just tells an away user to look). Gated on the owner holding `communication`;
-        the send goes through the one outbound seam (rsched.notify).
-        """
-        try:
-            from .. import notify
-
-            raw = yaml.safe_load((owner_dir / "routine.yaml").read_text(encoding="utf-8")) or {}
-            if not notify.discord_enabled(self.server, permissions=raw.get("permissions") or []):
-                return
-            verb = {"finished": "finished", "aborted": "was cancelled"}.get(state, "failed")
-            msg = f"🔔 Background task “{label}” {verb} — open the conversation to see the result."
-            await asyncio.to_thread(notify.send, self.server, msg)
-        except Exception:
-            log.info("detached: discord ping skipped for %s", owner_dir.name)
 
     async def _copy_artifacts(self, task_dir: Path, owner_dir: Path, taskid: str) -> int:
         src = task_dir / "artifacts"

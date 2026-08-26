@@ -11,6 +11,7 @@ import { confirmDialog, promptDialog } from "/static/components/dialog.js";
 import { setQuery, remount } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createArtifacts } from "/static/components/artifacts.js";
+import { createRail } from "/static/components/rail.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createPlanStrip } from "/static/components/planstrip.js";
 import { createStateGraph } from "/static/components/stategraph.js";
@@ -70,16 +71,17 @@ export async function render(view, runId, query = {}) {
   // Side rail: the routine's state graph (current phase lit, updates on SSE phase
   // transitions) + its artifacts. Fixed in the right margin on wide screens (CSS), an
   // ordinary collapsible block above the transcript otherwise.
-  const graphBody = el("div", {});
-  const treeBody = el("div", {});
-  const filesBody = el("div", {});
-  const artBody = el("div", {});
-  view.append(el("details", { class: "run-rail", open: true },
-    el("summary", { class: "small" }, "state & artifacts"),
-    el("div", { class: "rail-cap" }, "state"), graphBody,
-    el("div", { class: "rail-cap" }, "tasks"), treeBody,
-    el("div", { class: "rail-cap" }, "files"), filesBody,
-    el("div", { class: "rail-cap" }, "artifacts"), artBody));
+  // R341: the SHARED rail component, the same one the conversation view renders — so each
+  // section is individually collapsible here too (R340), remembered per browser, instead of
+  // the divergent plain-caption copy this view used to carry.
+  const railHost = el("details", { class: "run-rail", open: true },
+    el("summary", { class: "small" }, "state & artifacts"));
+  view.append(railHost);
+  const rail = createRail(railHost);
+  const graphBody = rail.add("state", el("div", {}));
+  const treeBody = rail.add("tasks", el("div", {}));
+  const filesBody = rail.add("files", el("div", {}));
+  const artBody = rail.add("artifacts", el("div", {}));
   // stategraph + artifacts are HOME-scoped (routines vs conversations routes) — created
   // at boot once the run detail names its home; tree/files key off the run id (home-free).
   let stateGraph = null;

@@ -68,18 +68,23 @@ network, and inherits the sibling's declared secrets.
 
 ## Secrets — declared-only injection (every mode)
 
-`_child_env` injects from the central store ONLY the vars the util (or a `calls:`
+`_child_env` injects from the stores ONLY the vars the util (or a `calls:`
 sibling, transitively) declares on `secrets:`; every other store key is scrubbed even
 when the daemon's own environment carries it. `STRIP_VARS` (the LLM billing keys, and the
 SSH-agent vars `SSH_AUTH_SOCK` / `SSH_AGENT_PID` — so a forwarded agent can't route around
 the per-routine machine binding) never pass, declared or not. The engine also injects a few
-per-run secrets through this SAME gate — a routine's OAuth connection tokens
-(`<PROVIDER>_ACCESS_TOKEN`) and its bound remote machines (`RSCHED_MACHINES` /
-`RSCHED_MACHINE_KEYS`) — each reaching a util only if the util declares the var. This layer
-needs no kernel support and applies even with `sandbox: off`. WHICH store secrets a
-routine's calls may receive at all is the user's per-routine decision (the four-state
-grant rows `secret:<NAME>` in routine.yaml `grants:` — an undecided REQUIRED name files a
-blocking access request on first use; docs/rules-permissions.md). An **OPTIONAL** secret
+per-run secrets through this SAME gate — the routine's OWN scoped secrets (D103), its OAuth
+connection tokens (`<PROVIDER>_ACCESS_TOKEN`) and its bound remote machines
+(`RSCHED_MACHINES` / `RSCHED_MACHINE_KEYS`) — each reaching a util only if the util declares
+the var. This layer needs no kernel support and applies even with `sandbox: off`. WHICH
+CENTRAL store secrets a routine's calls may receive at all is the user's per-routine decision
+(the four-state grant rows `secret:<NAME>` in routine.yaml `grants:` — an undecided REQUIRED
+name files a blocking access request on first use; docs/rules-permissions.md). A
+ROUTINE-SCOPED secret (`secrets.d/<slug>.env`, the routine page's *Own secrets* section) has
+no such decision: it is the routine's own, implicitly exposed to its runs and to no other
+routine, and it SHADOWS a central value of the same name — so those engine extras winning
+the merge is the shadowing rule, not an accident. It stays under the declared-only gate like
+everything else. An **OPTIONAL** secret
 (declared `NAME?`, D51/F290 — it backs a feature most calls don't use, like page-fetch's
 Basic auth) never files that request: not granted → it is WITHHELD from the child env and
 the util observation says so, so a public call runs prompt-free and an auth-needing one

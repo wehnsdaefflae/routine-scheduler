@@ -179,7 +179,6 @@ export function questionPanel(box, q, { onAnswered } = {}) {
       mdInline(q.question || "")),
     q.expires ? el("div", { class: "faint small" },
       "the run continues without you ", when(q.expires, { mode: "rel" }),
-      " — also answerable on the Decisions page",
-      q.mirrored ? " and on Discord" : "") : null,
+      " — also answerable on the Decisions page") : null,
     form.node));
 }

@@ -50,7 +50,7 @@ out only after your explicit go.
 |---|---|---|
 | workflow | `general-task` | scan → score → draft → gate is ordinary tool work |
 | rules | ask-policy, web-research, decision-record, intent-inference | the routine-improver meta routine handles improvement passes for every routine |
-| permissions + capabilities | **util-authoring** — approval *new utils only*, memory, **communication** | scrapers break at 6 a.m. — the `creations` approval level auto-applies *revisions* without waking you (new utils still ask); communication mirrors the send-gate to Discord |
+| permissions + capabilities | **util-authoring** — approval *new utils only*, memory | scrapers break at 6 a.m. — the `creations` approval level auto-applies *revisions* without waking you (new utils still ask); the send-gate is a blocking ask on the Decisions page |
 | budgets | 60 turns · 45 min · defaults; **ask_timeout_min 240** | a send-gate that waits longer than half a day is stale anyway |
 | schedule | weekdays 06:30 | the shortlist is ready with your coffee |
 
@@ -73,7 +73,7 @@ out only after your explicit go.
    summary, done.
 
 **Where you come in:** one deferred question per interesting posting ("pursue?"), one
-blocking (mirrored) question per send. Everything else is autonomous.
+blocking question per send. Everything else is autonomous.
 
 ---
 
@@ -103,7 +103,7 @@ submitted only after your sign-off.
 |---|---|---|
 | workflow | `general-task` (or generate a pipeline pattern once the library has traffic) | |
 | rules | ask-policy, web-research, decision-record, intent-inference | source tuning and pipeline growth come from the routine-improver's research/features lenses |
-| permissions + capabilities | util-authoring, memory, **run-history** — depth *all*, communication | **full run history** is the point: "did we already see this program in March?", "what did the run that submitted X actually do?" — longitudinal questions the LEDGER alone can't answer |
+| permissions + capabilities | util-authoring, memory, **run-history** — depth *all* | **full run history** is the point: "did we already see this program in March?", "what did the run that submitted X actually do?" — longitudinal questions the LEDGER alone can't answer |
 | budgets | **80 turns · 60 min** · ask_timeout_min 480 | a weekly run may verify dozens of pages; give it room |
 | schedule | Mondays 07:00 | deadlines are usually weekday-anchored |
 
@@ -118,7 +118,7 @@ submitted only after your sign-off.
    demotes the program with a note instead of silently keeping stale data.
 4. Advances each active application one stage: research → compose (packet fields,
    attachments via `xlsx-pdf` / `pdf-stamp` where forms are involved) → pangram pass →
-   **sign-off gate** (blocking, default `hold`, mirrored to Discord) → submit → monitor
+   **sign-off gate** (blocking, default `hold`) → submit → monitor
    the inbox for the funder's reply.
 5. Cross-run statistics from the full run history (`run-history` at depth `all`): submissions
    per month, tier→outcome rates — into `state/stats.md`. LEDGER, finish.
@@ -203,7 +203,7 @@ learning your taste run over run.
 |---|---|---|
 | workflow | `general-task` | propose → feedback → learn → propose is steady-state work |
 | rules | ask-policy, web-research, decision-record | the routine-improver's UI lens keeps `proposals.md` readable as it grows |
-| permissions | memory, **communication**, **run-history** | taste questions belong on your phone (Discord), not buried in a console; run-history lets it diff proposals against exactly what you saw last time |
+| permissions | memory, **run-history** | taste questions ride browser push to your phone as ordinary decisions; run-history lets it diff proposals against exactly what you saw last time |
 | budgets | 40 turns · 30 min · **ask_timeout_min 1440** | taste questions can wait a day; the run continues on its stated default and folds your late answer into the next one |
 | schedule | Tuesdays + Fridays 18:00 | often enough to converge, rare enough to have news |
 
@@ -216,7 +216,7 @@ learning your taste run over run.
    prices cached with source links, `db-link` deep links for the guests coming by train.
 3. Rewrites `state/proposals.md`: top 3, each fully costed, with what changed since last
    time and why (your feedback, quoted).
-4. Asks its ≤2 pivotal questions — deferred, with options, mirrored to Discord: *"Venue
+4. Asks its ≤2 pivotal questions — deferred, with options: *"Venue
    direction: (1) rented cabin, self-catered · (2) restaurant back room · (3) mixed —
    cabin + one restaurant evening. Default if unanswered: keep developing 1 and 3."*
 5. Updates the taste model in `.memory/` from your previous answers (what you chose AND

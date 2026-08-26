@@ -615,4 +615,5 @@ def get_file(request: Request, slug: str, path: str):
     and renders from blob URLs). Only artifacts/ and attachments/ are servable.
     """
     info = conversation_info(request, slug)
-    return artifacts.serve_file(info.cfg.dir, path, subdirs=("artifacts", "attachments"))
+    return artifacts.serve_file(info.cfg.dir, path,
+                                subdirs=(*artifacts.ARTIFACT_DIRS, "attachments"))

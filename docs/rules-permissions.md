@@ -256,7 +256,7 @@ The shipped set:
 |---|---|---|
 | `util-authoring` | `write_util` (the approval level is the capability's setting) | ✅ held by new routines |
 | `memory` | `memory_read` / `memory_write` — the `.memory/` notebook | ✅ |
-| `communication` | the reserved `discord` util — a second decision surface | opt-in |
+| `messaging-discord` | the reserved `discord` util — post as the user in their Discord | opt-in |
 | `run-history` | previous-run reads (the depth — last / all — is the capability's setting) | opt-in |
 | `shell` | the reserved `shell` util — arbitrary host commands | opt-in |
 | `remote-machines` | the reserved `remote` util — act on bound SSH hosts (see [remote-machines](remote-machines.md)) | opt-in |
@@ -317,7 +317,9 @@ of four states (a once-grant passes through *allowed now* and back out):
   through the permission cascade (allow-forever activates a covering conduct doc and
   runs the same raise-then-floor the permissions editor uses), a connection/machine
   binding, an fs root. `secret:` is the one class with no native switch — its
-  allow-forever is a `grants:` true row. Only a REQUIRED secret declaration triggers the
+  allow-forever is a `grants:` true row, and it covers the CENTRAL store only: a
+  routine-scoped secret (D103, `secrets.d/<slug>.env`) is owned by its routine, so there is
+  nothing to decide and the gate skips the name entirely. Only a REQUIRED secret declaration triggers the
   engine's own blocking request; an OPTIONAL one (`NAME?` in the util header, D51/F290)
   is withheld from the call instead of prompting — the run requests it explicitly when a
   call really needs it.

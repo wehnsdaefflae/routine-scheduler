@@ -41,7 +41,7 @@ DEFAULT_BUDGETS = {
 # kinds, reserved utils, the write_util approval level, previous-run read depth. The two
 # stay consistent via the web layer's cascades: activating a doc switches on what its
 # `requires:` names; switching a capability off deactivates the docs requiring it.
-# `communication` (discord), `run-history` depth and `shell` stay opt-in. There is NO
+# `messaging-*` (the personal channels), `run-history` depth and `shell` stay opt-in. There is NO
 # self-modification permission: a run never edits its own recipe or routine.yaml — the
 # routine-improver meta routine refines recipes centrally (its fs_write_roots covering
 # the homes is the one engine-recognized unlock). Defaults added here AFTER routines

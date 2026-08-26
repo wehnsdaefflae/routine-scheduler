@@ -27,6 +27,38 @@ def test_routine_page_hero_group_select_assigns_membership(ui, ui_page):
     assert data["groups"][0]["members"] == [{"slug": "uir"}]
 
 
+def test_hero_group_select_survives_a_reload_for_an_unscheduled_group(ui, ui_page):
+    """F388 (R499/R500): membership persisted, but the dropdown re-rendered as "none" after
+    a reload, so the user assigned the group again and reported data loss. The selection
+    must come from MEMBERSHIP — not from `group_managed`, which is set only for a member of
+    a SCHEDULED group (D71) and is null here."""
+    gid = groups.create(ui.routines, name="Unscheduled", members=[])["id"]
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    sel = ui_page.locator(".hero-group-sel")
+    expect(sel).to_be_visible(timeout=10_000)
+    sel.select_option(label="Unscheduled")
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("joined", timeout=10_000)
+    assert groups.load(ui.routines)["groups"][0]["members"] == [{"slug": "uir"}]
+
+    ui_page.goto(f"{ui.url}/#/routine/uir")          # reload: the truth is re-read
+    sel = ui_page.locator(".hero-group-sel")
+    expect(sel).to_be_visible(timeout=10_000)
+    expect(sel).to_have_value(gid, timeout=10_000)   # was "" before the fix
+    expect(ui_page.locator(".hero-sub", has_text="member of Unscheduled")).to_be_visible()
+
+
+def test_hero_group_select_survives_a_reload_for_a_scheduled_group(ui, ui_page):
+    """The same, for a SCHEDULED group — where `group_managed` IS set, so the sub-line keeps
+    saying the group's chain drives the fires."""
+    gid = groups.create(ui.routines, name="Nightly", members=[{"slug": "uir"}],
+                        cron="0 3 * * *")["id"]
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    sel = ui_page.locator(".hero-group-sel")
+    expect(sel).to_be_visible(timeout=10_000)
+    expect(sel).to_have_value(gid, timeout=10_000)
+    expect(ui_page.locator(".hero-sub", has_text="fires via the group's chain")).to_be_visible()
+
+
 def test_routines_page_group_crud(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector("[data-group-new]", timeout=10_000)
