@@ -16,8 +16,14 @@ FROM python:3.12-slim-bookworm
 #     bind-mounted ~/.cache/ms-playwright — image carries the stable root-owned libs only)
 #   xvfb/xauth — virtual X display so a browser util can run HEADFUL Chrome on this headless
 #     host when a site defeats headless mode; opt-in per util via xvfb-run, no global DISPLAY
+#   build-essential — a C toolchain for util dependency installs (F341, operator choice
+#     2026-08-26). A util declares its deps as PEP 723 inline metadata and uv builds them at
+#     call time; a package published only as an sdist (or one whose wheel misses this
+#     platform) needs a compiler right there, and without one the util fails at its FIRST run
+#     with a build error no routine can act on. The full chain, not just gcc: a compiled dep
+#     that needs g++ or a Makefile is exactly the case a partial toolchain still fails.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git curl ca-certificates gnupg sshfs \
+        git curl ca-certificates gnupg sshfs build-essential \
     # GitHub CLI apt repo
     && mkdir -p -m 755 /etc/apt/keyrings \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \

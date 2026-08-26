@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.230.2] — 2026-08-26
+
+### Added
+- **A C toolchain in the engine image** (F341, operator choice 2026-08-26). A util declares
+  its dependencies as PEP 723 inline metadata and `uv` builds them at call time, so a package
+  published only as an sdist — or whose wheel misses this platform — needs a compiler right
+  there; without one the util fails at its first run with a build error no routine can act on.
+  `build-essential`, not just `gcc`: a dep needing g++ or a Makefile is exactly the case a
+  partial toolchain still fails on.
+
+### Fixed
+- **F289 does not reproduce — headed Chromium works in the engine container.** It was
+  recorded as an image-level defect awaiting a rebuild: on 2026-08-05 the bundled Chromium
+  spawned its crash-reporter as a separate `--type=crashpad-handler` re-exec that aborted with
+  `--database is required` → SIGTRAP, and no browser-process launch flag reached it. Verified
+  in the live container: both bundled builds (chromium-1228 and chromium-1234) launch headed
+  under `xvfb-run` with no crashpad error, and a headed Playwright launch reports `DISPLAY=:99`
+  and a User-Agent with no `Headless` token — i.e. genuinely headed, not a silent fallback.
+  The `page-fetch` util's comment telling every run that `--head` is UNUSABLE was therefore
+  steering runs away from a working capability; corrected in the library (`revise page-fetch`).
+
 ## [0.230.1] — 2026-08-26
 
 ### Fixed

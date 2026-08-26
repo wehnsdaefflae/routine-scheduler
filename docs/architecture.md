@@ -674,7 +674,9 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   `SandboxPolicy` and wraps the command in a Landlock jail (`rsched/sandbox.py` policy +
   `rsched/landlock.py` ctypes binding/child wrapper, verified working inside the production Docker
   container) whose visible filesystem derives from the run — routine dir + fs roots rw/ro, plus the
-  toolchain (uv + caches, the library, system trees; the daemon-user HOME stays invisible: secrets
+  toolchain (uv + caches — including a C compiler, F341: a util's PEP 723 deps are BUILT at call
+  time, so a package shipped only as an sdist needs `build-essential` present in the image or the
+  util fails at its first run — the library, system trees; the daemon-user HOME stays invisible: secrets
   store, ~/.credentials, ~/.ssh — with ONE deliberate rw carve-out: ~/.claude + ~/.claude.json, the
   claude CLI's session/credential store, so `gu claude` works under the jail). Network is the util's `net:` declaration (undeclared = no TCP;
   transitive over `calls:`). Server config `sandbox: strict|permissive|off` (default permissive:
