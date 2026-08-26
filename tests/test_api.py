@@ -1921,6 +1921,42 @@ def test_post_rules_binds_and_unbinds_general_rules(client):
     assert bad.status_code == 400 and "ghost" in bad.text
 
 
+def test_patch_binds_rules_via_config_patch(client):
+    """A config_patch that binds a rule (the Decisions page's `approve & apply` for a
+    decision carrying `config_patch: {"rules": [...]}`) reaches routine.yaml through the
+    generic PATCH, not only the dedicated /rules picker. Before F392 the `rules` key hit
+    RoutinePatch's extra=forbid and 422'd — the Decisions page rendered `[object Object]`
+    and the operator-approved binding silently never landed. Rules REPLACE wholesale here,
+    the derived main.md tail resyncs, and an unknown slug is a legible 400.
+    """
+    c, tmp = client
+    rules_home = tmp / "library" / "rules"
+    rules_home.mkdir(parents=True, exist_ok=True)
+    for slug, summary in (("alpha", "the first principle"), ("beta", "the second principle")):
+        (rules_home / f"{slug}.md").write_text(
+            f"---\ntags: [a, b, c]\n---\n# rule: {slug} — {summary}\nbody\n", encoding="utf-8")
+    rdir = tmp / "routines" / "apir"
+    # bind one via the generic PATCH — the config_patch shape
+    r = c.patch("/api/routines/apir", json={"rules": ["alpha"]})
+    assert r.status_code == 200, r.text
+    assert "rules" in r.json()["updated"]
+    assert c.get("/api/routines/apir").json()["rules"] == ["alpha"]
+    assert not (rdir / "rules").exists()          # slugs only, no library copy into the routine
+    assert "- `alpha` — the first principle" in (rdir / "main.md").read_text(encoding="utf-8")
+    # REPLACE wholesale: sending both sets both, in order
+    assert c.patch("/api/routines/apir", json={"rules": ["alpha", "beta"]}).status_code == 200
+    assert c.get("/api/routines/apir").json()["rules"] == ["alpha", "beta"]
+    main = (rdir / "main.md").read_text(encoding="utf-8")
+    assert "`alpha`" in main and "`beta`" in main
+    # an empty list unbinds all and prunes the derived tail
+    assert c.patch("/api/routines/apir", json={"rules": []}).status_code == 200
+    assert c.get("/api/routines/apir").json()["rules"] == []
+    assert "`alpha`" not in (rdir / "main.md").read_text(encoding="utf-8")
+    # an unknown slug is a legible 400, never the opaque extra=forbid 422
+    bad = c.patch("/api/routines/apir", json={"rules": ["ghost"]})
+    assert bad.status_code == 400 and "ghost" in bad.text
+
+
 def test_put_permissions_cascades_capabilities(client):
     """The two-layer PUT: activating a doc RAISES capabilities to cover its requires AND
     FLOORS them back to the held docs (D8) — a gated action survives only as the means of a

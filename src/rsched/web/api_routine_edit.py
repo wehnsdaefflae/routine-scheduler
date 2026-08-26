@@ -168,12 +168,39 @@ class RoutinePatch(BaseModel):
     name: str | None = None
     description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
+    rules: list[str] | None = None          # general-rule slugs this routine practises — REPLACE
+    #                                          wholesale, validated against the library, main.md's
+    #                                          derived practices tail resynced (rules.apply_changes)
     improve: bool | None = None             # include in the routine-improver's passes (default on)
     deliberation: str | None = None         # DELIBERATION_LEVELS — how much thinking lands on paper
     keep_runs: int | None = None            # retention.keep_runs — how many run dirs to keep
     fs_read_roots: list[str] | None = None  # dirs the run may READ beyond its own
     fs_write_roots: list[str] | None = None  # dirs the run may WRITE (one covering the routine
     #                                          dir unlocks recipe self-edit — the improver's lever)
+
+
+def _apply_rules_field(rules_home: Path, routine_dir: Path, raw: dict, updates: dict) -> None:
+    """Bind/unbind the routine's general rules from a PATCH `rules` list — REPLACE wholesale,
+    validated against the library, with main.md's derived `## Standing practices` tail
+    resynced. Shares the ONE canonical path (rules.apply_changes) with the
+    /routines/{slug}/rules picker so a config_patch carrying `rules` (a Decisions-page
+    `approve & apply` for a rule-binding decision) applies through the generic PATCH too —
+    before F392 the key hit RoutinePatch's extra=forbid and 422'd invisibly. Pops `rules`;
+    an unknown slug is a legible 400. Next-run semantics like every other field here.
+    """
+    if "rules" not in updates:
+        return
+    want = updates.pop("rules") or []
+    if not isinstance(want, list) or any(not isinstance(r, str) for r in want):
+        raise HTTPException(400, "rules: must be a list of rule slugs")
+    held = rules_mod.current_rules(routine_dir)
+    add = [r for r in want if r not in held]
+    remove = [r for r in held if r not in want]
+    try:
+        rules_mod.apply_changes(rules_home, routine_dir, add, remove)
+    except KeyError as exc:
+        raise HTTPException(400, f"unknown rule: {exc.args[0]!r}") from exc
+    raw["rules"] = rules_mod.current_rules(routine_dir)
 
 
 def _apply_resource_fields(raw: dict, updates: dict) -> None:
@@ -281,6 +308,11 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
         if gproblems:
             raise HTTPException(400, "; ".join(gproblems))
         raw["grants"] = gmap
+    # Rules bind/unbind through the ONE canonical path (rules.apply_changes) — F392: a
+    # config_patch carrying `rules` now applies through the generic PATCH, not only the
+    # dedicated /routines/{slug}/rules picker. Extracted to a helper to keep this handler
+    # under the branch-complexity budget.
+    _apply_rules_field(_state(request).server.rules_home, info.cfg.dir, raw, updates)
     _apply_resource_fields(raw, updates)
     for key, val in updates.items():
         if isinstance(val, dict) and isinstance(raw.get(key), dict):

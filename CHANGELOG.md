@@ -19,7 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
-## [0.233.0] — 2026-08-26
+## [0.233.1] — 2026-08-26
+
+### Fixed
+- **A `config_patch` that binds a rule now applies through the Decisions page** (F392). A
+  decision carrying `config_patch: {"rules": [...]}` — the shape a revise-recipe run or
+  config-optimizer proposes to bind/unbind a routine's general rules — hit `RoutinePatch`'s
+  `extra="forbid"` on `PATCH /routines/{slug}` and 422'd, because `rules` had no field there
+  (rules previously only reached the dedicated `/routines/{slug}/rules` picker). The Decisions
+  page's `approve & apply` rendered the pydantic error list as `[object Object]` and the
+  operator-approved binding silently never landed (observed: a self-audit run's approved
+  `unexamined-is-not-clean` binding did not persist). `RoutinePatch` now carries a `rules`
+  field that REPLACEs wholesale through the ONE canonical path (`rules.apply_changes`) —
+  validated against the library, with `main.md`'s derived `## Standing practices` tail
+  resynced — so the config-patch apply and the picker share behaviour. An unknown slug is a
+  legible 400, not the opaque 422.
 
 ### Added
 - **A child run hands a file back by writing it** (F338 first increment, from R409/R410).
