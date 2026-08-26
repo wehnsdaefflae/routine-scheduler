@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.232.0] — 2026-08-26
+
+### Fixed
+- **A 402 that prices out `max_tokens` now degrades instead of killing the turn** (F362). The
+  finding was recorded as "OpenRouter credits exhausted — awaiting top-up or acceptance"; it
+  was mis-diagnosed. The balance is not empty (240 granted / 227.77 used / 12.23 left) and the
+  402 that killed `sprind-application-review:20260818-093527` said *"You requested up to 16384
+  tokens, but can only afford 9590"* — a requested output ceiling costing more than the
+  remaining balance, which recurs as any balance drains, so a top-up only postpones it. The
+  OpenAI-compatible adapter now retries once at the ceiling the provider itself names, logging
+  the squeeze. An affordable ceiling below ~600 tokens is NOT retried (failover should take the
+  turn rather than a stub reply), and a 402 naming no number is left alone — there is nothing
+  to degrade to, and inventing one would mask a genuinely empty balance.
+
 ## [0.231.1] — 2026-08-26
 
 ### Fixed

@@ -271,6 +271,18 @@ with a generic `503 service_unavailable` (which looks like an outage, not a sche
 The adapter self-heals a stray 503 by retrying once without the schema, but `json_object`
 avoids that wasted probe every turn.
 
+**A 402 that prices out `max_tokens` degrades instead of killing the turn** (F362). A
+credit-metered provider (OpenRouter) answers `402` when the REQUESTED output ceiling costs
+more than the balance left, and the message names the number that fits — *"You requested up
+to 16384 tokens, but can only afford 9590"*. That is NOT an empty account: it recurs as any
+balance drains, so topping up only postpones it. The adapter retries once at the stated
+ceiling, which turns a run-killing failure into a shorter completion (the squeeze is logged).
+Two deliberate exceptions: an affordable ceiling too small to carry an action (below ~600
+tokens) is not retried, so failover takes the turn instead of a stub reply; and a 402 naming
+no number is left alone, because there is nothing to degrade to and inventing one would mask
+a genuinely empty balance. The durable fix for a routine that keeps hitting it is a lower
+per-model `max_tokens` in the catalog.
+
 ```yaml
 endpoints:
   NanoGPT:

@@ -233,6 +233,65 @@ def test_openai_response_format_degradation_on_503(monkeypatch):
     assert c.text == '{"ok":1}'
 
 
+def test_openai_402_retries_at_the_affordable_ceiling(monkeypatch):
+    """F362: a credit-metered provider answers 402 when the REQUESTED max_tokens costs more
+    than the remaining balance, and names the number that fits. The run is not out of credit
+    — it asked for a ceiling it cannot pay for, which recurs as any balance drains no matter
+    how often it is topped up. Observed live: sprind-application-review:20260818-093527 died
+    on exactly this. One degraded retry at the stated ceiling beats killing the turn."""
+    bodies = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        bodies.append(json)
+        if json.get("max_tokens", 0) > 9590:
+            return FakeResponse(status_code=402, text=(
+                '{"error":{"message":"This request requires more credits, or fewer '
+                'max_tokens. You requested up to 16384 tokens, but can only afford 9590.",'
+                '"code":402}}'))
+        return FakeResponse(payload={"choices": [{"message": {"content": '{"ok":1}'}}],
+                                     "usage": {"prompt_tokens": 1, "completion_tokens": 1}})
+
+    monkeypatch.setattr(oai_mod.httpx, "post", fake_post)
+    c = _oai().complete(MESSAGES, model="m", max_tokens=16384)
+    assert len(bodies) == 2, "expected exactly one degraded retry"
+    assert bodies[0]["max_tokens"] == 16384 and bodies[1]["max_tokens"] == 9590
+    assert c.text == '{"ok":1}'
+
+
+def test_openai_402_below_the_floor_is_not_retried(monkeypatch):
+    """An affordable ceiling too small to carry an action is not worth a retry — the 402
+    stands so failover (when configured) takes the turn instead of a useless stub reply."""
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    bodies = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        bodies.append(json)
+        return FakeResponse(status_code=402, text=(
+            '{"error":{"message":"You requested up to 16384 tokens, but can only afford 12.",'
+            '"code":402}}'))
+
+    monkeypatch.setattr(oai_mod.httpx, "post", fake_post)
+    with pytest.raises(EndpointError):
+        _oai().complete(MESSAGES, model="m", max_tokens=16384)
+    assert all(b["max_tokens"] == 16384 for b in bodies), "must not retry below the floor"
+
+
+def test_openai_402_without_an_affordable_number_is_untouched(monkeypatch):
+    """A 402 that names no affordable ceiling (a genuinely empty balance) is left alone —
+    there is nothing to degrade TO, and inventing one would mask a real out-of-credit."""
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    calls = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls.append(json)
+        return FakeResponse(status_code=402, text='{"error":{"message":"Insufficient credits."}}')
+
+    monkeypatch.setattr(oai_mod.httpx, "post", fake_post)
+    with pytest.raises(EndpointError):
+        _oai().complete(MESSAGES, model="m", max_tokens=16384)
+    assert all(c["max_tokens"] == 16384 for c in calls)
+
+
 def test_openai_persistent_503_still_retryable(monkeypatch):
     """A genuine outage (503 even without response_format) must not be masked by the
     speculative degrade: it still surfaces retryable, after probing once without the schema

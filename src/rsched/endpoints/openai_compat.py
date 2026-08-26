@@ -15,6 +15,7 @@ validates every reply.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 
@@ -36,7 +37,19 @@ from .base import (
     with_retries,
 )
 
+log = logging.getLogger("rsched.endpoints.openai")
+
 _RF_ERROR_HINTS = ("response_format", "json_schema", "structured")
+
+# F362: a credit-metered provider (OpenRouter) answers 402 when the REQUESTED max_tokens
+# costs more than the remaining balance, and the message names the number that would fit:
+#   "You requested up to 16384 tokens, but can only afford 9590"
+# The run is not out of credit — it asked for a ceiling it cannot pay for, which recurs as
+# any balance drains no matter how often it is topped up. One degraded retry at the stated
+# affordable ceiling turns a hard run-killing failure into a shorter completion.
+_AFFORD_RE = re.compile(r"can only afford\s+(\d+)", re.IGNORECASE)
+# Below this a retry is pointless — the reply would be too short to carry an action.
+_MIN_AFFORDABLE_TOKENS = 600
 
 _THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 
@@ -164,6 +177,19 @@ class OpenAICompatEndpoint:
                     degraded.pop("reasoning")
                 if degraded.keys() != body.keys():
                     resp = self._post(degraded, headers, timeout)
+            elif resp.status_code == 402 and (afford := _AFFORD_RE.search(resp.text)):
+                # The provider priced the request out and TOLD US what fits. Retry once at
+                # that ceiling instead of failing the turn: a shorter answer beats a dead
+                # run, and the operator sees the squeeze in the endpoint log rather than as
+                # a mystery 402. Below the floor there is no useful reply to be had, so the
+                # 402 stands and failover (if configured) takes over.
+                affordable = int(afford.group(1))
+                if affordable >= _MIN_AFFORDABLE_TOKENS and affordable < (max_tokens or 0):
+                    log.warning("%s: 402 priced out at max_tokens=%s; retrying at %s",
+                                self.name, max_tokens, affordable)
+                    alt = self._post({**body, "max_tokens": affordable}, headers, timeout)
+                    if alt.status_code == 200:
+                        resp = alt
             elif resp.status_code == 503 and "response_format" in body:
                 # A backend that can't do schema-constrained decoding may reject
                 # `response_format` with a 503 whose body never names the field —
