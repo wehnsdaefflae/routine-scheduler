@@ -540,6 +540,47 @@ def test_artifact_row_shows_time_and_deletes(ui, ui_page):
     assert not (art / "notes.md").exists()
 
 
+def test_composer_picks_rules_pre_start(ui, ui_page):
+    """F339: the composer carries a general-rules picker. A rule is woven into main.md's
+    Standing-practices tail when the conversation is CREATED, and the first reply fires on
+    create — so a rule chosen after the fact never governs it. Unticking one here must
+    actually change what the created conversation holds."""
+    import yaml
+
+    ui_page.goto(f"{ui.url}/#/conversations")
+    section = ui_page.locator("h2", has_text="General rules")
+    expect(section).to_be_visible(timeout=10_000)
+    picker = ui_page.locator(".rulepicker")
+    expect(picker).to_be_visible()
+    expect(picker.locator("button", has_text="apply")).to_have_count(0)   # pre-start: no save
+
+    rows = picker.locator(".rule-doc")
+    expect(rows.first).to_be_visible(timeout=10_000)
+    checked = [i for i in range(rows.count())
+               if rows.nth(i).locator('input[type="checkbox"]').is_checked()]
+    before = len(checked)
+    assert before > 0, "a new conversation should start with rules bound"
+    row = rows.nth(checked[0])
+    dropped = row.locator(".t-title").inner_text()
+    row.locator('input[type="checkbox"]').uncheck()
+
+    ui_page.locator(".conv-new textarea").fill("Rules picked up front.")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**", timeout=15_000)
+    slug = ui_page.url.rsplit("/", 1)[-1]
+
+    raw = yaml.safe_load((ui.conversations / slug / "routine.yaml").read_text(encoding="utf-8"))
+    assert dropped not in raw["rules"]
+    assert len(raw["rules"]) == before - 1
+    # …and the Standing-practices tail — the part of the recipe that actually names the
+    # bound rules to the model — no longer carries it. (The pattern's own `includes:`
+    # frontmatter lists the workflow's rules and is not the binding, so assert on the tail.)
+    main = (ui.conversations / slug / "main.md").read_text(encoding="utf-8")
+    tail = main[main.index("## Standing practices"):]
+    assert dropped not in tail
+    assert raw["rules"][0] in tail          # the ones it kept ARE named
+
+
 def test_run_rail_sections_collapse_and_list_a_reports_deliverable(ui, ui_page):
     """R339/R340/R341, the user's steer being "don't we reuse the same code?": the run view
     now renders the SHARED rail component, so each section collapses (it could not before —

@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.231.0] — 2026-08-26
+
+### Added
+- **The conversation composer picks general RULES and OAuth connections before the first
+  reply** (F339). Both are pre-start choices by nature and rules especially so: a rule reaches
+  the prompt through `main.md`'s Standing-practices tail, which is materialized at create
+  time, so one bound afterwards never governs reply #1 — and reply #1 fires the moment you
+  send. `POST /api/conversations` takes `rules` (validated against the live library — an
+  unknown slug is a 400, never a conversation holding a practice nobody wrote) and
+  `connections` (validated like the routine PATCH: the account must actually be connected).
+  `/api/conversations/defaults` serves the rule catalog + the default set. The two pickers are
+  the SAME components the routine page uses, extended with a save-button-less pre-start mode
+  rather than copied.
+- **A missing connection now names its one-click grant** (F321, from R333). `google-api`
+  failing with "$GOOGLE_ACCESS_TOKEN is not set" was explained in prose in a finish summary,
+  while a missing fs-write root in the same conversation correctly produced a typed access
+  request the user could approve inline. A util call that fails while declaring a
+  connection-token var this routine does not bind now leads its hint with the
+  `connection:<provider>` request route — ahead of the generic repair text, because the call
+  is not broken, it is ungranted.
+- **`docs/designs.md`** — specs for work decided but unbuilt (F363, F338, F325, F328, F337,
+  F335), each with the evidence, the shape and the first increment, so the next session is not
+  re-deriving them. Entries are deleted as they ship.
+
 ## [0.230.2] — 2026-08-26
 
 ### Added

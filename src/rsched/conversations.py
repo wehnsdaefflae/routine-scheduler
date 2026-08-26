@@ -141,7 +141,9 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
                         playbook_slug: str = "",
                         budgets: dict | None = None,
                         fs_read_roots: list[str] | None = None,
-                        fs_write_roots: list[str] | None = None) -> Path:
+                        fs_write_roots: list[str] | None = None,
+                        rules: list[str] | None = None,
+                        connections: dict[str, str] | None = None) -> Path:
     """Create <conversations_home>/<slug> ready to run: materialized converse main.md with
     a Standing-practices tail naming the rules it holds, instruction.md = the first message,
     and a schedule-less routine.yaml marked `kind: conversation`. NO git init — a
@@ -150,6 +152,11 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
     A `playbook_slug` seeds instruction.md from that library playbook's brief (the first message
     specializes it) and records a `playbook: {slug, commit}` binding — the Update-playbook button
     later revises that source playbook from this conversation's deltas.
+
+    `rules` (slugs) and `connections` ({provider: account}) are likewise chosen PRE-START
+    (F339). Rules must be: a rule reaches the prompt through main.md's Standing-practices
+    tail, materialized here — one added afterwards never governs reply #1, which has already
+    fired. `rules=None` keeps the CONVERSATION_RULES default; an explicit list replaces it.
 
     `fs_read_roots` / `fs_write_roots` are extra folder grants applied at CREATE time (D70):
     they land in routine.yaml's native root lists — the same keys an allow-forever fs grant
@@ -174,8 +181,11 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
     for sub in ("state", "inbox", "attachments", "artifacts"):
         (conv_dir / sub).mkdir(parents=True)
     # the general rules a conversation holds: slugs only — the prose stays in the library.
-    active_rules = [r for r in CONVERSATION_RULES
-                    if r in set(library_docs.slugs(server.rules_home))]
+    # F339: the composer may choose them PRE-START, because a rule reaches the prompt through
+    # main.md's Standing-practices tail, which is materialized right here — a rule added after
+    # creation does not govern reply #1, which has already fired.
+    wanted = CONVERSATION_RULES if rules is None else rules
+    active_rules = [r for r in wanted if r in set(library_docs.slugs(server.rules_home))]
     rule_summaries = rules_mod.summaries(server.rules_home, active_rules)
     commit = head_commit(server.libraries_home)
     main_meta = {"name": title, "slug": slug,
@@ -214,6 +224,9 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
         **({"models": models} if models else {}),
         "permissions": active_perms,
         "rules": active_rules,
+        # D55/F339: OAuth bindings chosen on the composer, so reply #1 already acts as the
+        # account instead of failing on an unbound connection and asking mid-run.
+        **({"connections": dict(connections)} if connections else {}),
         "capabilities": capabilities,
         "budgets": {**CONVERSATION_BUDGETS,
                     **{k: int(v) for k, v in (budgets or {}).items() if k in DEFAULT_BUDGETS}},

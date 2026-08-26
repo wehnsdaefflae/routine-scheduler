@@ -442,6 +442,56 @@ def test_conversation_defaults_endpoint(client):
     assert d["budgets"]["max_turns"] == 40
     assert d["deliberation"] == "deliberate"
     assert "actions" in d["capabilities"]["active"]
+    # F339: the RULES surface too — the library's rules (slug + summary, for the picker)
+    # and the set a new conversation holds by default.
+    assert d["library_rules"] and all(set(r) == {"slug", "summary"} for r in d["library_rules"])
+    assert set(d["rules"]) <= {r["slug"] for r in d["library_rules"]}
+
+
+def test_create_conversation_accepts_prestart_rules(client):
+    """F339: rules are a PRE-START choice. A rule reaches the prompt through main.md's
+    Standing-practices tail, which is materialized at create time — one bound afterwards
+    never governs reply #1, which fires the moment the conversation is created."""
+    import json
+
+    import yaml
+
+    c, server = client
+    defaults = c.get("/api/conversations/defaults").json()
+    pick = [defaults["library_rules"][0]["slug"]]
+    slug = c.post("/api/conversations", data={
+        "text": "ruled task", "rules": json.dumps(pick)}).json()["slug"]
+    raw = yaml.safe_load(
+        (server.conversations_home / slug / "routine.yaml").read_text(encoding="utf-8"))
+    assert raw["rules"] == pick
+    # …and the chosen rule is actually woven into the recipe the first reply reads
+    main = (server.conversations_home / slug / "main.md").read_text(encoding="utf-8")
+    assert pick[0] in main
+
+
+def test_create_conversation_rejects_an_unknown_rule(client):
+    """A typo must not produce a conversation holding a rule with no prose — the tail would
+    name a practice nobody wrote."""
+    import json
+
+    c, _server = client
+    r = c.post("/api/conversations", data={
+        "text": "x", "rules": json.dumps(["no-such-rule"])})
+    assert r.status_code == 400 and "no such rule" in r.json()["detail"]
+
+
+def test_create_conversation_rejects_an_unconnected_account(client):
+    """F339: a connection bound at create must name a REALLY connected account — otherwise
+    the binding fails at first use, which is the failure the picker exists to prevent."""
+    import json
+
+    c, _server = client
+    r = c.post("/api/conversations", data={
+        "text": "x", "connections": json.dumps({"google": "nobody"})})
+    assert r.status_code == 400 and "no connected account" in r.json()["detail"]
+    r2 = c.post("/api/conversations", data={
+        "text": "x", "connections": json.dumps({"frobnitz": "a"})})
+    assert r2.status_code == 400 and "unknown provider" in r2.json()["detail"]
 
 
 def test_create_conversation_accepts_prestart_layers(client):

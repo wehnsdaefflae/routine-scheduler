@@ -13,11 +13,13 @@ import { deliberationControl } from "/static/components/deliberation.js";
 import { promptDialog } from "/static/components/dialog.js";
 import { filePicker } from "/static/components/filepicker.js";
 import { rootsEditor } from "/static/components/fsroots.js";
+import { connectionsCard } from "/static/components/connections.js";
 import { permissionsPanel } from "/static/components/permissions.js";
+import { rulePicker } from "/static/components/rulepicker.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { forgetField } from "/static/formpersist.js";
 import { navigate } from "/static/router.js";
-import { el, modelOption, toast } from "/static/util.js";
+import { el, modelOption, skeleton, toast } from "/static/util.js";
 
 export const PREFILL_KEY = "conv-new-prefill";
 
@@ -82,6 +84,12 @@ export function mountComposerOnly(main) {
   const delib = deliberationControl("deliberate");
   const permsHost = el("div", {});   // the permissions panel appends here once defaults load
   let permPanel = null;
+  // F339: rules and connections are PRE-START choices too. A rule especially — it reaches the
+  // prompt through main.md's Standing-practices tail, materialized at create time, so one
+  // bound afterwards never governs reply #1, which fires the moment you send.
+  const rulesHost = el("div", {}, skeleton(["60%"]));
+  let rulePick = null;
+  let pickedConnections = {};
   api("/api/conversations/defaults").then((d) => {
     if (d.deliberation) delib.set(d.deliberation);
     const b = d.budgets || {};
@@ -91,6 +99,9 @@ export function mountComposerOnly(main) {
     permPanel = permissionsPanel(d.permissions, d.capabilities, {
       disableRuns: "a conversation is one continuous run — previous-run depth is routine-only" });
     permsHost.replaceChildren(permPanel.node);
+    // no onSave → the picker renders no apply button; its `selected` rides the form
+    rulePick = rulePicker(d.library_rules || [], d.rules || []);
+    rulesHost.replaceChildren(rulePick.node);
   }).catch(() => {
     permsHost.replaceChildren(el("div", { class: "muted small" },
       "permission defaults unavailable — the conversation starts with the standard set; ",
@@ -155,6 +166,9 @@ export function mountComposerOnly(main) {
       if (tokIn.value.trim()) fd.append("max_total_tokens", tokIn.value.trim());
       fd.append("deliberation", delib.value);
       if (permPanel) fd.append("permissions", JSON.stringify(permPanel.value()));
+      if (rulePick) fd.append("rules", JSON.stringify(rulePick.selected));
+      if (Object.keys(pickedConnections).length)
+        fd.append("connections", JSON.stringify(pickedConnections));
       for (const f of files()) fd.append("files", f);
       const r = await apiUpload("/api/conversations", fd,
         adminToken ? { "x-admin-token": adminToken } : {});
@@ -218,6 +232,16 @@ export function mountComposerOnly(main) {
       "How much of the model's reasoning is written down as it works — more paper is easier to "
       + "follow but costs tokens.",
       delib.node),
+    ...settingsSection("General rules",
+      "The shared practices this conversation holds. They are woven into its recipe when it "
+      + "is created, so pick them NOW — a rule bound afterwards does not govern the first "
+      + "reply, which fires as soon as you send.",
+      rulesHost),
+    ...settingsSection("Connections",
+      "Bind an OAuth account per provider so the first reply can already act as that "
+      + "account, instead of hitting an unbound connection and having to ask. Connect the "
+      + "accounts themselves in Settings \u2192 Connections.",
+      connectionsCard({}, { onChange: (c) => { pickedConnections = c; } })),
     ...settingsSection("Permissions & capabilities",
       "What this conversation is allowed to do — enforced by the engine on every action. These "
       + "govern the first reply, which fires as soon as you start, so set them here; you can "

@@ -9,8 +9,17 @@
 import { api } from "/static/api.js";
 import { el, skeleton, toast } from "/static/util.js";
 
-export function connectionsCard(bound, { onSave }) {
+export function connectionsCard(bound, { onSave, onChange } = {}) {
+  // Two modes. With `onSave` it is the routine/group editor: a save button PATCHes the
+  // binding. With `onChange` it is a PRE-START picker (F339, the conversation composer):
+  // no save button — every change reports the whole {provider: account} map to the caller,
+  // which submits it with the rest of the form.
   const selects = {};
+  const current = () => {
+    const connections = {};
+    for (const [pid, sel] of Object.entries(selects)) if (sel.value) connections[pid] = sel.value;
+    return connections;
+  };
   const box = el("div", { class: "panel" }, skeleton(["50%"]));
   api("/api/settings/oauth").then((oauth) => {
     box.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:8px" },
@@ -25,18 +34,19 @@ export function connectionsCard(bound, { onSave }) {
         ...accounts.map((a) => el("option", { value: a }, a))]);
       sel.value = (bound || {})[p.id] || "";
       selects[p.id] = sel;
+      if (onChange) sel.onchange = () => onChange(current());
       box.append(el("div", { class: "row", style: "margin:5px 0", "data-conn-row": p.id },
         el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, p.name),
         accounts.length ? sel
           : el("span", { class: "muted small" }, "no connected accounts — connect one in Settings")));
     }
-    box.append(el("div", { class: "row mt" }, el("button", { class: "btn primary",
-      onclick: async () => {
-        const connections = {};
-        for (const [pid, sel] of Object.entries(selects)) if (sel.value) connections[pid] = sel.value;
-        try { await onSave(connections); toast("connections saved"); }
-        catch (err) { toast(err.message, 4000, { error: true }); }
-      } }, "save connections")));
+    if (onSave) {
+      box.append(el("div", { class: "row mt" }, el("button", { class: "btn primary",
+        onclick: async () => {
+          try { await onSave(current()); toast("connections saved"); }
+          catch (err) { toast(err.message, 4000, { error: true }); }
+        } }, "save connections")));
+    }
   }).catch((err) => box.replaceChildren(el("div", { class: "muted" }, err.message)));
   return box;
 }

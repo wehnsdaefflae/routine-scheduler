@@ -100,6 +100,70 @@ def _parse_roots(raw: str, field: str) -> list[str]:
     return roots
 
 
+def _parse_rules(server, raw: str) -> list[str] | None:
+    """The composer's rules field (F339): a JSON string array of library rule SLUGS, or
+    blank to keep the conversation default. Every slug is validated against the live
+    library, so a typo cannot quietly produce a conversation holding a rule that has no
+    prose — the tail would name a practice nobody wrote.
+    """
+    import json
+
+    from .. import library_docs
+
+    if not raw.strip():
+        return None                        # keep CONVERSATION_RULES
+    try:
+        vals = json.loads(raw)
+    except ValueError:
+        raise HTTPException(400, "rules: expected a JSON array of rule slugs") from None
+    if not isinstance(vals, list) or not all(isinstance(v, str) for v in vals):
+        raise HTTPException(400, "rules: expected a JSON array of rule slugs")
+    known = set(library_docs.slugs(server.rules_home))
+    picked: list[str] = []
+    unknown: list[str] = []
+    for v in vals:
+        slug = v.strip()
+        if not slug:
+            continue
+        (picked if slug in known else unknown).append(slug)
+    if unknown:
+        raise HTTPException(400, f"rules: no such rule in the library: {', '.join(unknown)}")
+    return picked
+
+
+def _parse_connections(raw: str) -> dict[str, str] | None:
+    """The composer's connections field (F339): a JSON {provider: account} map, validated
+    the same way the routine PATCH validates one — an unknown provider, or an account that
+    is not actually connected, is a 400 rather than a binding that fails at first use.
+    """
+    import json
+
+    from ..oauth import store as oauth_store
+    from ..oauth.providers import PROVIDERS
+
+    if not raw.strip():
+        return None
+    try:
+        vals = json.loads(raw)
+    except ValueError:
+        raise HTTPException(400, "connections: expected a JSON object") from None
+    if not isinstance(vals, dict):
+        raise HTTPException(400, "connections: expected a JSON object")
+    connected = {(c.get("provider"), str(c.get("account"))) for c in oauth_store.list_connections()}
+    out: dict[str, str] = {}
+    for prov, account in vals.items():
+        if prov not in PROVIDERS:
+            raise HTTPException(400, f"connections.{prov}: unknown provider "
+                                     f"(known: {', '.join(sorted(PROVIDERS))})")
+        if not isinstance(account, str) or not account.strip():
+            raise HTTPException(400, f"connections.{prov}: must be an account label")
+        if (prov, account.strip()) not in connected:
+            raise HTTPException(400, f"connections.{prov}: no connected account "
+                                     f"{account.strip()!r} — connect it in Settings first")
+        out[prov] = account.strip()
+    return out or None
+
+
 def _resolve_create_models(server, model: str, models: str) -> dict[str, str] | None:
     """Model roles at create time. `model` is the shorthand — one picked catalog name seeds
     main + tool_call. `models` is the full per-role JSON map (main / tool_call / uncensored),
@@ -151,6 +215,8 @@ async def create_conversation(request: Request, text: Annotated[str, Form()] = "
                               permissions: Annotated[str, Form()] = "",
                               fs_read_roots: Annotated[str, Form()] = "",
                               fs_write_roots: Annotated[str, Form()] = "",
+                              rules: Annotated[str, Form()] = "",
+                              connections: Annotated[str, Form()] = "",
                               files: Annotated[list[UploadFile] | None, File()] = None) -> dict:
     server = request.app.state.server
     text = text.replace("\r\n", "\n")   # multipart encodes newlines CRLF; \n is canonical
@@ -186,6 +252,11 @@ async def create_conversation(request: Request, text: Annotated[str, Form()] = "
     # boots — reply #1 already runs with it (the mid-run grant path stays for later changes).
     read_roots = _parse_roots(fs_read_roots, "fs_read_roots")
     write_roots = _parse_roots(fs_write_roots, "fs_write_roots")
+    # F339: rules and connections are pre-start choices too. A RULE especially — it reaches
+    # the prompt through main.md's Standing-practices tail, materialized at create time, so
+    # one bound afterwards never governs reply #1, which has already fired.
+    rule_slugs = _parse_rules(server, rules)
+    conn_map = _parse_connections(connections)
     models_cfg = _resolve_create_models(server, model, models)
     server.conversations_home.mkdir(parents=True, exist_ok=True)
     slug = conv_mod.new_slug(server.conversations_home)
@@ -198,7 +269,8 @@ async def create_conversation(request: Request, text: Annotated[str, Form()] = "
                                                 playbook_slug=playbook.strip(),
                                                 budgets=budgets or None,
                                                 fs_read_roots=read_roots,
-                                                fs_write_roots=write_roots)
+                                                fs_write_roots=write_roots,
+                                                rules=rule_slugs, connections=conn_map)
     except FileNotFoundError as exc:
         raise HTTPException(500, f"the library has no '{conv_mod.CONVERSE_WORKFLOW}' workflow "
                                  f"— restart the daemon to seed it ({exc})") from exc
@@ -259,9 +331,20 @@ def conversation_defaults(request: Request) -> dict:
     permissions, capabilities = permission_layers_detail(
         server, SimpleNamespace(permissions=active, capabilities=caps),
         routine_only=conv_mod.ROUTINE_ONLY_PERMISSIONS)
+    # F339: the RULES surface too — which library rules exist (slug + summary, for the
+    # picker) and which a new conversation holds by default. A rule is woven into main.md's
+    # Standing-practices tail at CREATE time, so this is the only moment it can be chosen
+    # for reply #1.
+    from .. import rules as rules_mod
+
+    rule_slugs = library_docs.slugs(server.rules_home)
+    summaries = rules_mod.summaries(server.rules_home, rule_slugs)
     return {"permissions": permissions, "capabilities": capabilities,
             "budgets": dict(conv_mod.CONVERSATION_BUDGETS),
-            "deliberation": conv_mod.CONVERSATION_DELIBERATION}
+            "deliberation": conv_mod.CONVERSATION_DELIBERATION,
+            "library_rules": [{"slug": s, "summary": summaries.get(s, "")}
+                              for s in rule_slugs],
+            "rules": [r for r in conv_mod.CONVERSATION_RULES if r in set(rule_slugs)]}
 
 
 @router.get("/conversations/{slug}/commands")

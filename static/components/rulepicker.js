@@ -77,5 +77,9 @@ export function rulePicker(available, held, opts = {}) {
       el("div", { class: "row", style: "gap:9px;align-items:center;margin-top:7px" },
         opts.onSave ? save : null, status)),
     get value() { return value(); },
+    // The FULL current selection, not the add/remove delta — what a pre-start composer
+    // submits (F339). Without `onSave` the picker renders no apply button and is purely
+    // this value.
+    get selected() { return [...now]; },
   };
 }

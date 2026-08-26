@@ -267,6 +267,79 @@ def test_failed_util_teaches_repair_and_keeps_trace_tail(tmp_path):
     assert "cannot revise utils" in obs2["hint"] and "corrected script" not in obs2["hint"]
 
 
+ALWAYS_FAILS_NEEDING_GOOGLE = (
+    "# /// script\n# dependencies = []\n# ///\n"
+    '"""gapi — needs a bound Google connection.\n\n'
+    "usage: gu gapi [--json]\n"
+    "calls: (none)\n"
+    "secrets: GOOGLE_ACCESS_TOKEN\n"
+    "tags: demo, testing\n"
+    "net: none\n"
+    '"""\n'
+    'import sys\n'
+    'print("$GOOGLE_ACCESS_TOKEN is not set", file=sys.stderr); sys.exit(1)\n'
+)
+
+
+def test_missing_connection_is_named_as_a_requestable_entity(tmp_path):
+    """F321 (from R333): a util that needs a CONNECTION this routine does not bind is not
+    broken, it is ungranted — the repair route must name the one-click
+    `connection:<provider>` request, the way a missing fs-write root already does. The
+    observed failure was an agent explaining the missing binding in prose and moving on.
+
+    Driven through the helper, not a subprocess: whether the util exits nonzero depends on
+    the ambient environment (a real GOOGLE_ACCESS_TOKEN makes it succeed), and that has
+    nothing to do with the routing rule under test.
+    """
+    from rsched.engine.executor import _unbound_connection_request
+
+    utils_lib.ensure_library(tmp_path)
+    utils_lib.write_util_file(tmp_path, "gapi", ALWAYS_FAILS_NEEDING_GOOGLE)
+    route = _unbound_connection_request(_ctx(tmp_path), "gapi")
+    assert "connection:google" in route
+    assert "GOOGLE_ACCESS_TOKEN" in route and "ask_user" in route
+    assert "in prose" in route                      # …and says not to just narrate it
+
+
+def test_a_bound_connection_produces_no_request_route(tmp_path):
+    """The route appears only when the binding is genuinely MISSING — a routine that already
+    binds the provider must not be given misleading grant advice."""
+    from types import SimpleNamespace
+
+    from rsched.engine.executor import _unbound_connection_request
+
+    utils_lib.ensure_library(tmp_path)
+    utils_lib.write_util_file(tmp_path, "gapi", ALWAYS_FAILS_NEEDING_GOOGLE)
+    ctx = _ctx(tmp_path)
+    ctx.routine = SimpleNamespace(slug="demo", dir=tmp_path, fs_read_roots=[],
+                                  fs_write_roots=[], connections={"google": "personal"},
+                                  machines=[])
+    assert _unbound_connection_request(ctx, "gapi") == ""
+
+
+def test_a_util_needing_no_connection_produces_no_route(tmp_path):
+    """Every other failing util keeps the plain repair hint — no grant noise."""
+    from rsched.engine.executor import _unbound_connection_request
+
+    utils_lib.ensure_library(tmp_path)
+    utils_lib.write_util_file(tmp_path, "boomer", FAILING_UTIL)
+    assert _unbound_connection_request(_ctx(tmp_path), "boomer") == ""
+
+
+def test_the_failing_util_hint_carries_the_connection_route(tmp_path, monkeypatch):
+    """End to end: the route rides the hint of a REAL failed call, ahead of the generic
+    repair text (the binding is the actual fix)."""
+    from rsched.engine.executor import do_util
+
+    monkeypatch.delenv("GOOGLE_ACCESS_TOKEN", raising=False)
+    utils_lib.ensure_library(tmp_path)
+    utils_lib.write_util_file(tmp_path, "gapi", ALWAYS_FAILS_NEEDING_GOOGLE)
+    obs = do_util({"kind": "util", "name": "gapi", "args": []}, _ctx(tmp_path))
+    assert obs["exit"] != 0
+    assert obs["hint"].startswith("This util needs a bound google connection")
+    assert "connection:google" in obs["hint"]
+
+
 GOOD_UTIL = (
     "# /// script\n# dependencies = []\n# ///\n"
     '"""demo — a demo util.\n\n'

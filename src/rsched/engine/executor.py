@@ -116,6 +116,36 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     return out
 
 
+def _unbound_connection_request(ctx: RunContext, name: str) -> str:
+    """F321 (from R333): the one-click repair route for a util that failed because a
+    connection it needs is not bound to this routine.
+
+    `google-api` failing with "$GOOGLE_ACCESS_TOKEN is not set" used to be explained in
+    PROSE in the finish summary, while a missing fs-write root in the same conversation
+    correctly produced a typed access request the user could approve inline. The asymmetry
+    was the whole complaint: a connection IS a grant entity (`connection:<provider>`,
+    entities.py), so a run should be routed to request it, not to narrate it.
+
+    Returns the route sentence, or "" when nothing is missing.
+    """
+    from ..oauth.providers import access_token_var, provider_ids
+
+    declared, _net, _opt = utils_lib.util_needs(ctx.server.libraries_home, name)
+    upper = {d.upper() for d in declared}
+    bound = dict(getattr(ctx.routine, "connections", None) or {})
+    missing = [pid for pid in provider_ids()
+               if access_token_var(pid) in upper and not bound.get(pid)]
+    if not missing:
+        return ""
+    eid = f"connection:{missing[0]}"
+    return (f'This util needs a bound {missing[0]} connection — it declares '
+            f'{access_token_var(missing[0])}, which the engine injects only from a binding, '
+            f'and this routine has none. That is a grantable entity: ask for it with '
+            f'{{"kind": "ask_user", "request": "{eid}", "question": "<why you need it>"}} '
+            f'and the user can allow it in one click on the Decisions page. Do NOT explain '
+            f'the missing binding in prose and move on. ')
+
+
 def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/show dispatch, many small exits
     name = action["name"]
     args = [str(a) for a in (action.get("args") or [])]
@@ -253,8 +283,12 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
                       f'file a deferred ask_user naming the util, the failing call, and the '
                       f'error (this routine holds no util-authoring permission, so it cannot '
                       f'revise utils itself). Never silently work around a broken util.')
+        # A missing CONNECTION binding outranks the generic repair route: the call is not
+        # broken, it is ungranted, and the fix is one typed request (F321).
+        conn_route = _unbound_connection_request(ctx, name)
         obs["hint"] = (
-            f'call shape: every argument goes in `args` as a JSON array of strings, e.g. '
+            conn_route
+            + f'call shape: every argument goes in `args` as a JSON array of strings, e.g. '
             f'{{"say": "…", "kind": "util", "name": "{name}", "args": ["<argument>", "--json"]}}. '
             + repair)
     return obs

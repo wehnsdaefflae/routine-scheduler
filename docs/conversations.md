@@ -207,8 +207,13 @@ running conversation, where changes apply from the next reply:
   switches at its next turn boundary too. The picker labels every model with its context window
   (and flags tight ones); a model whose window minus its max output tokens leaves no room for
   input cannot complete a single turn, so the picker disables it and the server refuses it.
-- **Traits** (its practice files — how it asks you, uses utils, researches, keeps a LEDGER, and makes
-  git checkpoints) are shown read-only.
+- **General rules** — the shared practices the conversation holds — are **picked on the composer**
+  (F339). They have to be: a rule reaches the prompt through `main.md`'s Standing-practices tail,
+  which is woven when the conversation is created, so one bound afterwards never governs reply #1.
+  On a running conversation the picker still edits them, from the next reply onward.
+- **Connections** (an OAuth account per provider) are pickable on the composer too, so the first
+  reply can already act as that account instead of hitting an unbound connection and having to
+  ask. Connect the accounts themselves in Settings → Connections.
 
 Title and tags are generated for you from the first message and are editable inline.
 
