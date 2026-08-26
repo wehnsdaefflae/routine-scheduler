@@ -81,6 +81,7 @@ carrying one is a lint error). One copy each; routines hold slugs. The shipped s
 | `problem-routing` | send a problem to whoever owns it, not upward — the artefact that must change names the owner; write a work order, not a hint; close what you receive |
 | `git-checkpoint` | undo points for external project repos (and conversation dirs) the run edits — a checkpoint commit before risky edits and one after, named in the reply; never pushes unless asked |
 | `evidence-discipline` | every reported claim traced to an observation from this run; verified-or-not as a binary, never a confidence score; failure reported as failure |
+| `unexamined-is-not-clean` | a check reports on what it read, never on what it skipped: give every result its denominator, declare each exclusion with a reason, surface anything dropped that no reason covers, and count the denominator with something you did not write |
 | `decision-commitment` | choose an approach and stop re-deciding: act when further lookup wouldn't change the action, revisit only on contradicting evidence, narrate the choice not the survey |
 | `error-recovery` | read a failed observation before reacting to it: state the error, change something material before retrying, treat two failures at one step as "the approach is wrong" |
 | `change-restraint` | the smallest change that does the job: no speculative structure, no compatibility shims, never hardcode past a check, say when the task itself is wrong |
