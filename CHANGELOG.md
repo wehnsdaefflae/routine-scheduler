@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.230.1] — 2026-08-26
+
+### Fixed
+- **The widened Artifacts panel surfaced build intermediates** — a regression in 0.230.0 found
+  by checking the live instance rather than the tests: frame-fill-lab's panel returned 103
+  rows, 76 of them page PNGs under `reports/build/`, burying the 27 real deliverables. A
+  rendering pipeline builds in `<dir>/build/` and copies the finished file up, so those are
+  intermediates by definition. `SKIP_SEGMENTS` (build, __pycache__, node_modules) and any
+  dot-segment are excluded from listing.
+
 ## [0.230.0] — 2026-08-26
 
 ### Added

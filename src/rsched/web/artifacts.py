@@ -25,6 +25,17 @@ from ..paths import resolve_rel, within
 #: output/ for generated pages/feeds) that the panel used to be blind to.
 ARTIFACT_DIRS = ("artifacts", "reports", "output")
 
+#: Path segments that hold INTERMEDIATES, never deliverables. A rendering pipeline builds in
+#: `<dir>/build/` and copies the finished file up — frame-fill-lab's audit run left 76 page
+#: PNGs there beside 27 real deliverables, which is a panel nobody can read. Dot-segments go
+#: too (caches, VCS internals). A deliverable is the thing you would hand someone.
+SKIP_SEGMENTS = frozenset({"build", "__pycache__", "node_modules"})
+
+
+def _is_deliverable(rel: Path) -> bool:
+    """False for anything under an intermediates directory (or a dot-dir)."""
+    return not any(part in SKIP_SEGMENTS or part.startswith(".") for part in rel.parts[1:])
+
 
 def list_artifacts(base_dir: Path) -> list[dict]:
     """Everything under the deliverable dirs — newest first, each row's `path` relative to
@@ -37,8 +48,11 @@ def list_artifacts(base_dir: Path) -> list[dict]:
             continue
         for p in art.rglob("*"):
             if p.is_file():
+                rel = p.relative_to(base_dir)
+                if not _is_deliverable(rel):
+                    continue
                 st = p.stat()
-                out.append({"path": str(p.relative_to(base_dir)), "name": p.name,
+                out.append({"path": str(rel), "name": p.name,
                             "size": st.st_size, "mtime": int(st.st_mtime)})
     out.sort(key=lambda x: x["mtime"], reverse=True)
     return out

@@ -426,6 +426,11 @@ def test_deliverable_dirs_beyond_artifacts_are_listed_and_served(client):
         (base / sub / name).write_text(body, encoding="utf-8")
     (base / "state").mkdir(exist_ok=True)
     (base / "state" / "scratch.json").write_text("{}", encoding="utf-8")   # NOT a deliverable
+    # a rendering pipeline builds in <dir>/build/ and copies the finished file up — those
+    # intermediates are not deliverables and must not flood the panel (frame-fill-lab's
+    # audit run left 76 page PNGs there beside 27 real files)
+    (base / "reports" / "build").mkdir(parents=True, exist_ok=True)
+    (base / "reports" / "build" / "page-1.png").write_text("x", encoding="utf-8")
 
     items = c.get("/api/routines/apir/artifacts").json()
     assert {i["path"] for i in items} == {"artifacts/a.html", "reports/r.md", "output/o.json"}
