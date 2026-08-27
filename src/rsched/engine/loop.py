@@ -13,26 +13,21 @@ parallel threads (subruns.py) and never outlive the parent.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import threading
 from collections import deque
+from typing import Any
 
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from ..ids import now_iso
-from ..policyload import load_policy
 from . import (
-    authoring,
-    create_routine,
-    detach,
-    executor,
+    actionroute,
+    finishgate,
     inbox,
-    interact,
-    manage_group,
+    loopnudge,
+    loopsetup,
     notes,
     requests,
-    secretgate,
 )
 from .actionschema import BRIEF_FIELD
 from .autocommit import autocommit as _autocommit
@@ -46,10 +41,11 @@ from .control import (
     pause_gate,
     request_abort,
 )
-from .finish_guard import normalize_escaped_newlines, unbacked_action_claims
+from .finish_guard import normalize_escaped_newlines
+from .loopconst import POLL_S
+from .loopnudge import REPEAT_FAIL
 from .observations import format_observation
 from .run_context import RunContext
-from .subruns import SubrunManager
 from .switches import (
     apply_config_change,
     apply_deliberation_switch,
@@ -57,9 +53,7 @@ from .switches import (
     apply_rule_additions,
 )
 
-POLL_S = 2.0
 REPEAT_WARN = 3
-REPEAT_FAIL = 5
 # D87-A: consecutive TURNS that each needed schema-rejection retries before landing an
 # action — a model that reliably cannot hold the action schema. Fail early and clearly
 # instead of limping through the budget at full-prompt retry prices (F297/R255:
@@ -84,186 +78,52 @@ class EngineLoop:
     Construct with `resume=True` to rehydrate a prior transcript and continue it.
     """
 
+    # Filled in by `loopsetup.configure` — declared here so the class still says what
+    # an EngineLoop HOLDS, which is what lifting construction out would otherwise cost.
+    _challenged: set[str]
+    _finish_reserved: Any
+    _hist_note_countdown: Any
+    _hist_rel: Any
+    _history_active: Any
+    _history_note: Any
+    _last_compact_after: Any
+    _last_config_ts: Any
+    _last_deliberation_ts: Any
+    _last_rules_ts: Any
+    _last_switch_ts: Any
+    _schema_off: Any
+    _schema_storm_streak: Any
+    _shed_schema_turns: Any
+    _sheds: Any
+    abort_event: Any
+    action_schema: Any
+    admin_leg: Any
+    allowed_tools: Any
+    base_grants: Any
+    consumed_dir: Any
+    ctx: Any
+    dialog_qid: str | None
+    executed_actions: Any
+    final_summary: Any
+    grants: Any
+    instruction: Any
+    leg_after_authored: Any
+    leg_commands: Any
+    leg_prose: Any
+    messages: list[dict]
+    repeat_hashes: deque[str]
+    resume: Any
+    subruns: Any
+    turn_records: list[dict]
+    util_reminder: Any
+    workflow_body: Any
+
     def __init__(self, ctx: RunContext, workflow_body: str, instruction: str,
                  abort_event: threading.Event | None = None,
                  allowed_tools: list[str] | None = None, resume: bool = False):
-        self.ctx = ctx
-        self.workflow_body = workflow_body
-        self.instruction = instruction
-        self.resume = resume     # rehydrate the prior transcript instead of a clean start
-        # A workflow may restrict which action kinds it may use (frontmatter `tools:`); `finish`
-        # is always permitted so a run can end. None = every tool allowed. Enforced per turn by
-        # validate_action, so the model is corrected within the schema-retry cycle.
-        self.allowed_tools = set(allowed_tools) | {"finish"} if allowed_tools else None
-        self.abort_event = abort_event or threading.Event()
-        self.subruns = SubrunManager(self)
-        self.messages: list[dict] = []
-        self.turn_records: list[dict] = []
-        self.repeat_hashes: deque[str] = deque(maxlen=REPEAT_FAIL)
-        self.consumed_dir = ctx.root_run_dir / "consumed"
-        self.final_summary = ""
-        self.dialog_qid: str | None = None   # open ask_user record a dialog reply left behind
-        self.executed_actions = 0  # actions that produced an observation this run
-        self._schema_storm_streak = 0   # consecutive retry-burdened turns (D87, SCHEMA_STORM_TURNS)
-        # This leg's wake, set in boot. The speaker turn is the USER's after the model hands
-        # it back with an authored finish (`leg_after_authored`); a message that resumes then
-        # keeps the turn with the user if it only EXECUTES commands (`leg_commands`, no
-        # `leg_prose`) — the model takes no turn. Prose hands the turn over. A run with its own
-        # work to do — a scheduled routine fire, or crash recovery mid-workflow — has no
-        # authored hand-back, so it always proceeds (commands there are injected context).
-        self.leg_commands = False
-        self.leg_prose = False
-        self.leg_after_authored = False
-        # Gated capabilities (write_util, reserved utils, runs/ access) come from the
-        # routine's CAPABILITIES mapping — user-set config a routine cannot self-grant
-        # (its own routine.yaml is write-protected like the recipe); the library docs'
-        # requires: contribute only the reserved-util vocabulary and denial wording.
-        # Own recipe/config writes unlock ONLY when a user-granted fs_write_root covers
-        # the routine dir — the routine-improver's case. Enforced per turn by
-        # validate_action.
-        from ..paths import within
-        unlocked = any(within(root, ctx.routine.dir)
-                       for root in ctx.routine.fs_write_roots or [])
-        # A "revise recipe" run (the user asked from the run view to change this routine's OWN
-        # files) is granted recipe self-write + the file-edit kinds for THIS leg only — a marker
-        # the /revise endpoint drops in the run dir, read once and cleared here. No persisted
-        # fs_write_root, so the recipe stays sealed to every ordinary run (see engine/revise.py).
-        from .revise import REVISE_KINDS, clear_revise_marker, revise_marker
-        revising = revise_marker(ctx.run_dir) is not None
-        if revising:
-            clear_revise_marker(ctx.run_dir)
-            if self.allowed_tools is not None:
-                self.allowed_tools |= set(REVISE_KINDS)
-        # D62: an ADMIN conversation leg — the web layer validated RSCHED_ADMIN_TOKEN and dropped
-        # a one-shot marker, read once and cleared here. admin lifts CAPABILITY gating for this
-        # leg only (gated kinds, reserved utils, previous-run read depth); structural/ownership
-        # gates still apply. Root conversations only — a scheduled routine never gets an operator
-        # at the keyboard, and a subrun builds its own capabilities-off policy (engine/admin.py).
-        from .admin import admin_marker, clear_admin_marker
-        self.admin_leg = admin_marker(ctx.run_dir) and detach._is_root_conversation(ctx)
-        clear_admin_marker(ctx.run_dir)
-        # D58: routine and group creation is INITIATED from a conversation — that is where a
-        # user is in the loop to design with. F328 keeps the restriction and drops its
-        # consequence: a run without a user may still PROPOSE, so the kinds are surfaced
-        # everywhere and it is the HANDLER that decides between materializing (root
-        # conversation) and queuing a proposal for the Decisions page (anywhere else). Before
-        # this, a scheduled run holding a fully designed, user-approved routine had no way to
-        # hand it over at all and it was carried back to the operator by hand (R353). A None
-        # allowed set means "unrestricted" and already carries every kind. Depth 0 ONLY: a
-        # within-reply CHILD must not create or propose routines as a side effect — its parent
-        # is the one reasoning with the user, and a child's proposal traces to nothing.
-        if self.allowed_tools is not None and ctx.depth == 0:
-            self.allowed_tools |= {"create_routine", "manage_group"}
-        # base_grants is the CONFIG-derived policy; the live self.grants folds the run's
-        # one-time grant overlay over it (requests.rebuild_policy) — always base+overlay,
-        # never stacked, so a decision can also be reasoned about from the base.
-        self.base_grants = load_policy(ctx.server.permissions_home,
-                                       ctx.routine.permissions,
-                                       ctx.routine.capabilities,
-                                       current_run_ts=ctx.run_ts,
-                                       recipe_unlocked=unlocked or revising,
-                                       admin=self.admin_leg,
-                                       grants_map=ctx.routine.grants)
-        if ctx.depth > 0:
-            # A spawned/subtask child: capabilities are off by design (childrun), so a
-            # gated-kind denial must name the child scope, not claim the routine lacks it.
-            # run_history drops back to "none" here: D96's always-on 'last' floor is a
-            # ROUTINE baseline, and a child's brief — not the archive — is its context.
-            from dataclasses import replace
-            self.base_grants = replace(self.base_grants, is_subrun=True,
-                                       run_history="none")
-        self.grants = ctx.grants = self.base_grants.with_overlay(ctx.granted_now,
-                                                                 ctx.denied_now)
-        self.util_reminder = self._build_util_reminder()
-        self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
-        self._last_deliberation_ts = ""   # edge-trigger for mid-run deliberation switches
-        self._last_rules_ts = ""    # edge-trigger for user-bound general rules
-        self._last_config_ts = ""   # edge-trigger for a live config PATCH (F337)
-        self._challenged: set[str] = set()   # F334 v2: conditions the verifier has
-        #                                      already objected to — at most once each,
-        #                                      or a stubborn pair livelocks the run
-        # A signal already applied by an earlier leg must not re-fire on this one —
-        # the run's applied ledger (engine-owned) seeds the edge-triggers.
-        from .switches import load_applied_baselines
-        load_applied_baselines(self)
-        ctx.deliberation = ctx.routine.deliberation   # live level; control.json may re-set it
-        # Repeat-streak escape hatch: identical-but-valid actions in a row are the second
-        # signature of provider grammar distortion (a model narrating "I keep forgetting args"
-        # while the grammar suppresses the field). At REPEAT_WARN the next completion runs
-        # schema-free; the contract in the system prompt still demands one JSON object.
-        # Once shedding has rescued the run twice, the diagnosis is settled for this model —
-        # the provider schema stays OFF for the rest of the run instead of re-triggering the
-        # suppression cycle on every fresh util call (~3 wasted turns each).
-        self._shed_schema_turns = 0
-        self._sheds = 0
-        self._schema_off = False
-        # The schema the TRANSPORT gets, projected onto the kinds this run may emit
-        # (the same projection the composed prompt shows). Narrowing the grammar makes a
-        # disallowed kind ungeneratable instead of generated-then-rejected. allowed_tools
-        # is fixed at boot; a mid-run GRANT decision (requests.apply_decision) re-projects
-        # this, so an allowed-now kind becomes generatable on the very next turn.
-        from .kindsurface import effective_kinds, schema_for_kinds
-        self.action_schema = schema_for_kinds(effective_kinds(self.allowed_tools, ctx.grants))
-        # Once the conversation has been archived to on-disk history, the model is reminded
-        # to consult its index — right after each compaction, then every 10th turn (NOT every
-        # turn: an identical tail on every observation is pure rent on the context).
-        self._history_active = False
-        self._hist_note_countdown = 0
-        # The RESERVED FINISH turn: a budget violation no longer ends the run behind the
-        # model's back. The first violation spends this reserve — one last turn, schema
-        # narrowed to finish — so the summary is ALWAYS authored. Only a second violation
-        # (the reserve already spent) force-finishes. See _reserve_finish.
-        self._finish_reserved = False
-        self._last_compact_after = 0   # post-compaction size; gates re-compaction (anti-thrash)
-        try:
-            hist_rel = str((ctx.run_dir / "history").relative_to(ctx.routine.dir))
-        except ValueError:
-            hist_rel = "history"
-        self._hist_rel = hist_rel
-        self._history_note = (
-            f"\n[history: earlier turns are archived under {hist_rel}/INDEX.md — "
-            "read_file the index and the relevant files before relying on memory.]")
+        loopsetup.configure(self, ctx, workflow_body, instruction, abort_event,
+                            allowed_tools, resume)
 
-    def _build_util_reminder(self) -> str:
-        # One-shot nudge appended to the FIRST user message only (kickoff / resume note) —
-        # the catalog already sits in CAPABILITIES and a failed util call carries its own
-        # repair hint, so repeating this on every observation was rent without information
-        # (~60 tokens × every turn, re-read for the rest of the run).
-        if self.allowed_tools is not None and "util" not in self.allowed_tools:
-            return ""
-        if self.grants.allows_kind("write_util"):
-            create = ("write_util to create/revise one"
-                      + (" (needs the user's approval first)"
-                         if self.grants.needs_confirm(creating=True) else ""))
-        else:
-            create = ("note the gap with a deferred ask_user — the write_util capability "
-                      "is switched off for this routine")
-        return ("\n[tools: the CAPABILITIES catalog lists the global utils; run `util "
-                f"name=list args=[\"<name>\"]` for one util's exact usage; "
-                f"if none fits, {create}.]")
-
-    def _reserve_finish(self, violation: str) -> None:
-        """Spend the reserved finish turn: one more turn, schema narrowed to `finish`, so the
-        run ends in ITS OWN words instead of an engine string. Before this, a budget violation
-        returned an engine-authored `partial` and the model was never told — for a scheduled
-        routine that costs the next run its handover; in a CONVERSATION the reply IS the
-        product, so the user read "Run stopped by the engine: turn budget exhausted (10)".
-        The reserve is spent at most once per run (the caller force-finishes on a second
-        violation), so it can overrun a budget by exactly one turn.
-        """
-        from .kindsurface import schema_for_kinds
-
-        self._finish_reserved = True
-        # ALWAYS_KINDS keeps `report` reachable here; using the reserve on one costs the run
-        # its authored summary (the next violation force-finishes), which is the model's call.
-        self.action_schema = schema_for_kinds({"finish"})
-        self._schema_off = False   # the narrowed grammar is the point — re-arm it if shed
-        self.messages.append({"role": "user", "content":
-            f"OBSERVATION (budget spent): {violation}. This is your LAST turn — the engine "
-            "executes nothing else. Reply with `finish`, status `partial` if work is "
-            "unfinished, and put everything that matters into the summary: what you "
-            "established, what changed on disk, and precisely where to pick up. That summary "
-            "is all that survives."})
 
     def _aborted(self) -> bool:
         return _ABORT["flag"] or self.abort_event.is_set()
@@ -287,7 +147,7 @@ class EngineLoop:
                         return self._finish_run(
                             "partial", f"Run stopped by the engine: {violation}. "
                                        "Progress so far is in the transcript and LEDGER.")
-                    self._reserve_finish(violation)
+                    loopnudge.reserve_finish(self, violation)
                 pause_gate(self, poll_s=POLL_S)
                 apply_model_switch(self)
                 apply_deliberation_switch(self)
@@ -336,174 +196,18 @@ class EngineLoop:
                             "for schema-driven work.")
                 else:
                     self._schema_storm_streak = 0
-                repeat_streak = self._repeat_streak(action)
+                repeat_streak = loopnudge.repeat_streak(self, action)
                 if repeat_streak >= REPEAT_FAIL:
                     return self._finish_run(
                         "failed", f"Stuck: the same action was repeated "
                                   f"{repeat_streak} times in a row. Aborting the run.")
 
                 if action["kind"] == "finish":
-                    # R108/F268: a user message that landed in the window between this
-                    # turn's inbox drain and the finish is DELIVERED, never silently
-                    # outlived. The finish is set aside (a rejected observation, like the
-                    # guards below) and the drained message(s) follow it, so the model
-                    # addresses them and finishes again. The spent reserved-finish turn is
-                    # the one exception — deferring it would force-finish the run with an
-                    # engine string on the next boundary — so _finish_run surfaces the
-                    # still-queued message to both sides instead.
-                    if (ctx.depth == 0 and not self._finish_reserved
-                            and inbox.has_pending_messages(ctx.routine.dir,
-                                                           vias=inbox.LIVE_MESSAGE_VIAS)):
-                        obs = {"kind": "finish", "rejected": True, "pending_user_input": True}
-                        ctx.transcript.event("observation", obs, turn=ctx.turn)
-                        self.messages.append({"role": "user", "content":
-                            "OBSERVATION (finish deferred): a user message arrived while "
-                            "you were finishing — it is delivered below instead of being "
-                            "dropped. Address it, then finish again with an updated "
-                            "summary."})
-                        drain_injections(self)
-                        ctx.write_status()
-                        continue
-                    # F334/D98 v1: a finish that ignores the user's OPEN stopping
-                    # conditions is set aside (same one-extra-turn shape as R108 above).
-                    # The engine checks only the ACCOUNTING — a `[s<n>]` mention per open
-                    # condition — never the semantics; the reserved-finish turn is exempt
-                    # (deferring it would force-finish with an engine string).
-                    if ctx.depth == 0 and not self._finish_reserved:
-                        from . import stopping
-                        if missing := stopping.unaccounted(
-                                str(action.get("summary") or ""), ctx.routine.dir,
-                                phase=ctx.phase):
-                            obs = {"kind": "finish", "rejected": True,
-                                   "stopping_unaccounted": missing}
-                            ctx.transcript.event("observation", obs, turn=ctx.turn)
-                            self.messages.append({"role": "user", "content":
-                                "OBSERVATION (finish deferred): your summary does not "
-                                "account for the open STOPPING CONDITIONS "
-                                f"{', '.join(missing)} (see the STOPPING CONDITIONS "
-                                "section). Add a line `[s<n>] met — <evidence>` or "
-                                "`[s<n>] unmet — <why>` for each, then finish again."})
-                            ctx.write_status()
-                            continue
-                    if action["status"] == "ok" and self.executed_actions == 0 and ctx.depth == 0:
-                        # Fabrication guard: a top-level ok-finish as the very first action
-                        # is a hallucinated completion (the classic no-tools failure mode) —
-                        # no observation exists that could ground any of its claims.
-                        obs = {"kind": "finish", "rejected": True}
-                        ctx.transcript.event("observation", obs, turn=ctx.turn)
-                        self.messages.append({"role": "user", "content":
-                            "OBSERVATION (finish REJECTED): you have not executed a single "
-                            "action this run, so the workflow cannot be complete and none of "
-                            "your claims have observations behind them. Start at workflow "
-                            "step 1 and do the actual work, one action per turn."})
-                        ctx.write_status()
-                        continue
-                    if action["status"] == "ok" and ctx.depth == 0:
-                        # Claim guard (D31=B): a top-level ok-finish whose summary claims a
-                        # high-signal action (report/ask_user/schedule_run) the run never
-                        # took is narrated unperformed work — reject so the run either takes
-                        # the action or drops the claim. Meta routines are exempt (they quote
-                        # other runs' actions); see finish_guard.py.
-                        unbacked = unbacked_action_claims(
-                            action.get("summary", ""),
-                            {r["kind"] for r in self.turn_records},
-                            is_meta="meta" in (ctx.routine.tags or []))
-                        if unbacked:
-                            obs = {"kind": "finish", "rejected": True,
-                                   "unbacked_claims": unbacked}
-                            ctx.transcript.event("observation", obs, turn=ctx.turn)
-                            names = ", ".join(unbacked)
-                            self.messages.append({"role": "user", "content":
-                                f"OBSERVATION (finish REJECTED): your summary states you "
-                                f"performed {names}, but no such action was taken this run. "
-                                f"Either actually take the action now, or remove that claim "
-                                f"from your summary, then finish again."})
-                            ctx.write_status()
-                            continue
-                    # F334/D98 v2: v1 proves the run ACCOUNTED for its conditions, not that
-                    # the account is true. A second model checks each `met` claim against the
-                    # run's own transcript. Fail-open at every level, and at most ONE objection
-                    # per condition per run: the model keeps the last word (a judge that could
-                    # veto forever would hang the run, which is the outcome conditions exist to
-                    # replace) and the disagreement is recorded instead.
-                    disputes: dict[str, str] = {}
-                    if ctx.depth == 0 and not self._finish_reserved:
-                        from . import verifier
-                        objections = verifier.refuted(self, str(action.get("summary") or ""))
-                        fresh = [o for o in objections if o["id"] not in self._challenged]
-                        if fresh:
-                            self._challenged.update(o["id"] for o in fresh)
-                            obs = {"kind": "finish", "rejected": True,
-                                   "stopping_unsupported": [o["id"] for o in fresh]}
-                            ctx.transcript.event("observation", obs, turn=ctx.turn)
-                            self.messages.append({"role": "user",
-                                                  "content": verifier.challenge_message(fresh)})
-                            ctx.write_status()
-                            continue
-                        disputes = {o["id"]: o["evidence"] for o in objections}
-                    self.final_summary = action["summary"]
-                    # F334/D98: stamp the model's own [s<n>] met/unmet accounting back into
-                    # the store. Without this a condition sat at `open` however often a run
-                    # reported it met, so every reader — the panel, the next run, the user —
-                    # saw a stale list. Depth 0 only (a child accounts for nothing) and
-                    # best-effort: a store write must never turn a finished run into a
-                    # failed one.
-                    if ctx.depth == 0:
-                        from . import stopping
-                        try:
-                            newly = stopping.record_accounting(
-                                ctx.routine.dir, action["summary"],
-                                run_id=ctx.run_id, now=now_iso(), disputes=disputes)
-                        except OSError as exc:
-                            ctx.transcript.event(
-                                "error", {"where": "stopping.record_accounting",
-                                          "error": str(exc)})
-                            newly = []
-                        if newly or disputes:
-                            ctx.transcript.event("stopping_update",
-                                                 {"met": newly, "run_id": ctx.run_id,
-                                                  **({"disputed": sorted(disputes)}
-                                                     if disputes else {})})
-                    return self._finish_run(action["status"], action["summary"], authored=True)
-                if action["kind"] == "ask_user":
-                    obs = interact.handle_ask(self, action, poll_s=POLL_S)
-                elif action["kind"] == "write_util":
-                    obs = authoring.handle_write_util(self, action, poll_s=POLL_S)
-                elif action["kind"] == "remove_util":
-                    obs = authoring.handle_remove_util(self, action, poll_s=POLL_S)
-                elif action["kind"] == "write_rule":
-                    obs = authoring.handle_write_rule(self, action, poll_s=POLL_S)
-                elif action["kind"] == "util":
-                    # D39: per-routine secret exposure is decided at CALL time — the gate
-                    # asks/refuses/passes; None means the call proceeds normally.
-                    obs = secretgate.gate_util_secrets(self, action, poll_s=POLL_S) \
-                        or executor.dispatch(action, ctx)
-                elif action["kind"] == "script":
-                    # the routine's own deterministic helper — same call-time secret gate
-                    obs = secretgate.gate_script_secrets(self, action, poll_s=POLL_S) \
-                        or executor.do_script(action, ctx)
-                elif action["kind"] == "schedule_run":
-                    obs = interact.handle_schedule_run(self, action)
-                elif action["kind"] == "report":
-                    obs = interact.handle_report(self, action)
-                elif action["kind"] == "spawn":
-                    obs = self.subruns.spawn(action)
-                elif action["kind"] == "subtask":
-                    obs = self.subruns.subtask(action)
-                elif action["kind"] == "detach":
-                    obs = detach.handle_detach(ctx, action)
-                elif action["kind"] == "create_routine":
-                    obs = create_routine.handle_create_routine(ctx, action)
-                elif action["kind"] == "manage_group":
-                    obs = manage_group.handle_manage_group(ctx, action)
-                elif action["kind"] == "subruns":
-                    obs = self.subruns.status_table()
-                elif action["kind"] == "kill":
-                    obs = self.subruns.kill(action["n"])
-                elif action["kind"] == "wait":
-                    obs = self.subruns.wait(action, poll_s=POLL_S, aborted=self._aborted)
-                else:
-                    obs = executor.dispatch(action, ctx)
+                    outcome = finishgate.check_finish(self, action, ctx)
+                    if outcome is None:
+                        continue   # a guard set it aside; the model gets another turn
+                    return outcome
+                obs = actionroute.dispatch_action(self, action, ctx)
                 ctx.transcript.event("observation", obs, turn=ctx.turn)
                 self.executed_actions += 1
                 if self.admin_leg:
@@ -611,14 +315,3 @@ class EngineLoop:
                                   "brief": json.dumps(brief, ensure_ascii=False),
                                   "say": action.get("say", "")})
 
-    def _repeat_streak(self, action: dict) -> int:
-        key = {k: v for k, v in action.items() if k != "say"}
-        digest = hashlib.sha1(json.dumps(key, sort_keys=True).encode("utf-8"),
-                              usedforsecurity=False).hexdigest()
-        self.repeat_hashes.append(digest)
-        streak = 0
-        for h in reversed(self.repeat_hashes):
-            if h != digest:
-                break
-            streak += 1
-        return streak
