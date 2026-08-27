@@ -1,8 +1,11 @@
 """Engine subprocess management: spawn, track, abort, reap, retention, orphan recovery.
 
-One engine process per run (`python -m rsched.cli engine-run <slug> --run-ts <ts>` in this
-venv), its own process group. The global semaphore counts starting+running processes; a
-run parked in waiting_user releases its slot (the daemon polls status.json cheaply).
+One engine process per run (`python -m rsched.cli engine-run <dir> --run-ts <ts> --config
+<path> --homes <fingerprint>` in this venv), its own process group. The child inherits no
+configuration, so the command NAMES the config and the homes it must resolve to and the
+child refuses a mismatch (`runner_state.engine_cmd`, F394). The global semaphore counts
+starting+running processes; a run parked in waiting_user releases its slot (the daemon
+polls status.json cheaply).
 """
 
 from __future__ import annotations
@@ -199,7 +202,7 @@ class Runner:
             if run.cancelled:   # aborted while queued — never spawn
                 return
             run.proc = await asyncio.create_subprocess_exec(
-                *runner_state.engine_cmd(str(cfg.dir), run.run_ts, resume=resume),
+                *runner_state.engine_cmd(self.server, str(cfg.dir), run.run_ts, resume=resume),
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,

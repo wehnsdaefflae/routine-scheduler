@@ -217,11 +217,26 @@ def _open_questions_memo(d: Path) -> list[dict]:
     return copy.deepcopy(hit[1])
 
 
+HOME_KINDS = ("routines", "conversations", "background")
+
+
 def all_homes(server: ServerConfig) -> tuple[Path, Path, Path]:
     """The three run homes, in resolution order — every cross-home probe iterates THIS
     tuple (drifted inline copies once disagreed on which homes exist).
     """
     return (server.routines_home, server.conversations_home, server.background_home)
+
+
+def homes_fingerprint(server: ServerConfig) -> str:
+    """The three run homes as ONE stable, human-readable string.
+
+    This is the SPAWN CONTRACT between the daemon and the `engine-run` subprocess it starts
+    (F394). The child is a fresh interpreter that inherits none of the parent's config, so
+    it is told which config file to load AND which homes that file must resolve to; it
+    refuses the run when the two disagree, rather than quietly working somewhere else.
+    """
+    return " ".join(f"{kind}={path}"
+                    for kind, path in zip(HOME_KINDS, all_homes(server), strict=True))
 
 
 class Schedulable(Protocol):

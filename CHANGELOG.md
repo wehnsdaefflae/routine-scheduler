@@ -19,6 +19,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.245.0] — 2026-08-27
+
+### Fixed
+- **A test whose engine stub stopped taking ran against PRODUCTION** (F394). The daemon spawns
+  each run as `python -m rsched.cli engine-run …`, and that child is a FRESH interpreter: it
+  inherited nothing from its spawner and loaded `~/.config/routine-scheduler/config.yaml` on its
+  own. So when the F393 split moved `engine_cmd` and `runner.py` bound it with `from … import`
+  (which copies the reference, so the test's `monkeypatch.setattr` no longer reached the caller),
+  `tests/test_scheduler.py` stopped stubbing the engine and silently executed its tmp-homed
+  fixture routine `strand` on the live instance — eleven turns and ~8,800 tokens on a paid
+  endpoint, two rows (R1001, R1002) appended to the production report ledger, four telemetry rows
+  under `~/routines/.control/`, for a routine that has never existed there. That trigger was
+  already fixed by resolving the three substitutable names through `runner_state` at call time.
+  This release fixes the DEFECT behind it — that nothing refused a tmp-homed Runner spawning a
+  production-homed engine — in both halves:
+  - **The spawn now names what the child must use, and the child requires it.** `engine_cmd`
+    takes the spawner's `ServerConfig` and passes `--config <its source>` plus
+    `--homes <registry.homes_fingerprint>`; `engine-run` has NO default for either, loads exactly
+    the config it was handed, and REFUSES (exit 2, both sides printed) when that config resolves
+    to different run homes than the spawner is using. A config nobody pointed it at can no longer
+    be adopted, and a mismatch is a loud refusal rather than a silent fallback to `~`. A spawner
+    whose config was never loaded from a file — every test's in-memory `ServerConfig()` — is
+    refused in `engine_cmd` itself, before a process exists.
+  - **`tests/production_guard.py` is the wider net under the whole class.** A session-scoped
+    autouse barrier: no write may land inside the live instance's data homes (covering `open`,
+    `io.open`, and the `mkstemp`+`replace`/`mkdir`/`unlink` family behind `paths.atomic_write`
+    and `Path`), and no test may spawn this package's CLI at all — that child loads the
+    production config by definition. The protected set is derived from `registry.all_homes`, so
+    a fourth home is covered without an edit. The rule is deliberately "the instance's data
+    homes", not "outside `tmp_path`": tests legitimately write to `/tmp`, to the checkout, and —
+    through the real `uv run` the util tests exercise — to `~/.cache` and `~/.local/share/uv`.
+  `tests/test_engine_spawn.py` pins both halves of the contract and `tests/test_production_guard.py`
+  exercises the barrier through the same chokepoints the codebase writes through.
+
 ## [0.244.0] — 2026-08-27
 
 ### Changed

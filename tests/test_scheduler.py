@@ -156,9 +156,16 @@ async def test_due_group_cron_arms_the_chain_and_fires_member_zero(make_routine,
 
 def _stub_engine(monkeypatch, script: str):
     """Replace the engine subprocess with a bash stub. The stub runs with cwd=<routine dir>;
-    $1 is the run ts (script references runs/$TS/...)."""
+    $1 is the run ts (script references runs/$TS/...).
 
-    def cmd(slug, run_ts, *, resume=False):
+    The signature MIRRORS engine_cmd's, server argument included: a stub that silently stops
+    matching the real one is how F394 happened (the F393 split moved engine_cmd, `from …
+    import` froze the old reference, and the patch quietly stopped taking). The real
+    engine_cmd now refuses a source-less ServerConfig outright, so the same slip fails loudly
+    instead of running the fixture against production.
+    """
+
+    def cmd(server, target, run_ts, *, resume=False):
         return ["bash", "-c", script.replace("{TS}", run_ts)]
 
     monkeypatch.setattr(runner_state, "engine_cmd", cmd)

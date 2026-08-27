@@ -65,6 +65,10 @@ one you are about to touch, not all of them.
   stub runner — no scheduler, no engine, no LLM; see `tests/ui/conftest.py`). One-time per
   machine: `uv run playwright install chromium`. EVERY UI change gets exercised here — it is
   the safety net that lets the frontend be reworked boldly.
+  `tests/production_guard.py` is the suite's SANDBOX FLOOR (session-scoped autouse): no test
+  may write inside the live instance's data homes, and none may spawn this package's CLI —
+  that child is a fresh interpreter that would load the production config. Never weaken it to
+  make a test pass; a test that needs to write there is pointed at `tmp_path` instead.
 - `uv run ruff check` + `uv run mypy` — the strict quality gates (ruff runs `select = ALL`;
   every ignore in pyproject.toml carries its house-style reason). Both MUST be green in every
   commit; `uv run pre-commit install` wires them into git.
@@ -241,6 +245,13 @@ by a test, by the engine, or by a past incident.
   dead budget. A re-asserted verdict STANDS and the disagreement is recorded (`disputed`).
 - **A run never writes its own config.** `routine.yaml` is never writable by any run — the
   block is by FILENAME anywhere a run can write, external repos included.
+- **The engine subprocess INHERITS NOTHING — the spawn names its config and its homes.**
+  `engine-run` is a fresh interpreter, so it defaults NEITHER `--config` nor `--homes`
+  (`daemon/runner_state.py` `engine_cmd` → `cli.cmd_engine_run`, F394): it loads exactly the
+  config it was handed and refuses when that config resolves to different run homes than the
+  spawner is using. A spawner whose config was never loaded from a file is refused before a
+  process exists. Never give either flag a default — the fallback is `~`, i.e. production,
+  and a tmp-homed test once spent real money and real ledger rows there.
 - **A config field must declare whether it reaches a LIVE run.** `configflow.CLASSIFICATION`
   (F337) maps every `RoutinePatch`/`ConversationPatch` field to LIVE (adopted at a turn boundary
   — budgets, deliberation, grants) or NEXT_RUN, with the reason the operator is shown;

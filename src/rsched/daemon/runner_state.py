@@ -20,8 +20,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..config import ServerConfig
 from ..ids import now_iso
-from ..paths import read_json
+from ..paths import config_file, read_json
+from ..registry import homes_fingerprint
 
 # WARNING/ERROR/CRITICAL/traceback markers in an engine subprocess's stderr. The engine's
 # stdout is DEVNULL and its stderr is only surfaced by _reap on a CRASH — so a non-fatal
@@ -65,11 +67,29 @@ INTERACTIVE_SLOTS = 3
 # long fire-and-forget jobs starve neither the schedule nor chat replies.
 BACKGROUND_SLOTS = 2
 
-def engine_cmd(target: str, run_ts: str, *, resume: bool = False) -> list[str]:
-    """`target` is a routine slug (resolved under routines_home) or a directory path —
-    conversations live under their own home, so the runner always passes cfg.dir.
+def engine_cmd(server: ServerConfig, target: str, run_ts: str, *,
+               resume: bool = False) -> list[str]:
+    """The argv for one run's engine subprocess. `target` is a routine slug (resolved under
+    routines_home) or a directory path — conversations live under their own home, so the
+    runner always passes cfg.dir.
+
+    The child is a FRESH interpreter that inherits none of this process's configuration, so
+    it is told WHICH config file to load (`--config`) and which run homes that file must
+    resolve to (`--homes`); `engine-run` requires both and refuses a mismatch. Nothing is
+    left to default — a spawner whose config was never loaded from a file is refused HERE,
+    before a process exists, because the child would otherwise fall back to
+    `~/.config/routine-scheduler/config.yaml` and execute the routine against the PRODUCTION
+    instance's homes, endpoints and money. That is not hypothetical: F394 (2026-08-27) is
+    two full runs of a tmp-homed test fixture against production, for want of this refusal.
     """
-    cmd = [sys.executable, "-m", "rsched.cli", "engine-run", target, "--run-ts", run_ts]
+    if server.source is None:
+        raise RuntimeError(
+            "engine_cmd: this ServerConfig was never loaded from a file (source is None), "
+            "so the engine subprocess has nothing to point at and would fall back to "
+            f"{config_file()} — the production instance. Load the config with "
+            "load_server_config(<path>), or stub the spawn (tests do).")
+    cmd = [sys.executable, "-m", "rsched.cli", "engine-run", target, "--run-ts", run_ts,
+           "--config", str(server.source), "--homes", homes_fingerprint(server)]
     if resume:
         cmd.append("--resume")
     return cmd

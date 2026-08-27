@@ -26,6 +26,10 @@ os.environ.setdefault("RSCHED_RETRY_BASE_DELAY", "0.01")
 import pytest
 import yaml
 
+# The suite's sandbox floor — a session-scoped autouse fixture that refuses any write into
+# the LIVE instance's data and any subprocess that would run this package's CLI (F394).
+# Imported for pytest to discover, not called from here.
+from production_guard import _no_production_writes  # noqa: F401
 from rsched.config import ModelRef, ServerConfig
 from rsched.endpoints import EndpointRegistry
 from rsched.endpoints.base import Completion

@@ -193,7 +193,9 @@ leaving a half-written file behind. See `docs/usenet.md`.
 
 `uv run rsched --help` — `daemon` (what the service/container runs: scheduler + web in one
 process), `run-once` (`--model kind=name` overrides a model role with a catalog model),
-`engine-run` (internal), `validate`, `lint`, `suggest`, `scaffold`, `abort`.
+`engine-run` (internal — the daemon spawns it with `--config` and `--homes`, both
+required, so the child can never adopt a config nobody pointed it at), `validate`,
+`lint`, `suggest`, `scaffold`, `abort`.
 
 ## Development
 

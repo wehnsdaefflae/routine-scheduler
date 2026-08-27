@@ -479,7 +479,7 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
 `state_digest`) — the emergent counterpart to a routine's compiled `stages/` + `phase.json`.
 - Runner: conversation replies draw from a **reserved interactive slot pool** (`INTERACTIVE_SLOTS`,
   3) — cron can't queue a chat reply and vice versa; `engine_cmd` targets `cfg.dir` (a path),
-  which `_routine_dir` accepts. Run resolution in `api_runs`/`api_questions` is home-aware.
+  which `_routine_dir` accepts, and names the config + homes the child must resolve to (F394). Run resolution in `api_runs`/`api_questions` is home-aware.
 - **Slash commands**: the user can run the SAME effect actions/utils the model can, from the chat
   input (`/util …`, `/read_file …`, … — autocomplete + a reference panel fed by
   `GET …/commands`). A command-flagged inbox message EXECUTES at the turn boundary via
@@ -784,7 +784,14 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   engine's per-repo commit lock.
 - The daemon (`scheduler.py` + `runner.py`) fires cron via croniter and spawns one `engine-run` subprocess
   per routine (never two of the same at once) under `max_concurrent_runs`; a run that blocks on a user
-  question **releases its slot** (a PAUSED run too). **`rsched/registry.py`** (a shared read-model,
+  question **releases its slot** (a PAUSED run too). **The spawn is an explicit contract, not an
+  inheritance** (F394): the child is a fresh interpreter that gets none of the parent's
+  configuration, so `runner_state.engine_cmd` passes `--config <the config the daemon loaded>` and
+  `--homes <registry.homes_fingerprint>`, and `engine-run` — which defaults NEITHER — refuses the
+  run when the named config resolves to different homes. Without that, a caller holding a config
+  it built rather than loaded (every test) spawned an engine that read `~/.config/routine-scheduler/config.yaml`
+  and executed against the live instance's homes, endpoints and money. A spawner whose config was
+  never loaded from a file is refused in `engine_cmd`, before a process exists. **`rsched/registry.py`** (a shared read-model,
   NOT daemon-owned) derives the catalog and run-index live from the filesystem every rescan — no
   database, no cache files; parsing is memoized per file behind a stat() fingerprint
   (inode+mtime+size, so atomic rewrites always miss), pruned for deleted dirs, copies returned —

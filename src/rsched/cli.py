@@ -82,12 +82,31 @@ def cmd_run_once(args) -> int:
 
 
 def cmd_engine_run(args) -> int:
-    """Internal: spawned by the daemon. Same as run-once but quiet, with a fixed run_ts."""
+    """Internal: spawned by the daemon. Same as run-once but quiet, with a fixed run_ts.
+
+    `--config` and `--homes` are REQUIRED and have NO default. This process inherits nothing
+    from its spawner, so a default would mean silently adopting
+    `~/.config/routine-scheduler/config.yaml` — the production instance — whenever the
+    spawner meant somewhere else (F394). The homes the named config resolves to must be the
+    ones the spawner is using; a disagreement is refused, never reconciled.
+    """
     from .endpoints.instrument import FileSink, set_sink
     from .engine.control import request_abort
     from .engine.runtime import run_routine
+    from .registry import homes_fingerprint
 
-    server, _ = load_server_config()
+    config_path = expand(args.config)
+    if not config_path.is_file():
+        print(f"error: --config {config_path}: no such file — the spawning process named a "
+              "config this process cannot read", file=sys.stderr)
+        return 2
+    server, _ = load_server_config(config_path)
+    homes = homes_fingerprint(server)
+    if homes != args.homes:
+        print(f"error: --homes mismatch — {config_path} does not resolve to the run homes "
+              f"the spawning process is using; refusing to run.\n"
+              f"  spawner: {args.homes}\n  config:  {homes}", file=sys.stderr)
+        return 2
     routine_dir = _routine_dir(server, args.routine)
     # LLM task manager: this subprocess can't reach the daemon bus, so every instrumented
     # complete() appends a lifecycle record to a sidecar the daemon tails and republishes.
@@ -223,6 +242,12 @@ def main(argv: list[str] | None = None) -> int:
     e = sub.add_parser("engine-run", help="internal: run a routine (spawned by the daemon)")
     e.add_argument("routine")
     e.add_argument("--run-ts", required=True)
+    e.add_argument("--config", required=True,
+                   help="the server config the SPAWNING process loaded — no default, so "
+                        "this process can never adopt a config nobody pointed it at")
+    e.add_argument("--homes", required=True,
+                   help="the spawner's run homes (registry.homes_fingerprint); a config "
+                        "that resolves to different homes is refused")
     e.add_argument("--resume", action="store_true",
                    help="rehydrate the run's transcript and continue it")
     e.set_defaults(fn=cmd_engine_run)
