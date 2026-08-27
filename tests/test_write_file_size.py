@@ -11,7 +11,7 @@ from rsched.engine.executor import do_write_file
 from rsched.engine.observations import format_observation
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
-from rsched.grants import GrantPolicy
+from rsched.grantpolicy import GrantPolicy
 
 
 def _ctx(make_routine, tmp_path) -> RunContext:

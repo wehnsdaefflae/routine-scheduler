@@ -16,7 +16,7 @@ from rsched.config import ServerConfig
 from rsched.daemon.schedule_once import OneShotManager
 from rsched.engine.actions import validate_action
 from rsched.engine.interact import handle_schedule_run
-from rsched.grants import GrantPolicy
+from rsched.grantpolicy import GrantPolicy
 from rsched.paths import read_json
 
 

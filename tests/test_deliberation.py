@@ -21,7 +21,7 @@ from rsched.engine.control import apply_deliberation_switch
 from rsched.engine.executor import do_edit_file, do_write_file
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript, read_events
-from rsched.grants import GrantPolicy
+from rsched.grantpolicy import GrantPolicy
 from rsched.paths import atomic_write_json
 
 

@@ -14,7 +14,7 @@ from conftest import finish
 from rsched.engine.requests import request_denial
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
-from rsched.grants import GrantPolicy
+from rsched.grantpolicy import GrantPolicy
 from rsched.paths import atomic_write_json, read_json
 from test_loop import _server
 

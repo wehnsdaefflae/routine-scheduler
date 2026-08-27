@@ -16,7 +16,7 @@ from rsched.engine.executor import dispatch
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import Transcript
-from rsched.grants import GrantPolicy
+from rsched.grantpolicy import GrantPolicy
 from rsched.paths import read_json
 
 TS = "20260716-210000"

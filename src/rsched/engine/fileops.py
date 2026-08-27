@@ -235,7 +235,7 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
                 "edits it, not even the routine-improver (machine-tunable knobs live in "
                 "tuning.yaml); file a deferred ask_user instead")
     if not g.recipe_unlocked:
-        from ..grants import is_recipe_path
+        from ..grantpolicy import is_recipe_path
 
         try:
             rel = resolved.relative_to(ctx.routine.dir)

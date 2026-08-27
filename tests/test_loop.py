@@ -1376,7 +1376,7 @@ def test_subtask_generate_gate(monkeypatch):
     default pattern with an explanatory note. The generation call's spend folds into the run."""
     import rsched.workflows.generate as gen_mod
     from rsched.engine.subruns import SubrunManager
-    from rsched.grants import GrantPolicy
+    from rsched.grantpolicy import GrantPolicy
 
     seen = []
 

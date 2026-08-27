@@ -20,7 +20,8 @@ from rsched.engine.actions import ALWAYS_KINDS, KIND_EXAMPLES, KINDS, validate_a
 from rsched.engine.inbox import drain_messages
 from rsched.engine.interact import handle_report
 from rsched.engine.observations import format_observation
-from rsched.grants import GATED_KINDS, GrantPolicy
+from rsched.grantpolicy import GrantPolicy
+from rsched.grants import GATED_KINDS
 from rsched.readmodels import items
 from rsched.reports import (
     next_id,

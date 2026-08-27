@@ -44,7 +44,7 @@ def test_harness_contract_mentions_the_load_bearing_facts(make_routine, tmp_path
 def test_harness_contract_reflects_grants(make_routine, tmp_path):
     """The contract tells the model what its grants allow: authoring denied without the
     grant, and the confirm level (always / creations-only) spelled out with it."""
-    from rsched.grants import GrantPolicy
+    from rsched.grantpolicy import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="granted")
     ctx.grants = GrantPolicy()                       # write_util switched off
@@ -58,7 +58,7 @@ def test_harness_contract_reflects_grants(make_routine, tmp_path):
 
 
 def test_harness_contract_memory_line_follows_grant(make_routine, tmp_path):
-    from rsched.grants import GrantPolicy
+    from rsched.grantpolicy import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="memg")
     ctx.grants = GrantPolicy()                       # memory not granted → no gloss
@@ -231,7 +231,7 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     may use, and marks reserved-but-ungranted utils — so a run (or the clarify wizard,
     which cannot even call `util name=list`) plans against reality."""
     from rsched.engine.capabilities import capabilities_digest
-    from rsched.grants import GrantPolicy
+    from rsched.grantpolicy import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="caps")
     for name, summary, tags in (("frob", "flips widgets", "code, dev"),
@@ -334,7 +334,7 @@ def test_capabilities_digest_surfaces_provisioned_secret_names_never_values(make
     knows which credentials exist up front — NAMES only, never a value, no consent prompt."""
     from rsched import secrets as secret_store
     from rsched.engine.capabilities import capabilities_digest
-    from rsched.grants import GrantPolicy
+    from rsched.grantpolicy import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="secdig")
     ctx.grants = GrantPolicy()
@@ -769,7 +769,7 @@ def test_harness_contract_recipe_line_follows_unlock(make_routine, tmp_path):
     the routine-improver's case) must be told its recipe IS writable. The unconditional
     "READ-ONLY to you" sentence made the improver skip every lens on its own self-target
     despite the include-toggle being on (F165, routine-improver:20260723-112446 t11/t13)."""
-    from rsched.grants import GrantPolicy
+    from rsched.grantpolicy import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="recun")
     ctx.grants = GrantPolicy()                        # sealed — the default for every run

@@ -290,7 +290,7 @@ def _once_match(eid: str, action: dict, ctx) -> bool:  # noqa: PLR0911 — one e
     the turn); secret:/fs-*: match the action that RECEIVES the entity — the coarser
     D76 promise entities.py documents.
     """
-    from ..grants import is_runs_path
+    from ..grantpolicy import is_runs_path
     cls, _, name = eid.partition(":")
     kind = action.get("kind")
     if cls == "action":

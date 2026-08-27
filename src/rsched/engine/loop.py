@@ -19,7 +19,7 @@ import threading
 from collections import deque
 
 from ..endpoints.base import EndpointError
-from ..grants import load_policy
+from ..grantpolicy import load_policy
 from ..health_events import log_health_event
 from ..ids import now_iso
 from . import (

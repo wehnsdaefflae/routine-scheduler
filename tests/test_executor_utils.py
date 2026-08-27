@@ -9,7 +9,7 @@ from rsched.config import ServerConfig, load_routine
 from rsched.engine.executor import dispatch
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
-from rsched.grants import GrantPolicy
+from rsched.grantpolicy import GrantPolicy
 
 ECHOER = '''"""echoer — prints its arguments back.
 

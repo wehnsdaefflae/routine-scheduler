@@ -13,7 +13,7 @@ from rsched.engine.executor import dispatch
 from rsched.engine.observations import OBS_CAP_CHARS, format_observation, truncate
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
-from rsched.grants import GrantPolicy
+from rsched.grantpolicy import GrantPolicy
 
 BIG = "x" * (OBS_CAP_CHARS * 2)
 

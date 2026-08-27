@@ -10,7 +10,7 @@ from rsched.engine.actions import KIND_EXAMPLES, KINDS
 from rsched.engine.composer import build_system_prompt, kickoff_message, state_digest
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
-from rsched.grants import GrantPolicy
+from rsched.grantpolicy import GrantPolicy
 from rsched.schema_guard import retry_message
 
 DOC = (Path(__file__).resolve().parents[1] / "docs" / "prompt-anatomy.md").read_text(encoding="utf-8")

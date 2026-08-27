@@ -346,7 +346,7 @@ def commands(request: Request, slug: str) -> dict:
     """
     from .. import utils_lib
     from ..engine.commands import command_catalog
-    from ..grants import load_policy
+    from ..grantpolicy import load_policy
 
     info = conversation_info(request, slug)
     server = request.app.state.server

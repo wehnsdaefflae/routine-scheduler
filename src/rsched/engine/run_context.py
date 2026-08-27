@@ -22,7 +22,7 @@ from .budget import Budget, BudgetLedger
 from .transcript import Transcript
 
 if TYPE_CHECKING:
-    from ..grants import GrantPolicy
+    from ..grantpolicy import GrantPolicy
 
 # Sentinel default for "argument not passed" where None is a meaningful value.
 _UNSET: Any = "\0"

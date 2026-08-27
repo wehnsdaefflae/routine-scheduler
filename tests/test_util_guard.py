@@ -53,7 +53,7 @@ def _wu(name):
 
 
 def test_recreate_denial_matrix(tmp_path):
-    from rsched.grants import GrantPolicy
+    from rsched.grantpolicy import GrantPolicy
 
     _seed_deleted_util(tmp_path)
     utils_lib.write_util_file(tmp_path, "alive", UTIL_BODY)

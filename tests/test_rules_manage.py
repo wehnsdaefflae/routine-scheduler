@@ -160,7 +160,8 @@ def test_read_rule_is_ungated_so_a_routine_can_read_what_binds_it():
 
 
 def test_write_rule_is_gated_and_carries_its_own_approval_dial(tmp_path):
-    from rsched.grants import EMPTY_CAPABILITIES, load_policy
+    from rsched.grantpolicy import load_policy
+    from rsched.grants import EMPTY_CAPABILITIES
 
     assert "write_rule" in GATED_KINDS
     policy = load_policy(tmp_path, [], {"actions": ["write_rule"], "rule_confirm": "creations"})

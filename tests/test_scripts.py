@@ -16,7 +16,8 @@ from rsched.config import ServerConfig
 from rsched.engine.actions import validate_action
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
-from rsched.grants import GATED_KINDS, GrantPolicy
+from rsched.grantpolicy import GrantPolicy
+from rsched.grants import GATED_KINDS
 
 TS = "20260708-070000"
 

@@ -261,7 +261,7 @@ def test_failed_util_teaches_repair_and_keeps_trace_tail(tmp_path):
     assert "end-of-trace" in obs["stderr"]        # the tail survives truncation
     assert len(obs["stderr"]) < 12000             # …but the whole flood does not
     # without a write_util grant the hint routes to escalation, not self-repair
-    from rsched.grants import GrantPolicy
+    from rsched.grantpolicy import GrantPolicy
 
     obs2 = do_util({"kind": "util", "name": "boomer", "args": []}, _ctx(tmp_path, GrantPolicy()))
     assert "cannot revise utils" in obs2["hint"] and "corrected script" not in obs2["hint"]

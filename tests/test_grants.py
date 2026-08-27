@@ -6,12 +6,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from rsched.grantpolicy import GrantPolicy, load_policy
 from rsched.grants import (
     EMPTY_CAPABILITIES,
-    GrantPolicy,
     capabilities_for,
     floor_capabilities,
-    load_policy,
     normalize_capabilities,
     read_library_requires,
 )
