@@ -217,9 +217,13 @@ def test_ensure_gitignore_idempotent(tmp_path):
     assert (tmp_path / ".gitignore").read_text(encoding="utf-8").count("mnt/") == 1
 
 
-def _share_setup(tmp_path, monkeypatch, *, sshfs=True, run_rc=0):
+def _share_setup(tmp_path, monkeypatch, *, sshfs=True, run_rc=0, live=True):
     monkeypatch.setattr(machines.shutil, "which",
                         lambda b: "/usr/bin/sshfs" if (sshfs and b == "sshfs") else None)
+    # No real sshfs runs in the suite, so nothing is ever a real mount: steer the liveness
+    # probe directly. `live=False` is the R514 case — sshfs exits 0, the mount never comes up.
+    monkeypatch.setattr(machines, "mount_is_live", lambda mp: live)
+    monkeypatch.setattr(machines, "MOUNT_LIVE_TIMEOUT_S", 0.0)
     monkeypatch.setattr(machines, "_mount_base", lambda: tmp_path / ".mounts")
     (tmp_path / ".mounts").mkdir(exist_ok=True)
     if run_rc is not None:
@@ -234,25 +238,82 @@ def _share_setup(tmp_path, monkeypatch, *, sshfs=True, run_rc=0):
 def test_mount_skips_when_no_share(tmp_path):
     routine = SimpleNamespace(dir=tmp_path, machines=["gpu"])
     server = SimpleNamespace(machines={"gpu": _mac("gpu", key_var="K")})   # no share
-    assert machines.mount_routine_shares(routine, server, secrets={"K": "P"}) == []
+    assert machines.mount_routine_shares(routine, server, secrets={"K": "P"}) == ([], {})
 
 
 def test_mount_skips_when_sshfs_missing(tmp_path, monkeypatch):
     routine, server = _share_setup(tmp_path, monkeypatch, sshfs=False, run_rc=None)
-    assert machines.mount_routine_shares(routine, server, secrets={"K": "P"}) == []
+    mounted, unavailable = machines.mount_routine_shares(routine, server, secrets={"K": "P"})
+    assert mounted == [] and "sshfs" in unavailable["gpu"]
 
 
 def test_mount_skips_when_key_unset(tmp_path, monkeypatch):
     routine, server = _share_setup(tmp_path, monkeypatch, run_rc=None)
-    assert machines.mount_routine_shares(routine, server, secrets={}) == []   # key_var not set
+    mounted, unavailable = machines.mount_routine_shares(routine, server, secrets={})
+    assert mounted == [] and unavailable == {"gpu": "no private key"}
 
 
 def test_mount_nonfatal_on_sshfs_failure(tmp_path, monkeypatch):
     routine, server = _share_setup(tmp_path, monkeypatch, run_rc=1)       # sshfs exits nonzero
-    assert machines.mount_routine_shares(routine, server, secrets={"K": "PEM"}) == []
+    mounted, unavailable = machines.mount_routine_shares(routine, server, secrets={"K": "PEM"})
+    assert mounted == [] and "sshfs failed" in unavailable["gpu"]
+
+
+# ------------------------------------------------------------- R514: mount liveness ----------
+def test_mount_is_live_distinguishes_plain_dir_from_mount(tmp_path, monkeypatch):
+    """A plain directory is NOT a live share. This is the whole R514 failure: `mkdir` runs
+    before sshfs, so a failed mount leaves an empty dir that reads exactly like an empty
+    share — `dir-tree` answered `entries: 0` for a populated remote box.
+    """
+    d = tmp_path / "mp"
+    d.mkdir()
+    assert machines.mount_is_live(d) is False              # exists, readable, but not a mount
+    monkeypatch.setattr(machines.Path, "is_mount", lambda self: True)
+    assert machines.mount_is_live(d) is True
+
+
+def test_mount_is_live_reports_stale_endpoint_as_dead(tmp_path, monkeypatch):
+    """A stale FUSE endpoint raises ENOTCONN on readdir. That must read as NOT LIVE, never
+    propagate, and never be mistaken for an empty share."""
+    d = tmp_path / "mp"
+    d.mkdir()
+    monkeypatch.setattr(machines.Path, "is_mount", lambda self: True)
+
+    def boom(_p):
+        raise OSError(107, "Transport endpoint is not connected")
+
+    monkeypatch.setattr(machines.os, "scandir", boom)
+    assert machines.mount_is_live(d) is False
+
+
+def test_mount_removes_lookalike_dir_when_never_live(tmp_path, monkeypatch):
+    """sshfs exits 0 but the mount never comes up (R514, observed on predator). The share is
+    reported unavailable WITH a reason, and no empty mnt/<name>/ directory is left standing —
+    so a read fails on a missing path instead of answering `entries: 0`, and a write cannot
+    silently land on local disk.
+    """
+    routine, server = _share_setup(tmp_path, monkeypatch, run_rc=0, live=False)
+    mounted, unavailable = machines.mount_routine_shares(routine, server, secrets={"K": "PEM"})
+    assert mounted == []
+    assert "never became a readable mount" in unavailable["gpu"]
+    assert not (tmp_path / "routine" / "mnt" / "gpu").exists()
+
+
+def test_remove_lookalike_never_deletes_data(tmp_path):
+    """Clearing a lookalike must never become deleting data: a non-empty mountpoint stays."""
+    mp = tmp_path / "mp"
+    mp.mkdir()
+    (mp / "keep.txt").write_text("data", encoding="utf-8")
+    machines._remove_lookalike_mountpoint(mp)
+    assert (mp / "keep.txt").read_text(encoding="utf-8") == "data"
 
 
 # ------------------------------------------------------------- engine mount lifecycle --------
+# The lifecycle tests never mount anything; this stands in for what mount_routine_shares
+# hands back, and carries the `.name` the run context records (R514).
+SENTINEL_SHARE = SimpleNamespace(name="gpu")
+
+
 def _server_for(d):
     server = ServerConfig()
     server.routines_home = d.parent
@@ -263,19 +324,21 @@ def _server_for(d):
 def test_run_routine_mounts_then_unmounts(make_routine, scripted, monkeypatch):
     calls: list = []
     monkeypatch.setattr(machines, "mount_routine_shares",
-                        lambda routine, server, **k: (calls.append("mount"), ["SENTINEL"])[1])
+                        lambda routine, server, **k: (calls.append("mount"),
+                                                      ([SENTINEL_SHARE], {}))[1])
     monkeypatch.setattr(machines, "unmount_routine_shares",
                         lambda mounted: calls.append(("unmount", mounted)))
     d = make_routine(slug="mountr")
     scripted([write_file("state/out.txt", content="x"), finish(summary="done")])
     status, _ = run_routine(d, _server_for(d), run_ts="20260708-070000")
     assert status == "ok"
-    assert calls[0] == "mount" and calls[-1] == ("unmount", ["SENTINEL"])
+    assert calls[0] == "mount" and calls[-1] == ("unmount", [SENTINEL_SHARE])
 
 
 def test_run_routine_unmounts_even_when_loop_raises(make_routine, scripted, monkeypatch):
     unmounted: list = []
-    monkeypatch.setattr(machines, "mount_routine_shares", lambda routine, server, **k: ["S"])
+    monkeypatch.setattr(machines, "mount_routine_shares",
+                        lambda routine, server, **k: ([SENTINEL_SHARE], {}))
     monkeypatch.setattr(machines, "unmount_routine_shares", unmounted.append)
 
     class BoomLoop:
@@ -290,7 +353,7 @@ def test_run_routine_unmounts_even_when_loop_raises(make_routine, scripted, monk
     scripted([])
     with pytest.raises(RuntimeError, match="boom"):
         run_routine(d, _server_for(d), run_ts="20260708-070000")
-    assert unmounted == [["S"]]         # the finally ran despite the crash
+    assert unmounted == [[SENTINEL_SHARE]]    # the finally ran despite the crash
 
 
 def test_mount_success_returns_share_and_scopes_key(tmp_path, monkeypatch):
@@ -298,8 +361,8 @@ def test_mount_success_returns_share_and_scopes_key(tmp_path, monkeypatch):
     mountpoint, the PEM written 0600 into a daemon-private keydir beside a pinned
     known_hosts, and mnt/ gitignored; unmount removes the keydir again."""
     routine, server = _share_setup(tmp_path, monkeypatch, run_rc=0)
-    got = machines.mount_routine_shares(routine, server, secrets={"K": "PEM-KEY"})
-    assert len(got) == 1
+    got, unavailable = machines.mount_routine_shares(routine, server, secrets={"K": "PEM-KEY"})
+    assert len(got) == 1 and unavailable == {}
     ms = got[0]
     assert ms.name == "gpu"
     assert ms.mountpoint == tmp_path / "routine" / "mnt" / "gpu"

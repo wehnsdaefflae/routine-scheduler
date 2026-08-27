@@ -144,6 +144,21 @@ How it works, and why it is safe:
 - Mounting is **best-effort**: an unreachable host, a missing key, or no `sshfs` on the host logs a
   warning and the run proceeds without the mount. It is unmounted on every exit path; a crash
   leaves a stale mount that the next run clears before remounting.
+- **A mount is PROVEN before it is advertised** (R514). `sshfs` daemonizes, so a zero exit means
+  the helper forked, not that the share is readable — and because the mountpoint directory is
+  created *before* the mount, a failure used to leave an empty directory standing exactly where a
+  populated share was promised. That is indistinguishable from an empty share: a run listed
+  `mnt/<machine>/…`, got nothing back, and could reasonably conclude its source was gone (or write
+  files that never left the daemon). So the engine now polls the mountpoint until it is a real
+  mount whose root actually reads (a stale FUSE endpoint raises `ENOTCONN` there and counts as
+  dead, never as empty). A share that does not come up within that window:
+  - has its **mountpoint directory removed**, so `mnt/<machine>/` does not exist at all — a read
+    fails on a missing path and a write cannot silently land on local disk. Only an *empty*
+    directory is ever removed; clearing a lookalike must never become deleting data.
+  - is named to the RUN, with its reason, in the CAPABILITIES block: the machine's row reads
+    `SHARE NOT MOUNTED this run (…)` instead of the mount line. The row reports what the run
+    actually has, never what the catalog asked for — a share is advertised only once proven live.
+    Child runs inherit that state along with the fs roots that reach the mounts.
 
 **Deployment note (Docker):** FUSE inside the container needs the fuse device + `CAP_SYS_ADMIN` +
 AppArmor unconfined, and the `sshfs` package. The shipped `Dockerfile` installs `sshfs` and

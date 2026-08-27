@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.235.0] — 2026-08-27
+
+### Fixed
+- **A machine share that did not mount can no longer be mistaken for an empty one** (R514).
+  `gu dir-tree mnt/predator/…` answered `entries: 0` while the box itself was populated, so
+  a run could conclude its source was gone — or write files that never left the daemon. Two
+  causes, both at the provisioning seam:
+  - `sshfs` **daemonizes**, so its zero exit meant "the helper forked", not "the share is
+    readable"; and the mountpoint directory is created *before* the mount, so a failure left
+    an empty directory standing exactly where a populated share had been promised. The engine
+    now polls `machines.mount_is_live` until the path is a real mount whose root actually
+    reads (a stale FUSE endpoint raises `ENOTCONN` there and counts as dead, never as empty).
+    A share that never comes up has its **empty mountpoint removed** — so a read fails on a
+    missing path and a write cannot silently land on local disk. Only an empty directory is
+    ever removed; clearing a lookalike never becomes deleting data.
+  - The CAPABILITIES block advertised `files mounted at mnt/<name>/` from the catalog's
+    `share:` field **alone**, i.e. from config intent, never from fact. The machine row now
+    reports what the run actually has: the mount line only once proven live, otherwise
+    `SHARE NOT MOUNTED this run (<reason>)` naming why and pointing at the remote transfer
+    path instead. Child runs inherit that state along with the fs roots that reach the mounts.
+  `mount_routine_shares` returns `(mounted, {name: reason})`; the machine-row rendering moved
+  into its own `capabilities._machine_notes`.
+
 ## [0.234.0] — 2026-08-27
 
 ### Removed

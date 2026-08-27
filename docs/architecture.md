@@ -242,7 +242,13 @@ connect (paramiko `RejectPolicy` — no TOFU in a headless run). Pieces:
   COVERS the sshfs sub-mount (verified empirically) — no sandbox change, no `remote-machines`
   permission needed (that gates the compute util, not the filesystem). `mnt/` is gitignored so the
   autocommit never slurps the remote FS; mounting is best-effort (unreachable/no-sshfs → warn +
-  proceed) and a crashed run's stale mount is cleared before the next remount. Docker: `sshfs` in
+  proceed) and a crashed run's stale mount is cleared before the next remount. A mount is PROVEN
+  live before it is advertised (R514): sshfs daemonizes, so exit 0 is not a usable share, and the
+  pre-created mountpoint dir otherwise reads exactly like an EMPTY share. `mount_routine_shares`
+  polls `mount_is_live` (a real mount whose root reads; `ENOTCONN` counts as dead, not empty), and
+  returns `(mounted, {name: reason})` — a share that never came up has its empty mountpoint dir
+  removed and is reported to the run in CAPABILITIES as `SHARE NOT MOUNTED`, so an unmounted share
+  can never be mistaken for an empty one. Docker: `sshfs` in
   the image + `/dev/fuse` + `CAP_SYS_ADMIN` + apparmor:unconfined in compose (inert without a share).
 - **`web/settings/machines.py`** — Settings → Machines CRUD + `scan-host` + `test` (the last two
   run the real `remote` util server-side with `base_policy`, so what Settings proves is what a run

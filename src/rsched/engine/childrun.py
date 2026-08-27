@@ -150,6 +150,11 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
         grant_args={e: v for e, v in parent_ctx.grant_args.items()
                     if entities.is_resource(e)},
         group_store_roots=list(parent_ctx.group_store_roots),
+        # The share mounts are the PARENT's, provisioned once for the whole run tree
+        # under <routine>/mnt/ — a child inherits the fs roots that reach them, so it
+        # must inherit the truth about which ones are live too (R514).
+        mounted_shares=set(parent_ctx.mounted_shares),
+        unavailable_shares=dict(parent_ctx.unavailable_shares),
     )
     transcript.header(run_id=f"{parent_ctx.run_id}#sub{n}", routine=parent_ctx.routine.slug,
                       workflow={"slug": recipe_slug, "commit": "", "version": 0},

@@ -269,6 +269,38 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     assert "spawn" not in kinds2 and "ask_user" in kinds2
 
 
+def test_capabilities_digest_reports_actual_share_state_not_config(make_routine, tmp_path):
+    """R514. The machine row must state what this run HAS, not what the catalog asked for.
+
+    A share advertised from `MachineConfig.share` alone told a run "files mounted at mnt/gpu/"
+    even when the sshfs mount had failed — and the empty mountpoint directory left behind read
+    exactly like an empty share, so `dir-tree` answered `entries: 0` for a populated box. A
+    share is named only once it is proven live; one that is not gets its reason instead.
+    """
+    from types import SimpleNamespace
+
+    from rsched.engine.capabilities import capabilities_digest
+
+    ctx = _ctx(make_routine, tmp_path, slug="mnts")
+    ctx.routine.machines = ["gpu"]
+    ctx.server.machines = {"gpu": SimpleNamespace(name="gpu", host="h", user="u", port=22,
+                                                  host_key="", workdir="", share="/srv",
+                                                  description="the GPU box", tags=[],
+                                                  key_var="K")}
+
+    ctx.mounted_shares, ctx.unavailable_shares = {"gpu"}, {}
+    live = capabilities_digest(ctx)
+    assert "files mounted at mnt/gpu/" in live and "SHARE NOT MOUNTED" not in live
+
+    ctx.mounted_shares, ctx.unavailable_shares = set(), {"gpu": "sshfs failed: host down"}
+    dead = capabilities_digest(ctx)
+    assert "SHARE NOT MOUNTED this run (sshfs failed: host down)" in dead
+    assert "files mounted at mnt/gpu/" not in dead
+    assert "there is no mnt/gpu/ directory" in dead
+    # the machine itself is still bound and still reachable for COMPUTE — only the mount is gone
+    assert "gpu — the GPU box" in dead
+
+
 def test_capabilities_digest_surfaces_provisioned_secret_names_never_values(make_routine, tmp_path):
     """D46: the CAPABILITIES section names the secrets provisioned in the central store so a run
     knows which credentials exist up front — NAMES only, never a value, no consent prompt."""

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -165,6 +166,61 @@ def sshfs_argv(mac: MachineConfig, mountpoint: Path, key_path: Path,
     ]
 
 
+# sshfs DAEMONIZES: the helper forks and exits 0 as soon as it has handed off, so a zero
+# exit says "the mount was requested", not "the share is readable". A mountpoint that never
+# came up is a plain empty DIRECTORY — and an empty directory reads exactly like an empty
+# share, which is R514: `dir-tree` answered `entries: 0` for a populated remote box, and a
+# run that trusted it would have concluded the source was gone (or written bytes that never
+# left the machine). So the engine PROVES the mount before it advertises it.
+MOUNT_LIVE_TIMEOUT_S = 10.0     # how long a fresh mount may take to become readable
+MOUNT_LIVE_POLL_S = 0.25
+
+
+def mount_is_live(mountpoint: Path) -> bool:
+    """True only when `mountpoint` is a real mount whose root can actually be READ.
+
+    Two distinct failures both return False, and both must: a plain directory (nothing
+    mounted — the silent one) and a stale FUSE endpoint (`ENOTCONN`, which raises here
+    rather than answering empty). Pure observation; never mutates.
+    """
+    try:
+        if not mountpoint.is_mount():
+            return False
+        with os.scandir(mountpoint) as it:      # ENOTCONN surfaces here, not as an empty listing
+            next(it, None)
+    except OSError:
+        return False
+    return True
+
+
+def wait_mount_live(mountpoint: Path) -> bool:
+    """`mount_is_live`, polled — a just-forked sshfs needs a moment before its root reads."""
+    deadline = time.monotonic() + MOUNT_LIVE_TIMEOUT_S
+    while True:
+        if mount_is_live(mountpoint):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(MOUNT_LIVE_POLL_S)
+
+
+def _remove_lookalike_mountpoint(mountpoint: Path) -> None:
+    """Delete the mountpoint DIRECTORY when nothing is mounted on it.
+
+    This is the loud half of the R514 fix. `mkdir(parents=True)` runs before sshfs, so a
+    failed mount otherwise leaves an empty directory standing exactly where a populated
+    share was promised — indistinguishable from a share that is genuinely empty. With no
+    directory there at all, a read fails on a path that does not exist and a write fails
+    instead of silently landing on local disk. Only ever removes an EMPTY dir (rmdir
+    raises ENOTEMPTY otherwise): clearing a lookalike must never become deleting data.
+    """
+    try:
+        if not mountpoint.is_mount():
+            mountpoint.rmdir()
+    except OSError:
+        pass
+
+
 def _unmount_path(mountpoint: Path) -> None:
     """Best-effort unmount, trying the FUSE helpers then umount (whichever the host has)."""
     for argv in (["fusermount3", "-u", str(mountpoint)], ["fusermount", "-u", str(mountpoint)],
@@ -198,19 +254,25 @@ def _ensure_mnt_gitignored(routine_dir: Path) -> None:
                                 f"{MOUNT_SUBDIR}/", ""]))
 
 
-def mount_routine_shares(routine: RoutineConfig, server: ServerConfig, *,
-                         secrets: dict[str, str] | None = None) -> list[MountedShare]:
-    """Mount every bound machine's `share` at <routine>/mnt/<name>/ for this run. Best-effort
-    and NON-FATAL: a machine with no share, no key, no pinned host key, or an unreachable host
-    is skipped with a warning — the run proceeds without that mount. Returns the shares that
-    mounted (pass them to unmount_routine_shares in a finally).
+def mount_routine_shares(
+        routine: RoutineConfig, server: ServerConfig, *,
+        secrets: dict[str, str] | None = None) -> tuple[list[MountedShare], dict[str, str]]:
+    """Mount every bound machine's `share` at <routine>/mnt/<name>/ for this run.
+
+    Returns `(mounted, unavailable)` — the shares that came up LIVE (pass them to
+    unmount_routine_shares in a finally), and `{name: reason}` for every share that was
+    wanted and did not. Still best-effort and NON-FATAL: a machine with no share, no key,
+    no pinned host key, or an unreachable host is skipped and the run proceeds without that
+    mount. What is no longer best-effort is HONESTY about it (R514) — a share that did not
+    mount leaves no directory behind and is reported to the run as unavailable, instead of
+    presenting an empty dir that reads like an empty share.
     """
     bound = getattr(routine, "machines", None) or []
     catalog = getattr(server, "machines", {}) or {}
     wanted = [(n, catalog[n]) for n in dict.fromkeys(bound)
               if n in catalog and catalog[n].share]
     if not wanted:
-        return []
+        return [], {}
     # Gitignore mnt/ BEFORE any mount attempt: a crashed prior run's STALE mount must
     # never be swept into the autocommit just because this run's own mounts failed early
     # (no sshfs / no key) and the write further down was skipped.
@@ -218,17 +280,31 @@ def mount_routine_shares(routine: RoutineConfig, server: ServerConfig, *,
     if not shutil.which("sshfs"):
         log.warning("machines: sshfs not installed — cannot mount share(s) %s",
                     [n for n, _ in wanted])
-        return []
+        return [], {n: "sshfs is not installed on the host" for n, _ in wanted}
     if secrets is None:
         from .secrets import load_secrets
         secrets = load_secrets()
     base = _mount_base()
     mounted: list[MountedShare] = []
+    unavailable: dict[str, str] = {}
+
+    def _failed(name: str, mountpoint: Path | None, keydir: Path | None, reason: str) -> None:
+        """One exit for every failure: log it, record it for the run, and leave NO empty
+        directory standing where the share was promised.
+        """
+        log.warning("machines: cannot mount %r — %s", name, reason)
+        unavailable[name] = reason
+        if mountpoint is not None:
+            _unmount_path(mountpoint)            # a half-up FUSE endpoint must not linger
+            _remove_lookalike_mountpoint(mountpoint)
+        if keydir is not None:                   # the PEM must not outlive the failed attempt
+            shutil.rmtree(keydir, ignore_errors=True)
+
     for name, mac in wanted:
         pem = (secrets.get(mac.key_var) or "").strip() if mac.key_var else ""
         if not pem or not mac.host_key.strip():
-            log.warning("machines: cannot mount %r — %s", name,
-                        "no private key" if not pem else "no pinned host key")
+            _failed(name, None, None,
+                    "no private key" if not pem else "no pinned host key")
             continue
         mp = routine_mount_dir(routine.dir) / name
         keydir: Path | None = None
@@ -245,17 +321,20 @@ def mount_routine_shares(routine: RoutineConfig, server: ServerConfig, *,
             r = subprocess.run(sshfs_argv(mac, mp, keyp, khp),
                                capture_output=True, text=True, timeout=45, check=False)
             if r.returncode != 0:
-                log.warning("machines: sshfs mount of %r failed: %s", name,
-                            r.stderr.strip() or f"exit {r.returncode}")
-                shutil.rmtree(keydir, ignore_errors=True)
+                _failed(name, mp, keydir,
+                        f"sshfs failed: {r.stderr.strip() or f'exit {r.returncode}'}")
+                continue
+            # sshfs returning 0 is NOT the mount being usable (it daemonizes) — prove it.
+            if not wait_mount_live(mp):
+                _failed(name, mp, keydir,
+                        f"sshfs reported success but {MOUNT_SUBDIR}/{name}/ never became "
+                        "a readable mount")
                 continue
             mounted.append(MountedShare(name=name, mountpoint=mp, keydir=keydir))
             log.info("machines: mounted %r share at %s", name, mp)
         except (OSError, subprocess.SubprocessError) as exc:
-            log.warning("machines: mounting %r failed: %s", name, exc)
-            if keydir is not None:   # the PEM must not outlive the failed attempt
-                shutil.rmtree(keydir, ignore_errors=True)
-    return mounted
+            _failed(name, mp, keydir, str(exc))
+    return mounted, unavailable
 
 
 # A keydir belongs to at most one live run; anything older than this at daemon boot is

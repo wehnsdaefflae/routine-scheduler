@@ -165,6 +165,45 @@ def _secret_notes(ctx: RunContext) -> list[str]:
     return out
 
 
+def _machine_notes(ctx: RunContext) -> str:
+    """The bound remote machines, one row each — a resource the run acts on via the `remote`
+    util, named here so it costs no discovery turn. Non-secret metadata only; readiness
+    (key/host-key set) is reported live by `remote list`.
+
+    The SHARE half reports what this run actually HAS, never what the catalog asked for
+    (R514). The line used to be emitted from `mac.share` alone, so a run whose sshfs mount
+    had failed was still told its files were at `mnt/<name>/` — and the empty directory left
+    behind read as an empty source. Now a share is advertised only once proven live, and a
+    share that did not come up says so with its reason.
+    """
+    bound = getattr(ctx.routine, "machines", None)
+    if not bound:
+        return ""
+    catalog = ctx.server.machines
+    rows = []
+    for name in bound:
+        mac = catalog.get(name)
+        if mac is None:
+            rows.append(f"- {name} — (not in the instance catalog; ask the user to add it)")
+            continue
+        desc = mac.description or f"{mac.user}@{mac.host}"
+        tags = f" [{', '.join(mac.tags)}]" if mac.tags else ""
+        if name in ctx.mounted_shares:
+            share = (f" · files mounted at mnt/{name}/ (read/write remote files there with "
+                     "normal file utils)")
+        elif name in ctx.unavailable_shares:
+            share = (f" · SHARE NOT MOUNTED this run ({ctx.unavailable_shares[name]}) — there "
+                     f"is no mnt/{name}/ directory; move files with the remote machine's own "
+                     "transfer capability instead, and do not treat any local path as its "
+                     "filesystem")
+        else:
+            share = ""
+        rows.append(f"- {name} — {desc}{tags}{share}")
+    return ("Remote machines this routine is bound to (run commands with the `remote` util — "
+            "`remote list` for readiness; a mounted share means the filesystem is already "
+            "local):\n" + "\n".join(rows))
+
+
 def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) -> str:
     """What this run can ACTUALLY do, stated up front: model + context window, the action
     kinds usable this run (workflow tools ∩ grants), the held permissions with their
@@ -267,26 +306,8 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         if notes:
             parts.append(notes)
     parts.extend(_secret_notes(ctx))
-    bound = getattr(ctx.routine, "machines", None)
-    if bound:
-        # Bound remote machines are a resource the run can act on (via the `remote` util);
-        # naming them here saves a discovery turn. Non-secret metadata only — readiness
-        # (key/host-key set) is reported live by `remote list`.
-        catalog = ctx.server.machines
-        rows = []
-        for name in bound:
-            mac = catalog.get(name)
-            if mac is None:
-                rows.append(f"- {name} — (not in the instance catalog; ask the user to add it)")
-                continue
-            desc = mac.description or f"{mac.user}@{mac.host}"
-            tags = f" [{', '.join(mac.tags)}]" if mac.tags else ""
-            share = (f" · files mounted at mnt/{name}/ (read/write remote files there with "
-                     "normal file utils)") if mac.share else ""
-            rows.append(f"- {name} — {desc}{tags}{share}")
-        parts.append("Remote machines this routine is bound to (run commands with the `remote` "
-                     "util — `remote list` for readiness; a mounted share means the filesystem "
-                     "is already local):\n" + "\n".join(rows))
+    if machines := _machine_notes(ctx):
+        parts.append(machines)
     if {"spawn", "subtask", "detach"} & set(kinds):
         try:
             from ..workflows.library import list_workflows

@@ -145,6 +145,12 @@ class RunContext:
     # lazily there) and inherited by children like every resource; empty for ungrouped
     # routines and conversations.
     group_store_roots: list = field(default_factory=list)
+    # R514: which bound machine SHARES this run actually has under mnt/<name>/, proven live
+    # at provisioning (machines.mount_routine_shares), and why each missing one is missing.
+    # The CAPABILITIES block reads these so the run is told the truth about its mounts — a
+    # share advertised from config alone let a run read an empty dir as an empty source.
+    mounted_shares: set[str] = field(default_factory=set)
+    unavailable_shares: dict[str, str] = field(default_factory=dict)
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
     # Spend recorded by EARLIER legs of this run (set on resume from the transcript).
     # Budgets deliberately ignore it — a resume gets a fresh window — but reporting must

@@ -140,7 +140,11 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     # this is the filesystem half). Best-effort; unmounted in the finally on EVERY exit path.
     from .. import machines as machines_mod
 
-    mounts = machines_mod.mount_routine_shares(cfg, server)
+    mounts, unavailable = machines_mod.mount_routine_shares(cfg, server)
+    # The run is told what it actually HAS (R514): a share that did not come up is named as
+    # unavailable in the prompt rather than left to read as an empty directory.
+    ctx.mounted_shares = {m.name for m in mounts}
+    ctx.unavailable_shares = unavailable
     try:
         status = EngineLoop(ctx, body, instruction,
                             allowed_tools=allowed_tools, resume=bool(resume_from)).run()
