@@ -19,6 +19,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.244.0] — 2026-08-27
+
+### Changed
+- **Every source file is under the ~350-line budget** (F393). 26 were over; 0 are now, across
+  222 files. Split by RESPONSIBILITY, never by line count — which is what the finding asked for,
+  and the reason `engine/actions.py`'s flat schema and `engine/observations.py`'s per-kind
+  wording survived intact rather than being chopped to hit a number.
+  Twenty-two new modules, each named for the one job it does. The ones worth knowing about:
+  `secretgate` / `authoring` (out of `interact`), `utils_header` / `utils_run` (out of
+  `utils_lib`), `grantpolicy` / `policyload` (out of `grants`), `window` / `degrade` (out of
+  `completion`), `switches` (out of `control`), `machine_mounts` (out of `machines`),
+  `exec_env` (out of `executor`), `runner_reap` / `runner_state` (out of `daemon/runner`), and
+  `actionroute` / `finishgate` / `loopsetup` / `loopnudge` (out of `engine/loop`).
+  - **Six import cycles surfaced**, five created by the splits. Every one was broken by MOVING
+    what the far side needed to the module that actually uses it — never by deferring an import
+    into a function, which hides a cycle rather than removing it. Twice that meant extracting a
+    leaf both sides depend on (`runner_state`, `loopconst`).
+  - `EngineLoop` now **declares its 37 fields**. Lifting construction out cost the one place
+    that said what an instance holds, and mypy said so immediately; declaring them is better
+    than the original, where the shape was implied by the order of 139 lines of assignment.
+  - Callers were repointed rather than re-exported. A compatibility shim would have hidden where
+    things live, which is the opposite of the point.
+
+### Fixed
+- F393 itself said "seven files over budget". It was 26 of 179 — the original count came from
+  reading only the top of a sorted list. Corrected on the instance, along with an honest note
+  that the 0.234–0.243 work ADDED to the backlog before clearing it: `machines.py` and
+  `control.py` crossed the budget as a direct result of R514 and F337/F338.
+
 ## [0.243.0] — 2026-08-27
 
 ### Added
