@@ -29,6 +29,7 @@ from .control import (
     _ABORT,
     RunAborted,
     announce_finished_subruns,
+    apply_config_change,
     apply_deliberation_switch,
     apply_model_switch,
     apply_rule_additions,
@@ -162,6 +163,7 @@ class EngineLoop:
         self._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
         self._last_deliberation_ts = ""   # edge-trigger for mid-run deliberation switches
         self._last_rules_ts = ""    # edge-trigger for user-bound general rules
+        self._last_config_ts = ""   # edge-trigger for a live config PATCH (F337)
         # A signal already applied by an earlier leg must not re-fire on this one —
         # the run's applied ledger (engine-owned) seeds the edge-triggers.
         from .control import load_applied_baselines
@@ -272,6 +274,7 @@ class EngineLoop:
                 apply_model_switch(self)
                 apply_deliberation_switch(self)
                 apply_rule_additions(self)
+                apply_config_change(self)
                 drain_injections(self)
                 announce_finished_subruns(self)
                 retries_before = ctx.schema_retries

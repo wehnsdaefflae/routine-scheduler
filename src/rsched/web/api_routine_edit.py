@@ -24,6 +24,7 @@ from .routines_common import (
     active_run_dir,
     guard_not_active,
     guard_template,
+    signal_config_change,
 )
 
 router = APIRouter(tags=["routines"])
@@ -265,7 +266,9 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
         if not updates:
             _git_commit(info.cfg.dir, "tuning.yaml edit via web (deliberation)")
             _state(request).scheduler.rescan()
-            return {"ok": True, "updated": ["deliberation"]}
+            live = signal_config_change(info, ["deliberation"], {"deliberation": level})
+            return {"ok": True, "updated": ["deliberation"],
+                    **({"told_live_run": True} if live else {})}
     # Validate per-routine models: known kinds, each a catalog model NAME. Models REPLACE
     # wholesale (not merge) so blanking a kind clears it back to the system_model fallback.
     if "models" in updates:
@@ -322,7 +325,11 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
     _git_commit(info.cfg.dir, f"routine.yaml edit via web ({', '.join(requested)})")
     _state(request).scheduler.rescan()
-    return {"ok": True, "updated": requested}
+    # F337: a run already in flight booted its policy, schema and prompt from the OLD config.
+    # Tell it what changed and which half of it reaches it now — the drift this closes is that
+    # some fields silently did and most silently did not.
+    live = signal_config_change(info, requested, patch.model_dump(exclude_none=True))
+    return {"ok": True, "updated": requested, **({"told_live_run": True} if live else {})}
 
 
 @router.post("/routines/{slug}/run")

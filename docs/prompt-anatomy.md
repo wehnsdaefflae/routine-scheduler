@@ -98,7 +98,17 @@ decides how much of its thinking lands ON PAPER:
 
 A mid-run switch (`POST /api/runs/{id}/deliberation` → control.json `set_deliberation`)
 cannot rewrite the composed prompt (append-only caching contract), so the engine applies it
-at the turn boundary as an ENGINE NOTE carrying the new contract sentence. Children inherit
+at the turn boundary as an ENGINE NOTE carrying the new contract sentence.
+
+The same seam carries **every** config change made while a run is live (F337): a PATCH to a
+routine or conversation writes control.json `config_change`, and
+`engine/control.apply_config_change` appends ONE `ENGINE NOTE: the user changed this routine's
+configuration while you are running.` listing each changed field under
+`IN EFFECT NOW, from this turn on:` — the fields `configflow` classes LIVE (budgets,
+deliberation, grants), which the engine adopts right there — or under
+`Saved, but it takes effect at your NEXT RUN`, each with the reason.
+Naming the fields that WAIT is as load-bearing as naming the ones that land: the gap F337 records
+is that a run was never told which was which. Children inherit
 the parent's live level. The durable value lives in **`tuning.yaml`** — the routine's
 machine-tunable behavior parameters, classed with the RECIPE (the routine-improver may edit
 it under its fs_write_root, like main.md/stages/); `routine.yaml` stays the user's

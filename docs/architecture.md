@@ -897,6 +897,26 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
     exactly why it may be approval-free. Membership is read LIVE, so a routine removed from a
     group loses the channel in both directions at once. Delivery never starts a run: a sibling
     picks its notes up when it next runs, which for a group chain is the same pass or the next.
+- **Config changed while a run is LIVE** (`rsched/configflow.py`, F337). A run reads
+  `routine.yaml` at boot and composes its prompt once, so a mid-run config edit lands on disk with
+  the run unaware — except for the ad-hoc live paths the system had grown (an access-request
+  decision bridges into the live policy via `engine/requests.py`; the `/rules` picker pushes an
+  added rule through `control.json`). So "I changed it while it was running" meant two different
+  things depending on the field, and the run was never told either way. The fix is not more live
+  paths: it is ONE classification table, `configflow.CLASSIFICATION`, mapping every `RoutinePatch`
+  and `ConversationPatch` field to **LIVE** (the engine adopts it at a turn boundary — `budgets`,
+  `deliberation`, `grants`) or **NEXT_RUN**, each with the reason the operator is shown.
+  `tests/test_configflow.py` fails on a patch field the table does not declare, so a new config
+  field cannot be added without deciding which half it is in — that guard IS the anti-drift
+  mechanism. Both PATCH handlers call `routines_common.signal_config_change`, which writes a
+  `config_change` signal into the live run's `control.json` (the seam that already exists for
+  reaching a running run); `engine/control.apply_config_change` adopts the live half at the next
+  turn boundary and appends ONE `ENGINE NOTE` naming EVERY changed field and which half it is in,
+  with a `user_injection` transcript event beside it — so the change is in the conversation the
+  model can see, never a second invisible mutation path. Edge-triggered through the same
+  applied-ts ledger as the model/deliberation/rule switches (a resumed leg never re-fires a stale
+  signal), and per-field best-effort: a value the run cannot use is logged and left for the next
+  run rather than ending a live run, and the note still says the field changed.
 - **Event triggers fire through the same seam** (docs/triggers.md): the webhook route
   (`web/api_hooks.py`, POST `/api/hooks/<slug>/<token>` — the ONE unauthenticated API route:
   constant-time token compare, generic 404, 64 KiB cap, rate limit + spool cap, rejections logged,

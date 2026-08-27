@@ -224,6 +224,12 @@ by a test, by the engine, or by a past incident.
   media fallback may rewrite it, each invalidating the provider cache by design.
 - **A run never writes its own config.** `routine.yaml` is never writable by any run — the
   block is by FILENAME anywhere a run can write, external repos included.
+- **A config field must declare whether it reaches a LIVE run.** `configflow.CLASSIFICATION`
+  (F337) maps every `RoutinePatch`/`ConversationPatch` field to LIVE (adopted at a turn boundary
+  — budgets, deliberation, grants) or NEXT_RUN, with the reason the operator is shown;
+  `tests/test_configflow.py` fails on an undeclared field. Both PATCH handlers signal a live run
+  through `control.json` and the engine appends ONE ENGINE NOTE naming EVERY changed field and
+  which half it is in — a change that silently does or does not reach a run is the bug.
 
 ## Standards
 

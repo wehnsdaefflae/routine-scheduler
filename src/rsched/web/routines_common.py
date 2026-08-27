@@ -13,7 +13,7 @@ from fastapi import HTTPException, Request
 from .. import registry
 from ..config import RoutineConfig
 from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
-from ..ids import parse_run_id
+from ..ids import now_iso, parse_run_id
 
 
 def guard_template(cfg: RoutineConfig, refusal: str) -> None:
@@ -140,3 +140,23 @@ def active_run_dir(info: registry.RoutineInfo) -> Path | None:
         return None
     d = info.cfg.dir / "runs" / ts
     return d if d.is_dir() else None
+
+
+def signal_config_change(info, fields: list[str], values: dict) -> bool:
+    """Tell a LIVE run that its config just changed (F337). No-op when nothing is running.
+
+    The delivery seam is the one that already exists for reaching a running run — a signal in
+    control.json, applied at the next turn boundary by `engine/control.apply_config_change`,
+    which adopts the live-classified fields and appends an ENGINE NOTE naming every changed
+    field and which half it is in. Never a second invisible mutation path: whatever happens,
+    the run is TOLD, which is what F337 records as missing.
+    """
+    run_dir = active_run_dir(info)
+    if run_dir is None or not fields:
+        return False
+    from .api_runs import merge_control
+    merge_control(run_dir, {"config_change": {"fields": list(fields),
+                                              "values": {k: v for k, v in values.items()
+                                                         if k in fields},
+                                              "ts": now_iso()}})
+    return True

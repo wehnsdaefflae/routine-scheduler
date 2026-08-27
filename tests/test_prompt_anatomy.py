@@ -114,6 +114,10 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # the group shared store (D67): a grouped run's harness contract names the
         # injected root and its collision contract
         "Group shared store (read+write",
+        # F337: the one wording a live run gets for a config change — naming the fields that
+        # WAIT is as load-bearing as naming the ones that land
+        "IN EFFECT NOW, from this turn on",
+        "Saved, but it takes effect at your NEXT RUN",
         # F335: the light channel between teammates, named beside the store root it lives in
         "NOTES FROM YOUR GROUP",
         # NOTE: the F292 two-phase group fire ("GROUP FIRE PHASE: ingest/outbound") was pinned

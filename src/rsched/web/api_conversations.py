@@ -36,7 +36,12 @@ from .api_routine_edit import (
     resolve_permission_layers,
 )
 from .model_fit import model_window_problem, window_meta
-from .routines_common import active_run_dir, guard_not_active, permission_layers_detail
+from .routines_common import (
+    active_run_dir,
+    guard_not_active,
+    permission_layers_detail,
+    signal_config_change,
+)
 
 router = APIRouter(tags=["conversations"])
 
@@ -528,10 +533,12 @@ class ConversationPatch(BaseModel):
 
 @router.patch("/conversations/{slug}")
 def patch_conversation(request: Request, slug: str, patch: ConversationPatch) -> dict:
-    """Unlike routine config edits (409 while a run is active), conversation edits apply
-    at the NEXT reply: the engine reads routine.yaml only at run boot, each reply is its
-    own boot, and a conversation dir has no git commit to race — so blocking on a live
-    reply would only add friction.
+    """Unlike routine config edits (409 while a run is active), conversation edits are never
+    blocked: the engine reads routine.yaml only at run boot, each reply is its own boot, and a
+    conversation dir has no git commit to race — so refusing during a live reply would only add
+    friction. What a live reply DOES with the change is `configflow`'s one classification (F337):
+    the live-classified fields are adopted at its next turn boundary, and it is told about the
+    rest as taking effect at the next reply.
     """
     info = conversation_info(request, slug)
     updates = patch.model_dump(exclude_none=True)
@@ -597,7 +604,12 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
         write_tuning(info.cfg.dir, {"deliberation": updates["deliberation"]})
     if set(updates) - {"deliberation"}:   # a tuning-only patch never rewrites routine.yaml
         atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
-    return {"ok": True, "updated": list(updates)}
+    # F337: a reply already in flight booted from the OLD config. Tell it what changed and
+    # which half reaches it now — the same one classification the routine page's PATCH uses,
+    # so "I changed it mid-reply" means the same thing in both homes.
+    live = signal_config_change(info, list(updates), updates)
+    return {"ok": True, "updated": list(updates),
+            **({"told_live_run": True} if live else {})}
 
 
 @router.post("/conversations/{slug}/rules")

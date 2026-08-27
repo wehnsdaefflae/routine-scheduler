@@ -19,6 +19,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.241.0] — 2026-08-27
+
+### Added
+- **A config change made while a run is live becomes an in-flow message** (F337). A run reads
+  `routine.yaml` at boot and composes its prompt once, so a mid-run edit landed on disk with the
+  run unaware of it — except for the ad-hoc live paths the system had grown (an access-request
+  decision bridges into the live policy; the `/rules` picker pushes an added rule through
+  `control.json`). "I changed it while it was running" therefore meant two different things
+  depending on which field was touched, and the run was never told either way.
+  - The fix is **not** more live paths. It is ONE classification table, `configflow.CLASSIFICATION`,
+    mapping every `RoutinePatch` and `ConversationPatch` field to **LIVE** — adopted at a turn
+    boundary: `budgets`, `deliberation`, `grants` — or **NEXT_RUN**, each with the reason the
+    operator is shown.
+  - `tests/test_configflow.py` **fails on a patch field the table does not declare.** That guard
+    is the anti-drift mechanism the finding asks for: a new config field cannot be added without
+    deciding which half it is in, so the silent divergence cannot quietly come back. (It caught a
+    lazy `"as fs_read_roots"` cross-reference during this very build.)
+  - Both PATCH handlers call `routines_common.signal_config_change`, writing a `config_change`
+    signal into the live run's `control.json` — the seam that already exists for reaching a
+    running run, not a second one. `engine/control.apply_config_change` adopts the live half at
+    the next turn boundary and appends ONE `ENGINE NOTE` naming EVERY changed field and which
+    half it is in, with a `user_injection` transcript event beside it. Naming the fields that
+    WAIT is as load-bearing as naming the ones that land.
+  - Edge-triggered through the same applied-ts ledger as the model/deliberation/rule switches, so
+    a resumed leg never re-fires a stale signal; per-field best-effort, so a value the run cannot
+    use is logged and left for the next run rather than ending a live run — and the note still
+    says the field changed. 20 tests. The F337 entry is deleted from `docs/designs.md`, which now
+    holds only F363.
+
 ## [0.240.0] — 2026-08-27
 
 ### Added
