@@ -7,8 +7,9 @@ from types import SimpleNamespace
 
 from rsched.config import ServerConfig, load_routine
 from rsched.engine import notes
+from rsched.engine.budgets_config import Budgets
 from rsched.engine.composer import state_digest
-from rsched.engine.run_context import Budgets, RunContext
+from rsched.engine.run_context import RunContext
 from rsched.engine.transcript import Transcript
 
 

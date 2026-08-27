@@ -8,10 +8,11 @@ from types import SimpleNamespace
 
 from rsched.config import ServerConfig, load_routine
 from rsched.engine import outputs
+from rsched.engine.budgets_config import Budgets
 from rsched.engine.composer import state_digest
 from rsched.engine.executor import dispatch
 from rsched.engine.observations import OBS_CAP_CHARS, format_observation, truncate
-from rsched.engine.run_context import Budgets, RunContext
+from rsched.engine.run_context import RunContext
 from rsched.engine.transcript import Transcript
 from rsched.grantpolicy import GrantPolicy
 

@@ -414,7 +414,8 @@ def test_ungrouped_run_context_has_no_store_root(tmp_path):
     from types import SimpleNamespace
 
     from rsched.config import ServerConfig
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.run_context import RunContext
     from rsched.engine.transcript import Transcript
 
     routine = SimpleNamespace(slug="solo", dir=tmp_path / "solo",

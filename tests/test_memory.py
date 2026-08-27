@@ -2,8 +2,9 @@
 
 from rsched.config import ServerConfig, load_routine
 from rsched.engine import executor
+from rsched.engine.budgets_config import Budgets
 from rsched.engine.observations import format_observation
-from rsched.engine.run_context import Budgets, RunContext
+from rsched.engine.run_context import RunContext
 from rsched.engine.transcript import Transcript
 
 

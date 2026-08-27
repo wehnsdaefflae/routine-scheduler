@@ -588,7 +588,8 @@ def test_deferred_decision_applies_at_next_boot(make_routine, scripted):
 
 def test_run_context_effective_roots_carry_fs_grants(tmp_path):
     from rsched.config import ServerConfig
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.run_context import RunContext
     from rsched.engine.transcript import Transcript
 
     routine = SimpleNamespace(slug="r", dir=tmp_path / "r",
@@ -625,8 +626,9 @@ def test_with_overlay_folds_capability_entities():
 
 def test_capabilities_digest_teaches_once_grants_and_tombstones(make_routine, tmp_path):
     from rsched.config import ServerConfig, load_routine
+    from rsched.engine.budgets_config import Budgets
     from rsched.engine.capabilities import capabilities_digest
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.run_context import RunContext
     from rsched.engine.transcript import Transcript
 
     d = make_routine(slug="digestr")

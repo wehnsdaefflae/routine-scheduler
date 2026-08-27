@@ -180,8 +180,9 @@ def test_drain_messages_carries_attachments(tmp_path):
 
 def _loop(make_routine, tmp_path):
     from rsched.config import ServerConfig, load_routine
+    from rsched.engine.budgets_config import Budgets
     from rsched.engine.loop import EngineLoop
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.run_context import RunContext
     from rsched.engine.transcript import Transcript
     d = make_routine(slug="mm")
     server = ServerConfig()

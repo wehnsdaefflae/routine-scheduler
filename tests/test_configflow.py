@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 
 from rsched import configflow
-from rsched.web.api_conversations import ConversationPatch
+from rsched.web.api_conversation_config import ConversationPatch
 from rsched.web.api_routine_patch import RoutinePatch
 
 
@@ -74,7 +74,8 @@ def test_adoptable_is_exactly_the_live_half():
 
 def _loop(make_routine, tmp_path):
     from rsched.config import ServerConfig, load_routine
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.run_context import RunContext
     from rsched.engine.transcript import Transcript
 
     d = make_routine(slug="cfgr")

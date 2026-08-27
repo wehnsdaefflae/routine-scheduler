@@ -13,9 +13,10 @@ import pytest
 
 from rsched.config import ModelRef, load_routine
 from rsched.endpoints.base import Completion, EndpointError
+from rsched.engine.budgets_config import Budgets
 from rsched.engine.completion import next_action
 from rsched.engine.loop import EngineLoop
-from rsched.engine.run_context import Budgets, RunContext
+from rsched.engine.run_context import RunContext
 from rsched.engine.transcript import Transcript, read_events
 from test_loop import TS, _server
 

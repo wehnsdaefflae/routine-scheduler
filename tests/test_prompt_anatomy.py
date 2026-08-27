@@ -8,8 +8,9 @@ from types import SimpleNamespace
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.actions import KIND_EXAMPLES
 from rsched.engine.actionschema import KINDS
+from rsched.engine.budgets_config import Budgets
 from rsched.engine.composer import build_system_prompt, kickoff_message, state_digest
-from rsched.engine.run_context import Budgets, RunContext
+from rsched.engine.run_context import RunContext
 from rsched.engine.transcript import Transcript
 from rsched.grantpolicy import GrantPolicy
 from rsched.schema_guard import retry_message

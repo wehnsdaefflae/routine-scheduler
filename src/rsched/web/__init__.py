@@ -3,7 +3,7 @@
 Routers are grouped by surface: routines, conversations, background tasks, runs,
 schedule, stats, summary, questions (decisions), audit, traces, settings (incl. oauth +
 machines), workflows/library, playbooks, LLM tasks, hooks (the one
-unauthenticated ingest), search, and the fs picker — see app._include_api_routers for
+unauthenticated ingest), search, and the fs picker — see appwiring._include_api_routers for
 the authoritative list.
 
 Ownership: the engine subprocess owns everything under a live run (run dirs,

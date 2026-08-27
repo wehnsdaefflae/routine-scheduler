@@ -76,8 +76,9 @@ def test_apply_model_switch(make_routine):
     """The engine applies a mid-run model switch from control.json, edge-triggered on its ts, and
     ignores an unknown endpoint. for_model re-resolves every turn, so the next turn uses it."""
     from rsched.config import ModelConfig, load_routine
+    from rsched.engine.budgets_config import Budgets
     from rsched.engine.loop import EngineLoop
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.run_context import RunContext
     from rsched.engine.switches import apply_model_switch
     from rsched.engine.transcript import Transcript
 
@@ -1947,7 +1948,8 @@ def test_second_shed_disables_provider_schema_for_the_run(make_routine, scripted
 def test_unlimited_token_budget_never_trips():
     """max_total_tokens = -1 (the default) disables the token ceiling: no violation, no 85%
     warning, no compaction pressure — and a child inherits unlimited, not garbage halves."""
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.run_context import RunContext
 
     ctx = RunContext.__new__(RunContext)   # only budget fields matter here
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=100, max_total_tokens=-1,
@@ -1975,7 +1977,8 @@ def test_unlimited_time_and_cost_budgets_honor_minus_one():
     finite time/cost caps still trip exactly as before."""
     import time as _t
 
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.run_context import RunContext
 
     ctx = RunContext.__new__(RunContext)
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=-1, max_total_tokens=-1,
@@ -2012,7 +2015,8 @@ def test_conversation_total_turn_budget_caps_the_whole_conversation():
     conversation's whole life), independent of the per-reply max_turns window."""
     import time as _t
 
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.run_context import RunContext
 
     ctx = RunContext.__new__(RunContext)
     ctx.usage = {"in": 0, "out": 0}
@@ -2050,7 +2054,8 @@ def test_unlimited_turn_budget_honors_minus_one():
     finite max_turns still trips exactly as before."""
     import time as _t
 
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.run_context import RunContext
 
     ctx = RunContext.__new__(RunContext)
     ctx.budgets = Budgets(max_turns=-1, max_wall_clock_min=-1, max_total_tokens=-1,
@@ -2074,7 +2079,8 @@ def test_unlimited_turn_budget_honors_minus_one():
 def test_usage_accounting_cache_keys_and_resume_base():
     """add_usage folds cache traffic in (kept out of "in" so token budgets keep meaning);
     usage_total() adds earlier legs' spend — budgets stay on the fresh window."""
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.run_context import RunContext
 
     ctx = RunContext.__new__(RunContext)
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=100, max_total_tokens=1000,
@@ -2197,9 +2203,10 @@ def test_compaction_antithrash(make_routine, monkeypatch):
     costs a full-prompt LLM call (seen live: 4 compactions/run, the last saving 5k chars)."""
     import rsched.engine.window as window_mod
     from rsched.config import load_routine
+    from rsched.engine.budgets_config import Budgets
     from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
     from rsched.engine.loop import EngineLoop
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.run_context import RunContext
     from rsched.engine.transcript import Transcript
     from rsched.engine.window import compact_if_needed
 
@@ -2243,9 +2250,10 @@ def test_failed_archival_degrades_without_error_card(make_routine, monkeypatch):
     event may be emitted for it."""
     from rsched.config import load_routine
     from rsched.engine import window as window_mod
+    from rsched.engine.budgets_config import Budgets
     from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
     from rsched.engine.loop import EngineLoop
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.run_context import RunContext
     from rsched.engine.transcript import Transcript, read_events
     from rsched.engine.window import compact_if_needed
 
@@ -2578,9 +2586,10 @@ def test_revise_marker_unlocks_recipe_for_the_leg(make_routine):
     leg (one-shot, cleared on read); an ordinary run keeps its recipe sealed, and routine.yaml
     stays sealed even under revise (config is never recipe)."""
     from rsched.config import load_routine
+    from rsched.engine.budgets_config import Budgets
     from rsched.engine.loop import EngineLoop
     from rsched.engine.revise import REVISE_MARKER, write_revise_marker
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.run_context import RunContext
     from rsched.engine.transcript import Transcript
 
     d = make_routine(slug="rv")
@@ -2676,8 +2685,9 @@ def test_write_util_path_name_rejected_in_schema_cycle(make_routine, scripted):
 def test_build_child_carries_tools_allowlist(make_routine, monkeypatch):
     """A child materialized from a pattern with a `tools:` allowlist gets that allowlist on
     its EngineLoop — the restriction must not be dropped between materialize and the loop."""
+    from rsched.engine.budgets_config import Budgets
     from rsched.engine.childrun import build_child
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.run_context import RunContext
     from rsched.engine.transcript import Transcript
     from rsched.workflows import adapt
 

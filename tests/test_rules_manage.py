@@ -180,7 +180,8 @@ def test_user_bound_rule_reaches_a_live_run_once(make_routine, tmp_path, lib):
     the LIBRARY at the next turn boundary, exactly once per signal.
     """
     from rsched.config import ServerConfig, load_routine
-    from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.run_context import RunContext
     from rsched.engine.switches import apply_rule_additions
     from rsched.engine.transcript import Transcript, read_events
     from rsched.paths import atomic_write_json
