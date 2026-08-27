@@ -17,7 +17,7 @@ The envelope is deliberately NARROWER than a util call's:
   credential env var the script reads; only DECLARED **and granted** names are injected
   (`NAME?` marks an optional one, withheld rather than prompted when not granted), and a
   declared, present, still-undecided secret files the same blocking exposure ask a util
-  call would (interact.gate_script_secrets). Everything else in the store is scrubbed.
+  call would (engine/secretgate.gate_script_secrets). Everything else in the store is scrubbed.
 - NO UTIL OR MODEL ACCESS: `gu` is not on PATH and there is no LLM channel — a step that
   needs a util's capability or a judgment call belongs in the recipe.
 - ASKS: mid-run escalation (`ask_user`, blocking approvals) is the recipe's channel — a
@@ -38,7 +38,7 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from . import sandbox, utils_lib
+from . import sandbox, utils_header, utils_run
 from .paths import atomic_write
 
 SCRIPT_TIMEOUT_S = 300
@@ -85,7 +85,7 @@ def list_scripts(routine_dir: Path) -> list[dict]:
     out: list[dict] = []
     for p in sorted(d.glob("*.py")) if d.is_dir() else []:
         try:
-            header = utils_lib.parse_header(p.read_text(encoding="utf-8"))
+            header = utils_header.parse_header(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):   # a broken script must not hide its siblings
             header = {"summary": "", "usage": ""}
         out.append({"name": p.stem, "summary": header.get("summary", ""),
@@ -98,7 +98,7 @@ def needs(routine_dir: Path, name: str) -> tuple[set[str], bool, set[str]]:
     OWN header — no transitive graph: a script has no `calls:` siblings.
     """
     try:
-        header = utils_lib.parse_header(
+        header = utils_header.parse_header(
             script_path(routine_dir, name).read_text(encoding="utf-8"))
     except OSError:
         return set(), False, set()
@@ -205,7 +205,7 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
                timeout: int = SCRIPT_TIMEOUT_S) -> tuple[int, str, str]:
     """Controlled runner: the routine's own venv python on the script, ONLY the caller's
     `env_secrets` injected (the caller filters to declared+granted names; every other
-    store key is scrubbed — `utils_lib.scoped_env`), the shared jail (`sandbox.wrap` —
+    store key is scrubbed — `utils_run.scoped_env`), the shared jail (`sandbox.wrap` —
     run fs roots), working directory = the routine dir so relative paths resolve like
     read_file/write_file. `gu` is deliberately NOT on PATH. Returns (exit, out, err).
     """
@@ -217,7 +217,7 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
                              libraries_home=libraries_home):
         return 2, "", problem
     env_secrets = dict(env_secrets or {})
-    env = utils_lib.scoped_env(set(env_secrets), env_secrets)
+    env = utils_run.scoped_env(set(env_secrets), env_secrets)
     # scoped_env serves util calls too, where the util library handle must survive —
     # a SCRIPT is pure code, not a tool-user, so no such handle may reach the child.
     env.pop("GLOBAL_UTILS_HOME", None)

@@ -443,7 +443,7 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
     (schema first, then per-kind/permission checks). Raises on unparseable text —
     callers decide whether that is a retry or a silent fallback.
     """
-    from .interact import recreate_denial  # function-level: interact pulls in the ask stack
+    from .authoring import recreate_denial  # function-level: authoring pulls in the ask stack
     from .requests import request_denial
 
     candidate = (completion.parsed if completion.parsed is not None

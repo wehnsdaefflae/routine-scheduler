@@ -461,13 +461,14 @@ def test_write_util_header_gate_blocks_bad_docs(make_routine, scripted, monkeypa
 
 def test_write_util_gating_and_commit(make_routine, scripted, monkeypatch):
     import rsched.utils_lib as ul
+    import rsched.utils_run as ur
 
     seen = {}
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
     monkeypatch.setattr(ul, "exists", lambda home, name: False)  # always "creating"
     monkeypatch.setattr(ul, "write_util_file",
                         lambda home, name, content: seen.update(name=name, content=content))
-    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (True, "selftest: ok"))
+    monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (True, "selftest: ok"))
     monkeypatch.setattr(ul, "git_commit",
                         lambda home, msg, **kw: seen.update(commit=msg) or True)
     _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
@@ -483,12 +484,13 @@ def test_write_util_gating_and_commit(make_routine, scripted, monkeypatch):
 
 def test_write_util_selftest_failure_not_committed(make_routine, scripted, monkeypatch):
     import rsched.utils_lib as ul
+    import rsched.utils_run as ur
 
     committed = []
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
     monkeypatch.setattr(ul, "exists", lambda home, name: False)
     monkeypatch.setattr(ul, "write_util_file", lambda home, name, content: None)
-    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (False, "AssertionError: boom"))
+    monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (False, "AssertionError: boom"))
     monkeypatch.setattr(ul, "git_commit", lambda home, msg, **kw: committed.append(msg) or True)
     _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "Create it.", "kind": "write_util", "name": "bad", "content": util_src("bad")},
@@ -504,13 +506,14 @@ def test_write_util_selftest_failure_output_keeps_the_tail(make_routine, scripte
     """R93: a LONG selftest log is truncated head+tail, never head-sliced — the traceback's
     END (the AssertionError that explains the failure) must reach the observation."""
     import rsched.utils_lib as ul
+    import rsched.utils_run as ur
 
     long_output = ("exit 1\nstdout:\n" + "filler line\n" * 400
                    + "stderr:\nTraceback (most recent call last):\nAssertionError: THE-CAUSE")
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
     monkeypatch.setattr(ul, "exists", lambda home, name: False)
     monkeypatch.setattr(ul, "write_util_file", lambda home, name, content: None)
-    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (False, long_output))
+    monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (False, long_output))
     _d, _ep, _status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "Create it.", "kind": "write_util", "name": "longbad",
          "content": util_src("longbad")},
@@ -522,6 +525,7 @@ def test_write_util_selftest_failure_output_keeps_the_tail(make_routine, scripte
     assert out.endswith("AssertionError: THE-CAUSE")      # …but the tail survived
     assert "truncated" in out                             # and says so (head+tail marker)
     import rsched.utils_lib as ul
+    import rsched.utils_run as ur
 
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
     monkeypatch.setattr(ul, "exists", lambda home, name: False)
@@ -547,15 +551,15 @@ def test_write_util_selftest_failure_output_keeps_the_tail(make_routine, scripte
 def test_is_approval_accepts_natural_affirmatives():
     """F161: approval answers arrive as free text over Discord — 'Do it. The mail is …'
     was recorded as a DECLINE because only a narrow word list counted as approval."""
-    from rsched.engine.interact import _is_approval
+    from rsched.engine.interact import is_approval
 
-    assert _is_approval("Do it. The mail is x@example.org")
-    assert _is_approval("ja, mach das")
-    assert _is_approval("Sure — go ahead")
-    assert _is_approval("Approve")
-    assert not _is_approval("Bin hier")          # a presence ping is NOT an approval
-    assert not _is_approval("decline")
-    assert not _is_approval("")
+    assert is_approval("Do it. The mail is x@example.org")
+    assert is_approval("ja, mach das")
+    assert is_approval("Sure — go ahead")
+    assert is_approval("Approve")
+    assert not is_approval("Bin hier")          # a presence ping is NOT an approval
+    assert not is_approval("decline")
+    assert not is_approval("")
 
 
 def test_approval_settles_only_on_clear_words():
@@ -599,11 +603,12 @@ def test_write_util_autonomous_revisions(make_routine, scripted, monkeypatch):
     """confirm: revisions-only — revising an existing util skips the approval round
     (the selftest still gates the commit); the grants unit tests cover create-still-asks."""
     import rsched.utils_lib as ul
+    import rsched.utils_run as ur
 
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
     monkeypatch.setattr(ul, "exists", lambda home, name: True)          # a revision
     monkeypatch.setattr(ul, "write_util_file", lambda home, name, content: None)
-    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (True, "selftest: ok"))
+    monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (True, "selftest: ok"))
     monkeypatch.setattr(ul, "git_commit", lambda home, msg, **kw: True)
     d = make_routine(slug="wuauto")
     scripted([
@@ -2607,6 +2612,7 @@ def test_write_util_selftest_failure_rolls_back_creation(make_routine, scripted,
     """A failed selftest must not leave the broken script live in the library: a NEW util's
     write is undone (removed), so concurrent `gu` callers never see it."""
     import rsched.utils_lib as ul
+    import rsched.utils_run as ur
 
     calls = []
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
@@ -2614,7 +2620,7 @@ def test_write_util_selftest_failure_rolls_back_creation(make_routine, scripted,
     monkeypatch.setattr(ul, "write_util_file",
                         lambda home, name, content: calls.append(("write", name)))
     monkeypatch.setattr(ul, "remove_util_file", lambda home, name: calls.append(("remove", name)))
-    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (False, "boom"))
+    monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (False, "boom"))
     _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "Create it.", "kind": "write_util", "name": "bad", "content": util_src("bad")},
         finish(status="partial", summary="util did not pass selftest"),
@@ -2629,6 +2635,7 @@ def test_write_util_selftest_failure_rolls_back_creation(make_routine, scripted,
 def test_write_util_selftest_failure_restores_revision(make_routine, scripted, monkeypatch):
     """Revising an existing util: a failed selftest restores the PREVIOUS working text."""
     import rsched.utils_lib as ul
+    import rsched.utils_run as ur
 
     writes = []
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
@@ -2636,7 +2643,7 @@ def test_write_util_selftest_failure_restores_revision(make_routine, scripted, m
     monkeypatch.setattr(ul, "read_util", lambda home, name: "OLD WORKING SOURCE")
     monkeypatch.setattr(ul, "write_util_file",
                         lambda home, name, content: writes.append(content))
-    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (False, "boom"))
+    monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (False, "boom"))
     d = make_routine(slug="wurest")
     scripted([
         {"say": "Fix it.", "kind": "write_util", "name": "adder", "content": util_src("adder")},
@@ -2753,6 +2760,7 @@ def test_write_util_edit_mode_patches_in_place(make_routine, scripted, monkeypat
     """D42-B/F187: an anchor/replacement write_util patches the EXISTING source engine-side
     — no 50KB re-emit — and the synthesized script rides the same selftest+commit gate."""
     import rsched.utils_lib as ul
+    import rsched.utils_run as ur
 
     source = util_src("adder") + "print('old behaviour')\n"
     seen = {}
@@ -2761,7 +2769,7 @@ def test_write_util_edit_mode_patches_in_place(make_routine, scripted, monkeypat
     monkeypatch.setattr(ul, "read_util", lambda home, name: source)
     monkeypatch.setattr(ul, "write_util_file",
                         lambda home, name, content: seen.update(name=name, content=content))
-    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (True, "selftest: ok"))
+    monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (True, "selftest: ok"))
     monkeypatch.setattr(ul, "git_commit",
                         lambda home, msg, **kw: seen.update(commit=msg) or True)
     _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
@@ -2806,6 +2814,7 @@ def test_write_util_edit_mode_needs_an_existing_util(make_routine, scripted, mon
     """Edit mode cannot create — a missing util yields a teaching edit_failed, and the
     ambiguous-anchor escape hatch all: true replaces every occurrence when set."""
     import rsched.utils_lib as ul
+    import rsched.utils_run as ur
 
     source = util_src("adder") + "x = 1\nx = 1\n"
     seen = {}
@@ -2815,7 +2824,7 @@ def test_write_util_edit_mode_needs_an_existing_util(make_routine, scripted, mon
                         lambda home, name: source if name == "adder" else None)
     monkeypatch.setattr(ul, "write_util_file",
                         lambda home, name, content: seen.update(content=content))
-    monkeypatch.setattr(ul, "selftest", lambda home, name, **k: (True, "selftest: ok"))
+    monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (True, "selftest: ok"))
     monkeypatch.setattr(ul, "git_commit", lambda home, msg, **kw: True)
     _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "edit a ghost", "kind": "write_util", "name": "ghost",

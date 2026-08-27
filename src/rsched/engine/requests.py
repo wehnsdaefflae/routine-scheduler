@@ -27,7 +27,7 @@ writes routine.yaml.
 
 from __future__ import annotations
 
-from .. import entities, utils_lib
+from .. import entities, utils_lib, utils_run
 
 DECISIONS = ("allow_now", "allow_once", "allow_forever", "deny_now", "deny_forever")
 
@@ -300,7 +300,7 @@ def _once_match(eid: str, action: dict, ctx) -> bool:  # noqa: PLR0911 — one e
     if cls == "secret":     # spent by the util call the var is actually injected into:
         if kind != "util":  # only utils DECLARING it (calls: tree included) receive it
             return False
-        needed, _net, _opt = utils_lib.util_needs(ctx.server.libraries_home,
+        needed, _net, _opt = utils_run.util_needs(ctx.server.libraries_home,
                                                   str(action.get("name") or ""))
         return name in needed
     if cls in ("fs-read", "fs-write"):

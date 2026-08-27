@@ -11,7 +11,7 @@ import pytest
 
 from conftest import finish
 from rsched import bootstrap, utils_lib
-from rsched.engine.interact import recreate_denial
+from rsched.engine.authoring import recreate_denial
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
 from rsched.paths import atomic_write_json
@@ -180,7 +180,7 @@ def _path_loop(d, server):
 
 def test_write_util_path_outside_roots_declines(make_routine):
     """The path source rides the run's OWN read sandbox — no reach outside the roots."""
-    from rsched.engine.interact import handle_write_util
+    from rsched.engine.authoring import handle_write_util
     from test_loop import _server
 
     d = make_routine(slug="pathsrc")
@@ -195,7 +195,7 @@ def test_write_util_path_outside_roots_declines(make_routine):
 def test_write_util_path_installs_exact_bytes(make_routine):
     """F280 end-to-end: the library copy is byte-identical to the source file, and the
     normal header + selftest gate still ran."""
-    from rsched.engine.interact import handle_write_util
+    from rsched.engine.authoring import handle_write_util
     from test_loop import _server
 
     d = make_routine(slug="pathsrc2")

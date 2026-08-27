@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from rsched import landlock, sandbox
+from rsched import landlock, sandbox, utils_run
 
 CMD = ["uv", "run", "--script", "/x/utils/demo/main.py", "--json"]
 
@@ -96,7 +96,7 @@ def test_prewarm_opens_network_for_build_time_dep_install(tmp_path, monkeypatch)
     monkeypatch.setattr(utils_lib.subprocess, "run", fake_run)
     policy = sandbox.SandboxPolicy(mode="permissive")
     # A prewarm failure must NOT raise — the real run reports the genuine error.
-    utils_lib.prewarm_script_deps("/x/utils/demo/main.py", policy, tmp_path)
+    utils_run.prewarm_script_deps("/x/utils/demo/main.py", policy, tmp_path)
     wrapped = captured["cmd"]
     assert wrapped[-4:] == ["uv", "sync", "--script", "/x/utils/demo/main.py"]
     assert json.loads(wrapped[2])["net"] is True     # network open for the install phase
@@ -190,6 +190,6 @@ def test_strict_refusal_reaches_util_observation(tmp_path, monkeypatch):
     _force_abi(monkeypatch, 0)
     utils_lib.ensure_library(tmp_path)
     utils_lib.write_util_file(tmp_path, "demo", '"""demo — d.\n\nusage: gu demo\n"""\n')
-    code, _out, err = utils_lib.run_util(tmp_path, "demo", [],
+    code, _out, err = utils_run.run_util(tmp_path, "demo", [],
                                          policy=sandbox.SandboxPolicy(mode="strict"))
     assert code == 2 and "strict" in err and "unsandboxed" in err

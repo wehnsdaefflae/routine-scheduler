@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ... import machines as machines_mod
-from ... import sandbox, utils_lib
+from ... import sandbox, utils_run
 from ...config import MachineConfig, load_server_config
 from ...secrets import load_secrets
 from .common import server_of, update_config
@@ -99,7 +99,7 @@ def _run_remote(server, args: list[str], extra_secrets: dict[str, str]) -> tuple
     """Run the reserved `remote` util from the daemon/web process (base sandbox policy — no run
     filesystem roots; the util only needs the network its `net:` line declares).
     """
-    return utils_lib.run_util(server.libraries_home, REMOTE_UTIL, args, timeout=90,
+    return utils_run.run_util(server.libraries_home, REMOTE_UTIL, args, timeout=90,
                               policy=sandbox.base_policy(server), extra_secrets=extra_secrets)
 
 

@@ -4,8 +4,8 @@ DISPATCH covers util / read_file / view_image / write_file / edit_file / memory_
 memory_write / read_rule / llm / list_models; `script` lives here too and is called
 directly from loop.py. Control-flow kinds (spawn, subruns, kill, wait, finish) live in
 loop.py — they change the run's state machine — and the user-facing kinds (ask_user,
-write_util, write_rule) in interact.py. Every observation dict feeds both the transcript
-event and (via observations.format_observation) the next user message.
+write_util, write_rule) in interact.py / authoring.py. Every observation dict feeds
+both the transcript event and (via observations.format_observation) the next user message.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 
-from .. import machines, sandbox, utils_lib
+from .. import machines, sandbox, utils_lib, utils_run
 from ..endpoints.base import EndpointError
 from ..ids import is_slug
 from ..oauth import store as oauth_store
@@ -130,7 +130,7 @@ def _unbound_connection_request(ctx: RunContext, name: str) -> str:
     """
     from ..oauth.providers import access_token_var, provider_ids
 
-    declared, _net, _opt = utils_lib.util_needs(ctx.server.libraries_home, name)
+    declared, _net, _opt = utils_run.util_needs(ctx.server.libraries_home, name)
     upper = {d.upper() for d in declared}
     bound = dict(getattr(ctx.routine, "connections", None) or {})
     missing = [pid for pid in provider_ids()
@@ -230,9 +230,9 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
     # child env instead of blocking the call with an exposure ask — a public call runs
     # prompt-free; the observation names the withheld undecided ones so an auth-needing
     # call learns to request exposure explicitly (denied ones stay unenumerated, R17).
-    from .interact import secret_state, withheld_optional_secrets
+    from .secretgate import secret_state, withheld_optional_secrets
     withheld = withheld_optional_secrets(ctx, name)
-    code, out, err = utils_lib.run_util(
+    code, out, err = utils_run.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
         policy=sandbox.policy_for_ctx(ctx),
         extra_secrets=_extra_secrets(ctx), withhold_secrets=set(withheld),
@@ -303,7 +303,7 @@ def do_script(action: dict, ctx: RunContext) -> dict:
     """
     from .. import scripts
     from ..secrets import load_secrets
-    from .interact import secret_state
+    from .secretgate import secret_state
     name = str(action.get("name") or "")
     args = [str(a) for a in action.get("args") or []]
     if not scripts.exists(ctx.routine.dir, name):

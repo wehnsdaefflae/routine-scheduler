@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from .. import utils_header, utils_run
 from ..paths import atomic_write
 from ..workflows import library
 from ..workflows.lint import lint_all, lint_permission_text, lint_rule_text, lint_workflow_py
@@ -187,12 +188,12 @@ def put_util(request: Request, name: str, body: UtilBody) -> dict:
     from .. import sandbox, utils_lib
 
     server = request.app.state.server
-    problems = utils_lib.header_problems(body.content)
+    problems = utils_header.header_problems(body.content)
     if problems:
         raise HTTPException(422, "header problems (not saved): " + "; ".join(problems))
     utils_lib.ensure_library(server.libraries_home, remote=server.libraries_remote)
     utils_lib.write_util_file(server.libraries_home, name, body.content)
-    ok, output = utils_lib.selftest(server.libraries_home, name,
+    ok, output = utils_run.selftest(server.libraries_home, name,
                                     policy=sandbox.base_policy(server))
     if not ok:
         raise HTTPException(422, f"selftest failed (not committed):\n{output[:800]}")

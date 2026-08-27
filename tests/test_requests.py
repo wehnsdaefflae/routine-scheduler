@@ -348,7 +348,7 @@ def _seed_util(home, name, docstring):
 
 def test_consume_once_secret_spent_only_by_a_declaring_util(tmp_path):
     """D76: a once-granted secret is spent by the next util call whose script declares
-    it (the injection surface — utils_lib.util_needs, calls: tree included); an
+    it (the injection surface — utils_run.util_needs, calls: tree included); an
     undeclaring util neither receives nor spends it."""
     from rsched.engine.requests import consume_once_grants
 
@@ -493,11 +493,11 @@ def test_web_decision_mid_run_bridges_into_the_live_overlay(make_routine, script
     target = tmp_path / "granted-target"
     target.mkdir()
     policies = []
-    monkeypatch.setattr(executor_mod.utils_lib, "run_util",
+    monkeypatch.setattr(executor_mod.utils_run, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (policies.append(policy) or (0, "ran", "")))
     monkeypatch.setattr(executor_mod.utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(executor_mod.utils_lib, "util_needs",
+    monkeypatch.setattr(executor_mod.utils_run, "util_needs",
                         lambda home, name: (set(), False, set()))
     d = make_routine(slug="livegrant")
     qid = f"q-{TS}-2"

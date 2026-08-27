@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from rsched import utils_lib
+from rsched import utils_run
 from rsched.engine.executor import _connection_env
 from rsched.oauth import store
 from rsched.oauth.store import Connection
@@ -39,13 +39,13 @@ def _lib(tmp_path, name, body):
 
 def test_declared_extra_is_injected(tmp_path):
     home = _lib(tmp_path, "notionish", DECLARING)
-    env = utils_lib._child_env(home, "notionish", {"NOTION_ACCESS_TOKEN": "AT"})
+    env = utils_run._child_env(home, "notionish", {"NOTION_ACCESS_TOKEN": "AT"})
     assert env["NOTION_ACCESS_TOKEN"] == "AT"
 
 
 def test_undeclared_extra_is_absent(tmp_path):
     home = _lib(tmp_path, "plainish", PLAIN)
-    env = utils_lib._child_env(home, "plainish", {"NOTION_ACCESS_TOKEN": "AT"})
+    env = utils_run._child_env(home, "plainish", {"NOTION_ACCESS_TOKEN": "AT"})
     assert "NOTION_ACCESS_TOKEN" not in env
 
 
@@ -53,7 +53,7 @@ def test_undeclared_extra_scrubbed_even_if_inherited(tmp_path, monkeypatch):
     # the invariant: an undeclared secret must not reach the child by ANY route, incl. inherited env
     monkeypatch.setenv("NOTION_ACCESS_TOKEN", "leaked-from-daemon-env")
     home = _lib(tmp_path, "plainish", PLAIN)
-    env = utils_lib._child_env(home, "plainish", {"NOTION_ACCESS_TOKEN": "AT"})
+    env = utils_run._child_env(home, "plainish", {"NOTION_ACCESS_TOKEN": "AT"})
     assert "NOTION_ACCESS_TOKEN" not in env
 
 

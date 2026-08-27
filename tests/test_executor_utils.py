@@ -1,4 +1,4 @@
-"""The util execution seam (executor.do_util → utils_lib.run_util): a REAL `uv run` of a
+"""The util execution seam (executor.do_util → utils_run.run_util): a REAL `uv run` of a
 tiny script, and the failure contract — a broken call must return its usage line plus the
 grants-aware repair route (fix-it-yourself vs escalate), never a silent dead end.
 """

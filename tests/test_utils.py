@@ -10,7 +10,7 @@ import shutil
 
 import pytest
 
-from rsched import sandbox, utils_lib
+from rsched import sandbox, utils_header, utils_lib, utils_run
 
 pytestmark = pytest.mark.skipif(shutil.which("uv") is None, reason="uv required to run utils")
 
@@ -91,9 +91,9 @@ def test_write_run_selftest_and_catalog(tmp_path):
     utils_lib.ensure_library(home)
     utils_lib.write_util_file(home, "adder", ADDER)
 
-    ok, out = utils_lib.selftest(home, "adder", policy=OFF)
+    ok, out = utils_run.selftest(home, "adder", policy=OFF)
     assert ok, out
-    code, stdout, _ = utils_lib.run_util(home, "adder", ["2", "3", "--json"], policy=OFF)
+    code, stdout, _ = utils_run.run_util(home, "adder", ["2", "3", "--json"], policy=OFF)
     assert code == 0 and '"sum": 5' in stdout
     catalog = utils_lib.catalog_text(home)
     assert "adder — add two integers." in catalog
@@ -118,7 +118,7 @@ if "--selftest" in sys.argv:
 print("ok")
 '''
     utils_lib.write_util_file(home, "failer", body)
-    ok, out = utils_lib.selftest(home, "failer", policy=OFF)
+    ok, out = utils_run.selftest(home, "failer", policy=OFF)
     assert ok is False
     assert "exit 4" in out                       # the exit code is surfaced…
     assert "stdout-detail: the assertion that failed" in out   # …stdout is NOT hidden…
@@ -135,10 +135,10 @@ def test_selftest_prewarms_deps_for_net_outbound(tmp_path, monkeypatch):
                              'usage: gu adder A B [--json]\nnet: outbound"""')
     utils_lib.write_util_file(home, "adder", outbound)
     prewarmed: list[str] = []
-    monkeypatch.setattr(utils_lib, "prewarm_script_deps",
+    monkeypatch.setattr(utils_run, "prewarm_script_deps",
                         lambda script, policy, _home: prewarmed.append(script))
-    monkeypatch.setattr(utils_lib, "run_util", lambda *a, **k: (0, "", "selftest: ok"))
-    ok, _out = utils_lib.selftest(home, "adder", policy=OFF)
+    monkeypatch.setattr(utils_run, "run_util", lambda *a, **k: (0, "", "selftest: ok"))
+    ok, _out = utils_run.selftest(home, "adder", policy=OFF)
     assert ok
     assert len(prewarmed) == 1 and prewarmed[0].endswith("adder/main.py")
 
@@ -152,10 +152,10 @@ def test_selftest_leaves_prewarm_to_run_util_for_net_none(tmp_path, monkeypatch)
                              'usage: gu adder A B [--json]\nnet: none"""')
     utils_lib.write_util_file(home, "adder", none_net)
     prewarmed: list[str] = []
-    monkeypatch.setattr(utils_lib, "prewarm_script_deps",
+    monkeypatch.setattr(utils_run, "prewarm_script_deps",
                         lambda script, policy, _home: prewarmed.append(script))
-    monkeypatch.setattr(utils_lib, "run_util", lambda *a, **k: (0, "", "selftest: ok"))
-    ok, _out = utils_lib.selftest(home, "adder", policy=OFF)
+    monkeypatch.setattr(utils_run, "run_util", lambda *a, **k: (0, "", "selftest: ok"))
+    ok, _out = utils_run.selftest(home, "adder", policy=OFF)
     assert ok
     assert prewarmed == []                        # run_util owns the net:none prewarm
 
@@ -167,18 +167,18 @@ def test_util_composition(tmp_path):
     utils_lib.write_util_file(home, "doubler", DOUBLER)
     # PERMISSIVE: on a Landlock kernel this whole chain (uv → doubler → gu → adder) runs
     # inside the real jail — the composition test doubles as the sandbox-compat canary.
-    ok, out = utils_lib.selftest(home, "doubler", policy=PERMISSIVE)
+    ok, out = utils_run.selftest(home, "doubler", policy=PERMISSIVE)
     assert ok, out
-    code, stdout, _ = utils_lib.run_util(home, "doubler", ["4", "--json"], policy=PERMISSIVE)
+    code, stdout, _ = utils_run.run_util(home, "doubler", ["4", "--json"], policy=PERMISSIVE)
     assert code == 0 and '"double": 8' in stdout
 
 
 def test_run_missing_and_invalid(tmp_path):
     home = tmp_path / "utils-home"
     utils_lib.ensure_library(home)
-    code, _, err = utils_lib.run_util(home, "ghost", [], policy=OFF)
+    code, _, err = utils_run.run_util(home, "ghost", [], policy=OFF)
     assert code == 2 and "no util named" in err
-    code, _, err = utils_lib.run_util(home, "Bad Name", [], policy=OFF)
+    code, _, err = utils_run.run_util(home, "Bad Name", [], policy=OFF)
     assert code == 2 and "invalid util name" in err
 
 
@@ -358,7 +358,7 @@ def test_header_problems_gate():
     var the code reads must be DECLARED in the docstring's secrets: line (a comment-form
     `# secrets:` above the docstring is invisible — the deepgram failure mode), and a
     net: declaration is required (the sandbox keys off it)."""
-    from rsched.utils_lib import header_problems
+    from rsched.utils_header import header_problems
 
     assert header_problems(GOOD_UTIL) == []
     no_tags = GOOD_UTIL.replace("tags: demo, testing\n", "")
@@ -396,25 +396,25 @@ def test_header_problems_gate():
 
 
 def test_parse_header_net_and_calls():
-    h = utils_lib.parse_header(GOOD_UTIL)
+    h = utils_header.parse_header(GOOD_UTIL)
     assert h["net"] == "none" and h["calls"] == [] and h["secrets"] == ["DEMO_API_KEY"]
     with_calls = GOOD_UTIL.replace("calls: (none)\n", "calls: adder, page-fetch\n")
-    assert utils_lib.parse_header(with_calls)["calls"] == ["adder", "page-fetch"]
+    assert utils_header.parse_header(with_calls)["calls"] == ["adder", "page-fetch"]
     # a header without the lines parses as undeclared — fail closed downstream
     bare = '"""x — y.\n\nusage: gu x\n"""\n'
-    h = utils_lib.parse_header(bare)
+    h = utils_header.parse_header(bare)
     assert h["net"] == "" and h["calls"] == [] and h["secrets"] == []
     assert h["optional_secrets"] == []
     # D51: a trailing '?' marks a secret OPTIONAL — the name (marker stripped) still appears in
     # `secrets` (injection + undeclared-read gate unchanged) and is ALSO listed in optional_secrets.
     opt = GOOD_UTIL.replace("secrets: DEMO_API_KEY\n", "secrets: DEMO_API_KEY, EXTRA_TOKEN?\n")
-    ho = utils_lib.parse_header(opt)
+    ho = utils_header.parse_header(opt)
     assert ho["secrets"] == ["DEMO_API_KEY", "EXTRA_TOKEN"]
     assert ho["optional_secrets"] == ["EXTRA_TOKEN"]
     # an optional-marked secret is still caught if the code reads it but the header omits it,
     # and is still injected — both proven by the child_env/header_problems suites; here we only
     # assert the parse split.
-    assert utils_lib.parse_header(GOOD_UTIL)["optional_secrets"] == []
+    assert utils_header.parse_header(GOOD_UTIL)["optional_secrets"] == []
 
 
 def _write_header_util(home, name, *, secrets="(none)", net="none", calls="(none)"):
@@ -434,19 +434,19 @@ def test_util_needs_transitive_closure(tmp_path):
     _write_header_util(tmp_path, "middle", calls="leaf")
     _write_header_util(tmp_path, "top", calls="middle", secrets="TOP_KEY")
     _write_header_util(tmp_path, "loner")
-    secrets, net, optional = utils_lib.util_needs(tmp_path, "top")
+    secrets, net, optional = utils_run.util_needs(tmp_path, "top")
     assert secrets == {"TOP_KEY", "LEAF_TOKEN"} and net is True and optional == set()
-    secrets, net, optional = utils_lib.util_needs(tmp_path, "loner")
+    secrets, net, optional = utils_run.util_needs(tmp_path, "loner")
     assert secrets == set() and net is False
     # cycles terminate; a missing callee contributes nothing
     _write_header_util(tmp_path, "a", calls="b")
     _write_header_util(tmp_path, "b", calls="a, ghost")
-    assert utils_lib.util_needs(tmp_path, "a") == (set(), False, set())
+    assert utils_run.util_needs(tmp_path, "a") == (set(), False, set())
     # `?`-marked names resolve as OPTIONAL across the tree — unless ANY declarer
     # requires them (one required declaration wins, F290)
     _write_header_util(tmp_path, "opt-leaf", secrets="SHARED?, ONLY_OPT?")
     _write_header_util(tmp_path, "opt-top", calls="opt-leaf", secrets="SHARED")
-    secrets, _, optional = utils_lib.util_needs(tmp_path, "opt-top")
+    secrets, _, optional = utils_run.util_needs(tmp_path, "opt-top")
     assert secrets == {"SHARED", "ONLY_OPT"} and optional == {"ONLY_OPT"}
 
 
@@ -460,7 +460,7 @@ def test_child_env_scopes_secrets(tmp_path, monkeypatch):
     monkeypatch.setenv("OTHER_KEY", "leaked-via-daemon-env")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "never")
     monkeypatch.setenv("UNRELATED", "stays")
-    env = utils_lib._child_env(tmp_path, "scoped")
+    env = utils_run._child_env(tmp_path, "scoped")
     assert env["MY_TOKEN"] == "t-1"
     assert "OTHER_KEY" not in env
     assert "ANTHROPIC_API_KEY" not in env
@@ -475,17 +475,17 @@ def test_optional_secret_injected_when_present_absent_otherwise(tmp_path, monkey
     # store has both → both injected
     monkeypatch.setattr("rsched.secrets.load_secrets",
                         lambda: {"REQ_KEY": "r-1", "OPT_KEY": "o-1"})
-    env = utils_lib._child_env(tmp_path, "optu")
+    env = utils_run._child_env(tmp_path, "optu")
     assert env["REQ_KEY"] == "r-1" and env["OPT_KEY"] == "o-1"
     # store lacks the optional one → it is absent, the required one still injected, no error
     monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {"REQ_KEY": "r-2"})
-    env = utils_lib._child_env(tmp_path, "optu")
+    env = utils_run._child_env(tmp_path, "optu")
     assert env["REQ_KEY"] == "r-2" and "OPT_KEY" not in env
     # F290: a withheld declared secret is scrubbed even when the store has it — the
     # engine's not-granted OPTIONAL secrets ride this; grant-free callers pass nothing
     monkeypatch.setattr("rsched.secrets.load_secrets",
                         lambda: {"REQ_KEY": "r-3", "OPT_KEY": "o-3"})
-    env = utils_lib._child_env(tmp_path, "optu", withhold={"OPT_KEY"})
+    env = utils_run._child_env(tmp_path, "optu", withhold={"OPT_KEY"})
     assert env["REQ_KEY"] == "r-3" and "OPT_KEY" not in env
 
 
@@ -560,7 +560,7 @@ time.sleep(120)
 '''
     utils_lib.write_util_file(home, "sleeper", sleeper)
     start = _time.monotonic()
-    code, _out, err = utils_lib.run_util(home, "sleeper", [], timeout=3, policy=OFF)
+    code, _out, err = utils_run.run_util(home, "sleeper", [], timeout=3, policy=OFF)
     elapsed = _time.monotonic() - start
     assert code == -1 and "timed out" in err
     # F226: stdout captured BEFORE the process-group kill is kept, not discarded — it is
@@ -599,9 +599,9 @@ def test_header_problems_flags_undeclared_gu_calls():
             'secrets: (none)\n{calls_line}net: none\n"""\n'
             'import subprocess\n'
             'subprocess.run(["gu", "adder", "1", "2"])\n')
-    problems = utils_lib.header_problems(base.format(calls_line=""))
+    problems = utils_header.header_problems(base.format(calls_line=""))
     assert any("adder" in p and "calls:" in p for p in problems)
-    assert not utils_lib.header_problems(base.format(calls_line="calls: adder\n"))
+    assert not utils_header.header_problems(base.format(calls_line="calls: adder\n"))
 
 
 PWD_UTIL = '''# /// script
@@ -629,8 +629,8 @@ def test_run_util_cwd_routes_to_given_dir(tmp_path):
     routine_dir = tmp_path / "a-routine"
     routine_dir.mkdir()
 
-    code, out, _ = utils_lib.run_util(home, "pwd-util", [], policy=OFF)
+    code, out, _ = utils_run.run_util(home, "pwd-util", [], policy=OFF)
     assert code == 0 and Path(out.strip()) == home.resolve()
 
-    code, out, _ = utils_lib.run_util(home, "pwd-util", [], policy=OFF, cwd=routine_dir)
+    code, out, _ = utils_run.run_util(home, "pwd-util", [], policy=OFF, cwd=routine_dir)
     assert code == 0 and Path(out.strip()) == routine_dir.resolve()

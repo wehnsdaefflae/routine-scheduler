@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 from rsched import utils_lib
 from rsched.engine.actions import validate_action
-from rsched.engine.interact import handle_remove_util
+from rsched.engine.authoring import handle_remove_util
 from rsched.grants import GrantPolicy, load_policy
 
 UTIL = '''# /// script

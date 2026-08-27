@@ -19,9 +19,10 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
-from . import libgit, sandbox
+from . import libgit
 from .ids import is_slug
 from .paths import atomic_write
+from .utils_header import parse_header
 
 # Vars scrubbed from util subprocesses UNCONDITIONALLY (declared or not). LLM-auth: a util
 # that needs an LLM (e.g. a `gu claude` equivalent) resolves its own credentials; it must
@@ -29,10 +30,6 @@ from .paths import atomic_write
 # SSH agent: a forwarded agent in the daemon's env would let ANY net-capable util
 # authenticate to hosts outside the machine catalog, routing around the per-routine binding —
 # so the agent socket never reaches a util (remote machines carry their own scoped keys).
-STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
-              "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS",
-              "OPENROUTER_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY",
-              "SSH_AUTH_SOCK", "SSH_AGENT_PID")
 
 # Exit code 2 = argparse's bad-arguments convention — a USAGE error (the caller sent
 # wrong flags), distinct from a real failure. Part of the util CONTRACT, so telemetry
@@ -46,7 +43,6 @@ OUTPUT_CAP = 1_000_000
 # `["gu", "<sibling>"]` exec sites in util code — the one home for this pattern
 # (header_problems flags undeclared calls with it; bootstrap's header migration repairs
 # them with the same regex, so the two can never drift).
-GU_CALL_RE = re.compile(r"""\[\s*["']gu["']\s*,\s*["']([a-z0-9][a-z0-9-]*)["']""")
 
 DISPATCHER = '''#!/usr/bin/env python3
 """gu — run a global util: `gu <name> [args...]`, or `gu list`. Utils call each other
@@ -156,134 +152,6 @@ def list_utils(home: Path) -> list[dict]:
     return out
 
 
-_SUMMARY_RE = re.compile(r'"""(.+?)"""', re.DOTALL)
-
-
-def parse_header(src: str) -> dict:
-    """The docstring header — the util's ONLY machine-read surface: summary, usage, tags,
-    declared secrets, declared sibling `calls:` (drives transitive secret/net resolution,
-    see util_needs), and the `net:` declaration ("outbound" | "none"; "" = undeclared,
-    which the sandbox treats as none — fail closed).
-
-    A `secrets:` entry may carry a trailing `?` (e.g. `secrets: FOO_KEY, BAR_TOKEN?`) to mark
-    an OPTIONAL secret (D51): injected when the store has it, but the Settings page does not
-    prompt for it and its absence is not a "missing credential". The stripped name still
-    appears in `secrets` (so injection and the undeclared-read gate are unchanged); the marked
-    names are also collected in `optional_secrets`.
-    """
-    m = _SUMMARY_RE.search(src)
-    doc = m.group(1).strip() if m else ""
-    lines = [ln.strip() for ln in doc.splitlines() if ln.strip()]
-    summary = lines[0] if lines else ""
-    usage = next((ln for ln in lines if ln.lower().startswith("usage:")), "")
-    tags_line = next((ln for ln in lines if ln.lower().startswith("tags:")), "")
-    tags = ([t.strip() for t in tags_line[len("tags:"):].split(",") if t.strip()]
-            if tags_line else [])
-    sec_line = next((ln for ln in lines if ln.lower().startswith("secrets:")), "")
-    sec_raw = [s.strip() for s in sec_line[len("secrets:"):].split(",")
-               if s.strip() and s.strip().lower() != "(none)"] if sec_line else []
-    # A trailing '?' marks an OPTIONAL secret (D51): the sandbox injects it when the store has it
-    # but the Settings page never prompts for it and its absence is not a missing credential. The
-    # name (marker stripped) still appears in `secrets`, so injection and the undeclared-read gate
-    # are unchanged — optionality is purely about consent/prompting, not access.
-    secrets = [s[:-1].strip() if s.endswith("?") else s for s in sec_raw]
-    optional_secrets = [s[:-1].strip() for s in sec_raw if s.endswith("?")]
-    calls_line = next((ln for ln in lines if ln.lower().startswith("calls:")), "")
-    calls = [c.strip() for c in calls_line[len("calls:"):].split(",")
-             if c.strip() and c.strip().lower() not in ("(none)", "none")
-             and is_slug(c.strip())] if calls_line else []
-    net_line = next((ln for ln in lines if ln.lower().startswith("net:")), "")
-    net = net_line[len("net:"):].strip().lower() if net_line else ""
-    return {"summary": summary, "usage": usage, "tags": tags, "secrets": secrets,
-            "optional_secrets": optional_secrets, "calls": calls, "net": net, "doc": doc}
-
-
-# env-var names that smell like credentials — used by header_problems to catch a util that
-# reads a secret it never declared (the Settings page can only prompt for DECLARED secrets,
-# and the sandbox injects only declared ones). Three read shapes are detected:
-#   direct    — os.environ["NAME"] / os.environ.get("NAME") / os.getenv("NAME")
-#   indirect  — VAR = "NAME"  then  os.environ[VAR] / os.getenv(VAR)  (the `gu claude`
-#               pattern: TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"; a var-keyed read alone can't
-#               name the secret, so we resolve module-level string-literal constants)
-#   grouped   — KEYS = ("A_PASS", "B_TOKEN", …)  then  for k in KEYS: os.environ.get(k)
-#               (the `ftp` pattern: a loop var over a tuple/list of names — when the env key is
-#               a var we cannot pin to ONE literal, every credential-shaped name grouped in a
-#               module-level tuple/list counts as read; err toward "declare it")
-_ENV_READ = r"""os\.(?:environ(?:\.get\(|\[)|getenv\()\s*"""
-_SECRETISH = re.compile(_ENV_READ + r"""["']([A-Z][A-Z0-9_]*)["']""")
-_ENV_VAR_KEY = re.compile(_ENV_READ + r"""([A-Za-z_][A-Za-z0-9_]*)\b""")
-_CONST_ASSIGN = re.compile(r"""^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*["']([A-Z][A-Z0-9_]*)["']""",
-                           re.MULTILINE)
-_GROUP_ASSIGN = re.compile(r"""^\s*[A-Za-z_][A-Za-z0-9_]*\s*=\s*[(\[]([^)\]]*)[)\]]""",
-                           re.MULTILINE)
-_LITERAL = re.compile(r"""["']([A-Z][A-Z0-9_]*)["']""")
-_SECRET_HINT = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL)S?$")
-
-
-def _secrets_read(content: str) -> set[str]:
-    """Credential-shaped env var NAMES the code reads — directly, indirectly through a
-    module-level string constant, or (when the env key is a variable we can't pin to one
-    literal, e.g. a loop var) any credential-shaped name grouped in a tuple/list constant.
-    """
-    used = {v for v in _SECRETISH.findall(content) if _SECRET_HINT.search(v)}
-    consts = dict(_CONST_ASSIGN.findall(content))
-    var_keys = _ENV_VAR_KEY.findall(content)
-    for var in var_keys:
-        literal = consts.get(var)
-        if literal and _SECRET_HINT.search(literal):
-            used.add(literal)
-    # A var-keyed env read that resolves to no single constant (a loop over a tuple of names):
-    # count every credential-shaped literal grouped in a module-level tuple/list, since we can't
-    # tell which one the loop touches. Only triggers when such an unresolved read exists.
-    if any(var not in consts for var in var_keys):
-        for group in _GROUP_ASSIGN.findall(content):
-            used |= {lit for lit in _LITERAL.findall(group) if _SECRET_HINT.search(lit)}
-    return used
-
-
-def undeclared_secrets(content: str) -> list[str]:
-    """Credential-looking env vars the code reads but the docstring `secrets:` line does
-    not declare — the gap header_problems rejects (and the header migration repairs).
-    """
-    declared = {s.upper() for s in parse_header(content)["secrets"]}
-    return sorted(_secrets_read(content) - declared)
-
-
-def header_problems(content: str) -> list[str]:
-    """Doc-standard gate for saving a util. The docstring header is the util's ONLY
-    machine-read surface (catalog, Settings secrets page, the sandbox): it must carry a
-    summary, a usage: line, at least one tag, a secrets: declaration covering every
-    credential-looking env var the code reads, and a net: declaration. Comment-form
-    `# secrets:` lines above the docstring are invisible to the parser — that is exactly
-    the failure this gate stops.
-    """
-    h = parse_header(content)
-    problems = []
-    if not h["summary"]:
-        problems.append("no module docstring — the first line must be '<name> — <summary>'")
-    if not h["usage"]:
-        problems.append("docstring needs a 'usage: gu <name> …' line")
-    if not h["tags"]:
-        problems.append("docstring needs a 'tags: <tag>, <tag>, …' line (at least one tag)")
-    if h["net"] not in ("outbound", "none"):
-        problems.append("docstring needs a 'net: outbound' or 'net: none' line — declare "
-                        "whether this util opens network connections; the sandbox denies "
-                        "all TCP to a util declaring none (or declaring nothing)")
-    undeclared = undeclared_secrets(content)
-    if undeclared:
-        problems.append("code reads credential env var(s) not declared in the docstring's "
-                        f"'secrets:' line: {', '.join(undeclared)} — declare them there "
-                        "(the Settings page only prompts for declared secrets, and the "
-                        "sandbox injects only declared ones)")
-    declared_calls = set(h["calls"])
-    undeclared_calls = sorted({c for c in GU_CALL_RE.findall(content)
-                               if c not in declared_calls})
-    if undeclared_calls:
-        problems.append("code execs sibling util(s) not declared on the docstring's "
-                        f"'calls:' line: {', '.join(undeclared_calls)} — declare them "
-                        "(the sandbox resolves secrets and net access transitively over "
-                        "declared calls; an undeclared sibling runs without its needs)")
-    return problems
 
 
 def catalog_text(home: Path) -> str:
@@ -412,205 +280,6 @@ def remove_util_file(home: Path, name: str) -> None:
         shutil.rmtree(d, ignore_errors=True)
         return
     shutil.rmtree(aside, ignore_errors=True)
-
-
-def util_needs(home: Path, name: str) -> tuple[set[str], bool, set[str]]:
-    """(declared secret env vars, net-outbound?, the OPTIONAL subset) for one util, resolved
-    TRANSITIVELY across its docstring `calls:` siblings — the whole call tree runs inside ONE
-    jail and ONE env, so a caller inherits what its callees declared (gmail-body-dump calls
-    gmail → gets the GMAIL_* secrets; anything calling a net: outbound sibling needs the
-    network open too). Undeclared = not granted: an unknown net line (or none at all)
-    contributes nothing. A name is optional only if EVERY declarer marks it `?` — one
-    required declaration anywhere in the tree makes it required.
-    """
-    secrets: set[str] = set()
-    required: set[str] = set()
-    net = False
-    seen: set[str] = set()
-    stack = [name]
-    while stack:
-        current = stack.pop()
-        if current in seen:
-            continue
-        seen.add(current)
-        src = read_util(home, current)
-        if src is None:
-            continue
-        header = parse_header(src)
-        opt = {s.upper() for s in header["optional_secrets"]}
-        declared = {s.upper() for s in header["secrets"]}
-        secrets.update(declared)
-        required.update(declared - opt)
-        net = net or header["net"] == "outbound"
-        stack += header["calls"]
-    return secrets, net, secrets - required
-
-
-def scoped_env(declared: set[str], extra_secrets: dict[str, str] | None = None,
-               withhold: set[str] | None = None) -> dict:
-    """A jailed subprocess's environment (utils AND per-routine scripts): the central
-    secrets store injects ONLY `declared` vars; every other store key is scrubbed even
-    when the daemon's own environment carries it — an undeclared secret must not reach
-    the child by any route. STRIP_VARS (LLM keys) are removed unconditionally.
-
-    `extra_secrets` are non-store secrets the engine resolves per run — today a routine's OAuth
-    connection access tokens (<PROVIDER>_ACCESS_TOKEN). They obey the SAME rule: injected only
-    if declared, scrubbed otherwise — the declared-only invariant covers them too.
-
-    `withhold` names DECLARED vars to scrub anyway — the engine passes a run's not-granted
-    OPTIONAL secrets (F290) so a public call runs without prompting; grant-free callers
-    (CLI, selftest, notify, settings) pass nothing and inject every declared var as before.
-    """
-    from .secrets import load_secrets
-    inject = {d.upper() for d in declared} - {w.upper() for w in (withhold or set())}
-    env = {**os.environ}
-    for key, value in {**load_secrets(), **(extra_secrets or {})}.items():
-        if key.upper() in inject:
-            env[key] = value
-        else:
-            env.pop(key, None)
-    for k in STRIP_VARS:
-        env.pop(k, None)                # never LLM keys: utils bill only via `gu claude`
-    return env
-
-
-def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = None,
-               withhold: set[str] | None = None) -> dict:
-    """A util subprocess's environment: `scoped_env` over the util's transitive
-    declarations (`calls:` siblings included — one jail, one env).
-    """
-    declared, _, _ = util_needs(home, name)
-    return scoped_env(declared, extra_secrets, withhold)
-
-
-def prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path) -> None:
-    """Resolve + install a PEP 723 script's dependencies with the network OPEN, so a util
-    whose runtime net policy is `none`/undeclared can still fetch its build-time deps (R40).
-    Filesystem stays jailed (same policy); only this install phase gets TCP. Best-effort:
-    any failure is swallowed — the caller's real run reports the genuine error. No-op under
-    sandbox mode 'off' would still be a harmless local `uv sync`.
-    """
-    try:
-        cmd = sandbox.wrap(["uv", "sync", "--script", script],
-                           policy=policy, libraries_home=home, net=True)
-    except sandbox.SandboxRefusal:
-        return
-    try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=180,
-                       stdin=subprocess.DEVNULL, cwd=str(home), check=False)
-    except (OSError, subprocess.SubprocessError):
-        return
-
-
-def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
-             policy: sandbox.SandboxPolicy,
-             extra_secrets: dict[str, str] | None = None,
-             withhold_secrets: set[str] | None = None,
-             cwd: Path | None = None) -> tuple[int, str, str]:
-    """Controlled runner: only a named util from THIS library, uv-run, scoped env (declared
-    secrets only, plus any `extra_secrets` the engine resolved for this run — same declared-only
-    rule), library root on PATH (so the util can call siblings via `gu`), inside the Landlock jail
-    `policy` + the util's own `net:` declaration describe (sandbox.wrap; the server `sandbox:` mode
-    decides strict/permissive/off). Runs with working directory `cwd` — a routine's own dir for
-    run-scoped calls, so relative paths a routine passes to a util resolve against ITS dir like
-    read_file/write_file do — or the library `home` when unset (CLI, selftest, notify, settings).
-    Returns (exit, out, err).
-    """
-    if not is_slug(name):
-        return 2, "", f"invalid util name {name!r}"
-    if not exists(home, name):
-        return 2, "", f"no util named {name!r} (available: {[u['name'] for u in list_utils(home)]})"
-    if not shutil.which("uv"):
-        return 2, "", "uv is required to run utils but is not on PATH"
-    env = _child_env(home, name, extra_secrets, withhold_secrets)
-    env["PATH"] = f"{home}:{env.get('PATH', '')}"
-    # Point the `gu` dispatcher (on PATH, for sibling calls) at THIS library, so a util that
-    # shells out to `gu <sibling>` always resolves siblings here.
-    env["GLOBAL_UTILS_HOME"] = str(home)
-    _, net, _ = util_needs(home, name)
-    script = str(util_dir(home, name) / "main.py")
-    # Build-time dependency install is a SEPARATE phase from the util's own execution: a
-    # `net: none` util still needs PyPI to fetch its (non-cached) PEP 723 deps the first
-    # time it runs — most visibly at write_util selftest. `uv run` would do resolve+install
-    # under the util's OWN net policy and a net:none util could never install a third-party
-    # dep at all (R40). So prewarm the deps in a network-OPEN, still-filesystem-jailed
-    # `uv sync --script` (env lands in ~/.cache/uv, already a jail-RW toolchain root; it
-    # writes nothing beside the script), THEN run offline-capable under the real policy.
-    # Best-effort: a prewarm failure (offline host, no deps, older uv) is non-fatal — the
-    # real run still surfaces the true error. `net` is util_needs' BOOL (True = outbound —
-    # the old `!= "outbound"` string compare was vacuously true and prewarmed every call);
-    # an outbound util installs inside its own net-open `uv run`, so it skips the pass here
-    # and the selftest runner owns its warm-up instead (R20).
-    if not net:
-        prewarm_script_deps(script, policy, home)
-    try:
-        cmd = sandbox.wrap(["uv", "run", "--script", script, *args],
-                           policy=policy, libraries_home=home, net=net)
-    except sandbox.SandboxRefusal as exc:
-        return 2, "", str(exc)
-    # File-backed capture + own process GROUP: `uv run` re-execs the script as a grandchild,
-    # which a plain subprocess.run timeout never kills — it would survive the timeout and
-    # keep the pipes open, blocking the engine turn forever. killpg reaps the whole tree,
-    # and spool files (instead of PIPEs) bound memory however much the util prints.
-    import signal
-    import tempfile
-    with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as out_f, \
-            tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as err_f:
-        proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, stdin=subprocess.DEVNULL,
-                                text=True, env=env, cwd=str(cwd or home), start_new_session=True)
-        timed_out = False
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                proc.kill()
-            proc.wait()
-
-        def _read_capped(fh) -> str:
-            fh.seek(0)
-            text = fh.read(OUTPUT_CAP + 1)
-            if len(text) > OUTPUT_CAP:
-                text = text[:OUTPUT_CAP] + "\n[output truncated at 1 MB]"
-            return text
-
-        if timed_out:
-            # F226: keep the stdout/stderr captured BEFORE the kill — a util that hung
-            # AFTER printing diagnostics (the common case) would otherwise lose exactly
-            # the material that explains why it hung. The timeout note rides on stderr.
-            note = f"util {name!r} timed out after {timeout}s (process group killed)"
-            partial_err = _read_capped(err_f)
-            return -1, _read_capped(out_f), f"{partial_err}\n[{note}]" if partial_err else note
-        return proc.returncode, _read_capped(out_f), _read_capped(err_f)
-
-
-def selftest(home: Path, name: str, *, timeout: int = 120,
-             policy: sandbox.SandboxPolicy) -> tuple[bool, str]:
-    # Build phase vs test phase (R20): run_util prewarms PEP 723 deps itself for
-    # net:none/undeclared utils, but a net:outbound one (util_needs' bool: True) resolves
-    # + installs its deps INSIDE `uv run` — so a first selftest of a heavy-dep script (a
-    # cold pandas/scipy tree is a ~60 MB fetch plus a bytecode compile) would spend this
-    # timeout on the toolchain and fail a correct util. Prewarm here (same best-effort
-    # jail as the run path) so the timed window below covers the selftest, never the
-    # install.
-    _, net, _ = util_needs(home, name)
-    if net:
-        prewarm_script_deps(str(util_dir(home, name) / "main.py"), policy, home)
-    code, out, err = run_util(home, name, ["--selftest"], timeout=timeout, policy=policy)
-    if code == 0:
-        return True, (err or out).strip()
-    # F226: a FAILED selftest must surface ALL the diagnostics — the exit code plus BOTH
-    # streams. The old `(err or out)` dropped the exit code and hid stdout whenever stderr
-    # was non-empty, so a script printing its failure detail to stdout and a bare traceback
-    # to stderr lost the detail. Label each stream; omit an empty one.
-    parts = [f"exit {code}"]
-    if out.strip():
-        parts.append(f"stdout:\n{out.strip()}")
-    if err.strip():
-        parts.append(f"stderr:\n{err.strip()}")
-    return False, "\n".join(parts)
 
 
 def was_deleted(home: Path, name: str) -> bool:

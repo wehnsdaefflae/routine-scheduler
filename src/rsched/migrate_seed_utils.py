@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 
-from . import sandbox, utils_lib
+from . import sandbox, utils_lib, utils_run
 from .config import ServerConfig
 from .paths import repo_root
 
@@ -52,7 +52,7 @@ def migrate_seed_utils(server: ServerConfig) -> int:
         if previous is not None and previous == content:
             continue
         utils_lib.write_util_file(home, name, content)
-        ok, output = utils_lib.selftest(home, name, policy=policy)
+        ok, output = utils_run.selftest(home, name, policy=policy)
         if not ok:
             if previous is None:
                 utils_lib.remove_util_file(home, name)

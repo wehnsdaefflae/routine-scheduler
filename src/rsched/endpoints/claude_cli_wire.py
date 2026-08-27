@@ -51,7 +51,7 @@ def stream_json_stdin(messages: list[Message]) -> str:
     return "\n".join(lines)
 
 # Vars that would re-route the child CLI to metered API-key auth (or a proxy), plus the
-# SSH agent socket — the same never-inherit rule utils_lib.STRIP_VARS applies to util
+# SSH agent socket — the same never-inherit rule utils_run.STRIP_VARS applies to util
 # subprocesses (a forwarded agent must not reach ANY child we spawn).
 STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
               "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS",

@@ -10,7 +10,7 @@ import time
 import pytest
 
 from conftest import finish
-from rsched import utils_lib
+from rsched import utils_lib, utils_run
 from rsched.config import ServerConfig
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
@@ -223,11 +223,11 @@ def test_util_secret_gate_files_one_request_covering_the_run(make_routine, scrip
     from rsched import secrets as secrets_mod
 
     ran = []
-    monkeypatch.setattr(utils_lib, "run_util",
+    monkeypatch.setattr(utils_run, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (ran.append((name, list(args))) or (0, "ran", "")))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(utils_lib, "util_needs",
+    monkeypatch.setattr(utils_run, "util_needs",
                         lambda home, name: ({"FOO_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secgate", budgets={"ask_timeout_min": 1})
@@ -273,13 +273,13 @@ def test_optional_secret_never_asks_and_is_withheld(make_routine, scripted, monk
     from rsched import secrets as secrets_mod
 
     seen_withhold = []
-    monkeypatch.setattr(utils_lib, "run_util",
+    monkeypatch.setattr(utils_run, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         withhold_secrets=None,
                         **_kw: (seen_withhold.append(set(withhold_secrets or set()))
                                 or (0, "fetched", "")))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(utils_lib, "util_needs",
+    monkeypatch.setattr(utils_run, "util_needs",
                         lambda home, name: ({"WEB_AUTH_SOURCES"}, True, {"WEB_AUTH_SOURCES"}))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"WEB_AUTH_SOURCES": "x"})
     d = make_routine(slug="optsec")
@@ -305,11 +305,11 @@ def test_secret_grant_row_covers_runs_without_asking(make_routine, scripted, mon
     from rsched import secrets as secrets_mod
 
     ran: list[tuple[str, list]] = []
-    monkeypatch.setattr(utils_lib, "run_util",
+    monkeypatch.setattr(utils_run, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (ran.append((name, list(args))) or (0, "ran", "")))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False, set()))
+    monkeypatch.setattr(utils_run, "util_needs", lambda home, name: ({"FOO_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secgate2", budgets={"ask_timeout_min": 1})
     import yaml as _yaml
@@ -332,11 +332,11 @@ def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, 
     from rsched import secrets as secrets_mod
 
     ran = []
-    monkeypatch.setattr(utils_lib, "run_util",
+    monkeypatch.setattr(utils_run, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None, **_kw:
                         (ran.append((name, list(args))) or (0, "ran", "")))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(utils_lib, "util_needs",
+    monkeypatch.setattr(utils_run, "util_needs",
                         lambda home, name: ({"FOO_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secdeny")
@@ -369,11 +369,11 @@ def test_secret_decline_observation_names_no_secrets(make_routine, scripted, mon
     from rsched.engine.observations import format_observation
 
     ran = []
-    monkeypatch.setattr(utils_lib, "run_util",
+    monkeypatch.setattr(utils_run, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (ran.append(name) or (0, "ran", "")))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(utils_lib, "util_needs",
+    monkeypatch.setattr(utils_run, "util_needs",
                         lambda home, name: ({"FOO_KEY", "BAR_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x", "BAR_KEY": "y"})
     d = make_routine(slug="secmute")
@@ -403,11 +403,11 @@ def test_secret_decline_after_ask_stays_generic(make_routine, scripted, monkeypa
     from rsched import secrets as secrets_mod
     from rsched.engine.observations import format_observation
 
-    monkeypatch.setattr(utils_lib, "run_util",
+    monkeypatch.setattr(utils_run, "run_util",
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (0, "ran", ""))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(utils_lib, "util_needs", lambda home, name: ({"FOO_KEY"}, False, set()))
+    monkeypatch.setattr(utils_run, "util_needs", lambda home, name: ({"FOO_KEY"}, False, set()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secmute2", budgets={"ask_timeout_min": 1})
 

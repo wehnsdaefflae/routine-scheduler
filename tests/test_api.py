@@ -7,6 +7,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from conftest import make_test_server, mk_run
+from rsched import utils_run
 from rsched.config import load_server_config
 from rsched.paths import atomic_write_json, read_json
 from rsched.web.app import ROUTINE_TOKEN_MUTATIONS, _routine_token_allowed, create_app
@@ -1413,7 +1414,7 @@ def test_secrets_injected_into_utils_and_endpoints(tmp_path, monkeypatch):
     utils_lib.write_util_file(home, "declarer", (
         "# /// script\n# ///\n"
         '"""declarer — d.\n\nusage: gu declarer\nsecrets: FOO_TOKEN\ntags: t\nnet: none\n"""\n'))
-    env = utils_lib._child_env(home, "declarer")
+    env = utils_run._child_env(home, "declarer")
     assert env["FOO_TOKEN"] == "tok"                 # the declared credential flows through
     assert "BAR_TOKEN" not in env                    # …an UNdeclared store key does not
     assert "OPENROUTER_KEY" not in env               # …and LLM keys never reach utils

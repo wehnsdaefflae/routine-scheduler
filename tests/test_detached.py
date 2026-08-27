@@ -9,6 +9,7 @@ import os
 import yaml
 
 from conftest import FakeRunner
+from rsched import utils_run
 from rsched.config import ServerConfig
 from rsched.daemon.detached import DetachedManager
 from rsched.daemon.runner import Runner
@@ -206,7 +207,7 @@ async def test_delivery_makes_no_outbound_send(tmp_path, monkeypatch):
     no channel — not Discord, not anything — whatever permissions the owner holds."""
     from rsched import utils_lib
     sent = []
-    monkeypatch.setattr(utils_lib, "run_util",
+    monkeypatch.setattr(utils_run, "run_util",
                         lambda home, name, args, **kw: sent.append((name, args)) or (0, "", ""))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
 

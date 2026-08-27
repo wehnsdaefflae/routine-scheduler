@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from conftest import finish, write_file
-from rsched import machines, secrets, utils_lib
+from rsched import machines, secrets, utils_run
 from rsched.config import MachineConfig, RoutineConfig, ServerConfig, load_server_config
 from rsched.engine import runtime
 from rsched.engine.executor import _extra_secrets, _machine_env
@@ -101,7 +101,7 @@ def test_dedupes_bindings():
 # ----------------------------------------------------------------- the declared-var gate -----
 def test_declared_machine_vars_injected(tmp_path):
     home = _lib(tmp_path, "remoteish", DECLARING)
-    env = utils_lib._child_env(home, "remoteish",
+    env = utils_run._child_env(home, "remoteish",
                                {"RSCHED_MACHINES": "[]", "RSCHED_MACHINE_KEYS": '{"g":"PEM"}'})
     assert env["RSCHED_MACHINE_KEYS"] == '{"g":"PEM"}'
     assert env["RSCHED_MACHINES"] == "[]"
@@ -109,7 +109,7 @@ def test_declared_machine_vars_injected(tmp_path):
 
 def test_undeclared_machine_vars_absent(tmp_path):
     home = _lib(tmp_path, "plainish", PLAIN)
-    env = utils_lib._child_env(home, "plainish", {"RSCHED_MACHINE_KEYS": '{"g":"PEM"}'})
+    env = utils_run._child_env(home, "plainish", {"RSCHED_MACHINE_KEYS": '{"g":"PEM"}'})
     assert "RSCHED_MACHINE_KEYS" not in env
 
 
@@ -118,7 +118,7 @@ def test_machine_keys_scrubbed_even_if_inherited(tmp_path, monkeypatch):
     # value NOR any inherited one (the scrub pops it), so the key never leaks to the wrong util
     monkeypatch.setenv("RSCHED_MACHINE_KEYS", "leaked")
     home = _lib(tmp_path, "plainish", PLAIN)
-    env = utils_lib._child_env(home, "plainish", {"RSCHED_MACHINE_KEYS": '{"g":"PEM"}'})
+    env = utils_run._child_env(home, "plainish", {"RSCHED_MACHINE_KEYS": '{"g":"PEM"}'})
     assert "RSCHED_MACHINE_KEYS" not in env
 
 
@@ -127,7 +127,7 @@ def test_ssh_agent_vars_always_stripped(tmp_path, monkeypatch):
     monkeypatch.setenv("SSH_AUTH_SOCK", "agent.sock")
     monkeypatch.setenv("SSH_AGENT_PID", "1234")
     home = _lib(tmp_path, "plainish", PLAIN)
-    env = utils_lib._child_env(home, "plainish", {})
+    env = utils_run._child_env(home, "plainish", {})
     assert "SSH_AUTH_SOCK" not in env and "SSH_AGENT_PID" not in env
 
 

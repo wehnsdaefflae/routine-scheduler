@@ -50,7 +50,7 @@ TURN_ACTION_CLASSES = frozenset({"action", "util", "runs", "workflows"})
 # the next requesting util invocation"). Their use happens inside a util subprocess
 # (declared-env injection, sandbox-mounted roots), so the engine spends them at the next
 # successfully-dispatched action that RECEIVES the entity: a secret at the next util call
-# whose script (or its `calls:` tree — utils_lib.util_needs) declares the var; an fs root
+# whose script (or its `calls:` tree — utils_run.util_needs) declares the var; an fs root
 # at the next file action under it OR the next util invocation (every util's sandbox
 # mounts the granted roots wholesale). connection:/machine: stay four-state — binding
 # carries an account/host no single action "uses up"; recreate: is a per-run unlock.

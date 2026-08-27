@@ -146,7 +146,7 @@ def test_needed_secrets_excludes_connection_tokens(oauth_client):
 
 def test_needed_secret_set_from_environment(oauth_client, monkeypatch):
     """F209: a declared secret provisioned via the daemon ENVIRONMENT (os.environ) — not the
-    store file — reads as SET, because utils_lib._child_env injects it into a declaring util.
+    store file — reads as SET, because utils_run._child_env injects it into a declaring util.
     Presence is the union of the store and os.environ; the store stays the only writable side.
     """
     client, tmp_path = oauth_client

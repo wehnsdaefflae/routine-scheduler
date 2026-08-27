@@ -9,6 +9,7 @@ import json
 import subprocess
 
 from conftest import finish, util, write_file
+from rsched import utils_run
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.actions import util_rejection_outcome
 from rsched.engine.executor import dispatch
@@ -44,7 +45,7 @@ def test_do_util_counts_outcomes(make_routine, tmp_path, monkeypatch):
     codes = iter([0, 2, 3])
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: name != "ghost")
     monkeypatch.setattr(utils_lib, "list_utils", lambda home: [])
-    monkeypatch.setattr(utils_lib, "run_util",
+    monkeypatch.setattr(utils_run, "run_util",
                         lambda home, name, args, **_kw: (next(codes), "out", "err"))
     for _ in range(3):
         dispatch({"kind": "util", "name": "fetch", "args": []}, ctx)

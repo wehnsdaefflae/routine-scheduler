@@ -5,8 +5,8 @@ notify channel) runs inside a Landlock jail (landlock.py) whose visible filesyst
 from the RUN's permissions: the routine's working dir + its fs_read_roots/fs_write_roots,
 plus the fixed toolchain a util needs to execute at all (interpreter, uv + its cache, the
 util library, system trees). Network is a per-util declaration (docstring `net:` line —
-utils_lib.util_needs): `none` (or undeclared) denies all TCP. Secrets scoping (declared-only
-env injection, utils_lib._child_env) is independent of this module and applies in every mode.
+utils_run.util_needs): `none` (or undeclared) denies all TCP. Secrets scoping (declared-only
+env injection, utils_run._child_env) is independent of this module and applies in every mode.
 
 The server-config `sandbox:` mode is the escape hatch (docs/sandboxing.md):
 - strict     — refuse to run utils when the jail can't engage as specified,

@@ -9,7 +9,7 @@ from __future__ import annotations
 import difflib
 import json
 
-from .. import sandbox, utils_lib
+from .. import sandbox, utils_lib, utils_run
 from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, guess_media_type
 from ..paths import atomic_write, resolve_rel
 from ..readmodels.statemap import STAGES_DIR
@@ -122,7 +122,7 @@ def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
     if not utils_lib.exists(home, VISION_UTIL):
         return "error: the `vision` util is not installed, so this file cannot be described"
     args = [abspath, "--prompt", prompt or VIEW_DEFAULT_PROMPT, "--json"]
-    code, out, err = utils_lib.run_util(home, VISION_UTIL, args, timeout=UTIL_DEFAULT_TIMEOUT_S,
+    code, out, err = utils_run.run_util(home, VISION_UTIL, args, timeout=UTIL_DEFAULT_TIMEOUT_S,
                                         policy=sandbox.policy_for_ctx(ctx),
                                         cwd=ctx.routine.dir)
     if code != 0:

@@ -3,7 +3,8 @@
 Turn cycle: budget check → pause gate → inbox drain → sub-workflow exit notifications →
 one completion (schema-validated, ≤2 retries — completion.py, which also owns the
 compaction gate) → dispatch → observation. Control-flow kinds (spawn/subruns/kill/wait)
-are handled here; ask_user and write_util in interact.py; effect kinds go through
+are handled here; ask_user in interact.py, library authoring in authoring.py;
+effect kinds go through
 executor.dispatch. The initial message list (kickoff or resume rehydration) is composed
 in boot.py; between-turn concerns (pause, model switch, injections, subrun announcements)
 live in control.py; the top-level entry (run_routine) in runtime.py. Sub-workflows run in
@@ -21,7 +22,18 @@ from ..endpoints.base import EndpointError
 from ..grants import load_policy
 from ..health_events import log_health_event
 from ..ids import now_iso
-from . import create_routine, detach, executor, inbox, interact, manage_group, notes, requests
+from . import (
+    authoring,
+    create_routine,
+    detach,
+    executor,
+    inbox,
+    interact,
+    manage_group,
+    notes,
+    requests,
+    secretgate,
+)
 from .actions import BRIEF_FIELD
 from .autocommit import autocommit as _autocommit
 from .boot import boot
@@ -454,19 +466,19 @@ class EngineLoop:
                 if action["kind"] == "ask_user":
                     obs = interact.handle_ask(self, action, poll_s=POLL_S)
                 elif action["kind"] == "write_util":
-                    obs = interact.handle_write_util(self, action, poll_s=POLL_S)
+                    obs = authoring.handle_write_util(self, action, poll_s=POLL_S)
                 elif action["kind"] == "remove_util":
-                    obs = interact.handle_remove_util(self, action, poll_s=POLL_S)
+                    obs = authoring.handle_remove_util(self, action, poll_s=POLL_S)
                 elif action["kind"] == "write_rule":
-                    obs = interact.handle_write_rule(self, action, poll_s=POLL_S)
+                    obs = authoring.handle_write_rule(self, action, poll_s=POLL_S)
                 elif action["kind"] == "util":
                     # D39: per-routine secret exposure is decided at CALL time — the gate
                     # asks/refuses/passes; None means the call proceeds normally.
-                    obs = interact.gate_util_secrets(self, action, poll_s=POLL_S) \
+                    obs = secretgate.gate_util_secrets(self, action, poll_s=POLL_S) \
                         or executor.dispatch(action, ctx)
                 elif action["kind"] == "script":
                     # the routine's own deterministic helper — same call-time secret gate
-                    obs = interact.gate_script_secrets(self, action, poll_s=POLL_S) \
+                    obs = secretgate.gate_script_secrets(self, action, poll_s=POLL_S) \
                         or executor.do_script(action, ctx)
                 elif action["kind"] == "schedule_run":
                     obs = interact.handle_schedule_run(self, action)

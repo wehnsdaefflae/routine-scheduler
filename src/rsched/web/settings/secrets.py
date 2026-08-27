@@ -26,7 +26,7 @@ def list_secrets(request: Request) -> dict:
     store_vals = secret_store.load_secrets()
     have = set(store_vals)
     # F209: a declared secret can be provisioned via the DAEMON ENVIRONMENT (os.environ) rather
-    # than the store file — utils_lib._child_env starts from os.environ, so such a secret DOES
+    # than the store file — utils_run._child_env starts from os.environ, so such a secret DOES
     # reach a util that declares it. Presence must reflect that, else a working secret reads
     # "not set" (the Webauthsources symptom). The store is still the only writable surface;
     # os.environ is read-only presence.

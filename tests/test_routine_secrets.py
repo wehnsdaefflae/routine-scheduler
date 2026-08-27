@@ -99,7 +99,7 @@ def test_a_routine_without_a_scoped_store_contributes_nothing(make_routine):
 def test_a_scoped_value_shadows_the_central_one_in_the_child_env():
     """The shadowing rule, end to end through the real injection function: extra_secrets win
     the merge, so the routine's own value is what the util subprocess is handed."""
-    from rsched.utils_lib import scoped_env
+    from rsched.utils_run import scoped_env
 
     secrets.set_secret("SFTP_USER", "shared")
     env = scoped_env({"SFTP_USER"}, {"SFTP_USER": "mine"})
@@ -109,7 +109,7 @@ def test_a_scoped_value_shadows_the_central_one_in_the_child_env():
 def test_declared_only_still_governs_a_scoped_secret():
     """Ownership removes the exposure DECISION, never the declared-only rule: a util that
     does not name the var on its `secrets:` header still never sees it."""
-    from rsched.utils_lib import scoped_env
+    from rsched.utils_run import scoped_env
 
     env = scoped_env({"SFTP_USER"}, {"SFTP_USER": "mine", "SFTP_PASS": "undeclared"})
     assert env["SFTP_USER"] == "mine"
@@ -119,7 +119,7 @@ def test_declared_only_still_governs_a_scoped_secret():
 def test_the_exposure_gate_skips_a_name_the_routine_owns(make_routine):
     """A name in BOTH stores must not file an access request: the run will be handed its
     OWN value, so asking to be shown the shared one is a question about nothing."""
-    from rsched.engine.interact import _own_secrets
+    from rsched.engine.secretgate import _own_secrets
 
     secrets.set_secret("SFTP_USER", "shared")
     secrets.set_routine_secret("scoped", "SFTP_USER", "mine")

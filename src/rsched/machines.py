@@ -6,7 +6,7 @@ vars the reserved `remote` util receives. Key MATERIAL never sits in config: eac
 names a Secrets-store key (`key_var`) holding the private key; only that is a credential.
 
 Two env vars carry the binding to the util, both under the declared-only injection gate
-(utils_lib._child_env): `RSCHED_MACHINES` — non-secret connection metadata (host/user/port/
+(utils_run._child_env): `RSCHED_MACHINES` — non-secret connection metadata (host/user/port/
 host_key/workdir/description/tags) — and `RSCHED_MACHINE_KEYS` — {name: private-key PEM}, a
 credential (its name ends in KEYS, so the util-authoring gate forces its declaration). See
 docs/remote-machines.md.

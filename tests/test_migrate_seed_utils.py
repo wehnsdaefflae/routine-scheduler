@@ -9,7 +9,7 @@ ways: five other utils are newer in production, and a blanket seed-wins would re
 
 import pytest
 
-from rsched import utils_lib
+from rsched import utils_lib, utils_run
 from rsched.config import ServerConfig
 from rsched.migrate_seed_utils import FORCE_FROM_SEED, migrate_seed_utils
 
@@ -49,7 +49,7 @@ def test_a_seed_copy_failing_its_selftest_is_rolled_back(lib, monkeypatch):
     """
     for name in FORCE_FROM_SEED:
         utils_lib.write_util_file(lib, name, "# previous live copy\n")
-    monkeypatch.setattr(utils_lib, "selftest", lambda *a, **k: (False, "boom"))
+    monkeypatch.setattr(utils_run, "selftest", lambda *a, **k: (False, "boom"))
     assert migrate_seed_utils(_server(lib)) == 0
     for name in FORCE_FROM_SEED:
         assert utils_lib.read_util(lib, name) == "# previous live copy\n"
