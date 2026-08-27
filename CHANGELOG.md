@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.234.0] — 2026-08-27
+
+### Removed
+- **Four converged one-shot migrations deleted** (F358) — the delete-after-convergence
+  policy running its own course, ahead of the `2026-08-31`/`2026-09-01` expiries that would
+  have turned `tests/test_policy.py` red:
+  - `conversations.migrate_conversations` + `_seed_converse_into_library` +
+    `_RETIRED_BUDGETS` and their boot call in `cli.py` (the 0.114.0 converse-v3 re-render and
+    budget lift). Verified converged: all 81 production conversations already carry
+    `workflow.version 3` and none holds a retired budget value.
+  - `web/api_audit.py`'s `_LEGACY_COMMENT_RE`/`_LEGACY_NOTE_RE` recovery of structured
+    fields from pre-0.8x plain-text feedback. Verified converged: of 22 queued inbox
+    messages instance-wide, zero are untagged `web-audit` messages. The `via: "web-audit"`
+    marker itself stays — it is the live channel, not migration residue.
+  - The two migration-coverage tests that pinned them
+    (`test_migrate_conversations_relifts_pattern_and_budgets`, the legacy-message block in
+    `test_api.py`).
+
 ## [0.233.2] — 2026-08-26
 
 ### Fixed

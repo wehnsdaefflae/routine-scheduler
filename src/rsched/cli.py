@@ -246,9 +246,6 @@ def cmd_daemon(_args) -> int:
     from .migrate_rules import migrate_rules
 
     migrate_rules(server)  # MIGRATION(expires=2026-09-30): traits -> library-global rules
-    from .conversations import migrate_conversations
-
-    migrate_conversations(server)  # MIGRATION(expires=2026-08-31): converse v3 + budgets
     from .migrate_group_members import migrate_group_members
 
     migrate_group_members(server)  # MIGRATION(expires=2026-09-30): members -> records (F292)

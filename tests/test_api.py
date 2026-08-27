@@ -1168,13 +1168,6 @@ def test_audit_feedback_editable_until_consumed(client, make_routine):
     assert c.put(f"/api/audit/feedback/{mid}",
                  json={"kind": "comment", "target": "F1", "text": ""}).status_code == 400
 
-    # a pre-editability message (formatted text only) still surfaces its fields for editing
-    (inbox / "msg-legacy.json").write_text(json.dumps(
-        {"text": "[AUDIT note] old style", "ts": "2026-07-01T09:00:00+02:00", "via": "web-audit"}))
-    legacy = next(p for p in c.get("/api/items").json()["queued"] if p["id"] == "msg-legacy")
-    assert legacy["kind"] == "general" and legacy["raw"] == "old style"
-    (inbox / "msg-legacy.json").unlink()
-
     # a plain injected message is on the queue too (kind "" = free text, D74): invisible
     # to the structured audit channel, editable/removable via the generic endpoint
     (inbox / "msg-injected.json").write_text(json.dumps({"text": "hi", "ts": "t"}))

@@ -3,7 +3,7 @@
 1. **Delete-after-convergence** (migrations): one-shot migration code must declare its own
    expiry with a `MIGRATION(expires=YYYY-MM-DD)` marker comment next to the code, and the
    suite FAILS once that date passes — a "temporary" migration can never silently become
-   permanent. Zero migrations exist today; this guard is for the next one.
+   permanent. It fires for real: the 2026-08-31/09-01 batch was deleted on its expiry.
 2. **Version discipline**: a bump of `rsched.__version__` must come with a matching
    `## [x.y.z]` header at the top of CHANGELOG.md (0.27 shipped without notes once).
    A pre-commit hook runs this file so the mismatch never reaches a commit.

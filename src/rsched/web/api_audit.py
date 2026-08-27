@@ -32,13 +32,6 @@ def _routine_dir(request: Request) -> Path:
     return request.app.state.server.routines_home / SELF_AUDIT_SLUG
 
 
-# MIGRATION(expires=2026-09-01): messages written before feedback became editable carry
-# only the formatted text — recover their structured fields so they stay editable too.
-# Delete once the production audit inboxes hold no pre-0.8x plain-text feedback items.
-_LEGACY_COMMENT_RE = re.compile(r"^\[AUDIT feedback · finding ([^\]]+)\]\s*(.*)$", re.DOTALL)
-_LEGACY_NOTE_RE = re.compile(r"^\[AUDIT note\]\s*(.*)$", re.DOTALL)
-
-
 def queued_messages(routine_dir: Path) -> list[dict]:
     """EVERY message still sitting in the inbox (not yet consumed by a run) — the Messages
     page shows these so a reviewer sees exactly what the next self-audit run will pick up,
@@ -59,11 +52,6 @@ def queued_messages(routine_dir: Path) -> list[dict]:
                 "choice": str(obj.get("choice") or ""), "raw": str(obj.get("raw") or ""),
                 "from": str(obj.get("from") or obj.get("source") or obj.get("via") or "user"),
                 **({"report": str(obj["report"])} if obj.get("report") else {})}
-        if not item["kind"] and obj.get("via") == "web-audit":
-            if m := _LEGACY_COMMENT_RE.match(item["text"]):
-                item.update(kind="comment", target=m.group(1).strip(), raw=m.group(2))
-            elif m := _LEGACY_NOTE_RE.match(item["text"]):
-                item.update(kind="general", raw=m.group(1))
         out.append(item)
     return out
 

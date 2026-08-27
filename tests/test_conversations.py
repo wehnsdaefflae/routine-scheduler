@@ -78,34 +78,6 @@ def test_converse_seed_lints_clean():
 
 # ---- disk scaffolding ---------------------------------------------------------------------------
 
-def test_migrate_conversations_relifts_pattern_and_budgets(server):
-    """MIGRATION(expires=2026-08-31) coverage. A conversation created before 0.114.0 keeps
-    its creation-time main.md and per-reply budgets forever — nothing else rewrites either.
-    The boot migration re-renders main.md from the current pattern, lifts budgets off the
-    retired values, leaves the conversation's held rule SET alone, and is idempotent.
-    """
-    d = conv_mod.create_conversation(server, slug="c-old", first_message="do a thing")
-    # roll it back to the pre-0.114.0 shape
-    raw = yaml.safe_load((d / "routine.yaml").read_text())
-    raw["workflow"].pop("version")
-    raw["budgets"] = {**raw["budgets"], "max_turns": 10, "max_wall_clock_min": 30,
-                      "max_subruns": 4}
-    (d / "routine.yaml").write_text(yaml.safe_dump(raw, sort_keys=False))
-    (d / "main.md").write_text("---\nname: old\n---\n# stale pattern\n", encoding="utf-8")
-
-    assert conv_mod.migrate_conversations(server) == 1
-    after = yaml.safe_load((d / "routine.yaml").read_text())
-    assert after["budgets"]["max_turns"] == 40 and after["budgets"]["max_wall_clock_min"] == 60
-    assert after["budgets"]["max_subruns"] == 8
-    assert after["workflow"]["version"] == 3
-    main = (d / "main.md").read_text()
-    assert "working_plan" in main and "roughly 10 turns per reply" not in main
-    # the held SET is config and is never rewritten by the re-render — only its tail is
-    assert after["rules"] == raw["rules"]
-    assert "## Standing practices" in main
-    assert conv_mod.migrate_conversations(server) == 0        # idempotent
-
-
 def test_create_conversation_disk_shape(server):
     d = conv_mod.create_conversation(server, slug="c-test", first_message="Fix the flaky test\nin repo X",
                                      workdir=str(server.routines_home))
