@@ -232,8 +232,13 @@ by a test, by the engine, or by a past incident.
   The engine judges NO semantics: the contract is an ACCOUNTING (`[s<n>] met|unmet — why` per
   ACTIVE condition), the gate rejects a summary that skips one, and `record_accounting` stamps the
   model's verdict back at the finish so the panel, the next run and the user all read the same
-  state. Satisfaction is REPORTED, never enforced — forcing a finish on an accounting the model
-  wrote itself is just the model stopping itself with extra steps.
+  state. Satisfaction is REPORTED, never enforced. **v2** (`engine/verifier.py`) checks the
+  claims a summary marks `met` against the run's own transcript with a `tool_call` subcall, and
+  is built around its own two failure modes: FAIL-OPEN everywhere (an unavailable endpoint, an
+  unparseable answer, an unmentioned condition or anything short of an explicit
+  `supported: false` all accept) so it cannot strand a finished job, and AT MOST ONE challenge
+  per condition per run so a stubborn model and a stubborn judge cannot livelock the run into a
+  dead budget. A re-asserted verdict STANDS and the disagreement is recorded (`disputed`).
 - **A run never writes its own config.** `routine.yaml` is never writable by any run — the
   block is by FILENAME anywhere a run can write, external repos included.
 - **A config field must declare whether it reaches a LIVE run.** `configflow.CLASSIFICATION`

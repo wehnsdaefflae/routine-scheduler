@@ -935,9 +935,27 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   `[s<n>] met|unmet` lines and stamps them back, emitting a `stopping_update` transcript event —
   without that writer a condition stayed `open` however often a run reported it met, which is why
   the status column was dead until 0.242.0. `met` is STICKY: a later run does not silently reopen
-  a goal the user has been told is done. Satisfaction is REPORTED, never enforced (v2, a verifier
-  subcall that blocks with evidence, remains a separate decision). Both homes share ONE
-  implementation and both get the GOAL rail panel (`static/components/stopping.js`).
+  a goal the user has been told is done. Satisfaction is REPORTED, never enforced. Both homes
+  share ONE implementation and both get the GOAL rail panel (`static/components/stopping.js`).
+- **v2 — verifying the claims** (`engine/verifier.py`). v1 proves a run ACCOUNTED for its
+  conditions; it cannot prove the account is TRUE, so a run could write `[s3] met — PDF verified`
+  having never opened the PDF and the gate, the writer and the panel would all agree it was done.
+  At the finish a SECOND model (the `tool_call` role, never the main one) is asked, per condition
+  the summary claims `met`, whether the run's own transcript tail supports it. The design is
+  dominated by the two ways this could be worse than the problem:
+  - **False blocks** — a judge that blocks on doubt strands finished jobs over evidence outside
+    the tail it was shown. So it is FAIL-OPEN at every level: an unavailable endpoint, an
+    unparseable answer, a condition the judge did not mention, and anything short of an explicit
+    `supported: false` all ACCEPT; the prompt says absence of evidence is not evidence of absence
+    and to be generous. `unmet` claims are never judged (the run already agrees), and a run with
+    no active conditions pays no subcall at all — which is most runs.
+  - **A livelock** — a stubborn model and a stubborn judge would trade refutations until the
+    budget dies, and a dead budget is precisely the outcome stopping conditions exist to replace.
+    So a condition is challenged AT MOST ONCE per run (`loop._challenged`): the finish is set
+    aside one turn with the objection and how to overrule it, and if the model re-asserts the
+    same verdict it STANDS. The disagreement is then recorded — `disputed` on the condition, in
+    the `stopping_update` event, and as an amber `disputed` mark in the panel. The engine gets
+    one intervention, the model keeps the last word, and the operator gets the audit trail.
 - **Event triggers fire through the same seam** (docs/triggers.md): the webhook route
   (`web/api_hooks.py`, POST `/api/hooks/<slug>/<token>` — the ONE unauthenticated API route:
   constant-time token compare, generic 404, 64 KiB cap, rate limit + spool cap, rejections logged,

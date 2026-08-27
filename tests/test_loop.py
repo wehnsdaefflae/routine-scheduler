@@ -732,11 +732,19 @@ def test_finish_with_pending_user_message_defers_and_delivers(make_routine, scri
     assert not any(p.name.startswith("msg-") for p in (d / "inbox").iterdir())
 
 
-def test_finish_gate_rejects_unaccounted_stopping_conditions(make_routine, scripted):
+def test_finish_gate_rejects_unaccounted_stopping_conditions(make_routine, scripted,
+                                                             monkeypatch):
     """F334/D98 v1: a depth-0 finish whose summary ignores an OPEN stopping condition is
     set aside (the R108 deferral shape — one extra turn); a summary carrying the
-    `[s<n>]` accounting passes. The engine checks the accounting, never the semantics."""
+    `[s<n>]` accounting passes. The engine checks the accounting, never the semantics.
+
+    v2's verifier is stubbed out: this is the ACCOUNTING gate's test, and leaving v2 live
+    would have it consume a scripted reply for a judgement this test says nothing about.
+    """
     from rsched.engine import stopping as stopping_mod
+    from rsched.engine import verifier
+
+    monkeypatch.setattr(verifier, "refuted", lambda loop, summary: [])
 
     d = make_routine(slug="stopper")
     stopping_mod.save(d, {"conditions": [{"text": "stop once the PDF is verified"},
@@ -766,6 +774,64 @@ def test_finish_gate_rejects_unaccounted_stopping_conditions(make_routine, scrip
     assert rows["s1"]["note"].startswith("PDF verified")
     assert rows["s1"]["resolved_run"] == f"stopper:{TS}"
     assert any(e["type"] == "stopping_update" for e in events)
+
+
+def test_verifier_challenges_once_then_the_run_keeps_the_last_word(make_routine, scripted,
+                                                                   monkeypatch):
+    """F334/D98 v2, the safety-critical half. A refuted claim sets the finish aside ONCE; if
+    the model re-asserts it, the verdict STANDS and the disagreement is recorded. Without the
+    once-only rule a stubborn model and a stubborn judge trade refutations until the budget
+    dies — and a dead budget is precisely the outcome stopping conditions exist to replace.
+    """
+    from rsched.engine import stopping as stopping_mod
+    from rsched.engine import verifier
+
+    d = make_routine(slug="verif")
+    stopping_mod.save(d, {"conditions": [{"text": "the PDF is verified"}]}, now="t")
+    seen = []
+    monkeypatch.setattr(verifier, "refuted", lambda loop, summary: (
+        seen.append(summary), [{"id": "s1", "text": "the PDF is verified",
+                                "evidence": "no action opened it"}])[1])
+    scripted([
+        probe(),
+        finish(summary="[s1] met — I verified it"),          # challenged
+        finish(summary="[s1] met — I verified it, honestly"),  # re-asserted → stands
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+
+    # exactly ONE objection, however many times the judge would refuse
+    challenged = [e for e in events if e["type"] == "observation"
+                  and e["payload"].get("stopping_unsupported")]
+    assert len(challenged) == 1 and challenged[0]["payload"]["stopping_unsupported"] == ["s1"]
+    assert len(seen) == 2                                  # it DID run again on the second finish
+
+    # the model's verdict stands, with the objection kept beside it
+    row = stopping_mod.load(d)["conditions"][0]
+    assert row["status"] == "met"
+    assert row["disputed"] == "no action opened it"
+    upd = next(e for e in events if e["type"] == "stopping_update")
+    assert upd["payload"]["met"] == ["s1"] and upd["payload"]["disputed"] == ["s1"]
+
+
+def test_a_verifier_that_accepts_never_touches_the_finish(make_routine, scripted, monkeypatch):
+    """The common path: nothing refuted, so the finish lands on the first try and the store
+    records no dispute."""
+    from rsched.engine import stopping as stopping_mod
+    from rsched.engine import verifier
+
+    d = make_routine(slug="verif2")
+    stopping_mod.save(d, {"conditions": [{"text": "the PDF is verified"}]}, now="t")
+    monkeypatch.setattr(verifier, "refuted", lambda loop, summary: [])
+    scripted([probe(), finish(summary="[s1] met — verified byte-identical")])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    assert not [e for e in events if e["type"] == "observation"
+                and e["payload"].get("stopping_unsupported")]
+    row = stopping_mod.load(d)["conditions"][0]
+    assert row["status"] == "met" and row["disputed"] == ""
 
 
 def test_reserved_finish_surfaces_still_queued_message(make_routine, scripted):

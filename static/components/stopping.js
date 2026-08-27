@@ -87,6 +87,13 @@ export function createStopping(mount, { url, showStage = false, onVerdict } = {}
     if (blocked) meta.append(` · ${c.blocked}`);
     if (c.stage) meta.append(` · stage ${c.stage}`);
     if (c.note) meta.append(el("span", { class: "goal-note", title: c.note }, ` · ${c.note}`));
+    // v2: the verifier objected and the run re-asserted anyway. The verdict stands — the model
+    // keeps the last word — but the disagreement is the operator's to judge, so it is visible
+    // rather than buried in the store.
+    if (c.disputed) {
+      meta.append(el("span", { class: "goal-disputed",
+        title: `a check of the run's transcript disagreed: ${c.disputed}` }, " · disputed"));
+    }
 
     const del = el("button", { class: "goal-del", title: "remove this condition" }, "✕");
     del.onclick = async () => {

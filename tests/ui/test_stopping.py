@@ -138,3 +138,19 @@ def test_no_conditions_explains_what_the_panel_is_for(ui, ui_page):
     expect(ui_page.locator(".goals")).to_contain_text("No stopping conditions")
     expect(ui_page.locator(".goals")).to_contain_text("runaway backstop")
     expect(ui_page.locator(".goal-verdict")).to_have_count(0)   # no goal set → no verdict
+
+
+def test_a_disputed_verdict_is_visible_not_buried(ui, ui_page):
+    """v2: the verifier objected and the run re-asserted, so the verdict stands — but a
+    disagreement nobody can see is the same mistake that lost the panel in the first place."""
+    _slug, conv_dir = _start_conversation(ui, ui_page)
+    _goal(conv_dir, {"mode": "all", "groups": [{"id": "g1", "name": "", "mode": "all"}],
+                     "conditions": [{"id": "s1", "text": "verify it", "status": "met",
+                                     "group": "g1", "note": "I checked",
+                                     "disputed": "no action opened the file"}]})
+    ui_page.reload()
+    expect(ui_page.locator(".goal-row.met")).to_have_count(1)     # the verdict stands
+    disputed = ui_page.locator(".goal-disputed")
+    expect(disputed).to_be_visible()
+    expect(disputed).to_have_attribute("title", "a check of the run's transcript disagreed: "
+                                                "no action opened the file")

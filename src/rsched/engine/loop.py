@@ -165,6 +165,9 @@ class EngineLoop:
         self._last_deliberation_ts = ""   # edge-trigger for mid-run deliberation switches
         self._last_rules_ts = ""    # edge-trigger for user-bound general rules
         self._last_config_ts = ""   # edge-trigger for a live config PATCH (F337)
+        self._challenged: set[str] = set()   # F334 v2: conditions the verifier has
+        #                                      already objected to — at most once each,
+        #                                      or a stubborn pair livelocks the run
         # A signal already applied by an earlier leg must not re-fire on this one —
         # the run's applied ledger (engine-owned) seeds the edge-triggers.
         from .control import load_applied_baselines
@@ -403,6 +406,27 @@ class EngineLoop:
                                 f"from your summary, then finish again."})
                             ctx.write_status()
                             continue
+                    # F334/D98 v2: v1 proves the run ACCOUNTED for its conditions, not that
+                    # the account is true. A second model checks each `met` claim against the
+                    # run's own transcript. Fail-open at every level, and at most ONE objection
+                    # per condition per run: the model keeps the last word (a judge that could
+                    # veto forever would hang the run, which is the outcome conditions exist to
+                    # replace) and the disagreement is recorded instead.
+                    disputes: dict[str, str] = {}
+                    if ctx.depth == 0 and not self._finish_reserved:
+                        from . import verifier
+                        objections = verifier.refuted(self, str(action.get("summary") or ""))
+                        fresh = [o for o in objections if o["id"] not in self._challenged]
+                        if fresh:
+                            self._challenged.update(o["id"] for o in fresh)
+                            obs = {"kind": "finish", "rejected": True,
+                                   "stopping_unsupported": [o["id"] for o in fresh]}
+                            ctx.transcript.event("observation", obs, turn=ctx.turn)
+                            self.messages.append({"role": "user",
+                                                  "content": verifier.challenge_message(fresh)})
+                            ctx.write_status()
+                            continue
+                        disputes = {o["id"]: o["evidence"] for o in objections}
                     self.final_summary = action["summary"]
                     # F334/D98: stamp the model's own [s<n>] met/unmet accounting back into
                     # the store. Without this a condition sat at `open` however often a run
@@ -415,15 +439,17 @@ class EngineLoop:
                         try:
                             newly = stopping.record_accounting(
                                 ctx.routine.dir, action["summary"],
-                                run_id=ctx.run_id, now=now_iso())
+                                run_id=ctx.run_id, now=now_iso(), disputes=disputes)
                         except OSError as exc:
                             ctx.transcript.event(
                                 "error", {"where": "stopping.record_accounting",
                                           "error": str(exc)})
                             newly = []
-                        if newly:
+                        if newly or disputes:
                             ctx.transcript.event("stopping_update",
-                                                 {"met": newly, "run_id": ctx.run_id})
+                                                 {"met": newly, "run_id": ctx.run_id,
+                                                  **({"disputed": sorted(disputes)}
+                                                     if disputes else {})})
                     return self._finish_run(action["status"], action["summary"], authored=True)
                 if action["kind"] == "ask_user":
                     obs = interact.handle_ask(self, action, poll_s=POLL_S)

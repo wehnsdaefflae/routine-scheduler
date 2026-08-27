@@ -207,6 +207,13 @@ When every condition the goal needs is met the panel says **goal met**, and the 
 job is done and to finish now. The engine does not force it to stop — it cannot judge your
 conditions, only make them impossible to ignore.
 
+**Claims are checked.** Marking a condition met is a claim, and a second model reads the agent's
+own transcript to see whether it holds up. If it does not, the finish is set aside once with the
+objection, and the agent either does the missing work or restates its case. It is asked only
+once: a repeated verdict stands, because a check that could veto forever would hang the job
+rather than bound it. When the two disagreed, the condition carries an amber **disputed** mark —
+hover it for the objection — and the call is yours.
+
 ## Artifacts — deliverables in the side panel
 
 When the agent produces something that's more than a chat answer — a report, a generated page, a

@@ -19,6 +19,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.243.0] — 2026-08-27
+
+### Added
+- **Stopping-condition verification — v2 of F334/D98** (`engine/verifier.py`). v1 proves a run
+  ACCOUNTED for its goal; it cannot prove the account is true. A run could write
+  `[s3] met — PDF verified` having never opened the PDF, and the gate, the writer and the panel
+  would all agree it was done — silently and confidently. At the finish a SECOND model (the
+  `tool_call` role, never the main one) is now asked, per condition the summary claims `met`,
+  whether the run's own transcript supports the claim.
+  The design is dominated by the two ways this could be worse than the problem it solves:
+  - **False blocks.** A judge that blocks on doubt is a machine for stranding finished jobs over
+    evidence outside the tail it was shown. It is FAIL-OPEN at every level: an unavailable
+    endpoint, an unparseable answer, a condition the judge did not mention, and anything short of
+    an explicit `supported: false` all ACCEPT. The prompt states that absence of evidence is not
+    evidence of absence and that a wrong `false` strands a finished job while a wrong `true`
+    costs only a stale mark a human can correct.
+  - **A livelock.** A stubborn model and a stubborn judge would trade refutations until the
+    budget died — and a dead budget is precisely the outcome stopping conditions exist to
+    replace. A condition is challenged **at most once per run**: the finish is set aside for one
+    turn carrying the objection and how to overrule it, and a re-asserted verdict STANDS. The
+    disagreement is then recorded rather than enforced — `disputed` on the condition, in the
+    `stopping_update` event, and as an amber `disputed` mark in the goal panel (hover for the
+    objection). The engine gets one intervention, the model keeps the last word, the operator
+    gets the audit trail.
+  Cost is naturally scoped: one subcall per finish attempt, and only for a run that HAS active
+  conditions claiming met — `unmet` claims are never judged, since the run already agrees. A run
+  with no goal pays nothing, which is most runs. 18 module tests + 2 loop-level, the important
+  one being that a re-asserted verdict ends the exchange instead of looping.
+
 ## [0.242.0] — 2026-08-27
 
 Recovering a dropped commitment, and closing the mechanism that dropped it. The user's order

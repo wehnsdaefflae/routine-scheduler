@@ -110,6 +110,9 @@ def normalize(raw: dict) -> dict:
             "note": str(c.get("note") or ""),
             "resolved_ts": str(c.get("resolved_ts") or ""),
             "resolved_run": str(c.get("resolved_run") or ""),
+            # v2: the verifier's standing objection to a verdict the run re-asserted. The
+            # model keeps the last word; the disagreement is kept beside it.
+            "disputed": str(c.get("disputed") or ""),
         })
     # Every condition belongs to a group so evaluation has one shape; a document that named
     # none gets the default group, which is also what a simple flat list looks like.
@@ -144,7 +147,7 @@ def _assign_ids(doc: dict, *, now: str) -> dict:
 #: Written by the ENGINE at a finish (record_accounting), never by the user's PUT. A
 #: whole-document save carries them forward from the store instead of taking them from the
 #: request — otherwise every edit of a condition's text would erase the run's own conclusion.
-ENGINE_OWNED = ("note", "resolved_ts", "resolved_run")
+ENGINE_OWNED = ("note", "resolved_ts", "resolved_run", "disputed")
 
 
 def save(routine_dir: Path, doc: dict, *, now: str) -> dict:
@@ -298,7 +301,8 @@ def read_accounting(summary: str) -> dict[str, tuple[str, str]]:
     return out
 
 
-def record_accounting(routine_dir: Path, summary: str, *, run_id: str, now: str) -> list[str]:
+def record_accounting(routine_dir: Path, summary: str, *, run_id: str, now: str,
+                      disputes: dict[str, str] | None = None) -> list[str]:
     """Stamp the model's verdict back into the store; returns the ids newly marked met.
 
     This is what makes every reader agree. Without it a condition sat at `open` forever however
@@ -308,6 +312,11 @@ def record_accounting(routine_dir: Path, summary: str, *, run_id: str, now: str)
     Only `met` transitions: `unmet` leaves the condition open (recording the reason, which is
     what the next run and the user actually want to read). `met` is STICKY — a later run does
     not silently reopen a goal the user has already been told is done; the user reopens it.
+
+    `disputes` are the v2 verifier's standing objections to verdicts the run RE-ASSERTED after
+    being challenged (engine/verifier.py). The verdict still lands — the model keeps the last
+    word, because an engine that could veto it forever would just hang the run — but the
+    objection is stored beside it so the panel and the user can see the two disagreed.
     """
     doc = load(routine_dir)
     verdicts = read_accounting(summary)
@@ -320,6 +329,7 @@ def record_accounting(routine_dir: Path, summary: str, *, run_id: str, now: str)
             continue
         state, note = got
         c["note"] = note
+        c["disputed"] = (disputes or {}).get(c["id"], "")
         if state == "met":
             c["status"] = "met"
             c["resolved_ts"] = now
