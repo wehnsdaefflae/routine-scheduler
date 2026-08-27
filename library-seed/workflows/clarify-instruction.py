@@ -24,7 +24,7 @@ META = {
     "when_to_use": "Internal: drives the new-routine wizard. Applied to a raw draft, it picks the "
                    "fitting workflow pattern, asks the user blocking questions that overlay the task "
                    "on that pattern, then writes state/wizard_result.json. Not for scheduled use.",
-    "version": 8,
+    "version": 9,
     "tags": ["meta", "wizard", "intake"],
     "includes": ["ask-policy"],
     # The deliverable must survive decomposition: applied to a draft that itself describes a
@@ -58,6 +58,18 @@ def analyze_draft():
     publish / spend — what needs a per-item confirmation vs standing authorization?), and success
     criteria (when is it DONE done?).
 
+    TWO ANSWERS ARE MANDATORY — the intake is not finished without them, whatever else the draft
+    settles:
+      1. **What the routine PRODUCES each run** — the concrete artefact, named, and where it lands.
+         Not the activity ("monitors the feed") but the output ("appends new entries to
+         state/seen.md and writes a digest to the report").
+      2. **What DONE looks like for ONE run** — the observable condition under which this run is
+         finished, checkable without asking anyone.
+    A draft that does not already fix both is not clarified yet. Carry whichever is missing into
+    marry() as a blocking question — those two are asked FIRST and are never resolved by assuming
+    a sensible default. A routine born without them cannot tell a finished run from an abandoned
+    one, and every later run inherits the ambiguity.
+
     OUT OF SCOPE — never ask about, never include: scheduling / frequency, the improvement standards,
     the working directory, and model / endpoint choices. Those are routine CONFIGURATION, set
     separately in the UI. The instruction describes ONLY the task. If the draft names a schedule
@@ -69,7 +81,12 @@ def choose_pattern():
     """`read_file` state/candidates.md — the workflow patterns available for this task, each with its
     control flow and its parameter contract. Pick the ONE whose control flow best fits how THIS task
     should run — that is your suggestion. If none fits well, choose instead to GENERATE a new pattern
-    and note the shape it needs. Remember the choice for write_result()."""
+    and note the shape it needs. Remember the choice for write_result().
+
+    The choice must be MADE, not defaulted to. Name the runner-up as well and why the winner fits
+    this task better — one sentence each, into write_result()'s `notes`. A general-purpose pattern
+    is a legitimate answer only when you can say what it beats; picked silently it is just the
+    absence of a decision, and the routine then runs for months on a control flow nobody chose."""
 
 
 def marry(pattern):
@@ -78,7 +95,12 @@ def marry(pattern):
     Where the task is ambiguous, contradicts the pattern, or leaves a parameter unfixed, `ask_user` —
     mode "blocking", ONE question per turn, at most 5 total: a one-sentence situation + the decision +
     options where sensible. Stop asking once the remaining unknowns wouldn't change how the routine
-    runs."""
+    runs.
+
+    EXCEPT the two mandatory answers from analyze_draft() — what the routine PRODUCES each run and
+    what DONE looks like for one run. Whichever of those the draft left open is asked FIRST, and the
+    stop-asking rule does not reach them: they always change how the routine runs, so no default is
+    "obvious" and silence is not an answer."""
 
 
 def write_result():

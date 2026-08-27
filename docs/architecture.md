@@ -563,6 +563,16 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   daemon's `registry_rescan_s` timer picks the new dir up). The protected `clarification` template routine
   still backs the clarify flow and its questions/decisions surface through `/api/questions`; `wizard_store.py`
   now retains only the on-disk helpers for that template.
+  The intake is held to a WALKED clarification, in prose rather than by a gate (F383) — a machine check
+  cannot tell a real answer from a plausible one, and the cause of a thin intake is the generation copy, not
+  a missing validator. Three answers must be SETTLED before a draft is presented as decided: what the routine
+  PRODUCES each run (the artefact, named, and where it lands), what DONE looks like for ONE run, and which
+  pattern was chosen versus the nearest alternative. `clarify-instruction` makes the first two mandatory
+  questions that the "stop asking once it wouldn't change how the routine runs" rule explicitly does NOT
+  reach, and requires the runner-up pattern named with its reason; the `create_routine` kind surface states
+  the same as a precondition with a checkable test (could you QUOTE the user's own answer? if not, ask
+  rather than draft), and the draft observation tells the relay to name any of the three that is still the
+  agent's inference rather than present it as the user's decision.
 - **Rules** (`library-seed/rules/`, `# rule:` heading, NO requires — lint-enforced): GENERAL
   rules — principle prose a run applies to its own case. ONE copy each, in the library: a routine
   holds SLUGS (`routine.yaml` `rules:`), named in main.md's Standing practices tail

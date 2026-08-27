@@ -116,9 +116,12 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
                     "finish the reply. The relay must state, in the user's words: what the "
                     "routine PRODUCES each run, what DONE looks like for one run, the chosen "
                     "workflow pattern AND one alternative from workflow_catalog with why this "
-                    "one fits better. If the user confirms, call create_routine again with "
-                    "the SAME fields to materialize it; a call with changed fields updates "
-                    "the draft and restarts the confirmation.")}
+                    "one fits better. If any of those is YOUR inference rather than something "
+                    "the user settled, do not present it as decided — say which one is open "
+                    "and ask it, and let the confirming call follow that answer. If the user "
+                    "confirms, call create_routine again with the SAME fields to materialize "
+                    "it; a call with changed fields updates the draft and restarts the "
+                    "confirmation.")}
     if blocked_same_leg:
         obs["held"] = ("This reply already drafted the routine — the confirming call must "
                        "follow the user's answer, in their next message. Show the draft and "

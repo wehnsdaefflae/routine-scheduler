@@ -19,6 +19,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.236.0] — 2026-08-27
+
+### Changed
+- **The new-routine intake WALKS its clarification instead of being trusted to** (F383, closing
+  R476/R492/R494/R503). 0.230.0 shipped the mechanical half — the draft observation carries the
+  pattern catalog and the relay must name the chosen pattern plus one alternative. What was left
+  is that nothing made the agent SETTLE what the routine produces and what done looks like before
+  a draft could be presented as decided. Fixed at the cause, in the generation and teaching copy —
+  deliberately NOT as a machine gate (a validator cannot tell a real answer from a plausible one)
+  and NOT with `create_routine`-only action fields:
+  - `clarify-instruction` (the intake pattern) names two MANDATORY answers — what the routine
+    PRODUCES each run (the artefact, named, and where it lands) and what DONE looks like for ONE
+    run — carried into `marry()` as the FIRST blocking questions, explicitly outside the
+    "stop asking once the remaining unknowns wouldn't change how the routine runs" rule, since
+    those two always do. `choose_pattern()` now requires the runner-up named with why the winner
+    beats it: a general-purpose pattern is a legitimate answer only when you can say what it
+    beats, and picked silently it is just the absence of a decision.
+  - The `create_routine` kind surface states the clarification as a PRECONDITION with a checkable
+    test — could you QUOTE the user's own answer for what it produces and what done is? If you
+    would be inferring either, ask instead of drafting.
+  - The draft observation's `next` tells the relay to name any of the three that is still the
+    agent's inference rather than present it as the user's decision.
+
+### Fixed
+- The live library's `clarify-instruction` had drifted behind two completed renames — traits
+  retired for general RULES, and `communication` split into per-channel messaging permissions. Its
+  ownership rule said `trait/permission` and `communication channels`; both now match the seed.
+
 ## [0.235.0] — 2026-08-27
 
 ### Fixed
