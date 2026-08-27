@@ -47,7 +47,8 @@ from ..groups import member_slugs
 from ..health_events import log_health_event
 from ..ids import now_iso
 from ..paths import read_json
-from .runner import Runner, _pid_alive
+from .runner import Runner
+from .runner_state import _pid_alive
 
 log = logging.getLogger("rsched.group_runs")
 

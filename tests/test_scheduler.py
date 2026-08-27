@@ -5,12 +5,13 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 
-import rsched.daemon.runner as runner_mod
 import rsched.daemon.scheduler as sched_mod
 from conftest import FakeRunner
 from rsched.config import ServerConfig, load_routine
+from rsched.daemon import runner_reap, runner_state
 from rsched.daemon.events import EventBus
-from rsched.daemon.runner import Runner, _notable_stderr
+from rsched.daemon.runner import Runner
+from rsched.daemon.runner_state import _notable_stderr
 from rsched.daemon.scheduler import Scheduler
 from rsched.engine.transcript import read_events
 from rsched.paths import atomic_write_json, read_json
@@ -160,7 +161,7 @@ def _stub_engine(monkeypatch, script: str):
     def cmd(slug, run_ts, *, resume=False):
         return ["bash", "-c", script.replace("{TS}", run_ts)]
 
-    monkeypatch.setattr(runner_mod, "engine_cmd", cmd)
+    monkeypatch.setattr(runner_state, "engine_cmd", cmd)
 
 
 async def _wait_for(cond, wait_s=5.0):
@@ -211,7 +212,7 @@ async def test_waiting_user_releases_slot(make_routine, tmp_path, monkeypatch):
     d2 = make_routine(slug="worker")
     cfg1, _ = load_routine(d1)
     cfg2, _ = load_routine(d2)
-    monkeypatch.setattr(runner_mod, "STATUS_POLL_S", 0.03)
+    monkeypatch.setattr(runner_state, "STATUS_POLL_S", 0.03)
     _stub_engine(monkeypatch,
                  'printf \'{"state": "waiting_user", "pid": 1}\' > runs/{TS}/status.json.tmp '
                  '&& mv runs/{TS}/status.json.tmp runs/{TS}/status.json && sleep 0.6')
@@ -229,7 +230,7 @@ async def test_abort_active_run(make_routine, tmp_path, monkeypatch):
     d = make_routine(slug="abortee")
     cfg, _ = load_routine(d)
     _stub_engine(monkeypatch, "sleep 30")
-    monkeypatch.setattr(runner_mod, "KILL_GRACE_S", 1)
+    monkeypatch.setattr(runner_state, "KILL_GRACE_S", 1)
     runner = Runner(_server(tmp_path), EventBus())
     await runner.fire(cfg)
     assert await _wait_for(lambda: runner.active["abortee"].proc is not None)
@@ -246,7 +247,7 @@ def test_recover_orphans(make_routine, tmp_path):
                       {"run_id": "orphan:20260701-070000", "state": "running", "pid": 999999})
     (run_dir / "transcript.jsonl").write_text(json.dumps({"type": "header"}) + "\n")
     runner = Runner(_server(tmp_path), EventBus())
-    fixed = runner.recover_orphans(scan(_server(tmp_path)))
+    fixed = runner_reap.recover_orphans(runner, scan(_server(tmp_path)))
     assert fixed == 1
     info = read_run(run_dir, "orphan")
     assert info.state == "failed" and "orphaned" in info.summary
@@ -354,7 +355,7 @@ async def test_user_cancel_logs_run_canceled_not_orphaned(make_routine, tmp_path
     d = make_routine(slug="cancelee")
     cfg, _ = load_routine(d)
     _stub_engine(monkeypatch, "sleep 30")
-    monkeypatch.setattr(runner_mod, "KILL_GRACE_S", 1)
+    monkeypatch.setattr(runner_state, "KILL_GRACE_S", 1)
     server = _server(tmp_path)
     runner = Runner(server, EventBus())
     await runner.fire(cfg)
@@ -378,7 +379,7 @@ def test_dead_pid_recovery_still_logs_orphaned_run(make_routine, tmp_path):
     (run_dir / "transcript.jsonl").write_text(json.dumps({"type": "header"}) + "\n")
     server = _server(tmp_path)
     runner = Runner(server, EventBus())
-    assert runner.recover_orphans(scan(server)) == 1
+    assert runner_reap.recover_orphans(runner, scan(server)) == 1
     assert [e["event"] for e in _health_events(server, "orphan2")] == ["orphaned_run"]
 
 
@@ -420,7 +421,7 @@ async def test_user_cancel_sigkill_never_retries(make_routine, tmp_path, monkeyp
     # TERM-immune: the trap ignores SIGTERM and the loop outlives its killed sleep
     # children, so the abort escalates to SIGKILL after the grace period (rc=-9).
     _stub_engine(monkeypatch, "echo x >> legs; trap '' TERM; while true; do sleep 0.2; done")
-    monkeypatch.setattr(runner_mod, "KILL_GRACE_S", 0.5)
+    monkeypatch.setattr(runner_state, "KILL_GRACE_S", 0.5)
     server = _server(tmp_path)
     runner = Runner(server, EventBus())
     await runner.fire(cfg)

@@ -863,7 +863,8 @@ def test_delete_conversation_tears_down_background(client):
 
 def test_runner_reserved_interactive_slots(server):
     from rsched.daemon.events import EventBus
-    from rsched.daemon.runner import INTERACTIVE_SLOTS, Runner
+    from rsched.daemon.runner import Runner
+    from rsched.daemon.runner_state import INTERACTIVE_SLOTS
 
     async def check():
         runner = Runner(server, EventBus())

@@ -9,13 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
-import os
-import re
-import signal
-import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 from .. import registry
@@ -23,17 +17,19 @@ from ..config import RoutineConfig, ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
 from ..ids import run_ts as make_run_ts
-from ..paths import atomic_write, atomic_write_json, read_json
+from ..paths import atomic_write_json, read_json
+from . import runner_reap, runner_state
 from .events import EventBus
 from .llm_tailer import tail_llm_sidecar
+from .runner_state import (
+    BACKGROUND_SLOTS,
+    INTERACTIVE_SLOTS,
+    ActiveRun,
+    _queued_status,
+    abort_process,
+)
 
 log = logging.getLogger("rsched.runner")
-
-# WARNING/ERROR/CRITICAL/traceback markers in an engine subprocess's stderr. The engine's
-# stdout is DEVNULL and its stderr is only surfaced by _reap on a CRASH — so a non-fatal
-# diagnostic logged by a cleanly-finishing run (e.g. the util-stats snapshot write breadcrumb,
-# F97) was silently dropped. _notable_stderr lets _reap re-emit just those lines.
-_NOTABLE_RE = re.compile(r"\b(?:WARNING|ERROR|CRITICAL)\b|Traceback \(most recent call last\)")
 
 
 # The injection channels that count as "a user is talking to this run" for the
@@ -45,83 +41,6 @@ _NOTABLE_RE = re.compile(r"\b(?:WARNING|ERROR|CRITICAL)\b|Traceback \(most recen
 # channels, so wake policy and consumption policy stay ONE vocabulary.
 
 
-def _stranded_user_messages(routine_dir: Path) -> bool:
-    """An unconsumed USER message is waiting in the dir's inbox (USER_MESSAGE_VIAS)."""
-    from ..engine.inbox import USER_MESSAGE_VIAS
-    inbox = routine_dir / "inbox"
-    if not inbox.is_dir():
-        return False
-    for p in inbox.iterdir():
-        if not p.is_file() or p.name.startswith("answer-"):
-            continue
-        obj = read_json(p)
-        if (isinstance(obj, dict) and obj.get("text")
-                and str(obj.get("via") or "") in USER_MESSAGE_VIAS):
-            return True
-    return False
-
-
-def _notable_stderr(stderr: bytes, *, max_lines: int = 12, max_chars: int = 800) -> str:
-    """A compact tail of the WARNING/ERROR/CRITICAL/traceback lines in captured stderr, or
-    "" when the subprocess logged nothing notable. Keeps only the tail so a chatty run can
-    never flood the daemon log, while a real, repeating failure stays visible every run.
-    """
-    hits = [ln.strip() for ln in stderr.decode("utf-8", "replace").splitlines()
-            if _NOTABLE_RE.search(ln)]
-    return " | ".join(hits[-max_lines:])[-max_chars:] if hits else ""
-
-
-KILL_GRACE_S = 10
-STATUS_POLL_S = 2.0
-# Conversations (interactive replies) get their own slot pool: cron load can never queue a
-# chat reply, and a long agentic reply never starves the schedule.
-INTERACTIVE_SLOTS = 3
-# Detached background tasks (dirs under background_home) get a THIRD pool so a couple of
-# long fire-and-forget jobs starve neither the schedule nor chat replies.
-BACKGROUND_SLOTS = 2
-
-
-def engine_cmd(target: str, run_ts: str, *, resume: bool = False) -> list[str]:
-    """`target` is a routine slug (resolved under routines_home) or a directory path —
-    conversations live under their own home, so the runner always passes cfg.dir.
-    """
-    cmd = [sys.executable, "-m", "rsched.cli", "engine-run", target, "--run-ts", run_ts]
-    if resume:
-        cmd.append("--resume")
-    return cmd
-
-
-def _queued_status(run_id: str, ts: str, prior: object = None) -> dict:
-    """The minimal 'queued' status.json written the moment a run is (re)armed, before its
-    engine subprocess boots. On a RESUME the run dir is reused and status.json still holds the
-    prior leg's cumulative telemetry (the `utils` histogram + the integer counters); pass that
-    dict as `prior` so this write CARRIES IT FORWARD instead of clobbering it. Otherwise the
-    boot-time prior_counters reseed (F131/F132) reads an already-wiped file and a finish->reopen
-    loses the pre-finish leg's util calls and counters (F140). A fresh run passes prior=None.
-    """
-    status = dict(prior) if isinstance(prior, dict) else {}
-    status.update({"run_id": run_id, "state": "queued", "started": ts,
-                   "updated": now_iso(), "turn": 0, "question": None,
-                   "usage": {"in": 0, "out": 0}})
-    return status
-
-
-@dataclass
-class ActiveRun:
-    """A run the daemon tracks: queued for a slot, running as a subprocess, or parked on
-    a user question (a parked run releases its slot — `holds_slot`).
-    """
-
-    slug: str
-    run_id: str
-    run_ts: str
-    run_dir: Path
-    proc: asyncio.subprocess.Process | None = None  # None while queued for a slot
-    holds_slot: bool = False
-    sem: asyncio.Semaphore | None = None  # the pool this run draws from (cron vs interactive)
-    background: bool = False  # a detached task — excluded from the self-update drain gate
-    cancelled: bool = False   # aborted while still QUEUED — the supervisor spawns nothing
-    user_cancel: bool = False  # user-requested abort of a RUNNING process (F188): when the
                                # kill leaves no engine finish, _reap logs run_canceled —
                                # a deliberate cancel must not masquerade as orphaned_run
 
@@ -199,7 +118,6 @@ class Runner:
         """
         if reason != "schedule":
             return
-        from ..health_events import log_health_event
         log_health_event(
             self.server.routines_home, "fire_refused",
             routine=cfg.slug, run_id="",
@@ -281,7 +199,7 @@ class Runner:
             if run.cancelled:   # aborted while queued — never spawn
                 return
             run.proc = await asyncio.create_subprocess_exec(
-                *engine_cmd(str(cfg.dir), run.run_ts, resume=resume),
+                *runner_state.engine_cmd(str(cfg.dir), run.run_ts, resume=resume),
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
@@ -309,7 +227,7 @@ class Runner:
             if run.holds_slot:
                 sem.release()
                 run.holds_slot = False
-        self._reap(run, cfg, stderr)
+        runner_reap.reap(self, run, cfg, stderr)
 
     async def _watch_waiting(self, run: ActiveRun) -> None:
         """A run parked on a blocking question releases its concurrency slot (an idle
@@ -318,7 +236,7 @@ class Runner:
         """
         sem = run.sem or self.semaphore
         while True:
-            await asyncio.sleep(STATUS_POLL_S)
+            await asyncio.sleep(runner_state.STATUS_POLL_S)
             st = read_json(run.run_dir / "status.json")
             state = st.get("state") if isinstance(st, dict) else None
             if state in ("waiting_user", "paused") and run.holds_slot:
@@ -342,161 +260,6 @@ class Runner:
             self.center.ingest(rec)
         return _on
 
-    def _reap(self, run: ActiveRun, cfg: RoutineConfig, stderr: bytes) -> None:
-        self.active.pop(run.slug, None)
-        if run.cancelled and run.proc is None:
-            return   # aborted while queued: status already closed out, nothing ran
-        rc = run.proc.returncode if run.proc else None
-        info = registry.read_run(run.run_dir, run.slug)
-        if info.state in (*registry.ACTIVE_STATES, "unknown"):
-            # engine died without closing out (SIGKILL, crash) — the daemon finalizes.
-            # F348: the last engine status write sampled vm_hwm_kb (peak resident memory);
-            # naming it here turns a blind rc=-9 post-mortem into an OOM diagnosis — a
-            # peak near the host's RAM is the kernel-OOM signature.
-            hwm = _last_vm_hwm_kb(run.run_dir)
-            hwm_note = f"; peak memory VmHWM={hwm} kB" if hwm else ""
-            self._close_out(run.run_dir, run.run_id,
-                            f"engine exited rc={rc} without a finish "
-                            f"({stderr.decode('utf-8', 'replace')[-400:].strip() or 'no stderr'}"
-                            f"{hwm_note})",
-                            event="run_canceled" if run.user_cancel else "orphaned_run")
-            info = registry.read_run(run.run_dir, run.slug)
-            if rc == -9 and not run.user_cancel:
-                self._retry_sigkilled(run, cfg, hwm)
-        else:
-            # Clean finish: stdout was DEVNULL and stderr is otherwise dropped here, so a
-            # non-fatal WARNING/ERROR the engine logged (e.g. a persistent telemetry-write
-            # failure like F97) would vanish. Re-emit just those lines into the daemon log
-            # (→ docker logs) so a silent, repeating failure is diagnosable.
-            notable = _notable_stderr(stderr)
-            if notable:
-                log.warning("engine-run routine=%s run=%s finished but logged: %s",
-                            run.slug, run.run_id, notable)
-        if self.center is not None:
-            self.center.close_process(
-                run.run_id,
-                error=(info.summary[:200] if info.state in ("failed", "aborted") else None))
-        self.bus.publish({"event": "run_finished", "routine": run.slug, "run_id": run.run_id,
-                          "state": info.state, "summary": info.summary[:300]})
-        log.info("run_finished routine=%s run=%s rc=%s state=%s",
-                 run.slug, run.run_id, rc, info.state)
-        # R108 residual (F268): a USER message that landed after the engine's LAST inbox
-        # check (the web saw the run still live, chose inject-over-resume, and the run
-        # finished in between) would strand until a later message nudged it. The reap is
-        # the one seam that always runs after every finish, so sweep here: an unconsumed
-        # user message re-opens the run through the same terminal-resume a message to an
-        # idle conversation takes. Only a CLEAN finish re-wakes — resuming a failed/
-        # aborted run on its own leftover message invites a crash-resume loop (and an
-        # abort was the user stopping it). Report/trigger/one-shot/audit deliveries never
-        # wake: each has its own contract (reports wait for the schedule or the routine's
-        # own report trigger).
-        if info.state == "finished" and _stranded_user_messages(cfg.dir):
-            log.info("post-finish inbox sweep: user message stranded — resuming %s", run.slug)
-            self._resume_for_stranded(cfg)
-        # D78-A: a web routine edit made WHILE this run was active was held in the durable
-        # pending-edit spool (the git index was contended). The reap is the one seam that
-        # always follows a run, and the run is now out of `self.active`, so no writer
-        # contends the index — replay the queued edits in order. Applies after ANY terminal
-        # state (config edits are independent of the run's success); a bad edit is logged,
-        # not raised, and its file dropped so one can't wedge the queue.
-        self._apply_pending_edits(cfg, run.slug)
-        try:
-            registry.apply_retention(cfg.dir, cfg.slug, cfg.keep_runs)
-        except OSError as exc:
-            log.warning("retention failed for %s: %s", cfg.slug, exc)
-
-    def _retry_sigkilled(self, run: ActiveRun, cfg: RoutineConfig, hwm: int | None) -> None:
-        """D99-A: a run the KERNEL killed (rc=-9, no authored finish, not a user abort)
-        gets ONE automatic in-place resume. The run-dir marker caps the retry — a run
-        that OOMs again dies failed instead of looping — and the recovery note (filed
-        via=background, the one channel a resumed leg's boot drains) makes the resumed
-        leg STATE what happened instead of continuing as if nothing did.
-        """
-        from ..engine.inbox import file_message
-        marker = run.run_dir / "sigkill-retry.json"
-        if marker.exists():
-            log.warning("sigkill retry already spent for %s — run stays failed", run.run_id)
-            return
-        atomic_write_json(marker, {"ts": now_iso(), "rc": -9, "vm_hwm_kb": hwm})
-        hwm_note = f", peak memory {hwm} kB" if hwm else ""
-        file_message(cfg.dir,
-                     f"AUTOMATIC RECOVERY: this run's previous leg was killed by the kernel "
-                     f"(rc=-9, no authored finish{hwm_note} — likely out-of-memory). This is "
-                     "the single automatic retry. Reassess from the transcript where the work "
-                     "stood, avoid repeating whatever ballooned memory (huge file reads, giant "
-                     "observations), and end with an honest authored finish even if that means "
-                     "partial.", source="daemon", via="background")
-
-        async def _wake() -> None:
-            rid = await self.resume(cfg, run.run_ts, reason="sigkill-retry")
-            if rid:
-                log.warning("sigkill auto-resume (D99): %s resumed as %s", run.run_id, rid)
-            else:
-                log.warning("sigkill auto-resume refused for %s (active/draining/gone) — "
-                            "the recovery note stays durable in the inbox", run.run_id)
-        task = asyncio.create_task(_wake())
-        self._supervisors.add(task)
-        task.add_done_callback(self._supervisors.discard)
-
-    def _resume_for_stranded(self, cfg: RoutineConfig) -> None:
-        """Fire-and-forget the terminal resume for a post-finish stranded message (the
-        reap itself is sync inside the supervisor's event loop). A refusal — draining,
-        raced by another wake — is logged, and the message stays durable in the inbox
-        for whatever run comes next.
-        """
-        async def _wake() -> None:
-            rid = await self.resume_terminal(cfg, reason="converse")
-            if not rid:
-                log.warning("post-finish inbox sweep could not resume %s — the message "
-                            "stays durable for the next run", cfg.slug)
-        task = asyncio.create_task(_wake())
-        self._supervisors.add(task)
-        task.add_done_callback(self._supervisors.discard)
-
-    def _apply_pending_edits(self, cfg: RoutineConfig, slug: str) -> None:
-        """Replay any web edits queued while this run was active (D78-A). Best-effort and
-        never raises out of the reap: a spool or applier failure is logged, the run's
-        finalization already happened above. No explicit catalog rescan is needed — the
-        scheduler tick rescans every registry_rescan_s (scheduler._tick_once), so a queued
-        schedule/config change is picked up on the next tick, exactly like a between-run
-        web edit.
-        """
-        from .. import pending_edits
-        try:
-            rows = pending_edits.apply_pending(cfg.dir, self.server.routines_home, slug)
-        except OSError as exc:
-            log.warning("pending-edit replay failed for %s: %s", slug, exc)
-            return
-        if not rows:
-            return
-        ok = sum(1 for r in rows if r.get("ok"))
-        log.info("pending-edit replay for %s: %d applied, %d failed", slug, ok, len(rows) - ok)
-        for r in rows:
-            if not r.get("ok"):
-                log.warning("pending edit (%s) failed for %s: %s",
-                            r.get("kind"), slug, r.get("error"))
-
-    def _close_out(self, run_dir: Path, run_id: str, message: str, *,
-                   event: str = "orphaned_run") -> None:
-        """Append a synthetic finish to a dead run (single writer: the engine is gone).
-        `event` names the health-stream entry: orphaned_run for a crash/dead pid,
-        run_canceled when the death was a user-requested abort (F188) — same payload shape.
-        """
-        try:
-            with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"ts": now_iso(), "type": "finish",
-                                     "payload": {"status": "failed", "summary": message,
-                                                 "authored": False}}) + "\n")
-        except OSError:
-            pass
-        raw = read_json(run_dir / "status.json")
-        st: dict = raw if isinstance(raw, dict) else {"run_id": run_id}
-        st.update(state="failed", updated=now_iso(), question=None)
-        atomic_write_json(run_dir / "status.json", st)
-        atomic_write(run_dir / "result.md", message + "\n")
-        log_health_event(self.server.routines_home, event,
-                         routine=run_id.split(":", maxsplit=1)[0] if ":" in run_id else run_id,
-                         run_id=run_id, detail=message[:500])
 
     async def abort(self, slug: str) -> bool:
         run = self.active.get(slug)
@@ -517,62 +280,4 @@ class Runner:
         run.user_cancel = True
         return await abort_process(run.proc.pid)
 
-    def recover_orphans(self, catalog: dict[str, registry.RoutineInfo]) -> int:
-        """At boot: any run dir claiming to be alive whose pid is dead gets closed out."""
-        fixed = 0
-        for info in catalog.values():
-            for r in info.runs:
-                if r.state in registry.ACTIVE_STATES \
-                        and not _pid_alive(r.pid):
-                    self._close_out(r.dir, r.run_id, "orphaned by daemon restart")
-                    fixed += 1
-                    log.warning("orphan closed: %s", r.run_id)
-        return fixed
 
-
-def _last_vm_hwm_kb(run_dir: Path) -> int | None:
-    """The dead engine's peak resident memory, from its LAST status.json write (the
-    engine samples /proc/self/status VmHWM into every status update — F348).
-    """
-    st = read_json(run_dir / "status.json")
-    if not isinstance(st, dict):
-        return None
-    try:
-        val = st.get("vm_hwm_kb")
-        return int(val) if val else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _pid_alive(pid: int | None) -> bool:
-    if not pid:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True   # exists, owned by another uid — alive (EPERM is not ESRCH)
-    return True
-
-
-async def abort_process(pid: int | None) -> bool:
-    """SIGTERM the engine's process group; SIGKILL stragglers after the grace period.
-    (F283: the run-dir/run-id params every caller dutifully passed were never used —
-    close-out attribution is the CALLER's job, via _close_out/_reap.)
-    """
-    if not pid or not _pid_alive(pid):
-        return False
-    try:
-        os.killpg(os.getpgid(pid), signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
-        return False
-    for _ in range(int(KILL_GRACE_S / 0.5)):
-        await asyncio.sleep(0.5)
-        if not _pid_alive(pid):
-            return True
-    try:
-        os.killpg(os.getpgid(pid), signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        pass
-    return True

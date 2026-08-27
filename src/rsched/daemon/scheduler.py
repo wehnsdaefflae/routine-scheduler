@@ -22,7 +22,7 @@ from ..config import ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
 from ..schedule import server_tz
-from . import pause, restart
+from . import pause, restart, runner_reap
 from .detached import DetachedManager
 from .events import EventBus
 from .group_runs import GroupRunManager
@@ -141,11 +141,13 @@ class Scheduler:
 
     async def run_forever(self) -> None:
         self.rescan()
-        fixed = self.runner.recover_orphans(self.catalog)
+        fixed = runner_reap.recover_orphans(self.runner, self.catalog)
         # conversations live outside the schedule but their runs can be orphaned all the same
-        self.runner.recover_orphans(registry.scan(self.server, self.server.conversations_home))
+        runner_reap.recover_orphans(
+            self.runner, registry.scan(self.server, self.server.conversations_home))
         # detached background tasks too — then the manager re-attempts any undelivered results
-        self.runner.recover_orphans(registry.scan(self.server, self.server.background_home))
+        runner_reap.recover_orphans(
+            self.runner, registry.scan(self.server, self.server.background_home))
         await self.detached.reconcile()
         # crashed runs leave sshfs key dirs behind (clean exits remove their own)
         from ..machine_mounts import sweep_stale_mount_keys

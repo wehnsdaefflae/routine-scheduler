@@ -10,7 +10,8 @@ import json
 from rsched.config import RoutineConfig, ServerConfig
 from rsched.daemon import restart
 from rsched.daemon.events import EventBus
-from rsched.daemon.runner import ActiveRun, Runner
+from rsched.daemon.runner import Runner
+from rsched.daemon.runner_state import ActiveRun
 from rsched.daemon.scheduler import Scheduler
 
 

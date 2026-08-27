@@ -128,7 +128,7 @@ def cmd_abort(args) -> int:
     import asyncio
 
     from . import registry
-    from .daemon.runner import abort_process
+    from .daemon.runner_state import abort_process
     from .ids import parse_run_id
     from .paths import read_json
 

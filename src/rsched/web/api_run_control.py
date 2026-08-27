@@ -19,7 +19,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from ..config import DELIBERATION_LEVELS, load_routine
-from ..daemon.runner import abort_process
+from ..daemon.runner_state import abort_process
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
 from ..registry import TERMINAL_STATES

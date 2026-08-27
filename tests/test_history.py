@@ -1,7 +1,7 @@
 """Unit tests for engine.history resume helpers — prior_counters (F131/F132)
 and the runner-side queued-status write that must not clobber them (F140)."""
 
-from rsched.daemon.runner import _queued_status
+from rsched.daemon.runner_state import _queued_status
 from rsched.engine.compaction import (
     CHARS_PER_TOKEN,
     INPUT_CHARS_PER_TOKEN,

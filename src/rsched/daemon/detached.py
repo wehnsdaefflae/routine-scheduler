@@ -24,7 +24,6 @@ and the boot `reconcile()` are the same idempotent pass.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import shutil
 from datetime import UTC, datetime
@@ -34,10 +33,11 @@ import yaml
 
 from .. import registry
 from ..config import DEFAULT_BUDGETS, ServerConfig, load_routine
-from ..ids import now_iso
 from ..paths import atomic_write, atomic_write_json, read_json
 from ..schedule import server_tz
-from .runner import Runner, _pid_alive
+from . import detached_delivery
+from .detached_delivery import _has_pending_bg_message
+from .runner import Runner
 
 log = logging.getLogger("rsched.detached")
 # A detached task gets a background-sized budget, NOT the owner conversation's per-reply window,
@@ -72,8 +72,8 @@ class DetachedManager:
         try:
             await self._intake()
             catalog = registry.scan(self.server, self.home)
-            await self._deliver(catalog)
-            await self._wake(catalog)
+            await detached_delivery.deliver(self, catalog)
+            await detached_delivery.wake(self, catalog)
             self._rebuild_digests(catalog)
             self._gc(catalog)
         except Exception:
@@ -173,110 +173,9 @@ class DetachedManager:
 
     # -- 2. deliver -------------------------------------------------------------------------
 
-    async def _deliver(self, catalog: dict[str, registry.RoutineInfo]) -> None:
-        for taskid, info in catalog.items():
-            if (info.cfg.dir / "delivered.json").exists():
-                continue
-            state = self._terminal_state(info)
-            if state is None:
-                continue
-            try:
-                await self._deliver_one(taskid, info, state)
-            except Exception:
-                log.exception("detached: delivery of %s failed — will retry next tick", taskid)
-
-    def _terminal_state(self, info: registry.RoutineInfo) -> str | None:
-        """The finished state to deliver, or None if the task is still live. A task counts as
-        terminal when its status.json says so OR — for a task that survived a restart and is no
-        longer tracked — when its pid is dead (crashed/orphaned without a finish).
-        """
-        last = info.last_run
-        if last is None:
-            return None
-        if last.state in registry.TERMINAL_STATES:
-            return last.state
-        if info.slug not in self.runner.active and not _pid_alive(last.pid):
-            return "failed"
-        return None
-
-    async def _deliver_one(self, taskid: str, info: registry.RoutineInfo, state: str) -> None:
-        task_dir = info.cfg.dir
-        owner = info.cfg.owner or {}
-        owner_dir = Path(owner.get("dir", ""))
-        if not owner.get("dir") or not (owner_dir / "routine.yaml").exists():
-            atomic_write_json(task_dir / "delivered.json", {"ts": now_iso(), "owner": "missing"})
-            log.info("detached: owner of %s missing at delivery — dropped", taskid)
-            return
-        copied = await self._copy_artifacts(task_dir, owner_dir, taskid)
-        # msg FIRST, delivered.json SECOND, both without an await between → a consumer (a later
-        # resume) can never see the msg before the marker; a crash in the tiny gap re-delivers
-        # the same deterministic filename, so still exactly one pending message.
-        atomic_write_json(owner_dir / "inbox" / f"msg-bg-{taskid}.json",
-                          {"text": self._delivery_text(info, state, taskid, copied),
-                           "ts": now_iso(), "via": "background"})
-        atomic_write_json(task_dir / "delivered.json",
-                          {"ts": now_iso(), "state": state, "owner": owner.get("slug")})
-        log.info("detached delivered task=%s state=%s owner=%s artifacts=%d",
-                 taskid, state, owner.get("slug"), copied)
-
-    async def _copy_artifacts(self, task_dir: Path, owner_dir: Path, taskid: str) -> int:
-        src = task_dir / "artifacts"
-        if not src.is_dir() or not any(src.iterdir()):
-            return 0
-        dst = owner_dir / "artifacts" / f"from-bg-{taskid}"
-        # namespaced + overwrite: never clobber the conversation's own artifacts, and idempotent
-        # on re-delivery. Blocking fs op → off the event loop.
-        await asyncio.to_thread(shutil.copytree, src, dst, dirs_exist_ok=True)
-        return sum(1 for _ in dst.rglob("*") if _.is_file())
-
-    def _delivery_text(self, info: registry.RoutineInfo, state: str, taskid: str,
-                       copied: int) -> str:
-        label = info.cfg.name or taskid
-        verb = {"finished": "finished", "failed": "failed",
-                "aborted": "was cancelled"}.get(state, state)
-        summary = (info.last_run.summary if info.last_run else "") or "(no summary was written.)"
-        lines = [f"[background task {verb}] The detached task “{label}” {verb}.", "", summary]
-        if copied:
-            lines += ["", f"Its {copied} artifact(s) were copied to `artifacts/from-bg-{taskid}/`."]
-        lines += ["", "Relay this result to me. (Full status of your background tasks is in "
-                  "`state/background.json`.)"]
-        return "\n".join(lines)
 
     # -- 3. wake ----------------------------------------------------------------------------
 
-    async def _wake(self, catalog: dict[str, registry.RoutineInfo]) -> None:
-        """Resume any owner that is idle (terminal last run) with a pending inbox message and is
-        not active/draining — state-driven, so it also catches the race where the owner finished
-        a reply just after we wrote the message. A live owner is skipped: its running reply drains
-        the message at the next turn boundary. Idempotent vs the message endpoint's own resume
-        (both go through runner.resume, which refuses a second concurrent resume).
-        """
-        seen: set[str] = set()
-        for info in catalog.values():
-            if not (info.cfg.dir / "delivered.json").exists():
-                continue
-            owner = info.cfg.owner or {}
-            slug = str(owner.get("slug") or "")
-            if not slug or slug in seen:
-                continue
-            seen.add(slug)
-            owner_dir = Path(owner.get("dir", ""))
-            if not (owner_dir / "routine.yaml").exists():
-                continue
-            await self._wake_owner(owner_dir, slug)
-
-    async def _wake_owner(self, owner_dir: Path, slug: str) -> None:
-        if self.runner.is_active(slug) or self.runner.draining:
-            return
-        if not _has_pending_inbox(owner_dir):
-            return
-        owner_cfg, _ = load_routine(owner_dir)
-        if owner_cfg is None:
-            return
-        # a non-terminal last run means a live reply is already draining the message
-        rid = await self.runner.resume_terminal(owner_cfg, reason="detached")
-        if rid:
-            log.info("detached woke owner=%s run=%s", slug, rid)
 
     # -- 4. digest --------------------------------------------------------------------------
 
@@ -349,12 +248,3 @@ def _strip_capabilities(caps: object) -> dict:
     return out
 
 
-def _has_pending_inbox(routine_dir: Path) -> bool:
-    inbox = routine_dir / "inbox"
-    if not inbox.is_dir():
-        return False
-    return any(p.is_file() and not p.name.startswith("answer-") for p in inbox.iterdir())
-
-
-def _has_pending_bg_message(owner_dir: Path, taskid: str) -> bool:
-    return owner_dir.is_dir() and (owner_dir / "inbox" / f"msg-bg-{taskid}.json").exists()
