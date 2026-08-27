@@ -11,7 +11,7 @@ import time
 from types import SimpleNamespace
 
 from conftest import finish
-from rsched.engine.requests import request_denial
+from rsched.engine.availability import request_denial
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
 from rsched.grantpolicy import GrantPolicy
@@ -472,7 +472,7 @@ def test_request_ids_canonicalize_fs_paths(monkeypatch, tmp_path):
     as `~/…` must yield the SAME absolute id in the pending record, the web's config
     write and the run overlay — or the granted root never matches what the enforcers
     compare (write_roots/read_roots hold expanded absolute paths)."""
-    from rsched.engine.requests import request_ids
+    from rsched.engine.availability import request_ids
 
     monkeypatch.setenv("HOME", str(tmp_path))
     assert request_ids({"request": "fs-write:~/proj"}) == [f"fs-write:{tmp_path / 'proj'}"]

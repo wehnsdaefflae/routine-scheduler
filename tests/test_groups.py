@@ -544,7 +544,7 @@ def test_a_dial_matching_the_group_is_not_recorded_on_the_member(tmp_path):
     a member's own key wins. List members are NOT stripped: they union, so a redundant entry
     is harmless and keeping it preserves what the user ticked.
     """
-    from rsched.config.routine import strip_group_dials
+    from rsched.config.groupconfig import strip_group_dials
 
     group = {"runs": "last", "workflows": "generate", "confirm": "never",
              "actions": ["memory_read"]}

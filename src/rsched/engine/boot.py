@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from .. import reports
 from ..paths import read_json, resolve_rel
-from . import fileops, inbox
+from . import inbox, mediaops
 from .composer import build_system_prompt, kickoff_message, state_digest
 from .control import inject_user_message, run_user_command
 from .history import orphaned_children, prior_counters, prior_usage, replay_messages, seen_paths
@@ -188,7 +188,7 @@ def attach_first_message_media(loop, kickoff: dict) -> None:
     pend = ctx.routine.dir / "state" / "pending-media.json"
     data = read_json(pend)
     rels = data.get("attachments") if isinstance(data, dict) else None
-    if rels and (media := fileops.media_from_paths(ctx, [str(r) for r in rels])):
+    if rels and (media := mediaops.media_from_paths(ctx, [str(r) for r in rels])):
         kickoff["media"] = media
     if pend.exists():
         try:

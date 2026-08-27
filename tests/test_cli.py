@@ -4,7 +4,8 @@ Assertions target information content (what a reader needs on the line), not exa
 
 import pytest
 
-from rsched.cli import _parse_model_overrides, _render_event
+from rsched.cli import _parse_model_overrides
+from rsched.cli_render import _render_event
 
 # ---------------------------------------------------------------- _render_event
 

@@ -291,7 +291,7 @@ def test_missing_connection_is_named_as_a_requestable_entity(tmp_path):
     the ambient environment (a real GOOGLE_ACCESS_TOKEN makes it succeed), and that has
     nothing to do with the routing rule under test.
     """
-    from rsched.engine.executor import _unbound_connection_request
+    from rsched.engine.exec_env import _unbound_connection_request
 
     utils_lib.ensure_library(tmp_path)
     utils_lib.write_util_file(tmp_path, "gapi", ALWAYS_FAILS_NEEDING_GOOGLE)
@@ -306,7 +306,7 @@ def test_a_bound_connection_produces_no_request_route(tmp_path):
     binds the provider must not be given misleading grant advice."""
     from types import SimpleNamespace
 
-    from rsched.engine.executor import _unbound_connection_request
+    from rsched.engine.exec_env import _unbound_connection_request
 
     utils_lib.ensure_library(tmp_path)
     utils_lib.write_util_file(tmp_path, "gapi", ALWAYS_FAILS_NEEDING_GOOGLE)
@@ -319,7 +319,7 @@ def test_a_bound_connection_produces_no_request_route(tmp_path):
 
 def test_a_util_needing_no_connection_produces_no_route(tmp_path):
     """Every other failing util keeps the plain repair hint — no grant noise."""
-    from rsched.engine.executor import _unbound_connection_request
+    from rsched.engine.exec_env import _unbound_connection_request
 
     utils_lib.ensure_library(tmp_path)
     utils_lib.write_util_file(tmp_path, "boomer", FAILING_UTIL)

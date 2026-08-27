@@ -84,7 +84,7 @@ async def cancel_background(request: Request, slug: str, taskid: str) -> dict:
     cfg, _ = load_routine(task_dir) if (task_dir / "routine.yaml").exists() else (None, [])
     if cfg is None or (cfg.owner or {}).get("slug") != slug:
         raise HTTPException(404, f"no background task {taskid!r} for conversation {slug!r}")
-    from .api_runs import abort_with_fallback
+    from .api_run_control import abort_with_fallback
 
     runner = request.app.state.runner
     last = registry.run_index(task_dir, taskid)
@@ -100,7 +100,7 @@ async def teardown_background(request: Request, slug: str) -> None:
     """On conversation delete: abort + remove its detached tasks (pid fallback for a task that
     outlived a restart), reusing the run abort path.
     """
-    from .api_runs import abort_with_fallback
+    from .api_run_control import abort_with_fallback
 
     runner = request.app.state.runner
     for taskid, ti in _background_tasks(request, slug):

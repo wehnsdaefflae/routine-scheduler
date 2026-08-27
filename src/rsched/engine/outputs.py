@@ -16,7 +16,7 @@ Reads are ordinary `read_file`, which pages by line window — a large output is
 consult on disk than it ever was in context, where it only existed as a head+tail guess.
 Writes are engine-only (`fileops._write_gate`), like `runs/`: a run must not be able to
 rewrite its own evidence. The dir is gitignored on first use — the run-end autocommit is
-`git add -A` and util output can carry tokens — mirroring `machines._ensure_mnt_gitignored`.
+`git add -A` and util output can carry tokens — mirroring `machine_mounts._ensure_mnt_gitignored`.
 
 Retention is KEEP_RUNS run directories, pruned on write: a backstop against unbounded
 growth, never a promise about how long an output survives.

@@ -196,7 +196,7 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
     callers decide whether that is a retry or a silent fallback.
     """
     from .authoring import recreate_denial  # function-level: authoring pulls in the ask stack
-    from .requests import request_denial
+    from .availability import request_denial
 
     candidate = (completion.parsed if completion.parsed is not None
                  else extract_json(completion.text))

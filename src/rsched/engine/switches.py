@@ -145,7 +145,7 @@ def _adopt(loop, field: str, value: object) -> None:
                 if hasattr(ctx.budgets, str(name)) and isinstance(limit, int):
                     setattr(ctx.budgets, str(name), limit)
         elif field == "grants" and isinstance(value, dict):
-            from ..grantpolicy import load_policy
+            from ..policyload import load_policy
 
             ctx.routine.grants = value
             loop.base_grants = load_policy(

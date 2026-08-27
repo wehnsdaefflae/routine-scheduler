@@ -10,25 +10,17 @@ both the transcript event and (via observations.format_observation) the next use
 
 from __future__ import annotations
 
-import json
 import logging
 
-from .. import machines, sandbox, utils_lib, utils_run
-from ..endpoints.base import EndpointError
+from .. import sandbox, utils_lib, utils_run
 from ..ids import is_slug
-from ..oauth import store as oauth_store
 from ..utils_lib import USAGE_ERROR_EXIT
-from . import outputs, refusal
-from .fileops import (
-    UTIL_DEFAULT_TIMEOUT_S,
-    do_edit_file,
-    do_memory_read,
-    do_memory_write,
-    do_read_file,
-    do_read_rule,
-    do_view_image,
-    do_write_file,
-)
+from . import outputs
+from .exec_env import _extra_secrets, _unbound_connection_request
+from .fileops import UTIL_DEFAULT_TIMEOUT_S, do_edit_file, do_read_file, do_write_file
+from .llmaction import do_list_models, do_llm
+from .mediaops import do_view_image
+from .memops import do_memory_read, do_memory_write, do_read_rule
 from .observations import truncate
 from .run_context import RunContext
 
@@ -38,112 +30,6 @@ READ_DEFAULT_MAX_LINES = 200
 # argparse exits 2 on bad arguments — the deterministic "called with wrong syntax" signal
 # for per-util telemetry (a util not using argparse may exit 1 for everything; then its
 # usage errors count as plain errors, which is the honest fallback).
-
-
-def _connection_env(ctx: RunContext) -> dict[str, str]:
-    """The routine's EFFECTIVE OAuth connections resolved to {<PROVIDER>_ACCESS_TOKEN: token},
-    passed to run_util as extra_secrets: the config bindings plus this run's one-time
-    connection grants (the decision recorded the account in ctx.grant_args). A util only
-    sees a token it declares AND the run holds; a missing / needs-reauth binding is simply
-    absent (the util then fails for want of a token).
-    """
-    bound = dict(ctx.routine.connections or {})
-    for eid in sorted(ctx.granted_now):
-        if eid.startswith("connection:"):
-            provider = eid.partition(":")[2]
-            bound.setdefault(provider, str(ctx.grant_args.get(eid) or ""))
-    if not bound:
-        return {}
-    env, warnings = oauth_store.tokens_for_routine(bound)
-    for w in warnings:                       # a broken binding must not fail SILENTLY
-        log.warning("connections: %s", w)
-    return env
-
-
-def _machine_env(ctx: RunContext) -> dict[str, str]:
-    """The routine's EFFECTIVE remote machines (config bindings + one-time machine grants)
-    resolved to RSCHED_MACHINES (connection metadata) + RSCHED_MACHINE_KEYS (private-key
-    PEMs from the Secrets store), passed to run_util as extra_secrets. Only the reserved
-    `remote` util declares these, so only it receives them; an unresolvable binding
-    (missing catalog entry / unset key) is simply absent from the maps. A one-time grant
-    covers EXEC only — the sshfs share is mounted by the daemon at binding time, so
-    mounts come with forever-bindings.
-    """
-    bound = list(ctx.routine.machines or [])
-    bound += [eid.partition(":")[2] for eid in sorted(ctx.granted_now)
-              if eid.startswith("machine:") and eid.partition(":")[2] not in bound]
-    if not bound:
-        return {}
-    env, warnings = machines.machines_for_routine(bound, ctx.server.machines)
-    for w in warnings:                       # a broken binding must not fail SILENTLY
-        log.warning("machines: %s", w)
-    return env
-
-
-def _routine_secrets(ctx: RunContext) -> dict[str, str]:
-    """This routine's own scoped store (D103). A conversation or background task has a slug
-    too, so the same mechanism serves them; a routine with no store contributes nothing.
-    """
-    from ..secrets import load_routine_secrets
-
-    try:
-        return load_routine_secrets(ctx.routine.slug)
-    except ValueError:
-        return {}     # a dir-path routine whose name is not a slug has no scoped store
-
-
-def _extra_secrets(ctx: RunContext) -> dict[str, str]:
-    """Engine-resolved, per-run secrets a util may receive (still under the declared-only gate):
-    the routine's OWN scoped secrets, OAuth connection access tokens, and bound remote-machine
-    details/keys. The var names are disjoint, so a plain merge is safe.
-
-    ROUTINE-SCOPED SECRETS (D103): `secrets.d/<slug>.env` rides this channel because
-    extra_secrets WIN the _child_env merge — so a routine's own `SFTP_USER` shadows a central
-    value of the same name for its runs, and reaches no other routine. There is no grant to
-    check: a scoped secret is the routine's own, implicitly exposed to it (secrets.py).
-
-    RSCHED_API_TOKEN (R94, operator decision 2026-08-05: ENFORCE): the reserved name a
-    util declares to talk to the daemon API resolves to the server's ROUTINE token — the
-    read-only tier — and OVERRIDES any secrets-store value for it (extra_secrets win the
-    _child_env merge by design), so the primary console token can never reach a util
-    subprocess through the store. Config stays honest: the engine reads `routine_token`
-    here, it never writes it (bootstrap.ensure_config generates it).
-    """
-    out = {**_routine_secrets(ctx), **_connection_env(ctx), **_machine_env(ctx)}
-    routine_token = str(getattr(ctx.server, "routine_token", "") or "")
-    if routine_token:
-        out["RSCHED_API_TOKEN"] = routine_token
-    return out
-
-
-def _unbound_connection_request(ctx: RunContext, name: str) -> str:
-    """F321 (from R333): the one-click repair route for a util that failed because a
-    connection it needs is not bound to this routine.
-
-    `google-api` failing with "$GOOGLE_ACCESS_TOKEN is not set" used to be explained in
-    PROSE in the finish summary, while a missing fs-write root in the same conversation
-    correctly produced a typed access request the user could approve inline. The asymmetry
-    was the whole complaint: a connection IS a grant entity (`connection:<provider>`,
-    entities.py), so a run should be routed to request it, not to narrate it.
-
-    Returns the route sentence, or "" when nothing is missing.
-    """
-    from ..oauth.providers import access_token_var, provider_ids
-
-    declared, _net, _opt = utils_run.util_needs(ctx.server.libraries_home, name)
-    upper = {d.upper() for d in declared}
-    bound = dict(getattr(ctx.routine, "connections", None) or {})
-    missing = [pid for pid in provider_ids()
-               if access_token_var(pid) in upper and not bound.get(pid)]
-    if not missing:
-        return ""
-    eid = f"connection:{missing[0]}"
-    return (f'This util needs a bound {missing[0]} connection — it declares '
-            f'{access_token_var(missing[0])}, which the engine injects only from a binding, '
-            f'and this routine has none. That is a grantable entity: ask for it with '
-            f'{{"kind": "ask_user", "request": "{eid}", "question": "<why you need it>"}} '
-            f'and the user can allow it in one click on the Decisions page. Do NOT explain '
-            f'the missing binding in prose and move on. ')
 
 
 def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/show dispatch, many small exits
@@ -335,87 +221,6 @@ def do_script(action: dict, ctx: RunContext) -> dict:
     return obs
 
 
-def do_llm(action: dict, ctx: RunContext) -> dict:
-    messages = []
-    if action.get("system"):
-        messages.append({"role": "system", "content": action["system"]})
-    messages.append({"role": "user", "content": action["prompt"]})
-    schema = action.get("response_schema")
-    purpose = ("llm · " + str(action.get("say") or "sub-call"))[:80]
-    # The optional `model` field: a ROLE (main/tool_call; uncensored → the routine's
-    # uncensored model) or a CATALOG model NAME (`list_models` shows them) — default
-    # tool_call. An unknown value is a teaching error naming the catalog (D81 extended,
-    # 2026-08-22).
-    role = str(action.get("model") or "tool_call")
-    try:
-        if role == "uncensored":
-            target = ctx.registry.for_uncensored(ctx.routine.models)
-            if target is None:
-                return {"kind": "llm",
-                        "error": "model role 'uncensored' is not configured for this routine "
-                                 "— it needs a models.uncensored catalog entry (routine page "
-                                 "→ Models). Use the default role, or ask the user to set one."}
-            endpoint, ref = target
-        elif role in ("main", "tool_call"):
-            endpoint, ref = ctx.registry.for_model(role, ctx.routine.models)
-        elif role in ctx.server.models:
-            endpoint, ref = ctx.registry.for_name(role)
-        else:
-            avail = ", ".join(sorted(ctx.server.models)) or "none configured"
-            return {"kind": "llm",
-                    "error": f"model {role!r} is neither a role (main/tool_call/uncensored) "
-                             f"nor a catalog model name. Catalog models: {avail}. The "
-                             "list_models action shows each one's endpoint and attributes."}
-        completion = endpoint.complete(messages, model=ref.model, schema=schema,
-                                       effort=ref.effort, temperature=ref.temperature,
-                                       max_tokens=ref.max_tokens, purpose=purpose,
-                                       kind="llm_action")
-    except EndpointError as exc:
-        return {"kind": "llm", "error": str(exc)}
-    ctx.add_usage(completion.usage)
-
-    reply = completion.text
-    if completion.parsed is not None:
-        reply = json.dumps(completion.parsed, ensure_ascii=False, indent=1)
-    reply, truncated = truncate(reply)
-    out = {"kind": "llm", "endpoint": ref.endpoint, "model": ref.model,
-           "reply": reply, "usage": completion.usage, "truncated": truncated}
-    # Refusal clarification (engine/refusal.py): a free-text reply that a classification
-    # subcall (markers only fast-path CONFIRM) judges a content refusal is FLAGGED, its
-    # trigger isolated, and ONLY the isolated essence delivered to the uncensored model
-    # as a normal call (operator, 2026-08-22: authentic environment, dummy responses
-    # managed in the background). Everything ELSE goes back to the PRIMARY model with
-    # the essence factored out — "without danger of refusal" — and that answer serves
-    # the observation; the refusal record rides beside it. A schema'd reply is an answer
-    # by construction, and an explicit `model: uncensored` call is the caller's own
-    # probe — neither is clarified.
-    if role != "uncensored" and completion.parsed is None \
-            and refusal.is_refusal(ctx, completion.text):
-        record = refusal.clarify_refusal(
-            ctx, task=str(action.get("prompt") or ""), refusal=completion.text,
-            where="llm", model=ref.name or ref.model)
-        out["refusal"] = record
-        essence = record.get("isolated")
-        if essence and essence in str(action.get("prompt") or ""):
-            sanitized = str(action.get("prompt") or "").replace(
-                essence, "[this part is handled separately]")
-            try:
-                remainder = endpoint.complete(
-                    [*messages[:-1], {"role": "user", "content": sanitized}],
-                    model=ref.model, schema=schema, effort=ref.effort,
-                    temperature=ref.temperature, max_tokens=ref.max_tokens,
-                    purpose=(purpose + " · remainder")[:80], kind="llm_action")
-            except EndpointError:
-                remainder = None
-            if remainder is not None and (remainder.text or remainder.parsed is not None):
-                ctx.add_usage(remainder.usage)
-                r2 = (remainder.text if remainder.parsed is None
-                      else json.dumps(remainder.parsed, ensure_ascii=False, indent=1))
-                out["reply"], out["truncated"] = truncate(r2)
-                out["remainder_processed"] = True
-    return out
-
-
 DISPATCH = {
     "util": do_util,
     "read_file": do_read_file,
@@ -428,39 +233,6 @@ DISPATCH = {
     "llm": do_llm,
     "list_models": lambda _action, ctx: do_list_models(ctx),
 }
-
-
-def do_list_models(ctx: RunContext) -> dict:
-    """The model DISCOVERY surface (paired with the per-call `model` override,
-    2026-08-22): what this run's role bindings resolve to right now, plus every catalog
-    model a `model` field may name. Read-only — config stays the user's. A catalog row
-    that fails to resolve surfaces as its own error line instead of vanishing
-    (failure-visibility).
-    """
-    roles: dict = {}
-    for role in ("main", "tool_call"):
-        try:
-            _, ref = ctx.registry.for_model(role, ctx.routine.models)
-            roles[role] = {"catalog": ref.name, "endpoint": ref.endpoint, "model": ref.model}
-        except EndpointError as exc:
-            roles[role] = {"error": str(exc)}
-    unc = ctx.registry.for_uncensored(ctx.routine.models)
-    roles["uncensored"] = ({"catalog": unc[1].name, "endpoint": unc[1].endpoint,
-                            "model": unc[1].model} if unc else None)
-    models = []
-    for name in sorted(ctx.server.models):
-        try:
-            _, ref = ctx.registry.resolve(name)
-            models.append({"name": name, "endpoint": ref.endpoint, "model": ref.model,
-                           "multimodal": ref.multimodal, "context_chars": ref.context_chars,
-                           "effort": ref.effort,
-                           "fallbacks": list(ctx.server.models[name].fallbacks)})
-        except EndpointError as exc:
-            models.append({"name": name, "error": str(exc)})
-    return {"kind": "list_models", "roles": roles, "models": models,
-            "note": ("a spawn/subtask/llm action's `model` field takes one of these "
-                     "catalog names, or a role (main/tool_call/uncensored); children "
-                     "default to main, llm to tool_call")}
 
 
 def dispatch(action: dict, ctx: RunContext) -> dict:

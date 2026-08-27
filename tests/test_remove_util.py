@@ -9,7 +9,8 @@ from types import SimpleNamespace
 from rsched import utils_lib
 from rsched.engine.actions import validate_action
 from rsched.engine.authoring import handle_remove_util
-from rsched.grantpolicy import GrantPolicy, load_policy
+from rsched.grantpolicy import GrantPolicy
+from rsched.policyload import load_policy
 
 UTIL = '''# /// script
 # dependencies = []

@@ -69,7 +69,7 @@ def commands(request: Request, slug: str) -> dict:
     """
     from .. import utils_lib
     from ..engine.commands import command_catalog
-    from ..grantpolicy import load_policy
+    from ..policyload import load_policy
 
     info = conversation_info(request, slug)
     server = request.app.state.server
@@ -268,7 +268,7 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
             roots = [r for r in roots if r not in (prev, wd)]
             raw[key] = ([wd] if wd else []) + roots
     # D82: the header panel edits the FULL folder-access lists — REPLACE wholesale, same
-    # validation as the routine page's save path (api_routine_edit._apply_resource_fields).
+    # validation as the routine page's save path (api_routine_patch._apply_resource_fields).
     # Placed AFTER the workdir slot-swap so a request carrying both (the UI sends one or the
     # other) lands on the explicit lists. Like every conversation config edit, the change
     # reaches the NEXT reply's boot — a live reply keeps the roots it booted with.

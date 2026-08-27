@@ -1,13 +1,13 @@
 """Engine-side OAuth token injection: `_child_env` gives a util an engine-provided access token
 ONLY if the util declares the var (the declared-only invariant, extended to non-store secrets), and
-`executor._connection_env` resolves a routine's `connections:` bindings to those env vars."""
+`exec_env._connection_env` resolves a routine's `connections:` bindings to those env vars."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
 from rsched import utils_run
-from rsched.engine.executor import _connection_env
+from rsched.engine.exec_env import _connection_env
 from rsched.oauth import store
 from rsched.oauth.store import Connection
 

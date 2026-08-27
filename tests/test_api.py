@@ -119,7 +119,7 @@ def test_engine_injects_the_routine_token_for_the_reserved_name():
     on the read-only tier."""
     from types import SimpleNamespace
 
-    from rsched.engine.executor import _extra_secrets
+    from rsched.engine.exec_env import _extra_secrets
 
     ctx = SimpleNamespace(server=SimpleNamespace(routine_token="routine-tok", machines={}),
                           routine=SimpleNamespace(slug="apir", connections={}, machines=[]),

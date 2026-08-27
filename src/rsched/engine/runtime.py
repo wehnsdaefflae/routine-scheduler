@@ -138,7 +138,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     # Mount every bound machine's `share` (sshfs) at <routine>/mnt/<name>/ for the run's
     # lifetime, so local filesystem utils act on remote files (compute goes via `remote exec`;
     # this is the filesystem half). Best-effort; unmounted in the finally on EVERY exit path.
-    from .. import machines as machines_mod
+    from .. import machine_mounts as machines_mod
 
     mounts, unavailable = machines_mod.mount_routine_shares(cfg, server)
     # The run is told what it actually HAS (R514): a share that did not come up is named as

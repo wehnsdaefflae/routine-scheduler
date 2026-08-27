@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rsched.grantpolicy import GrantPolicy, load_policy
+from rsched.grantpolicy import GrantPolicy
 from rsched.grants import (
     EMPTY_CAPABILITIES,
     capabilities_for,
@@ -14,6 +14,7 @@ from rsched.grants import (
     normalize_capabilities,
     read_library_requires,
 )
+from rsched.policyload import load_policy
 
 
 def _lib(tmp_path: Path, permissions: dict[str, str]) -> Path:

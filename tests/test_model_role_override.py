@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from rsched.config import ModelRef
 from rsched.endpoints.base import Completion
 from rsched.engine.actions import validate_action
-from rsched.engine.executor import do_llm
+from rsched.engine.llmaction import do_llm
 from rsched.engine.subruns import SubrunManager
 
 
@@ -153,7 +153,7 @@ def test_list_models_reports_roles_and_catalog():
     """The discovery half of the per-call override: resolved role bindings + every
     catalog name a `model` field may carry; an unset uncensored role reads as None
     (honest), never as an invented binding."""
-    from rsched.engine.executor import do_list_models
+    from rsched.engine.llmaction import do_list_models
 
     obs = do_list_models(_ctx(_Registry(unc=False)))
     assert obs["kind"] == "list_models"

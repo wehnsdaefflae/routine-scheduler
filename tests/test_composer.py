@@ -6,7 +6,8 @@ import json
 
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.compaction import maybe_compact, messages_size
-from rsched.engine.composer import build_system_prompt, harness_contract, state_digest
+from rsched.engine.composer import build_system_prompt, state_digest
+from rsched.engine.harness import harness_contract
 from rsched.engine.observations import format_observation, truncate
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
@@ -275,7 +276,8 @@ def test_group_notes_reach_the_prompt_and_drain_once(make_routine, tmp_path):
     carries what teammates left — once, then it is gone.
     """
     from rsched import groupnotes, groups
-    from rsched.engine.composer import harness_contract, state_digest
+    from rsched.engine.composer import state_digest
+    from rsched.engine.harness import harness_contract
 
     ctx = _ctx(make_routine, tmp_path, slug="steward")
     ctx.server.routines_home = tmp_path / "routines"

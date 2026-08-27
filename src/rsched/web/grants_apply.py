@@ -20,7 +20,7 @@ from ..paths import atomic_write
 
 def resolve_account(provider: str) -> str:
     """The single connected account for a provider. A connection entity is requestable
-    only when exactly one account exists (requests._availability enforces it run-side);
+    only when exactly one account exists (availability._availability enforces it run-side);
     this guards the race where accounts changed between the ask and the click.
     """
     from ..oauth import store as oauth_store

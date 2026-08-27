@@ -12,83 +12,10 @@ import signal
 import sys
 from pathlib import Path
 
+from .cli_daemon import cmd_daemon
+from .cli_render import _render_event, _server_tz
 from .config import MODEL_KINDS, load_server_config
-from .engine.actionschema import BRIEF_FIELD
 from .paths import expand
-
-
-def _server_tz() -> str:
-    from .schedule import server_tz
-    return server_tz()
-
-
-def _render_event(obj: dict) -> str | None:  # noqa: PLR0911 — one return per event type
-    t = obj.get("type")
-    p = obj.get("payload", {})
-    if t == "header":
-        o = obj.get("orchestrator", {})
-        return f"── run {obj.get('run_id')} · {o.get('endpoint')}:{o.get('model')} ──"
-    if t == "assistant_action":
-        say = p.get("say", "")
-        brief = {"util": f"{p.get('name')} {' '.join(p.get('args') or [])}".strip(),
-                 "write_util": p.get("name"),
-                 "read_file": p.get("path") or ", ".join(p.get("paths") or []),
-                 "write_file": p.get("path"), "edit_file": p.get("path"),
-                 "memory_read": p.get("name"),
-                 "memory_write": f"{p.get('name')}{' (delete)' if p.get('delete') else ''}",
-                 "llm": (p.get("prompt") or "")[:60],
-                 "spawn": f"{p.get('label') or ''} [{p.get('workflow') or 'general-task'}]",
-                 "subtask": f"{p.get('label') or ''} [{p.get('workflow') or 'general-task'}]",
-                 "kill": f"#{p.get('n')}", "wait": "all" if p.get("all") else
-                 (f"#{p.get('n')}" if p.get("n") else "any"),
-                 "ask_user": (p.get("question") or "")[:60],
-                 "finish": f"{p.get('status')}" }.get(
-                     p.get("kind"),
-                     # any kind without a rich renderer falls back to its BRIEF_FIELD —
-                     # a new action kind can never render blank here again
-                     str(p.get(BRIEF_FIELD.get(str(p.get("kind")), ""), "") or ""))
-        return f"[{obj.get('turn')}] {say}\n    → {p.get('kind')}: {brief}"
-    if t == "observation":
-        kind = p.get("kind")
-        if kind == "util":
-            return f"    ← util {p.get('name')}: " + ("missing" if p.get("missing")
-                                                      else f"exit {p.get('exit')}")
-        if kind == "write_util":
-            state = ("pending approval" if p.get("pending_approval") else "declined"
-                     if p.get("declined") else "selftest ok" if p.get("selftest_ok")
-                     else "selftest failed")
-            return f"    ← write_util {p.get('name')}: {state}"
-        if kind == "llm":
-            return "    ← llm reply" + (" (error)" if p.get("error") else "")
-        if kind == "spawn":
-            return (f"    ← spawn REJECTED: {p.get('reason')}" if p.get("rejected")
-                    else f"    ← sub-workflow #{p.get('n')} started")
-        if kind == "subtask":
-            if p.get("rejected"):
-                return f"    ← subtask REJECTED: {p.get('reason')}"
-            return f"    ← subtask #{p.get('n')} started (sequential, background)"
-        if kind == "wait":
-            done = ", ".join(f"#{f['n']}:{f['status']}" for f in p.get("finished", []))
-            return f"    ← wait → {done or ('timeout' if p.get('timed_out') else 'nothing new')}"
-        return f"    ← {kind}"
-    if t == "question":
-        return f"    ? [{p.get('mode')}] {p.get('question')}"
-    if t == "answer":
-        return f"    ! answered: {p.get('text', '')[:80]}"
-    if t == "user_injection":
-        return f"    + injected: {p.get('text', '')[:80]}"
-    if t == "error":
-        return f"    ✗ error ({p.get('where')}): {p.get('message', '')[:120]}"
-    if t == "compaction":
-        return f"    ⇣ compacted context ({p.get('before_chars')} → {p.get('after_chars')} chars)"
-    if t in ("subrun_start", "subrun_end"):
-        label = "subtask" if p.get("mode") == "sequential" else "subrun"
-        if t == "subrun_start":
-            return f'    ↳ {label} #{p.get('n')} "{p.get('label')}" started ({p.get('workflow')})'
-        return f"    ↰ {label} #{p.get('n')} {p.get('status')} — {p.get('turns')} turns"
-    if t == "finish":
-        return f"── finish: {p.get('status')} ──\n{p.get('summary', '')}"
-    return None
 
 
 def _parse_model_overrides(values: list[str]) -> dict[str, str]:
@@ -195,74 +122,6 @@ def cmd_validate(args) -> int:
             print(f"  - {pr}")
         total.extend(problems)
     return 1 if total else 0
-
-
-def cmd_daemon(_args) -> int:
-    import logging
-    import os
-
-    import uvicorn
-
-    from .web.app import create_app
-
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    from .bootstrap import (
-        adopt_library_edits,
-        adopt_permissions,
-        adopt_seed_routine,
-        ensure_config,
-        seed_routines,
-        sync_seed_library_docs,
-        sync_seed_utils,
-    )
-    ensure_config()   # fresh deploy: generate config+token so the API isn't open
-    server, problems = load_server_config()
-    # MIGRATION(expires=2026-09-30): BEFORE seed adoption — it clears the archive tombstone
-    # that would otherwise block the library-sync routine from installing
-    from .migrate_library_sync import migrate_library_sync
-
-    migrate_library_sync(server)
-    seed_routines(server.routines_home)   # fresh deploy: install bundled meta routines (off)
-    adopt_seed_routine(server.routines_home, "token-lab")  # seeds added after first boot land once
-    adopt_seed_routine(server.routines_home, "clarification")  # the clarify template (D10)
-    adopt_seed_routine(server.routines_home, "rules-review")    # owns the general-rule library
-    adopt_seed_routine(server.routines_home, "library-sync")    # publishes the instance off-box
-    from .migrate_template_kind import migrate_template_kind
-
-    # MIGRATION(expires=2026-09-30): the template's guards key off `kind:` now, and only an
-    # existing instance's own routine.yaml can be given that marker
-    migrate_template_kind(server)
-    # new default permissions reach existing routines once, at boot
-    adopt_permissions(server.routines_home, server.permissions_home)
-    sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap
-    from .migrate_seed_utils import migrate_seed_utils
-
-    # MIGRATION(expires=2026-09-30): sync_seed_utils never overwrites, so a util FIXED in the
-    # seed cannot reach a live library on its own — three have to this release
-    migrate_seed_utils(server)
-    sync_seed_library_docs(server.libraries_home)  # workflows/rules/permissions added since, too
-    adopt_library_edits(server.libraries_home)  # out-of-band writes (user/conversation) get history
-    from .migrate_rules import migrate_rules
-
-    migrate_rules(server)  # MIGRATION(expires=2026-09-30): traits -> library-global rules
-    from .migrate_group_members import migrate_group_members
-
-    migrate_group_members(server)  # MIGRATION(expires=2026-09-30): members -> records (F292)
-    for pr in problems:
-        logging.getLogger("rsched").warning("config: %s", pr)
-    app = create_app(server)
-    # env overrides so a container can bind the LAN (RSCHED_BIND=0.0.0.0) and remap the port
-    # without editing the mounted config; unset → the config's bind/port as before.
-    host = os.environ.get("RSCHED_BIND") or server.bind
-    port = int(os.environ.get("RSCHED_PORT") or server.port)
-    # Bound graceful shutdown: the web UI holds long-lived SSE streams that never close on
-    # their own, so an unbounded graceful shutdown hangs (a manual `systemctl restart` waited
-    # the full TimeoutStopSec; the self-update restart, which SIGTERMs itself, would hang with
-    # no systemd timeout at all). 10s force-closes idle streams while letting real requests finish.
-    uvicorn.run(app, host=host, port=port, log_level="warning",
-                timeout_graceful_shutdown=10)
-    return 0
 
 
 def cmd_abort(args) -> int:

@@ -15,7 +15,7 @@ from ..config import MODEL_KINDS
 from ..paths import resolve_rel
 from ..readmodels.stats import monthly_spend
 from . import artifacts
-from .api_questions import _snooze_active
+from .decisions_read import _snooze_active
 from .routines_common import (  # noqa: F401 — re-exported: siblings historically import from here
     _catalog,
     _git_commit,

@@ -148,7 +148,7 @@ class Scheduler:
         self.runner.recover_orphans(registry.scan(self.server, self.server.background_home))
         await self.detached.reconcile()
         # crashed runs leave sshfs key dirs behind (clean exits remove their own)
-        from ..machines import sweep_stale_mount_keys
+        from ..machine_mounts import sweep_stale_mount_keys
         sweep_stale_mount_keys()
         if fixed:
             self.rescan()

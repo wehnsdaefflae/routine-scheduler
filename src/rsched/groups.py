@@ -39,7 +39,7 @@ A group also carries `config:` — routine.yaml keys its members INHERIT (D82). 
 share a policy surface (the same permissions, rules, machines, secret grants, fs roots), and
 maintaining N copies of it is how they drift apart. The group holds one copy; a member's own
 routine.yaml still wins wherever it sets a key, so the group is a DEFAULT, not an override.
-The merge happens once, in `config.routine.apply_group_config`, against the RAW yaml before
+The merge happens once, in `config.groupconfig.apply_group_config`, against the RAW yaml before
 validation — so "the routine set it" means the key is present in its file, not merely that the
 model has a default. CONFIG_KEYS lists what may be shared and, just as deliberately, what may
 not: slug/name/description/enabled/schedule/workflow/retention/triggers/improve say WHICH

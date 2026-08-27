@@ -19,9 +19,9 @@ import threading
 from collections import deque
 
 from ..endpoints.base import EndpointError
-from ..grantpolicy import load_policy
 from ..health_events import log_health_event
 from ..ids import now_iso
+from ..policyload import load_policy
 from . import (
     authoring,
     create_routine,

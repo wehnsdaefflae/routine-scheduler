@@ -67,7 +67,7 @@ class StubRunner:
 
     async def resume_terminal(self, cfg, ts: str | None = None, *, reason: str = "") -> str:
         # Signature mirrors the real Runner.resume_terminal(cfg, ts=None, *, reason=...) — the
-        # run page's converse path passes the run ts positionally (api_runs.converse).
+        # run page's converse path passes the run ts positionally (api_run_control.converse).
         return f"{cfg.slug}:20260715-120001"   # the wake itself is enough - nothing asserts on it
 
     def is_active(self, slug: str) -> bool:

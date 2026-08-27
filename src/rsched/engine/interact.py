@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 
 from .. import reports, schedule_once
 from ..ids import question_id
-from . import detach, inbox, requests
+from . import availability, detach, inbox, requests
 from .control import RunAborted
 
 # Natural affirmatives count: approval answers arrive as free text, and "Do it. The mail
@@ -106,8 +106,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # renders the allow/deny × now/forever buttons for it (plus allow-once for
     # turn-action classes, D65), and the answer's `decision` is what settles it (free
     # text is held, D38). Validation already ran in the schema-retry cycle
-    # (requests.request_denial), so the ids here are requestable.
-    req_ids = requests.request_ids(action)
+    # (availability.request_denial), so the ids here are requestable.
+    req_ids = availability.request_ids(action)
     if req_ids:
         qtype = "request"
     question, default = _normalize_plain(qtype, str(action["question"]), default)

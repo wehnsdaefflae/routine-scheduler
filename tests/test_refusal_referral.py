@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from rsched.config import ModelRef
 from rsched.endpoints.base import Completion, EndpointError
 from rsched.engine import refusal
-from rsched.engine.executor import do_llm
+from rsched.engine.llmaction import do_llm
 
 REFUSAL = "I'm sorry, but I can't help with that request."
 SOFT_REFUSAL = "My principles around dangerous chemistry prevent me from assisting here."

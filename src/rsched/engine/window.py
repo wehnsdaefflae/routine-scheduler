@@ -18,7 +18,7 @@ from pathlib import Path
 
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import fileops
+from . import mediaops
 from .compaction import (
     CHARS_PER_TOKEN,
     KEEP_HEAD_MSGS,
@@ -214,7 +214,7 @@ def apply_media_fallback(loop, exc: EndpointError) -> bool:
         return False
     notes = []
     for item in media:
-        desc = fileops.vision_describe(loop.ctx, item["path"], "")
+        desc = mediaops.vision_describe(loop.ctx, item["path"], "")
         notes.append(f"[{Path(item['path']).name}: this run's model could not display it — "
                      f"description from the vision util]\n{desc}")
     last.pop("media", None)

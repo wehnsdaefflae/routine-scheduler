@@ -8,7 +8,8 @@ links, and the balance-URL derivation from the configured /api/v1 base.
 """
 from types import SimpleNamespace
 
-from rsched.web.settings.endpoints import CREDIT_MANAGE_URLS, credits_provider, nanogpt_balance_url
+from rsched.web.settings.endpoint_probe import credits_provider, nanogpt_balance_url
+from rsched.web.settings.endpoints import CREDIT_MANAGE_URLS
 
 
 def ep(kind="openai", base_url=""):

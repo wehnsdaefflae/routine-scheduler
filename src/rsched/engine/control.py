@@ -15,7 +15,7 @@ import time
 from .. import reports
 from ..paths import read_json
 from ..schema_guard import validate
-from . import child, executor, fileops, inbox
+from . import child, executor, inbox, mediaops
 from .actions import util_rejection_outcome, validate_action
 from .actionschema import ACTION_SCHEMA
 from .commands import CommandError, parse_command
@@ -84,7 +84,7 @@ def inject_user_message(loop, m: dict) -> None:
     lead = ("REPORT (injected mid-run)" if m.get("report")
             else "USER MESSAGE (injected mid-run)")
     msg: dict = {"role": "user", "content": f"{lead}:\n{m['text']}"}
-    if m.get("attachments") and (media := fileops.media_from_paths(ctx, m["attachments"])):
+    if m.get("attachments") and (media := mediaops.media_from_paths(ctx, m["attachments"])):
         msg["media"] = media
     loop.messages.append(msg)
 

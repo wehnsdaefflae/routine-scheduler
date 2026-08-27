@@ -82,7 +82,7 @@ def _ctx(make_routine, slug="scoped"):
 def test_the_run_offers_its_own_secrets_as_engine_extras(make_routine):
     """`_routine_secrets` is the engine-side half: a run contributes its scoped store to the
     same extra_secrets channel connection tokens and machine keys ride."""
-    from rsched.engine.executor import _routine_secrets
+    from rsched.engine.exec_env import _routine_secrets
 
     secrets.set_secret("SFTP_USER", "shared")
     secrets.set_routine_secret("scoped", "SFTP_USER", "mine")
@@ -90,7 +90,7 @@ def test_the_run_offers_its_own_secrets_as_engine_extras(make_routine):
 
 
 def test_a_routine_without_a_scoped_store_contributes_nothing(make_routine):
-    from rsched.engine.executor import _routine_secrets
+    from rsched.engine.exec_env import _routine_secrets
 
     secrets.set_secret("SFTP_USER", "shared")
     assert _routine_secrets(_ctx(make_routine)) == {}

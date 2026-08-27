@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 from rsched import utils_run
 from rsched.endpoints.base import EndpointError, supports_media_type
-from rsched.engine import executor, fileops
+from rsched.engine import executor, fileops, mediaops
 from rsched.engine.actions import KIND_EXAMPLES, validate_action
 from rsched.engine.actionschema import KINDS
 
@@ -87,7 +87,7 @@ def test_do_view_image_native(tmp_path):
 
 def test_do_view_image_vision_fallback(tmp_path, monkeypatch):
     (tmp_path / "shot.png").write_bytes(b"IMG")
-    monkeypatch.setattr(fileops, "vision_describe", lambda ctx, _ab, pr: "a red square")
+    monkeypatch.setattr(mediaops, "vision_describe", lambda ctx, _ab, pr: "a red square")
     obs = executor.do_view_image({"kind": "view_image", "path": "shot.png", "prompt": "?"},
                                  _ctx(tmp_path, _Endpoint(False)))
     assert "media" not in obs
@@ -96,7 +96,7 @@ def test_do_view_image_vision_fallback(tmp_path, monkeypatch):
 
 def test_do_view_image_no_endpoint_uses_vision(tmp_path, monkeypatch):
     (tmp_path / "shot.png").write_bytes(b"IMG")
-    monkeypatch.setattr(fileops, "vision_describe", lambda *a: "described")
+    monkeypatch.setattr(mediaops, "vision_describe", lambda *a: "described")
     obs = executor.do_view_image({"kind": "view_image", "path": "shot.png"}, _ctx(tmp_path, None))
     assert obs["files"][0]["via"] == "vision-util"
 
@@ -115,8 +115,8 @@ def test_do_view_image_missing_file(tmp_path):
 
 
 def test_do_view_image_oversize_uses_vision(tmp_path, monkeypatch):
-    monkeypatch.setattr("rsched.engine.fileops.NATIVE_MEDIA_MAX_BYTES", 4)
-    monkeypatch.setattr(fileops, "vision_describe", lambda *a: "described")
+    monkeypatch.setattr("rsched.engine.mediaops.NATIVE_MEDIA_MAX_BYTES", 4)
+    monkeypatch.setattr(mediaops, "vision_describe", lambda *a: "described")
     (tmp_path / "shot.png").write_bytes(b"toolong")
     obs = executor.do_view_image({"kind": "view_image", "path": "shot.png"},
                                  _ctx(tmp_path, _Endpoint(True)))
@@ -144,11 +144,11 @@ def test_vision_describe_parses_and_errors(tmp_path, monkeypatch):
     monkeypatch.setattr(utils_run, "run_util",
                         lambda home, n, args, timeout=300, policy=None, **_kw:
                         (0, json.dumps({"text": "hi"}), ""))
-    assert fileops.vision_describe(ctx, "/x.png", "?") == "hi"
+    assert mediaops.vision_describe(ctx, "/x.png", "?") == "hi"
     monkeypatch.setattr(utils_run, "run_util", lambda *a, **k: (1, "", "boom"))
-    assert fileops.vision_describe(ctx, "/x.png", "?").startswith("error:")
+    assert mediaops.vision_describe(ctx, "/x.png", "?").startswith("error:")
     monkeypatch.setattr(utils_lib, "exists", lambda home, n: False)
-    assert "not installed" in fileops.vision_describe(ctx, "/x.png", "?")
+    assert "not installed" in mediaops.vision_describe(ctx, "/x.png", "?")
 
 
 # --- auto-attach helper + inbox drain ----------------------------------------
@@ -157,10 +157,10 @@ def test_media_from_paths_filters(tmp_path):
     (tmp_path / "a.png").write_bytes(b"x")
     (tmp_path / "b.txt").write_text("x")
     (tmp_path / "c.pdf").write_bytes(b"x")
-    out = fileops.media_from_paths(_ctx(tmp_path, _Endpoint(True)),
+    out = mediaops.media_from_paths(_ctx(tmp_path, _Endpoint(True)),
                                     ["a.png", "b.txt", "c.pdf", "missing.png"])
     assert {m["media_type"] for m in out} == {"image/png", "application/pdf"}
-    assert fileops.media_from_paths(_ctx(tmp_path, _Endpoint(False)), ["a.png"]) == []
+    assert mediaops.media_from_paths(_ctx(tmp_path, _Endpoint(False)), ["a.png"]) == []
 
 
 def test_drain_messages_carries_attachments(tmp_path):
@@ -201,7 +201,7 @@ def test_inject_user_message_event_carries_attachments(make_routine, tmp_path, m
     bare filename list). A message without attachments keeps the payload lean."""
     from rsched.engine import control
     from rsched.engine.transcript import read_events
-    monkeypatch.setattr(fileops, "media_from_paths", lambda _ctx, _rels: [])
+    monkeypatch.setattr(mediaops, "media_from_paths", lambda _ctx, _rels: [])
     loop = _loop(make_routine, tmp_path)
     control.inject_user_message(loop, {"text": "see the screenshot",
                                        "attachments": ["attachments/shot.png"]})
@@ -213,7 +213,7 @@ def test_inject_user_message_event_carries_attachments(make_routine, tmp_path, m
 
 
 def test_apply_media_fallback(make_routine, tmp_path, monkeypatch):
-    monkeypatch.setattr(fileops, "vision_describe", lambda ctx, _ab, pr: "DESCRIBED")
+    monkeypatch.setattr(mediaops, "vision_describe", lambda ctx, _ab, pr: "DESCRIBED")
     loop = _loop(make_routine, tmp_path)
     loop.messages = [{"role": "user", "content": "OBS",
                       "media": [{"path": str(tmp_path / "x.png"), "media_type": "image/png"}]}]

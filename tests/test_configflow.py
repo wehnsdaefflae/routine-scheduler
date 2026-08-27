@@ -14,7 +14,7 @@ import pytest
 
 from rsched import configflow
 from rsched.web.api_conversations import ConversationPatch
-from rsched.web.api_routine_edit import RoutinePatch
+from rsched.web.api_routine_patch import RoutinePatch
 
 
 def test_every_patch_field_declares_its_half():

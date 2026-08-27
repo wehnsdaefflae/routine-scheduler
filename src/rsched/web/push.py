@@ -132,12 +132,12 @@ def send_to_all(server, payload: dict) -> int:
 def notify_new_decisions(server) -> int:
     """The sender the bus listener calls: diff the instance's open decisions against the
     already-pushed set and push one notification per NEW one. Same source of truth as the
-    Decisions page (api_questions.open_decisions), so the surfaces can never disagree.
+    Decisions page (decisions_read.open_decisions), so the surfaces can never disagree.
     Cheap no-op while nobody is subscribed.
     """
     if not subscriptions(server):
         return 0
-    from .api_questions import open_decisions
+    from .decisions_read import open_decisions
 
     qs = [q for q in open_decisions(server) if q.get("qid") and not q.get("answered")]
     with _lock:

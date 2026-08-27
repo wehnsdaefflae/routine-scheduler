@@ -4,6 +4,8 @@ api_routine_edit, api_conversations, api_hooks, and api_runs alike (it used to l
 inside api_routines, which every sibling then reached into).
 """
 
+# the ONE web->engine signal seam: control.json is merged, never overwritten, so no endpoint can
+# drop a sibling's pending signal.
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,9 +13,22 @@ from pathlib import Path
 from fastapi import HTTPException, Request
 
 from .. import registry
-from ..config import RoutineConfig
+from ..config import RoutineConfig, load_routine
 from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
 from ..ids import now_iso, parse_run_id
+from ..paths import atomic_write_json, read_json
+
+
+def merge_control(run_dir: Path, updates: dict) -> None:
+    """Merge `updates` into the run's web-owned control.json (read-modify-write, atomic).
+    ONE writer path for every mid-run signal — pause, switch_model, set_deliberation,
+    add_rules — so no endpoint can drop a sibling's pending signal.
+    """
+    ctrl = read_json(run_dir / "control.json")
+    ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}
+    ctrl.update(updates)
+    atomic_write_json(run_dir / "control.json", ctrl)
+
 
 
 def guard_template(cfg: RoutineConfig, refusal: str) -> None:
@@ -34,8 +49,6 @@ def guard_template_dir(routine_dir: Path, refusal: str) -> None:
     — a conversation is not in the routine registry at all — so the kind is read from the
     config on disk. An unreadable config is simply not a template.
     """
-    from ..config import load_routine
-
     cfg, _problems = load_routine(routine_dir)
     if cfg is not None:
         guard_template(cfg, refusal)
@@ -154,7 +167,6 @@ def signal_config_change(info, fields: list[str], values: dict) -> bool:
     run_dir = active_run_dir(info)
     if run_dir is None or not fields:
         return False
-    from .api_runs import merge_control
     merge_control(run_dir, {"config_change": {"fields": list(fields),
                                               "values": {k: v for k, v in values.items()
                                                          if k in fields},

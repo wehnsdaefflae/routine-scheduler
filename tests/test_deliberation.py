@@ -16,8 +16,8 @@ from rsched.config import (
     write_tuning,
 )
 from rsched.engine import deliberation
-from rsched.engine.composer import harness_contract
 from rsched.engine.fileops import do_edit_file, do_write_file
+from rsched.engine.harness import harness_contract
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.switches import apply_deliberation_switch
 from rsched.engine.transcript import Transcript, read_events
