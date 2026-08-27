@@ -495,6 +495,30 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   run with its OWN work (a scheduled routine fire, crash recovery mid-workflow) has no authored
   hand-back, so it always proceeds and a command there is injected context. Loop-control kinds are
   not commands.
+- **Branching** (`rsched/branches.py` + `web/api_branches.py`, F325) — the `branch` MODE of the
+  child-run contract (`engine/child.py`). `fork_conversation` copies a conversation at a chosen TURN
+  into a new dir: the parent's routine.yaml config wholesale plus a `parent: {slug, turn, forked}`
+  record, `main.md`/`instruction.md`/`tuning.yaml`, `state/` and `attachments/` (the files the
+  inherited history refers to — a transcript naming a missing attachment is a broken history), and
+  the transcript up to the fork point. NOT `artifacts/`: the branch produces its own and hands those
+  back, so copying the parent's would make every hand-back return the parent its own files. The cut
+  snaps to a clean turn boundary via `history.cut_index_for_turn`, the SAME cut the D69 rewind uses —
+  a prefix ending mid-turn would replay as an assistant action with no result. Per-event `usage` is
+  STRIPPED from the copy (the parent accounted for that spend; counting it again in the branch would
+  double it instance-wide) and the header is rewritten to name the branch, since every read model
+  keys off it. A terminal `status.json` beside the copied transcript is what makes a branch an
+  ORDINARY continued conversation: the user's first message in it goes down `resume_terminal` and
+  replays the inherited history, so the engine has no branch case at all. Because it is a copy, a
+  branch **cannot mutate the original**.
+  **Merging is deliberately a HAND-BACK, not a transcript merge** — two divergent histories cannot
+  be interleaved into one coherent conversation. `hand_back` copies the branch's `artifacts/` into
+  the parent's `artifacts/from-branch-<slug>/` and files ONE inbox message carrying the summary and
+  naming them: the same delivery shape as a detached background task (`daemon/detached._deliver_one`),
+  which is the point — a hand-back is the child-run result and the parent already knows how to read
+  one. It does not wake the parent; its next reply drains the message. Both ends are explicit user
+  actions (`POST …/branch`, `POST …/handback`, with `GET …/lineage` for the family in both
+  directions): where two lines of work diverge, and whether a branch's result is worth the parent's
+  attention, are decisions that cannot be inferred.
 - Web: `web/api_conversations.py` (create/message are multipart — **attachments** land in
   `<conv>/attachments/` and ride the message text as an `[attached files]` block; vision util for
   images). **Artifacts**: deliverables the model `write_file`s into a DELIVERABLE DIR —

@@ -217,12 +217,45 @@ running conversation, where changes apply from the next reply:
 
 Title and tags are generated for you from the first message and are editable inline.
 
-## Topics and forking
+## Topics, forking and branching
 
 A conversation is at its best as **one conversation, one topic** — the shared context is what makes
 later replies smart. If you drift onto something unrelated, the agent notices: it flags the reply as
 a new topic and offers a **one-click fork** that starts a fresh conversation pre-filled with your
 message. Take the fork to keep each thread's context clean.
+
+That fork starts EMPTY. When you instead want to try a second approach **from where you already
+are** — same history, same setup, without risking the thread you have — use **⑂ branch** in the
+header.
+
+### Branching
+
+A branch forks the conversation at a turn you choose into a new one that inherits:
+
+- the **config** — models, permissions, capabilities, rules, connections, folder access, budgets
+  and deliberation;
+- the **history** up to that turn, as a COPY — plus the `state/` and `attachments/` files that
+  history refers to. It resumes as an ordinary continued conversation from turn one.
+
+The original is **untouched**: a branch reads the same past but cannot rewrite it, so two lines of
+work can run side by side and neither can damage the other. The header of each shows the family —
+where a branch came from and at which turn, and which branches came off this conversation.
+
+Branch a **finished** reply, not one in flight: the fork point has to be a settled turn.
+
+### Handing a branch back
+
+Branches are deliberately **not merged**. Two divergent histories cannot be interleaved into one
+coherent conversation — the result would be a record of a conversation that never happened. Instead
+a branch **hands its result back**: press **↩ hand back** (it appears only on a branch), write the
+summary the parent should read, and the parent receives it as a message with the branch's
+`artifacts/` copied into its own `artifacts/from-branch-<slug>/`. It reads exactly like a finished
+background task reporting in, because it is the same thing: a child run returning a result.
+
+The hand-back does not wake the parent — its next reply picks the message up. The branch keeps its
+own conversation and can hand back again later; a second hand-back replaces the same artefact
+folder. Nothing you did not put in `artifacts/` crosses over, and the parent's transcript is never
+rewritten.
 
 ## Working on a project
 

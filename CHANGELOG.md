@@ -19,6 +19,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.238.0] — 2026-08-27
+
+### Added
+- **Conversation branching and hand-back** (F325, built in full). The `branch` MODE of the
+  child-run contract F338 settled one release earlier — which is why it landed first: a branch
+  arrives as a scheduling mode of an existing concept rather than a fourth name for it.
+  - **⑂ branch** forks a conversation at a chosen turn into a new one that inherits the parent's
+    config wholesale (models, permissions, capabilities, rules, connections, folder access,
+    budgets, deliberation), its `main.md`/`instruction.md`/`tuning.yaml`, its `state/` and
+    `attachments/` — the files the inherited history refers to — and a COPY of the transcript to
+    the fork point. Because it is a copy, **a branch cannot mutate the original**: two lines of
+    work run side by side and neither can damage the other. `artifacts/` is deliberately NOT
+    copied — the branch produces its own and hands those back.
+  - The fork point snaps to a clean turn boundary through the SAME cut the D69 rewind uses
+    (`history.cut_index_for_turn`, extracted so both read one definition): a prefix ending
+    mid-turn would replay as an assistant action with no result. Per-event `usage` is stripped
+    from the copy — the parent already accounted for that spend, and counting it again in the
+    branch double-counts the same tokens across two conversations. The header is rewritten to
+    name the branch, since every read model keys off it.
+  - A terminal `status.json` beside the copied transcript is what makes a branch an ORDINARY
+    continued conversation: its first message goes down `resume_terminal` and replays the
+    inherited history, so the engine carries no branch case at all.
+  - **↩ hand back** (only on a branch) delivers its result to the parent: artefacts copied into
+    `artifacts/from-branch-<slug>/`, and one inbox message carrying the summary and naming them.
+    **Merging is deliberately NOT a transcript merge** — two divergent histories cannot be
+    interleaved into one coherent conversation, so the parent receives a RESULT and decides what
+    to do with it. It is the same delivery shape a detached background task uses, which is the
+    point: a hand-back is the child-run result and the parent already knows how to read one. It
+    does not wake the parent; its next reply drains the message.
+  - The header shows the family in both directions — where a branch came from and at which turn,
+    and which branches came off this conversation, with a deleted parent named rather than hidden.
+  - `rsched/branches.py`, `web/api_branches.py` (`POST …/branch`, `POST …/handback`,
+    `GET …/lineage`), `static/components/branches.js`; 15 backend tests and 4 browser tests
+    against the real console. The F325 entry is deleted from `docs/designs.md`; the narration
+    moved to `docs/conversations.md` and `docs/architecture.md`.
+
 ## [0.237.0] — 2026-08-27
 
 ### Changed

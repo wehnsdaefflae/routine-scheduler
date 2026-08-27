@@ -3,6 +3,7 @@
 // from conversations.js. onListChanged refreshes the sidebar after title/tag edits.
 
 import { api } from "/static/api.js";
+import { branchControls } from "/static/components/branches.js";
 import { connectionsCard } from "/static/components/connections.js";
 import { machinesCard } from "/static/components/machines.js";
 import { deliberationControl } from "/static/components/deliberation.js";
@@ -191,9 +192,12 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
     + "it applies to this thread; binding one applies from the current reply on"), ruleHost);
   buildRules().then((n) => ruleHost.replaceChildren(n));
   caps.append(capBody);
+  // Branching (F325): fork this thread at a turn, or hand a branch's result back. Sits beside
+  // delete because both are lifecycle decisions about the conversation as a whole.
+  const branchBar = branchControls(slug, { isLive });
   head.replaceChildren(
     el("div", { class: "conv-head-row" }, stateChip, title,
-      el("span", { style: "margin-left:auto" }), del),
+      el("span", { style: "margin-left:auto" }), branchBar.node, del),
     el("div", { class: "conv-head-row sub" }, modelControl(detail, slug, isLive),
       el("span", { class: "conv-tagwrap" }, el("span", { class: "faint small" }, "tags"), tagsRow)),
     caps);

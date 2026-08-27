@@ -56,28 +56,6 @@ the trigger before any generation work exists.
 
 ---
 
-## F325 — conversation branching and merging
-
-**F338 has landed** (0.237.0): the child-run concept, its three scheduling modes and its
-hand-back contract now live in `engine/child.py`, documented in [child-runs](child-runs.md). A
-branch is the `branch` mode of that concept, and inherits its identity and hand-back.
-
-**Shape.** A branch forks a conversation at a chosen message into a new
-conversation whose `parent` records the origin slug + message id. It starts with the parent's
-config (models, permissions, rules, connections, roots) and a COPY of the transcript up to
-the fork point, so the branch reasons with the same history and cannot mutate the original.
-Merging is deliberately NOT a transcript merge — two divergent histories cannot be
-interleaved into one coherent conversation. It is a HAND-BACK, the F338 child result: the
-branch finishes with a summary plus declared artefacts, which land in the parent as a
-message and files. The parent chooses what to do with them, exactly as with a background
-task.
-
-**First increment.** Fork only, no hand-back: the button, the `parent` record, and the
-transcript copy. A fork that can be read and continued is useful on its own, and it makes
-the merge question concrete instead of theoretical.
-
----
-
 ## F328 — queued creation and config changes from a scheduled run
 
 **Problem (evidence R353).** `create_routine` and `manage_group` are hard-restricted to

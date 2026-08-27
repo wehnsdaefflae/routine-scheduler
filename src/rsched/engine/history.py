@@ -383,6 +383,23 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
     return messages, last_turn, records
 
 
+def cut_index_for_turn(events: list[dict], turn: int) -> int | None:
+    """The event index that closes `turn` — its assistant_action, plus the observation that
+    answered it when there is one. None when the turn is not in the transcript.
+
+    The one definition of a clean TURN BOUNDARY in a transcript, shared by the D69 rewind
+    (which truncates there) and conversation branching (which copies up to there, F325). Both
+    need a prefix that replays into paired messages; cutting mid-turn leaves an assistant action
+    with no result, which `replay_messages` would hand the model as a dangling turn.
+    """
+    for i, ev in enumerate(events):
+        if ev.get("type") == "assistant_action" and ev.get("turn") == turn:
+            if i + 1 < len(events) and events[i + 1].get("type") == "observation":
+                return i + 1
+            return i
+    return None
+
+
 def rewind_transcript(run_dir: Path, keep_through_turn: int) -> dict | None:
     """D69: rewind a conversation to a chosen turn so a dead/derailed run can be RE-OPENED and
     continued from there instead of being lost. Rewrites runs/<ts>/transcript.jsonl to keep
@@ -404,15 +421,7 @@ def rewind_transcript(run_dir: Path, keep_through_turn: int) -> dict | None:
     events, _ = read_events(tpath, 0)
     if not events:
         return None
-    # Find the assistant_action for the target turn; keep through it AND its next observation
-    # (the model's turn plus the result it saw), so the replay resumes on a clean turn boundary.
-    cut = None
-    for i, ev in enumerate(events):
-        if ev.get("type") == "assistant_action" and ev.get("turn") == keep_through_turn:
-            cut = i
-            if i + 1 < len(events) and events[i + 1].get("type") == "observation":
-                cut = i + 1
-            break
+    cut = cut_index_for_turn(events, keep_through_turn)
     if cut is None or cut >= len(events) - 1:
         return None   # turn not found, or nothing after it to drop
     kept = events[: cut + 1]
