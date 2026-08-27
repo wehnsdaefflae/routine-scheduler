@@ -18,8 +18,12 @@ The envelope is deliberately NARROWER than a util call's:
   (`NAME?` marks an optional one, withheld rather than prompted when not granted), and a
   declared, present, still-undecided secret files the same blocking exposure ask a util
   call would (engine/secretgate.gate_script_secrets). Everything else in the store is scrubbed.
-- NO UTIL OR MODEL ACCESS: `gu` is not on PATH and there is no LLM channel — a step that
-  needs a util's capability or a judgment call belongs in the recipe.
+- UTILS: declared-only, exactly the sibling rule utils themselves follow. A `calls:`
+  header line puts the `gu` dispatcher on PATH and folds every named util's `secrets:`
+  and `net:` into THIS script's env and jail (`utils_run.util_needs` — one call tree, one
+  jail, one env). A script declaring no calls gets no library handle at all; one that
+  execs an undeclared sibling is refused, not silently under-granted.
+- NO MODEL ACCESS: there is no LLM channel — a judgment call belongs in the recipe.
 - ASKS: mid-run escalation (`ask_user`, blocking approvals) is the recipe's channel — a
   script gets its declared grants; anything more is requested recipe-side.
 
@@ -28,7 +32,7 @@ There is deliberately NO approval dial: a script's blast radius is a subset of t
 routine's own permissions, and the sandbox enforces those regardless of the code.
 Header contract: first line `<name> — <summary>`, optional `usage:`, `net: outbound|none`
 (undeclared = none → no TCP at exec; the dependency install is a net-open build step,
-R40), `secrets:` for the exposure gate above.
+R40), `secrets:` for the exposure gate above, `calls:` for the utils it shells out to.
 """
 
 from __future__ import annotations
@@ -38,7 +42,7 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from . import sandbox, utils_header, utils_run
+from . import sandbox, utils_header, utils_lib, utils_run
 from .paths import atomic_write
 
 SCRIPT_TIMEOUT_S = 300
@@ -93,18 +97,65 @@ def list_scripts(routine_dir: Path) -> list[dict]:
     return out
 
 
-def needs(routine_dir: Path, name: str) -> tuple[set[str], bool, set[str]]:
-    """(declared secret env vars, net-outbound?, the OPTIONAL subset) from the script's
-    OWN header — no transitive graph: a script has no `calls:` siblings.
-    """
+def _header(routine_dir: Path, name: str) -> dict | None:
     try:
-        header = utils_header.parse_header(
+        return utils_header.parse_header(
             script_path(routine_dir, name).read_text(encoding="utf-8"))
     except OSError:
+        return None
+
+
+def declared_calls(routine_dir: Path, name: str) -> list[str]:
+    """The library utils this script's `calls:` line names — what earns it `gu` on PATH."""
+    header = _header(routine_dir, name)
+    return list(header["calls"]) if header else []
+
+
+def needs(routine_dir: Path, name: str,
+          libraries_home: Path) -> tuple[set[str], bool, set[str]]:
+    """(declared secret env vars, net-outbound?, the OPTIONAL subset) for one script,
+    resolved TRANSITIVELY across the `calls:` utils its header declares — the script and
+    every util it shells out to share ONE jail and ONE env, the same rule a util's own
+    siblings obey (`utils_run.util_needs`, which walks each callee's subtree). So a script
+    calling a `net: outbound` util needs the network open too, and inherits that util's
+    credentials without redeclaring them. A name is OPTIONAL only if every declarer in the
+    tree marks it `?` — one required declaration anywhere makes it required.
+    """
+    header = _header(routine_dir, name)
+    if header is None:
         return set(), False, set()
     declared = {s.upper() for s in header["secrets"]}
-    optional = {s.upper() for s in header["optional_secrets"]} & declared
-    return declared, header["net"] == "outbound", optional
+    required = declared - {s.upper() for s in header["optional_secrets"]}
+    net = header["net"] == "outbound"
+    for callee in header["calls"]:
+        c_secrets, c_net, c_optional = utils_run.util_needs(libraries_home, callee)
+        declared |= c_secrets
+        required |= c_secrets - c_optional
+        net = net or c_net
+    return declared, net, declared - required
+
+
+def call_problems(routine_dir: Path, name: str, libraries_home: Path) -> list[str]:
+    """The two ways a script's util access is declared wrong, both leaving it to run
+    WITHOUT the access it needs: it execs `gu <util>` the `calls:` line never names (so
+    that util's secrets and net never reach the shared jail), or it declares a util this
+    library does not have (so the declaration resolves to nothing). Refused at the
+    declaration — the same bargain `misdeclared` strikes, since failing loudly here beats
+    failing obscurely at the first env read or blocked socket.
+    """
+    header = _header(routine_dir, name)
+    if header is None:
+        return []
+    src = script_path(routine_dir, name).read_text(encoding="utf-8")
+    declared = set(header["calls"])
+    problems = []
+    if undeclared := sorted(set(utils_header.GU_CALL_RE.findall(src)) - declared):
+        problems.append("execs util(s) the docstring's 'calls:' line does not name: "
+                        + ", ".join(undeclared))
+    if unknown := sorted(c for c in declared
+                         if not utils_lib.exists(libraries_home, c)):
+        problems.append("declares util(s) the library does not have: " + ", ".join(unknown))
+    return problems
 
 
 _PEP723_BLOCK = re.compile(r"^# /// script\s*$(.*?)^# ///\s*$", re.MULTILINE | re.DOTALL)
@@ -207,20 +258,27 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
     `env_secrets` injected (the caller filters to declared+granted names; every other
     store key is scrubbed — `utils_run.scoped_env`), the shared jail (`sandbox.wrap` —
     run fs roots), working directory = the routine dir so relative paths resolve like
-    read_file/write_file. `gu` is deliberately NOT on PATH. Returns (exit, out, err).
+    read_file/write_file. `gu` is on PATH only for a script that DECLARES the utils it
+    calls. Returns (exit, out, err).
     """
     if not exists(routine_dir, name):
         have = ", ".join(p["name"] for p in list_scripts(routine_dir)) or "(none yet)"
         return 2, "", f"no script {name!r} (available: {have})"
-    _declared, net, _opt = needs(routine_dir, name)
+    _declared, net, _opt = needs(routine_dir, name, libraries_home)
     if problem := ensure_env(routine_dir, name, policy=policy,
                              libraries_home=libraries_home):
         return 2, "", problem
     env_secrets = dict(env_secrets or {})
     env = utils_run.scoped_env(set(env_secrets), env_secrets)
-    # scoped_env serves util calls too, where the util library handle must survive —
-    # a SCRIPT is pure code, not a tool-user, so no such handle may reach the child.
-    env.pop("GLOBAL_UTILS_HOME", None)
+    # The `calls:` line is what folded the named utils' secrets and net into the env and
+    # jail above, so it is also what earns the library handle: declare siblings and `gu`
+    # resolves them here (against THIS library, like a util's own sibling calls), declare
+    # none and no handle reaches the child at all.
+    if declared_calls(routine_dir, name):
+        env["PATH"] = f"{libraries_home}:{env.get('PATH', '')}"
+        env["GLOBAL_UTILS_HOME"] = str(libraries_home)
+    else:
+        env.pop("GLOBAL_UTILS_HOME", None)
     try:
         cmd = sandbox.wrap(
             [str(venv_python(routine_dir)), str(script_path(routine_dir, name)),

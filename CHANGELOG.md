@@ -19,6 +19,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.246.0] — 2026-08-27
+
+### Changed
+- **A script may use the utils it declares.** `scripts/<name>.py` was sealed off from the
+  library — `gu` off PATH, "a step needing a util's capability belongs in the recipe". That
+  boundary was doctrine, not safety, and it cut exactly the wrong way: the sub-steps most worth
+  moving out of prose are the repeating ones that ACQUIRE something (fetch a mailbox, drive a
+  browser session, reach an OAuth connector), and those are precisely what a script could not
+  do. A script could always re-implement a fetch with `net: outbound` and a pip dep; what it
+  could not reach was the utils wrapping something hard enough that reimplementing it is not an
+  option.
+  So `calls:` now means for a script what it has always meant for a util. The declaration is
+  the whole mechanism, and it is DECLARED-ONLY in both directions:
+  - `scripts.needs` resolves secrets and `net:` TRANSITIVELY over the declared utils
+    (`utils_run.util_needs`, unchanged — one call tree, one jail, one env). A script calling a
+    `net: outbound` util gets the network; it inherits that util's credentials without
+    redeclaring them, and a name is optional only if every declarer in the tree marks it `?`.
+  - The same `calls:` line earns the library handle: `GLOBAL_UTILS_HOME` + the library root on
+    PATH, pointed at THIS library like a util's own sibling calls. A script declaring no calls
+    gets no handle at all — the old behaviour, now the default rather than the rule.
+  - `scripts.call_problems` refuses the two declarations that would leave a script running
+    without the access it needs: a `gu` exec the `calls:` line never names, and a declared util
+    the library does not have. Refused at the header with the fix spelled out, the bargain
+    `misdeclared` already strikes — failing loudly there beats failing obscurely at the first
+    env read or blocked socket.
+  - The secret-exposure gate (`gate_script_secrets`) now asks over the transitive set, so the
+    four-state grant model covers a callee's credentials exactly as it covers a util call's.
+  There is still NO model channel inside a script: a judgment call belongs in the recipe, and
+  that is the boundary that actually holds the "recipe is the single interpreter" doctrine up.
+
 ## [0.245.0] — 2026-08-27
 
 ### Fixed

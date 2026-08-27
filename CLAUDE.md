@@ -92,8 +92,12 @@ one you are about to touch, not all of them.
   deterministic step (poll, parse, compute, render) is written ONCE via `write_file` and called
   thereafter — versioned by the routine repo, run in a persistent workdir venv (`<routine>/.venv`,
   PEP 723 deps on demand, gitignored) inside the run's fs jail, with ONLY the granted secrets its
-  docstring header declares (the util model — `rsched/scripts.py`), and NO util or model access
-  inside (`gu` off PATH; a step needing a util's capability belongs in the recipe). Gated by the
+  docstring header declares (the util model — `rsched/scripts.py`) PLUS whatever the utils it names
+  on its `calls:` line declare: the library is reachable through `gu` exactly as it is for a util's
+  own siblings, DECLARED-ONLY (no `calls:` line → no `gu` on PATH at all; an undeclared or unknown
+  sibling is refused rather than run without the secrets and net that declaration carries), one jail
+  and one env over the whole call tree. There is no model channel inside — a judgment call belongs
+  in the recipe. Gated by the
   `script` capability (`scripts` permission doc), no approval dial — the blast radius is a subset of
   the routine's own sandboxed permissions. routine-improver scouts recipes for deterministic prose
   responsibilities and nudges them into scripts.

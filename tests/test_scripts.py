@@ -1,7 +1,8 @@
 """Per-routine scripts — the routine's own persistent helper tooling. A
 `scripts/<name>.py` PEP 723 script runs in the routine-workdir venv with the routine's
-fs roots and ONLY the granted secrets its header declares as env (the util model); `gu`
-is deliberately not on PATH — a step needing a util's capability belongs in the recipe.
+fs roots and ONLY the granted secrets its header declares as env (the util model),
+resolved transitively over the library utils its `calls:` line names. That declaration is
+also what puts `gu` on PATH: declare none and no library handle reaches the child.
 """
 
 from __future__ import annotations
@@ -42,6 +43,38 @@ print(json.dumps({"args": sys.argv[1:],
 '''
 
 
+CALLER = '''# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+"""caller — probes the util-library handle a declared `calls:` line earns.
+
+net: none
+secrets: (none)
+calls: mailer
+"""
+import json
+import os
+import subprocess
+
+r = subprocess.run(["gu", "mailer"], check=False, capture_output=True, text=True)
+print(json.dumps({"gu_home": os.environ.get("GLOBAL_UTILS_HOME"),
+                  "mail_key": os.environ.get("MAIL_KEY"),
+                  "dispatched": r.stdout.strip()}))
+'''
+
+UTIL = '''"""{name} — a library util for the scripts tests.
+
+usage: gu {name}
+tags: test
+calls: {calls}
+secrets: {secrets}
+net: {net}
+"""
+print("{name}")
+'''
+
+
 def _routine(tmp_path):
     d = tmp_path / "r"
     (d / "scripts").mkdir(parents=True)
@@ -49,15 +82,90 @@ def _routine(tmp_path):
     return d
 
 
+def _lib(tmp_path, utils=()):
+    """A minimal util library: <home>/utils/<name>/main.py, the layout utils_lib reads,
+    plus the `gu` dispatcher that sits at the library root — what a script's declared
+    `calls:` line puts on PATH. The stub just echoes the util it was asked for, which is
+    all the scripts side needs to prove: the handle resolved.
+    """
+    home = tmp_path / "lib"
+    home.mkdir(parents=True, exist_ok=True)
+    gu = home / "gu"
+    gu.write_text('#!/bin/sh\necho "dispatched $1"\n', encoding="utf-8")
+    gu.chmod(0o755)
+    for name, calls, secrets, net in utils:
+        d = home / "utils" / name
+        d.mkdir(parents=True)
+        (d / "main.py").write_text(
+            UTIL.format(name=name, calls=calls or "(none)", secrets=secrets or "(none)",
+                        net=net), encoding="utf-8")
+    return home
+
+
 def test_list_and_needs_from_own_header(tmp_path):
     d = _routine(tmp_path)
     have = scripts.list_scripts(d)
     assert [s["name"] for s in have] == ["probe"]
     assert "env and args probe" in have[0]["summary"]
-    declared, net, optional = scripts.needs(d, "probe")
+    declared, net, optional = scripts.needs(d, "probe", _lib(tmp_path))
     assert declared == {"PROC_TOKEN", "OPT_TOKEN"}
     assert optional == {"OPT_TOKEN"} and net is False
+    assert scripts.declared_calls(d, "probe") == []
     assert scripts.list_scripts(tmp_path / "empty") == []
+
+
+def test_needs_resolves_declared_util_calls(tmp_path):
+    """A script and the utils it declares share ONE jail and ONE env, so the script
+    inherits their secrets and their network without redeclaring either — the same
+    transitive rule a util's own `calls:` siblings obey (utils_run.util_needs). And the
+    optional/required merge is the strict one: one REQUIRED declaration anywhere in the
+    tree makes a name required, even where another declarer marked it `?`.
+    """
+    home = _lib(tmp_path, [("mailer", "smtp", "MAIL_KEY, OPT_TOKEN?", "none"),
+                           ("smtp", None, "SMTP_PASS", "outbound")])
+    d = _routine(tmp_path)
+    (d / "scripts" / "caller.py").write_text(CALLER, encoding="utf-8")
+    declared, net, optional = scripts.needs(d, "caller", home)
+    # mailer's own secrets AND its smtp sibling's, two levels down
+    assert declared == {"MAIL_KEY", "OPT_TOKEN", "SMTP_PASS"}
+    assert optional == {"OPT_TOKEN"}
+    assert net is True                      # inherited from the outbound grandchild
+    assert scripts.declared_calls(d, "caller") == ["mailer"]
+    # the script's OWN required declaration wins over a callee's `?`
+    both = CALLER.replace("secrets: (none)", "secrets: OPT_TOKEN")
+    (d / "scripts" / "strict.py").write_text(both, encoding="utf-8")
+    _declared, _net, optional = scripts.needs(d, "strict", home)
+    assert optional == set()
+
+
+def test_call_problems_refuse_undeclared_and_unknown_utils(tmp_path):
+    """Both ways the declaration can be wrong leave the script running WITHOUT the access
+    it needs, so both are refused at the header instead of failing obscurely at the first
+    blocked socket: a `gu` exec the `calls:` line never names, and a declared util the
+    library does not have.
+    """
+    home = _lib(tmp_path, [("mailer", None, None, "none")])
+    d = _routine(tmp_path)
+    (d / "scripts" / "caller.py").write_text(CALLER, encoding="utf-8")
+    assert scripts.call_problems(d, "caller", home) == []
+    sneaky = CALLER.replace("calls: mailer", "calls: (none)")
+    (d / "scripts" / "sneaky.py").write_text(sneaky, encoding="utf-8")
+    assert "mailer" in scripts.call_problems(d, "sneaky", home)[0]
+    ghost = CALLER.replace("calls: mailer", "calls: mailer, nosuch")
+    (d / "scripts" / "ghost.py").write_text(ghost, encoding="utf-8")
+    assert "nosuch" in " ".join(scripts.call_problems(d, "ghost", home))
+    assert scripts.call_problems(d, "gone", home) == []      # missing file: no crash
+
+    from rsched.engine.executor import do_script
+
+    class _Ctx:
+        class routine:  # noqa: N801 — mirrors ctx.routine attribute shape
+            dir = d
+
+        class server:  # noqa: N801 — mirrors ctx.server attribute shape
+            libraries_home = home
+    obs = do_script({"kind": "script", "name": "sneaky"}, _Ctx)
+    assert "mailer" in obs["error"] and "calls:" in obs["error"]  # the fix is taught
 
 
 def test_misdeclared_engine_keys_in_pep723_block(tmp_path):
@@ -87,8 +195,8 @@ def test_misdeclared_engine_keys_in_pep723_block(tmp_path):
 
 def test_run_script_declared_env_and_venv(tmp_path, monkeypatch):
     """The env is what the CALLER composed from the script's DECLARED grants; everything
-    else in the store is scrubbed, and the util library is NOT reachable (no
-    GLOBAL_UTILS_HOME / gu on PATH — a script is pure code, not a tool-user)."""
+    else in the store is scrubbed, and a script declaring NO `calls:` gets no library
+    handle at all (no GLOBAL_UTILS_HOME, no gu on PATH) — util access is declared-only."""
     d = _routine(tmp_path)
     monkeypatch.setattr("rsched.secrets.load_secrets",
                         lambda: {"OTHER_KEY": "not-granted"})
@@ -114,6 +222,24 @@ def test_run_script_declared_env_and_venv(tmp_path, monkeypatch):
                                         env_secrets={"PROC_TOKEN": "t-2"})
     assert code == 0, err
     assert json.loads(out)["opt"] is None
+
+
+def test_declared_calls_earn_the_library_handle(tmp_path):
+    """The `calls:` line is what folded the utils' secrets and net into this jail, so it is
+    also what earns `gu`: the child gets GLOBAL_UTILS_HOME pointed at THIS library and the
+    library root on PATH, exactly as a util's own sibling calls resolve.
+    """
+    home = _lib(tmp_path, [("mailer", None, None, "none")])
+    d = _routine(tmp_path)
+    (d / "scripts" / "caller.py").write_text(CALLER, encoding="utf-8")
+    code, out, err = scripts.run_script(
+        d, "caller", [], policy=sandbox.SandboxPolicy(mode="off"),
+        libraries_home=home, env_secrets={"MAIL_KEY": "m-1"})
+    assert code == 0, err
+    data = json.loads(out)
+    assert data["gu_home"] == str(home)
+    assert data["dispatched"] == "dispatched mailer"   # `gu` resolved off PATH
+    assert data["mail_key"] == "m-1"        # inherited from the declared util
 
 
 def test_script_deps_parses_pep723(tmp_path):

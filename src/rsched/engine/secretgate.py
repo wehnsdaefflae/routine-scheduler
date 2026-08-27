@@ -92,15 +92,17 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
 
 
 def gate_script_secrets(loop, action: dict, poll_s: float) -> dict | None:
-    """The SAME four-state exposure gate for a per-routine script — needs come from the
-    script's own header, no transitive graph.
+    """The SAME four-state exposure gate for a per-routine script — needs resolved over
+    its own header AND the `calls:` utils it declares, since one jail and one env cover
+    the whole call tree.
     """
     from .. import scripts
     ctx = loop.ctx
     name = str(action.get("name") or "")
     if not scripts.exists(ctx.routine.dir, name):
         return None                     # the missing-script path exposes no secrets
-    needed, _net, optional = scripts.needs(ctx.routine.dir, name)
+    needed, _net, optional = scripts.needs(ctx.routine.dir, name,
+                                           ctx.server.libraries_home)
     return _gate_secrets(loop, kind="script", name=name, needed=needed,
                          optional=optional, poll_s=poll_s)
 

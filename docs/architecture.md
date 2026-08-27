@@ -295,9 +295,15 @@ and the capabilities digest's catalog listing):
   the stages are the sole source of truth. The rules themselves are NOT here: they live once in the
   library and the run reads them with `read_rule`.
 - `scripts/<name>.py` (`rsched/scripts.py`) — the routine's OWN persistent helper scripts:
-  PEP 723 + the util docstring-header standard minus the catalog lines (no `calls:` graph;
-  `gu` is NOT on PATH — a step needing a util's capability belongs in the recipe, and there
-  is no model channel: a script is pure deterministic code). Deliberately TOOLING, not a
+  PEP 723 + the util docstring-header standard minus the catalog lines. There is no model
+  channel — a judgment call belongs in the recipe — but the library IS reachable: the utils
+  a script names on its `calls:` line resolve through `gu` exactly as a util's own siblings
+  do, and `utils_run.util_needs` folds their `secrets:` and `net:` into the script's single
+  jail and env (`scripts.needs`). Access is DECLARED-ONLY: a script naming no calls gets no
+  `GLOBAL_UTILS_HOME` and no `gu` on PATH, and `scripts.call_problems` refuses one that
+  execs an undeclared sibling or declares a util the library does not have, rather than let
+  it run without the secrets and network that declaration would have carried. Deliberately
+  TOOLING, not a
   co-equal interpreter: the recipe stays the single interpreter of the task and delegates
   judgment-free sub-steps (polling, parsing, calculations, fixed artifacts) so a repeating
   step is written once and re-run for free. Run via the `script` action (gated by the
@@ -306,8 +312,9 @@ and the capabilities digest's catalog listing):
   deps installed into it (net-open build step, R40's prewarm rationale), gitignored against
   the `git add -A` autocommit. The jail is the run's fs roots (recipe and script read and
   write the SAME files); the env carries ONLY the granted secrets the script's header
-  `secrets:` line declares (`NAME?` = optional, withheld when not granted; a declared,
-  present, still-undecided secret files the util call's blocking exposure ask). Authored by
+  `secrets:` line declares, plus whatever its declared utils declare (`NAME?` = optional,
+  withheld when not granted; a declared, present, still-undecided secret files the util
+  call's blocking exposure ask, over the transitive set). Authored by
   the run itself with `write_file` (an own-dir write; the repo's autocommit versions it) or
   by the user; no approval dial — the blast radius is a subset of the routine's own
   sandboxed permissions. The capabilities digest lists the routine's scripts when the

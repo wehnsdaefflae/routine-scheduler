@@ -183,8 +183,10 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
 def do_script(action: dict, ctx: RunContext) -> dict:
     """Run one of the routine's OWN scripts/<name>.py helpers: declared-only secrets
     (the util model — only header-declared AND granted names reach the env, engine
-    extras like connection tokens included only if declared), the recipe's fs jail, no
-    `gu` on PATH. Same truncation + spill as a util call. The loop's secret gate
+    extras like connection tokens included only if declared, resolved transitively over
+    the utils the script's `calls:` line declares), the recipe's fs jail, and `gu` on
+    PATH only for a script that declares those calls. Same truncation + spill as a util
+    call. The loop's secret gate
     (declared-required-undecided → the blocking ask) ran before this.
     """
     from .. import scripts
@@ -202,7 +204,15 @@ def do_script(action: dict, ctx: RunContext) -> dict:
                 "which the engine never reads (the script would run with NO secrets and NO "
                 "network). Move them into the module DOCSTRING as header lines, exactly the "
                 "util model — e.g.\n    secrets: FTP_SOURCES\n    net: outbound\n— then rerun."}
-    declared, _net, _opt = scripts.needs(ctx.routine.dir, name)
+    if bad := scripts.call_problems(ctx.routine.dir, name, ctx.server.libraries_home):
+        return {"kind": "script", "name": name, "error":
+                "; ".join(bad) + ". A script reaches the util library ONLY through its "
+                "docstring `calls:` line: that declaration is what folds each util's "
+                "secrets and network into the shared jail, so an undeclared or unknown "
+                "sibling would run without them. Fix the header — e.g.\n"
+                "    calls: gmail, ftp\n— then rerun."}
+    declared, _net, _opt = scripts.needs(ctx.routine.dir, name,
+                                         ctx.server.libraries_home)
     env_secrets = {k: v for k, v in load_secrets().items()
                    if k in declared and secret_state(ctx, k) == "granted"}
     env_secrets |= {k: v for k, v in _extra_secrets(ctx).items() if k in declared}

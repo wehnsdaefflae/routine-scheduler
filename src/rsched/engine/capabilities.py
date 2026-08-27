@@ -252,13 +252,16 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             if have:
                 cap_bits.append(
                     "script — run this routine's OWN persistent helper scripts (scripts/, "
-                    "your venv, deterministic work only — no util or model access inside): "
+                    "your venv, deterministic work only — no model access inside): "
                     + "; ".join(f"{s['name']} ({s['summary']})" if s["summary"] else s["name"]
                                 for s in have)
                     + ". When you notice a repeating deterministic sub-step (fetch, parse, "
                       "compute, render), STOP redoing it by hand: write_file a new "
                       "scripts/<name>.py once and call it every time after — it persists "
                       "across runs, costs no model work, and stays under your control. "
+                      "A script may use utils it DECLARES on its docstring 'calls:' line "
+                      "(their secrets and network fold into its sandbox); an undeclared "
+                      "one is refused. "
                       "Placement test: a script is for THIS routine only — capability "
                       "another routine could plausibly reuse belongs in the shared "
                       "library as a util instead")
@@ -266,8 +269,9 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                 cap_bits.append(
                     "script — run this routine's own Python helpers from scripts/<name>.py "
                     "(none exist yet; author one with write_file: a PEP 723 script, "
-                    "docstring header '<name> — <summary>' + 'net:' + 'secrets:', then "
-                    "call it with the script action). When you notice a repeating "
+                    "docstring header '<name> — <summary>' + 'net:' + 'secrets:' + "
+                    "'calls:' for any utils it shells out to, then call it with the "
+                    "script action). When you notice a repeating "
                     "deterministic sub-step (fetch, parse, compute, render), write a "
                     "PERSISTENT script for it instead of redoing it by hand — it runs in "
                     "your venv inside your sandbox, survives this run, and future runs "
