@@ -45,7 +45,8 @@ one you are about to touch, not all of them.
   surfaces
 - `docs/search.md`, `docs/run-analytics.md`, `docs/authoring.md`, `docs/examples.md`,
   `docs/getting-started.md` — read models, authoring, onboarding
-- `docs/designs.md` — specs for work DECIDED BUT UNBUILT (one entry per queued finding).
+- `docs/designs.md` — specs for work DECIDED BUT UNBUILT (one entry per queued finding, or
+  per decision taken before a finding exists).
   Nothing there describes current behaviour, so never read it as a reference; an entry is
   deleted when it ships and its narration moves to the subsystem doc it belongs to
 - `.codemap/` — the derived module/route/contract map `self-audit` works from
