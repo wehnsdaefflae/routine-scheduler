@@ -114,12 +114,11 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # the group shared store (D67): a grouped run's harness contract names the
         # injected root and its collision contract
         "Group shared store (read+write",
-        # the two-phase group fire (F292): a split member's harness contract names its
-        # pass and what that pass may/may not do — both halves are load-bearing
-        "GROUP FIRE PHASE: ingest",
-        "GROUP FIRE PHASE: outbound",
-        "finish WITHOUT any outbound communication",
-        "do not redo the ingestion",
+        # NOTE: the F292 two-phase group fire ("GROUP FIRE PHASE: ingest/outbound") was pinned
+        # here until 2026-08-27. D90 retired the machinery and the engine stopped emitting those
+        # strings, but the doc kept describing them and this guard kept passing — it only checks
+        # doc ⊇ engine, so prose that outlives its feature is invisible to it. Removed with the
+        # doc text. A needle here must name a string the engine ACTUALLY emits today.
     ]
     for needle in needles:
         assert needle in DOC, f"engine string {needle!r} missing from docs/prompt-anatomy.md"

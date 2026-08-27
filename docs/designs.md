@@ -56,34 +56,6 @@ the trigger before any generation work exists.
 
 ---
 
-## F328 — queued creation and config changes from a scheduled run
-
-**Problem (evidence R353).** `create_routine` and `manage_group` are hard-restricted to
-top-level conversations, because a scheduled routine has no user in the loop. The
-restriction is right and the consequence is wrong: routine-improver reached a run with a
-FULLY DESIGNED, user-approved routine plus a two-phase group ready to materialize
-(`state/fau-comms-steward-ready-spec.md`, all five gate questions answered) and could not
-create them. The design had to be hand-carried back to the user to paste in.
-
-**Shape.** The missing piece is not permission, it is a QUEUE. D92's preview→confirm already
-built the exact shape: a scheduled run stores a DRAFT and the user confirms it later.
-
-- A scheduled run may call `create_routine` / `manage_group` in **draft mode only**. It
-  writes the same draft record D92 defined, under `.control/pending-creations/<id>.json`,
-  and gets the preview observation back. Nothing is created.
-- The **Decisions page** grows a row per pending creation: what it would create, from which
-  routine and run, with the full instruction. One click materializes it through
-  `workflows.scaffold` — the same single materializer — or discards it.
-- The run that queued it learns the outcome the way it learns anything else: a message in
-  its inbox when the user acts, drained by its next run.
-- **The engine still never writes routine.yaml.** The web layer materializes, exactly as it
-  applies forever-grants today.
-
-**First increment.** `create_routine` draft-from-a-scheduled-run plus the Decisions row and
-the materialize button. `manage_group` follows the same path once creation works.
-
----
-
 ## F337 — mid-run config changes as in-flow messages
 
 **Problem.** Config edited while a run is live lands in routine.yaml, but the RUN already

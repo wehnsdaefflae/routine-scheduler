@@ -606,6 +606,28 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   action (`engine/create_routine.py`) — valid ONLY from a root conversation — which materializes the routine
   SYNCHRONOUSLY through the SAME `workflows.scaffold` path the retired wizard build once called (decompose the chosen
   workflow into main.md + stages/, record its held rules, write routine.yaml, init the auto-push git repo; the
+  **A run without a user in the loop QUEUES instead of creating** (F328, `rsched/pending.py` +
+  `web/api_pending.py`). The restriction to conversations was right — a scheduled run has nobody to
+  design WITH — but its consequence was wrong: routine-improver reached a run holding a fully
+  designed, user-approved routine plus the group it belonged in and could not materialize either,
+  so the design was hand-carried back to the operator to paste in (R353). The missing piece was
+  never permission, it was a QUEUE. Both kinds are now surfaced to every run and the HANDLER
+  decides: a root conversation materializes through D92's preview→confirm as before; anywhere else
+  the same call writes a proposal to `.control/pending-creations/<id>.json` and returns an
+  observation saying plainly that nothing was created and not to re-issue it. The Decisions page
+  carries a band of proposals — what would be created, from which routine and run, with the full
+  instruction — and one click materializes through the SAME `workflows.scaffold` / `rsched.groups`
+  calls, or discards. **The engine still never writes `routine.yaml`**: the web layer materializes,
+  exactly as it applies forever-grants, and that is why the materializer lives there. The proposing
+  routine learns the outcome the ordinary way, from an inbox message its NEXT run drains — nothing
+  is woken, because a creation is not urgent and a queue that started runs would be a scheduler in
+  disguise. Ungated like `report`: a proposal nobody approved creates nothing and reaches nobody but
+  the operator's own page, so the approval IS the gate and it is a human. `manage_group`'s `list`
+  still answers directly (it writes nothing, and a run that cannot read the group store cannot
+  propose a correct change to it); every mutating verb queues. A within-reply CHILD is still
+  refused outright at every depth > 0 and the kinds are not even surfaced to it — a sub-workflow
+  must not create routines or reshape groups as a side effect, and a proposal from one traces back
+  to nothing the user reasoned about. The queue is for a run that HAS a user, just not right now.
   daemon's `registry_rescan_s` timer picks the new dir up). The protected `clarification` template routine
   still backs the clarify flow and its questions/decisions surface through `/api/questions`; `wizard_store.py`
   now retains only the on-disk helpers for that template.

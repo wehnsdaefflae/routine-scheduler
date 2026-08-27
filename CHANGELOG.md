@@ -19,6 +19,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.239.0] — 2026-08-27
+
+### Added
+- **A scheduled run can propose a routine or a group instead of being refused** (F328). R353 is
+  the case: routine-improver reached a run holding a fully designed, user-approved routine plus
+  the two-phase group it belonged in — all five gate questions answered — and could materialize
+  neither, so the design was hand-carried back to the operator to paste in. The restriction to
+  conversations was right (a scheduled run has nobody to design WITH); its consequence was wrong.
+  The missing piece was never permission, it was a QUEUE.
+  - `create_routine` and `manage_group` are now surfaced to every run, and the HANDLER decides:
+    a root conversation materializes through D92's preview→confirm exactly as before; anywhere
+    else the same call writes a proposal to `.control/pending-creations/<id>.json` and returns an
+    observation saying plainly that nothing was created and not to re-issue it (a second call
+    would queue a second proposal every run). A within-reply CHILD is still refused outright and
+    never sees the kinds — a sub-workflow must not create routines or reshape groups as a side
+    effect. The queue is for a run that HAS a user, just not right now.
+  - The **Decisions page** grows a band of proposals — what would be created, from which routine
+    and run, with the full instruction the routine would be BORN with — and one click materializes
+    through the SAME `workflows.scaffold` / `rsched.groups` calls, or discards.
+  - **The engine still never writes `routine.yaml`**: the web layer materializes, exactly as it
+    already applies forever-grants. The proposing routine learns the outcome the ordinary way,
+    from an inbox message its NEXT run drains — nothing is woken, because a creation is not urgent
+    and a queue that started runs would be a scheduler in disguise.
+  - Ungated, like `report`: a proposal nobody approved creates nothing and reaches nobody but the
+    operator's own page, so the approval IS the gate and it is a human. `manage_group`'s `list`
+    still answers directly — it writes nothing, and a run that cannot read the group store cannot
+    propose a correct change to it; every mutating verb queues.
+  - `rsched/pending.py`, `web/api_pending.py`, `static/components/pending.js`; 12 backend tests
+    and 5 browser tests. The F328 entry is deleted from `docs/designs.md`.
+
+### Fixed
+- **The prompt still described the retired two-phase group fire.** D90 replaced F292's `split`
+  flag with BRACKETING (an inbound-router member first, an outbound-sender member last) and the
+  engine stopped emitting the `GROUP FIRE PHASE: ingest/outbound` text — but `manage_group`'s kind
+  copy still offered `split` as a field, so the model was told about a field that is not in the
+  action schema, and `docs/prompt-anatomy.md` still documented the boot text. Both now describe
+  the model that exists. `tests/test_prompt_anatomy.py` pinned those dead strings and kept
+  passing: it only checks doc ⊇ engine, so prose that outlives its feature is invisible to it —
+  the needles are removed with a note saying so.
+
 ## [0.238.0] — 2026-08-27
 
 ### Added

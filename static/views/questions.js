@@ -7,6 +7,7 @@
 
 import { replaceHash } from "/static/router.js";
 import { api } from "/static/api.js";
+import { pendingBand } from "/static/components/pending.js";
 import { answerForm } from "/static/components/answerform.js";
 import { linkifyRefs } from "/static/components/reflinks.js";
 import { md, mdInline } from "/static/md.js";
@@ -86,6 +87,11 @@ export async function render(view, query = {}) {
   for (const [key, label] of SORTS) sortSel.append(el("option", { value: key }, `sort: ${label}`));
   sortSel.onchange = () => { state.sort = sortSel.value; renderList(); };
   view.append(el("div", { class: "row mt toolbar", style: "gap:10px" }, chipRow, routineSel, sortSel));
+
+  // F328: creations a SCHEDULED run proposed — it had no user in the loop, so it queued
+  // instead of creating. Above the decisions because nothing happens until one is clicked.
+  const pending = pendingBand();
+  view.append(pending.node);
 
   const list = el("div", { class: "mt" });
   list.append(skeleton(), skeleton());

@@ -50,7 +50,8 @@ def _server(tmp_path):
 def _ctx(server, *, home: str, slug="c-1", depth=0):
     routine = SimpleNamespace(slug=slug, dir=getattr(server, home) / slug)
     routine.dir.mkdir(parents=True, exist_ok=True)
-    return SimpleNamespace(server=server, routine=routine, depth=depth)
+    return SimpleNamespace(server=server, routine=routine, depth=depth,
+                           run_id=f"{slug}:20260827-030000")
 
 
 def _age_draft(ctx):
@@ -79,14 +80,26 @@ def test_create_routine_registered_and_validated():
                             "name": "n", "prompt": "p"})
 
 
-def test_create_routine_rejected_outside_root_conversation(tmp_path):
+def test_create_routine_queues_outside_a_root_conversation(tmp_path):
+    """F328: no user in the loop means PROPOSE, not refuse. Creation stays
+    conversation-INITIATED — a scheduled run or a within-reply child leaves a proposal for the
+    Decisions page, and still creates nothing itself."""
+    from rsched import pending
+
     server = _server(tmp_path)
-    for ctx in (_ctx(server, home="routines_home"),                     # a scheduled routine
-                _ctx(server, home="conversations_home", depth=1)):      # a within-reply child
-        obs = create_routine.handle_create_routine(
-            ctx, {"kind": "create_routine", "target": "x", "name": "X", "prompt": "p"})
-        assert obs["rejected"] and "conversation" in obs["reason"]
-    assert not list((server.routines_home).glob("x"))                   # nothing created
+    action = {"kind": "create_routine", "target": "x", "name": "X", "prompt": "p"}
+    obs = create_routine.handle_create_routine(_ctx(server, home="routines_home"), action)
+    assert obs["queued"] and not obs.get("created") and not obs.get("rejected")
+    assert "Do NOT re-issue" in obs["next"]
+
+    # a within-reply CHILD is still refused outright — a sub-workflow must not create routines
+    # as a side effect, and a proposal from one traces to nothing the user reasoned about
+    child = create_routine.handle_create_routine(
+        _ctx(server, home="conversations_home", depth=1), action)
+    assert child["rejected"] and "child run" in child["reason"]
+
+    assert not (server.routines_home / "x").exists()                    # nothing created
+    assert len(pending.load_all(server.routines_home)) == 1             # only the scheduled one
 
 
 def test_first_call_drafts_and_creates_nothing(tmp_path):

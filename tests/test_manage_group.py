@@ -37,7 +37,8 @@ def _server(tmp_path, members=("weight-coach", "news-digest")):
 def _ctx(server, *, home: str, slug="c-1", depth=0):
     routine = SimpleNamespace(slug=slug, dir=getattr(server, home) / slug)
     routine.dir.mkdir(parents=True, exist_ok=True)
-    return SimpleNamespace(server=server, routine=routine, depth=depth)
+    return SimpleNamespace(server=server, routine=routine, depth=depth,
+                           run_id=f"{slug}:20260827-030000")
 
 
 def test_manage_group_registered_and_validated():
@@ -56,12 +57,29 @@ def test_manage_group_registered_and_validated():
     assert validate_action({"say": "s", "kind": "manage_group", "verb": "list", "path": "x"})
 
 
-def test_manage_group_rejected_outside_root_conversation(tmp_path):
+def test_manage_group_queues_changes_outside_a_root_conversation(tmp_path):
+    """F328: a MUTATING verb becomes a proposal for the Decisions page rather than a refusal;
+    `list` still answers directly, because it writes nothing and a run that cannot read the
+    store cannot propose a correct change to it."""
+    from rsched import pending
+
     server = _server(tmp_path)
-    for ctx in (_ctx(server, home="routines_home", slug="weight-coach"),   # a scheduled routine
-                _ctx(server, home="conversations_home", depth=1)):         # a within-reply child
-        obs = manage_group.handle_manage_group(ctx, {"kind": "manage_group", "verb": "list"})
-        assert obs["rejected"] and "conversation" in obs["reason"]
+    sched = _ctx(server, home="routines_home", slug="weight-coach")
+    child = _ctx(server, home="conversations_home", depth=1)
+    for ctx in (sched, child):
+        listed = manage_group.handle_manage_group(ctx, {"kind": "manage_group", "verb": "list"})
+        assert "groups" in listed and not listed.get("queued")
+
+    obs = manage_group.handle_manage_group(
+        sched, {"kind": "manage_group", "verb": "create", "name": "G"})
+    assert obs["queued"] and not obs.get("rejected")
+    # a within-reply CHILD is still refused outright — it must not reshape groups as a side effect
+    kid = manage_group.handle_manage_group(
+        child, {"kind": "manage_group", "verb": "create", "name": "G"})
+    assert kid["rejected"] and "child run" in kid["reason"]
+
+    assert groups.list_groups(server.routines_home) == []       # nothing applied
+    assert len(pending.load_all(server.routines_home)) == 1
 
 
 def test_manage_group_create_validates_members(tmp_path):

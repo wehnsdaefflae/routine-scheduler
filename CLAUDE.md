@@ -140,6 +140,15 @@ one you are about to touch, not all of them.
   ledger `.control/reports.jsonl` (order rows + `delivered` event rows), one Items type; the
   page shows open → in_progress once drained → settled once answered. Triage is therefore
   FORWARDING, not absorbing.
+  **`create_routine` / `manage_group` are conversation-INITIATED, not conversation-only** (F328):
+  a root conversation materializes them, and a run with no user in the loop writes a PROPOSAL to
+  `.control/pending-creations/` that the Decisions page materializes with one click through the
+  same `workflows.scaffold` / `rsched.groups` path — so the engine still never writes
+  `routine.yaml`, and a scheduled run holding a finished design no longer has to hand it back to
+  the operator by hand (R353). `manage_group list` still answers directly; every mutating verb
+  queues. A within-reply CHILD (depth > 0) is still refused outright and never sees the kinds:
+  the queue is for a run that HAS a user, just not right now. Ungated like `report` — the
+  approval is the gate, and it is a human.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out —
   and an optional `request` ("<class>:<name>" entity id, entities.py): a typed ACCESS REQUEST the
   Decisions page settles with one of four decisions (allow/deny × now/forever). Forever-decisions

@@ -40,6 +40,7 @@ not do it as a side effect. The engine ALSO only surfaces the kind to a root con
 from __future__ import annotations
 
 from .. import group_runs, groups, registry, schedule
+from ..pending import READ_ONLY_VERBS
 from .detach import _is_root_conversation
 from .run_context import RunContext
 
@@ -86,6 +87,25 @@ def _members_or_error(ctx: RunContext, action: dict):
     return [{"slug": s} for s in slugs], None
 
 
+def _queued_obs(ctx: RunContext, action: dict, verb: str) -> dict:
+    """A scheduled run's group proposal, filed for the operator (F328) — the twin of
+    create_routine's. R353 needed BOTH: a routine plus the two-phase group it belongs in.
+    """
+    from ..pending import queue
+
+    fields = {k: action[k] for k in ("verb", "target", "name", "members",
+                                     "on_failure", "cron", "paused") if k in action}
+    fields["verb"] = verb
+    what = f"group {str(action.get('name') or action.get('target') or '').strip()!r}"
+    rec = queue(ctx.server.routines_home, kind="manage_group", routine=ctx.routine.slug,
+                run_id=ctx.run_id, fields=fields, summary=f"{verb} {what}")
+    return {"kind": "manage_group", "verb": verb, "queued": True, "id": rec["id"],
+            "next": ("Nothing changed yet, and nothing will until the user approves it — you "
+                     "have no user in the loop, so this went to the Decisions page as a "
+                     "proposal. Do NOT re-issue it: a second call queues a second proposal. "
+                     "Your next run learns the outcome from a message in your inbox.")}
+
+
 def handle_manage_group(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911 — a verb dispatcher: each verb's guard returns its own teaching rejection, one flat handler by design
     """Run one group operation from a root conversation. Returns the observation dict the loop
     records and renders. Bad input is a teaching rejection (corrected by the model), never a
@@ -99,12 +119,6 @@ def handle_manage_group(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911
       on_failure  — 'stop' | 'continue' (optional for create/update; required for set-default)
       paused      — gate the group's cron without clearing it (optional; update)
     """
-    if not _is_root_conversation(ctx):
-        return _reject(
-            "manage_group is only available from a top-level conversation — a scheduled routine "
-            "or a within-reply child cannot manage routine groups. Group management is initiated "
-            "by a conversation, with the user.")
-
     verb = str(action.get("verb") or "").strip()
     if verb not in VERBS:
         return _reject(f"manage_group requires a 'verb' field, one of {list(VERBS)}; got "
@@ -112,6 +126,17 @@ def handle_manage_group(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911
 
     home = ctx.server.routines_home
     gid = str(action.get("target") or "").strip()
+
+    # No user in the loop → a MUTATING verb becomes a proposal on the Decisions page (F328),
+    # not a refusal. `list` still answers directly: it writes nothing, and a run that cannot
+    # read the group store cannot propose a correct change to it.
+    if ctx.depth > 0 and verb not in READ_ONLY_VERBS:
+        return _reject(
+            "manage_group cannot CHANGE anything from inside a child run — a sub-workflow must "
+            "not reshape routine groups as a side effect. Report what you would change in your "
+            "finish summary and let the run that started you decide.")
+    if not _is_root_conversation(ctx) and verb not in READ_ONLY_VERBS:
+        return _queued_obs(ctx, action, verb)
 
     if verb == "list":
         return {"kind": "manage_group", "verb": "list",

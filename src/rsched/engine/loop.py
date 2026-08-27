@@ -126,11 +126,17 @@ class EngineLoop:
         from .admin import admin_marker, clear_admin_marker
         self.admin_leg = admin_marker(ctx.run_dir) and detach._is_root_conversation(ctx)
         clear_admin_marker(ctx.run_dir)
-        # D58: routine creation is initiated from a conversation ONLY. Surface create_routine
-        # to a ROOT conversation (the handler rejects every non-conversation as a backstop), so
-        # a scheduled routine never sees the kind in its schema or CAPABILITIES. A None allowed
-        # set means "unrestricted" and already carries every kind; the handler gate covers it.
-        if self.allowed_tools is not None and detach._is_root_conversation(ctx):
+        # D58: routine and group creation is INITIATED from a conversation — that is where a
+        # user is in the loop to design with. F328 keeps the restriction and drops its
+        # consequence: a run without a user may still PROPOSE, so the kinds are surfaced
+        # everywhere and it is the HANDLER that decides between materializing (root
+        # conversation) and queuing a proposal for the Decisions page (anywhere else). Before
+        # this, a scheduled run holding a fully designed, user-approved routine had no way to
+        # hand it over at all and it was carried back to the operator by hand (R353). A None
+        # allowed set means "unrestricted" and already carries every kind. Depth 0 ONLY: a
+        # within-reply CHILD must not create or propose routines as a side effect — its parent
+        # is the one reasoning with the user, and a child's proposal traces to nothing.
+        if self.allowed_tools is not None and ctx.depth == 0:
             self.allowed_tools |= {"create_routine", "manage_group"}
         # base_grants is the CONFIG-derived policy; the live self.grants folds the run's
         # one-time grant overlay over it (requests.rebuild_policy) — always base+overlay,

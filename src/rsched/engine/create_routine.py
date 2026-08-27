@@ -129,10 +129,50 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
     return obs
 
 
+def _queued_obs(ctx: RunContext, fields: dict) -> dict:
+    """A scheduled run's proposal, filed for the operator (F328).
+
+    R353 is the case: routine-improver reached a run with a fully designed, user-approved
+    routine ready and could not materialize it, so the design was hand-carried back to the user
+    to paste in. The restriction to conversations was right — a scheduled run has no user to
+    design WITH — but the consequence was wrong. What was missing is a queue, not permission.
+    """
+    from ..pending import queue
+
+    rec = queue(ctx.server.routines_home, kind="create_routine", routine=ctx.routine.slug,
+                run_id=ctx.run_id, fields=fields,
+                summary=f"routine {fields['slug']!r} from pattern {fields['workflow']!r}")
+    return {"kind": "create_routine", "slug": fields["slug"], "queued": True, "id": rec["id"],
+            "next": ("Nothing is created yet, and nothing will be until the user approves it — "
+                     "you have no user in the loop, so this went to the Decisions page as a "
+                     "proposal. Do NOT re-issue it: a second call queues a second proposal. "
+                     "Your next run learns the outcome from a message in your inbox. Finish the "
+                     "work that does not depend on this routine existing, and say in your "
+                     "summary that the creation is awaiting approval.")}
+
+
+def _for_non_conversation(ctx: RunContext, fields: dict) -> dict | None:
+    """What happens when the caller is not a root conversation — None when it IS one.
+
+    Two different answers, and the difference is whether a user could ever have been in the
+    loop. A CHILD run is refused outright: a sub-workflow must not create routines as a side
+    effect, and a proposal from one traces back to nothing the user reasoned about. A
+    top-level SCHEDULED run gets a queue (F328) — it has a user, just not right now.
+    """
+    if ctx.depth > 0:
+        return {"kind": "create_routine", "rejected": True,
+                "reason": "create_routine is not available inside a child run — a sub-workflow "
+                          "must not create routines as a side effect. Hand the design back in "
+                          "your finish summary and let the run that started you decide."}
+    if not _is_root_conversation(ctx):
+        return _queued_obs(ctx, fields)
+    return None
+
+
 def handle_create_routine(ctx: RunContext, action: dict) -> dict:
-    """Store/refresh the draft (first step) or materialize it (confirmed second step), or
-    reject when not a root conversation. Returns the observation dict the loop records and
-    renders.
+    """Store/refresh the draft (first step) or materialize it (confirmed second step) in a
+    root conversation; QUEUE the proposal for the operator anywhere else (F328). Returns the
+    observation dict the loop records and renders.
 
     Action fields (all reused from the shared schema — no create_routine-only fields):
       target   — the new routine's kebab-case slug (required)
@@ -140,11 +180,6 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
       prompt   — the clarified task instruction, decomposed into the routine's stages (required)
       workflow — the library workflow pattern to materialize from (optional; DEFAULT_WORKFLOW)
     """
-    if not _is_root_conversation(ctx):
-        return {"kind": "create_routine", "rejected": True,
-                "reason": "create_routine is only available from a top-level conversation — a "
-                          "scheduled routine or a within-reply child cannot create routines. "
-                          "Routine creation is initiated by a conversation, with the user."}
     from ..workflows.scaffold import scaffold
 
     slug = str(action.get("target") or "").strip()
@@ -162,9 +197,16 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     if workflow_slug not in {w["slug"] for w in catalog}:
         return _unknown_workflow_obs(slug, workflow_slug, catalog)
 
-    draft = _load_draft(ctx)
     fields = {"slug": slug, "name": name, "instruction": instruction,
               "workflow": workflow_slug}
+    # A run with no user in the loop QUEUES instead of creating (F328). It is the same D92
+    # draft, with a longer gap before the confirmation: the operator sees it on the Decisions
+    # page and one click materializes it through this very scaffold path. Nothing is created
+    # here, and the engine still never writes routine.yaml.
+    if (elsewhere := _for_non_conversation(ctx, fields)) is not None:
+        return elsewhere
+
+    draft = _load_draft(ctx)
     if draft is None or any(draft.get(k) != v for k, v in fields.items()):
         # First step, or a design change: (re)write the draft and ask for the round-trip.
         record = {**fields, "pid": os.getpid(), "created_at": now_iso()}
