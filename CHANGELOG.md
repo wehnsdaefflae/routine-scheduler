@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.246.1] — 2026-08-27
+
+### Fixed
+- **Endpoint credit-balance card and connection-test were 404** (regression from the F393
+  split). `web/settings/endpoint_probe.py` was extracted out of `endpoints.py` but its router
+  was never wired into the `settings` package aggregate (`settings/__init__.py`), so
+  `GET /api/settings/endpoints/{name}/credits` and `POST /api/settings/endpoints/{name}/test`
+  — both called by `static/views/settings-endpoints.js` — served nothing. Added `endpoint_probe`
+  to the import tuple and the `include_router` loop, plus a regression test asserting the two
+  routes are mounted on the aggregated settings router (the existing handler-unit tests passed
+  either way, which is why the split went unnoticed). (F395)
+
 ## [0.246.0] — 2026-08-27
 
 ### Changed

@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from . import (
+    endpoint_probe,
     endpoints,
     github,
     machines,
@@ -21,6 +22,6 @@ from . import (
 )
 
 router = APIRouter(tags=["settings"])
-for _mod in (endpoints, source, github, oauth, machines, secrets, server,
-             restart, pause):
+for _mod in (endpoints, endpoint_probe, source, github, oauth, machines, secrets,
+             server, restart, pause):
     router.include_router(_mod.router)

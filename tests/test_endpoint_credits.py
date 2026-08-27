@@ -35,3 +35,24 @@ def test_nanogpt_balance_url_lives_on_the_origin():
         == "https://nano-gpt.com/api/check-balance"
     assert nanogpt_balance_url("https://nano-gpt.com/api/v1/") \
         == "https://nano-gpt.com/api/check-balance"
+
+
+def test_endpoint_probe_routes_are_mounted():
+    """Regression (F395): the F393 split extracted endpoint_probe.py out of endpoints.py
+    but its router must be wired into the settings package aggregate — otherwise
+    /settings/endpoints/{name}/credits and /test 404 while the frontend still calls them
+    (settings-endpoints.js). The handler-only tests above pass either way, so this asserts
+    the wiring in settings/__init__.py directly."""
+    from rsched.web.settings import router as settings_router
+
+    # settings_router lazily includes sub-routers as _IncludedRouter wrappers
+    # (fastapi.routing), each exposing .original_router — collect the mounted paths
+    # through them rather than the flattened app graph.
+    mounted = set()
+    for inc in settings_router.routes:
+        sub = getattr(inc, "original_router", None)
+        if sub is None:
+            continue
+        mounted |= {rt.path for rt in sub.routes if hasattr(rt, "path")}
+    assert "/settings/endpoints/{name}/credits" in mounted
+    assert "/settings/endpoints/{name}/test" in mounted
