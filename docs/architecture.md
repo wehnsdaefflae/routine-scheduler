@@ -344,21 +344,43 @@ and the capabilities digest's catalog listing):
   `POST /routines/{slug}/recipe/revert` is the one-click rollback (recipe files only — never
   routine.yaml or state; 409 while a run is active). Flag-first: the improver never auto-reverts.
 
-## Child tasks (subtasks + subruns), questions, injection
+## Child runs (spawn + subtask), questions, injection
 
-- **A subtask and a subroutine are the same thing** — a child task materialized from a workflow
-  pattern and run recursively (`engine/childrun.py` `build_child`, tree on disk under
-  `runs/<ts>/sub/<n>/`), differing only in SCHEDULING and budget. A child's fs roots EXTEND the
+- **There is ONE child-run concept**, defined once in `engine/child.py` (F338): an isolated run
+  with its OWN directory, its OWN budget sliced from the parent's remainder, its own recipe or
+  pattern, and a declared relationship to its parent. `spawn`, `subtask` and (F325) a
+  conversation `branch` are three scheduling MODES of it — parallel, sequential, and
+  forked-from-a-conversation — not three concepts, and NOT a fourth action kind: the existing
+  kinds keep their names at the action surface, because each names a different scheduling intent
+  a run genuinely chooses between, and share this contract underneath. Three names had invited
+  three mental models, and the copy drifted between them until it claimed something false —
+  that children share the parent's working directory (R409/R410). The contract is: isolation, a
+  budget of its own, and a declared HAND-BACK (below). `engine/child.py` also owns the mode
+  vocabulary the prompt copy renders (`mode_noun`) and the hand-back path (`handback_dirname`),
+  so the three surfaces — kind copy, observations, docs — cannot drift apart again.
+  The in-engine modes are materialized from a workflow pattern and run recursively
+  (`engine/childrun.py` `build_child`, tree on disk under `runs/<ts>/sub/<n>/`), differing only
+  in SCHEDULING and budget. A child's fs roots EXTEND the
   parent's — the parent routine dir and every configured/granted root stay reachable from
   `sub/<n>` (F185; capabilities stay off, resources inherit). Both are NON-BLOCKING background
   threads — the turn loop never monopolizes on a child, so the conversation stays responsive.
   **spawn** = PARALLEL (≤4 parallel; you keep working). **subtask** = SEQUENTIAL (start it, then
   `wait n=N` before the next so you can fold its result in; `turns` pins its budget, else half the
-  parent's remainder). A child's completion is delivered by the turn-boundary hook
-  (`announce_finished_subruns` — `SUBTASK FINISHED` / `SUB-WORKFLOW FINISHED`); `wait` is RESPONSIVE
+  parent's remainder). **The HAND-BACK**: a child returns its finish summary always, and returns
+  FILES by writing them into its OWN `artifacts/` — the convention the Artifacts panel and
+  detached tasks already use, so no action-schema field was added and a non-child run pays
+  nothing. The engine copies those into the parent's `artifacts/from-sub-<n>/`
+  (`control.collect_child_artifacts`) and NAMES the landed paths in the notification, so a parent
+  never greps the runs tree for a child's output. Collection happens in `subruns._collect`, the
+  child's single finalization point — two paths report an exit (`wait`, which consumes finished
+  children directly, and the turn-boundary announcement), so collecting in either reporter was a
+  race. Isolation is kept on purpose: a shared writable dir between concurrent children is a race
+  the engine would have to arbitrate, and an isolated dir plus a declared hand-back gives the same
+  result with none. A child's completion is delivered by the turn-boundary hook
+  (`announce_finished_subruns` — one `CHILD RUN FINISHED (<mode>)` headline for every mode); `wait` is RESPONSIVE
   (it yields the moment a user message is pending — `inbox.has_pending_messages` — so the loop drains
   it and the parent replies, then waits again). Children are threads, so they die with the process
-  (DELIBERATE — the subprocess alternative was evaluated and rejected, docs/subtasks.md § Process
+  (DELIBERATE — the subprocess alternative was evaluated and rejected, docs/child-runs.md § Process
   model): a resume marks any still-running child aborted and notes it (`history.orphaned_children`),
   and a subtask does NOT survive a conversation reply-finish — a job that must outlive a reply is
   the separate **`detach`** capability below, not a subtask.

@@ -1,7 +1,7 @@
-"""The child-task executor — materialize a child routine from a workflow pattern and wire its
-EngineLoop, shared by BOTH schedulers: parallel `spawn` (a subroutine) and sequential blocking
-`subtask`. A subtask and a subroutine are the SAME thing — a child task run recursively from a
-pattern — differing only in how the parent schedules it and how its budget is sliced.
+"""The CHILD RUN executor — materialize a child routine from a workflow pattern and wire its
+EngineLoop. One builder for every in-engine scheduling MODE: parallel (`spawn`) and sequential
+(`subtask`). They are the same thing — a child run, as `engine/child.py` defines it — differing
+only in how the parent schedules it and how its budget is sliced.
 
 Each child is a REAL routine on disk under `runs/<ts>/sub/<n>/` while it runs (its own main.md +
 stages/ + instruction), so its module reads resolve under its own dir and it can itself
@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .. import entities
+from . import child
 from .run_context import RunContext
 from .transcript import Transcript
 
@@ -50,10 +51,10 @@ def inheritable_resources(granted_now: set[str], granted_once: set[str]) -> set[
 
 @dataclass
 class Subrun:
-    """One spawned child: its own RunContext + EngineLoop running in a thread, tracked until
-    its exit is announced to the parent and its usage folded in. `mode` distinguishes a
-    parallel subroutine (the parent keeps working) from a sequential subtask (the parent
-    blocks on it).
+    """One in-engine CHILD RUN: its own RunContext + EngineLoop running in a thread, tracked
+    until its exit is announced to the parent and its usage folded in. `mode` (child.PARALLEL
+    or child.SEQUENTIAL) says only how the parent SCHEDULES it — what it is, and what it owes
+    its parent on exit, is the same either way (engine/child.py).
     """
 
     n: int
@@ -63,8 +64,8 @@ class Subrun:
     loop: EngineLoop                   # the child EngineLoop
     abort_event: threading.Event
     started_mono: float
-    mode: str = "parallel"             # parallel (spawn) | sequential (subtask)
-    parent_dir: Path | None = None     # where collected deliverables land (F338)
+    mode: str = child.PARALLEL         # a child.MODES value — the scheduling mode only
+    parent_dir: Path | None = None     # where the hand-back lands (child.handback_dirname)
     collected_paths: tuple = ()        # what actually landed there, parent-relative
     note: str = ""                     # e.g. "recipe X unavailable — builtin fallback"
     thread: threading.Thread | None = None   # attached by SubrunManager just before start

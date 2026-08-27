@@ -16,7 +16,7 @@ from .. import reports
 from ..config import DELIBERATION_LEVELS
 from ..paths import read_json
 from ..schema_guard import validate
-from . import deliberation, executor, fileops, inbox
+from . import child, deliberation, executor, fileops, inbox
 from .actions import ACTION_SCHEMA, util_rejection_outcome, validate_action
 from .commands import CommandError, parse_command
 from .observations import format_observation, truncate
@@ -292,26 +292,32 @@ def child_finished_message(*, mode: str, n: int, label: str, workflow: str, stat
     announce_finished_subruns AND by history.replay_messages when it reconstitutes an
     announcement from a `subrun_end` event, so a resumed prompt reads like the live one.
 
-    `collected` names the child's deliverables that the engine copied up (F338). Without it
-    a parent had to know the child's dir, search it and copy files out by hand — a procedure
-    every routine reinvented, and one the spawn contract used to describe WRONGLY (R409/R410:
-    it claimed children share the parent's working directory; they never did).
+    ONE headline for every mode (F338): a child run finished, and the mode says how it was
+    scheduled. The modes used to announce themselves under different nouns, which is how the
+    prompt copy drifted apart in the first place. Only the follow-on instruction differs,
+    because only that genuinely differs: a sequential child's result feeds the next one.
+
+    `collected` names the child's deliverables that the engine copied up. Without it a parent
+    had to know the child's dir, search it and copy files out by hand — a procedure every
+    routine reinvented, and one the spawn contract used to describe WRONGLY (R409/R410: it
+    claimed children share the parent's working directory; they never did).
     """
     head, _ = truncate(summary, cap=4000)
     got = ("\nCollected from the child into your artifacts/: "
            + ", ".join(collected) + " — read them from there; the child's own dir is gone "
            "from your reach." if collected else "")
-    if mode == "sequential":
-        return (f"SUBTASK FINISHED — #{n} {label!r} (workflow {workflow}, status "
-                f"{status}, {turns} turns). Fold this result into your next subtask's "
-                f"brief, or finish:\n{head}{got}")
-    return (f"SUB-WORKFLOW FINISHED — #{n} {label!r} (workflow {workflow}, "
-            f"status {status}, {turns} turns):\n{head}{got}")
+    headline = (f"CHILD RUN FINISHED ({child.mode_noun(mode)}) — #{n} {label!r} "
+                f"(pattern {workflow}, status {status}, {turns} turns)")
+    if mode == child.SEQUENTIAL:
+        return (f"{headline}. Fold this result into your next child run's brief, or "
+                f"finish:\n{head}{got}")
+    return f"{headline}:\n{head}{got}"
 
 
 def collect_child_artifacts(sub) -> tuple:
     """Copy a finished child's deliverables into the PARENT's artifacts/, namespaced by the
-    child's number, and return the parent-relative paths (F338, first increment).
+    child's number, and return the parent-relative paths — the HAND-BACK half of the child-run
+    contract (engine/child.py, F338).
 
     The convention is the one the rest of the system already uses: a child writes what it is
     handing back into its own `artifacts/`, exactly as a detached background task does
@@ -331,7 +337,7 @@ def collect_child_artifacts(sub) -> tuple:
     parent_dir = sub.parent_dir
     if parent_dir is None:
         return ()          # a child built outside the normal path collects nothing
-    rel = f"artifacts/from-sub-{sub.n}"
+    rel = child.handback_dirname(sub.n)
     dst = parent_dir / rel
     try:
         shutil.copytree(src, dst, dirs_exist_ok=True)
@@ -344,8 +350,9 @@ def collect_child_artifacts(sub) -> tuple:
 
 def announce_finished_subruns(loop) -> None:
     """Turn-boundary notification: children that exited since the last boundary — the
-    "child finished" hook. A SEQUENTIAL subtask's completion prompts result-forwarding; a
-    PARALLEL subrun's is informational (keeps `SUB-WORKFLOW FINISHED`, pinned in the docs).
+    "child finished" hook. One `CHILD RUN FINISHED` headline for every mode; a SEQUENTIAL
+    child's completion additionally prompts result-forwarding, a PARALLEL one is
+    informational (engine/child.py, pinned in the docs).
     """
     for sub in loop.subruns.take_finished_unannounced():
         loop.messages.append({"role": "user", "content": child_finished_message(

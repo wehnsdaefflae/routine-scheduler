@@ -23,15 +23,15 @@ that are not discoverable from the code. Subsystem narration lives in `docs/` �
 one you are about to touch, not all of them.
 
 - `docs/architecture.md` — the full subsystem reference (engine loop, endpoints, routines
-  on disk, child tasks, conversations, libraries & seeds, daemon ownership, OAuth, machines)
+  on disk, child runs, conversations, libraries & seeds, daemon ownership, OAuth, machines)
 - `docs/prompt-anatomy.md` — every string the orchestrator sees, and why. Revise it with ANY
   change to composer / loop / actions / schema_guard wording; `tests/test_prompt_anatomy.py`
   fails on drift
 - `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer, the two-layer
   permission set, the ACCESS-REQUEST grant model (entities.py ids; allow/deny × now/forever, plus
   allow-once for turn-action classes), and each curated rule's provenance
-- `docs/subtasks.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
-  — the child-task and firing mechanisms
+- `docs/child-runs.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
+  — the child-run and firing mechanisms
 - `docs/conversations.md`, `docs/playbooks.md` — interactive sessions and reusable briefs. A
   conversation's spine is EMERGENT: it writes its own `state/plan.md` (inlined at the top of every
   reply by `state_digest`) where a routine gets `stages/` + `phase.json` compiled at creation —
@@ -116,9 +116,20 @@ one you are about to touch, not all of them.
   is rejected unless this run has seen it (`ctx.seen_paths` — read/viewed/written this run, rebuilt
   from the transcript on resume); the own dir is exempt (state/report rewrites are the normal mode),
   append and new files pass, and `edit_file` needs no gate — its verbatim anchor is self-grounding.
-  `subtask` runs a child sub-workflow SEQUENTIALLY and blocks (the parallel `spawn`'s
-  sibling — one child-task executor, `engine/childrun.py`); a `subtask` with `workflow: "generate"`
-  drafts a new pattern when the `workflows: generate` capability is held (see docs/subtasks.md).
+  There is ONE **CHILD RUN** concept (`engine/child.py`) — an isolated run with its own dir, its
+  own budget, its own recipe, and a declared relationship to its parent. `spawn` (parallel),
+  `subtask` (sequential) and a conversation `branch` are three scheduling MODES of it, never three
+  concepts and never a fourth action kind; `engine/child.py` owns the mode vocabulary the prompt
+  renders and the hand-back path, so the kind copy, the observations and the docs cannot drift
+  apart (that drift once had the prompt claim children share the parent's working directory).
+  Every mode obeys the same contract: isolation, a budget sliced from the parent's remainder, and
+  a HAND-BACK — summary always, FILES by the child writing into its own `artifacts/`, which the
+  engine copies to the parent's `artifacts/from-sub-<n>/` and NAMES in the one
+  `CHILD RUN FINISHED (<mode>)` notification. Collection lives in `subruns._collect`, the child's
+  single finalization point: two paths report an exit (`wait` and the turn boundary), so anything
+  that must happen once per child belongs there and not in a reporter. One child-task executor,
+  `engine/childrun.py`; a `subtask` with `workflow: "generate"` drafts a new pattern when the
+  `workflows: generate` capability is held (see docs/child-runs.md).
   **`report` is the ONE channel for work that is not the run's own task** — ungated, held by
   every routine. What varies is whether the run can name an owner. UNADDRESSED goes to the
   triage stream self-audit reads; ADDRESSED (`target`) is ALSO delivered into that routine's

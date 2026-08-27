@@ -56,60 +56,13 @@ the trigger before any generation work exists.
 
 ---
 
-## F338 — branches, subtasks and subroutines are ONE concept
-
-**Problem (user order 2026-08-14; evidence R409, R410).** The system has three names for
-child work and no single answer for what a child's OUTPUT is. `spawn` (parallel) and
-`subtask` (sequential) both build the child its own dir at `runs/<run-id>/sub/<n>/`
-(childrun.py), with the parent's fs roots inherited read-side. The orchestrator prompt used
-to claim children "share your working directory", which was simply false and cost a run a
-recovery detour (R409/R410; the copy was fixed as F352). Conversation *branching* (F325) is
-the same shape again and currently does not exist at all.
-
-The copy fix did not settle the real question: **how does a child's work get back?** Today a
-parent must know the child dir, `code-search` for the artefact and `copy-file` it up — a
-procedure invented per routine, and `copy-file` does not even create parent dirs.
-
-**Shape.**
-
-- **One vocabulary.** A CHILD RUN is the concept: an isolated run with its own dir, its own
-  budget, its own recipe or pattern, and a declared relationship to its parent. `spawn`,
-  `subtask` and a future `branch` are three *scheduling modes* of it — parallel, sequential,
-  and forked-from-a-conversation — not three concepts. Do not add a fourth action kind: the
-  existing kinds keep their names and gain a shared child-run contract underneath.
-- **A declared RESULT, not a scavenged one.** A child's `finish` gains the artefact it is
-  handing back — files it wrote under its own dir that the parent should collect. The engine
-  copies exactly those into the parent's `artifacts/` (the deliverable convention,
-  web/artifacts.py) and the child-finished observation names the landed paths. A child that
-  declares nothing hands back only its summary, as today.
-- **The parent stops guessing.** The SUB-WORKFLOW FINISHED observation carries the child's
-  dir AND the collected paths, so no run greps the runs tree again.
-- **Isolation stays.** A shared writable working dir between concurrent children is a race
-  the engine would have to arbitrate; the isolated dir plus a declared hand-back gives the
-  same result with no arbitration.
-
-**First increment — SHIPPED 0.233.0**, with one deliberate change from the sketch above: no
-new `finish` field. A child hands a file back by WRITING it into its own `artifacts/`, the
-convention the Artifacts panel and detached tasks already use; the engine copies that into the
-parent's `artifacts/from-sub-<n>/` on exit and the notification names the landed paths. That
-needs no action-schema change at all, so it costs every non-child run nothing, and the
-hand-back is opt-in by writing. The spawn/subtask contract copy was corrected to say so
-(`engine/kindsurface.py`), and `docs/subtasks.md` documents it.
-
-**Still unbuilt:** the vocabulary unification itself — one CHILD RUN concept with `spawn`,
-`subtask` and a future `branch` as scheduling modes of it, rather than three names. The
-hand-back was the load-bearing half and it is now settled; the rename is cosmetic by
-comparison and should follow F325's needs rather than lead them.
-
----
-
 ## F325 — conversation branching and merging
 
-**Blocked on F338** and stays blocked: a branch is a child run of a conversation, so it must
-inherit whatever F338 settles about a child's identity and its hand-back. Sequenced after it
-by user order 2026-08-14.
+**F338 has landed** (0.237.0): the child-run concept, its three scheduling modes and its
+hand-back contract now live in `engine/child.py`, documented in [child-runs](child-runs.md). A
+branch is the `branch` mode of that concept, and inherits its identity and hand-back.
 
-**Shape, once F338 lands.** A branch forks a conversation at a chosen message into a new
+**Shape.** A branch forks a conversation at a chosen message into a new
 conversation whose `parent` records the origin slug + message id. It starts with the parent's
 config (models, permissions, rules, connections, roots) and a COPY of the transcript up to
 the fork point, so the branch reasons with the same history and cannot mutate the original.

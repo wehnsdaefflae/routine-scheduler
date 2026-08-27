@@ -19,6 +19,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.237.0] — 2026-08-27
+
+### Changed
+- **Branches, subtasks and subroutines are ONE concept: the CHILD RUN** (F338, completing it).
+  0.233.0 shipped the load-bearing half — the hand-back. This is the vocabulary unification it
+  was waiting on, landed before conversation branching (F325) so branching arrives as a MODE of
+  the existing frame rather than as a fourth name for the same shape.
+  - New `engine/child.py` holds the single definition: a child run is an isolated run with its
+    own directory, its own budget sliced from the parent's remainder, its own recipe or pattern,
+    and a declared relationship to its parent. `spawn` (parallel), `subtask` (sequential) and a
+    conversation `branch` are three scheduling MODES of it. Deliberately **no fourth action
+    kind** — the action names each state a real scheduling intent a run chooses between, and now
+    share one contract underneath.
+  - The module owns the mode vocabulary the prompt renders (`mode_noun`) and the hand-back path
+    (`handback_dirname`), so the three surfaces that drifted apart — kind copy, observations,
+    docs — read from one place. That drift is what let the spawn contract claim children share
+    the parent's working directory (R409/R410), which cost a run a recovery detour.
+  - **One exit headline for every mode**: `CHILD RUN FINISHED (<mode noun>) — #<n> …`, with the
+    mode named inside it instead of changing the noun (`SUB-WORKFLOW FINISHED` /
+    `SUBTASK FINISHED` are gone). Only the follow-on instruction still differs, because only that
+    genuinely differs — a sequential child's result feeds the next one.
+  - `spawn` and `subtask` kind copy rewritten to state the shared contract once and then the one
+    thing that differs, so neither can describe the shared half differently from the other again.
+  - `docs/subtasks.md` → **`docs/child-runs.md`**, rewritten around the concept with a mode table
+    and the three-part contract; the F338 entry is deleted from `docs/designs.md` (it shipped) and
+    F325 is recorded as unblocked. `tests/test_child.py` pins the vocabulary, the hand-back path
+    and the single headline.
+
 ## [0.236.0] — 2026-08-27
 
 ### Changed

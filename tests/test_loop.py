@@ -1009,7 +1009,7 @@ def test_parallel_children_notify_at_boundary(make_routine, scripted):
     # both finish notifications reached the parent before its last completion
     final_call = ep.calls[-1]["messages"]
     joined = json.dumps(final_call)
-    assert "SUB-WORKFLOW FINISHED" in joined
+    assert "CHILD RUN FINISHED (parallel child run)" in joined
     assert "alpha result ready" in joined and "beta result ready" in joined
 
 
@@ -1172,7 +1172,7 @@ def test_subtask_starts_nonblocking_and_is_awaited(make_routine, scripted):
     sub_obs = next(e for e in events if e["type"] == "observation"
                    and e["payload"].get("kind") == "subtask")
     assert sub_obs["payload"].get("started") and not sub_obs["payload"].get("summary")
-    # the child's summary reached the parent (via the wait or the SUBTASK FINISHED hook)
+    # the child's summary reached the parent (via the wait or the CHILD RUN FINISHED hook)
     assert "step one result: 7" in json.dumps(ep.calls[-1]["messages"])
     child_system = next(c for c in ep.calls if "CHILD-A" in c["messages"][0]["content"])
     assert "no routine state digest" in child_system["messages"][0]["content"]

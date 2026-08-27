@@ -59,7 +59,7 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "OBSERVATION (budget spent)",   # the reserved finish turn (loop._reserve_finish)
         "read_file the index and the relevant files before relying on memory",
         "USER MESSAGE (injected mid-run)",
-        "SUB-WORKFLOW FINISHED",
+        "CHILD RUN FINISHED",
         "CONTEXT COMPACTED",
         "ENGINE WARNING: this exact action has now run",
         "OBSERVATION (",

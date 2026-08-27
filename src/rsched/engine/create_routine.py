@@ -50,7 +50,7 @@ from .run_context import RunContext
 DEFAULT_WORKFLOW = "general-task"
 
 #: `generate` is a SUBTASK capability (`subtask` with `workflow: "generate"`, gated by the
-#: `workflows: generate` permission — docs/subtasks.md), never a library pattern. Naming it
+#: `workflows: generate` permission — docs/child-runs.md), never a library pattern. Naming it
 #: here used to store cleanly and blow up at materialize, i.e. AFTER the user confirmed
 #: (F387/R493); it is rejected at draft time with the reason.
 GENERATE_PSEUDO_SLUG = "generate"

@@ -636,9 +636,10 @@ def test_replay_reconstitutes_child_announcements():
     ]
     msgs, _, _ = replay_messages(events)
     contents = [m["content"] for m in msgs]
-    assert any("SUBTASK FINISHED" in c and "CHILD-RESULT-SENTINEL" in c for c in contents)
+    assert any("CHILD RUN FINISHED (sequential child run)" in c
+               and "CHILD-RESULT-SENTINEL" in c for c in contents)
     # placement: the announcement sits between turn 1's observation and turn 2's action
-    idx = next(i for i, c in enumerate(contents) if "SUBTASK FINISHED" in c)
+    idx = next(i for i, c in enumerate(contents) if "CHILD RUN FINISHED" in c)
     assert "finish" in contents[idx + 1]
 
     # wait-delivered: the summary is inside the wait observation — no extra announcement

@@ -178,29 +178,29 @@ delete: a rule that should go is a report or a deferred ask_user naming it."""),
 model; `model` overrides per call — a role or a catalog model name, `list_models` shows them). \
 It sees ONLY \
 your prompt/system — include everything it needs; set response_schema for structured replies."""),
-    (("spawn",), """- spawn: start a SUB-WORKFLOW that runs IN PARALLEL with you — pick its \
-"workflow" for the \
-child's PURPOSE from the patterns listed under CAPABILITIES (default general-task) and give it \
-a fully self-contained "prompt" as its instruction; it sees nothing else and returns only its \
-finish summary. You keep working while it runs; you are notified automatically when it exits. \
-A child works in its OWN directory (runs/<ts>/sub/<n>/, NOT your working tree — R405/R406): \
-relative paths resolve THERE, so name absolute paths (within the allowed roots) for anything \
-it must read. To hand a FILE back, tell the child to write it into its own artifacts/ — the \
-engine copies that into YOUR artifacts/from-sub-<n>/ when the child exits and names the landed \
-paths in the notification, so you never go looking in its dir (F338). A child runs on \
-your MAIN model unless `model` picks a role or a catalog model for it."""),
-    (("subtask",), """- subtask: start a child sub-workflow that runs SEQUENTIALLY in the \
-background — decompose a large \
-task into ordered steps, each a fresh-context child run with its OWN budget and pattern. It does \
-NOT block you: to keep sequential order, `wait` for it (n=N) before starting the next subtask and \
-fold its result into that brief — the wait YIELDS if the user writes (so the conversation stays \
-live) and you are notified when it finishes; or do other work meanwhile. Pick its "workflow" for \
-that step's purpose (or omit for the default, or "generate" to DRAFT one when none fits — only if \
-that capability is enabled); give a self-contained "prompt"; "turns" bounds it (default: half your \
-remaining). Unlike a plain workflow step it runs on its own context window + pattern; it runs \
-on the routine's MAIN model unless `model` picks a role or a catalog model for it. A file it \
-must hand back goes in its own artifacts/ — the engine copies that into your \
-artifacts/from-sub-<n>/ and names it when the child exits (F338)."""),
+    (("spawn",), """- spawn: start a CHILD RUN scheduled in PARALLEL with you. Every child \
+run — however \
+scheduled — works the same way: its OWN directory (runs/<ts>/sub/<n>/, NOT your working tree — \
+R405/R406), its OWN budget sliced from your remainder, its own fresh context and pattern, and it \
+sees NOTHING of your conversation beyond the "prompt" you give it. So relative paths resolve \
+THERE: name absolute paths (within the allowed roots) for anything it must read. It hands back \
+its finish summary always, and hands back FILES by writing them into its own artifacts/ — the \
+engine copies those into YOUR artifacts/from-sub-<n>/ when it exits and names the landed paths, \
+so you never go looking in its dir. Parallel is the mode where you KEEP WORKING while it runs \
+and are notified when it exits. Pick its "workflow" for the child's PURPOSE from the patterns \
+listed under CAPABILITIES (default general-task) and give it a fully self-contained "prompt". A \
+child runs on your MAIN model unless `model` picks a role or a catalog model for it."""),
+    (("subtask",), """- subtask: start a CHILD RUN scheduled SEQUENTIALLY — the same child run \
+`spawn` starts \
+(own directory, own budget, own fresh context and pattern, hands files back through its own \
+artifacts/ into your artifacts/from-sub-<n>/), differing ONLY in how you schedule it. Use it to \
+decompose a large task into ordered steps. It does NOT block you: to keep the order, `wait` for \
+it (n=N) before starting the next one and fold its result into that brief — the wait YIELDS if \
+the user writes (so the conversation stays live) and you are notified when it finishes; or do \
+other work meanwhile. Pick its "workflow" for that step's purpose (or omit for the default, or \
+"generate" to DRAFT one when none fits — only if that capability is enabled); give a \
+self-contained "prompt"; "turns" bounds it (default: half your remaining). It runs on the \
+routine's MAIN model unless `model` picks a role or a catalog model for it."""),
     (("detach",), """- detach: start a LONG background task that OUTLIVES this reply — for a \
 big, self-contained job (a \
 large scrape, a bulk conversion, a slow build) you want to kick off and keep chatting around. \
@@ -248,9 +248,9 @@ reachable from chat. Available only inside a conversation."""),
     (("list_models",), """- list_models: the model catalog + this run's resolved role \
 bindings (main / tool_call / uncensored), read-only — consult it BEFORE setting a `model` \
 override on llm/spawn/subtask so the name you pass is one the catalog actually carries."""),
-    (("subruns",), """- subruns: a status table of your sub-workflows (state, turns, \
-elapsed)."""),
-    (("kill", "wait"), """- kill: terminate sub-workflow "n". wait: block until sub-workflow \
+    (("subruns",), """- subruns: a status table of your child runs, whatever mode each was \
+started in (state, turns, elapsed)."""),
+    (("kill", "wait"), """- kill: terminate child run "n". wait: block until child run \
 "n" / "all": true / any \
 unreported exit (timeout_s, default 600) — it returns AT ONCE when a finished child hasn't \
 been reported to you yet, or when nothing is running. Children never outlive you — your \

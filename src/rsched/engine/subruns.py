@@ -1,9 +1,9 @@
-"""Child-task scheduling: a parent routine runs child routines materialized from workflow
-patterns — PARALLEL subroutines (`spawn`, non-blocking) and SEQUENTIAL subtasks (`subtask`,
-blocking). Both are built by the shared executor (childrun.build_child); this module owns their
-LIFECYCLE: start each in a thread, monitor (`subruns`), block on a subtask or `wait` for
-parallel children, `kill`, and announce every exit to the parent at a turn boundary. Children
-never outlive the parent: its finish/abort kills them.
+"""CHILD RUN scheduling: a parent routine runs child routines materialized from workflow
+patterns, in either in-engine MODE — PARALLEL (`spawn`, non-blocking) or SEQUENTIAL (`subtask`,
+the parent waits). One concept, defined once in `engine/child.py`; both modes are built by the
+shared executor (childrun.build_child). This module owns their LIFECYCLE: start each in a
+thread, monitor (`subruns`), block or `wait`, `kill`, and announce every exit to the parent at a
+turn boundary. Children never outlive the parent: its finish/abort kills them.
 
 Threading model: each child EngineLoop runs in its own thread and writes ONLY its own transcript
 under sub/<n>/; all parent-transcript events are emitted from the parent thread (single writer
@@ -42,10 +42,10 @@ def _usage_snapshot(usage: dict) -> dict:
 
 
 class SubrunManager:
-    """The parent loop's window onto its children: `spawn` (a parallel subroutine), `subtask` (a
-    sequential subtask the parent blocks on), monitor (`subruns`/`wait`), `kill`, auto-announce
-    exits at turn boundaries. Both schedulers share the budget/depth/parallel caps and the
-    child-run executor — a subtask and a subroutine differ only in scheduling.
+    """The parent loop's window onto its CHILD RUNS: start one in either mode (`spawn`
+    parallel, `subtask` sequential), monitor (`subruns`/`wait`), `kill`, auto-announce exits at
+    turn boundaries. Both modes share the budget/depth/parallel caps, the child-run executor
+    and the hand-back — they differ only in scheduling (engine/child.py).
     """
 
     def __init__(self, parent_loop):
@@ -208,11 +208,11 @@ class SubrunManager:
     def _collect(self, sub: Subrun) -> None:
         if not sub.collected:
             sub.collected = True
-            # F338: the hand-back happens HERE, at the child's single finalization point,
-            # because there are two paths that can REPORT an exit — `wait` (which consumes
-            # finished children directly) and the turn-boundary announcement — and a child
-            # that finished during a wait must hand its files back exactly like one that
-            # finished between turns. Collecting in either reporter made it a race.
+            # The hand-back happens HERE, at the child's single finalization point, because
+            # there are two paths that can REPORT an exit — `wait` (which consumes finished
+            # children directly) and the turn-boundary announcement — and a child that
+            # finished during a wait must hand its files back exactly like one that finished
+            # between turns. Collecting in either reporter made it a race (F338).
             from .control import collect_child_artifacts
 
             sub.collected_paths = collect_child_artifacts(sub)

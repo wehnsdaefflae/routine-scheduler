@@ -1,18 +1,50 @@
-# Subtasks — sequential task decomposition
+# Child runs — decomposing a run's work
 
-A run structures its work three ways, and they are deliberately different:
+A run structures its work two ways, and they are deliberately different:
 
 - **Phases** — the routine's own stage modules (`stages/*.md`); the engine tracks which
   one the run is in from its stage-module reads (shown in the state-graph rail). Coarse.
-- **Subtasks** — a *sequential* decomposition of THIS run's work into ordered steps, each run
-  to completion before the next. New in this feature.
-- **Subruns** — *parallel* child routines (`spawn`), running concurrently.
+- **Child runs** — separate runs the parent starts to carry a piece of the work.
 
-The key idea: **a subtask and a subroutine are the same thing** — a *child task materialized
-from a workflow pattern and run recursively* — differing only in **scheduling** (sequential vs
-parallel) and **budget**. Both are real routines on disk under `runs/<ts>/sub/<n>/` while they
-run, with their own context window, pattern, and finish summary. Decomposition is **recursive**:
-a child can decompose again (bounded by `max_subrun_depth`).
+## One concept, three scheduling modes
+
+**A child run is: an isolated run with its own directory, its own budget, its own recipe or
+pattern, and a declared relationship to its parent.** That is the whole concept, defined once in
+`engine/child.py`. `spawn`, `subtask` and (F325) a conversation `branch` are three scheduling
+**modes** of it:
+
+| mode | action | when it runs | who drives it |
+|------|--------|--------------|---------------|
+| `parallel` | `spawn` | concurrently — the parent keeps working | the engine |
+| `sequential` | `subtask` | the parent folds its result into the next step | the engine |
+| `branch` | a conversation fork (F325) | forked from a message, alongside the original | the user |
+
+They are modes, **not** three concepts and **not** a fourth action kind. The action names stay,
+because each names a different scheduling intent a run genuinely chooses between; what they share
+is the contract underneath. This unification is F338, and it exists because three names had
+invited three mental models: the prompt copy drifted between them until it claimed something
+false — that children share the parent's working directory (R409/R410) — which cost a run a
+recovery detour. `engine/child.py` owns the mode vocabulary the prompt renders (`mode_noun`) and
+the hand-back path (`handback_dirname`), so the kind copy, the observations and these docs cannot
+drift apart again.
+
+**The contract, obeyed by every mode:**
+
+1. **Isolation.** A child gets its OWN directory and never writes into its parent's, so
+   concurrent siblings cannot race a shared tree and the engine arbitrates nothing.
+2. **A budget of its own**, sliced from the parent's remainder — a child can never outspend the
+   run that started it.
+3. **A declared hand-back.** Summary always; FILES by writing them into its own `artifacts/`
+   (below).
+
+The two in-engine modes are real routines on disk under `runs/<ts>/sub/<n>/` while they run, with
+their own context window, pattern and finish summary. Decomposition is **recursive**: a child can
+decompose again (bounded by `max_subrun_depth`).
+
+A child's exit is announced under ONE headline whatever its mode —
+`CHILD RUN FINISHED (<mode noun>) — #<n> …` — with the mode named inside it rather than changing
+the noun. Only the follow-on instruction differs, because only that genuinely differs: a
+sequential child's result feeds the next one.
 
 ## The `subtask` action
 
@@ -27,14 +59,14 @@ a child can decompose again (bounded by `max_subrun_depth`).
 
 `subtask` is **non-blocking** — it starts the child in the background (its own thread, its own
 `EngineLoop`) and returns immediately, so the conversation stays live while it runs. Mechanically
-it is a subrun tagged `sequential` with a `turns` budget. To keep sequential order you **wait**
+it is a child run tagged `sequential` with a `turns` budget — the same child `spawn` starts. To keep sequential order you **wait**
 for it — `wait n=N` — before starting the next subtask, and fold its result into that brief. The
 wait is **responsive**: it wakes on the child's completion (the finished-hook) but *yields* the
 moment a user message arrives, handing control back so the parent can reply, then you `wait` again.
-Its completion is delivered by the turn-boundary "SUBTASK FINISHED" hook (`announce_finished_subruns`)
-whether you are waiting or doing other work. Unlike a plain workflow step, a subtask gets its own
-fresh context window and pattern; unlike `spawn` (parallel, disjoint outputs) it is meant to run
-one-at-a-time with results forwarded.
+Its completion is delivered by the turn-boundary `CHILD RUN FINISHED` hook
+(`announce_finished_subruns`) whether you are waiting or doing other work. Unlike a plain workflow
+step, a child run gets its own fresh context window and pattern; unlike the `parallel` mode
+(disjoint outputs) the `sequential` one is meant to run one-at-a-time with results forwarded.
 
 ## What a child can reach
 
@@ -50,7 +82,7 @@ capability-class grants: permissions and capabilities are off at depth > 0. Keep
 children's outputs disjoint by convention — they share the tree, and the harness contract
 already forbids them `LEDGER.md` / `state/phase.json`.
 
-**Handing a FILE back** (F338, first increment; from R409/R410). Isolation is deliberate — a
+**Handing a FILE back** (the contract's third part; from R409/R410). Isolation is deliberate — a
 shared writable dir between concurrent children is a race the engine would have to arbitrate —
 but it left the parent to know the child's path, search it and copy files out by hand, a
 procedure every routine reinvented and one the spawn contract used to describe *wrongly* (it
@@ -59,9 +91,13 @@ file back by WRITING it into its own `artifacts/` — the same deliverable conve
 Artifacts panel lists and a detached background task already uses. On the child's exit the
 engine copies that into the PARENT's `artifacts/from-sub-<n>/` and the finished-notification
 names the landed paths, so nothing greps the runs tree. A child that writes nothing hands back
-only its summary, exactly as before: the hand-back is opt-in by writing, needing no new action
-field. The rest of the F338 unification — one vocabulary across spawn/subtask/branch — is
-specced in [designs](designs.md).
+only its summary: the hand-back is opt-in by writing, needing no new action field, so a run with
+no children pays nothing for it.
+
+Collection happens in `subruns._collect`, the child's single finalization point — **not** in
+either reporter. Two paths report an exit (`wait`, which consumes finished children directly, and
+the turn-boundary announcement), so collecting in a reporter meant a child that finished during a
+wait handed nothing back. Anything that must happen once per child belongs at that one point.
 
 ## The decomposition gate
 
@@ -124,8 +160,8 @@ on completion). See [background-tasks.md](background-tasks.md).
 
 A parent controls its running children with two actions and one invariant:
 
-- **Abort** — `kill n=N` terminates sub-workflow *N* immediately (its partial state is marked in
-  the transcript). This is how a parent stops a subtask or subruns it no longer needs; there is
+- **Abort** — `kill n=N` terminates child run *N* immediately (its partial state is marked in
+  the transcript). This is how a parent stops a child run it no longer needs; there is
   nothing else to add for "abort".
 - **Gather** — `wait n=N` / `wait all=true` blocks until a child (or all) finishes; a finished
   child is also announced at the next turn boundary whether or not you are waiting.
