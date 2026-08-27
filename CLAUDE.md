@@ -136,6 +136,12 @@ one you are about to touch, not all of them.
   `inbox/`, which its NEXT SCHEDULED RUN drains — it starts no run and wakes nobody. The target
   closes it by reporting back with `answers: "<R id>"`, adding `closes: true` when the reply ends
   the exchange — a closure is born settled; without it the reply is itself a new open report.
+  Teammates inside one GROUP have a lighter channel that is NOT the report ledger (F335,
+  `rsched/groupnotes.py`): a member writes `<group-store>/notes/<sibling>/note-*.json` with an
+  ordinary file write and the engine surfaces it in the sibling's state digest at boot, dropping
+  it as it reads — no approval, no ledger row, no Messages item, and no new action kind. The
+  boundary IS the safety model: the store is in members' fs roots and nobody else's, so a note
+  cannot leave the group. A note is coordination; a report is work an OWNER must act on.
   One `R<n>` namespace, one append-only
   ledger `.control/reports.jsonl` (order rows + `delivered` event rows), one Items type; the
   page shows open → in_progress once drained → settled once answered. Triage is therefore

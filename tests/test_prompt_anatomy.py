@@ -114,6 +114,8 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # the group shared store (D67): a grouped run's harness contract names the
         # injected root and its collision contract
         "Group shared store (read+write",
+        # F335: the light channel between teammates, named beside the store root it lives in
+        "NOTES FROM YOUR GROUP",
         # NOTE: the F292 two-phase group fire ("GROUP FIRE PHASE: ingest/outbound") was pinned
         # here until 2026-08-27. D90 retired the machinery and the engine stopped emitting those
         # strings, but the doc kept describing them and this guard kept passing — it only checks

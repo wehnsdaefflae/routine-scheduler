@@ -875,8 +875,28 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
     inherit it like every resource). The harness contract names the root and its collision
     semantics: writes are whole-file atomic and LAST WRITE WINS PER FILE, so members exchange
     files under per-routine names (`<slug>-<topic>.md`) and treat shared files as read-mostly.
-    It is also the natural home for what a split member's ingest pass stages for its outbound
-    pass (its own `state/` works too — the phase prose names both).
+    It is also the natural home for what an ingest-end member stages for the outbound-end member
+    that follows it in the chain (its own `state/` works too).
+  - **Intra-group NOTES (F335, `rsched/groupnotes.py`)**: the light channel between routines that
+    are already teammates. Reaching a sibling used to go through the same `report` machinery as
+    reaching a stranger — a ledger row, a delivery into the target's `inbox/`, and an open
+    maintenance item on the Messages page until somebody closed it — which turns "here is the file
+    I staged for you" into a tracked work item a human has to close. A NOTE is coordination; a
+    REPORT is work somebody must ACT on, tracked until answered, and `report` keeps that meaning
+    unchanged. A member writes `<group-store>/notes/<to-slug>/note-*.json` with an ordinary file
+    write (the store is already writable to it — **no new action kind**); the engine renders the
+    waiting notes into the state digest at boot and DELETES them as it reads, mirroring how
+    `inbox/` drains, so a note is delivered exactly once and never becomes a backlog someone has
+    to clear by hand. The harness contract names the convention beside the store root and LISTS
+    the actual sibling slugs — a channel a run does not know about is a channel that does not
+    exist, and "write to a member" is not actionable without their names.
+    **No approval, no ledger row, no Messages-page item**: the safety argument is the BOUNDARY,
+    not a gate. A note lives in the group's own store, which is injected into every member's fs
+    roots and nobody else's, and `write_note` refuses a pair sharing no group — reaching outside
+    the group is not something this channel declines, it is something it cannot express. That is
+    exactly why it may be approval-free. Membership is read LIVE, so a routine removed from a
+    group loses the channel in both directions at once. Delivery never starts a run: a sibling
+    picks its notes up when it next runs, which for a group chain is the same pass or the next.
 - **Event triggers fire through the same seam** (docs/triggers.md): the webhook route
   (`web/api_hooks.py`, POST `/api/hooks/<slug>/<token>` — the ONE unauthenticated API route:
   constant-time token compare, generic 404, 64 KiB cap, rate limit + spool cap, rejections logged,

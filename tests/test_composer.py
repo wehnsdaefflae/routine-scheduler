@@ -269,6 +269,34 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     assert "spawn" not in kinds2 and "ask_user" in kinds2
 
 
+def test_group_notes_reach_the_prompt_and_drain_once(make_routine, tmp_path):
+    """F335 end to end through the composer: the harness contract NAMES the light channel (a
+    channel a run does not know about is a channel that does not exist), and the state digest
+    carries what teammates left — once, then it is gone.
+    """
+    from rsched import groupnotes, groups
+    from rsched.engine.composer import harness_contract, state_digest
+
+    ctx = _ctx(make_routine, tmp_path, slug="steward")
+    ctx.server.routines_home = tmp_path / "routines"
+    groups.create(ctx.server.routines_home, name="FAU",
+                  members=[{"slug": "steward"}, {"slug": "ingest"}])
+    ctx.group_store_roots = groups.member_store_roots(ctx.server.routines_home, "steward",
+                                                      create=True)
+
+    contract = harness_contract(ctx)
+    assert "write a note for them" in contract and "ingest" in contract
+    assert "`report` when someone must ACT" in contract      # and when NOT to use it
+
+    groupnotes.write_note(ctx.server.routines_home, sender="ingest", to="steward",
+                          text="staged the batch for you")
+    kw = {"routines_home": ctx.server.routines_home, "slug": "steward"}
+    digest = state_digest(ctx.routine.dir, [], [], **kw)
+    assert "NOTES FROM YOUR GROUP" in digest and "staged the batch for you" in digest
+    # the digest is built once per run and the note is delivered exactly once
+    assert "NOTES FROM YOUR GROUP" not in state_digest(ctx.routine.dir, [], [], **kw)
+
+
 def test_capabilities_digest_reports_actual_share_state_not_config(make_routine, tmp_path):
     """R514. The machine row must state what this run HAS, not what the catalog asked for.
 

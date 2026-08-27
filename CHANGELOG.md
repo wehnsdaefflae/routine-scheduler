@@ -19,6 +19,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.240.0] — 2026-08-27
+
+### Added
+- **Approval-free intra-group notes** (F335, `rsched/groupnotes.py`). Members of a group are a
+  team with a shared purpose, but one member reaching another went through the same `report`
+  machinery as reaching a stranger: a ledger row, a delivery into the target's `inbox/`, and an
+  open maintenance item on the Messages page until somebody closed it. For teammates coordinating
+  inside one chain that is heavyweight — it turns "here is the file I staged for you" into a
+  tracked work item a human has to close.
+  - A member writes `<group-store>/notes/<sibling>/note-*.json` with an ORDINARY file write — the
+    group store (D67) is already in its fs roots, so there is **no new action kind**. The engine
+    renders waiting notes into the state digest at boot as `NOTES FROM YOUR GROUP` and DELETES
+    them as it reads, mirroring how `inbox/` drains: delivered exactly once, never a backlog
+    somebody has to clear by hand.
+  - The harness contract names the convention beside the store root and LISTS the actual sibling
+    slugs — a channel a run does not know about is a channel that does not exist, and "write to a
+    member" is not actionable without their names. It also says when to use `report` instead.
+  - **No approval, no ledger row, no Messages-page item.** The safety argument is the BOUNDARY,
+    not a gate: the store is injected into every member's fs roots and nobody else's, and a note
+    between routines sharing no group is refused — reaching outside the group is not something
+    this channel declines, it is something it cannot express. That is exactly why it may be
+    approval-free. Membership is read LIVE, so a routine removed from a group loses the channel
+    in both directions at once.
+  - A NOTE is coordination; a REPORT is work an OWNER must act on, tracked until answered.
+    `report` is unchanged. 11 module tests + a composer end-to-end. The F335 entry is deleted
+    from `docs/designs.md`.
+
 ## [0.239.0] — 2026-08-27
 
 ### Added

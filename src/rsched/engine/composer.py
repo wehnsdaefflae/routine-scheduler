@@ -44,6 +44,11 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
                   "files with your group members there. Writes are whole-file and last "
                   "write wins per file, so prefer per-routine filenames "
                   "(<your-slug>-<topic>.md) and treat shared files as read-mostly.")
+        # F335: the light channel between teammates. Named HERE because a channel a run does
+        # not know about is a channel that does not exist — and because it belongs beside the
+        # store root it lives in, not in a section about reporting problems.
+        from ..groupnotes import contract_line
+        extra += contract_line(ctx.server.routines_home, r.slug)
     # write_util is a user-set capability; the confirm level is its approval policy.
     # ctx.grants None (direct construction) = ungated.
     g = ctx.grants
@@ -210,6 +215,11 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         from ..priorities import digest_section
         if prio := digest_section(routines_home, slug):
             parts.append(prio)
+        # F335: notes teammates left for this routine. DRAINS — this digest is built once per
+        # run, at boot, and a note is delivered exactly once (mirroring how inbox/ drains).
+        from ..groupnotes import digest_section as notes_section
+        if group_notes := notes_section(routines_home, slug):
+            parts.append(group_notes)
     phase = read_json(routine_dir / "state" / "phase.json")
     parts.append(f"Current phase: {json.dumps(phase, ensure_ascii=False)}" if phase
                  else "Current phase: (none recorded — likely the first run)")
