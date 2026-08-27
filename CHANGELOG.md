@@ -19,6 +19,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.242.0] — 2026-08-27
+
+Recovering a dropped commitment, and closing the mechanism that dropped it. The user's order
+of 2026-08-14 — *"a run should stop on a MEANING-level condition, not only on budget walls"* —
+became F334/D98=A, whose five parts shipped as three in 0.208.0. The sidebar panel was deferred
+into F324, F324 shipped the rail on 2026-08-26 and closed `addressed` without it, and the
+`stopping_update` writer was recorded as a "documented deviation". So the feature was enforced in
+the prompt and the finish gate while being invisible, over a store whose status column nothing
+ever wrote. All of it lands here, with the logical connectives the flat list never had.
+
+### Added
+- **Goal conditions are LOGICALLY CONNECTED.** A condition belongs to a GROUP that combines its
+  members with `all`/`any`, and the document combines the groups the same way — two levels, which
+  expresses "(A AND B) OR (C AND D)" and its dual. Deeper nesting is where a UI and a weak model
+  both stop being able to reason, so it is deliberately not offered. Two further connectives about
+  WHEN a condition is live: **`requires`** holds one dormant until another is met (the sequencing
+  case), and **`stage`** scopes one to a routine stage module — the "per-stage routine conditions
+  LATER" half of the original order. A dormant condition is shown to the run so it sees the shape
+  of the job, but is never demanded in the accounting.
+- **The GOAL rail panel** (`static/components/stopping.js`), on the conversation view and the run
+  view alike: `✓` met / `○` open / `–` dropped, met conditions dimmed and struck through in the
+  same visual language the state graph uses for a done phase, each group's ALL/ANY chip editable,
+  a per-group tally, a dormant row greyed with what it waits for, and a `goal met` verdict chip.
+  Click a mark to overrule the run's conclusion. 6 browser tests.
+- **Routines get stopping conditions at all** — `GET/PUT /api/routines/{slug}/stopping`, one
+  implementation shared with conversations in the new `web/api_stopping.py`. The read carries the
+  evaluated verdict so a panel never re-derives the boolean structure and disagrees with the
+  prompt the run was given.
+- **`readmodels/orphans.py` + `GET /api/items/orphans`** — deferrals whose CARRIER closed without
+  delivering them, bannered on the Messages page. This is the mechanism that lost the panel: the
+  changelog `items` join marks the carrier addressed and nothing checks what was deferred INTO it,
+  because a deferral is only prose. Run against the real ledger it finds exactly one row — the
+  lost panel — and no false positives; `tests/test_orphans.py` uses that history as its fixture.
+
+### Fixed
+- **The run's verdict is now recorded.** `stopping.record_accounting` parses the model's own
+  `[s<n>] met|unmet` lines at the finish and stamps them into the store, emitting a
+  `stopping_update` transcript event (the event D98 specified and 0.208.0 skipped). Without it a
+  condition stayed `open` however often a run reported it met — the reason the status column was
+  dead. `met` is STICKY, so a later run cannot silently reopen a goal the user has been told is
+  done, and `unmet` records the REASON while staying open. Parsing is over the whole summary with
+  each note bounded by the next entry or its own line end: models routinely put two entries on one
+  line, and an unbounded note swallowed every entry after it.
+- The finish gate demands an accounting for **ACTIVE** conditions only — a dormant one cannot yet
+  have happened, and demanding a verdict on it only teaches the model to write noise.
+- The digest renders the **structure**, not a flat list. A run that cannot see two conditions are
+  an OR treats them as an AND and works past where the user meant it to stop.
+- **Documented at last**: the feature had no coverage in CLAUDE.md, `docs/`, or the prompt-anatomy
+  reference despite being a live prompt surface since 0.208.0.
+
 ## [0.241.0] — 2026-08-27
 
 ### Added

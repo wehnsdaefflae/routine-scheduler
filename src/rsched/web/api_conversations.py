@@ -46,20 +46,6 @@ from .routines_common import (
 router = APIRouter(tags=["conversations"])
 
 
-class StoppingCondition(BaseModel):
-    """One user-owned stopping condition (F334/D98) — prose the run must account for."""
-
-    model_config = ConfigDict(extra="forbid")
-    id: str = ""
-    text: str
-    status: str = "open"
-    ts: str = ""
-
-
-class StoppingBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    conditions: list[StoppingCondition]
-
 _autolabel_tasks: set[asyncio.Task] = set()   # strong refs for fire-and-forget autolabel tasks
 
 from .conversations_common import (  # noqa: E402
@@ -621,30 +607,6 @@ def set_conversation_rules(request: Request, slug: str, body: RulesBody) -> dict
     """
     info = conversation_info(request, slug)
     return apply_rule_edit(request, info.cfg.dir, body, active_run_dir(info))
-
-
-@router.get("/conversations/{slug}/stopping")
-def get_stopping(request: Request, slug: str) -> dict:
-    """The conversation's stopping conditions (F334/D98) — the USER's meaning-level bounds.
-    The list is user-owned prose; the engine only makes it impossible to ignore (state
-    digest + finish gate), so this read is what the sidebar panel renders.
-    """
-    from ..engine import stopping
-    info = conversation_info(request, slug)
-    return {"conditions": stopping.load(info.cfg.dir)}
-
-
-@router.put("/conversations/{slug}/stopping")
-def set_stopping(request: Request, slug: str, body: StoppingBody) -> dict:
-    """Replace the conversation's stopping-condition list (user-owned, whole-list PUT —
-    same single-writer shape as the rules/permissions saves). Ids are assigned stably
-    (s1, s2, …); a reply already in flight sees the change at its next boot.
-    """
-    from ..engine import stopping
-    info = conversation_info(request, slug)
-    rows = stopping.save(info.cfg.dir, [c.model_dump() for c in body.conditions],
-                         now=now_iso())
-    return {"ok": True, "conditions": rows}
 
 
 @router.put("/conversations/{slug}/permissions")

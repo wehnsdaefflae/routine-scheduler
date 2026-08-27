@@ -21,6 +21,7 @@ import { createArtifacts } from "/static/components/artifacts.js";
 import { createRail } from "/static/components/rail.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createStateGraph } from "/static/components/stategraph.js";
+import { createStopping } from "/static/components/stopping.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { promptDialog } from "/static/components/dialog.js";
 import { busy, chip, el, emptyState, relTime, toast } from "/static/util.js";
@@ -183,6 +184,9 @@ export async function render(view, slug, _query = {}) {
     // the state graph rides at the top of the artifact rail: current phase lit up,
     // re-highlighted live on the SSE state events below
     const graphBody = rail.add("state", el("div", {}));
+    // F334/D98: the user's meaning-level bounds — what DONE means for this job, and how far
+    // through it the run is. Above the state graph: the goal outranks the phase.
+    const goalBody = rail.add("goal", el("div", {}));
     const treeBody = detail.run_id ? rail.add("tasks", el("div", {})) : el("div", {});
     const filesBody = detail.run_id ? rail.add("files", el("div", {})) : el("div", {});
     // the live browser session (D86, R262 pt2): the browser-session util's persisted handle
@@ -194,6 +198,8 @@ export async function render(view, slug, _query = {}) {
     const bgBody = rail.add("background", el("div", { class: "bg-tasks" }));
     rail.toggle("background", false);
     const artsBody = rail.add("artifacts", el("div", {}));
+    const stopping = createStopping(goalBody, {
+      url: `/api/conversations/${slug}/stopping` });
     const stateGraph = createStateGraph(graphBody, {
       graphUrl: `/api/conversations/${slug}/stategraph`,
       ...(detail.run_id ? { statsUrl: `/api/runs/${detail.run_id}/phases` } : {}) });

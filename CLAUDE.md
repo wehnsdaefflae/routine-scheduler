@@ -185,7 +185,7 @@ one you are about to touch, not all of them.
   pins the load-bearing strings and fails on drift.
 - **Transcript events** (`engine/transcript.py` — append-only JSONL, the engine is the only writer):
   `header, assistant_action, observation, question, answer, user_injection, subrun_start, subrun_end,
-  compaction, error, finish`. This vocabulary is consumed by the web renderer AND the meta routine.
+  compaction, error, stopping_update, finish`. This vocabulary is consumed by the web renderer AND the meta routine.
 
 ## Gotchas
 
@@ -222,6 +222,18 @@ by a test, by the engine, or by a past incident.
 - **The composed prompt is a caching contract.** The message list is appended-to, never
   mutated; per-turn boilerplate is banned. Only compaction, schema-retry cleanup and the
   media fallback may rewrite it, each invalidating the provider cache by design.
+- **What DONE means is the user's, and it is not a budget.** A run's meaning-level bounds are
+  STOPPING CONDITIONS (`engine/stopping.py`, F334/D98, user order 2026-08-14): user prose in
+  `state/stopping.json` that the composer inlines and the finish gate makes impossible to ignore.
+  Budgets stay a runaway BACKSTOP; this is what actually decides when a job is finished.
+  Conditions are LOGICALLY CONNECTED — groups combine with `all`/`any`, the document combines the
+  groups the same way (two levels: enough for "(A AND B) OR C", shallow enough for a UI and a weak
+  model), `requires` gates one condition on another, and `stage` scopes one to a routine phase.
+  The engine judges NO semantics: the contract is an ACCOUNTING (`[s<n>] met|unmet — why` per
+  ACTIVE condition), the gate rejects a summary that skips one, and `record_accounting` stamps the
+  model's verdict back at the finish so the panel, the next run and the user all read the same
+  state. Satisfaction is REPORTED, never enforced — forcing a finish on an accounting the model
+  wrote itself is just the model stopping itself with extra steps.
 - **A run never writes its own config.** `routine.yaml` is never writable by any run — the
   block is by FILENAME anywhere a run can write, external repos included.
 - **A config field must declare whether it reaches a LIVE run.** `configflow.CLASSIFICATION`

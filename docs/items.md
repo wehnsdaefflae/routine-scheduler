@@ -142,6 +142,22 @@ delivered when addressed, with the message marked "no reply needed"; answering a
 anyway is harmless — it is already settled — and only a NEW report that names the closure
 reopens the discussion, as its own open item.
 
+**Deferrals whose carrier closed without delivering them.** An item routinely defers part of its
+scope into another ("the sidebar panel ships with F324's shared component"). The carrier then
+ships its OWN scope and closes, the changelog `items` join records the carrier as addressed, and
+nothing checks that what was deferred INTO it actually shipped — the deferral existed only as
+prose. The deferred piece becomes an open item nowhere and is simply gone. That is not
+hypothetical: D98's stopping-conditions panel was deferred into F324 on 2026-08-21, F324 closed
+`addressed` on 2026-08-26 naming R339/R340/R341/F336 as delivered, and the panel was never built.
+`readmodels/orphans.py` reads the ledger for deferral phrasings naming a carrier and flags any
+whose carrier is CLOSED and whose closure evidence — the carrier's own `detail` plus the
+changelog rows whose `items` name it — never mentions the deferring ids. (Prose mentions are
+deliberately not evidence: the deferring sentence names both the source and the carrier, so
+counting them would make every deferral its own proof of delivery.) `GET /api/items/orphans`
+serves them and the Messages page banners them above the list, because they are invisible to
+every filter below it. It SURFACES rather than gates — a human judges the promise, and the fix
+for a false positive is to write the closure note so it names what it delivered.
+
 The stream is append-only. The report row is written by the `report` action; the `delivered`
 and `retracted` events are further rows, folded onto it by `reports.read_reports`.
 

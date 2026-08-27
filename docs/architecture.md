@@ -917,6 +917,27 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   applied-ts ledger as the model/deliberation/rule switches (a resumed leg never re-fires a stale
   signal), and per-field best-effort: a value the run cannot use is logged and left for the next
   run rather than ending a live run, and the note still says the field changed.
+- **Stopping conditions — what DONE means** (`engine/stopping.py`, `web/api_stopping.py`,
+  F334/D98; user order 2026-08-14: "a run should stop on a MEANING-level condition, not only on
+  budget walls"). The USER owns `state/stopping.json` (the web endpoints are the only writer of
+  the LIST); the ENGINE makes it impossible to ignore and RECORDS what the run concluded.
+  Conditions are logically connected: each belongs to a GROUP combining `all`/`any`, the document
+  combines the groups the same way (two levels — enough for "(A AND B) OR C", shallow enough that
+  a UI and a weak model can both reason about it), `requires` holds a condition DORMANT until
+  another is met, and `stage` scopes one to a routine stage module (the "per-stage routine
+  conditions" half of the order). Dropped conditions leave every verdict; an empty group is
+  vacuously satisfied under either mode, because the strict reading of an empty `any` would let an
+  emptied group block a job forever; a document with no conditions evaluates to `None` — no
+  opinion — so nothing announces a goal nobody set. The composer inlines the whole structure
+  (docs/prompt-anatomy.md §7) and the finish gate rejects a depth-0 finish whose summary skips an
+  ACTIVE condition (the R108 one-extra-turn shape; the reserved-finish turn is exempt, and dormant
+  conditions are never demanded). At the finish, `record_accounting` parses the model's own
+  `[s<n>] met|unmet` lines and stamps them back, emitting a `stopping_update` transcript event —
+  without that writer a condition stayed `open` however often a run reported it met, which is why
+  the status column was dead until 0.242.0. `met` is STICKY: a later run does not silently reopen
+  a goal the user has been told is done. Satisfaction is REPORTED, never enforced (v2, a verifier
+  subcall that blocks with evidence, remains a separate decision). Both homes share ONE
+  implementation and both get the GOAL rail panel (`static/components/stopping.js`).
 - **Event triggers fire through the same seam** (docs/triggers.md): the webhook route
   (`web/api_hooks.py`, POST `/api/hooks/<slug>/<token>` — the ONE unauthenticated API route:
   constant-time token compare, generic 404, 64 KiB cap, rate limit + spool cap, rejections logged,

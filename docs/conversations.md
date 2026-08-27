@@ -182,6 +182,31 @@ reply, or a completed routine) with a command, it executes and the turn stays wi
 does **not** apply to a routine's own scheduled execution — that is the routine's turn, not
 yours, so its workflow always runs (a command you inject there is context for that run).
 
+## The goal — what DONE means
+
+A conversation's budgets are a **runaway backstop**, not a definition of done. What actually
+bounds the job is the **goal**: meaning-level conditions you write, in the rail's `goal` panel.
+
+- A condition is prose — "the PDF is verified", "only diagnose, do not start fixing".
+- Conditions live in **groups**, and a group is satisfied by **ALL** of its conditions or by
+  **ANY** one of them — click the ALL/ANY chip to switch. With more than one group, the same
+  chip appears at the top for how the groups combine. That is how you say "either the work is
+  published *or* I call it off", which a flat checklist cannot express.
+- **`after s<n>`** on a condition holds it dormant until that one is met — the sequencing case.
+  A dormant condition is greyed and says what it waits for; the agent is shown it but is not
+  asked to judge it yet.
+- On a routine, a condition can also name a **stage**, so it is live only during that stage.
+
+The agent sees the whole structure in its prompt and **must account for every active condition
+when it finishes** — a line per condition saying met or unmet and why. A finish that skips one is
+rejected and costs it a turn. Its verdict is written back, so the panel's marks (`✓` met, `○`
+open, `–` dropped) are the run's own conclusions, not a list you maintain by hand. You can always
+overrule one: click the mark to cycle it, then **save goal**.
+
+When every condition the goal needs is met the panel says **goal met**, and the agent is told the
+job is done and to finish now. The engine does not force it to stop — it cannot judge your
+conditions, only make them impossible to ignore.
+
 ## Artifacts — deliverables in the side panel
 
 When the agent produces something that's more than a chat answer — a report, a generated page, a

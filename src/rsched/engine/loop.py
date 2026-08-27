@@ -20,6 +20,7 @@ from collections import deque
 from ..endpoints.base import EndpointError
 from ..grants import load_policy
 from ..health_events import log_health_event
+from ..ids import now_iso
 from . import create_routine, detach, executor, inbox, interact, manage_group, notes, requests
 from .actions import BRIEF_FIELD
 from .autocommit import autocommit as _autocommit
@@ -354,7 +355,8 @@ class EngineLoop:
                     if ctx.depth == 0 and not self._finish_reserved:
                         from . import stopping
                         if missing := stopping.unaccounted(
-                                str(action.get("summary") or ""), ctx.routine.dir):
+                                str(action.get("summary") or ""), ctx.routine.dir,
+                                phase=ctx.phase):
                             obs = {"kind": "finish", "rejected": True,
                                    "stopping_unaccounted": missing}
                             ctx.transcript.event("observation", obs, turn=ctx.turn)
@@ -402,6 +404,26 @@ class EngineLoop:
                             ctx.write_status()
                             continue
                     self.final_summary = action["summary"]
+                    # F334/D98: stamp the model's own [s<n>] met/unmet accounting back into
+                    # the store. Without this a condition sat at `open` however often a run
+                    # reported it met, so every reader — the panel, the next run, the user —
+                    # saw a stale list. Depth 0 only (a child accounts for nothing) and
+                    # best-effort: a store write must never turn a finished run into a
+                    # failed one.
+                    if ctx.depth == 0:
+                        from . import stopping
+                        try:
+                            newly = stopping.record_accounting(
+                                ctx.routine.dir, action["summary"],
+                                run_id=ctx.run_id, now=now_iso())
+                        except OSError as exc:
+                            ctx.transcript.event(
+                                "error", {"where": "stopping.record_accounting",
+                                          "error": str(exc)})
+                            newly = []
+                        if newly:
+                            ctx.transcript.event("stopping_update",
+                                                 {"met": newly, "run_id": ctx.run_id})
                     return self._finish_run(action["status"], action["summary"], authored=True)
                 if action["kind"] == "ask_user":
                     obs = interact.handle_ask(self, action, poll_s=POLL_S)

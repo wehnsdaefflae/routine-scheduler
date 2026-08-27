@@ -20,7 +20,7 @@ log = logging.getLogger("rsched.transcript")
 
 EVENT_TYPES = (
     "header", "assistant_action", "observation", "question", "answer", "user_injection",
-    "subrun_start", "subrun_end", "compaction", "error", "refusal", "finish",
+    "subrun_start", "subrun_end", "compaction", "error", "refusal", "stopping_update", "finish",
 )
 
 

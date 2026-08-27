@@ -15,6 +15,7 @@ import { createRail } from "/static/components/rail.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createPlanStrip } from "/static/components/planstrip.js";
 import { createStateGraph } from "/static/components/stategraph.js";
+import { createStopping } from "/static/components/stopping.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtDur, fmtTokens, fmtTs, skeleton, streamStatus,
@@ -78,6 +79,7 @@ export async function render(view, runId, query = {}) {
     el("summary", { class: "small" }, "state & artifacts"));
   view.append(railHost);
   const rail = createRail(railHost);
+  const goalBody = rail.add("goal", el("div", {}));
   const graphBody = rail.add("state", el("div", {}));
   const treeBody = rail.add("tasks", el("div", {}));
   const filesBody = rail.add("files", el("div", {}));
@@ -439,17 +441,22 @@ export async function render(view, runId, query = {}) {
       graphUrl: `/api/conversations/${slug}/stategraph`,
       statsUrl: `/api/runs/${runId}/phases` });
     artifacts = createArtifacts(artBody, { slug, base: "conversations" });
+    createStopping(goalBody, { url: `/api/conversations/${slug}/stopping` });
   } else if (home === "background") {
     // a detached task has no page/routes of its own — results deliver to the owner
     kickerEl.textContent = `background task / ${slug}`;
     titleLink.removeAttribute("href");
     graphBody.append(el("div", { class: "faint small" },
       "detached background task — its result is delivered to the owning conversation"));
+    // a detached task's bounds are its OWNER's; it has no goal surface of its own
+    rail.toggle("goal", false);
   } else {
     stateGraph = createStateGraph(graphBody, {
       graphUrl: `/api/routines/${slug}/stategraph`,
       statsUrl: `/api/runs/${runId}/phases` });
     artifacts = createArtifacts(artBody, { slug, base: "routines" });
+    // showStage: a per-stage condition is a ROUTINE concept — a conversation has no stages
+    createStopping(goalBody, { url: `/api/routines/${slug}/stopping`, showStage: true });
   }
   mainBox.replaceChildren();
   const transcript = createTranscript(mainBox, {

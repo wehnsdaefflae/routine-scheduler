@@ -37,6 +37,18 @@ def _report_header(routine_dir: Path) -> dict | None:
             "summary": str(report.get("summary") or "")}
 
 
+@router.get("/items/orphans")
+def orphans(request: Request) -> list[dict]:
+    """Deferrals whose CARRIER closed without delivering them (readmodels/orphans.py).
+
+    The gap the ledger could not see: an item defers part of its scope into another, the
+    carrier ships its own scope and closes `addressed`, and the deferred piece becomes an
+    open item nowhere. It is surfaced rather than gated — a human judges the promise.
+    """
+    from ..readmodels import orphans as orphans_model
+    return orphans_model.load(_routine_dir(request))
+
+
 @router.get("/items")
 def items(request: Request,
           type_: Annotated[str, Query(alias="type")] = "",

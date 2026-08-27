@@ -270,29 +270,6 @@ def test_message_admin_token_drops_marker_only_when_valid(client, monkeypatch):
     assert (run_dir / ADMIN_MARKER).exists()
 
 
-def test_stopping_conditions_get_put_roundtrip(client):
-    """F334/D98 v1: the stopping list is user-owned via GET/PUT — ids assigned stably,
-    whole-list replace, malformed body rejected (extra keys are a 422, not a silent drop)."""
-    c, _ = client
-    slug = c.post("/api/conversations", data={"text": "publish the PDF"}).json()["slug"]
-    assert c.get(f"/api/conversations/{slug}/stopping").json() == {"conditions": []}
-    r = c.put(f"/api/conversations/{slug}/stopping",
-              json={"conditions": [{"text": "stop once the PDF is verified"},
-                                   {"text": "only diagnose"}]})
-    assert r.status_code == 200
-    rows = r.json()["conditions"]
-    assert [x["id"] for x in rows] == ["s1", "s2"]
-    # drop one, keep the other's id stable
-    r2 = c.put(f"/api/conversations/{slug}/stopping",
-               json={"conditions": [{"id": "s2", "text": "only diagnose",
-                                     "status": "dropped"}]})
-    assert [x["id"] for x in r2.json()["conditions"]] == ["s2"]
-    got = c.get(f"/api/conversations/{slug}/stopping").json()["conditions"]
-    assert got[0]["status"] == "dropped"
-    assert c.put(f"/api/conversations/{slug}/stopping",
-                 json={"conditions": [{"text": "x", "stray": True}]}).status_code == 422
-
-
 def test_create_conversation_admin_token_drops_marker_only_when_valid(client, monkeypatch):
     """D66: the NEW-conversation composer's Admin toggle sends x-admin-token ON CREATE.
     Reply #1 fires on create, so a VALID token must drop the one-shot admin marker on the

@@ -739,8 +739,8 @@ def test_finish_gate_rejects_unaccounted_stopping_conditions(make_routine, scrip
     from rsched.engine import stopping as stopping_mod
 
     d = make_routine(slug="stopper")
-    stopping_mod.save(d, [{"text": "stop once the PDF is verified"},
-                          {"text": "only diagnose — never fix"}], now="t")
+    stopping_mod.save(d, {"conditions": [{"text": "stop once the PDF is verified"},
+                                         {"text": "only diagnose — never fix"}]}, now="t")
     scripted([
         probe(),
         finish(summary="all done, PDF looks fine"),                     # no accounting → deferred
@@ -760,6 +760,12 @@ def test_finish_gate_rejects_unaccounted_stopping_conditions(make_routine, scrip
     from rsched.engine.composer import state_digest
     digest = state_digest(d, [], [])
     assert "STOPPING CONDITIONS" in digest and "[s1] stop once the PDF is verified" in digest
+    # ...and the model's own verdict was STAMPED BACK, so the panel and the next run see it
+    rows = {c["id"]: c for c in stopping_mod.load(d)["conditions"]}
+    assert rows["s1"]["status"] == "met" and rows["s2"]["status"] == "met"
+    assert rows["s1"]["note"].startswith("PDF verified")
+    assert rows["s1"]["resolved_run"] == f"stopper:{TS}"
+    assert any(e["type"] == "stopping_update" for e in events)
 
 
 def test_reserved_finish_surfaces_still_queued_message(make_routine, scripted):

@@ -559,6 +559,65 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .sg-link { width: 1px; height: 10px; background: var(--line-2); margin-left: 10px; }
 .sg-link.done { background: var(--live); opacity: 0.5; }
 
+/* the GOAL panel (F334/D98): the user's meaning-level bounds and how far through them the
+   run is. Deliberately the same visual language as the state graph above it — a met
+   condition reads like a done phase (live-green mark, dimmed text) so the two rails answer
+   "what is finished" the same way. */
+.goals { display: flex; flex-direction: column; gap: 6px; font-family: var(--sans); }
+.goal-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.goal-verdict {
+  margin-left: auto; font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--muted);
+}
+.goal-verdict.met { color: var(--live); border-color: var(--live); }
+.goal-group { border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px; }
+.goal-group.sat { border-color: var(--live); }
+.goal-ghead { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+/* the ALL/ANY toggle is the connective made visible — a flat tick list cannot say "either
+   of these ends the job", which is the whole point of connecting the conditions */
+.goal-mode {
+  flex: none; border: 1px solid var(--line-2); background: var(--surface-2); cursor: pointer;
+  color: var(--muted); font-size: 9.5px; letter-spacing: .06em; font-weight: 700;
+  border-radius: 5px; padding: 1px 5px; font-family: var(--sans);
+}
+.goal-mode.any { color: var(--amber); border-color: var(--amber); }
+.goal-mode:hover { color: var(--text); }
+.goal-gname {
+  flex: 1; min-width: 0; background: none; border: none; color: var(--text);
+  font-size: 12px; padding: 1px 2px; font-family: var(--sans);
+}
+.goal-gname:focus { outline: 1px solid var(--line-2); border-radius: 4px; }
+.goal-row {
+  display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; color: var(--muted);
+  padding: 2px 2px; min-width: 0;
+}
+.goal-row .goal-mark {
+  flex: none; width: 14px; text-align: center; border: none; background: none; cursor: pointer;
+  color: var(--faint); font-size: 12px; padding: 0; line-height: 1.4;
+}
+.goal-row.met { color: var(--faint); }
+.goal-row.met .goal-mark { color: var(--live); }
+.goal-row.met .goal-text { text-decoration: line-through; text-decoration-color: var(--faint); }
+.goal-row.dropped { color: var(--faint); opacity: .55; }
+.goal-row.dropped .goal-text { text-decoration: line-through; }
+/* a condition waiting on another is visibly NOT yours to act on yet, and says what it waits
+   for — "dormant" alone would leave the reader guessing */
+.goal-row.blocked { opacity: .6; font-style: italic; }
+.goal-text { min-width: 0; flex: 1; }
+.goal-text:focus { outline: 1px solid var(--line-2); border-radius: 4px; }
+.goal-meta { font-size: 10px; white-space: nowrap; }
+.goal-note { color: var(--faint); }
+.goal-req, .goal-stage {
+  flex: none; background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px;
+  color: var(--muted); font-size: 10px; padding: 0 3px; max-width: 90px;
+}
+.goal-del {
+  flex: none; border: none; background: none; color: var(--faint); cursor: pointer;
+  font-size: 11px; padding: 0 2px; line-height: 1; opacity: 0;
+}
+.goal-row:hover .goal-del, .goal-ghead:hover .goal-del { opacity: 1; }
+.goal-del:hover { color: var(--err); }
+
 /* file activity (run rail + conversation artifact rail): which files the run read/wrote —
    paths truncate LEFT (rtl trick) so the filename end stays visible */
 .filelist { display: flex; flex-direction: column; gap: 1px; font-family: var(--sans); }

@@ -376,6 +376,11 @@ export function createTranscript(container, opts = {}) {
     subrun_end: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,
       `${ev.payload.mode === "sequential" ? "→ subtask" : "↰ subrun"} ${ev.payload.n} "${ev.payload.label}" ${ev.payload.status} — ${ev.payload.turns} turns, ${fmtTokens(ev.payload.usage)}`,
       md(ev.payload.summary || "(no summary)", "obs md"))),
+    // F334/D98: the run's own [s<n>] accounting, stamped into state/stopping.json at the
+    // finish. A neutral line, like compaction — it records a state change the reader needs
+    // to see in place, not an action the model took.
+    stopping_update: (ev) => el("div", { class: "ev compaction" },
+      `— stopping conditions met: ${(ev.payload.met || []).join(", ")} —`),
     header: (ev) => el("div", { class: "ev system" },
       `run ${ev.run_id} · ${ev.orchestrator?.endpoint}:${ev.orchestrator?.model} · workflow ${ev.workflow?.slug || "?"}`),
   };
